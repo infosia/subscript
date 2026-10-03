@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     /// Validates record targets in one ambient mirror and assigns its HIR
@@ -30,8 +31,8 @@ impl<'p> Checker<'p> {
             let include = match &parsed.provenance.header {
                 Some(record) => record.value.clone(),
                 None => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::MirrorHeaderMissing,
                         format!(
                             "mirror `{}` declares foreign functions but has no \
                              `@subscript-c-header` provenance record",
@@ -58,8 +59,8 @@ impl<'p> Checker<'p> {
                 })
             });
             if !exists {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorParameterTargetMissing,
                     format!(
                         "mirror `{}` has provenance record naming nonexistent \
                          parameter `{}.{}`: `{}`",
@@ -72,8 +73,8 @@ impl<'p> Checker<'p> {
 
         for (typedef_name, record) in &parsed.provenance.callbacks {
             if !aliases.contains(typedef_name) {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorCallbackTargetMissing,
                     format!(
                         "mirror `{}` has provenance record naming nonexistent \
                          callback typedef `{}`: `{}`",
@@ -117,7 +118,7 @@ impl<'p> Checker<'p> {
         // own line order.
         lifetime_errors.sort_by_key(|(_, pos)| pos.line);
         for (message, pos) in lifetime_errors {
-            self.error(RuleCode::S100, message, pos);
+            self.reject_subset(RejectionSite::MirrorLifetimeTargetMissing, message, pos);
         }
     }
 
@@ -163,8 +164,8 @@ impl<'p> Checker<'p> {
                 })
             }
             (Type::Array(_), None) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorArrayProvenanceMissing,
                     format!(
                         "mirror `{}` parameter `{}.{}` absorbs an array descriptor \
                          or scalar parameter pair but has no \
@@ -177,8 +178,8 @@ impl<'p> Checker<'p> {
                 None
             }
             (Type::Str, None) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorStringProvenanceMissing,
                     format!(
                         "mirror `{}` parameter `{}.{}` absorbs a string view but \
                          has no `@subscript-c-string-view` provenance record",
@@ -190,8 +191,8 @@ impl<'p> Checker<'p> {
             }
             (Type::Array(_), Some(_)) | (Type::Str, Some(_)) | (_, Some(_)) => {
                 let raw = record.map(|record| record.raw.as_str()).unwrap_or_default();
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorParameterProvenanceMismatch,
                     format!(
                         "mirror `{}` has provenance record incompatible with \
                          parameter `{}.{}`: `{}`",
@@ -214,8 +215,8 @@ impl<'p> Checker<'p> {
     ) -> Option<hir::ForeignTypeProvenance> {
         let parsed = &self.prog.files[file];
         let Some(typedef_name) = type_reference_name(type_ann) else {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::MirrorAnonymousCallback,
                 format!(
                     "mirror `{}` has an anonymous callback type without \
                      `@subscript-c-callback` provenance",
@@ -230,8 +231,8 @@ impl<'p> Checker<'p> {
                 typedef_name: record.value.clone(),
             }),
             None => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorCallbackProvenanceMissing,
                     format!(
                         "mirror `{}` callback type `{}` has no \
                          `@subscript-c-callback` provenance record",

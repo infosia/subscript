@@ -8,6 +8,7 @@
 //! (which resolves an annotation with the parameter bound).
 
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 /// The position that a type argument fills in a container type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,17 +47,16 @@ impl<'p> Checker<'p> {
         }
         if !self.in_poisoned_context {
             match slot {
-                ContainerSlot::ArrayElement => self.error(
-                    RuleCode::S100,
+                ContainerSlot::ArrayElement => self.reject_subset(
+                    RejectionSite::ContextAffineArrayElement,
                     "Worker, Inbox, and Outbox values may not be array elements",
                     pos,
                 ),
                 ContainerSlot::MapKey | ContainerSlot::MapValue | ContainerSlot::SetElement => self
-                    .error_diverging(
-                        RuleCode::S100,
+                    .reject_subset(
+                        RejectionSite::ContextAffineContainerArgument,
                         "Worker, Inbox, and Outbox values may not be container type arguments",
                         pos,
-                        Divergence::WorkerContextAffinity,
                     ),
             }
         }

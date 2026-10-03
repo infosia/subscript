@@ -213,6 +213,8 @@ fn run_with_effects(
             .collect(),
         poisoned_imports: Vec::new(),
         type_only_value_uses: HashSet::new(),
+        rejected_local_names: HashSet::new(),
+        rejected_module_exports: HashMap::new(),
         cur_file: 0,
         subst: HashMap::new(),
         ambient_scope: HashMap::new(),
@@ -231,7 +233,7 @@ fn run_with_effects(
         in_poisoned_context: false,
         in_json_argument: false,
         in_for_of_subject: false,
-        aggregate_type_divergence: None,
+        aggregate_type_site: None,
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
         next_for_of_id: 0,
@@ -259,6 +261,38 @@ fn run_with_effects(
     // Parse-time provenance has a fixed shape; this pass binds each record
     // to declarations in its own mirror before type resolution discards
     // the source spelling.
+    for source in &prog.files {
+        if !source.dts {
+            continue;
+        }
+        for item in &source.module.body {
+            let declaration = match item {
+                ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::TsModule(module))) => module,
+                _ => continue,
+            };
+            if let ast::TsModuleName::Str(name) = &declaration.id {
+                let stem = normalize_module_specifier(&name.value);
+                ck.poison_missing_modules.insert(stem.clone());
+                if let Some(ast::TsNamespaceBody::TsModuleBlock(block)) = &declaration.body {
+                    let names = ck.rejected_module_exports.entry(stem).or_default();
+                    for item in &block.body {
+                        let decl = match item {
+                            ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => {
+                                &export.decl
+                            }
+                            ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => decl,
+                            _ => continue,
+                        };
+                        names.extend(
+                            super::exports::declaration_names(decl)
+                                .iter()
+                                .map(|id| id.sym.to_string()),
+                        );
+                    }
+                }
+            }
+        }
+    }
     for i in 0..prog.files.len() {
         if prog.files[i].dts {
             ck.collect_mirror_provenance(i);

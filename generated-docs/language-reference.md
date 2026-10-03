@@ -97,21 +97,21 @@ export function main(): void {
 
 No structural substitution between nominal types.
 
-Pinned corpus: [`corpus/reject/r06-structural-substitution.ts`](../corpus/reject/r06-structural-substitution.ts), line 21.
+Pinned corpus: [`corpus/reject/r120-narrowing-escapes-conditional.ts`](../corpus/reject/r120-narrowing-escapes-conditional.ts), line 22.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: nominal types are not interchangeable
+// tsc: rejects TS2345
+// expected-error: S005 at the post-conditional argument
 ```
 
 ```ts
-export function main(): void {
-  const value: B = new B();
-  print(`${read(value)}`);
-  Context.free(value);
+function escaped(value: EscapingValue | null): u32 {
+  const observed: u32 = value !== null ? use(value) : 0;
+  return use(value);
 }
+
 ```
 
 ### S006
@@ -223,21 +223,21 @@ function fail(): void {
 
 Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access.
 
-Pinned corpus: [`corpus/reject/r12-general-union.ts`](../corpus/reject/r12-general-union.ts), line 8.
+Pinned corpus: [`corpus/reject/r264-narrowing-switch-join.ts`](../corpus/reject/r264-narrowing-switch-join.ts), line 11.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: unions are limited to T | null
+// tsc: rejects TS18047
+// expected-error: S011 at line 11
 ```
 
 ```ts
-// expected-error: unions are limited to T | null
-class Choice {
-  value: i32 | string;
-
-  constructor(value: i32 | string) {
+  switch (k) {
+    case 0: if (local === null) { return; } break;
+    case 1: print(`${local.v}`); break;
+  }
+}
 ```
 
 ### S012
@@ -325,7 +325,7 @@ const n: i32 = zz;
 
 One namespace cannot contain two declarations of the same name.
 
-Pinned corpus: [`corpus/reject/r146-accessor-field-name-clash.ts`](../corpus/reject/r146-accessor-field-name-clash.ts), line 10.
+Pinned corpus: [`corpus/reject/r164-duplicate-static-member-name.ts`](../corpus/reject/r164-duplicate-static-member-name.ts), line 9.
 
 Header guidance:
 
@@ -335,9 +335,9 @@ Header guidance:
 ```
 
 ```ts
-  current: i32 = 1;
-
-  get current(): i32 {
+class C {
+  static value: i32 = 1;
+  static value(): i32 {
     return 2;
   }
 ```
@@ -366,21 +366,20 @@ export function main(): void {
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r62-valuetype-fixed-array-layout-too-large.ts`](../corpus/reject/r62-valuetype-fixed-array-layout-too-large.ts), line 9.
+Pinned corpus: [`corpus/reject/r249-unnarrowed-nullable-field-call.ts`](../corpus/reject/r249-unnarrowed-nullable-field-call.ts), line 10.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS2564
-// expected-error: S100 at the FixedArray type
+// tsc: rejects TS2721
+// expected-error: S100 at nullable field call
 ```
 
 ```ts
-@ValueType
-class Big {
-  data: FixedArray<u8, 4294967295>;
+export function main(): void {
+  const h = new Holder();
+  print(`${h.cb(4)}`);
 }
-
 ```
 
 ## Warning rules
@@ -478,7 +477,7 @@ Corpus: [`corpus/accept/a04-value-struct.ts`](../corpus/accept/a04-value-struct.
 
 R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Static accessors use the same rules through the class name. Reference classes and `@ValueType` value classes can declare read accessors. Only reference classes can declare instance write accessors. Value-position writes, value-class instance write accessors, and mirror accessors are outside the surface.
 
-Corpus: [`corpus/accept/a144-accessor.ts`](../corpus/accept/a144-accessor.ts), [`corpus/accept/a176-compound-through-accessor.ts`](../corpus/accept/a176-compound-through-accessor.ts), [`corpus/accept/a179-static-read-accessor.ts`](../corpus/accept/a179-static-read-accessor.ts), [`corpus/reject/r141-value-class-write-accessor.ts`](../corpus/reject/r141-value-class-write-accessor.ts), [`corpus/reject/r142-readonly-accessor-write.ts`](../corpus/reject/r142-readonly-accessor-write.ts), [`corpus/reject/r145-accessor-write-as-value.ts`](../corpus/reject/r145-accessor-write-as-value.ts), [`corpus/reject/r146-accessor-field-name-clash.ts`](../corpus/reject/r146-accessor-field-name-clash.ts), [`corpus/reject/r173-compound-write-as-value.ts`](../corpus/reject/r173-compound-write-as-value.ts).
+Corpus: [`corpus/accept/a144-accessor.ts`](../corpus/accept/a144-accessor.ts), [`corpus/accept/a176-compound-through-accessor.ts`](../corpus/accept/a176-compound-through-accessor.ts), [`corpus/accept/a179-static-read-accessor.ts`](../corpus/accept/a179-static-read-accessor.ts), [`corpus/reject/r141-value-class-write-accessor.ts`](../corpus/reject/r141-value-class-write-accessor.ts), [`corpus/reject/r142-readonly-accessor-write.ts`](../corpus/reject/r142-readonly-accessor-write.ts), [`corpus/reject/r145-accessor-write-as-value.ts`](../corpus/reject/r145-accessor-write-as-value.ts), [`corpus/reject/r173-compound-write-as-value.ts`](../corpus/reject/r173-compound-write-as-value.ts).
 
 ### Nullish operators
 

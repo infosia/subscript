@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::{RejectionFailure, RejectionSite};
 
 impl<'p> Checker<'p> {
     // ----- pass A: name collection -----
@@ -31,17 +32,28 @@ impl<'p> Checker<'p> {
     ) {
         // Mirror (`.d.ts`) declarations populate the global ambient scope;
         // program declarations populate the per-file scope.
+        let unimplemented_overload = matches!(binding.item, ScopeItem::Func(_))
+            && super::rejection_facts::unimplemented_function_group(
+                &self.prog.files[file].module,
+                name,
+            );
         let scope = if self.prog.files[file].dts {
             &mut self.ambient_scope
         } else {
             &mut self.file_scopes[file]
         };
         if scope.contains_key(name) {
-            self.error(
-                RuleCode::S017,
-                format!("duplicate top-level name `{}`", name),
-                pos,
-            );
+            let site = if matches!(
+                (&scope[name].item, &binding.item),
+                (ScopeItem::Class(_), ScopeItem::Class(_))
+            ) {
+                RejectionSite::DuplicateTopLevelClass
+            } else if unimplemented_overload {
+                RejectionSite::TopLevelOverloadImplementationMissing
+            } else {
+                RejectionSite::TopLevelNameClash
+            };
+            self.reject_subset(site, format!("duplicate top-level name `{}`", name), pos);
             return;
         }
         scope.insert(name.to_string(), binding);
@@ -65,18 +77,30 @@ impl<'p> Checker<'p> {
                     | ast::ModuleDecl::ExportDefaultDecl(_)
                     | ast::ModuleDecl::ExportDefaultExpr(_)),
                 ) => {
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::DefaultExportDeclaration,
                         "the module surface requires named exports",
                         self.pos(other.span()),
-                        Divergence::NamedModuleSurface,
                     );
                     continue;
                 }
                 ast::ModuleItem::ModuleDecl(other) => {
                     let pos = self.pos(other.span());
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        match other {
+                            ast::ModuleDecl::TsImportEquals(import)
+                                if matches!(
+                                    import.module_ref,
+                                    ast::TsModuleRef::TsExternalModuleRef(_)
+                                ) =>
+                            {
+                                RejectionSite::ExternalImportEqualsDeclaration
+                            }
+                            ast::ModuleDecl::TsExportAssignment(_) => {
+                                RejectionSite::ExportAssignmentEsModule
+                            }
+                            _ => RejectionSite::UnsupportedModuleDeclaration,
+                        },
                         "only `export` declarations and named imports are in the decided surface",
                         pos,
                     );
@@ -116,8 +140,8 @@ impl<'p> Checker<'p> {
             ast::Decl::TsEnum(e) => self.collect_enum(file, e),
             ast::Decl::TsTypeAlias(alias) => self.collect_string_alias(file, alias),
             ast::Decl::Using(using) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ModuleUsing,
                     if using.is_await {
                         "module-level `await using` is not in the decided surface"
                     } else {
@@ -128,8 +152,11 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    match other {
+                        ast::Decl::TsInterface(_) => RejectionSite::SourceInterfaceDeclaration,
+                        _ => RejectionSite::SourceNamespaceDeclaration,
+                    },
                     "declaration form outside the decided surface",
                     pos,
                 );
@@ -137,21 +164,39 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn value_type_alignment(call: &ast::CallExpr) -> Result<u32, &'static str> {
+    fn value_type_alignment(
+        call: &ast::CallExpr,
+        source_decorator: bool,
+    ) -> Result<u32, RejectionFailure> {
         if call.args.len() != 1 || call.args[0].spread.is_some() {
-            return Err("`@ValueType` accepts exactly one object-literal argument");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeArgumentCount,
+                "`@ValueType` accepts exactly one object-literal argument",
+            ));
         }
         let ast::Expr::Object(options) = &*call.args[0].expr else {
-            return Err("`@ValueType` accepts exactly one object-literal argument");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeOptionsNonLiteral,
+                "`@ValueType` accepts exactly one object-literal argument",
+            ));
         };
         if options.props.len() != 1 {
-            return Err("`@ValueType` options must contain only the `align` key");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeOptionCount,
+                "`@ValueType` options must contain only the `align` key",
+            ));
         }
         let ast::PropOrSpread::Prop(prop) = &options.props[0] else {
-            return Err("`@ValueType` options must contain only the `align` key");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeOptionSpread,
+                "`@ValueType` options must contain only the `align` key",
+            ));
         };
         let ast::Prop::KeyValue(property) = &**prop else {
-            return Err("`@ValueType` options must contain only the `align` key");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeOptionPropertyForm,
+                "`@ValueType` options must contain only the `align` key",
+            ));
         };
         let is_align = match &property.key {
             ast::PropName::Ident(key) => key.sym.as_ref() == "align",
@@ -159,14 +204,27 @@ impl<'p> Checker<'p> {
             _ => false,
         };
         if !is_align {
-            return Err("`@ValueType` options must contain only the `align` key");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeOptionKey,
+                "`@ValueType` options must contain only the `align` key",
+            ));
         }
         let ast::Expr::Lit(ast::Lit::Num(number)) = &*property.value else {
-            return Err("`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}");
+            return Err(RejectionFailure::new(
+                RejectionSite::ValueTypeAlignmentNonLiteral,
+                "`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}",
+            ));
         };
         let value = number.value;
         if value.fract() != 0.0 || !matches!(value as u32, 2 | 4 | 8 | 16) {
-            return Err("`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}");
+            return Err(RejectionFailure::new(
+                if source_decorator {
+                    RejectionSite::ValueTypeAlignmentOutsideSet
+                } else {
+                    RejectionSite::BuiltinValueTypeAlignmentOutsideSet
+                },
+                "`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}",
+            ));
         }
         Ok(value as u32)
     }
@@ -192,7 +250,10 @@ impl<'p> Checker<'p> {
                     ) =>
                 {
                     is_value = true;
-                    match Self::value_type_alignment(call) {
+                    match Self::value_type_alignment(
+                        call,
+                        self.source_function_declared("ValueType"),
+                    ) {
                         Ok(value) => {
                             alignment_override = Some(hir::AlignmentOverride {
                                 value,
@@ -200,7 +261,7 @@ impl<'p> Checker<'p> {
                             });
                         }
                         Err(message) => {
-                            self.error(RuleCode::S100, message, self.pos(dec.span));
+                            self.reject_subset(message.site, message.message, self.pos(dec.span));
                         }
                     }
                 }
@@ -212,25 +273,25 @@ impl<'p> Checker<'p> {
                     ) =>
                 {
                     is_descriptor = true;
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if self.source_function_declared("Descriptor") {
+                            RejectionSite::DescriptorOptions
+                        } else {
+                            RejectionSite::BuiltinDescriptorOptions
+                        },
                         "`@Descriptor` does not accept options",
                         self.pos(dec.span),
                     );
                 }
                 _ => {
                     let pos = self.pos(dec.span);
-                    self.error(
-                        RuleCode::S100,
-                        "the only decided decorators are the ambient `@ValueType` and `@Descriptor`",
-                        pos,
-                    );
+                    self.reject_subset(RejectionSite::UnsupportedClassDecorator, "the only decided decorators are the ambient `@ValueType` and `@Descriptor`", pos);
                 }
             }
         }
         if is_value && is_descriptor {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DescriptorValueType,
                 "`@Descriptor` declares a reference class and cannot be combined with `@ValueType`",
                 self.pos(class.span),
             );
@@ -243,6 +304,14 @@ impl<'p> Checker<'p> {
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
+        if c.class
+            .type_params
+            .as_deref()
+            .is_some_and(|params| self.reject_type_parameter_defaults(params))
+        {
+            self.register_scope_item(file, &name, ScopeItem::Poisoned, pos);
+            return;
+        }
         if let Some(tp) = &c.class.type_params {
             let static_members = c.class.body.iter().filter_map(|member| match member {
                 ast::ClassMember::ClassProp(property) if property.is_static => Some(property.span),
@@ -252,11 +321,10 @@ impl<'p> Checker<'p> {
             let mut has_static_member = false;
             for span in static_members {
                 has_static_member = true;
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::GenericClassStaticMember,
                     "generic classes cannot declare static members",
                     self.pos(span),
-                    Divergence::StaticMemberSurface,
                 );
             }
             // §82.4 rule 5: the checker holds one substitution, so a
@@ -281,11 +349,10 @@ impl<'p> Checker<'p> {
                 }
                 // The static-member rule already reports a static method.
                 if !method.is_static {
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GenericClassGenericMethod,
                         "generic classes cannot declare generic methods",
                         self.pos(method.span),
-                        Divergence::GenericMethodOnGenericClass,
                     );
                 }
             }
@@ -355,10 +422,22 @@ impl<'p> Checker<'p> {
         let name = f.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(f.ident.span);
+        if f.function
+            .type_params
+            .as_deref()
+            .is_some_and(|params| self.reject_type_parameter_defaults(params))
+        {
+            self.register_scope_item(file, &name, ScopeItem::Poisoned, pos);
+            return;
+        }
         if let Some(tp) = &f.function.type_params {
             let bodiless = f.function.body.is_none();
             if bodiless {
-                self.error(RuleCode::S100, "function bodies are required", pos.clone());
+                self.reject_subset(
+                    RejectionSite::SourceFunctionBodyMissing,
+                    "function bodies are required",
+                    pos.clone(),
+                );
             }
             let (type_params, duplicate_type_parameter) = self.collect_type_parameter_names(tp);
             self.generic_fns.insert(
@@ -387,6 +466,17 @@ impl<'p> Checker<'p> {
         }
     }
 
+    pub(super) fn reject_type_parameter_defaults(&mut self, params: &ast::TsTypeParamDecl) -> bool {
+        let mut rejected = false;
+        for parameter in &params.params {
+            if let Some(default) = &parameter.default {
+                rejected = true;
+                self.reject_subset(RejectionSite::TypeParameterDefault, "type-parameter defaults are not in the decided surface; pass an explicit type argument", self.pos(default.span()));
+            }
+        }
+        rejected
+    }
+
     pub(super) fn collect_type_parameter_names(
         &mut self,
         params: &ast::TsTypeParamDecl,
@@ -400,8 +490,8 @@ impl<'p> Checker<'p> {
                 let name = parameter.name.sym.to_string();
                 if !names.insert(name.clone()) {
                     duplicate = true;
-                    self.error(
-                        RuleCode::S017,
+                    self.reject_subset(
+                        RejectionSite::DuplicateTypeParameter,
                         format!("duplicate type parameter `{name}`"),
                         self.pos(parameter.name.span),
                     );
@@ -433,12 +523,7 @@ impl<'p> Checker<'p> {
     /// one time, and poisons every name in the pattern, so no
     /// `unknown name` follows it (§107.4).
     fn reject_outer_pattern(&mut self, file: usize, pat: &ast::Pat) {
-        self.error_diverging(
-            RuleCode::S100,
-            "a binding pattern binds inside a function body; a declaration outside one binds one name",
-            self.pos(pat.span()),
-            Divergence::ModuleLevelPattern,
-        );
+        self.reject_subset(RejectionSite::ModuleBindingPattern, "a binding pattern binds inside a function body; a declaration outside one binds one name", self.pos(pat.span()));
         for binding in pattern::collect_names(pat) {
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
@@ -449,6 +534,7 @@ impl<'p> Checker<'p> {
     fn collect_enum(&mut self, file: usize, e: &ast::TsEnumDecl) {
         let name = e.id.sym.to_string();
         let pos = self.pos(e.id.span);
+        let diagnostics_before = self.diags.len();
         let mut members = Vec::new();
         // `None` means the previous member's value + 1 overflows i32, so
         // the next implicit value has no representation.
@@ -458,8 +544,8 @@ impl<'p> Checker<'p> {
                 ast::TsEnumMemberId::Ident(id) => id.sym.to_string(),
                 ast::TsEnumMemberId::Str(s) => {
                     let p = self.pos(s.span);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::EnumStringMemberName,
                         "string enum member names are not decided",
                         p,
                     );
@@ -471,8 +557,8 @@ impl<'p> Checker<'p> {
                     Some(v) => v,
                     None => {
                         let p = self.pos(m.span);
-                        self.error(
-                            RuleCode::S008,
+                        self.reject_subset(
+                            RejectionSite::EnumImplicitValueOverflow,
                             format!(
                                 "implicit value for enum member `{}` overflows i32",
                                 member_name
@@ -486,11 +572,14 @@ impl<'p> Checker<'p> {
                     Some(v) => i64::from(v),
                     None => {
                         let p = self.pos(init.span());
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if matches!(&**init, ast::Expr::Lit(ast::Lit::Str(_))) {
+                                RejectionSite::EnumStringValue
+                            } else {
+                                RejectionSite::EnumNonIntegerMember
+                            },
                             "enum members must have integer literal values",
                             p,
-                            Divergence::IntegerLiteralRange,
                         );
                         next.unwrap_or(0)
                     }
@@ -508,16 +597,33 @@ impl<'p> Checker<'p> {
             members,
             pos: pos.clone(),
         });
-        self.register_scope_item(file, &name, ScopeItem::Enum(id), pos);
+        self.register_scope_item(
+            file,
+            &name,
+            if self.diags.len() == diagnostics_before {
+                ScopeItem::Enum(id)
+            } else {
+                ScopeItem::Poisoned
+            },
+            pos,
+        );
     }
 
     fn collect_string_alias(&mut self, file: usize, alias: &ast::TsTypeAliasDecl) {
         let name = alias.id.sym.to_string();
         let pos = self.pos(alias.id.span);
+        if alias
+            .type_params
+            .as_deref()
+            .is_some_and(|params| self.reject_type_parameter_defaults(params))
+        {
+            self.register_scope_item(file, &name, ScopeItem::Poisoned, pos);
+            return;
+        }
         if alias.type_params.is_some() {
-            self.error(
-                RuleCode::S100,
-                "string-literal union aliases cannot be generic",
+            self.reject_subset(
+                RejectionSite::GenericSourceAlias,
+                "source type aliases cannot be generic",
                 pos,
             );
             return;
@@ -527,16 +633,16 @@ impl<'p> Checker<'p> {
             return;
         }
         let Some(members) = string_alias_members(&alias.type_ann) else {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::SourceAliasNotLiteralUnion,
                 "type aliases are limited to a union of two or more string literals",
                 pos,
             );
             return;
         };
         if members.len() > i32::MAX as usize {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::LiteralAliasDiscriminantLimit,
                 "string-literal union has more members than fit its i32 discriminant",
                 self.pos(alias.type_ann.span()),
             );
@@ -547,8 +653,8 @@ impl<'p> Checker<'p> {
             .iter()
             .find(|member| !seen.insert((*member).clone()))
         {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DuplicateLiteralAliasMember,
                 format!("duplicate string-literal union member `{duplicate}`"),
                 self.pos(alias.type_ann.span()),
             );
@@ -574,16 +680,16 @@ impl<'p> Checker<'p> {
         let name = alias.id.sym.to_string();
         let pos = self.pos(alias.id.span);
         if mapping.members.is_empty() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::WireEnumEmpty,
                 "wire-mapped string-literal union must have at least one member",
                 self.pos(mapping.span),
             );
             return;
         }
         if mapping.members.len() > i32::MAX as usize {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::WireAliasDiscriminantLimit,
                 "wire-mapped string-literal union has more members than fit its i32 discriminant",
                 self.pos(mapping.span),
             );
@@ -596,8 +702,12 @@ impl<'p> Checker<'p> {
         let mut seen_wires: HashMap<i32, String> = HashMap::new();
         for element in &mapping.members {
             let ast::TsTypeElement::TsPropertySignature(property) = element else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if matches!(element, ast::TsTypeElement::TsMethodSignature(_)) {
+                        RejectionSite::WireEnumMethodMember
+                    } else {
+                        RejectionSite::WireEnumMemberForm
+                    },
                     "CEnum mappings contain only named properties with integer-literal values",
                     self.pos(element.span()),
                 );
@@ -607,8 +717,8 @@ impl<'p> Checker<'p> {
                 ast::Expr::Lit(ast::Lit::Str(value)) => value.value.to_string(),
                 ast::Expr::Ident(value) if !property.computed => value.sym.to_string(),
                 _ => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::WireEnumMemberKey,
                         "CEnum member keys must be string literals or identifiers",
                         self.pos(property.key.span()),
                     );
@@ -616,19 +726,18 @@ impl<'p> Checker<'p> {
                 }
             };
             if !seen_members.insert(member.clone()) {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DuplicateWireAliasMember,
                     format!("duplicate string-literal union member `{member}`"),
                     self.pos(property.key.span()),
                 );
                 return;
             }
             let Some(annotation) = &property.type_ann else {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WireEnumUntypedMember,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(property.span),
-                    Divergence::WireEnumValues,
                 );
                 return;
             };
@@ -637,20 +746,18 @@ impl<'p> Checker<'p> {
                 ..
             }) = &*annotation.type_ann
             else {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WireEnumMemberNonIntegerSyntax,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(annotation.type_ann.span()),
-                    Divergence::WireEnumValues,
                 );
                 return;
             };
             if !number.value.is_finite() || number.value.fract() != 0.0 {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WireEnumMemberNonIntegerValue,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(number.span),
-                    Divergence::WireEnumValues,
                 );
                 return;
             }
@@ -659,25 +766,23 @@ impl<'p> Checker<'p> {
                     .raw
                     .as_ref()
                     .map_or_else(|| number.value.to_string(), ToString::to_string);
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WireEnumValueRange,
                     format!(
                         "wire value {spelling} for CEnum member `{member}` is outside the i32 range"
                     ),
                     self.pos(number.span),
-                    Divergence::WireEnumValues,
                 );
                 return;
             }
             let wire = number.value as i32;
             if let Some(first) = seen_wires.insert(wire, member.clone()) {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DuplicateWireEnumValue,
                     format!(
                         "duplicate CEnum wire value {wire} for members `{first}` and `{member}`"
                     ),
                     self.pos(number.span),
-                    Divergence::WireEnumValues,
                 );
                 return;
             }
@@ -746,11 +851,19 @@ impl<'p> Checker<'p> {
             ast::Decl::TsEnum(e) => self.collect_enum(file, e),
             other => {
                 let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorModuleDeclaration,
                     "mirror declaration form outside the decided surface",
                     pos,
                 );
+                for name in super::exports::declaration_names(other) {
+                    self.register_scope_item(
+                        file,
+                        name.sym.as_ref(),
+                        ScopeItem::Poisoned,
+                        self.pos(name.span),
+                    );
+                }
             }
         }
     }
@@ -815,8 +928,8 @@ impl<'p> Checker<'p> {
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
             if mirror_const_value(v, d).is_none() {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorVariableForm,
                     format!(
                         "mirror variable `{name}` is outside the decided surface; the one \
                          accepted form is `declare const X = <integer literal>;`"

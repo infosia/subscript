@@ -8,5 +8,6 @@ use crate::types::Type;
 pub(super) struct FieldInitializer {
     pub class_type: Type,
     pub earlier: HashSet<String>,
+    pub definite_uninitialized: HashSet<String>,
     pub write: bool,
 }

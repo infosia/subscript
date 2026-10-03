@@ -580,7 +580,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[
         ("expr/call.rs", "check_indirect_call", 0xed9d360786d01965),
         ("expr/call.rs", "check_method_call_on", 0x193473593e642b0b),
-        ("expr/member.rs", "member_on", 0xb1ffa3a2183a7b30),
+        ("expr/member.rs", "member_on_context", 0xb1ffa3a2183a7b30),
     ] },
     AllowGroup { name: "instance-identity", reason: "Instance keys compare declared type arguments and preserve T identity (§143 rule 1b).", sites: &[
         ("generics.rs", "numeric_normal_form", 0x58518f62e52b0a50),
@@ -628,7 +628,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
         ("type_rules.rs", "assignable_through_constraints", 0xbb1305f0120713de),
-        ("type_rules.rs", "report_not_assignable", 0xa944daeb4d9d32da),
+        ("type_rules.rs", "report_not_assignable", 0x3b63376ac19d0a25),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[
         ("type_rules.rs", "contains_string_alias", 0xac8041c10ca4be34),

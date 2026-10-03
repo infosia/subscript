@@ -412,6 +412,29 @@ fn synthesized_int_range(ty: &Type) -> Option<(i64, i64)> {
     Some((lo.max(-EXACT) as i64, hi.min(EXACT) as i64))
 }
 
+/// The inherited Object names in the TypeScript view of these receivers.
+fn is_object_member(name: &str) -> bool {
+    matches!(
+        name,
+        "constructor"
+            | "toString"
+            | "toLocaleString"
+            | "valueOf"
+            | "hasOwnProperty"
+            | "isPrototypeOf"
+            | "propertyIsEnumerable"
+    )
+}
+
+/// The Function names in TypeScript's class-constructor view.
+fn is_function_member(name: &str) -> bool {
+    is_object_member(name)
+        || matches!(
+            name,
+            "name" | "length" | "apply" | "bind" | "call" | "arguments" | "caller"
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{check_program, hir, RuleCode, SourceFile};

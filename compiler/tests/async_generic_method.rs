@@ -126,7 +126,13 @@ export function main(): void { Box.load<i32>(1); }",
 fn bodiless_declared_async_template_reports_the_body_rule() {
     accept(&main_with("await box.load<i32>(1);"));
     for (modifier, ret, column, divergence, call) in [
-        ("async ", "Promise<T>", 9, None, "await box.load<i32>(1);"),
+        (
+            "async ",
+            "Promise<T>",
+            9,
+            Some(Divergence::GenericMethodBodyMissing),
+            "await box.load<i32>(1);",
+        ),
         (
             "",
             "T",

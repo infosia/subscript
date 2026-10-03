@@ -2,11 +2,10 @@
 //! including the banned-type rules (S001 `any`, S007 bare `number`,
 //! S011 general unions, S012 `undefined`, S013 `Promise`).
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::diag::RuleCode;
-use crate::divergence::Divergence;
 use crate::types::Type;
 
 use super::{Checker, ContainerSlot, ScopeItem};
@@ -19,35 +18,64 @@ impl<'p> Checker<'p> {
     pub(crate) fn resolve_async_return(&mut self, ty: &ast::TsType) -> Type {
         let ast::TsType::TsTypeRef(reference) = ty else {
             let pos = self.pos(ty.span());
-            self.error(
-                RuleCode::S100,
-                "async functions must return an explicitly annotated `Promise<T>`",
+            let parenthesized_promise = match ty {
+                ast::TsType::TsParenthesizedType(p) => {
+                    let resolved = self.resolve_type(&p.type_ann);
+                    matches!(self.apparent_type(&resolved), Type::AsyncHandle(_))
+                }
+                _ => false,
+            };
+            self.reject_subset(
+                if parenthesized_promise {
+                    RejectionSite::AsyncReturnNonReference
+                } else {
+                    RejectionSite::AsyncReturnNotPromise
+                },
+                "async functions must return an explicitly annotated builtin `Promise<T>`",
                 pos,
             );
             return Type::Error;
         };
         let ast::TsEntityName::Ident(ident) = &reference.type_name else {
             let pos = self.pos(reference.span);
-            self.error(
-                RuleCode::S100,
-                "async functions must return an explicitly annotated `Promise<T>`",
+            self.reject_subset(
+                RejectionSite::AsyncReturnQualifiedName,
+                "async functions must return an explicitly annotated builtin `Promise<T>`",
                 pos,
             );
             return Type::Error;
         };
-        if ident.sym.as_ref() != "Promise" {
+        if matches!(
+            self.type_scope_item(ident.sym.as_ref()),
+            Some(ScopeItem::Poisoned)
+        ) {
+            return Type::Error;
+        }
+        if ident.sym.as_ref() != "Promise" || self.type_scope_item("Promise").is_some() {
             let pos = self.pos(ident.span);
-            self.error(
-                RuleCode::S100,
-                "async functions must return an explicitly annotated `Promise<T>`",
+            self.reject_subset(
+                if self
+                    .type_scope_item(ident.sym.as_ref())
+                    .is_some_and(|item| {
+                        let ScopeItem::TypeAlias(ty) = item else {
+                            return false;
+                        };
+                        matches!(self.apparent_type(&ty), Type::AsyncHandle(_))
+                    })
+                {
+                    RejectionSite::AsyncReturnAlias
+                } else {
+                    RejectionSite::AsyncReturnSourceNotPromise
+                },
+                "async functions must return an explicitly annotated builtin `Promise<T>`",
                 pos,
             );
             return Type::Error;
         }
         let Some(args) = &reference.type_params else {
             let pos = self.pos(ident.span);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AsyncReturnMissingArgument,
                 "`Promise` requires exactly one fulfilled-value type argument",
                 pos,
             );
@@ -55,8 +83,8 @@ impl<'p> Checker<'p> {
         };
         if args.params.len() != 1 {
             let pos = self.pos(ident.span);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AsyncReturnArgumentCount,
                 "`Promise` requires exactly one fulfilled-value type argument",
                 pos,
             );
@@ -94,8 +122,30 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    match other {
+                        ast::TsType::TsTupleType(_) => RejectionSite::TupleAnnotation,
+                        ast::TsType::TsThisType(_) => RejectionSite::ThisAnnotation,
+                        ast::TsType::TsTypeQuery(_) => RejectionSite::QueryAnnotation,
+                        ast::TsType::TsTypeLit(_) => RejectionSite::StructuralAnnotation,
+                        ast::TsType::TsOptionalType(_) => RejectionSite::OptionalAnnotation,
+                        ast::TsType::TsRestType(_) => RejectionSite::RestAnnotation,
+                        ast::TsType::TsConditionalType(_) => RejectionSite::ConditionalAnnotation,
+                        ast::TsType::TsInferType(_) => RejectionSite::InferAnnotation,
+                        ast::TsType::TsTypeOperator(_) => RejectionSite::OperatorAnnotation,
+                        ast::TsType::TsIndexedAccessType(_) => RejectionSite::IndexedAnnotation,
+                        ast::TsType::TsMappedType(_) => RejectionSite::MappedAnnotation,
+                        ast::TsType::TsTypePredicate(_) => RejectionSite::PredicateAnnotation,
+                        ast::TsType::TsImportType(_) => RejectionSite::ImportAnnotation,
+                        ast::TsType::TsLitType(lit) => match &lit.lit {
+                            ast::TsLit::Str(_) => RejectionSite::StringLiteralAnnotation,
+                            ast::TsLit::Number(_) => RejectionSite::NumberLiteralAnnotation,
+                            ast::TsLit::Bool(_) => RejectionSite::BooleanLiteralAnnotation,
+                            ast::TsLit::BigInt(_) => RejectionSite::BigIntLiteralAnnotation,
+                            ast::TsLit::Tpl(_) => RejectionSite::TemplateLiteralAnnotation,
+                        },
+                        _ => RejectionSite::UnsupportedAnnotationKind,
+                    },
                     "type annotation form outside the decided surface",
                     pos,
                 );
@@ -103,11 +153,10 @@ impl<'p> Checker<'p> {
             }
         };
         if !allow_void && self.apparent_type(&resolved) == Type::Void {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::VoidTypeOutsideResult,
                 "`void` is only allowed as a return, generator element, or Promise result type",
                 self.pos(ty.span()),
-                Divergence::VoidValue,
             );
             Type::Error
         } else {
@@ -120,31 +169,28 @@ impl<'p> Checker<'p> {
         let pos = self.pos(kw.span);
         match kw.kind {
             TsNumberKeyword => {
-                self.error_diverging(
-                    RuleCode::S007,
+                self.reject_subset(
+                    RejectionSite::AnyTypeAnnotation,
                     "bare `number` is rejected; there is no default numeric type — \
                      use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, \
                      f16, f32, f64)",
                     pos,
-                    Divergence::BareNumber,
                 );
                 Type::Error
             }
             TsAnyKeyword => {
-                self.error_diverging(
-                    RuleCode::S001,
+                self.reject_subset(
+                    RejectionSite::UnknownTypeAnnotation,
                     "`any` is not part of the language",
                     pos,
-                    Divergence::AnyType,
                 );
                 Type::Error
             }
             TsUndefinedKeyword => {
-                self.error_diverging(
-                    RuleCode::S012,
+                self.reject_subset(
+                    RejectionSite::UndefinedKeywordAnnotation,
                     "`undefined` is banned; the single null story is `null`",
                     pos,
-                    Divergence::GeneralUnionAndUndefined,
                 );
                 Type::Error
             }
@@ -166,19 +212,24 @@ impl<'p> Checker<'p> {
                 {
                     Type::Object
                 } else {
-                    self.error_diverging(
-                        RuleCode::S011,
+                    self.reject_subset(
+                        RejectionSite::ObjectTypeOutsideBoundary,
                         "`object` is a boundary-only type; it is not available to \
                          general declarations",
                         pos,
-                        Divergence::BoundaryOnlyObject,
                     );
                     Type::Error
                 }
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    match kw.kind {
+                        TsNeverKeyword => RejectionSite::NeverAnnotation,
+                        TsUnknownKeyword => RejectionSite::UnknownAnnotation,
+                        TsSymbolKeyword => RejectionSite::SymbolAnnotation,
+                        TsBigIntKeyword => RejectionSite::BigIntAnnotation,
+                        _ => RejectionSite::UnsupportedKeywordKind,
+                    },
                     "keyword type outside the decided surface",
                     pos,
                 );
@@ -190,7 +241,11 @@ impl<'p> Checker<'p> {
     fn resolve_type_ref(&mut self, r: &ast::TsTypeRef) -> Type {
         let ast::TsEntityName::Ident(ident) = &r.type_name else {
             let pos = self.pos(r.span);
-            self.error(RuleCode::S100, "qualified type names are not decided", pos);
+            self.reject_subset(
+                RejectionSite::QualifiedSourceTypeName,
+                "qualified type names are not decided",
+                pos,
+            );
             return Type::Error;
         };
         let name = ident.sym.as_ref();
@@ -199,20 +254,24 @@ impl<'p> Checker<'p> {
         if let Some(bound) = self.subst.get(name) {
             return bound.clone();
         }
-        if let Some(sized) = crate::ambient::sized_alias(name) {
-            return sized;
+        if self.type_scope_item(name).is_none() {
+            if let Some(sized) = crate::ambient::sized_alias(name) {
+                return sized;
+            }
         }
         // Mirror `type` aliases (function-pointer typedefs, flag-set
         // `u64` aliases) resolve to their aliased language type (§12.2).
-        if let Some(ScopeItem::TypeAlias(alias)) = self.type_scope_item(name) {
-            return alias;
+        if name != "Array" {
+            if let Some(ScopeItem::TypeAlias(alias)) = self.type_scope_item(name) {
+                return alias;
+            }
         }
         match name {
             "Worker" | "Inbox" | "Outbox" if self.type_scope_item(name).is_none() => {
                 let expected = if name == "Worker" { 2 } else { 1 };
                 let Some(args) = &r.type_params else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::WorkerTypeArgumentsMissing,
                         format!(
                             "generic reference class `{name}` requires explicit type arguments"
                         ),
@@ -221,8 +280,8 @@ impl<'p> Checker<'p> {
                     return Type::Error;
                 };
                 if args.params.len() != expected {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::WorkerTypeArgumentCount,
                         format!("`{name}` takes exactly {expected} type argument(s)"),
                         pos,
                     );
@@ -243,8 +302,12 @@ impl<'p> Checker<'p> {
                     };
                     if !plain_reference && !matches!(self.apparent_type(&message), Type::Error) {
                         let type_name = self.type_name(&message);
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if matches!(self.apparent_type(&message), Type::Class(_)) {
+                                RejectionSite::WorkerMessagePlainClass
+                            } else {
+                                RejectionSite::WorkerMessageNonClass
+                            },
                             format!(
                                 "worker message type `{type_name}` must be a plain reference class"
                             ),
@@ -264,32 +327,32 @@ impl<'p> Checker<'p> {
             }
             "RegExp" if self.type_scope_item(name).is_none() => {
                 if r.type_params.is_some() {
-                    self.error(RuleCode::S100, "`RegExp` is not generic", pos);
+                    self.reject_subset(
+                        RejectionSite::RegExpTypeArguments,
+                        "`RegExp` is not generic",
+                        pos,
+                    );
                     return Type::Error;
                 }
                 return Type::RegExp;
             }
             "RegExpMatchArray" if self.type_scope_item(name).is_none() => {
                 let message = "`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)";
-                self.reject_subset(
-                    crate::check::rejection::RejectionSite::RegexMatchType,
-                    message,
-                    pos,
-                );
+                self.reject_subset(RejectionSite::RegexMatchType, message, pos);
                 return Type::Error;
             }
-            "Promise" => {
+            "Promise" if self.type_scope_item(name).is_none() => {
                 let Some(args) = &r.type_params else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::PromiseTypeArgumentMissing,
                         "`Promise` requires exactly one fulfilled-value type argument",
                         pos,
                     );
                     return Type::Error;
                 };
                 if args.params.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::PromiseTypeArgumentCount,
                         "`Promise` requires exactly one fulfilled-value type argument",
                         pos,
                     );
@@ -298,18 +361,18 @@ impl<'p> Checker<'p> {
                 let value = self.resolve_result_type(&args.params[0]);
                 return Type::async_handle(value);
             }
-            "FixedArray" => {
+            "FixedArray" if self.type_scope_item(name).is_none() => {
                 let Some(args) = &r.type_params else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::FixedArrayTypeArgumentsMissing,
                         "`FixedArray` requires element type and length arguments",
                         pos,
                     );
                     return Type::Error;
                 };
                 if args.params.len() != 2 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::FixedArrayTypeArgumentCount,
                         "`FixedArray` takes exactly two type arguments",
                         pos,
                     );
@@ -325,8 +388,8 @@ impl<'p> Checker<'p> {
                     }) if n.value >= 0.0 && n.value.fract() == 0.0 => {
                         if n.value > f64::from(u32::MAX) {
                             let p = self.pos(args.params[1].span());
-                            self.error(
-                                RuleCode::S008,
+                            self.reject_subset(
+                                RejectionSite::FixedArrayLengthRange,
                                 format!(
                                     "FixedArray length {} out of range (maximum {})",
                                     n.value,
@@ -340,8 +403,8 @@ impl<'p> Checker<'p> {
                     }
                     other => {
                         let p = self.pos(other.span());
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::FixedArrayLengthLiteral,
                             "`FixedArray` length must be a non-negative integer literal",
                             p,
                         );
@@ -363,10 +426,10 @@ impl<'p> Checker<'p> {
                              of {} bytes",
                             crate::types::MAX_AGGREGATE_BYTES
                         );
-                        if let Some(divergence) = self.aggregate_type_divergence {
-                            self.error_diverging(RuleCode::S100, message, pos, divergence);
+                        if let Some(site) = self.aggregate_type_site {
+                            self.reject_subset(site, message, pos);
                         } else {
-                            self.error(RuleCode::S100, message, pos);
+                            self.reject_subset(RejectionSite::FixedArrayByteLimit, message, pos);
                         }
                         return Type::Error;
                     }
@@ -387,10 +450,18 @@ impl<'p> Checker<'p> {
                         return Type::array(elem);
                     }
                 }
-                self.error(RuleCode::S100, "`Array` takes one type argument", pos);
+                self.reject_subset(
+                    if self.scope_binding(name).is_some() {
+                        RejectionSite::ArrayTypeArgumentCount
+                    } else {
+                        RejectionSite::BuiltinArrayTypeArgumentCount
+                    },
+                    "`Array` takes one type argument",
+                    pos,
+                );
                 return Type::Error;
             }
-            "Generator" => {
+            "Generator" if self.type_scope_item(name).is_none() => {
                 if let Some(args) = &r.type_params {
                     if let Some(first) = args.params.first() {
                         let y = self.resolve_result_type(first);
@@ -400,8 +471,8 @@ impl<'p> Checker<'p> {
                         return Type::generator(y);
                     }
                 }
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::GeneratorYieldTypeMissing,
                     "`Generator` requires at least a yield type argument",
                     pos,
                 );
@@ -416,7 +487,11 @@ impl<'p> Checker<'p> {
             && self.type_scope_item(name).is_none()
         {
             if r.type_params.is_some() {
-                self.error(RuleCode::S100, format!("`{name}` is not generic"), pos);
+                self.reject_subset(
+                    RejectionSite::ErrorTypeArguments,
+                    format!("`{name}` is not generic"),
+                    pos,
+                );
                 return Type::Error;
             }
             return Type::Class(self.error_class);
@@ -427,8 +502,8 @@ impl<'p> Checker<'p> {
         // A program declaration shadows the ambient name, as for Date.
         if (name == "Map" || name == "Set") && self.type_scope_item(name).is_none() {
             let Some(args) = &r.type_params else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapTypeArgumentsMissing,
                     format!("generic reference class `{name}` requires explicit type arguments"),
                     pos,
                 );
@@ -436,8 +511,8 @@ impl<'p> Checker<'p> {
             };
             let expected = if name == "Map" { 2 } else { 1 };
             if args.params.len() != expected {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapTypeArgumentCount,
                     format!("`{name}` takes exactly {expected} type argument(s)"),
                     pos,
                 );
@@ -467,7 +542,7 @@ impl<'p> Checker<'p> {
                 let key_pos = self.pos(args.params[0].span());
                 let key_name = self.type_name(&key);
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::MapSetTypeKey,
+                    RejectionSite::MapSetTypeKey,
                     format!(
                         "`{key_name}` is not a Map/Set key kind; Q24 permits sized \
                          integers, boolean, enum, f32/f64, string, Date, and \
@@ -492,7 +567,11 @@ impl<'p> Checker<'p> {
         // named `Date` wins, exactly as for `Math`.
         if name == "Date" && self.type_scope_item(name).is_none() {
             if r.type_params.is_some() {
-                self.error(RuleCode::S100, "`Date` is not generic", pos);
+                self.reject_subset(
+                    RejectionSite::DateTypeArguments,
+                    "`Date` is not generic",
+                    pos,
+                );
                 return Type::Error;
             }
             return Type::Date;
@@ -509,14 +588,18 @@ impl<'p> Checker<'p> {
             }
             Some(ScopeItem::Class(id)) => {
                 if r.type_params.is_some() {
-                    self.error(RuleCode::S100, format!("`{}` is not generic", name), pos);
+                    self.reject_subset(
+                        RejectionSite::NonGenericClassTypeArguments,
+                        format!("`{}` is not generic", name),
+                        pos,
+                    );
                 }
                 Type::Class(id)
             }
             Some(ScopeItem::GenericClass(key)) => {
                 let Some(args) = &r.type_params else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GenericClassTypeArgumentsMissing,
                         format!("generic class `{}` requires explicit type arguments", name),
                         pos,
                     );
@@ -538,18 +621,14 @@ impl<'p> Checker<'p> {
                     if wire_mapped && self.allow_wire_alias_boundary {
                         Type::StringAlias(id)
                     } else {
-                        self.error(
-                            RuleCode::S100,
-                            format!(
+                        self.reject_subset(RejectionSite::BoundaryLiteralAlias, format!(
                                 "string-literal union alias `{name}` cannot appear in a boundary signature"
-                            ),
-                            pos,
-                        );
+                            ), pos);
                         Type::Error
                     }
                 } else if r.type_params.is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::LiteralAliasTypeArguments,
                         format!("string-literal union alias `{name}` is not generic"),
                         pos,
                     );
@@ -559,7 +638,15 @@ impl<'p> Checker<'p> {
                 }
             }
             _ => {
-                self.error(RuleCode::S016, format!("unknown type name `{}`", name), pos);
+                self.reject_subset(
+                    if crate::ambient::lib_type_name(name) {
+                        RejectionSite::TypeNameUnknown
+                    } else {
+                        RejectionSite::UnboundTypeName
+                    },
+                    format!("unknown type name `{}`", name),
+                    pos,
+                );
                 Type::Error
             }
         }
@@ -578,8 +665,8 @@ impl<'p> Checker<'p> {
             ast::TsUnionOrIntersectionType::TsUnionType(union) => union,
             ast::TsUnionOrIntersectionType::TsIntersectionType(i) => {
                 let pos = self.pos(i.span);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::IntersectionTypeAnnotation,
                     "intersection types are not in the decided surface",
                     pos,
                 );
@@ -590,11 +677,10 @@ impl<'p> Checker<'p> {
             if let ast::TsType::TsKeywordType(kw) = &**member {
                 if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword {
                     let pos = self.pos(kw.span);
-                    self.error_diverging(
-                        RuleCode::S012,
+                    self.reject_subset(
+                        RejectionSite::UndefinedUnionMember,
                         "`undefined` is banned; the single null story is `null`",
                         pos,
-                        Divergence::GeneralUnionAndUndefined,
                     );
                     return Type::Error;
                 }
@@ -630,8 +716,8 @@ impl<'p> Checker<'p> {
                 }
                 let pos = self.pos(base.span());
                 let name = self.type_name(&inner);
-                self.error(
-                    RuleCode::S011,
+                self.reject_subset(
+                    RejectionSite::NullableNonReference,
                     format!(
                         "unions are limited to `Ref | null`; `{} | null` is not a \
                          reference type union",
@@ -643,7 +729,7 @@ impl<'p> Checker<'p> {
             }
         }
         let pos = self.pos(union.span);
-        let divergence = if union.types.iter().all(|member| {
+        let site = if union.types.iter().all(|member| {
             matches!(
                 &**member,
                 ast::TsType::TsLitType(ast::TsLitType {
@@ -652,16 +738,19 @@ impl<'p> Checker<'p> {
                 })
             )
         }) {
-            Divergence::LiteralUnionAlias
+            RejectionSite::UnionLiteralUnionAlias
+        } else if union.types.iter().any(|member| matches!(&**member, ast::TsType::TsTypeRef(reference)
+            if matches!(&reference.type_name, ast::TsEntityName::Ident(ident)
+                if !self.subst.contains_key(ident.sym.as_ref())
+                    && self.type_scope_item(ident.sym.as_ref()).is_none()
+                    && crate::ambient::sized_alias(ident.sym.as_ref()).is_none()
+                    && !crate::ambient::lib_type_name(ident.sym.as_ref())
+                    && !matches!(ident.sym.as_ref(), "FixedArray" | "Context" | "Worker" | "Inbox" | "Outbox" | "CEnum")))) {
+            RejectionSite::UnionUnknownTypeMember
         } else {
-            Divergence::GeneralUnionAndUndefined
+            RejectionSite::UnionGeneralUnionAndUndefined
         };
-        self.error_diverging(
-            RuleCode::S011,
-            "unions are limited to `Ref | null`",
-            pos,
-            divergence,
-        );
+        self.reject_subset(site, "unions are limited to `Ref | null`", pos);
         Type::Error
     }
 
@@ -670,8 +759,8 @@ impl<'p> Checker<'p> {
             ast::TsFnOrConstructorType::TsFnType(fn_ty) => fn_ty,
             ast::TsFnOrConstructorType::TsConstructorType(c) => {
                 let pos = self.pos(c.span);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ConstructorTypeAnnotation,
                     "constructor types are not in the decided surface",
                     pos,
                 );
@@ -685,8 +774,8 @@ impl<'p> Checker<'p> {
                     Some(ann) => params.push(self.resolve_type(&ann.type_ann)),
                     None => {
                         let pos = self.pos(binding.id.span);
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::FunctionTypeParameterAnnotationMissing,
                             "function type parameters require annotations",
                             pos,
                         );
@@ -695,8 +784,12 @@ impl<'p> Checker<'p> {
                 },
                 other => {
                     let pos = self.pos(other.span());
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        match other {
+                            ast::TsFnParam::Rest(_) => RejectionSite::FunctionTypeRestParameter,
+                            ast::TsFnParam::Array(_) => RejectionSite::FunctionTypeArrayPattern,
+                            _ => RejectionSite::FunctionTypeObjectPattern,
+                        },
                         "function type parameter form outside the decided surface",
                         pos,
                     );

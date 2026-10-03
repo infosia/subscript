@@ -7,10 +7,9 @@
 //! names with an error type, so one pattern gives one diagnostic
 //! (§107.4).
 
+use crate::check::rejection::RejectionSite;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast as ast;
-
-use crate::divergence::Divergence;
 
 /// Where one bound name reads its value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +38,7 @@ pub(crate) struct PatternRejection<'a> {
     /// The reason, which names the work the form needs.
     pub message: &'static str,
     /// The TypeScript form, when stock `tsc` accepts this program.
-    pub divergence: Divergence,
+    pub site: RejectionSite,
     /// Every name in the pattern, in source order.
     pub names: Vec<&'a ast::BindingIdent>,
 }
@@ -109,7 +108,7 @@ pub(crate) fn classify(pat: &ast::Pat) -> Pattern<'_> {
         other => Pattern::Rejected(PatternRejection {
             span: other.span(),
             message: reason::NESTED,
-            divergence: Divergence::NestedPattern,
+            site: RejectionSite::BindingPatternUnsupportedRoot,
             names: collect_names(other),
         }),
     }
@@ -121,7 +120,7 @@ fn classify_array(array: &ast::ArrayPat) -> Pattern<'_> {
         // `const [, b] = xs` advances the position and binds no name.
         let Some(element) = element else { continue };
         let index = i32::try_from(index).unwrap_or(i32::MAX);
-        let (span, message, divergence) = match element {
+        let (span, message, site) = match element {
             ast::Pat::Ident(binding) => {
                 bindings.push(PatternBinding {
                     source: BindingSource::Element(index),
@@ -129,18 +128,26 @@ fn classify_array(array: &ast::ArrayPat) -> Pattern<'_> {
                 });
                 continue;
             }
-            ast::Pat::Rest(rest) => (rest.span, reason::ARRAY_REST, Divergence::ArrayRestPattern),
+            ast::Pat::Rest(rest) => (
+                rest.span,
+                reason::ARRAY_REST,
+                RejectionSite::ArrayBindingRestElement,
+            ),
             ast::Pat::Assign(assign) => (
                 assign.span,
                 reason::DEFAULT_VALUE,
-                Divergence::PatternDefaultValue,
+                RejectionSite::ArrayBindingDefaultValue,
             ),
-            other => (other.span(), reason::NESTED, Divergence::NestedPattern),
+            other => (
+                other.span(),
+                reason::NESTED,
+                RejectionSite::ArrayBindingNestedPattern,
+            ),
         };
         return Pattern::Rejected(PatternRejection {
             span,
             message,
-            divergence,
+            site,
             names: array_names(array),
         });
     }
@@ -153,12 +160,12 @@ fn classify_array(array: &ast::ArrayPat) -> Pattern<'_> {
 fn classify_object(object: &ast::ObjectPat) -> Pattern<'_> {
     let mut bindings = Vec::new();
     for prop in &object.props {
-        let (span, message, divergence) = match prop {
+        let (span, message, site) = match prop {
             ast::ObjectPatProp::Assign(assign) => match assign.value {
                 Some(_) => (
                     assign.span,
                     reason::DEFAULT_VALUE,
-                    Divergence::PatternDefaultValue,
+                    RejectionSite::ObjectBindingShorthandDefault,
                 ),
                 None => {
                     bindings.push(PatternBinding {
@@ -185,26 +192,30 @@ fn classify_object(object: &ast::ObjectPat) -> Pattern<'_> {
                     (None, _) => (
                         entry.key.span(),
                         reason::FIELD_NAME,
-                        Divergence::PatternFieldName,
+                        RejectionSite::ObjectBindingNonLiteralFieldName,
                     ),
                     (Some(_), ast::Pat::Assign(assign)) => (
                         assign.span,
                         reason::DEFAULT_VALUE,
-                        Divergence::PatternDefaultValue,
+                        RejectionSite::ObjectBindingFieldDefault,
                     ),
-                    (Some(_), other) => (other.span(), reason::NESTED, Divergence::NestedPattern),
+                    (Some(_), other) => (
+                        other.span(),
+                        reason::NESTED,
+                        RejectionSite::ObjectBindingNestedPattern,
+                    ),
                 }
             }
             ast::ObjectPatProp::Rest(rest) => (
                 rest.span,
                 reason::OBJECT_REST,
-                Divergence::ObjectRestPattern,
+                RejectionSite::ObjectBindingRestProperty,
             ),
         };
         return Pattern::Rejected(PatternRejection {
             span,
             message,
-            divergence,
+            site,
             names: object_names(object),
         });
     }

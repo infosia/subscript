@@ -1,10 +1,11 @@
 //! Checks array literals, array spread literals, and descriptor object literals.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, ContainerSlot, FnCtx};
-use crate::diag::{Pos, RuleCode};
+use crate::diag::Pos;
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
 
@@ -31,7 +32,11 @@ impl<'p> Checker<'p> {
                 Some(e) if e.spread.is_none() => elems.push(e),
                 Some(_) => unreachable!("spread literal dispatched above"),
                 None => {
-                    self.error(RuleCode::S100, "array holes are not decided", pos.clone());
+                    self.reject_subset(
+                        RejectionSite::ArrayLiteralHole,
+                        "array holes are not decided",
+                        pos.clone(),
+                    );
                 }
             }
         }
@@ -51,12 +56,7 @@ impl<'p> Checker<'p> {
                 let mut out = Vec::new();
                 for e in elems {
                     let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &elem_ty,
-                        checked.pos.clone(),
-                        "the array element",
-                    );
+                    self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
                 hir::Expr {
@@ -69,8 +69,8 @@ impl<'p> Checker<'p> {
                 let elem_ty = (**elem_ty).clone();
                 let n = *n;
                 if elems.len() != n as usize {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::FixedArrayLiteralLength,
                         format!(
                             "FixedArray length mismatch: the annotation says {}, \
                              the literal has {} elements",
@@ -83,12 +83,7 @@ impl<'p> Checker<'p> {
                 let mut out = Vec::new();
                 for e in elems {
                     let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &elem_ty,
-                        checked.pos.clone(),
-                        "the array element",
-                    );
+                    self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
                 hir::Expr {
@@ -99,8 +94,8 @@ impl<'p> Checker<'p> {
             }
             _ => {
                 if elems.is_empty() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::EmptyArrayInference,
                         "cannot infer the type of an empty array literal without context",
                         pos.clone(),
                     );
@@ -117,12 +112,7 @@ impl<'p> Checker<'p> {
                     {
                         elem_ty = self.generic_union(&elem_ty, &checked.ty);
                     } else {
-                        self.require_assignable(
-                            &checked.ty.clone(),
-                            &elem_ty,
-                            checked.pos.clone(),
-                            "the array element",
-                        );
+                        self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
                     }
                     out.push(checked);
                 }
@@ -148,12 +138,13 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let class = self.classes[class_id.0].clone();
+        let property_diagnostics = self.diags.len();
         let mut provided: Vec<(String, DescriptorProp<'_>, Pos)> = Vec::new();
         for prop in &object.props {
             let (name, value, prop_pos) = match prop {
                 ast::PropOrSpread::Spread(spread) => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::DescriptorLiteralSpread,
                         "spread properties are not supported in descriptor literals",
                         self.pos(spread.dot3_token),
                     );
@@ -162,8 +153,8 @@ impl<'p> Checker<'p> {
                 ast::PropOrSpread::Prop(prop) => match &**prop {
                     ast::Prop::KeyValue(key_value) => {
                         let ast::PropName::Ident(key) = &key_value.key else {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::DescriptorLiteralQuotedKey,
                                 "descriptor literal member names must be identifiers",
                                 self.pos(key_value.key.span()),
                             );
@@ -181,8 +172,8 @@ impl<'p> Checker<'p> {
                         self.pos(ident.span),
                     ),
                     other => {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::DescriptorLiteralAccessor,
                             "descriptor literals contain data properties only",
                             self.pos(other.span()),
                         );
@@ -191,16 +182,16 @@ impl<'p> Checker<'p> {
                 },
             };
             if provided.iter().any(|(existing, _, _)| existing == &name) {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DescriptorLiteralDuplicateMember,
                     format!("duplicate descriptor literal member `{name}`"),
                     prop_pos,
                 );
                 continue;
             }
             if !class.fields.iter().any(|field| field.name == name) {
-                self.error(
-                    RuleCode::S004,
+                self.reject_subset(
+                    RejectionSite::DescriptorLiteralUnknownMember,
                     format!(
                         "descriptor class `{}` has no declared property `{name}`",
                         class.name
@@ -212,6 +203,9 @@ impl<'p> Checker<'p> {
             provided.push((name, value, prop_pos));
         }
 
+        if self.diags.len() != property_diagnostics {
+            return self.err_expr(pos);
+        }
         let mut fields = Vec::with_capacity(class.fields.len());
         for field in &class.fields {
             let explicit = provided
@@ -239,8 +233,12 @@ impl<'p> Checker<'p> {
                     })
                 }
                 None => {
-                    self.error(
-                        RuleCode::S100,
+                    if object.props.iter().any(|property| matches!(property, ast::PropOrSpread::Prop(property) if matches!(&**property, ast::Prop::KeyValue(value) if matches!(&value.key, ast::PropName::Str(key) if key.value.as_str() == field.name.as_str())))) {
+                        fields.push(None);
+                        continue;
+                    }
+                    self.reject_subset(
+                        if object.props.iter().any(|property| matches!(property, ast::PropOrSpread::Prop(property) if matches!(&**property, ast::Prop::KeyValue(value) if matches!(&value.key, ast::PropName::Str(key) if key.value.as_str() == field.name.as_str())))) { RejectionSite::DescriptorRequiredMemberQuotedKey } else { RejectionSite::DescriptorRequiredMemberMissing },
                         format!(
                             "descriptor literal for `{}` is missing required member `{}`",
                             class.name, field.name
@@ -251,12 +249,7 @@ impl<'p> Checker<'p> {
                 }
             };
             if let Some(checked) = &checked {
-                self.require_assignable(
-                    &checked.ty.clone(),
-                    &field.ty,
-                    checked.pos.clone(),
-                    "the descriptor member",
-                );
+                self.require_expr_assignable(&checked, &field.ty, fx, "the descriptor member");
             }
             fields.push(checked);
         }
@@ -286,7 +279,7 @@ impl<'p> Checker<'p> {
             Some(Type::FixedArray(..))
         ) {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ArraySpreadFixedArray,
+                RejectionSite::ArraySpreadFixedArray,
                 "array-literal spread produces a fresh T[]; it cannot construct a FixedArray",
                 pos.clone(),
             );
@@ -299,7 +292,11 @@ impl<'p> Checker<'p> {
         let mut inferred: Option<Type> = context_elem.clone();
         for slot in &a.elems {
             let Some(slot) = slot else {
-                self.error(RuleCode::S100, "array holes are not decided", pos.clone());
+                self.reject_subset(
+                    RejectionSite::ArraySpreadLiteralHole,
+                    "array holes are not decided",
+                    pos.clone(),
+                );
                 continue;
             };
             let is_spread = slot.spread.is_some();
@@ -318,7 +315,7 @@ impl<'p> Checker<'p> {
                     // the unannotated form that stock `tsc` accepts.
                     Type::Map(..) => {
                         self.reject_subset(
-                            crate::check::rejection::RejectionSite::ArraySpreadMap,
+                            RejectionSite::ArraySpreadMap,
                             "a bare `Map` is not an array-literal spread operand: Map \
                              traversal binds `K`; a `[K, V]` pair has no tuple representation \
                              in the language; push `map.keys()` or \
@@ -329,7 +326,7 @@ impl<'p> Checker<'p> {
                     }
                     Type::Generator(_) => {
                         self.reject_subset(
-                            crate::check::rejection::RejectionSite::ArraySpreadGenerator,
+                            RejectionSite::ArraySpreadGenerator,
                             "Generator<T> is single-use; array-literal spread would consume \
                              a value expression",
                             spread_pos,
@@ -342,7 +339,7 @@ impl<'p> Checker<'p> {
                         None => {
                             let actual = self.type_name(other);
                             self.reject_subset(
-                                crate::check::rejection::RejectionSite::ArraySpreadSource,
+                                RejectionSite::ArraySpreadSource,
                                 format!(
                                     "array-literal spread accepts T[], FixedArray<T, N>, Set, \
                                      or string; got `{actual}`"

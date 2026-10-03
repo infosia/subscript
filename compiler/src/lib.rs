@@ -9,6 +9,7 @@
 //! rule codes (S001–S013, S100) and TS positions. Loaders can use
 //! [`parse_import_specifiers`] to discover imports with the same parser.
 
+use crate::check::rejection::{diagnostic, RejectionSite};
 pub mod api_reference;
 pub mod diag;
 mod diag_render;
@@ -144,8 +145,8 @@ pub fn check_program_with(
     options: &CheckOptions,
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     if files.is_empty() {
-        return Err(vec![Diagnostic::new(
-            RuleCode::S100,
+        return Err(vec![diagnostic(
+            RejectionSite::SourceFilesEmpty,
             "no source files given",
             Pos::new(String::new(), 1, 1),
         )]);

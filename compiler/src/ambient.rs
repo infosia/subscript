@@ -6,7 +6,24 @@
 
 use crate::diag::RuleCode;
 use crate::divergence::Divergence;
+mod lib_names;
 mod rejection_id;
+
+/// True for a global value name in the pinned lib surface.
+pub(crate) fn lib_value_name(name: &str) -> bool {
+    name == "globalThis" || lib_names::VALUES.binary_search(&name).is_ok()
+}
+
+/// True for a global callable name in the pinned lib surface.
+pub(crate) fn lib_callable_name(name: &str) -> bool {
+    lib_names::CALLS.binary_search(&name).is_ok()
+}
+
+/// True for a global type name in the pinned lib surface.
+pub(crate) fn lib_type_name(name: &str) -> bool {
+    lib_names::TYPES.binary_search(&name).is_ok()
+}
+
 use crate::hir::RegexFn;
 use crate::hir::{AmbientFn, ArrFn, ContextBytesFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
@@ -36,8 +53,6 @@ pub(crate) struct ApiRejection {
     pub group: &'static str,
     /// Rejected spelling or call shape.
     pub surface: &'static str,
-    /// Stable checker diagnostic code.
-    pub code: RuleCode,
     /// Collision-register rule.
     pub q_rule: &'static str,
     /// Accepted replacement, when the checker contract names one.
@@ -632,11 +647,19 @@ const fn rejection(
         divergence: site.1,
         group,
         surface,
-        code: RuleCode::S014,
         q_rule,
         replacement,
         summary,
         corpus,
+    }
+}
+
+impl ApiRejection {
+    /// The stable code that the named site supplies.
+    pub(crate) fn code(self) -> RuleCode {
+        crate::check::rejection::RejectionSite::Api(self.id, self.divergence)
+            .class()
+            .0
     }
 }
 

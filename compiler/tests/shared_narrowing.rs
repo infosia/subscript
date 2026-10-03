@@ -339,7 +339,10 @@ fn do_while_remains_outside_the_language() {
             .expect_err("do-while is unsupported");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!(diagnostics[0].divergence, None);
+    assert_eq!(
+        diagnostics[0].divergence,
+        Some(subscript_compiler::divergence::Divergence::DoWhileStatement)
+    );
 }
 
 #[test]

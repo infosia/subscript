@@ -1,13 +1,13 @@
 //! Checks arrow function expressions (C5).
 
+use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx, Frame, Local, ParamSig, Scope};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
 
@@ -19,6 +19,9 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if ctx.is_some_and(|ty| self.apparent_type(ty) == Type::Error) {
+            return self.err_expr(pos);
+        }
         let ctx_fn = match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
             Some(Type::Func(ft)) => Some((**ft).clone()),
             _ => None,
@@ -44,17 +47,12 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         if a.is_async {
-            self.error_diverging(
-                RuleCode::S100,
-                "async arrow functions are not in the decided surface; use an async function declaration",
-                pos.clone(),
-                Divergence::AsyncFunctionShape,
-            );
+            self.reject_subset(RejectionSite::AsyncArrowFunction, "async arrow functions are not in the decided surface; use an async function declaration", pos.clone());
             return self.err_expr(pos);
         }
         if a.is_generator {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GeneratorArrowFunction,
                 "generator arrows are not in the decided surface",
                 pos.clone(),
             );
@@ -100,15 +98,23 @@ impl<'p> Checker<'p> {
             .map(|ann| self.resolve_result_type(&ann.type_ann))
             .or_else(|| ret_ctx.cloned());
 
+        let saved_flow = fx.nonnull_flow_snapshot();
+        for scope in &mut fx.scopes {
+            scope.nonnull_flow.clear();
+        }
         fx.frames.push(Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             is_generator: false,
             is_async: false,
             yield_ty: None,
+            yield_annotated: false,
             is_lambda: true,
+            contextual_void: a.return_type.is_none() && ret == Some(Type::Void),
             captures: Vec::new(),
             this_ty: None,
-            missing_this_divergence: None,
+            missing_this_site: None,
+            static_this_class: None,
+            super_call_available: false,
         });
         fx.scopes.push(Scope {
             fn_boundary: true,
@@ -121,12 +127,7 @@ impl<'p> Checker<'p> {
         for (p, pattern) in params.iter().zip(&a.params) {
             let default = if let ast::Pat::Assign(assign) = pattern {
                 let value = self.check_expr(&assign.right, Some(&p.ty), fx);
-                self.require_assignable(
-                    &value.ty.clone(),
-                    &p.ty,
-                    value.pos.clone(),
-                    "the default value",
-                );
+                self.require_expr_assignable(&value, &p.ty, fx, "the default value");
                 Some(value)
             } else {
                 None
@@ -165,12 +166,7 @@ impl<'p> Checker<'p> {
                 ast::BlockStmtOrExpr::Expr(e) => {
                     let checked = self.check_expr(e, ret.as_ref(), fx);
                     if let Some(ret) = &ret {
-                        self.require_assignable(
-                            &checked.ty.clone(),
-                            &ret.clone(),
-                            checked.pos.clone(),
-                            "the lambda body",
-                        );
+                        self.require_expr_assignable(&checked, &ret.clone(), fx, "the lambda body");
                     } else {
                         ret = Some(checked.ty.clone());
                     }
@@ -190,8 +186,8 @@ impl<'p> Checker<'p> {
                 ast::BlockStmtOrExpr::BlockStmt(block) => {
                     self.reserve_block_declarations(&block.stmts, fx);
                     if ret.is_none() {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::BlockLambdaReturnAnnotationMissing,
                             "a lambda with a block body requires a return type annotation",
                             pos.clone(),
                         );
@@ -208,7 +204,15 @@ impl<'p> Checker<'p> {
                         if !matches!(&self.apparent_type(ret), Type::Void | Type::Error)
                             && !crate::check::stmt::always_returns(&out)
                         {
-                            self.error(RuleCode::S100, "not all paths return a value", pos.clone());
+                            self.reject_subset(
+                                if self.ts_return_coverage(&out) {
+                                    RejectionSite::LambdaReturnCoverage
+                                } else {
+                                    RejectionSite::LambdaReturnPathMissing
+                                },
+                                "not all paths return a value",
+                                pos.clone(),
+                            );
                         }
                     }
                     out
@@ -226,6 +230,7 @@ impl<'p> Checker<'p> {
         };
         fx.narrowed = saved_narrowed;
         fx.scopes.pop();
+        fx.restore_nonnull_flow(&saved_flow);
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);

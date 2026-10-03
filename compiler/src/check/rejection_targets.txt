@@ -1,0 +1,1363 @@
+ParserLoneSurrogateEscape	c-parse-surrogate	S100	a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character
+ParserSyntaxError	a-s214	S100	parse error: A `set` accessor must have exactly one parameter
+ParserSyntaxError	a-s231	S100	parse error: Expression expected
+ParserSyntaxError	parser-syntax-error	S100	parse error: A `get` accessor cannot have parameters
+ParserSyntaxError	parser-syntax-error-witness-4	S100	parse error: Expected ']', got ','
+ParserSyntaxError	parser-syntax-error-witness-10	S100	parse error: A 'break' statement can only be used within an enclosing iteration or switch statement
+ParserSyntaxError	parser-syntax-error-witness-8	S100	parse error: Expected one variable binding
+ParserSyntaxError	parser-syntax-error-witness-9	S100	parse error: Unexpected initializer in for in/of loop
+ParserSyntaxError	parser-syntax-error-witness-2	S100	parse error: Unexpected token `!`. Expected identifier, string literal, numeric literal or [ for the computed key
+ParserSyntaxError	parser-syntax-error-witness-7	S100	parse error: Expression expected
+ParserSyntaxError	parser-syntax-error-witness-6	S100	parse error: Expected ']', got ':'
+ParserSyntaxError	parser-syntax-error-witness-3	S100	parse error: Unexpected token `]`. Expected an identifier, void, yield, null, await, break, a string literal, a numeric literal, true, false, `, -, import, this, typeof, {, [, (
+ParserSyntaxError	parser-syntax-error-witness-5	S100	parse error: Expression expected
+ParserSyntaxError	c-parse-invalid	S100	parse error: Expression expected
+ParserSyntaxError	c-parse-identifier-surrogate	S100	parse error: Invalid character in identifier
+ClassAlignmentBelowNatural	c-corpus-r135-valuetype-align-below-natural	S100	requested alignment 2 is below the natural alignment 4 for `InvalidAlignment`
+ClassFinalAlignmentLimit	c-class-final-align	S100	`C` layout exceeds the supported aggregate limit of 2147483647 bytes after final alignment
+ClassFieldLayoutLimit	c-corpus-r65-valuetype-field-offset-layout-too-large	S100	`Accumulated` layout exceeds the supported aggregate limit of 2147483647 bytes while placing field `tail`
+AggregateArgumentFrameLimit	new-frame-argument-copy	S100	by-value aggregate argument copy makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
+SuspendFrameMemberLayoutLimit	a-s058	S100	generator frame layout exceeds the supported aggregate limit of 2147483647 bytes while placing parameter `a`
+GeneratorFrameFinalAlignmentLimit	c-generator-final-align	S100	generator frame layout exceeds the supported aggregate limit of 2147483647 bytes after final alignment
+ClosureEnvironmentLayoutLimit	c-corpus-r69-closure-environment-layout-too-large	S100	closure environment layout exceeds the supported aggregate limit of 2147483647 bytes
+StoredAggregateLayoutLimit	c-layout-pending	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+TypeOnlyImportValueUse	c-type-only-value	S100	`C` cannot be used as a value because it was imported with `import type`
+TypeOnlyImportValueUse	c-type-only-local-class	S100	`C` cannot be used as a value because it was imported with `import type`
+NamespaceAsValue	c-namespace-call	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamespaceAsValue	c-namespace-construction	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamespaceAsValue	c-namespace-assign	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamespaceAsValue	c-namespace-local-function	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+SwitchCaseRead	c-lookup-switch-read	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	c-lookup-switch-let-closure	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	c-lookup-switch-const-closure	S100	`x` is read from a different switch case
+SwitchCaseWriteOutsideDeclaration	c-lookup-switch-write	S100	`x` is assigned in a case that does not declare it
+ImmediateShadowedNameRead	c-corpus-r155-class-read-before-declaration	S100	`Foo` is read before its declaration in this block
+ImmediateShadowedNameRead	c-corpus-r154-namespace-read-before-declaration	S100	`Math` is read before its declaration in this block
+BlockNameReadBeforeDeclaration	c-lookup-shadow-class	S100	`C` is read before its declaration in this block
+BlockPendingReadWithoutProgramShadow	c-lookup-pending-closure	S100	`x` is read before its declaration in this block
+ImmediateNameWriteBeforeDeclaration	c-lookup-pending-write	S100	`x` is assigned before its declaration in this block
+BlockNameWriteBeforeDeclaration	c-lookup-write-closure	S100	`x` is assigned before its declaration in this block
+ContextAffineCapture	c-lookup-context-capture	S100	lambda captures Context-affine `box`; Worker, Inbox, and Outbox values may not be captured
+MutableLocalCapture	c-capture-mutable	S009	lambda captures `x`, which is not a `const` local; capturing lambdas may capture only const locals by value
+ModuleVarDeclaration	module-var-declaration	S100	`var` is not in the language; use `let` or `const`
+ModuleInitializerMissing	module-initializer-missing	S100	module-level variables require an initializer
+FunctionBodyMissing	function-body-missing	S100	function bodies are required
+FunctionImplementationMissing	function-implementation-missing	S100	function bodies are required
+AsyncHandleUnawaited	async-handle-unawaited	S013	an async handle is dropped without any await of its completion
+FunctionReturnPathMissing	function-return-path-missing	S100	not all paths return a value
+FunctionReturnCoverage	function-return-coverage	S100	not all paths return a value
+StaticFieldInitializerMissing	static-field-initializer-missing	S100	static fields require an initializer
+StaticFieldInitializerMissing	static-field-initializer-missing-witness-2	S100	static fields require an initializer
+FieldDefiniteAssertionUnassigned	field-definite-assertion-unassigned	S100	field `x` of `A` asserts with `!` a value that nothing assigns at the constructor's top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentAfterUnreachableReturn	field-assignment-after-unreachable-return	S100	field `x` of `A` is assigned at the constructor's top level after a statement that holds a `return`, so the constructor can return before the assignment; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor, before every statement that holds a `return`
+FieldAssignmentAfterReturnUnassignedExit	c-corpus-r228-field-assigned-after-early-return	S100	field `inner` of `Holder` is assigned at the constructor's top level after a statement that holds a `return`, so the constructor can return before the assignment; write `inner: Inner = …`, or assign `this.inner = …` at the top level of the constructor, before every statement that holds a `return`
+FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentMissingUnassignedExit	field-assignment-missing-unassigned-exit	S100	field `x` of `A` has no initializer, and no constructor statement assigns it; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentMissingNoNormalExit	field-assignment-missing-no-normal-exit	S100	field `x` of `A` has no initializer, and no constructor statement assigns it; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+ConstructorFieldReadUnassigned	constructor-field-read-unassigned	S100	`this.x` reads field `x` of `A` before the constructor assigns it at its top level; move the read after `this.x = …`, or give `x` an initializer
+ConstructorDefiniteFieldReadBeforeAssignment	constructor-definite-field-read-before-assignment	S100	`this.x` reads field `x` of `A` before the constructor assigns it at its top level; move the read after `this.x = …`, or give `x` an initializer
+ConstructorThisBeforeFieldValues	constructor-this-before-field-values	S100	the constructor of `A` calls a member of `this` before field `x` holds a value; move the call after the assignment of `x`, or give `x` an initializer
+LambdaUsingDeclaration	lambda-using-declaration	S100	nested declarations are not in the decided surface
+LocalVarDeclaration	local-var-declaration	S100	`var` is not in the language; use `let` or `const`
+AwaitUsingDeclaration	await-using-declaration	S100	`await using` is not in the decided surface
+LocalInitializerMissing	local-initializer-missing	S100	local declarations require an initializer
+NullInitializerInference	null-initializer-inference	S100	cannot infer a type from `null`; annotate the declaration
+UsingBindingNotDisposable	using-binding-not-disposable	S100	the class of a `using` binding must declare `[Symbol.dispose](): void`
+UsingBindingResourceType	using-binding-resource-type	S100	a `using` binding must be a reference class with a disposal hook, or that class or null
+GeneratorReturnValue	generator-return-value	S100	generator return values are not in the decided surface
+ExplicitVoidReturnValue	explicit-void-return-value	S100	a `void` function cannot return a value
+VoidFunctionReturnValue	void-function-return-value	S100	a `void` function cannot return a value
+ReturnValueMissing	return-value-missing	S100	missing return value of type `i32`
+StatementNonBooleanCondition	c-condition	S100	condition must be boolean, got `i32`
+AsyncForOf	async-for-of	S013	`for await…of` requires the Promise object/iterator surface, which is not in the language
+ForOfVarBinding	for-of-var-binding	S100	`var` is not in the language; use `let` or `const`
+ForOfAwaitUsing	for-of-await-using	S100	`await using` in a `for` head is not in the decided surface
+ForOfBindingKind	for-of-binding-kind	S100	`for…of` requires a `const` or `let` identifier binding
+IteratorMethodValueArgumentCount	iterator-method-value-argument-count	S100	`values()` expects no arguments
+IteratorMethodArgumentCount	iterator-method-argument-count	S100	`values()` expects no arguments
+LiteralAliasDuplicateCase	literal-alias-duplicate-case	S100	duplicate case label "a" for string-literal union alias `A`
+LiteralAliasDuplicateCase	literal-alias-duplicate-case-witness-2	S100	duplicate case label "a" for string-literal union alias `A`
+LiteralAliasUnknownCase	literal-alias-unknown-case	S100	case label "c" is not a member of string-literal union alias `A`
+AliasCaseNonLiteral	alias-case-non-literal	S100	case labels for string-literal union alias `A` must be string literals naming a member
+SwitchDiscriminantKind	switch-discriminant-kind	S100	switch discriminants are integers, enums, strings, or string-literal union aliases; got `boolean`
+LiteralAliasSwitchCoverage	literal-alias-switch-coverage	S100	non-exhaustive switch over string-literal union alias `A`; missing case labels: "b"
+DuplicateReadAccessor	duplicate-read-accessor	S017	two accessors cannot declare the read member `x`
+DuplicateWriteAccessor	duplicate-write-accessor	S017	two accessors cannot declare the write member `x`
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation	S017	a method cannot share the member name `f` with a method
+ClassMemberNameClash	class-member-name-clash	S017	a method cannot share the member name `f` with a method
+ClassMemberDuplicateImplementation	c-corpus-r146-accessor-field-name-clash	S017	a field and an accessor cannot share the member name `current`
+ComputedMethodName	computed-method-name	S100	computed method names are not decided
+DescriptorDisposeMethod	descriptor-dispose-method	S100	descriptor classes cannot declare `[Symbol.dispose]()`
+DescriptorMethod	descriptor-method	S100	descriptor classes cannot declare accessors
+DescriptorMethod	c-corpus-r94-descriptor-method	S100	descriptor classes cannot declare methods
+MirrorStaticMethod	mirror-static-method	S100	mirror classes cannot declare static methods or accessors
+DisposeStatic	dispose-static	S100	`[Symbol.dispose]()` must be non-static
+AsyncStaticMethod	async-static-method	S100	async static methods are not in the decided surface
+ValueClassDisposeMethod	value-class-dispose-method	S100	value classes cannot declare `[Symbol.dispose]()`
+MirrorAccessor	mirror-accessor	S100	mirror classes cannot declare accessors
+ReadAccessorReturnMissing	read-accessor-return-missing	S100	a read accessor requires an explicit return type
+ValueClassWriteAccessor	value-class-write-accessor	S100	value class `A` cannot declare a write accessor
+WriteAccessorReturnAnnotation	write-accessor-return-annotation	S100	a write accessor cannot declare a return type
+WriteAccessorDefaultParameter	write-accessor-default-parameter	S100	a write accessor parameter cannot have a default
+WriteAccessorPattern	write-accessor-pattern	S100	a write accessor parameter must be an identifier
+WriteAccessorTypeMissing	write-accessor-type-missing	S100	a write accessor parameter requires a type annotation
+AsyncGeneratorMethod	async-generator-method	S100	async generator methods are not in the decided surface
+GeneratorMethodDeclaration	generator-method-declaration	S100	generator methods are not in the decided surface
+ValueClassAsyncMethod	value-class-async-method	S100	async methods on `@ValueType` value classes are not in the decided surface
+MethodBodyMissing	method-body-missing	S100	function bodies are required
+GenericMethodImplementationMissing	generic-method-implementation-missing	S100	function bodies are required
+GenericMethodBodyMissing	generic-method-body-missing	S100	function bodies are required
+DisposeAsync	dispose-async	S100	`[Symbol.dispose]()` must be synchronous
+DisposeSignature	dispose-signature	S100	`[Symbol.dispose]()` takes no parameters and returns `void`
+ValueClassInheritance	value-class-inheritance	S006	value classes do not inherit
+DescriptorInheritance	descriptor-inheritance	S100	descriptor classes do not inherit
+ReferenceClassInheritance	reference-class-inheritance	S100	class inheritance is not in the decided surface
+ComputedFieldDeclaration	computed-field-declaration	S100	computed or non-identifier field names are not decided
+ComputedFieldUnboundName	computed-field-unbound-name	S100	computed or non-identifier field names are not decided
+ComputedFieldUnboundName	computed-field-unbound-name-witness-2	S100	computed or non-identifier field names are not decided
+DescriptorStaticField	descriptor-static-field	S100	descriptor classes cannot declare static fields
+MirrorStaticField	mirror-static-field	S100	mirror classes cannot declare static fields
+StaticFieldOptional	static-field-optional	S012	optional static fields imply `undefined`; use `T | null`
+StaticFieldAnnotationMissing	static-field-annotation-missing	S100	static fields require a type annotation
+ContextAffineStaticField	context-affine-static-field	S100	Worker, Inbox, and Outbox values may not be static fields
+DescriptorRequiredInitializer	descriptor-required-initializer	S100	a required descriptor member (`name!: T`) cannot have an initializer
+DescriptorInitializerWithoutOptional	descriptor-initializer-without-optional	S100	a descriptor member initializer requires the optional `?` spelling
+DescriptorRequiredFieldUnassigned	descriptor-required-field-unassigned	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredWithoutDefinite	descriptor-required-without-definite	S100	required descriptor members must be spelled `name!: T`
+InstanceFieldOptional	instance-field-optional	S012	optional properties imply `undefined`; use `T | null`
+InstanceFieldAnnotationMissing	instance-field-annotation-missing	S100	fields require a type annotation
+WireAliasNestedField	wire-alias-nested-field	S100	wire-mapped aliases are supported only as direct boundary-struct members or array-pair elements; member `x` nests one inside another boundary type
+DescriptorOptionalInitializerMissing	descriptor-optional-initializer-missing	S012	optional descriptor members require a default initializer
+ContextAffineInstanceField	context-affine-instance-field	S100	Worker, Inbox, and Outbox values may not be class fields
+ValueFieldOutsideWhitelist	value-field-outside-whitelist	S100	field type `string` is outside the value-class whitelist (sized numerics, boolean, value classes, FixedArray, enums)
+DescriptorConstructor	descriptor-constructor	S100	descriptor classes cannot declare constructors
+WireAliasNestedConstructorParameter	wire-alias-nested-constructor-parameter	S100	wire-mapped aliases are supported only as direct mirror-constructor parameters or array-pair elements; parameter `x` nests one inside another boundary type
+ConstructorParameterProperty	constructor-parameter-property	S100	constructor parameter properties are not decided
+DuplicateNumericIndexSignature	duplicate-numeric-index-signature	S100	a class can declare at most one index signature
+ClassIndexSignatureCount	class-index-signature-count	S100	a class can declare at most one index signature
+ClassIndexSignatureNonReference	class-index-signature-non-reference	S100	only reference classes can declare an index signature
+ClassIndexSignatureStatic	class-index-signature-static	S100	a class index signature cannot be static
+ClassIndexSignatureIndexType	class-index-signature-index-type	S100	a class index signature requires an `i32` or `u32` index, got `string`
+IndexSignatureElementAnnotationMissing	index-signature-element-annotation-missing	S100	a class index signature requires an element type
+WriteAccessorWithoutRead	a-s029	S100	write accessor `x` requires a read accessor with the same name
+AccessorTypeMismatch	accessor-type-mismatch	S100	the read and write accessors of `x` must have the same type
+IndexSignatureGetterMismatch	duplicate-numeric-index-signature	S100	the index signature requires `get(index: i32): i32` with exactly matching types
+IndexSignatureGetterMismatch	index-signature-getter-mismatch	S100	the index signature requires `get(index: i32): i32` with exactly matching types
+IndexSignatureGetterMismatch	index-signature-element-annotation-missing	S100	the index signature requires `get(index: i32): <error>` with exactly matching types
+ClassIndexSetSignature	duplicate-numeric-index-signature	S100	the index signature requires `set(index: i32, value: i32): void` with exactly matching types
+ClassIndexSetSignature	index-signature-getter-mismatch	S100	the index signature requires `set(index: i32, value: i32): void` with exactly matching types
+ClassIndexSetSignature	index-signature-element-annotation-missing	S100	the index signature requires `set(index: i32, value: <error>): void` with exactly matching types
+DuplicateDirectExport	duplicate-direct-export	S017	duplicate export name `x`
+MirrorExportList	mirror-export-list	S100	export lists are outside the mirror surface
+TypeOnlyExportDeclaration	type-only-export-declaration	S100	type-only exports are outside the named module surface
+ExportSourceModuleMissing	export-source-module-missing	S100	export source module `./missing` is not among the program's files
+ExportSourceModuleMissing	export-source-module-missing-witness-2	S100	export source module `s154_external_101` is not among the program's files
+ExportSpecifierKind	export-specifier-kind	S100	the module surface requires named exports
+TypeOnlyOrDefaultExportSpecifier	type-only-or-default-export-specifier	S100	type-only and default exports are outside the named module surface
+TypeOnlyImportReexport	type-only-import-reexport	S100	`A` was imported with `import type`; its re-export is a type-only export, outside the named module surface
+DuplicateAliasedExport	duplicate-aliased-export	S017	duplicate export name `x`
+ExportAliasCycle	export-alias-cycle	S016	export alias chain reaches no declaration: target/s154/forms/export-alias-cycle/main.ts::x -> target/s154/forms/export-alias-cycle/other.ts::x -> target/s154/forms/export-alias-cycle/main.ts::x
+ReexportSpecifierKind	reexport-specifier-kind	S100	the module surface requires named exports
+ExportLocalMissing	export-local-missing	S016	`missing` is not defined in `target/s154/forms/export-local-missing/main.ts`
+ReexportMemberMissing	reexport-member-missing	S016	`missing` is not exported by `./other`
+ReexportMemberMissing	reexport-member-missing-witness-2	S016	`missing_exports_370_augment` is not exported by `./other`
+ErrorConstructorTypeArguments	error-constructor-type-arguments	S100	`Error` is not generic
+ErrorConstructorTypeArguments	error-constructor-type-arguments-witness-2	S100	`Error` is not generic
+ErrorMessageNonString	error-message-non-string	S100	the `Error` message must be a `string`, got `i32`
+ErrorMessageType	error-message-type	S100	the `Error` message must be a `string`, got `Message`
+ErrorConstructorArguments	error-constructor-arguments	S100	`new Error` takes one `string` message argument
+ErrorCallWithoutNew	error-call-without-new	S100	`Error` is constructed with `new Error(message)`; a call without `new` is rejected
+CatchBindingUnnarrowedUse	catch-binding-unnarrowed-use	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+ThrowOperandNotErrorFamily	throw-operand-not-error-family	S010	`throw` requires an Error-family object; this operand has type `i32`
+FinallyClause	finally-clause	S010	`finally` is not in the decided exception surface; repeat the cleanup after the `try` statement and in its `catch` block
+CatchBindingPatternWithoutAny	catch-binding-pattern-without-any	S010	a catch binding is one name; a binding pattern is not in the decided exception surface
+CatchBindingPatternWithoutAny	catch-binding-pattern-without-any-witness-2	S010	a catch binding is one name; a binding pattern is not in the decided exception surface
+CatchBindingPattern	catch-binding-pattern	S010	a catch binding is one name; a binding pattern is not in the decided exception surface
+CatchBindingAnnotation	catch-binding-annotation	S010	a catch binding annotation other than `unknown` is rejected; write `catch (e)` or `catch (e: unknown)`
+CatchBindingInvalidAnnotation	catch-binding-invalid-annotation	S010	a catch binding annotation other than `unknown` is rejected; write `catch (e)` or `catch (e: unknown)`
+InstanceofRightNotErrorFamily	instanceof-right-not-error-family	S100	`instanceof` requires an Error-family class as its right operand
+InstanceofRightNotClass	instanceof-right-not-class	S100	`instanceof` requires an Error-family class as its right operand
+InstanceofLeftNotErrorFamily	instanceof-left-not-error-family	S100	`instanceof` tests an Error-family object or a catch binding; this operand has type `A`
+InstanceofLeftPrimitive	instanceof-left-primitive	S100	`instanceof` tests an Error-family object or a catch binding; this operand has type `i32`
+InvalidProgramEntry	c-entry-ambiguous	S100	a program with multiple source files must name its entry module
+HostEntrySignatureMismatch	c-host-generic	S100	entry export `f`: generic function `f` in `target/s154/forms/c-host-generic/host-generic.ts` cannot be a host entry
+GenericConstraintMismatch	c-constraint-rejected	S100	type argument `i32` does not satisfy the constraint `string` of `T`
+GenericConstraintIdentity	c-constraint-structural	S100	type argument `D` does not satisfy the constraint `C` of `T`
+GenericConstraintCycle	c-constraint-circular	S100	type parameter `T` has a circular constraint
+GenericFunctionTypeArgumentCount	c-generic-function-arity	S100	`f` expects 1 type argument(s), got 2
+GenericFunctionTypeArgumentCount	c-generic-function-default-explicit	S100	`f` expects 2 type argument(s), got 1
+GenericMethodTypeArgumentCount	c-generic-method-arity	S100	`f` expects 1 type argument(s), got 2
+GenericMethodTypeArgumentCount	c-generic-method-default-explicit	S100	`f` expects 2 type argument(s), got 1
+GenericClassTypeArgumentCount	c-generic-class-arity	S100	`C` expects 1 type argument(s), got 2
+GenericClassTypeArgumentCount	c-generic-class-default-explicit	S100	`C` expects 2 type argument(s), got 1
+MirrorHeaderMissing	c-prov-header	S100	mirror `target/s154/forms/c-prov-header/prov-header.d.ts` declares foreign functions but has no `@subscript-c-header` provenance record
+MirrorParameterTargetMissing	c-prov-target-parameter	S100	mirror `target/s154/forms/c-prov-target-parameter/prov-target-parameter.d.ts` has provenance record naming nonexistent parameter `missing.x`: `// @subscript-c-string-view function="missing" parameter="x" aggregate="View"`
+MirrorCallbackTargetMissing	c-prov-target-callback	S100	mirror `target/s154/forms/c-prov-target-callback/prov-target-callback.d.ts` has provenance record naming nonexistent callback typedef `Missing`: `// @subscript-c-callback typedef="Missing"`
+MirrorLifetimeTargetMissing	c-prov-target-lifetime	S100	mirror `target/s154/forms/c-prov-target-lifetime/prov-target-lifetime.d.ts` has provenance record naming `Missing`, which is no boundary class with a callback field: `// @subscript-c-callback-lifetime aggregate="Missing"`
+MirrorArrayProvenanceMissing	c-prov-array	S100	mirror `target/s154/forms/c-prov-array/prov-array.d.ts` parameter `foreign.xs` absorbs an array descriptor or scalar parameter pair but has no `@subscript-c-descriptor` or `@subscript-c-scalar-pair` provenance record
+MirrorStringProvenanceMissing	c-prov-string	S100	mirror `target/s154/forms/c-prov-string/prov-string.d.ts` parameter `foreign.x` absorbs a string view but has no `@subscript-c-string-view` provenance record
+MirrorParameterProvenanceMismatch	c-prov-incompatible	S100	mirror `target/s154/forms/c-prov-incompatible/prov-incompatible.d.ts` has provenance record incompatible with parameter `foreign.x`: `// @subscript-c-string-view function="foreign" parameter="x" aggregate="View"`
+MirrorAnonymousCallback	c-callback-anonymous-field	S100	mirror `target/s154/forms/c-callback-anonymous-field/callback-anonymous-field.d.ts` has an anonymous callback type without `@subscript-c-callback` provenance
+MirrorCallbackProvenanceMissing	c-callback-alias-field	S100	mirror `target/s154/forms/c-callback-alias-field/callback-alias-field.d.ts` callback type `Callback` has no `@subscript-c-callback` provenance record
+InitializerNonPlaceOptionalReceiver	c-synthetic-global	S100	a non-place receiver of `??` or `?.` cannot be used in an initializer
+GenericInstanceExpansionLimit	c-corpus-r288-growing-instance-chain	S100	generic template `nest`: the chain of instances grows without bound from `nest<T>` to `nest<W<T>>` through argument `W<T>`
+TopLevelNameClash	top-level-name-clash	S017	duplicate top-level name `f`
+DuplicateTopLevelClass	duplicate-top-level-class	S017	duplicate top-level name `A`
+TopLevelOverloadImplementationMissing	c-initializer-overload-function	S017	duplicate top-level name `f`
+DefaultExportDeclaration	default-export-declaration	S100	the module surface requires named exports
+ExportAssignmentEsModule	export-assignment-es-module	S100	only `export` declarations and named imports are in the decided surface
+ExternalImportEqualsDeclaration	external-import-equals-declaration	S100	only `export` declarations and named imports are in the decided surface
+UnsupportedModuleDeclaration	unsupported-module-declaration	S100	only `export` declarations and named imports are in the decided surface
+ModuleUsing	module-using	S100	module-level `using` is not in the decided surface
+BuiltinDescriptorOptions	builtin-descriptor-options	S100	`@Descriptor` does not accept options
+DescriptorOptions	descriptor-options	S100	`@Descriptor` does not accept options
+UnsupportedClassDecorator	unsupported-class-decorator	S100	the only decided decorators are the ambient `@ValueType` and `@Descriptor`
+DescriptorValueType	descriptor-value-type	S100	`@Descriptor` declares a reference class and cannot be combined with `@ValueType`
+GenericClassStaticMember	generic-class-static-member	S100	generic classes cannot declare static members
+GenericClassGenericMethod	generic-class-generic-method	S100	generic classes cannot declare generic methods
+SourceFunctionBodyMissing	c-initializer-rejected-generic	S100	function bodies are required
+DuplicateTypeParameter	duplicate-type-parameter	S017	duplicate type parameter `T`
+ModuleBindingPattern	module-binding-pattern	S100	a binding pattern binds inside a function body; a declaration outside one binds one name
+EnumStringMemberName	enum-string-member-name	S100	string enum member names are not decided
+EnumImplicitValueOverflow	enum-implicit-value-overflow	S008	implicit value for enum member `b` overflows i32
+EnumNonIntegerMember	enum-non-integer-member	S100	enum members must have integer literal values
+GenericSourceAlias	generic-source-alias	S100	source type aliases cannot be generic
+SourceAliasNotLiteralUnion	source-alias-not-literal-union	S100	type aliases are limited to a union of two or more string literals
+DuplicateLiteralAliasMember	duplicate-literal-alias-member	S100	duplicate string-literal union member `a`
+WireEnumEmpty	wire-enum-empty	S100	wire-mapped string-literal union must have at least one member
+WireEnumMethodMember	wire-enum-method-member	S100	CEnum mappings contain only named properties with integer-literal values
+WireEnumMemberForm	wire-enum-member-form	S100	CEnum mappings contain only named properties with integer-literal values
+WireEnumMemberKey	wire-enum-member-key	S100	CEnum member keys must be string literals or identifiers
+DuplicateWireAliasMember	duplicate-wire-alias-member	S100	duplicate string-literal union member `a`
+WireEnumUntypedMember	new-cenum-untyped	S100	wire value for CEnum member `a` must be an integer literal
+WireEnumMemberNonIntegerSyntax	wire-enum-member-non-integer-syntax	S100	wire value for CEnum member `a` must be an integer literal
+WireEnumMemberNonIntegerValue	wire-enum-member-non-integer-value	S100	wire value for CEnum member `a` must be an integer literal
+WireEnumValueRange	wire-enum-value-range	S100	wire value 2147483648 for CEnum member `a` is outside the i32 range
+DuplicateWireEnumValue	duplicate-wire-enum-value	S100	duplicate CEnum wire value 1 for members `a` and `b`
+MirrorModuleDeclaration	mirror-module-declaration	S100	mirror declaration form outside the decided surface
+MirrorVariableForm	mirror-variable-form	S100	mirror variable `A_declarations_818` is outside the decided surface; the one accepted form is `declare const X = <integer literal>;`
+InitializerRouteRead	c-root-initializer-recursive	S100	`value` is accessed before its declaration, through `f`
+InitializerRouteRead	c-root-initializer-callback	S100	`y` is accessed before its declaration, through an indirect call
+ContextAffineArrayElement	c-worker-array	S100	Worker, Inbox, and Outbox values may not be array elements
+UriCodecTypeArguments	c-uri-generic	S100	`encodeURI` is not generic
+UriCodecTypeArguments	c-uri-local-generic	S100	`encodeURI` is not generic
+WireAliasNestedForeignParameter	wire-alias-nested-foreign-parameter	S100	wire-mapped aliases are supported only as direct foreign-function parameters or array-descriptor elements; `x` nests one inside another boundary type
+WireAliasNestedForeignReturn	wire-alias-nested-foreign-return	S100	wire-mapped aliases are supported only as direct foreign-function returns
+ForeignDirectCallback	foreign-direct-callback	S100	mirror `target/s154/forms/foreign-direct-callback/mirror.d.ts` foreign function `f_signatures_79` parameter `cb` is a direct callback; callbacks are supported only as fields of mirrored boundary structs
+ForeignReturnProvenance	foreign-return-provenance	S100	mirror `target/s154/forms/foreign-return-provenance/mirror.d.ts` foreign function `f_signatures_106` returns a string view; foreign string-view, descriptor, and callback returns are unsupported because return provenance cannot be represented by the boundary vocabulary
+TypeOnlyNamespaceImport	type-only-namespace-import	S100	`import type * as` is outside the decided surface
+NamespaceImportTargetMissing	namespace-import-target-missing	S100	imported module `./missing` is not among the program's files
+PoisonedRelativeDefaultImport	poisoned-relative-default-import	S100	only named imports are in the decided surface
+PoisonedDefaultImport	poisoned-default-import	S100	only named imports are in the decided surface
+NamedImportUnresolvedModule	named-import-unresolved-module	S100	imported module `./missing` is not among the program's files
+NamedImportModuleMissing	named-import-module-missing	S100	imported module `s154_external_263` is not among the program's files
+DefaultImport	default-import	S100	only named imports are in the decided surface
+NamedImportMemberMissing	named-import-member-missing	S016	`missing` is not exported by `./other`
+NamedImportMemberMissing	named-import-member-missing-witness-2	S016	`missing_signatures_317_augment` is not exported by `./other`
+ModuleVariableAnnotationMissing	module-variable-annotation-missing	S100	module-level variables require a type annotation
+WorkerEndpointModuleGlobal	worker-endpoint-module-global	S100	Worker, Inbox, and Outbox values may not be module globals
+AsyncGeneratorFunction	async-generator-function	S100	a function cannot be both async and a generator
+AsyncReturnAnnotationMissing	async-return-annotation-missing	S100	async functions require an explicit `Promise<T>` return annotation
+FunctionReturnAnnotationMissing	function-return-annotation-missing	S100	function return types must be annotated
+OptionalParameter	optional-parameter	S012	optional parameters imply `undefined`; use a default value or `T | null`
+NamedParameterAnnotationMissing	named-parameter-annotation-missing	S100	parameters require a type annotation
+PatternParameterAnnotationMissing	pattern-parameter-annotation-missing	S100	parameters require a type annotation
+AsyncReturnNotPromise	c-async-keyword	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnNonReference	c-async-parenthesized	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnQualifiedName	c-async-qualified	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnAlias	c-async-alias	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnMissingArgument	c-async-promise-missing	S100	`Promise` requires exactly one fulfilled-value type argument
+AsyncReturnMissingArgument	c-async-default-alias	S100	`Promise` requires exactly one fulfilled-value type argument
+AsyncReturnArgumentCount	c-async-promise-arity	S100	`Promise` requires exactly one fulfilled-value type argument
+AsyncReturnArgumentCount	c-async-arity-alias	S100	`Promise` requires exactly one fulfilled-value type argument
+VoidTypeOutsideResult	void-type-outside-result	S100	`void` is only allowed as a return, generator element, or Promise result type
+VoidTypeOutsideResult	c-corpus-r337-void-array	S100	`void` is only allowed as a return, generator element, or Promise result type
+AnyTypeAnnotation	c-corpus-r08-bare-number	S007	bare `number` is rejected; there is no default numeric type — use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64)
+UnknownTypeAnnotation	c-corpus-r01-any	S001	`any` is not part of the language
+UndefinedKeywordAnnotation	c-undefined-type	S012	`undefined` is banned; the single null story is `null`
+ObjectTypeOutsideBoundary	c-object-type	S011	`object` is a boundary-only type; it is not available to general declarations
+QualifiedSourceTypeName	c-qualified	S100	qualified type names are not decided
+WorkerTypeArgumentsMissing	c-worker-missing	S100	generic reference class `Worker` requires explicit type arguments
+WorkerTypeArgumentsMissing	c-worker-local-default	S100	generic reference class `Worker` requires explicit type arguments
+WorkerTypeArgumentCount	c-worker-arity	S100	`Worker` takes exactly 2 type argument(s)
+WorkerTypeArgumentCount	worker-type-argument-count	S100	`Worker` takes exactly 2 type argument(s)
+WorkerTypeArgumentCount	c-worker-local-one	S100	`Worker` takes exactly 2 type argument(s)
+WorkerMessageNonClass	c-worker-scalar	S100	worker message type `i32` must be a plain reference class
+WorkerMessagePlainClass	c-worker-local-scalar	S100	worker message type `i32` must be a plain reference class
+RegExpTypeArguments	c-regexp-generic	S100	`RegExp` is not generic
+RegExpTypeArguments	c-regexp-local	S100	`RegExp` is not generic
+PromiseTypeArgumentMissing	c-promise-missing	S100	`Promise` requires exactly one fulfilled-value type argument
+PromiseTypeArgumentMissing	c-promise-default-alias	S100	`Promise` requires exactly one fulfilled-value type argument
+PromiseTypeArgumentCount	c-promise-arity	S100	`Promise` requires exactly one fulfilled-value type argument
+PromiseTypeArgumentCount	c-promise-arity-alias	S100	`Promise` requires exactly one fulfilled-value type argument
+FixedArrayTypeArgumentsMissing	c-fixed-missing	S100	`FixedArray` requires element type and length arguments
+FixedArrayTypeArgumentsMissing	c-fixed-default-alias	S100	`FixedArray` requires element type and length arguments
+FixedArrayTypeArgumentCount	c-fixed-arity	S100	`FixedArray` takes exactly two type arguments
+FixedArrayTypeArgumentCount	c-fixed-one-alias	S100	`FixedArray` takes exactly two type arguments
+FixedArrayLengthRange	c-fixed-length-overflow	S008	FixedArray length 4294967296 out of range (maximum 4294967295)
+FixedArrayLengthLiteral	c-fixed-length-negative	S100	`FixedArray` length must be a non-negative integer literal
+FixedArrayByteLimit	c-corpus-r62-valuetype-fixed-array-layout-too-large	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+FixedArrayByteLimit	c-fixed-too-large	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+BuiltinArrayTypeArgumentCount	c-array-arity	S100	`Array` takes one type argument
+ArrayTypeArgumentCount	c-array-two-alias	S100	`Array` takes one type argument
+GeneratorYieldTypeMissing	c-generator-no-argument	S100	`Generator` requires at least a yield type argument
+ErrorTypeArguments	c-error-generic	S100	`Error` is not generic
+ErrorTypeArguments	c-error-local	S100	`Error` is not generic
+MapTypeArgumentsMissing	c-map-missing	S100	generic reference class `Map` requires explicit type arguments
+MapTypeArgumentsMissing	c-map-local-default	S100	generic reference class `Map` requires explicit type arguments
+MapTypeArgumentCount	c-map-arity	S100	`Map` takes exactly 2 type argument(s)
+MapTypeArgumentCount	c-map-local-one	S100	`Map` takes exactly 2 type argument(s)
+DateTypeArguments	c-date-generic	S100	`Date` is not generic
+DateTypeArguments	c-date-local	S100	`Date` is not generic
+NonGenericClassTypeArguments	c-class-generic	S100	`C` is not generic
+NonGenericClassTypeArguments	c-class-local	S100	`C` is not generic
+GenericClassTypeArgumentsMissing	c-class-missing	S100	generic class `C` requires explicit type arguments
+GenericClassTypeArgumentsMissing	c-class-default	S100	generic class `C` requires explicit type arguments
+BoundaryLiteralAlias	c-boundary-alias	S100	string-literal union alias `Choice` cannot appear in a boundary signature
+LiteralAliasTypeArguments	c-alias-generic	S100	string-literal union alias `Choice` is not generic
+LiteralAliasTypeArguments	c-alias-local	S100	string-literal union alias `Choice` is not generic
+TypeNameUnknown	a-probe-iterable	S016	unknown type name `Iterable`
+TypeNameUnknown	c-lib-interface	S016	unknown type name `ReadonlyArray`
+TypeNameUnknown	c-unknown-type	S016	unknown type name `Missing`
+IntersectionTypeAnnotation	intersection-type-annotation	S100	intersection types are not in the decided surface
+IntersectionTypeAnnotation	c-intersection	S100	intersection types are not in the decided surface
+UndefinedUnionMember	c-undefined-union	S012	`undefined` is banned; the single null story is `null`
+NullableNonReference	nullable-non-reference	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
+NullableNonReference	c-nullable-scalar	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
+NullableNonReference	c-value-nullable-array-reject	S011	unions are limited to `Ref | null`; `i32[] | null` is not a reference type union
+ConstructorTypeAnnotation	c-constructor-type	S100	constructor types are not in the decided surface
+FunctionTypeParameterAnnotationMissing	c-function-unannotated	S100	function type parameters require annotations
+NamespaceMemberMissing	c-namespace-missing	S016	`missing` is not exported by `./namespace-missing-lib`
+NamespaceUnexportedMember	c-namespace-default-export	S016	`default` is not exported by `./namespace-default-export-lib`
+DistinctNominalClassAssignment	c-corpus-r06-structural-substitution	S005	nominal types are not interchangeable: the argument expects `A`, got `B`
+DistinctNominalContainerAssignment	c-corpus-r120-narrowing-escapes-conditional	S005	nominal types are not interchangeable: the argument expects `EscapingValue`, got `EscapingValue | null`
+DistinctNominalContainerAssignment	c-assign-map-width	S005	nominal types are not interchangeable: the initializer expects `Map<i64, i64>`, got `Map<i32, i32>`
+DistinctNominalContainerAssignment	c-nominal-null-rejected	S005	nominal types are not interchangeable: the initializer expects `C`, got `C | null`
+ImplicitNumericAssignment	c-mixed-width	S007	implicit numeric conversion from `i32` to `i64`; spell it `as i64`
+NullableValueClassAssignment	c-nullable-function-class	S011	value class `C` cannot be nullable
+NullableValueClassAssignment	c-nullable-function-class-reject	S011	value class `C` cannot be nullable
+CaptureEffectEscapes	c-corpus-r245-yield-returns-capture	S009	lambda capturing `value` may capture at yield
+CaptureEffectArgument	c-corpus-r241-parameter-returned	S009	call `forward` parameter `cb` requires a clean argument; lambda capturing `value` may capture
+UnaryNumericCoercion	a-s204	S100	unary `-` requires a numeric operand, got `string`
+LogicalNotNonBoolean	a-s205	S100	`!` requires a boolean operand, got `i32`
+BitwiseIntegerOperand	a-s206	S100	`~` requires an integer operand, got `f64`
+DeleteProperty	a-s207	S100	the `delete` operator is not in the language; use `Context.free`
+IndexUpdateExpressionValue	a-s209	S100	`a[i]++` cannot be used as a value
+AccessorUpdateExpressionValue	a-s210	S100	`x.x++` cannot be used as a value
+UpdateNonNumericTarget	a-s211	S100	`++`/`--` require a numeric target, got `boolean`
+ReadonlyIndexUpdate	a-s212	S100	`a[i] = v` cannot write through a readonly index signature
+ReadonlyAccessorUpdate	a-s213	S100	`x.x++` cannot write through a read-only accessor
+LogicalNonBooleanOperand	a-s215	S100	logical operators require booleans, got `i32`
+OptionalCallValueWithoutFallback	a-s217	S012	an optional chain has type `i32 | undefined` in TypeScript; give it a fallback with `??` or use it as a statement
+OptionalMemberValueWithoutFallback	a-s218	S012	an optional chain has type `i32 | undefined` in TypeScript; give it a fallback with `??` or use it as a statement
+OptionalComputedMember	a-s219	S100	an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`
+OptionalMethodCall	a-s220	S100	an optional call through `?.()` is not in the decided surface
+OptionalFunctionCall	a-s221	S100	an optional call through `?.()` is not in the decided surface
+OptionalPrivateMember	a-s222	S100	private names are not in the decided surface
+UndefinedEqualityPair	a-s224	S012	`undefined` is legal only in a presence test on an absence-capable descriptor member
+UndefinedEqualityNonMember	a-s225	S012	`undefined` is legal only in a presence test on an absence-capable descriptor member
+BinaryMixedNumericTypes	a-s227	S007	mixed-type arithmetic (`i64` and `i32`) requires an explicit `as` conversion
+ConditionalNonBooleanCondition	a-s229	S100	condition must be boolean, got `i32`
+AsyncGeneratorYield	async-generator-function	S100	`yield` is only available inside a `function*` coroutine
+YieldDelegation	a-s232	S100	`yield*` delegation is not in the decided surface
+BareYieldNonVoid	a-s233	S100	a bare `yield;` requires `void`, but the generator element type is `i32`
+BareYieldDeclaredNonVoid	c-corpus-r334-bare-yield-nonvoid	S100	a bare `yield;` requires `void`, but the generator element type is `i32`
+DescriptorDefaultThisArithmetic	a-s127	S100	§147 rule 3a: `this` is forbidden in a descriptor member default
+DescriptorDefaultOptionalNumericOperand	c-corpus-r315-descriptor-arithmetic-read	S100	§147 rule 3a: `this` is forbidden in a descriptor member default
+FieldInitializerUninitializedRead	a-s128	S100	§147 rule 2: `this.a` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden
+FieldInitializerDeclaredRead	c-corpus-r307-current-field	S100	§147 rule 2: `this.x` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden
+FieldInitializerSelfRead	a-s129	S100	§147 rule 2: `this.f` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden
+DescriptorAbsentMemberRead	a-s130	S100	an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`
+PrivateMemberRead	a-s131	S100	private names are not in the decided surface
+ArrayIndexNotInt	a-s132	S100	array indices are `i32`, got `i64`
+FixedArrayIndexNotInt	a-s133	S100	array indices are `i32`, got `i64`
+FixedArrayConstantIndexBounds	a-s134	S100	index 2 out of bounds for FixedArray length 1
+NonIndexableReceiver	a-s135	S100	type `string` is not indexable
+ValueClassMemberMissing	a-probe-unconstrained-object	S018	`T` has no member `valueOf`
+ValueClassMemberMissing	a-s136	S018	`T` has no member `foo`
+InstancePrototypeMissing	a-control-prototype	S003	no prototype mutation
+InstancePrototypeMember	a-s137	S003	no prototype mutation
+ReadSetterOnlyAccessor	a-s138	S100	read accessor `x` has no checker signature
+InstanceStaticMemberRead	a-s139	S100	`C.x` is static and must be accessed through the class name
+ClassObjectMemberWrite	a-s140	S004	nominal types are closed: `C` has no property `toString`
+ClassUndeclaredPropertyWrite	c-corpus-r04-undeclared-property	S004	nominal types are closed: `Box` has no property `extra`
+AsyncMethodValue	a-s141	S100	async method `f` is not a first-class value; call it directly in await position
+GenericAsyncMethodValue	a-s142	S100	async method `f` is not a first-class value; call it directly in await position
+ClassObjectMemberRead	a-s143	S018	`C` has no member `toString`
+ArrayMethodValue	a-s144	S100	method `push` may only be called, not read as a value
+FixedArrayMethodValue	a-s145	S100	method `map` may only be called, not read as a value
+FixedArrayObjectMember	a-s146	S100	`constructor` is outside the FixedArray surface (length, indexing, and the Q27 callback family)
+MapMethodValue	a-s147	S100	method `get` may only be called, not read as a value
+MapObjectMember	a-s148	S100	`Map` has no accepted member `constructor` (Q24)
+SetMethodValue	a-s149	S100	method `add` may only be called, not read as a value
+SetObjectMember	a-s150	S100	`Set` has no accepted member `constructor` (Q24)
+StringMethodValue	a-s151	S100	method `slice` may only be called, not read as a value
+GeneratorResultDoneWrite	a-s152	S100	method `test` may only be called, not read as a value
+GeneratorResultValueWrite	a-s153	S100	coroutine step results are read-only
+GeneratorResultObjectMember	a-s154	S100	`toString` is not part of the coroutine step result ({ done, value })
+NumericObjectMember	a-s155	S018	`i32` has no member `valueOf`
+BoundaryObjectMember	a-s156	S100	`object` is boundary-opaque; narrow it with `as` before member access
+ArrayOfTypeArgumentCount	a-s010	S100	`Array.of<T>` takes exactly one type argument
+MapCopyTypeArgumentCount	a-s011	S100	`new Map` takes exactly 2 type argument(s)
+MapCopyNullableSource	a-s012	S011	`Map<i32, i32> | null` may be null here; narrow with a null check first
+AsyncArrowFunction	a-s103	S100	async arrow functions are not in the decided surface; use an async function declaration
+BlockLambdaReturnAnnotationMissing	a-s105	S100	a lambda with a block body requires a return type annotation
+LambdaReturnCoverage	a-s106	S100	not all paths return a value
+RegexLiteralUnicodeSetsFlag	a-s107	S100	the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, "v")`
+BigIntLiteral	a-s109	S100	literal form outside the decided surface
+HalfFloatLiteralRange	a-s110	S008	numeric literal 70000 out of range for `f16`
+FractionalIntegerLiteral	a-s111	S008	fractional literal in integer context `i32`
+IntegerLiteralRange	a-s112	S008	integer literal 128 out of range for `i8`
+TemplateInterpolationKind	a-s113	S100	type `C` cannot be interpolated into a template
+UnknownValueName	a-s115	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamespaceContextValue	a-s116	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+AsyncFunctionValue	a-s117	S100	async functions are not first-class values; call them directly in await position
+GenericFunctionValue	c-apply-id	S100	generic function `id` has no first-class value; call it directly or use a lambda
+ClassRuntimeValue	a-s119	S100	class `C` used as a value
+EnumObjectValue	a-s120	S100	enum `E` used as a value; use a member
+MirrorTypeAliasValue	a-s121	S100	type alias `Fn121` used as a value
+LiteralAliasValue	a-s122	S100	string-literal union alias `T` used as a value
+ForeignFunctionValue	a-s123	S100	foreign function `host` may only be called
+DynamicEvaluatorValue	a-s124	S002	no dynamic code evaluation
+AmbientFunctionValue	a-s125	S100	ambient function `print` may only be called
+UnknownAmbientValueName	a-s126	S016	unknown name `missing`
+UnknownAmbientValueName	c-lookup-switch-var-read	S016	unknown name `x`
+ArrayLiteralHole	a-s000	S100	array holes are not decided
+FixedArrayLiteralLength	a-s001	S100	FixedArray length mismatch: the annotation says 2, the literal has 1 elements
+EmptyArrayInference	a-s002	S100	cannot infer the type of an empty array literal without context
+EmptyArrayInference	intersection-type-annotation	S100	cannot infer the type of an empty array literal without context
+DescriptorLiteralSpread	a-s003	S100	spread properties are not supported in descriptor literals
+DescriptorLiteralQuotedKey	a-s004	S100	descriptor literal member names must be identifiers
+DescriptorLiteralAccessor	a-s005	S100	descriptor literals contain data properties only
+DescriptorLiteralDuplicateMember	a-s006	S100	duplicate descriptor literal member `x`
+DescriptorLiteralUnknownMember	a-s007	S004	descriptor class `D` has no declared property `y`
+DescriptorRequiredMemberQuotedKey	a-s004	S100	descriptor literal for `D` is missing required member `x`
+DescriptorRequiredMemberMissing	a-s008	S100	descriptor literal for `D` is missing required member `x`
+ArraySpreadLiteralHole	a-s009	S100	array holes are not decided
+NonExpressionCalleeUnavailable	a-s033	S100	call form outside the decided surface
+NonGenericFunctionTypeArguments	a-s034	S100	`f` is not generic
+ClassCalledWithoutNew	a-s035	S100	`C` is a class; construct it with `new`
+EnumCalled	a-s036	S100	enum `E` is not callable
+MirrorTypeAliasCalled	a-s037	S100	type alias `Fn37` used as a value
+LiteralAliasCalled	a-s038	S100	string-literal union alias `T` is not callable
+DynamicEvaluatorCalled	a-s039	S002	no dynamic code evaluation
+UnreachableExpressionValue	a-s040	S100	`unreachable()` is only legal as a call statement
+UnknownFunctionName	a-s041	S016	unknown function `missing`
+UnknownFunctionName	b-probe-conversions	S016	unknown function `String`
+GeneratorYieldTypeNotKnown	a-s042	S100	generator `gen` is called before its yield type is known; declare it earlier in the program
+ContextByteTargetKind	a-s043	S100	`Context.bytesOf<T>` cannot use `string`; it is not a @ValueType value class or FixedArray
+ContextByteTargetLayout	a-s044	S100	`Context.bytesOf<T>` cannot use `FixedArray<string, 1>`; its storage type is not eligible; unsupported storage type is `string`
+ByteArgumentIdentity	a-s045	S100	type mismatch: `Context.bytesOf` expects exactly `FixedArray<i64, 1>`, got `FixedArray<i32, 1>`
+NonGenericStaticMethodTypeArguments	a-s046	S100	static method `C.f` is not generic
+PromiseCombinatorCall	a-s047	S013	Promise combinator `.then(...)` is not in the language
+PromiseStaticCall	a-s048	S013	Promise static `Promise.resolve(...)` is not in the language
+WorkerStaticObjectMethod	a-s049	S018	`Worker` has no static method `valueOf`
+GenericMethodTypeArgumentsMissing	a-s050	S100	generic method `id` requires explicit type arguments
+ValueClassMethodMissing	a-probe-unconstrained-object	S018	`T` has no method `toString`
+ValueClassMethodMissing	a-s051	S018	`T` has no method `foo`
+ToStringTypeArguments	a-s052	S100	`toString` is not generic
+WorkerObjectMethod	a-s053	S018	`Worker<M, M>` has no method `valueOf`
+InboxObjectMethod	a-s054	S018	`Inbox<M>` has no method `valueOf`
+OutboxObjectMethod	a-s055	S018	`Outbox<M>` has no method `valueOf`
+ToStringArgumentCount	a-s056	S100	`toString` expects no arguments
+FixedArrayObjectMethod	a-s057	S018	`FixedArray<i32, 1>` has no method `valueOf`
+CoroutineStepLayoutLimit	a-s058	S100	coroutine step-result layout exceeds the supported aggregate limit of 2147483647 bytes
+CoroutineReturnOrThrowCall	a-s059	S100	`return` is outside the coroutine surface (next)
+InstanceStaticMethodCall	a-s060	S100	`C.f` is static and must be accessed through the class name
+ClassObjectMethodCall	a-s061	S018	`C` has no method `toString`
+ClassUndeclaredMethodCall	c-corpus-r176-unknown-member	S018	`Store` has no method `store`
+ConstructorNotNamedClass	a-s064	S100	`new` requires a class name
+LocalValueConstructed	a-s065	S100	`C` names a local value here, not a class
+DynamicFunctionConstructed	a-s066	S002	no dynamic code evaluation (`new Function`)
+PromiseConstructed	a-s067	S013	Promise objects cannot be constructed; async functions expose no Promise object surface
+WorkerEndpointConstructed	a-s068	S100	`new Inbox` is rejected; Q35 worker handles and endpoints are runtime-created
+WorkerEndpointConstructed	worker-type-argument-count	S100	`new Worker` is rejected; Q35 worker handles and endpoints are runtime-created
+ContainerConstructorTypeArgumentsMissing	a-s069	S100	`new Map` requires explicit type arguments (Q24)
+ContainerConstructorTypeArgumentCount	a-s070	S100	`new Set` takes exactly 1 type argument(s)
+SetConstructorSourceCount	a-s071	S100	`new Set` takes at most one source argument
+NonGenericConstructorTypeArguments	a-s072	S100	`C` is not generic
+GenericConstructorTypeArguments	a-s073	S100	generic class `C` requires explicit type arguments
+OpaqueHandleConstructed	a-s075	S100	opaque handle `H` is obtained from the host, not constructed
+AmbientClassConstructed	a-s076	S100	ambient class `C` is obtained from the host, not constructed, because a `declare class` has no constructor body
+DescriptorClassConstructed	a-s077	S100	descriptor class `D` is constructed with an object literal, not `new`
+NamespaceClassPrototypeRead	a-s178	S003	no prototype mutation
+ReadStaticSetterOnlyAccessor	a-s180	S018	static read accessor `C.x` is missing
+StaticMethodValue	a-s181	S100	static method `C.f` may only be called
+ClassRuntimeMember	a-s182	S018	class `C` has no static member `name`
+NamespacePrototypeRead	a-s183	S003	no prototype mutation
+GenericClassRuntimeMember	a-s184	S018	generic class `C` has no static member `name`
+EnumObjectMember	a-s185	S018	enum `E` has no member `toString`
+MirrorAliasStaticValue	a-s186	S100	type alias `Fn186` used as a value
+LiteralAliasStaticValue	a-s187	S100	string-literal union alias `T` has no static values
+GlobalPrototypeRead	a-s188	S003	no prototype mutation
+WorkerMessageNotTransferable	a-s190	S100	message class `M` is not transferable: innermost field `M.a` has non-transferable type `i32[]`
+WorkerSpawnSpread	a-s191	S100	`Worker.spawn` expects one directly named entry function, got 1 argument(s)
+WorkerEntryNotNamedFunction	a-s192	S100	`Worker.spawn` entry must be a directly named module-level function; lambdas and other values are not worker entries
+WorkerEntryLocalValue	a-s193	S100	`Worker.spawn` entry must name a module-level function directly, not a local function value
+WorkerEntryGeneric	a-s194	S100	`Worker.spawn` entry must name a non-generic module-level function directly
+WorkerEntryAsync	a-s195	S100	`Worker.spawn` entry must be synchronous; async worker entries are rejected
+WorkerEntryShape	a-s196	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+WorkerEntryStructuralEndpoints	a-s197	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+WorkerSpawnTypeArgumentCount	a-s198	S100	`Worker.spawn` takes exactly two explicit type arguments
+WorkerExplicitMessageIdentity	a-s199	S100	`Worker.spawn` type arguments must exactly match its entry's Inbox/Outbox message classes
+RegexConstructorTypeArguments	a-s200	S100	`RegExp` is not generic
+RegexCompile	a-s201	S100	`RegExp` has no accepted method `compile`
+ReplaceAllRegexNotGlobal	a-s202	S100	`string.replaceAll` with a RegExp literal requires the `g` flag
+StringStaticMethodArgumentCount	a-s203	S100	`split` expects 1 or 2 argument(s), got 0
+VoidExpressionValue	a-s078	S100	a `void` expression is only allowed as an expression statement
+DescriptorDefaultThisUse	a-s079	S100	§147 rule 3a: `this` is forbidden in a descriptor member default
+FieldInitializerThisUse	a-s080	S100	§147 rule 2: `this` as a value is forbidden
+FieldInitializerThisUse	a-s222	S100	§147 rule 2: `this` as a value is forbidden
+ThisInMethodArrow	a-s082	S100	a lambda cannot capture `this`; capture a const local instead
+NominalObjectLiteral	a-s083	S005	object literals do not satisfy nominal class types
+ObjectLiteralWithoutDescriptorContext	a-s084	S100	object literals are not in the decided surface
+NonNullAssertionExpression	a-s085	S100	the `!` assertion is not in the decided surface; narrow with a null check
+FunctionExpression	a-s104	S100	function expressions are not in the decided surface; use an arrow
+EmbeddedHeaderCopied	a-s088	S100	embedded header `Ext.header` cannot be copied as `Header`; store it directly into `Header | null` or read one of its fields
+AwaitOutsideAsync	a-s089	S013	`await` is only legal inside an async function
+AwaitNonHandle	a-s090	S100	`await` requires `Context.suspend()`, an async call, or a held async handle
+AwaitNotDirectCall	a-s091	S100	awaitable expressions must be direct calls
+ContextSuspendArguments	a-s092	S100	`Context.suspend()` takes no type arguments or value arguments
+AwaitLocalCall	a-s093	S100	an async awaitable cannot be called through a local value
+AwaitUndeclaredAsyncFunction	a-s094	S100	`print` is not a directly declared async function
+AwaitSynchronousFunction	a-s095	S100	`g` is synchronous and cannot be awaited
+AwaitFunctionTypeArguments	a-s096	S100	`f` is not generic
+AwaitComputedMethod	a-s097	S100	an awaited async method requires an identifier method name
+AwaitNonClassMethod	a-s098	S018	type `string` has no async method `toString`
+AwaitClassObjectMethod	a-s099	S018	`C` has no method `toString`
+AwaitSynchronousMethod	a-s100	S100	method `f` is synchronous and cannot be awaited
+AwaitMethodTypeArguments	a-s101	S100	method `f` is not generic
+AwaitIndirectCall	a-s102	S100	an async awaitable must directly call a named async function or instance method
+UnsignedShiftAssignment	a-s013	S100	assignment operator outside the decided surface
+LogicalOrPowerAssignment	a-s014	S100	assignment operator outside the decided surface
+DestructuringAssignment	a-s015	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
+IndexAssignmentExpressionValue	a-s016	S100	`a[i] = v` cannot be used as a value
+ReadonlyIndexAssignment	a-s017	S100	`a[i] = v` cannot write through a readonly index signature
+StaticAccessorAssignmentExpressionValue	a-s018	S100	`C.x = v` cannot be used as a value
+ReadonlyStaticAccessorAssignment	a-s019	S100	`C.x = v` cannot write through a read-only accessor
+AccessorAssignmentExpressionValue	a-s021	S100	`x.x = v` cannot be used as a value
+ReadonlyAccessorAssignment	a-s022	S100	`x.x = v` cannot write through a read-only accessor
+ConstLocalAssignment	a-s024	S100	cannot rebind `const` binding `x`
+ImportedBindingAssignment	a-s025	S100	cannot assign to `x` because it is an import
+ConstGlobalAssignment	a-s026	S100	cannot rebind `const` binding `x`
+NonVariableAssignmentTarget	a-s027	S100	`f` is not an assignable binding
+NonPlaceAssignmentTarget	a-s028	S100	assignment target outside the decided surface
+WriteSetterOnlyAccessor	a-s029	S100	read accessor `x` has no checker signature
+PrivateMemberAssignment	a-s030	S100	private names are not in the decided surface
+ConstStaticFieldAssignment	a-s031	S100	cannot rebind `const` binding `C.x`
+WriteStaticSetterOnlyAccessor	a-s032	S018	static read accessor `C.x` is missing
+NumericObjectMethod	a-s158	S018	`f64` has no method `valueOf`
+StringObjectMember	a-s159	S100	`valueOf` is outside the string surface (length, slice, `+` concatenation, `===`/`!==`, and the Q21 String methods)
+ArraySpliceRequiredArgument	a-s160	S100	`splice` expects 1 or 2 arguments (start, deleteCount), got 0
+ArrayUnshiftEmpty	a-s161	S100	`unshift` expects 1 argument (value), got 0
+ArrayCopyWithinRequiredArgumentCount	a-s162	S100	`copyWithin` expects 2 or 3 arguments (target, start, end?), got 1
+ArraySortArgumentCount	a-s163	S100	`sort` expects 1 argument (the comparator), got 2
+ArrayReduceArgumentCount	a-s164	S100	`reduce` expects 2 arguments (callback, init), got 3
+ArrayCallbackThisArgument	a-s165	S100	`map` expects 1 argument (the callback), got 2
+ArrayMapVoidCallback	a-s166	S100	the `map` callback must return a value
+MapGroupByArgumentCount	a-s167	S100	`Map.groupBy` expects an array and a callback, got 0 argument(s)
+MapGroupByArraySource	a-s168	S100	`Map.groupBy` items must be a `T[]`, got `C`
+MapGroupByVoidKey	a-s169	S100	`Map.groupBy` callback must return a key
+MapObjectMethod	a-s171	S100	`Map` has no accepted method `valueOf` (Q24)
+MapCallbackThisArgument	a-s172	S100	`Map.forEach` expects exactly 1 callback, got 2
+SetObjectMethod	a-s173	S100	`Set` has no accepted method `valueOf` (Q24)
+SetCallbackThisArgument	a-s174	S100	`Set.forEach` expects exactly 1 callback, got 2
+SetBinaryRequiredArgumentCount	a-s175	S100	`Set.union` expects exactly 1 Set argument, got 0
+CollectionCallbackNotFunction	a-s170	S100	type mismatch: the `Map.groupBy` callback expects `(i32)` => …, got `i32`
+CollectionCallbackTypeMismatch	a-s176	S100	type mismatch: the `map` callback expects `(i32) or (i32, i32)` => …, got `(i64) => i64`
+ArrayObjectMember	a-s177	S100	`valueOf` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods)
+ValueTypeArgumentCount	new-align-count	S100	`@ValueType` accepts exactly one object-literal argument
+ValueTypeOptionsNonLiteral	new-align-object	S100	`@ValueType` accepts exactly one object-literal argument
+ValueTypeOptionCount	new-align-empty	S100	`@ValueType` options must contain only the `align` key
+ValueTypeOptionSpread	new-align-spread	S100	`@ValueType` options must contain only the `align` key
+ValueTypeOptionPropertyForm	new-align-method	S100	`@ValueType` options must contain only the `align` key
+ValueTypeOptionKey	new-align-key	S100	`@ValueType` options must contain only the `align` key
+ValueTypeAlignmentNonLiteral	new-align-string	S100	`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}
+BuiltinValueTypeAlignmentOutsideSet	builtin-value-type-alignment-outside-set	S100	`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}
+ValueTypeAlignmentOutsideSet	new-align-value	S100	`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}
+ProvenanceUnknownKind	new-prov-kind	S100	mirror `target/s154/forms/new-prov-kind/mirror.d.ts` has malformed provenance record `// @subscript-c-unknown`: unknown record kind `unknown`
+ProvenanceMissingKind	new-prov-empty	S100	mirror `target/s154/forms/new-prov-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-`: record kind is missing
+ProvenanceFieldSeparator	new-prov-no-separator	S100	mirror `target/s154/forms/new-prov-no-separator/mirror.d.ts` has malformed provenance record `// @subscript-c-descriptor function="f"parameter="p" aggregate="A" element="E" const=true`: fields must be separated by whitespace
+ProvenanceUnexpectedKey	new-prov-key	S100	mirror `target/s154/forms/new-prov-key/mirror.d.ts` has malformed provenance record `// @subscript-c-header wrong="a.h"`: expected `include=`
+ProvenanceUnquotedString	new-prov-unquoted	S100	mirror `target/s154/forms/new-prov-unquoted/mirror.d.ts` has malformed provenance record `// @subscript-c-header include=a.h`: `include` must be a quoted string
+ProvenanceUnterminatedString	new-prov-unterminated	S100	mirror `target/s154/forms/new-prov-unterminated/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="a`: unterminated quoted value for `include`
+ProvenanceUnterminatedEscape	new-prov-escape-end	S100	mirror `target/s154/forms/new-prov-escape-end/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="a\`: unterminated escape in `include`
+ProvenanceUnsupportedEscape	new-prov-escape-unknown	S100	mirror `target/s154/forms/new-prov-escape-unknown/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="\z"`: unsupported escape `\z` in `include`
+ProvenanceControlCharacter	new-prov-control	S100	mirror `target/s154/forms/new-prov-control/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="ab"`: unescaped control character in `include`
+ProvenanceInvalidUnicodeDigits	new-prov-unicode-bad	S100	mirror `target/s154/forms/new-prov-unicode-bad/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="\uGGGG"`: invalid Unicode escape in `include`
+ProvenanceInvalidBoolean	new-prov-boolean	S100	mirror `target/s154/forms/new-prov-boolean/mirror.d.ts` has malformed provenance record `// @subscript-c-descriptor function="f" parameter="p" aggregate="A" element="E" const=other`: `const` must be `true` or `false`
+ProvenanceTrailingData	new-prov-trailing	S100	mirror `target/s154/forms/new-prov-trailing/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="a.h" extra`: record has trailing data
+RegexPattern	regex-pattern	S100	invalid regular-expression literal: Invalid quantifier
+RegexPattern	regex-pattern-witness-2	S100	invalid regular-expression literal: Range values reversed, start char code is greater than end char code.
+RegexPattern	regex-pattern-witness-3	S100	invalid regular-expression literal: Invalid character escape
+RegexPattern	regex-pattern-witness-4	S100	invalid regular-expression literal: Invalid unicode escape
+RegexPattern	regex-pattern-witness-5	S100	invalid regular-expression literal: Backreference to invalid named capture group: b
+RegexPattern	regex-pattern-witness-6	S100	invalid regular-expression literal: Invalid character escape
+RegexPattern	a-s108	S100	invalid regular-expression literal: Unbalanced parenthesis
+ProvenanceShortUnicodeEscape	new-prov-unicode-short	S100	mirror `target/s154/forms/new-prov-unicode-short/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="\u12"`: short Unicode escape in `include`
+ProvenanceInvalidUnicodeScalar	new-prov-unicode-scalar	S100	mirror `target/s154/forms/new-prov-unicode-scalar/mirror.d.ts` has malformed provenance record `// @subscript-c-header include="\uD800"`: invalid Unicode scalar in `include`
+ProvenanceHeaderBasename	c-prov-malformed	S100	mirror `target/s154/forms/c-prov-malformed/prov-malformed.d.ts` has malformed provenance record `// @subscript-c-header include="bad/path.h"`: header include must be a non-empty basename
+ProvenanceDuplicateHeader	c-prov-duplicate	S100	mirror `target/s154/forms/c-prov-duplicate/prov-duplicate.d.ts` has duplicate provenance for one header: `// @subscript-c-header include="x.h"`
+ProvenanceEmptyDescriptor	new-prov-descriptor-empty	S100	mirror `target/s154/forms/new-prov-descriptor-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-descriptor function="" parameter="p" aggregate="A" element="E" const=true`: descriptor fields must be non-empty
+ProvenanceDuplicateDescriptor	new-prov-descriptor-duplicate	S100	mirror `target/s154/forms/new-prov-descriptor-duplicate/mirror.d.ts` has duplicate provenance for one parameter: `// @subscript-c-descriptor function="f" parameter="p" aggregate="A" element="E" const=true`
+ProvenanceEmptyStringView	new-prov-string-view-empty	S100	mirror `target/s154/forms/new-prov-string-view-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-string-view function="" parameter="p" aggregate="A"`: string-view fields must be non-empty
+ProvenanceDuplicateStringView	new-prov-string-view-duplicate	S100	mirror `target/s154/forms/new-prov-string-view-duplicate/mirror.d.ts` has duplicate provenance for one parameter: `// @subscript-c-string-view function="f" parameter="p" aggregate="A"`
+ProvenanceEmptyScalarPair	new-prov-scalar-pair-empty	S100	mirror `target/s154/forms/new-prov-scalar-pair-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-scalar-pair function="" parameter="p" element="E" const=true`: scalar-pair fields must be non-empty
+ProvenanceDuplicateScalarPair	new-prov-scalar-pair-duplicate	S100	mirror `target/s154/forms/new-prov-scalar-pair-duplicate/mirror.d.ts` has duplicate provenance for one parameter: `// @subscript-c-scalar-pair function="f" parameter="p" element="E" const=true`
+ProvenanceEmptyCallback	new-prov-callback-empty	S100	mirror `target/s154/forms/new-prov-callback-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-callback typedef=""`: callback typedef must be non-empty
+ProvenanceDuplicateCallback	new-prov-callback-duplicate	S100	mirror `target/s154/forms/new-prov-callback-duplicate/mirror.d.ts` has duplicate provenance for one callback typedef: `// @subscript-c-callback typedef="C"`
+ProvenanceEmptyCallbackLifetime	new-prov-callback-lifetime-empty	S100	mirror `target/s154/forms/new-prov-callback-lifetime-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-callback-lifetime aggregate=""`: callback-lifetime aggregate must be non-empty
+ProvenanceDuplicateCallbackLifetime	new-prov-callback-lifetime-duplicate	S100	mirror `target/s154/forms/new-prov-callback-lifetime-duplicate/mirror.d.ts` has duplicate provenance for one callback-lifetime aggregate: `// @subscript-c-callback-lifetime aggregate="A"`
+ProvenanceEmptyExternalType	new-prov-external-empty	S100	mirror `target/s154/forms/new-prov-external-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-external type=""`: external type must be non-empty
+ProvenanceDuplicateExternalType	new-prov-external-duplicate	S100	mirror `target/s154/forms/new-prov-external-duplicate/mirror.d.ts` has duplicate provenance for one external type: `// @subscript-c-external type="T"`
+ProvenanceEmptyCEnum	new-prov-cenum-empty	S100	mirror `target/s154/forms/new-prov-cenum-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-cenum typedef="" alias="E"`: cenum typedef and alias fields must be non-empty
+ProvenanceDuplicateCEnum	new-prov-cenum-duplicate	S100	mirror `target/s154/forms/new-prov-cenum-duplicate/mirror.d.ts` has duplicate provenance for one cenum typedef: `// @subscript-c-cenum typedef="T" alias="E"`
+BindingPatternUnsupportedRoot	a-probe-array-rest	S100	a nested binding pattern needs recursive type checks and ordered effects
+ArrayBindingNestedPattern	new-pattern-nested-array	S100	a nested binding pattern needs recursive type checks and ordered effects
+ObjectBindingNestedPattern	new-pattern-nested-field	S100	a nested binding pattern needs recursive type checks and ordered effects
+ArrayBindingRestElement	c-corpus-r217-pattern-array-rest	S100	a rest element in an array binding pattern needs allocation and copy semantics for the rest array
+ArrayBindingDefaultValue	c-corpus-r216-pattern-default-value	S100	a default value in a binding pattern needs a rule for a missing element and for `undefined`; the language has neither
+ObjectBindingShorthandDefault	new-pattern-default-shorthand	S100	a default value in a binding pattern needs a rule for a missing element and for `undefined`; the language has neither
+ObjectBindingFieldDefault	new-pattern-default-key	S100	a default value in a binding pattern needs a rule for a missing element and for `undefined`; the language has neither
+ObjectBindingNonLiteralFieldName	c-corpus-r222-pattern-computed-field-name	S100	a field binding pattern names its fields with an identifier or a string literal
+ObjectBindingRestProperty	c-corpus-r218-pattern-object-rest	S100	a rest element in a field binding pattern needs a result shape and property-selection rules
+OptionalReceiverNonNullable	a-s223	S100	the tested receiver has type `C`, which is not nullable
+NullishReceiverNonNullable	c-corpus-r177-nullish-non-nullable-left	S100	the left operand of `??` has type `Box`, which is not nullable
+ConditionalJoinSizedOperandWidths	c-corpus-r304-conditional-numeric-widths	S100	conditional branches have no common type: `i32` and `f64`
+ConditionalJoinGeneralUnionAndUndefined	a-s230	S100	conditional branches have no common type: `i32` and `string`
+UnionLiteralUnionAlias	c-corpus-r88-literal-union-inline	S011	unions are limited to `Ref | null`
+UnionGeneralUnionAndUndefined	c-general-union	S011	unions are limited to `Ref | null`
+UnionUnknownTypeMember	c-union-unknown-rejected	S011	unions are limited to `Ref | null`
+AggregateAnnotationLimit	c-fixed-layout-pattern	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+AssignmentLiteralAlias	c-assign-string-enum	S100	type mismatch: the initializer expects `B`, got `A`
+DisjointLiteralAliasAssignment	c-alias-assignment-rejected	S100	type mismatch: the initializer expects `B`, got `A`
+UndefinedOptionalMember	c-corpus-r117-explicit-undefined-member	S012	`undefined` is banned; the single null story is `null`
+UndefinedValue	a-s114	S012	`undefined` is banned; the single null story is `null`
+LocalAggregateFrameLimit	c-corpus-r67-frame-local-boundary-too-large	S100	local aggregate storage makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
+NullableCall	a-s236	S100	type `((i32) => i32) | null` is not callable
+NullableCall	c-corpus-r249-unnarrowed-nullable-field-call	S100	type `((i32) => i32) | null` is not callable
+NullableCallShared	new-shared-nullable-call	S100	type `(() => void) | null` is not callable
+NullableMemberNonNullFlow	c-nullable-initialized	S011	`C | null` may be null here; narrow with a null check first
+NullableMember	c-nullable-shared-rejected	S011	`C | null` may be null here; narrow with a null check first
+NullableMemberShared	c-corpus-r260-narrowing-try-join	S011	`Cell | null` may be null here; narrow with a null check first
+UnknownNamespaceConstructor	a-s074	S100	unknown class `Object`
+UnknownClassConstructor	c-corpus-r169-embedded-header-copy	S016	unknown class `SubChainExtA`
+ThisStaticField	a-s081	S100	`this` is only available in constructors and methods
+RunnerMainMissing	c-runner-library-main	S100	entry module exports no host entry `main`
+ContextAffineContainerArgument	c-worker-map	S100	Worker, Inbox, and Outbox values may not be container type arguments
+GenericInferenceNoCandidate	c-corpus-r331-generic-inference-return-only	S100	cannot infer type parameter `T` of `empty`: no candidate; use explicit type arguments
+GenericInferenceRequiredArgumentMissing	c-inference-missing-rejected	S100	cannot infer type parameter `T` of `id`: no candidate; use explicit type arguments
+GenericInferenceConflictingCandidates	b-known-pair	S100	cannot infer type parameter `T` of `pair`: conflicting candidates `i64` and `i32`; use explicit type arguments
+GenericInferenceIncompatibleKinds	c-inference-conflict-rejected	S100	cannot infer type parameter `T` of `pair`: conflicting candidates `i32` and `string`; use explicit type arguments
+DuplicateLocalDeclaration	c-corpus-r150-parameter-and-local	S017	duplicate declaration of `value` in one scope
+DuplicateLocalDeclaration	c-corpus-r151-duplicate-const	S017	duplicate declaration of `value` in one scope
+IteratorBindingUnsupportedMembers	c-pattern-iterator-ok	S100	an iterator result cannot supply a binding pattern; use `const r = it.next(); if (r.done) ...`
+IteratorBindingUnknownMembers	c-pattern-iterator-bad	S100	an iterator result cannot supply a binding pattern; use `const r = it.next(); if (r.done) ...`
+IteratorBindingUnknownMembers	c-pattern-iterator-extended	S100	an iterator result cannot supply a binding pattern; use `const r = it.next(); if (r.done) ...`
+BindingPatternSourceKind	c-pattern-string	S100	an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `string`
+BindingPatternNonIterableSource	c-pattern-invalid	S100	an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`
+InitializerDirectRead	new-initializer-direct	S100	`y` is accessed before its declaration, directly from this initializer
+FixedArrayByteLimit	fixed-array-byte-limit	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+SwitchCaseClosureRead	switch-case-closure-read	S100	`caseValue` is read from a different switch case
+BlockNameReadBeforeDeclaration	block-name-read-before-declaration	S100	`Math` is read before its declaration in this block
+BlockNameReadBeforeDeclaration	block-name-read-before-declaration-witness-2	S100	`Foo` is read before its declaration in this block
+BuiltinValueTypeAlignmentOutsideSet	builtin-value-type-alignment-outside-set-witness-2	S100	`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}
+BuiltinDescriptorOptions	builtin-descriptor-options-witness-2	S100	`@Descriptor` does not accept options
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation-witness-2	S017	a field and an accessor cannot share the member name `current`
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation-witness-3	S017	a method cannot share the member name `x` with a field
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation-witness-4	S017	a method cannot share the member name `x` with a method
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation-witness-5	S017	a field cannot share the member name `x` with a field
+ClassMemberDuplicateImplementation	class-member-duplicate-implementation-witness-6	S017	a static method cannot share the member name `value` with a field
+FieldAssignmentMissingUnassignedExit	field-assignment-missing-unassigned-exit-witness-2	S100	field `count` of `Counter` has no initializer, and no constructor statement assigns it; write `count: i32 = …`, or assign `this.count = …` at the top level of the constructor
+FieldAssignmentMissingUnassignedExit	field-assignment-missing-unassigned-exit-witness-3	S100	field `inner` of `Holder` has no initializer, and no constructor statement assigns it; write `inner: Inner = …`, or assign `this.inner = …` at the top level of the constructor
+FieldAssignmentAfterReturnUnassignedExit	field-assignment-after-return-unassigned-exit	S100	field `inner` of `Holder` is assigned at the constructor's top level after a statement that holds a `return`, so the constructor can return before the assignment; write `inner: Inner = …`, or assign `this.inner = …` at the top level of the constructor, before every statement that holds a `return`
+ConstructorFieldReadUnassigned	constructor-field-read-unassigned-witness-2	S100	`this.inner` reads field `inner` of `Holder` before the constructor assigns it at its top level; move the read after `this.inner = …`, or give `inner` an initializer
+FieldAssignmentMissingUnassignedExit	field-assignment-missing-unassigned-exit-witness-4	S100	field `v` of `G<T>` has no initializer, and no constructor statement assigns it; write `v: i32 = …`, or assign `this.v = …` at the top level of the constructor
+DescriptorMethod	descriptor-method-witness-2	S100	descriptor classes cannot declare methods
+DescriptorMethod	descriptor-method-witness-3	S100	descriptor classes cannot declare methods
+ValueTypeAlignmentOutsideSet	value-type-alignment-outside-set	S100	`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}
+DescriptorOptions	descriptor-options-witness-2	S100	`@Descriptor` does not accept options
+ClassMemberNameClash	class-member-name-clash-witness-2	S017	a method cannot share the member name `x` with a method
+FieldAssignmentMissingNoNormalExit	field-assignment-missing-no-normal-exit-witness-2	S100	field `count` of `Counter` has no initializer, and no constructor statement assigns it; write `count: i32 = …`, or assign `this.count = …` at the top level of the constructor
+FieldAssignmentMissingNoNormalExit	field-assignment-missing-no-normal-exit-witness-3	S100	field `inner` of `Holder` has no initializer, and no constructor statement assigns it; write `inner: Inner = …`, or assign `this.inner = …` at the top level of the constructor
+FieldAssignmentAfterUnreachableReturn	field-assignment-after-unreachable-return-witness-2	S100	field `inner` of `Holder` is assigned at the constructor's top level after a statement that holds a `return`, so the constructor can return before the assignment; write `inner: Inner = …`, or assign `this.inner = …` at the top level of the constructor, before every statement that holds a `return`
+ConstructorDefiniteFieldReadBeforeAssignment	constructor-definite-field-read-before-assignment-witness-2	S100	`this.inner` reads field `inner` of `Holder` before the constructor assigns it at its top level; move the read after `this.inner = …`, or give `inner` an initializer
+FieldAssignmentMissingNoNormalExit	field-assignment-missing-no-normal-exit-witness-4	S100	field `v` of `G<T>` has no initializer, and no constructor statement assigns it; write `v: i32 = …`, or assign `this.v = …` at the top level of the constructor
+ClassMemberNameClash	class-member-name-clash-witness-3	S017	a method cannot share the member name `current` with a method
+UsingBindingNotDisposable	using-binding-not-disposable-witness-2	S100	the class of a `using` binding must declare `[Symbol.dispose](): void`
+UsingBindingResourceType	using-binding-resource-type-witness-2	S100	a `using` binding must be a reference class with a disposal hook, or that class or null
+UsingBindingNotDisposable	using-binding-not-disposable-witness-3	S100	the class of a `using` binding must declare `[Symbol.dispose](): void`
+UsingBindingResourceType	using-binding-resource-type-witness-3	S100	a `using` binding must be a reference class with a disposal hook, or that class or null
+FixedArrayUnknownMember	fixed-array-unknown-member	S100	`missing_s154` is outside the FixedArray surface (length, indexing, and the Q27 callback family)
+MapUnknownMember	map-unknown-member	S100	`Map` has no accepted member `missing_s154` (Q24)
+SetUnknownMember	set-unknown-member	S100	`Set` has no accepted member `missing_s154` (Q24)
+GeneratorResultUnknownMember	generator-result-unknown-member	S100	`missing_s154` is not part of the coroutine step result ({ done, value })
+NumericUnknownMember	numeric-unknown-member	S018	`i32` has no member `missing_s154`
+BoundaryUnknownMember	boundary-unknown-member	S100	`object` is boundary-opaque; narrow it with `as` before member access
+WorkerStaticUnknownMethod	worker-static-unknown-method	S018	`Worker` has no static method `missing_s154`
+WorkerUnknownMethod	worker-unknown-method	S018	`Worker<M, M>` has no method `missing_s154`
+InboxUnknownMethod	inbox-unknown-method	S018	`Inbox<M>` has no method `missing_s154`
+OutboxUnknownMethod	outbox-unknown-method	S018	`Outbox<M>` has no method `missing_s154`
+FixedArrayUnknownMethod	fixed-array-unknown-method	S018	`FixedArray<i32, 1>` has no method `missing_s154`
+NumericUnknownMethod	numeric-unknown-method	S018	`f64` has no method `missing_s154`
+StringUnknownMember	string-unknown-member	S100	`missing_s154` is outside the string surface (length, slice, `+` concatenation, `===`/`!==`, and the Q21 String methods)
+MapUnknownMethod	map-unknown-method	S100	`Map` has no accepted method `missing_s154` (Q24)
+SetUnknownMethod	set-unknown-method	S100	`Set` has no accepted method `missing_s154` (Q24)
+ArrayUnknownMember	array-unknown-member	S100	`missing_s154` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods)
+RegexCompileUnknownMethod	regex-compile-unknown-method	S100	`RegExp` has no accepted method `missing_s154`
+SynchronousMethodValue	synchronous-method-value	S100	method `f` may only be called, not read as a value
+GenericSynchronousMethodValue	generic-synchronous-method-value	S100	method `f` may only be called, not read as a value
+GeneratorFunctionValue	generator-function-value	S100	generators may only be called, not passed as values
+ByteArgumentTypeMismatch	byte-argument-type-mismatch	S100	type mismatch: `Context.bytesOf` expects exactly `FixedArray<i32, 1>`, got `i32`
+WorkerSpawnArgumentCount	worker-spawn-argument-count	S100	`Worker.spawn` expects one directly named entry function, got 0 argument(s)
+WorkerEntryParameterCount	worker-entry-parameter-count	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+WorkerEntryEndpointMismatch	worker-entry-endpoint-mismatch	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+ArrayCallbackArgumentCount	array-callback-argument-count	S100	`map` expects 1 argument (the callback), got 0
+MapCallbackArgumentCount	map-callback-argument-count	S100	`Map.forEach` expects exactly 1 callback, got 0
+SetCallbackArgumentCount	set-callback-argument-count	S100	`Set.forEach` expects exactly 1 callback, got 0
+ClassUndeclaredMemberRead	class-undeclared-member-read	S018	`C` has no member `missing_s154`
+AwaitClassUndeclaredMethod	await-class-undeclared-method	S018	`C` has no method `missing_s154`
+ClassStaticMemberMissing	class-static-member-missing	S018	class `C` has no static member `missing_s154`
+GenericClassStaticMemberMissing	generic-class-static-member-missing	S018	generic class `C` has no static member `missing_s154`
+NamespaceIncompatibleContext	namespace-incompatible-context	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamespaceIncompatibleContext	namespace-incompatible-context-witness-2	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+MapCopyNullableNonMap	map-copy-nullable-non-map	S011	`C | null` may be null here; narrow with a null check first
+NumberLiteralAnnotation	c-annotation-literal	S100	type annotation form outside the decided surface
+NumberLiteralAnnotation	NumberLiteralAnnotation	S100	type annotation form outside the decided surface
+NumberLiteralAnnotation	shadow-fixed-length	S100	type annotation form outside the decided surface
+EnumToInteger	EnumToInteger	S100	type mismatch: the return value expects `i32`, got `E`
+ConditionalAnnotation	ConditionalAnnotation	S100	type annotation form outside the decided surface
+ArrayConcatCallArgumentCount	ArrayConcatCallArgumentCount	S100	`concat` expects 1 argument(s) (1 required), got 2
+LocalEnumDeclaration	LocalEnumDeclaration	S100	nested declarations are not in the decided surface
+LocalInterfaceDeclaration	LocalInterfaceDeclaration	S100	nested declarations are not in the decided surface
+UriCodecArgumentCount	UriCodecArgumentCount	S100	`encodeURI` expects 1 argument(s) (1 required), got 2
+MapGetOrArgumentCount	MapGetOrArgumentCount	S100	`Map.getOr` expects 2 argument(s) (2 required), got 3
+CoroutineReturnOrThrowCall	GeneratorMethod	S100	`toString` is outside the coroutine surface (next)
+ArrayFillArgumentCount	ArrayFillArgumentCount	S100	`fill` expects 3 argument(s) (1 required), got 4
+TypeofOperator	a-s208	S100	unary operator outside the decided surface
+TypeofOperator	TypeofOperator	S100	unary operator outside the decided surface
+TemplateLiteralAnnotation	TemplateLiteralAnnotation	S100	type annotation form outside the decided surface
+ObjectTypeOutsideBoundary	a-s081	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	a-s116	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	descriptor-options	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	unsupported-class-decorator	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-count	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-empty	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-key	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-method	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-object	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-spread	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-string	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	new-align-value	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	value-type-alignment-outside-set	S011	`object` is a boundary-only type; it is not available to general declarations
+ObjectTypeOutsideBoundary	descriptor-options-witness-2	S011	`object` is a boundary-only type; it is not available to general declarations
+BigIntLiteralAnnotation	BigIntLiteralAnnotation	S100	type annotation form outside the decided surface
+GeneratorNextArgumentCount	GeneratorNextArgumentCount	S100	`next` expects 0 argument(s) (0 required), got 1
+TemplateInterpolationKind	c-lookup-context-capture	S100	type `Inbox<M>` cannot be interpolated into a template
+StaticFieldInitializerMissing	static-field-optional	S100	static fields require an initializer
+StaticFieldInitializerMissing	context-affine-static-field	S100	static fields require an initializer
+ReferenceConstructorArgumentCount	ValueConstructorArgumentCount	S100	`C` expects 1 argument(s) (1 required), got 2
+ReferenceConstructorArgumentCount	ReferenceConstructorArgumentCount	S100	`C` expects 1 argument(s) (1 required), got 2
+LocalAliasDeclaration	c-alias-local	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-class-local	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-date-local	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-error-local	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-map-local-default	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-map-local-one	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-regexp-local	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-worker-local-default	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-worker-local-one	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	c-worker-local-scalar	S100	nested declarations are not in the decided surface
+LocalAliasDeclaration	LocalAliasDeclaration	S100	nested declarations are not in the decided surface
+MutableLocalCapture	c-lookup-context-capture	S009	lambda captures `box`, which is not a `const` local; capturing lambdas may capture only const locals by value
+MutableLocalCapture	c-lookup-switch-var-read	S009	lambda captures `x`, which is not a `const` local; capturing lambdas may capture only const locals by value
+ScalarToStringArgumentCount	ScalarToStringArgumentCount	S100	`toString` expects 0 argument(s) (0 required), got 1
+ConstAssertionExpression	ConstAssertionExpression	S100	expression form outside the decided surface
+CompoundInvalidOperand	CompoundInvalidOperand	S100	operator `+=` is not defined for `boolean` and `boolean`
+StructuralAnnotation	StructuralAnnotation	S100	type annotation form outside the decided surface
+InvalidReceiverMethod	InvalidReceiverMethod	S100	`null` has no method `toString`
+OperatorAnnotation	OperatorAnnotation	S100	type annotation form outside the decided surface
+BooleanLiteralAnnotation	BooleanLiteralAnnotation	S100	type annotation form outside the decided surface
+BigIntConversionArgumentCount	BigIntConversionArgumentCount	S100	`toISOString` expects 0 argument(s) (0 required), got 1
+AutoAccessorDeclaration	AutoAccessorDeclaration	S100	class member form outside the decided surface
+LocalFunctionDeclaration	c-namespace-local-function	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	c-uri-local-generic	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	LocalFunctionDeclaration	S100	nested declarations are not in the decided surface
+BindingPatternUnsupportedRoot	new-align-count	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-empty	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-key	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-method	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-object	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-spread	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-string	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	new-align-value	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	value-type-alignment-outside-set	S100	a nested binding pattern needs recursive type checks and ordered effects
+BindingPatternUnsupportedRoot	descriptor-options-witness-2	S100	a nested binding pattern needs recursive type checks and ordered effects
+ArrayToFixedArray	ArrayToFixedArray	S100	type mismatch: the return value expects `FixedArray<i32, 2>`, got `i32[]`
+MapSetArgumentCount	MapSetArgumentCount	S100	`Map.set` expects 2 argument(s) (2 required), got 3
+LiteralAliasMember	LiteralAliasMember	S100	`A` has no member `length`
+FunctionTypeObjectPattern	FunctionTypeObjectPattern	S100	function type parameter form outside the decided surface
+AsyncHandleUnawaited	AsyncMethodArgumentCount	S013	an async handle is dropped without any await of its completion
+FunctionValueArgumentCount	FunctionValueArgumentCount	S100	`the function value` expects 1 argument(s) (1 required), got 2
+FixedArrayByteLimit	c-fixed-layout-pattern	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
+ArrayJoinArgumentCount	ArrayJoinArgumentCount	S100	`join` expects 1 argument(s) (0 required), got 2
+SetAddOrHasArgumentCount	SetAddOrHasArgumentCount	S100	`Set.add` expects 1 argument(s) (1 required), got 2
+SourceNamespaceDeclaration	unsupported-module-declaration	S100	declaration form outside the decided surface
+SourceNamespaceDeclaration	SourceNamespaceDeclaration	S100	declaration form outside the decided surface
+PrivateMethodDeclaration	PrivateMethodDeclaration	S100	class member form outside the decided surface
+TupleAnnotation	a-s191	S100	type annotation form outside the decided surface
+TupleAnnotation	TupleAnnotation	S100	type annotation form outside the decided surface
+DescriptorRequiredMemberMissing	a-s003	S100	descriptor literal for `D` is missing required member `x`
+DescriptorRequiredMemberMissing	a-s005	S100	descriptor literal for `D` is missing required member `x`
+LocalAggregateFrameLimit	c-corpus-r69-closure-environment-layout-too-large	S100	local aggregate storage makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
+SourceInterfaceDeclaration	source-interface-declaration	S100	declaration form outside the decided surface
+SourceInterfaceDeclaration	c-nullable-function-class	S100	declaration form outside the decided surface
+SourceInterfaceDeclaration	SourceInterfaceDeclaration	S100	declaration form outside the decided surface
+DescriptorConstructor	descriptor-required-without-definite	S100	descriptor classes cannot declare constructors
+StringRelationalOperand	StringRelationalOperand	S100	operator not defined for `string` and `string`
+FunctionBodyMissing	class-member-name-clash	S100	function bodies are required
+FunctionBodyMissing	top-level-name-clash	S100	function bodies are required
+FunctionImplementationMissing	c-initializer-overload-function	S100	function bodies are required
+FunctionBodyMissing	class-member-name-clash-witness-2	S100	function bodies are required
+FunctionBodyMissing	class-member-name-clash-witness-3	S100	function bodies are required
+NumberConversionArgumentCount	NumberConversionArgumentCount	S100	`getTime` expects 0 argument(s) (0 required), got 1
+IndexSignatureGetterMismatch	class-index-signature-count	S100	the index signature requires `get(index: i32): i32` with exactly matching types
+IndexSignatureGetterMismatch	class-index-signature-non-reference	S100	the index signature requires `get(index: i32): i32` with exactly matching types
+IndexSignatureGetterMismatch	class-index-signature-static	S100	the index signature requires `get(index: i32): i32` with exactly matching types
+IndexSignatureGetterMismatch	class-index-signature-index-type	S100	the index signature requires `get(index: string): i32` with exactly matching types
+ClassExpression	ClassExpression	S100	expression form outside the decided surface
+MirrorExportList	reexport-member-missing-witness-2	S100	export lists are outside the mirror surface
+MirrorExportList	named-import-member-missing-witness-2	S100	export lists are outside the mirror surface
+GeneratorMember	GeneratorMember	S100	`Generator<i32>` has no member `next`
+AmbientFunctionArgumentCount	AmbientFunctionArgumentCount	S100	`print` expects 1 argument(s) (1 required), got 2
+LocalClassDeclaration	local-class-declaration	S100	nested declarations are not in the decided surface
+LocalClassDeclaration	c-type-only-local-class	S100	nested declarations are not in the decided surface
+LocalClassDeclaration	LocalClassDeclaration	S100	nested declarations are not in the decided surface
+ObjectLiteralWithoutDescriptorContext	await-using-declaration	S100	object literals are not in the decided surface
+BooleanMethod	a-s062	S100	`boolean` has no method `valueOf`
+BooleanMethod	BooleanMethod	S100	`boolean` has no method `toString`
+TypeParameterDefault	c-class-default	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	c-generic-class-default-explicit	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	c-generic-function-default-explicit	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	c-generic-method-default-explicit	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+ArrayShiftArgumentCount	ArrayShiftArgumentCount	S100	`shift` expects 0 argument(s) (0 required), got 1
+TaggedTemplateExpression	a-s087	S100	expression form outside the decided surface
+TaggedTemplateExpression	TaggedTemplateExpression	S100	expression form outside the decided surface
+ArraySearchArgumentCount	ArraySearchArgumentCount	S100	`includes` expects 2 argument(s) (1 required), got 3
+UnaryPlusOperator	UnaryPlusOperator	S100	unary operator outside the decided surface
+StringAliasAssertion	StringAliasAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `string` to `A`
+ArrayReverseArgumentCount	ArrayReverseArgumentCount	S100	`reverse` expects 0 argument(s) (0 required), got 1
+StringLiteralAnnotation	StringLiteralAnnotation	S100	type annotation form outside the decided surface
+DebuggerStatement	debugger-statement	S100	statement form outside the decided surface
+DebuggerStatement	DebuggerStatement	S100	statement form outside the decided surface
+FunctionMember	FunctionMember	S100	`() => void` has no member `length`
+ArraySliceArgumentCount	ArraySliceArgumentCount	S100	`slice` expects 2 argument(s) (0 required), got 3
+ArrayAtArgumentCount	ArrayAtArgumentCount	S100	`at` expects 1 argument(s) (1 required), got 2
+InOperator	InOperator	S100	operator outside the decided surface
+NullableClassAssertion	NullableClassAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C | null` to `C`
+SourceAliasNotLiteralUnion	c-async-alias	S100	type aliases are limited to a union of two or more string literals
+AngleAssertionExpression	AngleAssertionExpression	S100	expression form outside the decided surface
+InboxWaitArgumentCount	InboxWaitArgumentCount	S100	`post` expects 1 argument(s) (1 required), got 2
+AssignmentTypeMismatch	c-assign-rejected	S100	type mismatch: the initializer expects `string`, got `i32`
+AssignmentTypeMismatch	c-initializer-overload-function	S100	type mismatch: the argument expects `string`, got `i32`
+AssignmentTypeMismatch	AssignmentTypeMismatch	S100	type mismatch: the return value expects `i32`, got `string`
+ArrayCopyWithinRequiredArgumentCount	ArrayCopyWithinArgumentCount	S100	`copyWithin` expects 2 or 3 arguments (target, start, end?), got 4
+OutboxPostArgumentCount	OutboxPostArgumentCount	S100	`poll` expects 0 argument(s) (0 required), got 1
+DateNowArgumentCount	DateNowArgumentCount	S100	`Date.now` expects 0 argument(s) (0 required), got 1
+MirrorModuleDeclaration	export-source-module-missing-witness-2	S100	mirror declaration form outside the decided surface
+MirrorModuleDeclaration	reexport-member-missing-witness-2	S100	mirror declaration form outside the decided surface
+MirrorModuleDeclaration	poisoned-default-import	S100	mirror declaration form outside the decided surface
+MirrorModuleDeclaration	named-import-module-missing	S100	mirror declaration form outside the decided surface
+MirrorModuleDeclaration	named-import-member-missing-witness-2	S100	mirror declaration form outside the decided surface
+ModuleVariableAnnotationMissing	a-s089	S100	module-level variables require a type annotation
+BigIntAnnotation	BigIntAnnotation	S100	keyword type outside the decided surface
+AwaitMethodArgumentCount	AwaitMethodArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
+UnknownAnnotation	UnknownAnnotation	S100	keyword type outside the decided surface
+PrivateFieldDeclaration	a-s030	S100	class member form outside the decided surface
+PrivateFieldDeclaration	a-s131	S100	class member form outside the decided surface
+PrivateFieldDeclaration	a-s222	S100	class member form outside the decided surface
+PrivateFieldDeclaration	private-field-declaration	S100	class member form outside the decided surface
+PrivateFieldDeclaration	PrivateFieldDeclaration	S100	class member form outside the decided surface
+BinaryStringOperand	BinaryStringOperand	S100	operator not defined for `string` and `i32`
+WorkerTypeArgumentCount	static-field-initializer-missing-witness-2	S100	`Worker` takes exactly 2 type argument(s)
+LocalNamespaceDeclaration	LocalNamespaceDeclaration	S100	nested declarations are not in the decided surface
+PredicateAnnotation	PredicateAnnotation	S100	type annotation form outside the decided surface
+WorkerMessagePlainClass	worker-value-message	S100	worker message type `M` must be a plain reference class
+InvalidAssertion	InvalidAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `boolean` to `string`
+FunctionTypeArrayPattern	FunctionTypeArrayPattern	S100	function type parameter form outside the decided surface
+CompoundEnumOperand	a-s226	S100	operator `+=` is not defined for `E` and `i32`
+CompoundEnumOperand	CompoundEnumOperand	S100	operator `+=` is not defined for `E` and `i32`
+NumericUnknownMethod	a-s051	S018	`i32` has no method `foo`
+MetaPropertyExpression	MetaPropertyExpression	S100	expression form outside the decided surface
+LiteralAliasMethod	LiteralAliasMethod	S100	`A` has no method `toUpperCase`
+LocalVarDeclaration	c-lookup-switch-var-read	S100	`var` is not in the language; use `let` or `const`
+IntegerEnumAssertion	IntegerEnumAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `i32` to `E`
+InstantiationExpression	InstantiationExpression	S100	expression form outside the decided surface
+RegexTestArgumentCount	RegexTestArgumentCount	S100	`toString` expects 0 argument(s) (0 required), got 1
+ClassIndexSetSignature	class-index-signature-count	S100	the index signature requires `set(index: i32, value: i32): void` with exactly matching types
+ClassIndexSetSignature	class-index-signature-non-reference	S100	the index signature requires `set(index: i32, value: i32): void` with exactly matching types
+ClassIndexSetSignature	class-index-signature-static	S100	the index signature requires `set(index: i32, value: i32): void` with exactly matching types
+ClassIndexSetSignature	class-index-signature-index-type	S100	the index signature requires `set(index: string, value: i32): void` with exactly matching types
+ClassUndeclaredMethodCall	shadow-generator-next	S018	`Generator<i32>` has no method `next`
+StaticBlockDeclaration	StaticBlockDeclaration	S100	class member form outside the decided surface
+MappedAnnotation	MappedAnnotation	S100	type annotation form outside the decided surface
+VoidTypeOutsideResult	c-promise-arity-alias	S100	`void` is only allowed as a return, generator element, or Promise result type
+DefaultExportDeclaration	default-import	S100	the module surface requires named exports
+DefaultExportDeclaration	c-namespace-default-export	S100	the module surface requires named exports
+ThisAnnotation	ThisAnnotation	S100	type annotation form outside the decided surface
+StatementNonBooleanCondition	a-s236	S100	condition must be boolean, got `((i32) => i32) | null`
+EnumMember	EnumMember	S100	`E` has no member `toString`
+ReferenceClassInheritance	a-s168	S100	class inheritance is not in the decided surface
+WriteAccessorWithoutRead	a-s032	S100	static write accessor `x` requires a read accessor with the same name
+WriteAccessorWithoutRead	a-s138	S100	write accessor `x` requires a read accessor with the same name
+WriteAccessorWithoutRead	a-s180	S100	static write accessor `x` requires a read accessor with the same name
+TypeNameUnknown	a-s087	S016	unknown type name `TemplateStringsArray`
+TypeNameUnknown	descriptor-options	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	unsupported-class-decorator	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	c-corpus-r169-embedded-header-copy	S016	unknown type name `SubChainExtA`
+TypeNameUnknown	new-align-count	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-empty	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-key	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-method	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-object	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-spread	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-string	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	new-align-value	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	value-type-alignment-outside-set	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	descriptor-options-witness-2	S016	unknown type name `ClassDecoratorContext`
+TypeNameUnknown	TaggedTemplateExpression	S016	unknown type name `TemplateStringsArray`
+ClassMemberNameClash	generic-method-body-missing	S017	a method cannot share the member name `f` with a method
+SymbolAnnotation	SymbolAnnotation	S100	keyword type outside the decided surface
+MapClearArgumentCount	MapClearArgumentCount	S100	`Map.clear` expects 0 argument(s) (0 required), got 1
+ArrayPopArgumentCount	ArrayPopArgumentCount	S100	`pop` expects 0 argument(s) (0 required), got 1
+ForInStatement	ForInStatement	S100	statement form outside the decided surface
+InferAnnotation	InferAnnotation	S100	type annotation form outside the decided surface
+ForeignFunctionArgumentCount	a-probe-array-rest	S100	`f` expects 1 argument(s) (1 required), got 3
+ForeignFunctionArgumentCount	SourceFunctionArgumentCount	S100	`id<i32>` expects 1 argument(s) (1 required), got 2
+ForeignFunctionArgumentCount	ForeignFunctionArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
+QueryAnnotation	QueryAnnotation	S100	type annotation form outside the decided surface
+IndexedAnnotation	IndexedAnnotation	S100	type annotation form outside the decided surface
+ModuleInitializerMissing	worker-endpoint-module-global	S100	module-level variables require an initializer
+ParserSyntaxError	WithStatement	S100	parse error: The 'with' statement is not supported. All symbols in a 'with' block will have type 'any'.
+DoWhileStatement	DoWhileStatement	S100	statement form outside the decided surface
+LiteralAliasToString	LiteralAliasToString	S100	type mismatch: the return value expects `string`, got `A`
+BooleanMember	a-s157	S100	`boolean` has no member `valueOf`
+BooleanMember	BooleanMember	S100	`boolean` has no member `toString`
+NumericObjectMember	a-probe-unconstrained-object	S018	`i32` has no member `valueOf`
+RegexConstructorArgumentCount	RegexConstructorArgumentCount	S100	`new RegExp` expects 2 argument(s) (1 required), got 3
+InstanceMethodArgumentCount	InstanceMethodArgumentCount	S100	`f` expects 0 argument(s) (0 required), got 1
+EnumMethod	EnumMethod	S100	`E` has no method `toString`
+FunctionMethod	FunctionMethod	S100	`() => void` has no method `call`
+ForeignReturnProvenance	wire-alias-nested-foreign-return	S100	mirror `target/s154/forms/wire-alias-nested-foreign-return/mirror.d.ts` foreign function `f_signatures_60` returns an array descriptor; foreign string-view, descriptor, and callback returns are unsupported because return provenance cannot be represented by the boundary vocabulary
+ArrayPushArgumentCount	a-s063	S100	`push` expects 1 argument(s) (1 required), got 2
+ArrayPushArgumentCount	ArrayPushArgumentCount	S100	`push` expects 1 argument(s) (1 required), got 2
+ExponentOperator	a-s216	S100	operator outside the decided surface
+ExponentOperator	ExponentOperator	S100	operator outside the decided surface
+DateUtcArgumentCount	DateUtcArgumentCount	S100	`Date.UTC` expects 7 argument(s) (1 required), got 8
+NeverAnnotation	c-annotation-never	S100	keyword type outside the decided surface
+NeverAnnotation	NeverAnnotation	S100	keyword type outside the decided surface
+BooleanRelationalOperand	BooleanRelationalOperand	S100	operator not defined for `boolean` and `boolean`
+VoidOperator	VoidOperator	S100	unary operator outside the decided surface
+BinaryInvalidOperand	c-corpus-r290-generic-relational-operand	S100	operator not defined for `T` and `i32`
+BinaryInvalidOperand	BinaryInvalidOperand	S100	operator not defined for `boolean` and `boolean`
+LabeledStatement	LabeledStatement	S100	statement form outside the decided surface
+GenericSourceAlias	c-array-two-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-async-arity-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-async-default-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-fixed-default-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-fixed-one-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-pattern-iterator-extended	S100	source type aliases cannot be generic
+GenericSourceAlias	c-promise-arity-alias	S100	source type aliases cannot be generic
+GenericSourceAlias	c-promise-default-alias	S100	source type aliases cannot be generic
+AwaitFunctionArgumentCount	AwaitFunctionArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
+FixedArrayPushArgumentCount	FixedArrayPushArgumentCount	S100	`post` expects 1 argument(s) (1 required), got 2
+SetClearArgumentCount	SetClearArgumentCount	S100	`Set.clear` expects 0 argument(s) (0 required), got 1
+MirrorHeaderMissing	foreign-return-provenance	S100	mirror `target/s154/forms/foreign-return-provenance/mirror.d.ts` declares foreign functions but has no `@subscript-c-header` provenance record
+MirrorHeaderMissing	wire-alias-nested-foreign-parameter	S100	mirror `target/s154/forms/wire-alias-nested-foreign-parameter/mirror.d.ts` declares foreign functions but has no `@subscript-c-header` provenance record
+MirrorHeaderMissing	wire-alias-nested-foreign-return	S100	mirror `target/s154/forms/wire-alias-nested-foreign-return/mirror.d.ts` declares foreign functions but has no `@subscript-c-header` provenance record
+MirrorHeaderMissing	foreign-direct-callback	S100	mirror `target/s154/forms/foreign-direct-callback/mirror.d.ts` declares foreign functions but has no `@subscript-c-header` provenance record
+MapHasArgumentCount	MapHasArgumentCount	S100	`Map.has` expects 1 argument(s) (1 required), got 2
+InvalidReceiverMember	InvalidReceiverMember	S100	`null` has no member `x`
+FieldDefiniteAssertionUnassigned	context-affine-instance-field	S100	field `x` of `A` asserts with `!` a value that nothing assigns at the constructor's top level; write `x: Inbox<A> = …`, or assign `this.x = …` at the top level of the constructor
+UnknownAmbientValueName	lib-global-value	S016	unknown name `String`
+FunctionTypeRestParameter	c-function-rest	S100	function type parameter form outside the decided surface
+FunctionTypeRestParameter	FunctionTypeRestParameter	S100	function type parameter form outside the decided surface
+RegexExecArgumentCount	RegexExecArgumentCount	S100	`test` expects 1 argument(s) (1 required), got 2
+FixedArrayAtArgumentCount	FixedArrayAtArgumentCount	S100	`slice` expects 2 argument(s) (0 required), got 3
+CommaExpression	CommaExpression	S100	expression form outside the decided surface
+BlockLambdaReturnAnnotationMissing	new-shared-nullable-call	S100	a lambda with a block body requires a return type annotation
+SatisfiesExpression	SatisfiesExpression	S100	expression form outside the decided surface
+IdentityAssertion	a-s234	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
+IdentityAssertion	IdentityAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
+FunctionParameterIdentity	FunctionParameterIdentity	S100	type mismatch: the argument expects `(i64) => void`, got `(i32) => void`
+AsyncMethodArgumentCount	AsyncMethodArgumentCount	S100	`f` expects 0 argument(s) (0 required), got 1
+NumericUnknownMember	a-s136	S018	`i32` has no member `foo`
+FixedArrayLiteralLength	a-s058	S100	FixedArray length mismatch: the annotation says 536870911, the literal has 1 elements
+CompoundStringOperand	CompoundStringOperand	S100	operator `+=` is not defined for `string` and `i32`
+BinaryEnumOperand	a-s228	S100	operator not defined for `E` and `E`
+BinaryEnumOperand	BinaryEnumOperand	S100	operator not defined for `E` and `i32`
+RestParameter	a-probe-array-rest	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-count	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-empty	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-key	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-method	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-object	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-spread	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-string	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	new-align-value	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	value-type-alignment-outside-set	S100	parameter pattern outside the decided surface
+MirrorBindingPatternParameter	descriptor-options-witness-2	S100	parameter pattern outside the decided surface
+TypeParameterDefault	c-async-default-alias	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	c-fixed-default-alias	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	c-promise-default-alias	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+UnknownValueName	namespace-value	S100	namespace import `ns` is a static qualifier and cannot be used as a value
+NamedImportModuleMissing	missing-side-effect	S100	imported module `./missing` is not among the program's files
+GeneratorYieldTypeMissing	generator-bare	S100	`Generator` requires at least a yield type argument
+SourceFunctionArgumentCount	async-call-count	S100	`f` expects 1 argument(s) (1 required), got 2
+TypeParameterDefault	default-function	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	default-method	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+TypeParameterDefault	default-class	S100	type-parameter defaults are not in the decided surface; pass an explicit type argument
+MapGetArgumentCount	map-reference-get-count	S100	`Map.get` expects 1 argument(s) (1 required), got 2
+ContextMethodArgumentCount	foreign-count	S100	`f` expects 1 argument(s) (1 required), got 2
+UnboundFunctionName	a-s041	S016	unknown function `missing`
+AsyncHandleUnawaited	async-call-count	S013	an async handle is dropped without any await of its completion
+StringConcatArgumentCount	string-concat-count	S100	`concat` expects 1 argument(s) (1 required), got 2
+UnboundValueName	a-s126	S016	unknown name `missing`
+AsyncReturnAlias	c-async-arity-alias	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnAlias	c-async-default-alias	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+AsyncReturnSourceNotPromise	async-return-shadow	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+UnboundTypeName	c-corpus-r169-embedded-header-copy	S016	unknown type name `SubChainExtA`
+UnboundTypeName	c-unknown-type	S016	unknown type name `Missing`
+UnboundTypeName	unbound-type	S016	unknown type name `Missing`
+GenericClassStaticMember	poisoned-constructor-count	S100	generic classes cannot declare static members
+AsyncReturnMissingArgument	async-builtin-missing	S100	`Promise` requires exactly one fulfilled-value type argument
+ImportAnnotation	import-type	S100	type annotation form outside the decided surface
+NullableMember	old-r195-using-nullable-member	S011	`Resource | null` may be null here; narrow with a null check first
+NullableMember	old-r264-narrowing-switch-join	S011	`Cell | null` may be null here; narrow with a null check first
+AsyncReturnAlias	async-mirror-alias	S100	async functions must return an explicitly annotated builtin `Promise<T>`
+NullableCall	old-r249-unnarrowed-nullable-field-call	S100	type `((i32) => i32) | null` is not callable
+NullableNominalAssignment	c-corpus-r120-narrowing-escapes-conditional	S005	nominal types are not interchangeable: the argument expects `EscapingValue`, got `EscapingValue | null`
+NullableNominalAssignment	c-nominal-null-rejected	S005	nominal types are not interchangeable: the initializer expects `C`, got `C | null`
+NullableNominalAssignmentNonNullFlow	nullable-assignment	S005	nominal types are not interchangeable: the argument expects `C`, got `C | null`
+NullableNominalAssignment	old-r120-narrowing-escapes-conditional	S005	nominal types are not interchangeable: the argument expects `EscapingValue`, got `EscapingValue | null`
+AsyncReturnArgumentCount	async-builtin-arity	S100	`Promise` requires exactly one fulfilled-value type argument
+UnboundTypeName	constructor-error-type-count	S016	unknown type name `Missing`
+ClassUndeclaredMemberRead	shadow-fixed-member	S018	`FixedArray<i32, i32>` has no member `length`
+UnknownNamespaceConstructor	lib-constructor	S100	unknown class `WeakMap`
+ValueConstructorArgumentCount	constructor-error-type-count	S100	`C` expects 1 argument(s) (1 required), got 2
+NullableCallNonNullFlow	nullable-call-initialized	S100	type `((i32) => i32) | null` is not callable
+LambdaReturnPathMissing	lambda-missing-return	S100	not all paths return a value
+ConstructorFieldReadAfterNestedAssignment	field-read-nested-assigned	S100	`this.x` reads field `x` of `C` before the constructor assigns it at its top level; move the read after `this.x = …`, or give `x` an initializer
+DescriptorRequiredFieldUnassigned	descriptor-empty-constructor	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredFieldUnassigned	descriptor-conditional-constructor	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredWithoutDefinite	descriptor-both-constructor	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredWithoutDefinite	descriptor-throw-constructor	S100	required descriptor members must be spelled `name!: T`
+ExportAssignmentEsModule	export-assignment-only	S100	only `export` declarations and named imports are in the decided surface
+DescriptorRequiredFieldUnassigned	descriptor-reference-field	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredFieldUnassigned	descriptor-array-field	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredFieldUnassigned	descriptor-alias-field	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredFieldUnassigned	descriptor-nested-field	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredWithoutDefinite	descriptor-switch-assigned	S100	required descriptor members must be spelled `name!: T`
+DescriptorRequiredWithoutDefinite	descriptor-switch-unassigned	S100	required descriptor members must be spelled `name!: T`
+NullableMemberNonNullFlow	flow-member-0	S011	`A | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	flow-member-1	S011	`A | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	flow-member-2	S011	`A | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	flow-member-3	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	flow-member-null-0	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	flow-member-null-1	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	flow-member-null-2	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	flow-member-null-3	S011	`A | null` may be null here; narrow with a null check first
+NullableNominalAssignmentNonNullFlow	flow-nominal-0	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignmentNonNullFlow	flow-nominal-1	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignmentNonNullFlow	flow-nominal-2	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignmentNonNullFlow	flow-nominal-3	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignment	flow-nominal-null-0	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignment	flow-nominal-null-1	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignment	flow-nominal-null-2	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignment	flow-nominal-null-3	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableCallNonNullFlow	flow-call-0	S100	type `(() => void) | null` is not callable
+NullableCallNonNullFlow	flow-call-1	S100	type `(() => void) | null` is not callable
+NullableCallNonNullFlow	flow-call-2	S100	type `(() => void) | null` is not callable
+NullableCallNonNullFlow	flow-call-3	S100	type `(() => void) | null` is not callable
+NullableCall	flow-call-null-0	S100	type `(() => void) | null` is not callable
+NullableCall	flow-call-null-1	S100	type `(() => void) | null` is not callable
+NullableCall	flow-call-null-2	S100	type `(() => void) | null` is not callable
+NullableCall	flow-call-null-3	S100	type `(() => void) | null` is not callable
+DeclaredFieldWithoutValue	declare-field-0	S100	field `value` of `B` has no initializer, and no constructor statement assigns it; write `value: i32 = …`, or assign `this.value = …` at the top level of the constructor
+DeclaredFieldWithoutValue	declare-field-1	S100	field `value` of `B` has no initializer, and no constructor statement assigns it; write `value: string = …`, or assign `this.value = …` at the top level of the constructor
+DeclaredFieldWithoutValue	declare-field-2	S100	field `value` of `B` has no initializer, and no constructor statement assigns it; write `value: A = …`, or assign `this.value = …` at the top level of the constructor
+DeclaredFieldWithoutValue	declare-field-3	S100	field `value` of `B` has no initializer, and no constructor statement assigns it; write `value: i32[] = …`, or assign `this.value = …` at the top level of the constructor
+FieldAssignmentNestedEveryNormalExit	field-all-exits-0	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedEveryNormalExit	field-all-exits-1	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedEveryNormalExit	field-all-exits-2	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedEveryNormalExit	field-all-exits-3	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-unassigned-exit-0	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-unassigned-exit-1	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-unassigned-exit-2	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-unassigned-exit-3	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+ErasedAssignableTypeMismatch	erased-assignment-0	S100	type mismatch: the initializer expects `E`, got `i32`
+ErasedAssignableTypeMismatch	erased-assignment-1	S100	type mismatch: the initializer expects `f64[]`, got `i32[]`
+ErasedAssignableTypeMismatch	erased-assignment-2	S100	type mismatch: the initializer expects `f64[][]`, got `i32[][]`
+ErasedNominalTypeArguments	erased-assignment-3	S005	nominal types are not interchangeable: the initializer expects `Box<f64>`, got `Box<i32>`
+AssignmentTypeMismatch	distinct-assignment-0	S100	type mismatch: the initializer expects `E`, got `string`
+AssignmentTypeMismatch	distinct-assignment-1	S100	type mismatch: the initializer expects `i32[]`, got `string[]`
+AssignmentTypeMismatch	distinct-assignment-2	S100	type mismatch: the initializer expects `f64[][]`, got `boolean[][]`
+AssignmentTypeMismatch	distinct-assignment-3	S100	type mismatch: the initializer expects `() => i32`, got `() => string`
+NonNullableNullEquality	nonnull-null-equality-0	S100	operator `===` not defined for `i32` and `null`
+NonNullableNullEquality	nonnull-null-equality-1	S100	operator `===` not defined for `string` and `null`
+NonNullableNullEquality	nonnull-null-equality-2	S100	operator `===` not defined for `boolean` and `null`
+NonNullableNullEquality	nonnull-null-equality-3	S100	operator `===` not defined for `A` and `null`
+FunctionParameterIdentity	function-erasure-0	S100	type mismatch: the argument expects `(i64) => void`, got `(i32) => void`
+FunctionParameterIdentity	function-erasure-1	S100	type mismatch: the argument expects `(i64) => void`, got `(u32) => void`
+FunctionParameterIdentity	function-erasure-2	S100	type mismatch: the argument expects `(i64) => void`, got `(f32) => void`
+FunctionParameterIdentity	function-erasure-3	S100	type mismatch: the argument expects `(i64) => void`, got `(f64) => void`
+AssignmentTypeMismatch	function-distinct-0	S100	type mismatch: the argument expects `(string) => void`, got `(i32) => void`
+AssignmentTypeMismatch	function-distinct-1	S100	type mismatch: the argument expects `(i32) => void`, got `(string) => void`
+AssignmentTypeMismatch	function-distinct-2	S100	type mismatch: the argument expects `(boolean) => void`, got `(i32) => void`
+AssignmentTypeMismatch	function-distinct-3	S100	type mismatch: the argument expects `(i32) => void`, got `(boolean) => void`
+BinaryInvalidOperand	string-invalid-0	S100	operator `===` not defined for `string` and `i32`
+BinaryInvalidOperand	string-invalid-1	S100	operator not defined for `string` and `i32`
+BinaryInvalidOperand	string-invalid-2	S100	operator not defined for `string` and `i32`
+BinaryInvalidOperand	string-invalid-3	S100	operator `!==` not defined for `string` and `i32`
+BinaryStringOperand	string-add-0	S100	operator not defined for `string` and `i32`
+BinaryStringOperand	string-add-1	S100	operator not defined for `string` and `boolean`
+BinaryStringOperand	string-add-2	S100	operator not defined for `string` and `f64`
+BinaryStringOperand	string-add-3	S100	operator not defined for `string` and `i64`
+BinaryInvalidOperand	enum-disjoint-0	S100	operator `===` not defined for `E` and `F`
+BinaryInvalidOperand	enum-disjoint-1	S100	operator `!==` not defined for `E` and `F`
+BinaryInvalidOperand	enum-disjoint-2	S100	operator `==` not defined for `E` and `F`
+BinaryInvalidOperand	enum-disjoint-3	S100	operator `!=` not defined for `E` and `F`
+BinaryEnumOperand	enum-number-0	S100	operator not defined for `E` and `i32`
+BinaryEnumOperand	enum-number-1	S100	operator not defined for `E` and `i32`
+BinaryEnumOperand	enum-number-2	S100	operator not defined for `E` and `i32`
+BinaryEnumOperand	enum-number-3	S100	operator `===` not defined for `E` and `i32`
+EnumStaticMemberMissing	enum-missing-0	S018	enum `E` has no member `B`
+EnumStaticMemberMissing	enum-missing-1	S018	enum `E` has no member `missing`
+EnumStaticMemberMissing	enum-missing-2	S018	enum `E` has no member `values`
+EnumStaticMemberMissing	enum-missing-3	S018	enum `E` has no member `name`
+EnumObjectMember	enum-object-0	S018	enum `E` has no member `toString`
+EnumObjectMember	enum-object-1	S018	enum `E` has no member `valueOf`
+EnumObjectMember	enum-object-2	S018	enum `E` has no member `hasOwnProperty`
+EnumObjectMember	enum-object-3	S018	enum `E` has no member `toLocaleString`
+ThisOutsideMethod	this-module-0	S100	`this` is only available in constructors and methods
+ThisOutsideMethod	this-module-1	S100	`this` is only available in constructors and methods
+ThisOutsideMethod	this-module-2	S100	`this` is only available in constructors and methods
+ThisOutsideMethod	this-module-3	S100	`this` is only available in constructors and methods
+ThisInMethodArrow	this-arrow-0	S100	a lambda cannot capture `this`; capture a const local instead
+ThisInMethodArrow	this-arrow-1	S100	a lambda cannot capture `this`; capture a const local instead
+ThisInMethodArrow	this-arrow-2	S100	a lambda cannot capture `this`; capture a const local instead
+ThisInMethodArrow	this-arrow-3	S100	a lambda cannot capture `this`; capture a const local instead
+SwitchCaseRead	switch-direct-0	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	switch-closure-0	S100	`x` is read from a different switch case
+SwitchCaseRead	switch-direct-1	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	switch-closure-1	S100	`x` is read from a different switch case
+SwitchCaseRead	switch-direct-2	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	switch-closure-2	S100	`x` is read from a different switch case
+SwitchCaseRead	switch-direct-3	S100	`x` is read from a different switch case
+SwitchCaseClosureRead	switch-closure-3	S100	`x` is read from a different switch case
+NullableCall	noncallable-0	S100	type `i32` is not callable
+NullableCall	noncallable-1	S100	type `string` is not callable
+NullableCall	noncallable-2	S100	type `boolean` is not callable
+NullableCall	noncallable-3	S100	type `i32[]` is not callable
+NullableNominalAssignmentNonNullFlow	flow-cache-return	S005	nominal types are not interchangeable: the return value expects `N`, got `N | null`
+LocalFunctionDeclaration	hoisted-local-call	S100	nested declarations are not in the decided surface
+SourceAliasNotLiteralUnion	poisoned-alias-lambda	S100	type aliases are limited to a union of two or more string literals
+ErasedAssignableEquality	erased-equality-array	S100	operator `===` not defined for `i32[]` and `f64[]`
+ErasedAssignableEquality	probe-equality-erased-0	S100	operator `===` not defined for `f64[]` and `i64[]`
+ErasedAssignableEquality	probe-equality-erased-1	S100	operator `===` not defined for `i32[][]` and `f64[][]`
+ErasedAssignableEquality	probe-equality-erased-2	S100	operator `===` not defined for `() => i32` and `() => i64`
+FunctionParameterIdentity	probe-function-result-0	S100	type mismatch: the argument expects `() => i32`, got `() => i64`
+FunctionParameterIdentity	probe-function-result-1	S100	type mismatch: the argument expects `() => f64`, got `() => i32`
+FunctionParameterIdentity	probe-function-result-2	S100	type mismatch: the argument expects `() => u32`, got `() => f32`
+AssignmentTypeMismatch	probe-function-result-distinct-0	S100	type mismatch: the argument expects `() => string`, got `() => i32`
+AssignmentTypeMismatch	probe-function-result-distinct-1	S100	type mismatch: the argument expects `() => i32`, got `() => string`
+AssignmentTypeMismatch	probe-function-result-distinct-2	S100	type mismatch: the argument expects `() => boolean`, got `() => i32`
+BinaryInvalidOperand	probe-enum-invalid-0	S100	operator `===` not defined for `E` and `boolean`
+BinaryInvalidOperand	probe-enum-invalid-1	S100	operator not defined for `E` and `boolean`
+BinaryInvalidOperand	probe-enum-invalid-2	S100	operator not defined for `E` and `boolean`
+LocalFunctionDeclaration	probe-hoisted-local-0	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	probe-hoisted-local-1	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	probe-hoisted-local-2	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	probe-hoisted-invalid-argument-0	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	probe-hoisted-invalid-argument-1	S100	nested declarations are not in the decided surface
+LocalFunctionDeclaration	probe-hoisted-invalid-argument-2	S100	nested declarations are not in the decided surface
+SourceAliasNotLiteralUnion	probe-poisoned-alias-context-0	S100	type aliases are limited to a union of two or more string literals
+SourceAliasNotLiteralUnion	probe-poisoned-alias-context-1	S100	type aliases are limited to a union of two or more string literals
+SourceAliasNotLiteralUnion	probe-poisoned-alias-context-2	S100	type aliases are limited to a union of two or more string literals
+SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-0	S100	type aliases are limited to a union of two or more string literals
+SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-1	S100	type aliases are limited to a union of two or more string literals
+SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-2	S100	type aliases are limited to a union of two or more string literals
+NullableMember	probe-nullable-conditional-write-0	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	probe-nullable-conditional-write-1	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	probe-nullable-conditional-write-2	S011	`A | null` may be null here; narrow with a null check first
+NullableMember	probe-nullable-conditional-write-3	S011	`A | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	probe-nullable-try-both	S011	`A | null` may be null here; narrow with a null check first
+DistinctNominalClassAssignment	distinct-nominal-class-assignment	S005	nominal types are not interchangeable: the initializer expects `A`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment	S005	nominal types are not interchangeable: the initializer expects `A`, got `B`
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-2	S005	nominal types are not interchangeable: the initializer expects `A | null`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-2	S005	nominal types are not interchangeable: the initializer expects `A | null`, got `B`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment	S005	nominal types are not interchangeable: the initializer expects `Map<f64, string>`, got `Map<i32, string>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-3	S005	nominal types are not interchangeable: the initializer expects `Map<string, string>`, got `Map<i32, string>`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-2	S005	nominal types are not interchangeable: the initializer expects `Set<f64>`, got `Set<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-4	S005	nominal types are not interchangeable: the initializer expects `Set<string>`, got `Set<i32>`
+ErasedNominalTypeArguments	erased-nominal-type-arguments	S005	nominal types are not interchangeable: the initializer expects `Box<f64>`, got `Box<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-5	S005	nominal types are not interchangeable: the initializer expects `Box<string>`, got `Box<i32>`
+AbstractMethodBodyMissing	abstract-method-body-missing	S100	function bodies are required
+FunctionImplementationMissing	function-implementation-missing-witness-2	S100	function bodies are required
+ThisStaticMethodMember	this-static-method-member	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method	S100	the member is not declared on the static class receiver
+ReferenceClassInheritance	reference-class-inheritance-witness-2	S100	class inheritance is not in the decided surface
+SuperConstructorCall	reference-class-inheritance-witness-2	S100	call form outside the decided surface
+DynamicImportCall	dynamic-import-call	S100	call form outside the decided surface
+LocalInitializerMissing	local-initializer-missing-witness-2	S100	local declarations require an initializer
+FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+NullableMember	nullable-member	S011	`C | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	nullable-member-non-null-flow	S011	`C | null` may be null here; narrow with a null check first
+EnumStringValue	enum-string-value	S100	enum members must have integer literal values
+ConstructorParameterProperty	constructor-parameter-property-witness-2	S100	constructor parameter properties are not decided
+OptionalParameter	optional-parameter-witness-2	S012	optional parameters imply `undefined`; use a default value or `T | null`
+DefaultExportDeclaration	default-export-declaration-witness-2	S100	the module surface requires named exports
+DefaultImport	default-export-declaration-witness-2	S100	only named imports are in the decided surface
+DefaultExportDeclaration	default-export-declaration-witness-3	S100	the module surface requires named exports
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-3	S005	nominal types are not interchangeable: the argument expects `A`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-6	S005	nominal types are not interchangeable: the argument expects `A`, got `B`
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-4	S005	nominal types are not interchangeable: the argument expects `A | null`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-7	S005	nominal types are not interchangeable: the argument expects `A | null`, got `B`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-3	S005	nominal types are not interchangeable: the argument expects `Map<f64, string>`, got `Map<i32, string>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-8	S005	nominal types are not interchangeable: the argument expects `Map<string, string>`, got `Map<i32, string>`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-4	S005	nominal types are not interchangeable: the argument expects `Set<f64>`, got `Set<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-9	S005	nominal types are not interchangeable: the argument expects `Set<string>`, got `Set<i32>`
+ErasedNominalTypeArguments	erased-nominal-type-arguments-witness-2	S005	nominal types are not interchangeable: the argument expects `Box<f64>`, got `Box<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-10	S005	nominal types are not interchangeable: the argument expects `Box<string>`, got `Box<i32>`
+AbstractMethodBodyMissing	abstract-method-body-missing-witness-2	S100	function bodies are required
+FunctionImplementationMissing	function-implementation-missing-witness-3	S100	function bodies are required
+ThisStaticMethodMember	this-static-method-member-witness-2	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-2	S100	the member is not declared on the static class receiver
+ReferenceClassInheritance	reference-class-inheritance-witness-3	S100	class inheritance is not in the decided surface
+SuperConstructorCall	reference-class-inheritance-witness-3	S100	call form outside the decided surface
+DynamicImportCall	dynamic-import-call-witness-2	S100	call form outside the decided surface
+LocalInitializerMissing	local-initializer-missing-witness-3	S100	local declarations require an initializer
+FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+NullableMember	nullable-member-witness-2	S011	`C | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-2	S011	`C | null` may be null here; narrow with a null check first
+EnumStringValue	enum-string-value-witness-2	S100	enum members must have integer literal values
+ConstructorParameterProperty	constructor-parameter-property-witness-3	S100	constructor parameter properties are not decided
+OptionalParameter	optional-parameter-witness-3	S012	optional parameters imply `undefined`; use a default value or `T | null`
+DefaultExportDeclaration	default-export-declaration-witness-4	S100	the module surface requires named exports
+DefaultImport	default-export-declaration-witness-4	S100	only named imports are in the decided surface
+DefaultExportDeclaration	default-export-declaration-witness-5	S100	the module surface requires named exports
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-5	S005	nominal types are not interchangeable: the return value expects `A`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-11	S005	nominal types are not interchangeable: the return value expects `A`, got `B`
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-6	S005	nominal types are not interchangeable: the return value expects `A | null`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-12	S005	nominal types are not interchangeable: the return value expects `A | null`, got `B`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-5	S005	nominal types are not interchangeable: the return value expects `Map<f64, string>`, got `Map<i32, string>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-13	S005	nominal types are not interchangeable: the return value expects `Map<string, string>`, got `Map<i32, string>`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-6	S005	nominal types are not interchangeable: the return value expects `Set<f64>`, got `Set<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-14	S005	nominal types are not interchangeable: the return value expects `Set<string>`, got `Set<i32>`
+ErasedNominalTypeArguments	erased-nominal-type-arguments-witness-3	S005	nominal types are not interchangeable: the return value expects `Box<f64>`, got `Box<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-15	S005	nominal types are not interchangeable: the return value expects `Box<string>`, got `Box<i32>`
+AbstractMethodBodyMissing	abstract-method-body-missing-witness-3	S100	function bodies are required
+FunctionImplementationMissing	function-implementation-missing-witness-4	S100	function bodies are required
+ThisStaticMethodMember	this-static-method-member-witness-3	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-3	S100	the member is not declared on the static class receiver
+ReferenceClassInheritance	reference-class-inheritance-witness-4	S100	class inheritance is not in the decided surface
+SuperConstructorCall	reference-class-inheritance-witness-4	S100	call form outside the decided surface
+DynamicImportCall	dynamic-import-call-witness-3	S100	call form outside the decided surface
+LocalInitializerMissing	local-initializer-missing-witness-4	S100	local declarations require an initializer
+FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+NullableMember	nullable-member-witness-3	S011	`C | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-3	S011	`C | null` may be null here; narrow with a null check first
+EnumStringValue	enum-string-value-witness-3	S100	enum members must have integer literal values
+ConstructorParameterProperty	constructor-parameter-property-witness-4	S100	constructor parameter properties are not decided
+OptionalParameter	optional-parameter-witness-4	S012	optional parameters imply `undefined`; use a default value or `T | null`
+DefaultExportDeclaration	default-export-declaration-witness-6	S100	the module surface requires named exports
+DefaultImport	default-export-declaration-witness-6	S100	only named imports are in the decided surface
+DefaultExportDeclaration	default-export-declaration-witness-7	S100	the module surface requires named exports
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-7	S005	nominal types are not interchangeable: the assignment expects `A`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-16	S005	nominal types are not interchangeable: the assignment expects `A`, got `B`
+DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-8	S005	nominal types are not interchangeable: the assignment expects `A | null`, got `B`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-17	S005	nominal types are not interchangeable: the assignment expects `A | null`, got `B`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-7	S005	nominal types are not interchangeable: the assignment expects `Map<f64, string>`, got `Map<i32, string>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-18	S005	nominal types are not interchangeable: the assignment expects `Map<string, string>`, got `Map<i32, string>`
+DistinctNominalContainerAssignment	distinct-nominal-container-assignment-witness-8	S005	nominal types are not interchangeable: the assignment expects `Set<f64>`, got `Set<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-19	S005	nominal types are not interchangeable: the assignment expects `Set<string>`, got `Set<i32>`
+ErasedNominalTypeArguments	erased-nominal-type-arguments-witness-4	S005	nominal types are not interchangeable: the assignment expects `Box<f64>`, got `Box<i32>`
+IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-20	S005	nominal types are not interchangeable: the assignment expects `Box<string>`, got `Box<i32>`
+AbstractMethodBodyMissing	abstract-method-body-missing-witness-4	S100	function bodies are required
+FunctionImplementationMissing	function-implementation-missing-witness-5	S100	function bodies are required
+ThisStaticMethodMember	this-static-method-member-witness-4	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-4	S100	the member is not declared on the static class receiver
+ReferenceClassInheritance	reference-class-inheritance-witness-5	S100	class inheritance is not in the decided surface
+SuperConstructorCall	reference-class-inheritance-witness-5	S100	call form outside the decided surface
+DynamicImportCall	dynamic-import-call-witness-4	S100	call form outside the decided surface
+LocalInitializerMissing	local-initializer-missing-witness-5	S100	local declarations require an initializer
+FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+NullableMember	nullable-member-witness-4	S011	`C | null` may be null here; narrow with a null check first
+NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-4	S011	`C | null` may be null here; narrow with a null check first
+EnumStringValue	enum-string-value-witness-4	S100	enum members must have integer literal values
+ConstructorParameterProperty	constructor-parameter-property-witness-5	S100	constructor parameter properties are not decided
+OptionalParameter	optional-parameter-witness-5	S012	optional parameters imply `undefined`; use a default value or `T | null`
+DefaultExportDeclaration	default-export-declaration-witness-8	S100	the module surface requires named exports
+DefaultImport	default-export-declaration-witness-8	S100	only named imports are in the decided surface
+DefaultExportDeclaration	default-export-declaration-witness-9	S100	the module surface requires named exports
+OptionalPrivateMember	optional-private-member	S100	private names are not in the decided surface
+UnknownClassConstructor	unknown-class-constructor	S016	unknown class `Missing`
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-2	S100	call form outside the decided surface
+ErasedAssignableTypeMismatch	erased-assignable-type-mismatch	S100	type mismatch: the initializer expects `(A | null)[]`, got `A[]`
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-3	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-4	S100	call form outside the decided surface
+ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-2	S100	type mismatch: the return value expects `(A | null)[]`, got `A[]`
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-5	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-6	S100	call form outside the decided surface
+ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-3	S100	type mismatch: the argument expects `(A | null)[]`, got `A[]`
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-7	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-8	S100	call form outside the decided surface
+ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-4	S100	type mismatch: the assignment expects `(A | null)[]`, got `A[]`
+DuplicateNumericIndexSignature	duplicate-numeric-index-signature-witness-2	S100	a class can declare at most one index signature
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-9	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-10	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-11	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-12	S100	call form outside the decided surface
+NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-13	S100	call form outside the decided surface
+ThisStaticMethodMember	this-static-method-member-witness-5	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-5	S100	the member is not declared on the static class receiver
+ThisStaticMethodMember	this-static-method-member-witness-6	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-6	S100	the member is not declared on the static class receiver
+ThisStaticMethodMember	this-static-method-member-witness-7	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-7	S100	the member is not declared on the static class receiver
+ThisStaticMethodMember	this-static-method-member-witness-8	S100	a static method must name its class instead of `this`
+InstanceMemberInStaticMethod	instance-member-in-static-method-witness-8	S100	the member is not declared on the static class receiver
+LocalInitializerMissing	local-initializer-missing-witness-6	S100	local declarations require an initializer
+AssignmentTypeMismatch	assignment-type-mismatch	S100	type mismatch: the initializer expects `B[]`, got `A[]`
+LocalInitializerMissing	local-initializer-missing-witness-7	S100	local declarations require an initializer
+AssignmentTypeMismatch	assignment-type-mismatch-witness-2	S100	type mismatch: the return value expects `B[]`, got `A[]`
+LocalInitializerMissing	local-initializer-missing-witness-8	S100	local declarations require an initializer
+AssignmentTypeMismatch	assignment-type-mismatch-witness-3	S100	type mismatch: the argument expects `B[]`, got `A[]`
+LocalInitializerMissing	local-initializer-missing-witness-9	S100	local declarations require an initializer
+AssignmentTypeMismatch	assignment-type-mismatch-witness-4	S100	type mismatch: the assignment expects `B[]`, got `A[]`
+StatementAlwaysTruthyCondition	truth-async-statement	S100	condition must be boolean, got `Promise<boolean>`
+StatementAlwaysTruthyCondition	truth-function-statement	S100	condition must be boolean, got `() => boolean`
+ConditionalAlwaysTruthyCondition	truth-async-conditional	S100	condition must be boolean, got `Promise<boolean>`
+ConditionalAlwaysTruthyCondition	truth-function-conditional	S100	condition must be boolean, got `() => boolean`
+MethodValueTruthTest	truth-method-statement	S100	method `ready` may only be called, not read as a value
+MethodValueTruthTest	truth-method-conditional	S100	method `ready` may only be called, not read as a value
+MethodValueTruthTest	truth-async-method	S100	async method `ready` is not a first-class value; call it directly in await position
+MethodValueTruthTest	truth-generic-method	S100	method `ready` may only be called, not read as a value
+RestParameter	rest-script	S100	parameter pattern outside the decided surface
+FieldAssignmentNestedEveryNormalExit	field-enum-exhaustive	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+FieldAssignmentNestedUnassignedExit	field-enum-incomplete	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+BinaryInvalidOperand	string-subtract	S100	operator not defined for `string` and `string`
+BinaryInvalidOperand	string-multiply	S100	operator not defined for `string` and `string`
+BinaryInvalidOperand	string-bitwise	S100	operator not defined for `string` and `string`
+Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)	a-probe-unconstrained-object	S014	`toString` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
+Api(FormNumberValue, NumberCoercionAndArguments)	b-probe-conversions	S014	`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+Api(FormSpliceStartDeleteCountItems, VariadicArguments)	ArraySpliceArgumentCount	S014	`splice with inserted elements` is rejected: Variadic parameters are the missing prerequisite for insertion through `splice`. (Q27)
+Api(FormUnshiftValueValues, VariadicArguments)	ArrayUnshiftArgumentCount	S014	`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
+Api(MapScalarGet, MapScalarGet)	MapGetArgumentCount	S014	`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)
+Api(FormMaxMinHypotWithMoreThanTwoArguments, MathSubset)	MathMethodArgumentCount	S014	`max` is rejected: Variadic parameters are outside the language. (Q19)

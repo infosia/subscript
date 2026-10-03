@@ -611,18 +611,10 @@ fn the_annotated_bare_map_forms_measure_their_recorded_tsc_class() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
-/// compiler.md §107.3 and §79 rule 6: the pattern rejection sites that
-/// carry a divergence variant each also reject a program `tsc`
-/// rejects, so that class reaches no corpus entry. This test is its
-/// pin: every form below is rejected here at the named variant, and the
-/// pinned TypeScript compiler measures the class recorded beside it.
-///
-/// The source-shape site serves both classes by the source alone: an
-/// array pattern over a `string` is `tsc`-clean, and so is a pattern
-/// parameter over a `string`, because a `string` iterates. A field
-/// pattern over a `string` and an array pattern over an `i32` are not.
-/// The rest, default, nested, and field-rest sites each serve both
-/// classes through one source of the wrong shape.
+/// Pattern controls measure their TypeScript class and the corresponding block.
+/// Iterable string array patterns carry the source-shape divergence; ordinary
+/// noniterable or missing-field errors carry no block. Rest/default/nested guards
+/// reject before source type resolution and retain their divergence witnesses.
 #[test]
 fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
     use subscript_compiler::divergence::Divergence;
@@ -670,14 +662,14 @@ fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
         },
     ];
     let variants = [
-        Divergence::PatternSourceShape,
-        Divergence::PatternSourceShape,
-        Divergence::PatternSourceShape,
-        Divergence::PatternSourceShape,
-        Divergence::ArrayRestPattern,
-        Divergence::NestedPattern,
-        Divergence::PatternDefaultValue,
-        Divergence::ObjectRestPattern,
+        Some(Divergence::PatternSourceShape),
+        None,
+        Some(Divergence::PatternSourceShape),
+        None,
+        Some(Divergence::ArrayRestPattern),
+        Some(Divergence::NestedPattern),
+        Some(Divergence::PatternDefaultValue),
+        Some(Divergence::ObjectRestPattern),
     ];
 
     let mut wrong_site = Vec::new();
@@ -693,11 +685,8 @@ fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
             .iter()
             .map(|diagnostic| diagnostic.divergence)
             .collect();
-        if sites != [Some(variant)] {
-            wrong_site.push(format!(
-                "{}: {sites:?}, wants [Some({variant:?})]",
-                form.stem
-            ));
+        if sites != [variant] {
+            wrong_site.push(format!("{}: {sites:?}, wants [{variant:?}]", form.stem));
         }
     }
     assert!(
@@ -710,15 +699,8 @@ fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
-/// compiler.md §108.1 rule 2 and §79 rule 6: the nested-assignment site
-/// carries `Divergence::NestedFieldAssignment`, because a constructor
-/// that assigns a field in both arms of a conditional is `tsc`-accepted
-/// (`r227`). The same site rejects a constructor that assigns in one arm,
-/// which `tsc` rejects, so that form reaches no corpus entry. This test is
-/// its pin: the form is rejected here at the named variant, and the pinned
-/// TypeScript compiler measures the class recorded beside it. The
-/// both-arm form runs in the same batch as the firing control; the two
-/// differ by the `else` arm alone.
+/// One-arm assignment has an unassigned normal exit and carries no block;
+/// the both-arm control carries the stricter top-level-assignment divergence.
 #[test]
 fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
     use subscript_compiler::divergence::Divergence;
@@ -737,7 +719,10 @@ fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
     ];
 
     let mut wrong_site = Vec::new();
-    for form in &forms {
+    for (form, wanted) in forms
+        .iter()
+        .zip([None, Some(Divergence::NestedFieldAssignmentEveryNormalExit)])
+    {
         let file = format!("{}.ts", form.stem);
         let diagnostics =
             subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
@@ -749,11 +734,8 @@ fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
             .iter()
             .map(|diagnostic| diagnostic.divergence)
             .collect();
-        if sites != [Some(Divergence::NestedFieldAssignment)] {
-            wrong_site.push(format!(
-                "{}: {sites:?}, wants [Some(NestedFieldAssignment)]",
-                form.stem
-            ));
+        if sites != [wanted] {
+            wrong_site.push(format!("{}: {sites:?}, wants [{wanted:?}]", form.stem));
         }
     }
     assert!(
@@ -770,8 +752,8 @@ fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
 /// each one is rejected here at the recorded site, and the pinned
 /// TypeScript compiler measures the class recorded beside it.
 ///
-/// Site A carries no variant, so a `tsc`-accepted form that reaches it
-/// cannot be a reject corpus entry, and this test is its pin. §108.4
+/// Section 154 gives site A a variant because accepted forms reach it.
+/// This test retains both accepted and rejected TypeScript forms. Section 108.4
 /// names one form per statement shape: both arms of a conditional, the
 /// same arm, a loop body, and a chained assignment. The `tsc`-rejected
 /// forms and the two rule 5 spellings are the shapes the four corpus
@@ -844,10 +826,13 @@ fn the_prefix_this_forms_measure_their_recorded_tsc_class() {
         &[None],
         &[None],
         &[None],
-        &[None],
-        &[None],
-        &[None],
-        &[Some(Divergence::NestedFieldAssignment), None],
+        &[Some(Divergence::ConstructorFieldReadWithAssignmentFact)],
+        &[Some(Divergence::ConstructorFieldReadWithAssignmentFact)],
+        &[Some(Divergence::ConstructorFieldReadWithAssignmentFact)],
+        &[
+            Some(Divergence::NestedFieldAssignmentEveryNormalExit),
+            Some(Divergence::ConstructorFieldReadWithAssignmentFact),
+        ],
         &[None, None],
     ];
 

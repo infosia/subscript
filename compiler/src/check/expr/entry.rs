@@ -1,19 +1,30 @@
 //! Checks the expression entry points, statement expressions, and `await`.
 
+use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx, ScopeItem};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, AsyncCallee, ExprKind};
 use crate::types::{ClassId, Type};
 
 use super::contextual_object_class;
 
 impl<'p> Checker<'p> {
+    pub(in crate::check) fn check_truth_expr(
+        &mut self,
+        expression: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        match super::unparen_expr(expression) {
+            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, false, true),
+            expression => self.check_expr(expression, None, fx),
+        }
+    }
+
     pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
         !fx.owns_local_name(name) && self.peek_scope_item(name).is_none()
     }
@@ -115,7 +126,7 @@ impl<'p> Checker<'p> {
     ) {
         let message = crate::ambient::rejection_message(rejection, actual);
         self.reject_subset(
-            crate::check::rejection::RejectionSite::Api(rejection),
+            RejectionSite::Api(rejection.id, rejection.divergence),
             message,
             pos,
         );
@@ -164,11 +175,10 @@ impl<'p> Checker<'p> {
         let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
         fx.descriptor_numeric_operand = previous_numeric;
         if self.apparent_type(&checked.ty) == Type::Void {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::VoidExpressionValue,
                 "a `void` expression is only allowed as an expression statement",
                 checked.pos.clone(),
-                Divergence::VoidValue,
             );
             self.err_expr(checked.pos)
         } else {
@@ -184,140 +194,154 @@ impl<'p> Checker<'p> {
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
-        let mut checked = match e {
-            ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
-                &p.expr,
-                ctx,
-                fx,
-                allow_embedded_header_receiver,
-            ),
-            ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
-            ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
-            ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
-            ast::Expr::This(_) => {
-                if fx.descriptor_default.is_some() {
-                    self.error_diverging(
-                        RuleCode::S100,
-                        "§147 rule 3a: `this` is forbidden in a descriptor member default",
-                        pos.clone(),
-                        Divergence::ThisInFieldInitializer,
-                    );
-                    return self.err_expr(pos);
-                }
-                if let Some(initializer) = &fx.field_initializer {
-                    let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                        "`this` inside a lambda is forbidden"
-                    } else if initializer.write {
-                        "a write through `this` is forbidden"
-                    } else {
-                        "`this` as a value is forbidden"
-                    };
-                    self.error_diverging(
-                        RuleCode::S100,
-                        format!("§147 rule 2: {reason}"),
-                        pos.clone(),
-                        Divergence::ThisInFieldInitializer,
-                    );
-                    return self.err_expr(pos);
-                }
-                let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
-                match this_ty {
-                    Some(ty) => hir::Expr {
-                        kind: ExprKind::This,
-                        ty,
-                        pos,
-                    },
-                    None => {
-                        let divergence = fx
-                            .frames
-                            .last()
-                            .and_then(|frame| frame.missing_this_divergence);
-                        if let Some(divergence) = divergence {
-                            self.error_diverging(
-                                RuleCode::S100,
-                                "`this` is only available in constructors and methods",
-                                pos.clone(),
-                                divergence,
-                            );
+        let mut checked =
+            match e {
+                ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
+                    &p.expr,
+                    ctx,
+                    fx,
+                    allow_embedded_header_receiver,
+                ),
+                ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
+                ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
+                ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
+                ast::Expr::This(_) => {
+                    if fx.descriptor_default.is_some() {
+                        self.reject_subset(
+                            RejectionSite::DescriptorDefaultThisUse,
+                            "§147 rule 3a: `this` is forbidden in a descriptor member default",
+                            pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
+                    if let Some(initializer) = &fx.field_initializer {
+                        let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                            "`this` inside a lambda is forbidden"
+                        } else if initializer.write {
+                            "a write through `this` is forbidden"
                         } else {
-                            self.error(
-                                RuleCode::S100,
-                                "`this` is only available in constructors and methods",
+                            "`this` as a value is forbidden"
+                        };
+                        self.reject_subset(
+                            RejectionSite::FieldInitializerThisUse,
+                            format!("§147 rule 2: {reason}"),
+                            pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
+                    let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
+                    match this_ty {
+                        Some(ty) => hir::Expr {
+                            kind: ExprKind::This,
+                            ty,
+                            pos,
+                        },
+                        None => {
+                            let site = fx.frames.last().and_then(|frame| frame.missing_this_site);
+                            if let Some(site) = site {
+                                self.reject_subset(
+                                    site,
+                                    "`this` is only available in constructors and methods",
+                                    pos.clone(),
+                                );
+                            } else {
+                                self.reject_subset(
+                                if fx.frames.last().is_some_and(|frame| frame.is_lambda)
+                                    && fx.frames.iter().any(|frame| frame.this_ty.is_some()) {
+                                    RejectionSite::ThisInMethodArrow
+                                } else { RejectionSite::ThisOutsideMethod },
+                                if fx.frames.last().is_some_and(|frame| frame.is_lambda)
+                                    && fx.frames.iter().any(|frame| frame.this_ty.is_some()) {
+                                    "a lambda cannot capture `this`; capture a const local instead"
+                                } else { "`this` is only available in constructors and methods" },
                                 pos.clone(),
                             );
+                            }
+                            self.err_expr(pos)
                         }
-                        self.err_expr(pos)
                     }
                 }
-            }
-            ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
-            ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
-            ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
-            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
-            ast::Expr::Member(m) => self.check_member_read(m, fx),
-            ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
-            ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
-            ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
-            ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
-            ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
-            ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
-            ast::Expr::Object(object) => {
-                match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
-                    Some(id) if self.classes[id.0].is_descriptor => {
-                        self.check_descriptor_lit(object, id, fx, pos)
-                    }
-                    Some(_) => {
-                        self.error_diverging(
-                            RuleCode::S005,
-                            "object literals do not satisfy nominal class types",
-                            pos.clone(),
-                            Divergence::ObjectLiteralConstruction,
-                        );
-                        self.err_expr(pos)
-                    }
-                    _ => {
-                        // C1: the literal has no standalone type, so only a
-                        // `@Descriptor` context constructs from one.
-                        self.error_diverging(
-                            RuleCode::S100,
-                            "object literals are not in the decided surface",
-                            pos.clone(),
-                            Divergence::ObjectLiteralConstruction,
-                        );
-                        self.err_expr(pos)
+                ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
+                ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
+                ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
+                ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
+                ast::Expr::Member(m) => self.check_member_read(m, fx),
+                ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
+                ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
+                ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
+                ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
+                ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
+                ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
+                ast::Expr::Object(object) => {
+                    match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
+                        Some(id) if self.classes[id.0].is_descriptor => {
+                            self.check_descriptor_lit(object, id, fx, pos)
+                        }
+                        Some(_) => {
+                            self.reject_subset(
+                                RejectionSite::NominalObjectLiteral,
+                                "object literals do not satisfy nominal class types",
+                                pos.clone(),
+                            );
+                            self.err_expr(pos)
+                        }
+                        _ => {
+                            // C1: the literal has no standalone type, so only a
+                            // `@Descriptor` context constructs from one.
+                            self.reject_subset(
+                                RejectionSite::ObjectLiteralWithoutDescriptorContext,
+                                "object literals are not in the decided surface",
+                                pos.clone(),
+                            );
+                            self.err_expr(pos)
+                        }
                     }
                 }
-            }
-            ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
-            ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
-            ast::Expr::Await(a) => self.check_await(a, fx, pos),
-            ast::Expr::TsNonNull(t) => {
-                let p = self.pos(t.span);
-                self.error(
-                    RuleCode::S100,
-                    "the `!` assertion is not in the decided surface; narrow with a null check",
-                    p.clone(),
-                );
-                self.err_expr(p)
-            }
-            ast::Expr::Fn(_) => {
-                self.error(
-                    RuleCode::S100,
-                    "function expressions are not in the decided surface; use an arrow",
-                    pos.clone(),
-                );
-                self.err_expr(pos)
-            }
-            other => {
-                let p = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
-                    "expression form outside the decided surface",
-                    p.clone(),
-                );
-                self.err_expr(p)
-            }
-        };
+                ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
+                ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
+                ast::Expr::Await(a) => self.check_await(a, fx, pos),
+                ast::Expr::TsNonNull(t) => {
+                    let p = self.pos(t.span);
+                    self.reject_subset(
+                        RejectionSite::NonNullAssertionExpression,
+                        "the `!` assertion is not in the decided surface; narrow with a null check",
+                        p.clone(),
+                    );
+                    self.err_expr(p)
+                }
+                ast::Expr::Fn(_) => {
+                    self.reject_subset(
+                        RejectionSite::FunctionExpression,
+                        "function expressions are not in the decided surface; use an arrow",
+                        pos.clone(),
+                    );
+                    self.err_expr(pos)
+                }
+                other => {
+                    let p = self.pos(other.span());
+                    self.reject_subset(
+                        match other {
+                            ast::Expr::TsTypeAssertion(_) => {
+                                RejectionSite::AngleAssertionExpression
+                            }
+                            ast::Expr::TsSatisfies(_) => RejectionSite::SatisfiesExpression,
+                            ast::Expr::TsInstantiation(_) => RejectionSite::InstantiationExpression,
+                            ast::Expr::Seq(_) => RejectionSite::CommaExpression,
+                            ast::Expr::TaggedTpl(_) => RejectionSite::TaggedTemplateExpression,
+                            ast::Expr::Class(_) => RejectionSite::ClassExpression,
+                            ast::Expr::MetaProp(_) => RejectionSite::MetaPropertyExpression,
+                            ast::Expr::PrivateName(_) => RejectionSite::PrivateNameExpression,
+                            ast::Expr::TsConstAssertion(_) => {
+                                RejectionSite::ConstAssertionExpression
+                            }
+                            _ => RejectionSite::UnsupportedExpressionKind,
+                        },
+                        "expression form outside the decided surface",
+                        p.clone(),
+                    );
+                    self.err_expr(p)
+                }
+            };
         self.end_shared_narrowing(&checked, fx);
         if !allow_embedded_header_receiver {
             self.reject_embedded_header_copy(&mut checked, ctx);
@@ -370,18 +394,13 @@ impl<'p> Checker<'p> {
         }
         let extension_name = self.classes[extension.0].name.clone();
         let header_name = self.classes[header.0].name.clone();
-        self.error_diverging(
-            RuleCode::S100,
-            format!(
+        self.reject_subset(RejectionSite::EmbeddedHeaderCopied, format!(
                 "embedded header `{extension_name}.{}` cannot be copied as `{header_name}`; store it directly into `{header_name} | null` or read one of its fields",
                 match &expr.kind {
                     ExprKind::Field { name, .. } => name.as_str(),
                     _ => unreachable!("embedded header projection is a field"),
                 }
-            ),
-            expr.pos.clone(),
-            Divergence::EmbeddedHeaderCopy,
-        );
+            ), expr.pos.clone());
         expr.ty = Type::Error;
     }
 
@@ -441,11 +460,10 @@ impl<'p> Checker<'p> {
     /// never materialize a Promise-typed value in HIR.
     fn check_await(&mut self, awaited: &ast::AwaitExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
-            self.error_diverging(
-                RuleCode::S013,
+            self.reject_subset(
+                RejectionSite::AwaitOutsideAsync,
                 "`await` is only legal inside an async function",
                 pos.clone(),
-                Divergence::AwaitOutsideAsync,
             );
             return self.err_expr(pos);
         }
@@ -458,11 +476,7 @@ impl<'p> Checker<'p> {
             let handle = self.check_expr(operand, None, fx);
             let Type::AsyncHandle(value) = self.apparent_type(&handle.ty.clone()) else {
                 if self.apparent_type(&(handle.ty)) != Type::Error {
-                    self.error(
-                        RuleCode::S100,
-                        "`await` requires `Context.suspend()`, an async call, or a held async handle",
-                        pos.clone(),
-                    );
+                    self.reject_subset(RejectionSite::AwaitNonHandle, "`await` requires `Context.suspend()`, an async call, or a held async handle", pos.clone());
                 }
                 return self.err_expr(pos);
             };
@@ -475,8 +489,8 @@ impl<'p> Checker<'p> {
             };
         };
         let ast::Callee::Expr(callee) = &call.callee else {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AwaitNotDirectCall,
                 "awaitable expressions must be direct calls",
                 pos.clone(),
             );
@@ -492,8 +506,8 @@ impl<'p> Checker<'p> {
                 && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "suspend")
             {
                 if call.type_args.is_some() || !call.args.is_empty() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ContextSuspendArguments,
                         "`Context.suspend()` takes no type arguments or value arguments",
                         pos.clone(),
                     );
@@ -518,8 +532,8 @@ impl<'p> Checker<'p> {
                     {
                         return self.err_expr(pos);
                     }
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitLocalCall,
                         "an async awaitable cannot be called through a local value",
                         self.pos(ident.span),
                     );
@@ -556,8 +570,8 @@ impl<'p> Checker<'p> {
                         (instance.clone(), instance, false)
                     }
                     _ => {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::AwaitUndeclaredAsyncFunction,
                             format!("`{name}` is not a directly declared async function"),
                             self.pos(ident.span),
                         );
@@ -568,21 +582,22 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 };
                 if !sig.is_async {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitSynchronousFunction,
                         format!("`{checked_name}` is synchronous and cannot be awaited"),
                         self.pos(ident.span),
                     );
                     return self.err_expr(pos);
                 }
                 if rejects_type_args {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitFunctionTypeArguments,
                         format!("`{name}` is not generic"),
                         self.pos(ident.span),
                     );
                 }
                 let args = self.check_args_with_arguments(
+                    RejectionSite::AwaitMethodArgumentCount,
                     &sig.params,
                     &call.args,
                     fx,
@@ -601,8 +616,8 @@ impl<'p> Checker<'p> {
             }
             ast::Expr::Member(member) => {
                 let ast::MemberProp::Ident(method) = &member.prop else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitComputedMethod,
                         "an awaited async method requires an identifier method name",
                         pos.clone(),
                     );
@@ -617,8 +632,8 @@ impl<'p> Checker<'p> {
                 let Type::Class(class) = self.apparent_type(&receiver.ty.clone()) else {
                     if self.apparent_type(&(receiver.ty)) != Type::Error {
                         let receiver_ty = self.type_name(&receiver.ty);
-                        self.error(
-                            RuleCode::S018,
+                        self.reject_subset(
+                            RejectionSite::AwaitNonClassMethod,
                             format!("type `{receiver_ty}` has no async method `{name}`"),
                             method_pos,
                         );
@@ -642,29 +657,40 @@ impl<'p> Checker<'p> {
                 };
                 let Some(sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
                     let class_name = self.classes[class.0].name.clone();
-                    self.error(
-                        RuleCode::S018,
+                    self.reject_subset(
+                        if super::is_object_member(&name) {
+                            RejectionSite::AwaitClassObjectMethod
+                        } else {
+                            RejectionSite::AwaitClassUndeclaredMethod
+                        },
                         format!("`{class_name}` has no method `{name}`"),
                         method_pos,
                     );
                     return self.err_expr(pos);
                 };
                 if !sig.is_async {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitSynchronousMethod,
                         format!("method `{name}` is synchronous and cannot be awaited"),
                         method_pos,
                     );
                     return self.err_expr(pos);
                 }
                 if !generic && call.type_args.is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AwaitMethodTypeArguments,
                         format!("method `{name}` is not generic"),
                         method_pos,
                     );
                 }
-                let args = self.check_args(&sig.params, &call.args, fx, &pos, &name);
+                let args = self.check_args(
+                    RejectionSite::AwaitFunctionArgumentCount,
+                    &sig.params,
+                    &call.args,
+                    fx,
+                    &pos,
+                    &name,
+                );
                 hir::Expr {
                     kind: ExprKind::AsyncCall {
                         callee: AsyncCallee::Method {
@@ -679,11 +705,7 @@ impl<'p> Checker<'p> {
                 }
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
-                    "an async awaitable must directly call a named async function or instance method",
-                    pos.clone(),
-                );
+                self.reject_subset(RejectionSite::AwaitIndirectCall, "an async awaitable must directly call a named async function or instance method", pos.clone());
                 self.err_expr(pos)
             }
         }

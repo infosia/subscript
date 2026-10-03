@@ -434,7 +434,7 @@ impl<'p> Checker<'p> {
                 diagnostics
                     .iter()
                     .any(|diagnostic| {
-                        diagnostic.code == RuleCode::S011
+                        diagnostic.code.as_str() == "S011"
                             && diagnostic.pos.file == start.file
                             && (diagnostic.pos.line, diagnostic.pos.col) >= (start.line, start.col)
                             && (diagnostic.pos.line, diagnostic.pos.col) < (end.line, end.col)

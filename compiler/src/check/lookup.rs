@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     // ----- shared lookups -----
@@ -8,6 +9,9 @@ impl<'p> Checker<'p> {
     /// declarations, §12.2). A type-only import binding reports S100 once
     /// per use site and resolves poisoned (compiler.md §134 rule 2).
     pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos) -> Option<ScopeItem> {
+        if self.rejected_local_names.contains(name) {
+            return Some(ScopeItem::Poisoned);
+        }
         let type_only = self.scope_binding(name).is_some_and(|binding| {
             binding.type_only && !matches!(binding.item, ScopeItem::Poisoned)
         });
@@ -16,8 +20,8 @@ impl<'p> Checker<'p> {
                 .type_only_value_uses
                 .insert((self.cur_file, pos.line, pos.col))
         {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::TypeOnlyImportValueUse,
                 format!(
                     "`{name}` cannot be used as a value because it was imported with `import type`"
                 ),
@@ -34,8 +38,8 @@ impl<'p> Checker<'p> {
             self.type_scope_item(name),
             Some(ScopeItem::Namespace { .. })
         ) {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::NamespaceAsValue,
                 format!(
                     "namespace import `{name}` is a static qualifier and cannot be used as a value"
                 ),
@@ -58,6 +62,9 @@ impl<'p> Checker<'p> {
     /// Resolves a name in a type position. A type-only import binding
     /// resolves to its declaration (compiler.md §134 rule 3).
     pub(crate) fn type_scope_item(&self, name: &str) -> Option<ScopeItem> {
+        if self.rejected_local_names.contains(name) {
+            return Some(ScopeItem::Poisoned);
+        }
         self.scope_binding(name)
             .map(|binding| binding.item.clone())
             .or_else(|| {
@@ -122,13 +129,20 @@ impl<'p> Checker<'p> {
                             format!("`{name}` is assigned in a case that does not declare it")
                         };
                         if for_read {
-                            self.error(RuleCode::S100, message, pos.clone());
-                        } else {
-                            self.error_diverging(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                if crossed > 0 {
+                                    RejectionSite::SwitchCaseClosureRead
+                                } else {
+                                    RejectionSite::SwitchCaseRead
+                                },
                                 message,
                                 pos.clone(),
-                                Divergence::DeclarationScope,
+                            );
+                        } else {
+                            self.reject_subset(
+                                RejectionSite::SwitchCaseWriteOutsideDeclaration,
+                                message,
+                                pos.clone(),
                             );
                         }
                         return Some(Local {
@@ -151,13 +165,20 @@ impl<'p> Checker<'p> {
                     "Math" | "Date" | "Number" | "JSON" | "Context" | "Promise"
                 );
                 if shadows_program_item || ambient_namespace {
-                    self.error(RuleCode::S100, message, pos.clone());
-                } else {
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if crossed > 0 {
+                            RejectionSite::BlockNameReadBeforeDeclaration
+                        } else {
+                            RejectionSite::ImmediateShadowedNameRead
+                        },
                         message,
                         pos.clone(),
-                        Divergence::DeclarationScope,
+                    );
+                } else {
+                    self.reject_subset(
+                        RejectionSite::BlockPendingReadWithoutProgramShadow,
+                        message,
+                        pos.clone(),
                     );
                 }
                 return Some(Local {
@@ -172,8 +193,12 @@ impl<'p> Checker<'p> {
                 break;
             }
             if scope.pending.contains(name) {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if crossed > 0 {
+                        RejectionSite::BlockNameWriteBeforeDeclaration
+                    } else {
+                        RejectionSite::ImmediateNameWriteBeforeDeclaration
+                    },
                     format!("`{name}` is assigned before its declaration in {scope_name}"),
                     pos.clone(),
                 );
@@ -189,19 +214,18 @@ impl<'p> Checker<'p> {
             }
         }
         let (crossed, local) = found?;
+        if self.apparent_type(&local.ty) == Type::Error {
+            return Some(local);
+        }
         if crossed > 0 {
             if self.is_context_affine_type(&local.ty) {
-                self.error(
-                    RuleCode::S100,
-                    format!(
+                self.reject_subset(RejectionSite::ContextAffineCapture, format!(
                         "lambda captures Context-affine `{name}`; Worker, Inbox, and Outbox values may not be captured"
-                    ),
-                    pos.clone(),
-                );
+                    ), pos.clone());
             }
             if local.mutable {
-                self.error(
-                    RuleCode::S009,
+                self.reject_subset(
+                    RejectionSite::MutableLocalCapture,
                     format!(
                         "lambda captures `{}`, which is not a `const` local; \
                          capturing lambdas may capture only const locals by value",

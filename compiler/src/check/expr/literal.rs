@@ -1,11 +1,11 @@
 //! Checks literals, template strings, and identifier references.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx, ScopeItem};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, Callee, ExprKind, RegexFn, TplPart};
 use crate::types::Type;
 
@@ -52,24 +52,20 @@ impl<'p> Checker<'p> {
                 let pattern = regex.exp.to_string();
                 let flags = regex.flags.to_string();
                 if flags.contains('v') {
-                    self.error(
-                        RuleCode::S100,
-                        "the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, \"v\")`",
-                        pos.clone(),
-                    );
+                    self.reject_subset(RejectionSite::RegexLiteralUnicodeSetsFlag, "the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, \"v\")`", pos.clone());
                     return self.err_expr(pos);
                 }
                 if flags.contains('y') {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::RegexSticky,
+                        RejectionSite::RegexSticky,
                         "`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)",
                         pos.clone()
 );
                     return self.err_expr(pos);
                 }
                 if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        error.site,
                         format!("invalid regular-expression literal: {error}"),
                         pos.clone(),
                     );
@@ -127,8 +123,8 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let p = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::BigIntLiteral,
                     "literal form outside the decided surface",
                     p.clone(),
                 );
@@ -182,8 +178,8 @@ impl<'p> Checker<'p> {
             // Round-to-nearest-even first overflows binary16 at the
             // midpoint 65520: values below it still round to 65504.
             if self.apparent_type(&(target)) == Type::F16 && value.abs() >= 65_520.0 {
-                self.error(
-                    RuleCode::S008,
+                self.reject_subset(
+                    RejectionSite::HalfFloatLiteralRange,
                     format!("numeric literal {} out of range for `f16`", raw),
                     pos.clone(),
                 );
@@ -197,8 +193,8 @@ impl<'p> Checker<'p> {
         }
         if fractional {
             let name = self.type_name(&target);
-            self.error(
-                RuleCode::S008,
+            self.reject_subset(
+                RejectionSite::FractionalIntegerLiteral,
                 format!("fractional literal in integer context `{}`", name),
                 pos.clone(),
             );
@@ -220,11 +216,10 @@ impl<'p> Checker<'p> {
         };
         let Some(integer) = integer else {
             let name = self.type_name(&target);
-            self.error_diverging(
-                RuleCode::S008,
+            self.reject_subset(
+                RejectionSite::IntegerLiteralRange,
                 format!("integer literal {} out of range for `{}`", raw, name),
                 pos.clone(),
-                Divergence::IntegerLiteralRange,
             );
             return self.err_expr(pos);
         };
@@ -267,8 +262,8 @@ impl<'p> Checker<'p> {
                     );
                 } else if !printable {
                     let name = self.type_name(&checked.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::TemplateInterpolationKind,
                         format!("type `{}` cannot be interpolated into a template", name),
                         checked.pos.clone(),
                     );
@@ -292,18 +287,17 @@ impl<'p> Checker<'p> {
         let name = id.sym.to_string();
         let pos = self.pos(id.span);
         if name == "undefined" {
-            self.error_diverging(
-                RuleCode::S012,
-                "`undefined` is banned; the single null story is `null`",
-                pos.clone(),
+            self.reject_subset(
                 if matches!(
                     ctx.map(|ty| self.apparent_type(ty)),
                     Some(Type::StringAlias(_))
                 ) {
-                    Divergence::OptionalDescriptorMember
+                    RejectionSite::UndefinedOptionalMember
                 } else {
-                    Divergence::GeneralUnionAndUndefined
+                    RejectionSite::UndefinedValue
                 },
+                "`undefined` is banned; the single null story is `null`",
+                pos.clone(),
             );
             return self.err_expr(pos);
         }
@@ -330,14 +324,20 @@ impl<'p> Checker<'p> {
                 "namespace import `{name}` is a static qualifier and cannot be used as a value"
             );
             if ctx.is_none() {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(RejectionSite::UnknownValueName, message, pos.clone());
+            } else {
+                self.reject_subset(
+                    if matches!(
+                        ctx.map(|ty| self.apparent_type(ty)),
+                        Some(Type::Object | Type::Class(_) | Type::Error) | Some(Type::Nullable(_))
+                    ) {
+                        RejectionSite::NamespaceContextValue
+                    } else {
+                        RejectionSite::NamespaceIncompatibleContext
+                    },
                     message,
                     pos.clone(),
-                    Divergence::NamedModuleSurface,
                 );
-            } else {
-                self.error(RuleCode::S100, message, pos.clone());
             }
             return self.err_expr(pos);
         }
@@ -372,15 +372,11 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 };
                 if sig.is_generator || sig.is_async {
-                    self.error(
-                        RuleCode::S100,
-                        if sig.is_async {
+                    self.reject_subset(if sig.is_async { RejectionSite::AsyncFunctionValue } else { RejectionSite::GeneratorFunctionValue }, if sig.is_async {
                             "async functions are not first-class values; call them directly in await position"
                         } else {
                             "generators may only be called, not passed as values"
-                        },
-                        pos.clone(),
-                    );
+                        }, pos.clone());
                     return self.err_expr(pos);
                 }
                 let ty = Type::func(sig.params.iter().map(|p| p.ty.clone()).collect(), sig.ret);
@@ -391,10 +387,10 @@ impl<'p> Checker<'p> {
                 }
             }
             Some(ScopeItem::GenericFunc(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::GenericFunctionValue,
                     format!(
-                        "generic function `{}` requires explicit type arguments",
+                        "generic function `{}` has no first-class value; call it directly or use a lambda",
                         name
                     ),
                     pos.clone(),
@@ -402,40 +398,40 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ClassRuntimeValue,
                     format!("class `{}` used as a value", name),
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::Enum(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::EnumObjectValue,
                     format!("enum `{}` used as a value; use a member", name),
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::TypeAlias(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorTypeAliasValue,
                     format!("type alias `{name}` used as a value"),
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::StringAlias(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::LiteralAliasValue,
                     format!("string-literal union alias `{name}` used as a value"),
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::Foreign(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ForeignFunctionValue,
                     format!("foreign function `{}` may only be called", name),
                     pos.clone(),
                 );
@@ -454,16 +450,15 @@ impl<'p> Checker<'p> {
                         pos,
                     }
                 } else if name == "eval" || name == "Function" {
-                    self.error_diverging(
-                        RuleCode::S002,
+                    self.reject_subset(
+                        RejectionSite::DynamicEvaluatorValue,
                         "no dynamic code evaluation",
                         pos.clone(),
-                        Divergence::DynamicObjectModel,
                     );
                     self.err_expr(pos)
                 } else if name == "Context" {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::ContextValue,
+                        RejectionSite::ContextValue,
                         "`Context` is an ambient namespace, not a value; use \
                          `Context.collect()`, `Context.free(value)`, or await \
                          `Context.suspend()` (Q6/Q7/Q34)",
@@ -493,7 +488,7 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 } else if name == "Number" {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::NumberValue,
+                        RejectionSite::NumberValue,
                         "`Number` is an ambient namespace, not a value or coercion; \
                          use `Number.<member>` (Q25)",
                         pos.clone(),
@@ -501,7 +496,7 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 } else if name == "JSON" {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::JsonValue,
+                        RejectionSite::JsonValue,
                         "`JSON` is an ambient namespace, not a value; use \
                          `JSON.stringify(value)` or `JSON.parse<T>(text)` (Q28)",
                         pos.clone(),
@@ -511,7 +506,7 @@ impl<'p> Checker<'p> {
                     // The ambient Date surface is a type and a namespace,
                     // never a value (Q20).
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::DateValue,
+                        RejectionSite::DateValue,
                         "`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, \
                          and `Date.now()` are accepted (Q20)",
                         pos.clone(),
@@ -519,7 +514,7 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 } else if name == "Map" || name == "Set" {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::MapSetValue,
+                        RejectionSite::MapSetValue,
                         format!(
                             "`{name}` is a generic reference class, not a value; \
                              construct it with explicit type arguments (Q24)"
@@ -528,22 +523,22 @@ impl<'p> Checker<'p> {
                     );
                     self.err_expr(pos)
                 } else if crate::ambient::ambient_fn(&name).is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AmbientFunctionValue,
                         format!("ambient function `{}` may only be called", name),
                         pos.clone(),
                     );
                     self.err_expr(pos)
                 } else if crate::ambient::number_global(&name).is_some() {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::NumberGlobalValue,
+                        RejectionSite::NumberGlobalValue,
                         format!("`{name}` may only be called, not read as a value (Q25)"),
                         pos.clone(),
                     );
                     self.err_expr(pos)
                 } else if name == "isNaN" || name == "isFinite" {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::CoercingGlobalValue,
+                        RejectionSite::CoercingGlobalValue,
                         format!(
                             "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
                         ),
@@ -551,8 +546,12 @@ impl<'p> Checker<'p> {
                     );
                     self.err_expr(pos)
                 } else {
-                    self.error(
-                        RuleCode::S016,
+                    self.reject_subset(
+                        if crate::ambient::lib_value_name(&name) {
+                            RejectionSite::UnknownAmbientValueName
+                        } else {
+                            RejectionSite::UnboundValueName
+                        },
                         format!("unknown name `{}`", name),
                         pos.clone(),
                     );

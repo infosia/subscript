@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     // ----- pass C: bodies -----
@@ -120,8 +121,8 @@ impl<'p> Checker<'p> {
             ast::Decl::Var(v) => {
                 if v.kind == ast::VarDeclKind::Var {
                     let pos = self.pos(v.span);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ModuleVarDeclaration,
                         "`var` is not in the language; use `let` or `const`",
                         pos,
                     );
@@ -155,8 +156,8 @@ impl<'p> Checker<'p> {
                             .0
                         }
                         None => {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::ModuleInitializerMissing,
                                 "module-level variables require an initializer",
                                 pos.clone(),
                             );
@@ -190,18 +191,30 @@ impl<'p> Checker<'p> {
         name: &str,
         exported: bool,
         sig: &FnSig,
-        this: (Option<Type>, Option<Divergence>),
+        this: (Option<Type>, Option<RejectionSite>),
         pos: Pos,
     ) -> Option<hir::Function> {
-        let (this_ty, missing_this_divergence) = this;
+        let (mut this_ty, missing_this_site) = this;
+        let static_this_class = if missing_this_site == Some(RejectionSite::ThisStaticField) {
+            let shape = self.apparent_type(this_ty.as_ref().unwrap_or(&Type::Error));
+            this_ty = None;
+            match shape {
+                Type::Class(id) => Some(id),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let mut fx = FnCtx::new(
             sig.ret.clone(),
             sig.is_generator,
             this_ty,
             self.diags.clone(),
         );
-        fx.frames[0].missing_this_divergence = missing_this_divergence;
+        fx.frames[0].missing_this_site = missing_this_site;
+        fx.frames[0].static_this_class = static_this_class;
         fx.frames[0].is_async = sig.is_async;
+        fx.frames[0].yield_annotated = sig.is_generator && sig.yield_known;
         if sig.is_generator {
             if let Type::Generator(y) = &self.apparent_type(&sig.ret) {
                 if sig.yield_known {
@@ -222,7 +235,23 @@ impl<'p> Checker<'p> {
                 out
             }
             None => {
-                self.error(RuleCode::S100, "function bodies are required", pos.clone());
+                self.reject_subset(
+                    if super::rejection_facts::abstract_method(
+                        &self.prog.files[self.cur_file].module,
+                        f,
+                    ) {
+                        RejectionSite::AbstractMethodBodyMissing
+                    } else if super::rejection_facts::has_function_implementation(
+                        &self.prog.files[self.cur_file].module,
+                        f,
+                    ) {
+                        RejectionSite::FunctionBodyMissing
+                    } else {
+                        RejectionSite::FunctionImplementationMissing
+                    },
+                    "function bodies are required",
+                    pos.clone(),
+                );
                 Vec::new()
             }
         };
@@ -233,11 +262,10 @@ impl<'p> Checker<'p> {
             .map(|(pos, _)| pos.clone())
             .collect::<Vec<_>>();
         for origin in unhandled {
-            self.error_diverging(
-                RuleCode::S013,
+            self.reject_subset(
+                RejectionSite::AsyncHandleUnawaited,
                 "an async handle is dropped without any await of its completion",
                 origin,
-                Divergence::DroppedAsyncHandle,
             );
         }
         let body = if has_dispose_binding(&body) {
@@ -258,7 +286,15 @@ impl<'p> Checker<'p> {
                 && !matches!(self.apparent_type(&sig.ret), Type::Void | Type::Error)
                 && !stmt::always_returns(&body)
             {
-                self.error(RuleCode::S100, "not all paths return a value", pos.clone());
+                self.reject_subset(
+                    if self.ts_return_coverage(&body) {
+                        RejectionSite::FunctionReturnCoverage
+                    } else {
+                        RejectionSite::FunctionReturnPathMissing
+                    },
+                    "not all paths return a value",
+                    pos.clone(),
+                );
             }
             sig.ret.clone()
         };
@@ -345,6 +381,20 @@ impl<'p> Checker<'p> {
             return;
         }
         let this_ty = Type::Class(id);
+        let definite_uninitialized: HashSet<String> = class
+            .body
+            .iter()
+            .filter_map(|member| {
+                let ast::ClassMember::ClassProp(prop) = member else {
+                    return None;
+                };
+                let ast::PropName::Ident(name) = &prop.key else {
+                    return None;
+                };
+                (prop.definite && prop.value.is_none() && !prop.is_static)
+                    .then(|| name.sym.to_string())
+            })
+            .collect();
         let mut earlier_initialized_fields = HashSet::new();
         let mut checked_read_accessors = HashSet::new();
         let mut checked_write_accessors = HashSet::new();
@@ -363,8 +413,7 @@ impl<'p> Checker<'p> {
                         };
                         let pos = self.pos(key.span);
                         let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
-                        fx.frames[0].missing_this_divergence =
-                            Some(Divergence::StaticMemberSurface);
+                        fx.frames[0].missing_this_site = Some(RejectionSite::ThisStaticField);
                         let init = match &prop.value {
                             Some(value) => {
                                 fx.with_synthetic_owner(
@@ -384,8 +433,8 @@ impl<'p> Checker<'p> {
                                 .0
                             }
                             None => {
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    RejectionSite::StaticFieldInitializerMissing,
                                     "static fields require an initializer",
                                     pos.clone(),
                                 );
@@ -422,6 +471,7 @@ impl<'p> Checker<'p> {
                     fx.field_initializer = Some(super::field_initializer::FieldInitializer {
                         class_type: this_ty.clone(),
                         earlier: earlier_initialized_fields.clone(),
+                        definite_uninitialized: definite_uninitialized.clone(),
                         write: false,
                     });
                     let e = fx
@@ -462,12 +512,31 @@ impl<'p> Checker<'p> {
                     };
                     let mut fx =
                         FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
+                    fx.frames[0].super_call_available = class.super_class.is_some();
                     let mut hir_params = Vec::new();
                     let mut patterns = Vec::new();
-                    for (i, p) in ctor.params.iter().enumerate() {
-                        let ast::ParamOrTsParamProp::Param(param) = p else {
-                            continue;
-                        };
+                    for parameter in &ctor.params {
+                        if let ast::ParamOrTsParamProp::TsParamProp(property) = parameter {
+                            match &property.param {
+                                ast::TsParamPropParam::Ident(binding) => {
+                                    self.bind_error_names(&[binding], &mut fx)
+                                }
+                                ast::TsParamPropParam::Assign(assignment) => self.bind_error_names(
+                                    &pattern::collect_names(&assignment.left),
+                                    &mut fx,
+                                ),
+                            }
+                        }
+                    }
+                    for (i, param) in ctor
+                        .params
+                        .iter()
+                        .filter_map(|parameter| match parameter {
+                            ast::ParamOrTsParamProp::Param(param) => Some(param),
+                            _ => None,
+                        })
+                        .enumerate()
+                    {
                         let Some(ps) = sig.params.get(i) else { break };
                         let default = match &param.pat {
                             ast::Pat::Assign(a) => Some(
@@ -588,8 +657,8 @@ impl<'p> Checker<'p> {
                         false,
                         &sig,
                         (
-                            (!method.is_static).then(|| this_ty.clone()),
-                            method.is_static.then_some(Divergence::StaticMemberSurface),
+                            Some(this_ty.clone()),
+                            method.is_static.then_some(RejectionSite::ThisStaticField),
                         ),
                         pos,
                     ) {
@@ -642,6 +711,7 @@ impl<'p> Checker<'p> {
                 spellings.insert(
                     key.sym.to_string(),
                     FieldSpelling {
+                        declared: prop.declare,
                         definite: prop.definite,
                         optional: prop.is_optional,
                         // The declared text, not the resolved type: a
@@ -699,43 +769,58 @@ impl<'p> Checker<'p> {
                 "write `{name}: {declared} = …`, or assign `this.{name} = …` at the top level \
                  of the constructor"
             );
+            let assigned_on_exit = self.classes[id.0].ctor.as_ref().is_some_and(|ctor| {
+                super::rejection_facts::field_on_normal_exit(self, &ctor.body, &name)
+            });
             if spelling.definite {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::FieldDefiniteAssertionUnassigned,
                     format!(
                         "field `{name}` of `{class_name}` asserts with `!` a value that nothing \
                          assigns at the constructor's top level; {spellings}"
                     ),
                     pos,
-                    Divergence::DefiniteAssignmentAssertion,
                 );
             } else if after_return.contains(&name) {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if assigned_on_exit {
+                        RejectionSite::FieldAssignmentAfterUnreachableReturn
+                    } else {
+                        RejectionSite::FieldAssignmentAfterReturnUnassignedExit
+                    },
                     format!(
                         "field `{name}` of `{class_name}` is assigned at the constructor's top \
                          level after a statement that holds a `return`, so the constructor can \
-                         return before the assignment (stock `tsc` answers TS2564); {spellings}, \
+                         return before the assignment; {spellings}, \
                          before every statement that holds a `return`"
                     ),
                     pos,
                 );
             } else if anywhere.contains(&name) {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if assigned_on_exit {
+                        RejectionSite::FieldAssignmentNestedEveryNormalExit
+                    } else {
+                        RejectionSite::FieldAssignmentNestedUnassignedExit
+                    },
                     format!(
                         "field `{name}` of `{class_name}` is assigned inside a nested statement \
                          of the constructor, not at its top level; {spellings}"
                     ),
                     pos,
-                    Divergence::NestedFieldAssignment,
                 );
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if spelling.declared {
+                        RejectionSite::DeclaredFieldWithoutValue
+                    } else if assigned_on_exit {
+                        RejectionSite::FieldAssignmentMissingNoNormalExit
+                    } else {
+                        RejectionSite::FieldAssignmentMissingUnassignedExit
+                    },
                     format!(
                         "field `{name}` of `{class_name}` has no initializer, and no constructor \
-                         statement assigns it (stock `tsc` answers TS2564); {spellings}"
+                         statement assigns it; {spellings}"
                     ),
                     pos,
                 );
@@ -750,8 +835,8 @@ impl<'p> Checker<'p> {
     /// of a field that holds a value at that statement.
     ///
     /// The assignment prefix is the constructor's parameter defaults,
-    /// followed by its top-level statements up to and including the last
-    /// top-level statement that assigns a field rule 1 reaches. A field
+    /// followed by top-level statements through the first statement after
+    /// which every rule-1 field holds a value. A field
     /// holds a value when it has an initializer, or when a top-level
     /// statement earlier in the prefix assigns it. That is rule 2's
     /// notion: a nested assignment does not count, and the statement's
@@ -760,8 +845,9 @@ impl<'p> Checker<'p> {
     /// value.
     ///
     /// Site A is a read of a field that holds no value. Stock `tsc`
-    /// answers TS2565 for the measured forms, so the site carries no
-    /// variant. Site B is a method or an accessor call on `this`, or
+    /// answers TS2565 for some forms; accepted forms also reach this site,
+    /// so section 154 requires its variant. Site B is a method or accessor
+    /// call on `this`, or
     /// `this` as a value; `tsc` accepts those, because its
     /// definite-assignment analysis does not follow a call.
     fn check_this_in_assignment_prefix(
@@ -811,8 +897,17 @@ impl<'p> Checker<'p> {
                 break;
             }
         }
+        let assigned_reads: Vec<bool> = collected
+            .iter()
+            .map(|violation| match &violation.kind {
+                PrefixThis::Read(name) => {
+                    super::rejection_facts::field_held_before_read(&ctor.body, name, &violation.pos)
+                }
+                _ => false,
+            })
+            .collect();
         let class_name = self.classes[id.0].name.clone();
-        for violation in collected {
+        for (violation, flow_assigned) in collected.into_iter().zip(assigned_reads) {
             let PrefixViolation {
                 pos,
                 kind,
@@ -821,8 +916,17 @@ impl<'p> Checker<'p> {
             } = violation;
             let (use_site, advice) = match kind {
                 PrefixThis::Read(name) => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if spellings
+                            .get(&name)
+                            .is_some_and(|spelling| spelling.definite)
+                        {
+                            RejectionSite::ConstructorDefiniteFieldReadBeforeAssignment
+                        } else if flow_assigned {
+                            RejectionSite::ConstructorFieldReadAfterNestedAssignment
+                        } else {
+                            RejectionSite::ConstructorFieldReadUnassigned
+                        },
                         format!(
                             "`this.{name}` reads field `{name}` of `{class_name}` before the \
                              constructor assigns it at its top level; move the read after \
@@ -836,15 +940,14 @@ impl<'p> Checker<'p> {
                 PrefixThis::Value => ("uses `this` as a value", "use"),
             };
             let named = field_list(&first_missing, &other_missing);
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ConstructorThisBeforeFieldValues,
                 format!(
                     "the constructor of `{class_name}` {use_site} before {} {} a value; move the \
                      {advice} after {}, or {}",
                     named.subject, named.verb, named.assignments, named.initializers
                 ),
                 pos,
-                Divergence::ThisBeforeFieldValues,
             );
         }
     }

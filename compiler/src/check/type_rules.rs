@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     /// Renders a type with real class/enum names, for messages.
@@ -249,21 +250,29 @@ impl<'p> Checker<'p> {
 
     /// Emits the rule-specific diagnostic for a failed assignment.
     pub(crate) fn require_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
-        self.require_assignable_with(from, to, pos, what, None);
-    }
-
-    pub(crate) fn require_assignable_with(
-        &mut self,
-        from: &Type,
-        to: &Type,
-        pos: Pos,
-        what: &str,
-        divergence: Option<Divergence>,
-    ) {
         if self.assignable(from, to) {
             return;
         }
-        self.report_not_assignable(from, to, pos, what, divergence);
+        self.report_not_assignable(from, to, pos, what, false);
+    }
+
+    /// Keeps the declaration-initializer fact at an assignment rejection.
+    pub(super) fn require_expr_assignable(
+        &mut self,
+        from: &hir::Expr,
+        to: &Type,
+        fx: &FnCtx,
+        what: &str,
+    ) {
+        if !self.assignable(&from.ty, to) {
+            self.report_not_assignable(
+                &from.ty,
+                to,
+                from.pos.clone(),
+                what,
+                fx.has_nonnull_flow(from),
+            );
+        }
     }
 
     fn report_not_assignable(
@@ -272,7 +281,7 @@ impl<'p> Checker<'p> {
         to: &Type,
         pos: Pos,
         what: &str,
-        divergence: Option<Divergence>,
+        nonnull_initializer: bool,
     ) {
         let from_n = self.type_name(from);
         let to_n = self.type_name(to);
@@ -283,34 +292,56 @@ impl<'p> Checker<'p> {
             }
             _ => false,
         };
+        let from_nominal = match from {
+            Type::Nullable(inner) => inner.as_ref(),
+            other => other,
+        };
+        let to_nominal = match to {
+            Type::Nullable(inner) => inner.as_ref(),
+            other => other,
+        };
         if class_like(from) && class_like(to) {
             let message = format!(
                 "nominal types are not interchangeable: {} expects `{}`, got `{}`",
                 what, to_n, from_n
             );
-            if matches!((from, to), (Type::Class(_), Type::Class(_))) {
-                self.error_diverging(
-                    RuleCode::S005,
+            if matches!(&self.apparent_type(from), Type::Nullable(inner) if **inner == self.apparent_type(to))
+            {
+                self.reject_subset(
+                    if nonnull_initializer {
+                        RejectionSite::NullableNominalAssignmentNonNullFlow
+                    } else {
+                        RejectionSite::NullableNominalAssignment
+                    },
                     message,
                     pos,
-                    Divergence::NominalClassIdentity,
                 );
+            } else if !self.ts_nominal_assignable(from, to) {
+                self.reject_subset(RejectionSite::IncompatibleNominalAssignment, message, pos);
+            } else if matches!((from_nominal, to_nominal), (Type::Class(a), Type::Class(b)) if self.instance_arguments.get(a).zip(self.instance_arguments.get(b)).is_some_and(|((a, _), (b, _))| a == b))
+            {
+                self.reject_subset(RejectionSite::ErasedNominalTypeArguments, message, pos);
+            } else if matches!((from_nominal, to_nominal), (Type::Class(_), Type::Class(_))) {
+                self.reject_subset(RejectionSite::DistinctNominalClassAssignment, message, pos);
             } else {
-                self.error(RuleCode::S005, message, pos);
+                self.reject_subset(
+                    RejectionSite::DistinctNominalContainerAssignment,
+                    message,
+                    pos,
+                );
             }
         } else if from.is_numeric() && to.is_numeric() {
-            self.error_diverging(
-                RuleCode::S007,
+            self.reject_subset(
+                RejectionSite::ImplicitNumericAssignment,
                 format!(
                     "implicit numeric conversion from `{}` to `{}`; spell it `as {}`",
                     from_n, to_n, to_n
                 ),
                 pos,
-                Divergence::SizedOperandWidths,
             );
         } else if self.is_value_class(from) && matches!(to, Type::Nullable(_)) {
-            self.error(
-                RuleCode::S011,
+            self.reject_subset(
+                RejectionSite::NullableValueClassAssignment,
                 format!("value class `{}` cannot be nullable", from_n),
                 pos,
             );
@@ -319,14 +350,42 @@ impl<'p> Checker<'p> {
                 "type mismatch: {} expects `{}`, got `{}`",
                 what, to_n, from_n
             );
-            let divergence = divergence.or_else(|| {
-                matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_)))
-                    .then_some(Divergence::LiteralUnionAlias)
-            });
-            if let Some(divergence) = divergence {
-                self.error_diverging(RuleCode::S100, message, pos, divergence);
+            if matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_))) {
+                let compatible = match (&self.apparent_type(from), &self.apparent_type(to)) {
+                    (Type::StringAlias(a), Type::StringAlias(b)) => self.string_aliases[a.0]
+                        .members
+                        .iter()
+                        .all(|member| self.string_aliases[b.0].members.contains(member)),
+                    _ => false,
+                };
+                self.reject_subset(
+                    if compatible {
+                        RejectionSite::AssignmentLiteralAlias
+                    } else {
+                        RejectionSite::DisjointLiteralAliasAssignment
+                    },
+                    message,
+                    pos,
+                );
             } else {
-                self.error(RuleCode::S100, message, pos);
+                self.reject_subset(
+                    match (&self.apparent_type(from), &self.apparent_type(to)) {
+                        (Type::StringAlias(_), Type::Str) => RejectionSite::LiteralAliasToString,
+                        (Type::Enum(_), integer) if self.apparent_type(integer).is_integer() => {
+                            RejectionSite::EnumToInteger
+                        }
+                        (Type::Array(_), Type::FixedArray(..)) => RejectionSite::ArrayToFixedArray,
+                        (Type::Func(_), Type::Func(_)) if self.ts_erased_assignable(from, to) => {
+                            RejectionSite::FunctionParameterIdentity
+                        }
+                        _ if self.ts_erased_assignable(from, to) => {
+                            RejectionSite::ErasedAssignableTypeMismatch
+                        }
+                        _ => RejectionSite::AssignmentTypeMismatch,
+                    },
+                    message,
+                    pos,
+                );
             }
         }
     }

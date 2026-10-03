@@ -2,7 +2,8 @@
 
 use super::exception::ErrorKind;
 use super::{Checker, FnCtx, ParamSig};
-use crate::diag::{Pos, RuleCode};
+use crate::check::rejection::RejectionSite;
+use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind, TextFn};
 use crate::types::Type;
 use swc_ecma_ast as ast;
@@ -46,13 +47,20 @@ impl Checker<'_> {
         name: &str,
     ) -> hir::Expr {
         if c.type_args.is_some() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::UriCodecTypeArguments,
                 format!("`{name}` is not generic"),
                 pos.clone(),
             );
         }
-        let args = self.check_args(&[ParamSig::positional(Type::Str)], &c.args, fx, &pos, name);
+        let args = self.check_args(
+            RejectionSite::UriCodecArgumentCount,
+            &[ParamSig::positional(Type::Str)],
+            &c.args,
+            fx,
+            &pos,
+            name,
+        );
         let failure = match function {
             TextFn::DecodeUri => TextFn::UriFailure,
             TextFn::DecodeComponent => TextFn::ComponentFailure,

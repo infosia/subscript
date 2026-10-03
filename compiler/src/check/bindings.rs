@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::{diagnostic, RejectionSite};
 
 impl<'p> Checker<'p> {
     /// Reserves the names that declarations own in one statement list.
@@ -10,6 +11,18 @@ impl<'p> Checker<'p> {
             let ast::Stmt::Decl(declaration) = statement else {
                 continue;
             };
+            if let ast::Decl::Fn(function) = declaration {
+                scope.vars.insert(
+                    function.ident.sym.to_string(),
+                    Local {
+                        ty: Type::Error,
+                        mutable: false,
+                        async_origins: HashSet::new(),
+                        caught: false,
+                    },
+                );
+                continue;
+            }
             let declarators = match declaration {
                 ast::Decl::Var(declaration) if declaration.kind != ast::VarDeclKind::Var => {
                     &declaration.decls
@@ -42,7 +55,7 @@ impl<'p> Checker<'p> {
             } else {
                 format!("duplicate declaration of `{name}` in one scope")
             };
-            self.error(RuleCode::S017, message, pos);
+            self.reject_subset(RejectionSite::DuplicateLocalDeclaration, message, pos);
         }
     }
 
@@ -55,7 +68,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
     ) {
         let pos = self.pos(rejection.span);
-        self.error_diverging(RuleCode::S100, rejection.message, pos, rejection.divergence);
+        self.reject_subset(rejection.site, rejection.message, pos);
         self.bind_error_names(&rejection.names, fx);
     }
 
@@ -92,9 +105,13 @@ impl<'p> Checker<'p> {
                 if bindings.iter().all(|binding| matches!(&binding.source,
                     pattern::BindingSource::Field(name) if name == "done" || name == "value")));
             if tsc_accepts {
-                self.error_diverging(RuleCode::S100, message, pos, Divergence::PatternSourceShape);
+                self.reject_subset(
+                    RejectionSite::IteratorBindingUnsupportedMembers,
+                    message,
+                    pos,
+                );
             } else {
-                self.error(RuleCode::S100, message, pos);
+                self.reject_subset(RejectionSite::IteratorBindingUnknownMembers, message, pos);
             }
             return false;
         }
@@ -115,11 +132,16 @@ impl<'p> Checker<'p> {
         if !fits {
             let name = self.type_name(ty);
             let pos = self.pos(pattern.span());
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!(pattern, pattern::Pattern::Array { .. })
+                    && self.apparent_type(ty) == Type::Str
+                {
+                    RejectionSite::BindingPatternSourceKind
+                } else {
+                    RejectionSite::BindingPatternNonIterableSource
+                },
                 format!("{shape}; the source is `{name}`"),
                 pos,
-                Divergence::PatternSourceShape,
             );
         }
         fits
@@ -221,33 +243,14 @@ impl<'p> Checker<'p> {
         self.bind_pattern_from(pattern, &place, mutable, fx, out);
     }
 
-    pub(crate) fn error(&mut self, code: RuleCode, message: impl Into<String>, pos: Pos) {
-        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
-        self.diags.push(Diagnostic::new(code, message, pos));
-    }
-
     pub(super) fn resolution_error(
         &mut self,
-        code: RuleCode,
+        site: RejectionSite,
         message: impl Into<String>,
         pos: Pos,
     ) {
-        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
-        let mut diagnostic = Diagnostic::new(code, message, pos);
+        let mut diagnostic = diagnostic(site, message, pos);
         diagnostic.resolution = true;
-        self.diags.push(diagnostic);
-    }
-
-    pub(crate) fn error_diverging(
-        &mut self,
-        code: RuleCode,
-        message: impl Into<String>,
-        pos: Pos,
-        divergence: Divergence,
-    ) {
-        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
-        let mut diagnostic = Diagnostic::new(code, message, pos);
-        diagnostic.divergence = Some(divergence);
         self.diags.push(diagnostic);
     }
 

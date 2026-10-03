@@ -7,11 +7,17 @@
 //! declarations are registered as templates in pass A/B and
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
+use crate::check::rejection::{diagnostic, RejectionSite};
 mod host_entries;
 mod identity;
 mod init_effects;
 mod init_order;
-mod rejection;
+pub(crate) mod rejection;
+mod rejection_facts;
+#[cfg(test)]
+mod rejection_programs;
+#[cfg(test)]
+mod rejection_regressions;
 #[cfg(test)]
 mod rejection_total;
 pub(crate) use crate::hir::source_name;
@@ -61,7 +67,6 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
-use crate::divergence::Divergence;
 use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
@@ -338,14 +343,14 @@ impl ClassSig {
 #[derive(Debug, Clone, Copy)]
 enum ClassMemberNamespaceEntry {
     Field,
-    Method,
+    Method { has_body: bool },
     Accessor { read: bool, write: bool },
 }
 
 #[derive(Debug, Clone, Copy)]
 enum ClassMemberDeclaration {
     Field,
-    Method,
+    Method { has_body: bool },
     ReadAccessor,
     WriteAccessor,
 }
@@ -465,6 +470,8 @@ pub(crate) struct Local {
 pub(crate) struct Scope {
     pub vars: HashMap<String, Local>,
     pub shared_narrowing_paths: HashMap<String, bool>,
+    /// Non-null initializer, assignment, or terminal-guard facts for diagnostic classification.
+    pub nonnull_flow: HashSet<String>,
     /// Names that declarations later in this scope own.
     pub pending: HashSet<String>,
     /// The first case that declares each name in a switch body.
@@ -511,6 +518,8 @@ fn this_field_assignment(statement: &hir::Stmt) -> Option<&str> {
 /// How one class field is spelled in the source (compiler.md §108.1).
 #[derive(Debug, Clone, Default)]
 struct FieldSpelling {
+    /// A source `declare` field.
+    declared: bool,
     /// The `!` definite-assignment assertion.
     definite: bool,
     /// The `?` optional marker.
@@ -725,10 +734,15 @@ pub(crate) struct Frame {
     pub is_generator: bool,
     pub is_async: bool,
     pub yield_ty: Option<Type>,
+    pub yield_annotated: bool,
     pub is_lambda: bool,
+    /// A lambda obtains void from its contextual signature, without an annotation.
+    pub contextual_void: bool,
     pub captures: Vec<hir::Capture>,
     pub this_ty: Option<Type>,
-    pub missing_this_divergence: Option<Divergence>,
+    pub missing_this_site: Option<RejectionSite>,
+    pub static_this_class: Option<ClassId>,
+    pub super_call_available: bool,
 }
 
 /// Per-body checking state: scope stack, frames, and the narrowing set of
@@ -880,10 +894,14 @@ impl FnCtx {
                 is_generator,
                 is_async: false,
                 yield_ty: None,
+                yield_annotated: false,
                 is_lambda: false,
+                contextual_void: false,
                 captures: Vec::new(),
                 this_ty,
-                missing_this_divergence: None,
+                missing_this_site: None,
+                static_this_class: None,
+                super_call_available: false,
             }],
             scopes: vec![Scope::default()],
             narrowed: HashSet::new(),
@@ -920,12 +938,11 @@ impl FnCtx {
         );
         let mut prefix = self.synthetic_owners.pop().unwrap_or_default();
         if rejects_prefix && !prefix.is_empty() {
-            let mut diagnostic = Diagnostic::new(
-                RuleCode::S100,
+            let diagnostic = diagnostic(
+                RejectionSite::InitializerNonPlaceOptionalReceiver,
                 "a non-place receiver of `??` or `?.` cannot be used in an initializer",
                 pos.clone(),
             );
-            diagnostic.divergence = Some(Divergence::NonPlaceNullishInitializer);
             self.diagnostics.push(diagnostic);
             prefix = SyntheticPrefix::default();
             if let Some(expression) = result.expression_mut() {
@@ -1040,6 +1057,10 @@ pub(crate) struct Checker<'p> {
     pub poisoned_imports: Vec<hir::PoisonedImport>,
     /// Use sites that already report a value use of a type-only import.
     pub type_only_value_uses: HashSet<(usize, u32, u32)>,
+    /// Rejected local names in the active statement scope.
+    pub rejected_local_names: HashSet<String>,
+    /// Rejected mirror module exports, keyed by normalized module name.
+    pub rejected_module_exports: HashMap<String, HashSet<String>>,
     pub cur_file: usize,
     pub subst: HashMap<String, Type>,
     /// Global ambient names contributed by ingested mirror (`.d.ts`)
@@ -1097,7 +1118,7 @@ pub(crate) struct Checker<'p> {
     /// included. `compiler.md` §103.2 rule 4 owns this behaviour.
     pub in_for_of_subject: bool,
     /// The divergence for an aggregate type in the current declaration.
-    pub aggregate_type_divergence: Option<Divergence>,
+    pub aggregate_type_site: Option<RejectionSite>,
     /// Aggregate type annotations whose byte size depends on a class
     /// layout and must therefore be checked after signature resolution.
     pub pending_layouts: Vec<(Type, Pos, &'static str)>,

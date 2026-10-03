@@ -1,6 +1,7 @@
 //! The active generic instance chain (compiler.md §140).
 
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 /// An edge from a requesting parameter to one requested argument (§140 rule 1).
 #[derive(Clone)]
@@ -233,11 +234,10 @@ impl<'p> Checker<'p> {
                 source_name(key), render(&self.instance_chain[index].args), render(args), self.type_name(&args[position]),
             );
             let first = self.diags.len();
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GenericInstanceExpansionLimit,
                 message,
                 pos.clone(),
-                Divergence::GrowingInstanceChain,
             );
             if let (Some(start), Some(end)) = (
                 arguments.positions.get(position),

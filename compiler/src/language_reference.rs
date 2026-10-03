@@ -115,7 +115,6 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r141-value-class-write-accessor.ts",
             "corpus/reject/r142-readonly-accessor-write.ts",
             "corpus/reject/r145-accessor-write-as-value.ts",
-            "corpus/reject/r146-accessor-field-name-clash.ts",
             "corpus/reject/r173-compound-write-as-value.ts",
         ],
     },

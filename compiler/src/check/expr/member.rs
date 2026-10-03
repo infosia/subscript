@@ -1,11 +1,11 @@
 //! Checks member reads and index reads.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, Callee, ExprKind, MapFn, RegexFn, SetFn};
 use crate::types::Type;
 
@@ -13,7 +13,7 @@ use super::path_key;
 
 impl<'p> Checker<'p> {
     pub(super) fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
-        self.check_member_read_inner(m, fx, false)
+        self.check_member_read_inner(m, fx, false, false)
     }
 
     pub(super) fn check_member_read_inner(
@@ -21,9 +21,13 @@ impl<'p> Checker<'p> {
         m: &ast::MemberExpr,
         fx: &mut FnCtx,
         allow_absence_test: bool,
+        truth_test: bool,
     ) -> hir::Expr {
         let pos = self.pos(m.span);
-        // TypeScript also rejects arithmetic on an optional descriptor member.
+        if self.reject_static_this_member(m, fx) {
+            return self.err_expr(pos);
+        }
+        // Classify optional descriptor arithmetic before checking this.
         if let Some(default_type) = &fx.descriptor_default {
             if let Type::Class(class) = self.apparent_type(default_type) {
                 if fx.descriptor_numeric_operand
@@ -32,9 +36,21 @@ impl<'p> Checker<'p> {
                         .fields.iter().any(|field| field.name == name.sym.as_ref()
                             && (field.is_defaulted || field.is_absence_capable)))
                 {
-                    self.error(
-                        RuleCode::S100,
-                        "§147 rule 3a: `this` is forbidden in a descriptor member default; arithmetic on an optional member also fails with TS2532",
+                    let string_member = if let ast::MemberProp::Ident(name) = &m.prop {
+                        self.classes[class.0].fields.iter().any(|field| {
+                            field.name == name.sym.as_ref()
+                                && self.apparent_type(&field.ty) == Type::Str
+                        })
+                    } else {
+                        false
+                    };
+                    self.reject_subset(
+                        if string_member {
+                            RejectionSite::DescriptorDefaultThisArithmetic
+                        } else {
+                            RejectionSite::DescriptorDefaultOptionalNumericOperand
+                        },
+                        "§147 rule 3a: `this` is forbidden in a descriptor member default",
                         self.pos(m.obj.span()),
                     );
                     return self.err_expr(pos);
@@ -70,13 +86,23 @@ impl<'p> Checker<'p> {
                     let message = format!("§147 rule 2: `this.{}` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden", name.sym);
                     let this_pos = self.pos(m.obj.span());
                     if is_field {
-                        self.error(RuleCode::S100, message, this_pos);
-                    } else {
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if initializer
+                                .definite_uninitialized
+                                .contains(name.sym.as_ref())
+                            {
+                                RejectionSite::FieldInitializerUninitializedRead
+                            } else {
+                                RejectionSite::FieldInitializerDeclaredRead
+                            },
                             message,
                             this_pos,
-                            Divergence::ThisInFieldInitializer,
+                        );
+                    } else {
+                        self.reject_subset(
+                            RejectionSite::FieldInitializerSelfRead,
+                            message,
+                            this_pos,
                         );
                     }
                     return self.err_expr(pos);
@@ -117,23 +143,18 @@ impl<'p> Checker<'p> {
                     return handled;
                 }
                 let obj = self.check_receiver(&m.obj, fx);
-                let mut expr = self.member_on(obj, &name, prop_pos, false);
+                let mut expr = self.member_on_context(obj, &name, prop_pos, false, truth_test);
                 self.apply_narrowing(&mut expr, fx);
                 let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
                 if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
-                    self.error_diverging(
-                        RuleCode::S100,
-                        "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`",
-                        expr.pos.clone(),
-                        Divergence::OptionalDescriptorMember,
-                    );
+                    self.reject_subset(RejectionSite::DescriptorAbsentMemberRead, "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`", expr.pos.clone());
                     expr.ty = Type::Error;
                 }
                 expr
             }
             ast::MemberProp::PrivateName(_) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::PrivateMemberRead,
                     "private names are not in the decided surface",
                     pos.clone(),
                 );
@@ -187,8 +208,8 @@ impl<'p> Checker<'p> {
             Type::Array(t) => {
                 if !self.assignable(&index.ty, &Type::I32) {
                     let name = self.type_name(&index.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArrayIndexNotInt,
                         format!("array indices are `i32`, got `{}`", name),
                         index.pos.clone(),
                     );
@@ -198,16 +219,16 @@ impl<'p> Checker<'p> {
             Type::FixedArray(t, n) => {
                 if !self.assignable(&index.ty, &Type::I32) {
                     let name = self.type_name(&index.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::FixedArrayIndexNotInt,
                         format!("array indices are `i32`, got `{}`", name),
                         index.pos.clone(),
                     );
                 }
                 if let ExprKind::Int(k) = index.kind {
                     if k < 0 || k >= i64::from(*n) {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::FixedArrayConstantIndexBounds,
                             format!("index {} out of bounds for FixedArray length {}", k, n),
                             index.pos.clone(),
                         );
@@ -218,8 +239,8 @@ impl<'p> Checker<'p> {
             Type::Error => Type::Error,
             other => {
                 let name = self.type_name(other);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::NonIndexableReceiver,
                     format!("type `{}` is not indexable", name),
                     pos.clone(),
                 );
@@ -246,23 +267,33 @@ impl<'p> Checker<'p> {
         prop_pos: Pos,
         for_write: bool,
     ) -> hir::Expr {
+        self.member_on_context(obj, name, prop_pos, for_write, false)
+    }
+
+    fn member_on_context(
+        &mut self,
+        obj: hir::Expr,
+        name: &str,
+        prop_pos: Pos,
+        for_write: bool,
+        truth_test: bool,
+    ) -> hir::Expr {
         // §143 rule 1a: a member read on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).
         if name != "prototype" && self.is_unconstrained_type_parameter(&obj.ty) {
             let type_name = self.type_name(&obj.ty);
-            self.error(
-                RuleCode::S018,
+            self.reject_subset(
+                RejectionSite::ValueClassMemberMissing,
                 format!("`{type_name}` has no member `{name}`"),
                 prop_pos.clone(),
             );
             return self.err_expr(prop_pos);
         }
         if name == "prototype" {
-            self.error_diverging(
-                RuleCode::S003,
+            self.reject_subset(
+                if matches!(self.apparent_type(&obj.ty), Type::Class(id) if self.classes[id.0].fields.iter().any(|field| field.name == name)) { RejectionSite::InstancePrototypeMember } else { RejectionSite::InstancePrototypeMissing },
                 "no prototype mutation",
                 prop_pos.clone(),
-                Divergence::DynamicObjectModel,
             );
             return self.err_expr(prop_pos);
         }
@@ -302,8 +333,8 @@ impl<'p> Checker<'p> {
                 }
                 if self.class_sigs[id.0].has_accessor(name) {
                     let Some(sig) = self.class_sigs[id.0].methods.get(name) else {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ReadSetterOnlyAccessor,
                             format!("read accessor `{name}` has no checker signature"),
                             prop_pos.clone(),
                         );
@@ -326,18 +357,18 @@ impl<'p> Checker<'p> {
                 if !self.class_sigs[id.0].has_member(name)
                     && self.class_sigs[id.0].has_static_member(name)
                 {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
+                    self.reject_subset(RejectionSite::InstanceStaticMemberRead, format!(
                             "`{class_name}.{name}` is static and must be accessed through the class name"
-                        ),
-                        prop_pos.clone(),
-                    );
+                        ), prop_pos.clone());
                     return self.err_expr(prop_pos);
                 }
                 if for_write {
-                    self.error(
-                        RuleCode::S004,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::ClassObjectMemberWrite
+                        } else {
+                            RejectionSite::ClassUndeclaredPropertyWrite
+                        },
                         format!(
                             "nominal types are closed: `{}` has no property `{}`",
                             class_name, name
@@ -345,32 +376,28 @@ impl<'p> Checker<'p> {
                         prop_pos.clone(),
                     );
                 } else if let Some(sig) = self.class_sigs[id.0].methods.get(name) {
-                    self.error(
-                        RuleCode::S100,
-                        if sig.is_async {
+                    self.reject_subset(if truth_test { RejectionSite::MethodValueTruthTest } else if sig.is_async { RejectionSite::AsyncMethodValue } else { RejectionSite::SynchronousMethodValue }, if sig.is_async {
                             format!(
                                 "async method `{name}` is not a first-class value; call it directly in await position"
                             )
                         } else {
                             format!("method `{name}` may only be called, not read as a value")
-                        },
-                        prop_pos.clone(),
-                    );
+                        }, prop_pos.clone());
                 } else if let Some(template) = self.class_sigs[id.0].generic_methods.get(name) {
-                    self.error(
-                        RuleCode::S100,
-                        if template.function.is_async {
+                    self.reject_subset(if truth_test { RejectionSite::MethodValueTruthTest } else if template.function.is_async { RejectionSite::GenericAsyncMethodValue } else { RejectionSite::GenericSynchronousMethodValue }, if template.function.is_async {
                             format!(
                                 "async method `{name}` is not a first-class value; call it directly in await position"
                             )
                         } else {
                             format!("method `{name}` may only be called, not read as a value")
-                        },
-                        prop_pos.clone(),
-                    );
+                        }, prop_pos.clone());
                 } else {
-                    self.error(
-                        RuleCode::S018,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::ClassObjectMemberRead
+                        } else {
+                            RejectionSite::ClassUndeclaredMemberRead
+                        },
                         format!("`{}` has no member `{}`", class_name, name),
                         prop_pos.clone(),
                     );
@@ -394,8 +421,8 @@ impl<'p> Checker<'p> {
                             || name == "pop"
                             || crate::ambient::arr_method(name).is_some())
                     {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ArrayMethodValue,
                             format!("method `{}` may only be called, not read as a value", name),
                             prop_pos.clone(),
                         );
@@ -405,8 +432,8 @@ impl<'p> Checker<'p> {
                 } else if !for_write
                     && crate::ambient::arr_method(name).is_some_and(|f| f.fixed_symbol().is_some())
                 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::FixedArrayMethodValue,
                         format!("method `{name}` may only be called, not read as a value"),
                         prop_pos.clone(),
                     );
@@ -418,8 +445,12 @@ impl<'p> Checker<'p> {
                         prop_pos.clone(),
                     );
                 } else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::FixedArrayObjectMember
+                        } else {
+                            RejectionSite::FixedArrayUnknownMember
+                        },
                         format!(
                             "`{}` is outside the FixedArray surface (length, indexing, \
                              and the Q27 callback family)",
@@ -442,16 +473,20 @@ impl<'p> Checker<'p> {
                     };
                 }
                 if !for_write && crate::ambient::map_method(name).is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::MapMethodValue,
                         format!("method `{name}` may only be called, not read as a value"),
                         prop_pos.clone(),
                     );
                 } else if let Some(rejection) = crate::ambient::map_rejection(name) {
                     self.emit_api_rejection(rejection, name, prop_pos.clone());
                 } else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::MapObjectMember
+                        } else {
+                            RejectionSite::MapUnknownMember
+                        },
                         format!("`Map` has no accepted member `{name}` (Q24)"),
                         prop_pos.clone(),
                     );
@@ -470,16 +505,20 @@ impl<'p> Checker<'p> {
                     };
                 }
                 if !for_write && crate::ambient::set_method(name).is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::SetMethodValue,
                         format!("method `{name}` may only be called, not read as a value"),
                         prop_pos.clone(),
                     );
                 } else if let Some(rejection) = crate::ambient::set_rejection(name) {
                     self.emit_api_rejection(rejection, name, prop_pos.clone());
                 } else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::SetObjectMember
+                        } else {
+                            RejectionSite::SetUnknownMember
+                        },
                         format!("`Set` has no accepted member `{name}` (Q24)"),
                         prop_pos.clone(),
                     );
@@ -498,8 +537,8 @@ impl<'p> Checker<'p> {
                 // (stdlib.md §8): the accepted members beyond `length`
                 // are all methods.
                 if !for_write && crate::ambient::str_method(name).is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::StringMethodValue,
                         format!("method `{}` may only be called, not read as a value", name),
                         prop_pos.clone(),
                     );
@@ -541,20 +580,20 @@ impl<'p> Checker<'p> {
                     format!("`RegExp` has no accepted member `{name}`")
                 };
                 if matches!(name, "lastIndex" | "exec") {
+                    self.reject_subset(RejectionSite::RegexMember, message, prop_pos.clone());
+                } else {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::RegexMember,
+                        RejectionSite::GeneratorResultDoneWrite,
                         message,
                         prop_pos.clone(),
                     );
-                } else {
-                    self.error(RuleCode::S100, message, prop_pos.clone());
                 }
                 self.err_expr(prop_pos)
             }
             Type::IterResult(v) => {
                 if for_write {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GeneratorResultValueWrite,
                         "coroutine step results are read-only",
                         prop_pos.clone(),
                     );
@@ -578,8 +617,12 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     },
                     _ => {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if super::is_object_member(name) {
+                                RejectionSite::GeneratorResultObjectMember
+                            } else {
+                                RejectionSite::GeneratorResultUnknownMember
+                            },
                             format!(
                                 "`{}` is not part of the coroutine step result \
                                  ({{ done, value }})",
@@ -596,7 +639,7 @@ impl<'p> Checker<'p> {
                 // (stdlib.md §3): the accepted members are all methods.
                 if for_write {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::DateMemberWrite,
+                        RejectionSite::DateMemberWrite,
                         format!(
                             "`Date` is an immutable value; `{}` cannot be assigned (Q20)",
                             name
@@ -607,7 +650,7 @@ impl<'p> Checker<'p> {
                     || crate::ambient::date_method(name).is_some()
                 {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::DateMethodValue,
+                        RejectionSite::DateMethodValue,
                         format!("`{}` may only be called, not read as a value (Q20)", name),
                         prop_pos.clone(),
                     );
@@ -623,7 +666,7 @@ impl<'p> Checker<'p> {
                 );
                 if known {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::NumberMethodValue,
+                        RejectionSite::NumberMethodValue,
                         format!(
                             "numeric method `{name}` may only appear in an accepted call \
                              (Number formatting on f32/f64; Q25/Q26)"
@@ -631,8 +674,12 @@ impl<'p> Checker<'p> {
                         prop_pos.clone(),
                     );
                 } else {
-                    self.error(
-                        RuleCode::S018,
+                    self.reject_subset(
+                        if super::is_object_member(name) {
+                            RejectionSite::NumericObjectMember
+                        } else {
+                            RejectionSite::NumericUnknownMember
+                        },
                         format!("`{}` has no member `{name}`", self.type_name(&ty)),
                         prop_pos.clone(),
                     );
@@ -640,8 +687,12 @@ impl<'p> Checker<'p> {
                 self.err_expr(prop_pos)
             }
             Type::Object => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if super::is_object_member(name) {
+                        RejectionSite::BoundaryObjectMember
+                    } else {
+                        RejectionSite::BoundaryUnknownMember
+                    },
                     "`object` is boundary-opaque; narrow it with `as` before member access",
                     prop_pos.clone(),
                 );
@@ -649,8 +700,15 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let type_name = self.type_name(&other);
-                self.error(
-                    RuleCode::S018,
+                self.reject_subset(
+                    match self.apparent_type(&other) {
+                        Type::Bool => RejectionSite::BooleanMember,
+                        Type::Func(_) => RejectionSite::FunctionMember,
+                        Type::Generator(_) => RejectionSite::GeneratorMember,
+                        Type::Enum(_) => RejectionSite::EnumMember,
+                        Type::StringAlias(_) => RejectionSite::LiteralAliasMember,
+                        _ => RejectionSite::InvalidReceiverMember,
+                    },
                     format!("`{}` has no member `{}`", type_name, name),
                     prop_pos.clone(),
                 );

@@ -1,6 +1,7 @@
 //! The entry module owns the host API (compiler.md §129).
 
 use super::*;
+use crate::check::rejection::{diagnostic, RejectionSite};
 
 pub(super) fn entry_file(prog: &ParsedProgram) -> Result<Option<usize>, Vec<Diagnostic>> {
     let named: Vec<_> = prog
@@ -23,8 +24,8 @@ pub(super) fn entry_file(prog: &ParsedProgram) -> Result<Option<usize>, Vec<Diag
         [] => "a program with multiple source files must name its entry module",
         _ => "a program must name exactly one entry module",
     };
-    Err(vec![Diagnostic::new(
-        RuleCode::S100,
+    Err(vec![diagnostic(
+        RejectionSite::InvalidProgramEntry,
         message,
         Pos::new(
             named
@@ -123,12 +124,11 @@ pub(super) fn populate(
             ),
             _ => "the entry module exports functions only".to_owned(),
         };
-        let mut diagnostic = Diagnostic::new(
-            RuleCode::S100,
+        let diagnostic = diagnostic(
+            RejectionSite::HostEntrySignatureMismatch,
             format!("entry export `{name}`: {reason}"),
             pos,
         );
-        diagnostic.divergence = Some(Divergence::HostApiSurface);
         errors.push(diagnostic);
     }
     errors

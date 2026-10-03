@@ -1,6 +1,7 @@
 //! Whole-program capture and parameter escape facts (compiler.md §118).
+use crate::check::rejection::{diagnostic, RejectionSite};
 use crate::hir::{self, ArrFn, Callee, Expr, ExprKind as E, HirChild, MapFn, SetFn, Stmt};
-use crate::{Diagnostic, RuleCode, Type};
+use crate::{Diagnostic, Type};
 use std::collections::{HashMap, HashSet};
 
 type Env = HashMap<String, usize>;
@@ -434,19 +435,18 @@ impl<'a> Analysis<'a> {
         let mut diagnostics = Vec::new();
         for (kind, e) in &self.escapes {
             if self.fact(e) {
-                let mut d = Diagnostic::new(
-                    RuleCode::S009,
+                let d = diagnostic(
+                    RejectionSite::CaptureEffectEscapes,
                     format!("{} may capture at {kind}", value_name(self.module, e)),
                     e.pos.clone(),
                 );
-                d.divergence = Some(crate::divergence::Divergence::EscapingCapture);
                 diagnostics.push(d);
             }
         }
         for (callee, p, e) in &self.calls {
             if self.escaping.contains(&(*p as *const hir::Param as usize)) && self.fact(e) {
-                let mut d = Diagnostic::new(
-                    RuleCode::S009,
+                let d = diagnostic(
+                    RejectionSite::CaptureEffectArgument,
                     format!(
                         "call `{callee}` parameter `{}` requires a clean argument; {} may capture",
                         p.name,
@@ -454,7 +454,6 @@ impl<'a> Analysis<'a> {
                     ),
                     e.pos.clone(),
                 );
-                d.divergence = Some(crate::divergence::Divergence::EscapingCapture);
                 diagnostics.push(d);
             }
         }

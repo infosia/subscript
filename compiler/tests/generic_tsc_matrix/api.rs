@@ -298,7 +298,7 @@ pub(super) fn cells() -> Vec<Cell> {
                     } else if api.name == "Worker.spawn" {
                         Some(Divergence {
                             code: RuleCode::S100,
-                            record: "compiler.md §40",
+                            record: "compiler.md §40.1",
                             message:
                                 "`Worker.spawn` entry must name a module-level function directly",
                             token: "`entry` is a directly named module-level",
@@ -306,9 +306,9 @@ pub(super) fn cells() -> Vec<Cell> {
                     } else if matches!(api.owner.as_str(), "Worker" | "Inbox" | "Outbox") {
                         Some(Divergence {
                             code: RuleCode::S100,
-                            record: "compiler.md §40",
+                            record: "stdlib.md §16.2",
                             message: "worker message type",
-                            token: "Message classes are transferable per stdlib §16.2",
+                            token: "A message type is a plain reference class",
                         })
                     } else if matches!(api.name.as_str(), "Context.bytesOf" | "Context.bytesInto")
                         && position == 0
@@ -316,13 +316,13 @@ pub(super) fn cells() -> Vec<Cell> {
                     {
                         Some(Divergence {
                             code: RuleCode::S100,
-                            record: "stdlib.md §18.1",
+                            record: "Q3",
                             message: if api.name == "Context.bytesOf" {
                                 "type mismatch: `Context.bytesOf` argument expects"
                             } else {
                                 "type mismatch: `Context.bytesInto` argument expects"
                             },
-                            token: "The argument `value` has type `T` (nominal equality)",
+                            token: "enforces length and element type",
                         })
                     } else if api.name == "Context.free" && (role == "array" || role == "value") {
                         Some(Divergence {

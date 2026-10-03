@@ -1,6 +1,7 @@
 //! Resolves namespace qualifiers to ordinary imported declaration bindings.
 
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     /// Creates a private lookup key for the exported declaration identity.
@@ -19,7 +20,11 @@ impl<'p> Checker<'p> {
         let item = item.unwrap_or_else(|| {
             if module.is_some() {
                 self.resolution_error(
-                    RuleCode::S016,
+                    if member.sym.as_ref() == "default" {
+                        RejectionSite::NamespaceUnexportedMember
+                    } else {
+                        RejectionSite::NamespaceMemberMissing
+                    },
                     format!("`{}` is not exported by `{source}`", member.sym),
                     self.pos(member.span),
                 );

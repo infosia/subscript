@@ -654,11 +654,6 @@ s065.ts	json.rs:114 check_json_call		S014
 `JSON.stringify` cannot serialize `RegExp`; P13 accepts sized numerics except f16, boolean, string, Date, arrays, @ValueType values, reference classes, and Ref | null
 export function main(): void { JSON.stringify(/x/); }
 ===
-s066.ts	json.rs:130 check_json_call				R3: json_serializable admits only helper types; collect_json_types includes every child and root.
-
-class Box { value: i32 = 1; next: Box | null = null; }
-export function main(): void { JSON.stringify(new Box()); }
-===
 s067.ts	json.rs:157 check_json_parse		S014		
 `JSON.parse` expects exactly 1 argument, got 2
 export function main(): void { const v = JSON.parse("1", (k: string, value: i32): i32 => value); }
@@ -682,11 +677,6 @@ export function main(): void { JSON.parse("1"); }
 s071.ts	json.rs:251 check_json_parse		S014		
 `JSON.parse` cannot deserialize `Map<i32, i32>`; Q28 accepts sized numerics except f16, boolean, string, arrays, @ValueType values, reference classes, and Ref | null
 export function main(): void { JSON.parse<Map<i32, i32>>("{}"); }
-===
-s072.ts	json.rs:266 check_json_parse				R4: serializable, Error, and Date guards admit only parser types; graph closure makes lookups total.
-
-class Box { value: i32 = 1; next: Box | null = null; }
-export function main(): void { JSON.parse<Box>("{}"); }
 ===
 s073.ts	json.rs:293 reject_json_error_type		S014		
 `JSON.stringify` cannot accept `Error`: the Error classes are not JSON types

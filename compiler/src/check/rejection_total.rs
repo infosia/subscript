@@ -1,4 +1,4 @@
-//! Total witness check for compiler.md §153.
+//! Total witness check for compiler.md §153 and §154.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
-use super::rejection::RejectionSite;
+use super::rejection::{RejectionClass, RejectionSite};
+use super::rejection_programs;
 use crate::diag::{Diagnostic, Pos};
 use crate::divergence::Divergence;
 use crate::{check_program, SourceFile};
@@ -25,15 +26,18 @@ pub(super) fn record_site(site: RejectionSite, message: &str, pos: &Pos) {
 fn all_sites() -> Vec<RejectionSite> {
     crate::ambient::rejected_api()
         .into_iter()
-        .map(RejectionSite::Api)
+        .map(|row| RejectionSite::Api(row.id, row.divergence))
         .chain(index::DIRECT_SITES.iter().copied())
+        .chain(index::GENERAL_SITES.iter().copied())
         .collect()
 }
 
 fn carried_variants() -> Vec<Divergence> {
     let mut variants = Vec::new();
     for site in all_sites() {
-        let variant = site.divergence();
+        let Some(variant) = site.class().1.divergence() else {
+            continue;
+        };
         if !variants.contains(&variant) {
             variants.push(variant);
         }
@@ -42,6 +46,22 @@ fn carried_variants() -> Vec<Divergence> {
 }
 
 fn fragment_files(variant: Divergence, source: &str) -> Vec<SourceFile> {
+    if source.starts_with("// file: ") {
+        return source
+            .split("// file: ")
+            .skip(1)
+            .map(|part| {
+                let (name, body) = part.split_once('\n').unwrap();
+                if name.ends_with(".d.ts") {
+                    SourceFile::ambient(name, body)
+                } else if name == "main.ts" {
+                    SourceFile::entry(name, body)
+                } else {
+                    SourceFile::new(name, body)
+                }
+            })
+            .collect();
+    }
     if variant == Divergence::MirrorParameterPattern {
         vec![
             SourceFile::ambient(
@@ -57,9 +77,29 @@ fn fragment_files(variant: Divergence, source: &str) -> Vec<SourceFile> {
 
 fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> Vec<String> {
     let mut failures = Vec::new();
-    let diagnostics = check_program(&fragment_files(variant, ts))
-        .err()
-        .unwrap_or_default();
+    let files = fragment_files(variant, ts);
+    // The discovery guard reads the absent-module option, not only source syntax.
+    let options = crate::CheckOptions {
+        poison_missing_modules: if matches!(
+            variant,
+            Divergence::PoisonedDefaultImport | Divergence::NamespaceImportTargetMissingForm
+        ) {
+            vec![
+                "s154_fragment_poison_default".to_owned(),
+                "./missing".to_owned(),
+            ]
+        } else {
+            Vec::new()
+        },
+        ..crate::CheckOptions::default()
+    };
+    let diagnostics = match crate::check_program_with(&files, &options) {
+        Ok(module) if variant == Divergence::RunnerMainMissing => {
+            module.runner_main().err().into_iter().collect()
+        }
+        Ok(_) => Vec::new(),
+        Err(diagnostics) => diagnostics,
+    };
     if !diagnostics
         .iter()
         .any(|diagnostic| diagnostic.divergence == Some(variant))
@@ -174,19 +214,22 @@ fn checker_failures(witness: &Witness<'_>, site: RejectionSite) -> Vec<String> {
 fn diagnostic_failures(
     target: &str,
     diagnostic: &Diagnostic,
-    expected: Divergence,
+    expected: Option<Divergence>,
     files: &[SourceFile],
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    if diagnostic.divergence != Some(expected) {
+    if diagnostic.divergence != expected {
         failures.push(format!(
             "{target}: variant {:?}, expected {:?}",
             diagnostic.divergence, expected
         ));
     }
     let rendered = crate::render_diagnostics(files, std::slice::from_ref(diagnostic));
-    if !rendered.contains("= TypeScript accepts:") {
+    if expected.is_some() && !rendered.contains("= TypeScript accepts:") {
         failures.push(format!("{target}: divergence block absent"));
+    }
+    if expected.is_none() && rendered.contains("= TypeScript accepts:") {
+        failures.push(format!("{target}: TscRejects diagnostic renders a block"));
     }
     failures
 }
@@ -211,6 +254,7 @@ fn table_failures(witnesses: &[Witness<'_>], sites: &[RejectionSite]) -> Vec<Str
             ));
         }
     }
+    let programs = rejection_programs::programs();
     let listed: BTreeSet<_> = sites
         .iter()
         .flat_map(|site| index::witness_entry(*site).files().iter().copied())
@@ -227,11 +271,12 @@ fn table_failures(witnesses: &[Witness<'_>], sites: &[RejectionSite]) -> Vec<Str
         let entry = index::witness_entry(*site);
         let (_, variant) = entry.key();
         for key in entry.files() {
-            if !witnesses.iter().any(|w| w.file == *key) {
+            if !witnesses.iter().any(|w| w.file == *key) && !programs.iter().any(|p| p.key == *key)
+            {
                 failures.push(format!("{site:?}: named target has no witness {key}"));
             }
         }
-        if site.divergence() != variant {
+        if site.class().1.divergence() != variant {
             failures.push(format!(
                 "{site:?}: production variant disagrees with witness table"
             ));
@@ -240,7 +285,7 @@ fn table_failures(witnesses: &[Witness<'_>], sites: &[RejectionSite]) -> Vec<Str
     failures
 }
 
-fn class_controls() -> [Witness<'static>; 2] {
+fn class_controls() -> [Witness<'static>; 3] {
     [
         Witness {
             file: "control-accepted.ts",
@@ -260,11 +305,20 @@ fn class_controls() -> [Witness<'static>; 2] {
             message: "",
             source: "export {}; const value: string = \"x\";",
         },
+        Witness {
+            file: "control-tsc-rejects.ts",
+            target: "control",
+            codes: BTreeSet::new(),
+            code: "S011",
+            mirror: "",
+            message: "",
+            source: "export {}; const value:i32|null=1;",
+        },
     ]
 }
 
 /// One tsc process measures all witnesses and every carried TypeScript fragment.
-/// This test costs 0.41 seconds: tsc 0.28 seconds and checker 0.07 seconds.
+/// Warm cargo test reports `finished in 1.54s`: tsc 0.573s and checker 0.459s.
 /// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -273,17 +327,28 @@ fn every_subset_rejection_carries_its_divergence() {
         .parent()
         .unwrap()
         .to_path_buf();
+    let _pinned_tsc = tsc::tsc_binary(&root);
     let temporary = std::env::temp_dir().join(format!("subscript-s153-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();
     let witnesses = witnesses();
+    let programs = rejection_programs::programs();
     let mut failures = Vec::new();
     failures.extend(table_failures(&witnesses, &all_sites()));
     let mut paths = vec![root.join("prelude/lang.d.ts")];
     for variant in carried_variants() {
-        let path = temporary.join(format!("fragment-{variant:?}.ts"));
-        let source = format!("export {{}};\n{}", variant.entry().ts);
-        fs::write(&path, source).unwrap();
-        paths.push(path);
+        let mut files = fragment_files(variant, variant.entry().ts);
+        // Each single-file snippet is an isolated TypeScript module.
+        if files.len() == 1 {
+            files[0].source = format!("export {{}};\n{}", files[0].source);
+        }
+        let program = rejection_programs::Program {
+            key: format!("fragment-{variant:?}.ts"),
+            codes: BTreeSet::new(),
+            files,
+            poison: Vec::new(),
+            runner: false,
+        };
+        paths.extend(rejection_programs::write_tsc(&program, &temporary));
     }
     let controls = class_controls();
     for witness in witnesses.iter().chain(&controls) {
@@ -302,30 +367,46 @@ fn every_subset_rejection_carries_its_divergence() {
         fs::write(&path, source).unwrap();
         paths.push(path);
     }
+    for program in &programs {
+        paths.extend(rejection_programs::write_tsc(program, &temporary));
+    }
+    let script = temporary.join("tsc-batch.cjs");
+    fs::write(&script, include_str!("rejection_tsc.cjs")).unwrap();
     let config = temporary.join("tsconfig.json");
     fs::write(&config, tsc::tsconfig(&paths)).unwrap();
     let tsc_started = Instant::now();
-    let result = Command::new(tsc::tsc_binary(&root))
-        .args(["--project", config.to_str().unwrap(), "--pretty", "false"])
+    let result = Command::new("node")
+        .arg(&script)
+        .arg(root.join("node_modules/typescript"))
+        .arg(&config)
         .current_dir(&root)
         .output()
         .unwrap();
     let tsc_cost = tsc_started.elapsed();
     let output = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        result.status.success(),
+        "tsc failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let mut measured = BTreeMap::<String, BTreeSet<String>>::new();
-    for line in output.lines().filter(|line| line.contains("error TS")) {
-        let (position, diagnostic) = line.split_once("): error ").unwrap();
-        let file = position.rsplit_once('(').unwrap().0;
-        let name = std::path::Path::new(file)
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let code = diagnostic.split_once(':').unwrap().0;
+    for line in output.lines() {
+        let (file, code) = line.split_once('\t').unwrap();
         measured
-            .entry(name.to_owned())
+            .entry(file.to_owned())
             .or_default()
             .insert(code.to_owned());
+    }
+    for program in &programs {
+        let codes = measured
+            .remove(&format!("@{}", program.key))
+            .unwrap_or_default();
+        if codes != program.codes {
+            failures.push(format!(
+                "{}: tsc {:?}, expected {:?}",
+                program.key, codes, program.codes
+            ));
+        }
     }
     for witness in &witnesses {
         let mut codes = measured.remove(witness.file).unwrap_or_default();
@@ -339,6 +420,16 @@ fn every_subset_rejection_carries_its_divergence() {
     // Construct both false class claims; the same tsc batch measures their sources.
     for control in &controls {
         let codes = measured.remove(control.file).unwrap_or_default();
+        if control.file == "control-tsc-rejects.ts" {
+            assert!(tsc_class_failure(control, &codes).is_none());
+            assert!(site_class_failure(
+                "control",
+                RejectionSite::ClassUndeclaredMemberRead.class().1,
+                &codes
+            )
+            .is_some());
+            continue;
+        }
         assert!(tsc_class_failure(control, &codes).is_some());
         if control.file == "control-accepted.ts" {
             assert!(fragment_tsc_failure(control.file, &codes).is_some());
@@ -346,7 +437,7 @@ fn every_subset_rejection_carries_its_divergence() {
     }
     for variant in carried_variants() {
         let name = format!("fragment-{variant:?}.ts");
-        let codes = measured.remove(&name).unwrap_or_default();
+        let codes = measured.remove(&format!("@{name}")).unwrap_or_default();
         if let Some(failure) = fragment_tsc_failure(&name, &codes) {
             failures.push(failure);
         }
@@ -364,6 +455,7 @@ fn every_subset_rejection_carries_its_divergence() {
             }
         }
     }
+    failures.extend(general_checker_failures(&programs));
     for variant in carried_variants() {
         let entry = variant.entry();
         failures.extend(fragment_checker_failures(
@@ -373,8 +465,8 @@ fn every_subset_rejection_carries_its_divergence() {
         ));
     }
     eprintln!(
-        "s153: {} witnesses; {} variants; tsc {:.3}s; checker {:.3}s; total {:.3}s",
-        witnesses.len(),
+        "s154: {} witnesses; {} variants; tsc {:.3}s; checker {:.3}s; total {:.3}s",
+        witnesses.len() + programs.len(),
         carried_variants().len(),
         tsc_cost.as_secs_f64(),
         checker_started.elapsed().as_secs_f64(),
@@ -479,9 +571,11 @@ fn production_variant_mismatch_fires() {
         divergence: Divergence::DateSubset,
         ..crate::ambient::rejected_api()[0]
     };
-    assert!(table_failures(&witnesses(), &[RejectionSite::Api(row)])
-        .iter()
-        .any(|failure| failure.contains("production variant disagrees")));
+    assert!(
+        table_failures(&witnesses(), &[RejectionSite::Api(row.id, row.divergence)])
+            .iter()
+            .any(|failure| failure.contains("production variant disagrees"))
+    );
 }
 
 #[test]
@@ -514,50 +608,54 @@ fn rejected_subscript_fragment_fires() {
     );
 }
 
-fn outside_s014_constructor(source: &str) -> bool {
+fn outside_site_map(source: &str) -> bool {
     let production = source.split("#[cfg(test)]\nmod tests").next().unwrap();
-    production.contains("RuleCode::S014")
+    production.contains("RuleCode::")
 }
 
 #[test]
-fn outside_s014_constructor_fires() {
-    assert!(outside_s014_constructor(
-        "fn reject() { error(RuleCode::S014); }"
-    ));
+fn outside_code_literal_fires() {
+    assert!(outside_site_map("fn reject() { error(RuleCode::S100); }"));
+    assert!(outside_site_map("fn reject() { error(RuleCode::S001); }"));
 }
 
 #[test]
-fn s014_has_one_checker_constructor() {
+fn every_code_has_one_site_map() {
     fn visit(path: &std::path::Path, failures: &mut Vec<String>) {
         for entry in fs::read_dir(path).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 visit(&path, failures);
             } else if path.extension().is_some_and(|extension| extension == "rs")
-                && path.file_name().unwrap() != "rejection.rs"
-                && !["rejection_total.rs", "rejection_witness_index.rs"]
+                && !["rejection.rs", "rejection_total.rs"]
                     .contains(&path.file_name().unwrap().to_str().unwrap())
+                && outside_site_map(&fs::read_to_string(&path).unwrap())
             {
-                let source = fs::read_to_string(&path).unwrap();
-                // Checker files put inline tests after their production items.
-                if outside_s014_constructor(&source) {
-                    failures.push(path.display().to_string());
-                }
+                failures.push(path.display().to_string());
             }
         }
     }
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut failures = Vec::new();
-    visit(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/check"),
-        &mut failures,
-    );
+    visit(&source_root.join("check"), &mut failures);
+    for file in [
+        "parse.rs",
+        "provenance.rs",
+        "regex.rs",
+        "lib.rs",
+        "ambient.rs",
+        "hir/host_entry.rs",
+    ] {
+        if outside_site_map(&fs::read_to_string(source_root.join(file)).unwrap()) {
+            failures.push(file.to_owned());
+        }
+    }
     assert!(
         failures.is_empty(),
-        "S014 constructors outside rejection.rs: {failures:?}"
+        "code literals outside rejection.rs: {failures:?}"
     );
-    let source = include_str!("rejection.rs");
-    let body = source
-        .split("pub(super) enum RejectionSite {")
+    let body = include_str!("rejection_sites.rs")
+        .split("pub(crate) enum RejectionSite {")
         .nth(1)
         .unwrap()
         .split("\n}")
@@ -571,10 +669,284 @@ fn s014_has_one_checker_constructor() {
         .collect();
     let listed: BTreeSet<_> = index::DIRECT_SITES
         .iter()
+        .chain(index::GENERAL_SITES)
         .map(|site| format!("{site:?}"))
         .collect();
     assert_eq!(
         declared, listed,
         "every direct site must enter the total check"
     );
+}
+
+#[test]
+fn tsc_rejects_diagnostic_with_block_fires() {
+    let files = [SourceFile::entry(
+        "control.ts",
+        "export {}; const value:i32=1;",
+    )];
+    let diagnostic = Diagnostic {
+        divergence: Some(Divergence::CompilerOwnedValue),
+        ..super::rejection::diagnostic(
+            RejectionSite::NullableMember,
+            "control",
+            Pos::new("control.ts", 1, 1),
+        )
+    };
+    let failures = diagnostic_failures("control", &diagnostic, None, &files);
+    assert!(failures
+        .iter()
+        .any(|failure| failure.contains("TscRejects diagnostic renders a block")));
+}
+
+pub(super) fn clear_reached() {
+    REACHED.with_borrow_mut(Vec::clear);
+}
+
+pub(super) fn take_reached() -> Vec<(RejectionSite, String, Pos)> {
+    REACHED.with_borrow_mut(std::mem::take)
+}
+
+fn general_checker_failures(programs: &[rejection_programs::Program]) -> Vec<String> {
+    let targets: Vec<_> = include_str!("rejection_targets.txt")
+        .lines()
+        .map(|line| {
+            let fields: Vec<_> = line.splitn(4, '\t').collect();
+            (fields[0], fields[1], fields[2], fields[3])
+        })
+        .collect();
+    let mut failures = target_site_failures(targets.iter().map(|row| row.0));
+    for program in programs {
+        clear_reached();
+        let diagnostics = rejection_programs::check(program);
+        let reached = take_reached();
+        if let Some(failure) = accepted_first_diagnostic_failure(program, &diagnostics) {
+            failures.push(failure);
+        }
+        for site in index::GENERAL_SITES.iter().copied().filter(|site| {
+            index::witness_entry(*site)
+                .files()
+                .contains(&program.key.as_str())
+        }) {
+            let name = format!("{site:?}");
+            let expected = index::witness_key(site).1;
+            let Some((_, _, code, message)) = targets
+                .iter()
+                .find(|(target, key, _, _)| *target == name && *key == program.key)
+            else {
+                failures.push(format!(
+                    "{name}: {}: target expectation absent",
+                    program.key
+                ));
+                continue;
+            };
+            let Some(diagnostic) = diagnostics
+                .iter()
+                .filter(|d| d.code.as_str() == *code && d.message == *message)
+                .find(|d| {
+                    reached.iter().any(|(actual, message, pos)| {
+                        *actual == site && message == &d.message && pos == &d.pos
+                    })
+                })
+                .or_else(|| {
+                    diagnostics
+                        .iter()
+                        .find(|d| d.code.as_str() == *code && d.message == *message)
+                })
+            else {
+                failures.push(format!(
+                    "{name}: {}: target message absent: {message}",
+                    program.key
+                ));
+                continue;
+            };
+            if !reached.iter().any(|(actual, message, pos)| {
+                *actual == site && *message == diagnostic.message && *pos == diagnostic.pos
+            }) {
+                failures.push(format!("{name}: {}: named target absent", program.key));
+            }
+            if tsc_rejects_target_is_follow_on(
+                site.class().1,
+                &diagnostics,
+                diagnostic,
+                &program.files,
+            ) {
+                failures.push(format!(
+                    "{name}: {}: TscRejects witness first diagnostic is elsewhere: {}",
+                    program.key,
+                    source_first_diagnostic(&diagnostics, &program.files)
+                        .unwrap()
+                        .message
+                ));
+            }
+            failures.extend(diagnostic_failures(
+                &name,
+                diagnostic,
+                expected,
+                &program.files,
+            ));
+            if let Some(failure) = site_class_failure(&name, site.class().1, &program.codes) {
+                failures.push(failure);
+            }
+        }
+    }
+    for site in index::GENERAL_SITES {
+        let entry = index::witness_entry(*site);
+        if site.class().0.as_str() != "S014"
+            && entry.key().1.is_some()
+            && !entry.files().is_empty()
+            && !entry
+                .files()
+                .iter()
+                .any(|key| programs.iter().any(|p| p.key == *key && p.codes.is_empty()))
+        {
+            failures.push(format!(
+                "{site:?}: Diverges site has no tsc-accepted witness"
+            ));
+        }
+    }
+    failures
+}
+
+fn site_class_failure(
+    target: &str,
+    class: RejectionClass,
+    codes: &BTreeSet<String>,
+) -> Option<String> {
+    (class == RejectionClass::TscRejects && codes.is_empty())
+        .then(|| format!("{target}: TscRejects witness is accepted by tsc"))
+}
+
+#[test]
+fn rejection_names_state_guards_without_source_line_numbers() {
+    let has_number = |name: &str| {
+        name.as_bytes()
+            .windows(2)
+            .any(|part| part[0].is_ascii_alphabetic() && part[1].is_ascii_digit())
+    };
+    for site in all_sites() {
+        if matches!(site, RejectionSite::Api(..)) {
+            continue;
+        }
+        assert!(!has_number(&format!("{site:?}")), "{site:?}");
+    }
+    for variant in Divergence::ALL {
+        assert!(!has_number(&format!("{variant:?}")), "{variant:?}");
+    }
+}
+
+fn tsc_rejects_target_is_follow_on(
+    class: RejectionClass,
+    diagnostics: &[Diagnostic],
+    target: &Diagnostic,
+    files: &[SourceFile],
+) -> bool {
+    class == RejectionClass::TscRejects
+        && source_first_diagnostic(diagnostics, files).is_some_and(|first| first != target)
+}
+
+#[test]
+fn tsc_rejects_follow_on_witness_fires() {
+    let first = super::rejection::diagnostic(
+        RejectionSite::UnknownClassConstructor,
+        "unknown class",
+        Pos::new("main.ts", 1, 1),
+    );
+    let later = super::rejection::diagnostic(
+        RejectionSite::NullableMember,
+        "nullable",
+        Pos::new("main.ts", 2, 1),
+    );
+    let diagnostics = vec![later.clone(), first.clone()];
+    assert!(tsc_rejects_target_is_follow_on(
+        RejectionClass::TscRejects,
+        &diagnostics,
+        &later,
+        &[],
+    ));
+    assert!(!tsc_rejects_target_is_follow_on(
+        RejectionClass::TscRejects,
+        &diagnostics,
+        &first,
+        &[],
+    ));
+    assert!(!tsc_rejects_target_is_follow_on(
+        RejectionClass::Diverges(Divergence::NullableMemberNonNullFlow),
+        &diagnostics,
+        &later,
+        &[],
+    ));
+}
+
+fn source_first_diagnostic<'a>(
+    diagnostics: &'a [Diagnostic],
+    files: &[SourceFile],
+) -> Option<&'a Diagnostic> {
+    diagnostics.iter().min_by_key(|diagnostic| {
+        (
+            files
+                .iter()
+                .position(|file| file.name == diagnostic.pos.file)
+                .unwrap_or(usize::MAX),
+            diagnostic.pos.line,
+            diagnostic.pos.col,
+        )
+    })
+}
+
+fn target_site_failures<'a>(targets: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let sites: BTreeSet<_> = all_sites().iter().map(|site| format!("{site:?}")).collect();
+    targets
+        .into_iter()
+        .filter(|target| !sites.contains(*target))
+        .map(|target| format!("{target}: target row names no site"))
+        .collect()
+}
+
+#[test]
+fn target_row_without_site_fires() {
+    assert_eq!(
+        target_site_failures(["UnknownTarget"]),
+        ["UnknownTarget: target row names no site"]
+    );
+    assert!(target_site_failures(["RestParameter"]).is_empty());
+}
+
+fn accepted_first_diagnostic_failure(
+    program: &rejection_programs::Program,
+    diagnostics: &[Diagnostic],
+) -> Option<String> {
+    if !program.codes.is_empty() {
+        return None;
+    }
+    let first = source_first_diagnostic(diagnostics, &program.files)?;
+    first.divergence.is_none().then(|| {
+        format!(
+            "first diagnostic: {}: tsc accepts but the first diagnostic has no block: {}",
+            program.key, first.message
+        )
+    })
+}
+
+#[test]
+fn accepted_first_diagnostic_without_block_fires_in_source_order() {
+    let program = rejection_programs::Program {
+        key: "control".to_owned(),
+        codes: BTreeSet::new(),
+        files: vec![SourceFile::entry("main.ts", "")],
+        poison: vec![],
+        runner: false,
+    };
+    let first = super::rejection::diagnostic(
+        RejectionSite::NullableMember,
+        "earlier nullable read",
+        Pos::new("main.ts", 1, 1),
+    );
+    let later = super::rejection::diagnostic(
+        RejectionSite::RestParameter,
+        "later rest parameter",
+        Pos::new("main.ts", 2, 1),
+    );
+    let failure = accepted_first_diagnostic_failure(&program, &[later.clone(), first]).unwrap();
+    assert!(failure.ends_with("earlier nullable read"));
+    assert!(accepted_first_diagnostic_failure(&program, &[later]).is_none());
 }

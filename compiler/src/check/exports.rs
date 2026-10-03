@@ -1,6 +1,7 @@
 //! Named export dependencies and declaration identities (compiler.md §128).
 
 use super::*;
+use crate::check::rejection::{diagnostic, RejectionSite};
 
 #[derive(Clone)]
 pub(super) struct ExportBinding {
@@ -41,8 +42,8 @@ impl Checker<'_> {
             if !previous.re_export && !binding.re_export {
                 return; // The module scope owns declaration duplicates.
             }
-            self.error(
-                RuleCode::S017,
+            self.reject_subset(
+                RejectionSite::DuplicateDirectExport,
                 format!("duplicate export name `{name}`"),
                 binding.pos,
             );
@@ -70,19 +71,18 @@ impl Checker<'_> {
 
     pub(super) fn collect_named_exports(&mut self, file: usize, export: &ast::NamedExport) {
         if self.prog.files[file].dts {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::MirrorExportList,
                 "export lists are outside the mirror surface",
                 self.pos(export.span),
             );
             return;
         }
         if export.type_only {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::TypeOnlyExportDeclaration,
                 "type-only exports are outside the named module surface",
                 self.pos(export.span),
-                Divergence::NamedModuleSurface,
             );
         }
         let unsupported_form =
@@ -99,7 +99,7 @@ impl Checker<'_> {
                     .contains(&normalize_module_specifier(&source.value))
                 {
                     self.resolution_error(
-                        RuleCode::S100,
+                        RejectionSite::ExportSourceModuleMissing,
                         format!(
                             "export source module `{}` is not among the program's files",
                             source.value
@@ -111,11 +111,10 @@ impl Checker<'_> {
         }
         for specifier in &export.specifiers {
             let ast::ExportSpecifier::Named(named) = specifier else {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ExportSpecifierKind,
                     "the module surface requires named exports",
                     self.pos(specifier.span()),
-                    Divergence::NamedModuleSurface,
                 );
                 continue;
             };
@@ -123,11 +122,10 @@ impl Checker<'_> {
             let exported = named.exported.as_ref().unwrap_or(&named.orig);
             let unsupported = unsupported_export_specifier(specifier);
             if unsupported && !export.type_only {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::TypeOnlyOrDefaultExportSpecifier,
                     "type-only and default exports are outside the named module surface",
                     self.pos(named.span),
-                    Divergence::NamedModuleSurface,
                 );
             }
             // §134 rule 5: a local re-export of a type-only import is a
@@ -136,14 +134,9 @@ impl Checker<'_> {
                 && export.src.is_none()
                 && binds_type_only_import(&self.prog.files[file].module, &name);
             if type_only_local {
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!(
+                self.reject_subset(RejectionSite::TypeOnlyImportReexport, format!(
                         "`{name}` was imported with `import type`; its re-export is a type-only export, outside the named module surface"
-                    ),
-                    self.pos(named.orig.span()),
-                    Divergence::NamedModuleSurface,
-                );
+                    ), self.pos(named.orig.span()));
             }
             let target = if unsupported_form || missing_source || type_only_local {
                 ExportTarget::Declaration(ScopeItem::Poisoned)
@@ -159,8 +152,8 @@ impl Checker<'_> {
             // The imported name locates S016; the exported name locates S017.
             let exported_name = exported.atom().to_string();
             if self.export_definitions[file].contains_key(&exported_name) {
-                self.error(
-                    RuleCode::S017,
+                self.reject_subset(
+                    RejectionSite::DuplicateAliasedExport,
                     format!("duplicate export name `{exported_name}`"),
                     self.pos(exported.span()),
                 );
@@ -255,7 +248,9 @@ impl Checker<'_> {
             }
         }
         for diagnostic in resolved.failures.into_values() {
-            self.resolution_error(diagnostic.code, diagnostic.message, diagnostic.pos);
+            let mut diagnostic = diagnostic;
+            diagnostic.resolution = true;
+            self.diags.push(diagnostic);
         }
     }
 
@@ -289,8 +284,8 @@ impl Checker<'_> {
                 .join(" -> ");
             return resolved.fail(
                 origin.0,
-                Diagnostic::new(
-                    RuleCode::S016,
+                diagnostic(
+                    RejectionSite::ExportAliasCycle,
                     format!("export alias chain reaches no declaration: {chain}"),
                     self.export_definitions[origin.0][&origin.1].pos.clone(),
                 ),
@@ -310,11 +305,10 @@ impl Checker<'_> {
                             matches!(specifier, ast::ImportSpecifier::Namespace(ns) if ns.local.sym.as_ref() == local)))
                 });
                 if namespace {
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ReexportSpecifierKind,
                         "the module surface requires named exports",
                         binding.pos.clone(),
-                        Divergence::NamedModuleSurface,
                     );
                     ScopeItem::Poisoned
                 } else if let Some(binding) = self.file_scopes[*file].get(local) {
@@ -324,8 +318,8 @@ impl Checker<'_> {
                 } else {
                     resolved.fail(
                         *file,
-                        Diagnostic::new(
-                            RuleCode::S016,
+                        diagnostic(
+                            RejectionSite::ExportLocalMissing,
                             format!(
                                 "`{local}` is not defined in `{}`",
                                 self.prog.files[*file].name
@@ -363,12 +357,19 @@ impl Checker<'_> {
             // Missing module statements own their diagnostics, including imports.
             return ScopeItem::Poisoned;
         };
+        if self
+            .rejected_module_exports
+            .get(&stem)
+            .is_some_and(|names| names.contains(name))
+        {
+            return ScopeItem::Poisoned;
+        }
         if !self.export_definitions[file].contains_key(name) {
             if let Some((file, pos)) = origin {
                 return resolved.fail(
                     file,
-                    Diagnostic::new(
-                        RuleCode::S016,
+                    diagnostic(
+                        RejectionSite::ReexportMemberMissing,
                         format!("`{name}` is not exported by `{module}`"),
                         pos.clone(),
                     ),

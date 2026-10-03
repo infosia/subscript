@@ -9,8 +9,8 @@
 //! members, and final padding are all included in their applicable
 //! bound.
 
-use crate::diag::{Diagnostic, Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::check::rejection::{diagnostic, RejectionSite};
+use crate::diag::{Diagnostic, Pos};
 use crate::hir;
 use crate::types::{
     scalar_size_align, HandleClass, HandleKind, Type, CRANELIFT_FRAME_ALIGNMENT,
@@ -261,15 +261,14 @@ impl<'a> Validator<'a> {
             let natural_align = align;
             if let Some(override_) = &class.alignment_override {
                 if u64::from(override_.value) < natural_align {
-                    let mut diagnostic = Diagnostic::new(
-                        RuleCode::S100,
+                    let diagnostic = diagnostic(
+                        RejectionSite::ClassAlignmentBelowNatural,
                         format!(
                             "requested alignment {} is below the natural alignment {} for `{}`",
                             override_.value, natural_align, class.name
                         ),
                         override_.pos.clone(),
                     );
-                    diagnostic.divergence = Some(Divergence::ValueClassLayout);
                     self.diagnostics.push(diagnostic);
                 }
                 align = align.max(u64::from(override_.value));
@@ -281,8 +280,8 @@ impl<'a> Validator<'a> {
                         .fields
                         .last()
                         .map_or_else(|| class.pos.clone(), |field| field.pos.clone());
-                    self.diagnostics.push(Diagnostic::new(
-                        RuleCode::S100,
+                    self.diagnostics.push(diagnostic(
+                        RejectionSite::ClassFinalAlignmentLimit,
                         format!(
                             "`{}` layout exceeds the supported aggregate limit of {} bytes \
                              after final alignment",
@@ -301,8 +300,8 @@ impl<'a> Validator<'a> {
     }
 
     fn class_too_large(&mut self, class: &hir::ClassDef, field: &hir::Field) {
-        let mut diagnostic = Diagnostic::new(
-            RuleCode::S100,
+        let diagnostic = diagnostic(
+            RejectionSite::ClassFieldLayoutLimit,
             format!(
                 "`{}` layout exceeds the supported aggregate limit of {} bytes \
                  while placing field `{}`",
@@ -310,7 +309,6 @@ impl<'a> Validator<'a> {
             ),
             field.pos.clone(),
         );
-        diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
         self.diagnostics.push(diagnostic);
     }
 
@@ -366,8 +364,12 @@ impl<'a> Validator<'a> {
         let final_size =
             end.and_then(|end| raw_round_up(end, u64::from(CRANELIFT_FRAME_ALIGNMENT)));
         if final_size.is_none_or(|size| size > u64::from(MAX_FRAME_BYTES)) {
-            self.diagnostics.push(Diagnostic::new(
-                RuleCode::S100,
+            self.diagnostics.push(diagnostic(
+                if description == "local aggregate storage" {
+                    RejectionSite::LocalAggregateFrameLimit
+                } else {
+                    RejectionSite::AggregateArgumentFrameLimit
+                },
                 format!(
                     "{description} makes the accumulated Cranelift stack frame exceed \
                      the supported frame limit of {MAX_FRAME_BYTES} bytes"
@@ -410,8 +412,11 @@ impl<'a> Validator<'a> {
             let next = raw_round_up(*end, layout.align.max(1))
                 .and_then(|offset| offset.checked_add(layout.size.max(1)));
             let Some(next) = next.filter(|size| *size <= limit()) else {
-                let mut diagnostic = Diagnostic::new(RuleCode::S100, what.to_string(), pos.clone());
-                diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
+                let diagnostic = diagnostic(
+                    RejectionSite::SuspendFrameMemberLayoutLimit,
+                    what.to_string(),
+                    pos.clone(),
+                );
                 failure.replace(Some(diagnostic));
                 return false;
             };
@@ -498,15 +503,14 @@ impl<'a> Validator<'a> {
                 })
             {
                 if failure.borrow().is_none() {
-                    let mut diagnostic = Diagnostic::new(
-                        RuleCode::S100,
+                    let diagnostic = diagnostic(
+                        RejectionSite::AsyncChildFrameLayoutLimit,
                         format!(
                             "async frame layout exceeds the supported aggregate limit of \
                              {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
                         ),
                         function.pos.clone(),
                     );
-                    diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
                     failure.replace(Some(diagnostic));
                 }
                 report_failure(&mut self.diagnostics);
@@ -514,15 +518,14 @@ impl<'a> Validator<'a> {
             }
         }
         if raw_round_up(end, 8).is_none_or(|size| size > limit()) {
-            let mut diagnostic = Diagnostic::new(
-                RuleCode::S100,
+            let diagnostic = diagnostic(
+                RejectionSite::GeneratorFrameFinalAlignmentLimit,
                 format!(
                     "generator frame layout exceeds the supported aggregate limit of \
                      {MAX_AGGREGATE_BYTES} bytes after final alignment"
                 ),
                 last_pos.clone(),
             );
-            diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
             self.diagnostics.push(diagnostic);
         }
     }
@@ -533,15 +536,14 @@ impl<'a> Validator<'a> {
         }
         let layout = self.sequence_layout(0, captures.iter().map(|capture| &capture.ty), 1);
         if layout.is_none() {
-            let mut diagnostic = Diagnostic::new(
-                RuleCode::S100,
+            let diagnostic = diagnostic(
+                RejectionSite::ClosureEnvironmentLayoutLimit,
                 format!(
                     "closure environment layout exceeds the supported aggregate limit of \
                      {MAX_AGGREGATE_BYTES} bytes"
                 ),
                 pos.clone(),
             );
-            diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
             self.diagnostics.push(diagnostic);
         }
         layout
@@ -582,13 +584,7 @@ impl<'a> Validator<'a> {
 
     fn add_type_slot(&mut self, frame: &mut FrameBudget, ty: &Type, description: &str, pos: &Pos) {
         if let Outcome::Layout(layout) = self.type_layout(ty) {
-            let before = self.diagnostics.len();
             self.add_frame_slot(frame, layout, description, pos);
-            if description == "local aggregate storage" {
-                for diagnostic in self.diagnostics.iter_mut().skip(before) {
-                    diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
-                }
-            }
         }
     }
 
@@ -862,15 +858,14 @@ impl<'a> Validator<'a> {
     ) -> Vec<Diagnostic> {
         for (ty, pos, description) in pending {
             if matches!(self.type_layout(ty), Outcome::TooLarge) {
-                let mut diagnostic = Diagnostic::new(
-                    RuleCode::S100,
+                let diagnostic = diagnostic(
+                    RejectionSite::StoredAggregateLayoutLimit,
                     format!(
                         "{description} exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes"
                     ),
                     pos.clone(),
                 );
-                diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
                 self.diagnostics.push(diagnostic);
             }
         }

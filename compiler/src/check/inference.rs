@@ -3,6 +3,7 @@
 use super::*;
 use crate::check::expr::unparen_expr;
 use crate::check::instance_chain::ParameterEdge;
+use crate::check::rejection::RejectionSite;
 
 fn deferred_literal(expr: &ast::Expr) -> bool {
     match unparen_expr(expr) {
@@ -127,9 +128,9 @@ impl<'p> Checker<'p> {
             let has_null = values.contains(&Type::Null);
             let mut values = values.into_iter().filter(|value| *value != Type::Null);
             let Some(mut inferred) = values.next() else {
-                self.error_diverging(RuleCode::S100, format!(
+                self.reject_subset(if call.args.len() < template.function.params.iter().take_while(|p| !matches!(p.pat, ast::Pat::Assign(_))).count() { RejectionSite::GenericInferenceRequiredArgumentMissing } else { RejectionSite::GenericInferenceNoCandidate }, format!(
                     "cannot infer type parameter `{parameter}` of `{}`: no candidate; use explicit type arguments",
-                    source_name(key)), pos.clone(), crate::divergence::Divergence::GenericInferenceMissing);
+                    source_name(key)), pos.clone());
                 return None;
             };
             for candidate in values {
@@ -146,9 +147,9 @@ impl<'p> Checker<'p> {
                     _ => None,
                 };
                 let Some(joined) = joined else {
-                    self.error_diverging(RuleCode::S100, format!(
+                    self.reject_subset(if self.apparent_type(&inferred).is_numeric() && self.apparent_type(&candidate).is_numeric() { RejectionSite::GenericInferenceConflictingCandidates } else { RejectionSite::GenericInferenceIncompatibleKinds }, format!(
                         "cannot infer type parameter `{parameter}` of `{}`: conflicting candidates `{}` and `{}`; use explicit type arguments",
-                        source_name(key), self.type_name(&inferred), self.type_name(&candidate)), pos.clone(), crate::divergence::Divergence::GenericInferenceCandidates);
+                        source_name(key), self.type_name(&inferred), self.type_name(&candidate)), pos.clone());
                     return None;
                 };
                 inferred = joined;

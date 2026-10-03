@@ -1,13 +1,13 @@
 //! Checks call expressions, method calls, argument lists, and `new`.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{
     source_name, static_member_symbol, Checker, ContainerSlot, FnCtx, ParamSig, ScopeItem,
 };
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{
     self, AmbientFn, AsyncCallee, Callee, ContextBytesFn, ExprKind, MapFn, NumFn, SetFn, WorkerFn,
 };
@@ -22,11 +22,46 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let ast::Callee::Expr(callee) = &c.callee else {
-            self.error(
-                RuleCode::S100,
-                "call form outside the decided surface",
-                pos.clone(),
-            );
+            let site = match &c.callee {
+                ast::Callee::Super(_)
+                    if c.type_args.is_none()
+                        && fx
+                            .frames
+                            .last()
+                            .is_some_and(|frame| frame.super_call_available) =>
+                {
+                    RejectionSite::SuperConstructorCall
+                }
+                ast::Callee::Super(_) => RejectionSite::NonExpressionCalleeUnavailable,
+                ast::Callee::Import(_) => {
+                    let missing_target =
+                        c.args
+                            .first()
+                            .is_some_and(|argument| match &*argument.expr {
+                                ast::Expr::Lit(ast::Lit::Str(path)) => {
+                                    !self.prog.files.iter().any(|file| {
+                                        file.stem
+                                            == crate::check::normalize_module_specifier(
+                                                path.value.as_ref(),
+                                            )
+                                    })
+                                }
+                                ast::Expr::Lit(_) => true,
+                                _ => false,
+                            });
+                    if c.type_args.is_some()
+                        || c.args.is_empty()
+                        || c.args.len() > 2
+                        || missing_target
+                    {
+                        RejectionSite::NonExpressionCalleeUnavailable
+                    } else {
+                        RejectionSite::DynamicImportCall
+                    }
+                }
+                ast::Callee::Expr(_) => RejectionSite::NonExpressionCalleeUnavailable,
+            };
+            self.reject_subset(site, "call form outside the decided surface", pos.clone());
             return self.err_expr(pos);
         };
         let mut callee: &ast::Expr = callee;
@@ -64,8 +99,8 @@ impl<'p> Checker<'p> {
         if c.type_args.is_some()
             && matches!(item, Some(ScopeItem::Func(_)) | Some(ScopeItem::Foreign(_)))
         {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::NonGenericFunctionTypeArguments,
                 format!("`{}` is not generic", name),
                 ident_pos.clone(),
             );
@@ -98,32 +133,32 @@ impl<'p> Checker<'p> {
                 self.check_indirect_call(callee, c, fx, pos)
             }
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ClassCalledWithoutNew,
                     format!("`{}` is a class; construct it with `new`", name),
                     ident_pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::Enum(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::EnumCalled,
                     format!("enum `{}` is not callable", name),
                     ident_pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::TypeAlias(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MirrorTypeAliasCalled,
                     format!("type alias `{name}` used as a value"),
                     ident_pos.clone(),
                 );
                 self.err_expr(pos)
             }
             Some(ScopeItem::StringAlias(_)) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::LiteralAliasCalled,
                     format!("string-literal union alias `{name}` is not callable"),
                     ident_pos.clone(),
                 );
@@ -134,11 +169,10 @@ impl<'p> Checker<'p> {
                     return self.check_uri_call(function, c, fx, pos, &name);
                 }
                 if name == "eval" {
-                    self.error_diverging(
-                        RuleCode::S002,
+                    self.reject_subset(
+                        RejectionSite::DynamicEvaluatorCalled,
                         "no dynamic code evaluation",
                         pos.clone(),
-                        Divergence::DynamicObjectModel,
                     );
                     return self.err_expr(pos);
                 }
@@ -160,19 +194,22 @@ impl<'p> Checker<'p> {
                 }
                 if let Some(ambient) = crate::ambient::ambient_fn(&name) {
                     if ambient == AmbientFn::Unreachable && !unreachable_statement {
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::UnreachableExpressionValue,
                             "`unreachable()` is only legal as a call statement",
                             pos.clone(),
-                            Divergence::UnreachableInValuePosition,
                         );
                         let _ = self.check_ambient_call(ambient, c, fx, pos.clone());
                         return self.err_expr(pos);
                     }
                     return self.check_ambient_call(ambient, c, fx, pos);
                 }
-                self.error(
-                    RuleCode::S016,
+                self.reject_subset(
+                    if crate::ambient::lib_callable_name(&name) {
+                        RejectionSite::UnknownFunctionName
+                    } else {
+                        RejectionSite::UnboundFunctionName
+                    },
                     format!("unknown function `{}`", name),
                     ident_pos,
                 );
@@ -203,8 +240,15 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         if sig.is_async {
-            let args =
-                self.check_args_with_arguments(&sig.params, &c.args, fx, &pos, fn_name, checked);
+            let args = self.check_args_with_arguments(
+                RejectionSite::SourceFunctionArgumentCount,
+                &sig.params,
+                &c.args,
+                fx,
+                &pos,
+                fn_name,
+                checked,
+            );
             let origin = fx.register_async_origin(pos.clone());
             return hir::Expr {
                 kind: ExprKind::AsyncHandleCreate {
@@ -217,8 +261,8 @@ impl<'p> Checker<'p> {
             };
         }
         if sig.is_generator && !sig.yield_known {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GeneratorYieldTypeNotKnown,
                 format!(
                     "generator `{}` is called before its yield type is known; \
                      declare it earlier in the program",
@@ -228,7 +272,15 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let args = self.check_args_with_arguments(&sig.params, &c.args, fx, &pos, fn_name, checked);
+        let args = self.check_args_with_arguments(
+            RejectionSite::ForeignFunctionArgumentCount,
+            &sig.params,
+            &c.args,
+            fx,
+            &pos,
+            fn_name,
+            checked,
+        );
         let value = hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(hir::Symbol::from_full_text(fn_name)),
@@ -254,7 +306,14 @@ impl<'p> Checker<'p> {
         let Some(sig) = self.foreign_sigs.get(name).cloned() else {
             return self.err_expr(pos);
         };
-        let args = self.check_args(&sig.params, &c.args, fx, &pos, name);
+        let args = self.check_args(
+            RejectionSite::ContextMethodArgumentCount,
+            &sig.params,
+            &c.args,
+            fx,
+            &pos,
+            name,
+        );
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Foreign(name.to_string()),
@@ -281,7 +340,14 @@ impl<'p> Checker<'p> {
         } else {
             ambient.name().to_string()
         };
-        let args = self.check_args(&params, &c.args, fx, &pos, &label);
+        let args = self.check_args(
+            RejectionSite::AmbientFunctionArgumentCount,
+            &params,
+            &c.args,
+            fx,
+            &pos,
+            &label,
+        );
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Ambient(ambient),
@@ -362,7 +428,7 @@ impl<'p> Checker<'p> {
         let name = function.name();
         let Some(type_args) = &call.type_args else {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ContextBytesMissingType,
+                RejectionSite::ContextBytesMissingType,
                 format!("`Context.{name}<T>` takes exactly one type argument"),
                 member_pos,
             );
@@ -370,7 +436,7 @@ impl<'p> Checker<'p> {
         };
         if type_args.params.len() != 1 {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ContextBytesTypeCount,
+                RejectionSite::ContextBytesTypeCount,
                 format!("`Context.{name}<T>` takes exactly one type argument"),
                 member_pos,
             );
@@ -391,14 +457,9 @@ impl<'p> Checker<'p> {
             };
             if !top_level_ok {
                 let target_name = self.type_name(&target);
-                self.error_diverging(
-                RuleCode::S100,
-                format!(
+                self.reject_subset(RejectionSite::ContextByteTargetKind, format!(
                     "`Context.{name}<T>` cannot use `{target_name}`; it is not a @ValueType value class or FixedArray"
-                ),
-                member_pos,
-                Divergence::ByteAccessTarget,
-            );
+                ), member_pos);
                 return self.err_expr(pos);
             }
             let rejection = self.context_bytes_storage_rejection(
@@ -422,11 +483,10 @@ impl<'p> Checker<'p> {
                         )
                     },
                 );
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ContextByteTargetLayout,
                     format!("`Context.{name}<T>` cannot use `{target_name}`; {detail}"),
                     member_pos,
-                    Divergence::ByteAccessTarget,
                 );
                 return self.err_expr(pos);
             }
@@ -443,7 +503,7 @@ impl<'p> Checker<'p> {
         };
         if call.args.len() != params.len() {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ContextBytesArgumentCount,
+                RejectionSite::ContextBytesArgumentCount,
                 format!(
                     "`Context.{name}` expects exactly {} argument(s), got {}",
                     params.len(),
@@ -458,7 +518,7 @@ impl<'p> Checker<'p> {
             if let Some(spread) = argument.spread {
                 let spread_pos = self.pos(spread);
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::ContextBytesSpread,
+                    RejectionSite::ContextBytesSpread,
                     "spread arguments require variadic parameters, which the language does not have",
                     spread_pos.clone(),
                 );
@@ -466,15 +526,26 @@ impl<'p> Checker<'p> {
             }
             let checked = self.check_expr(&argument.expr, Some(expected), fx);
             if self.involves_type_parameter(expected) || self.involves_type_parameter(&checked.ty) {
-                self.require_assignable(
-                    &checked.ty,
+                self.require_expr_assignable(
+                    &checked,
                     expected,
-                    checked.pos.clone(),
+                    fx,
                     &format!("`Context.{name}` argument"),
                 );
             } else if checked.ty != *expected && self.apparent_type(&(checked.ty)) != Type::Error {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if matches!(
+                        (
+                            &self.apparent_type(&checked.ty),
+                            &self.apparent_type(expected)
+                        ),
+                        (Type::FixedArray(..), Type::FixedArray(..))
+                            | (Type::Class(_), Type::Class(_))
+                    ) {
+                        RejectionSite::ByteArgumentIdentity
+                    } else {
+                        RejectionSite::ByteArgumentTypeMismatch
+                    },
                     format!(
                         "type mismatch: `Context.{name}` expects exactly `{}`, got `{}`",
                         self.type_name(expected),
@@ -533,7 +604,14 @@ impl<'p> Checker<'p> {
                     .iter()
                     .map(|t| ParamSig::positional(t.clone()))
                     .collect();
-                let args = self.check_args(&params, &c.args, fx, &pos, "the function value");
+                let args = self.check_args(
+                    RejectionSite::FunctionValueArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "the function value",
+                );
                 let value = hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Value(Box::new(callee)),
@@ -550,7 +628,10 @@ impl<'p> Checker<'p> {
                 self.nullable_use_error(
                     &callee,
                     fx,
-                    RuleCode::S100,
+                    (
+                        RejectionSite::NullableCall,
+                        RejectionSite::NullableCallShared,
+                    ),
                     format!("type `{}` is not callable", name),
                     pos.clone(),
                 );
@@ -626,8 +707,8 @@ impl<'p> Checker<'p> {
             return None;
         }
         if call.type_args.is_some() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::NonGenericStaticMethodTypeArguments,
                 format!("static method `{class_name}.{name}` is not generic"),
                 member_pos,
             );
@@ -644,6 +725,9 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if self.reject_static_this_member(m, fx) {
+            return self.err_expr(pos);
+        }
         let ast::MemberProp::Ident(prop) = &m.prop else {
             let value = self.check_member_read(m, fx);
             return self.check_indirect_call(value, c, fx, pos);
@@ -657,20 +741,18 @@ impl<'p> Checker<'p> {
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
         if matches!(name.as_str(), "then" | "catch" | "finally") {
-            self.error_diverging(
-                RuleCode::S013,
+            self.reject_subset(
+                RejectionSite::PromiseCombinatorCall,
                 format!("Promise combinator `.{name}(...)` is not in the language"),
                 prop_pos.clone(),
-                Divergence::PromiseObject,
             );
             return self.err_expr(pos);
         }
         if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
-            self.error_diverging(
-                RuleCode::S013,
+            self.reject_subset(
+                RejectionSite::PromiseStaticCall,
                 format!("Promise static `Promise.{name}(...)` is not in the language"),
                 prop_pos.clone(),
-                Divergence::PromiseObject,
             );
             return self.err_expr(pos);
         }
@@ -680,8 +762,12 @@ impl<'p> Checker<'p> {
             if name == "spawn" {
                 return self.check_worker_spawn(c, fx, pos);
             }
-            self.error(
-                RuleCode::S018,
+            self.reject_subset(
+                if super::is_object_member(&name) {
+                    RejectionSite::WorkerStaticObjectMethod
+                } else {
+                    RejectionSite::WorkerStaticUnknownMethod
+                },
                 format!("`Worker` has no static method `{name}`"),
                 prop_pos,
             );
@@ -772,11 +858,10 @@ impl<'p> Checker<'p> {
             return None;
         }
         let Some(type_args) = &call.type_args else {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GenericMethodTypeArgumentsMissing,
                 format!("generic method `{name}` requires explicit type arguments"),
                 pos,
-                Divergence::GenericMethodTypeArguments,
             );
             return None;
         };
@@ -815,8 +900,8 @@ impl<'p> Checker<'p> {
         // no constraint is an error for every type argument (`tsc` TS2339).
         if self.is_unconstrained_type_parameter(&recv.ty) {
             let type_name = self.type_name(&recv.ty);
-            self.error(
-                RuleCode::S018,
+            self.reject_subset(
+                RejectionSite::ValueClassMethodMissing,
                 format!("`{type_name}` has no method `{name}`"),
                 prop_pos,
             );
@@ -836,9 +921,20 @@ impl<'p> Checker<'p> {
             }
         }
         if self.is_error_type(&recv.ty) && name == "toString" {
-            self.check_args(&[], &c.args, fx, &pos, &name);
+            self.check_args(
+                RejectionSite::ScalarToStringArgumentCount,
+                &[],
+                &c.args,
+                fx,
+                &pos,
+                &name,
+            );
             if c.type_args.is_some() {
-                self.error(RuleCode::S100, "`toString` is not generic", pos.clone());
+                self.reject_subset(
+                    RejectionSite::ToStringTypeArguments,
+                    "`toString` is not generic",
+                    pos.clone(),
+                );
             }
             return self.error_to_string(recv, pos);
         }
@@ -880,8 +976,12 @@ impl<'p> Checker<'p> {
                     "join" => (WorkerFn::Join, Vec::new(), Type::Void),
                     _ => {
                         let type_name = self.type_name(&Type::Worker(input, output));
-                        self.error(
-                            RuleCode::S018,
+                        self.reject_subset(
+                            if super::is_object_member(&name) {
+                                RejectionSite::WorkerObjectMethod
+                            } else {
+                                RejectionSite::WorkerUnknownMethod
+                            },
                             format!("`{type_name}` has no method `{name}`"),
                             prop_pos,
                         );
@@ -889,7 +989,14 @@ impl<'p> Checker<'p> {
                     }
                 };
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, &name));
+                args.extend(self.check_args(
+                    RejectionSite::InboxWaitArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    &name,
+                ));
                 hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Worker(function),
@@ -905,8 +1012,12 @@ impl<'p> Checker<'p> {
                     "poll" => WorkerFn::InboxPoll,
                     _ => {
                         let type_name = self.type_name(&Type::Inbox(message));
-                        self.error(
-                            RuleCode::S018,
+                        self.reject_subset(
+                            if super::is_object_member(&name) {
+                                RejectionSite::InboxObjectMethod
+                            } else {
+                                RejectionSite::InboxUnknownMethod
+                            },
                             format!("`{type_name}` has no method `{name}`"),
                             prop_pos,
                         );
@@ -914,7 +1025,14 @@ impl<'p> Checker<'p> {
                     }
                 };
                 let mut args = vec![recv];
-                args.extend(self.check_args(&[], &c.args, fx, &pos, &name));
+                args.extend(self.check_args(
+                    RejectionSite::OutboxPostArgumentCount,
+                    &[],
+                    &c.args,
+                    fx,
+                    &pos,
+                    &name,
+                ));
                 hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Worker(function),
@@ -927,8 +1045,12 @@ impl<'p> Checker<'p> {
             Type::Outbox(message) => {
                 if name != "post" {
                     let type_name = self.type_name(&Type::Outbox(message));
-                    self.error(
-                        RuleCode::S018,
+                    self.reject_subset(
+                        if super::is_object_member(&name) {
+                            RejectionSite::OutboxObjectMethod
+                        } else {
+                            RejectionSite::OutboxUnknownMethod
+                        },
                         format!("`{type_name}` has no method `{name}`"),
                         prop_pos,
                     );
@@ -940,7 +1062,14 @@ impl<'p> Checker<'p> {
                     has_default: false,
                 }];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, &name));
+                args.extend(self.check_args(
+                    RejectionSite::FixedArrayPushArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    &name,
+                ));
                 hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Worker(WorkerFn::OutboxPost),
@@ -953,18 +1082,32 @@ impl<'p> Checker<'p> {
             Type::Array(elem) => match name.as_str() {
                 "push" => {
                     let params = [ParamSig::positional((*elem).clone())];
-                    let args = self.check_args(&params, &c.args, fx, &pos, "push");
+                    let args = self.check_args(
+                        RejectionSite::ArrayPushArgumentCount,
+                        &params,
+                        &c.args,
+                        fx,
+                        &pos,
+                        "push",
+                    );
                     mk(recv, args, Type::I32, pos)
                 }
                 "pop" => {
-                    let args = self.check_args(&[], &c.args, fx, &pos, "pop");
+                    let args = self.check_args(
+                        RejectionSite::ArrayPopArgumentCount,
+                        &[],
+                        &c.args,
+                        fx,
+                        &pos,
+                        "pop",
+                    );
                     mk(recv, args, (*elem).clone(), pos)
                 }
                 other => {
                     // The §9 method intrinsics (stdlib.md §9, Q22).
                     if other == "toString" && !c.args.is_empty() {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ToStringArgumentCount,
                             "`toString` expects no arguments",
                             pos.clone(),
                         );
@@ -1011,8 +1154,12 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let type_name = self.type_name(&Type::FixedArray(elem, n));
-                self.error(
-                    RuleCode::S018,
+                self.reject_subset(
+                    if super::is_object_member(&name) {
+                        RejectionSite::FixedArrayObjectMethod
+                    } else {
+                        RejectionSite::FixedArrayUnknownMethod
+                    },
                     format!("`{type_name}` has no method `{name}`"),
                     prop_pos,
                 );
@@ -1036,20 +1183,26 @@ impl<'p> Checker<'p> {
             Type::RegExp => self.check_regex_method(recv, &name, c, fx, pos, prop_pos),
             Type::Generator(y) => match name.as_str() {
                 "next" => {
-                    let args = self.check_args(&[], &c.args, fx, &pos, "next");
+                    let args = self.check_args(
+                        RejectionSite::GeneratorNextArgumentCount,
+                        &[],
+                        &c.args,
+                        fx,
+                        &pos,
+                        "next",
+                    );
                     let step = Type::iter_result((*y).clone());
                     match crate::check::layout::class_independent_layout(&step) {
                         crate::check::layout::IndependentLayout::Fits => mk(recv, args, step, pos),
                         crate::check::layout::IndependentLayout::TooLarge => {
-                            self.error_diverging(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::CoroutineStepLayoutLimit,
                                 format!(
                                     "coroutine step-result layout exceeds the supported \
                                      aggregate limit of {} bytes",
                                     crate::types::MAX_AGGREGATE_BYTES
                                 ),
                                 prop_pos,
-                                Divergence::AggregateLayoutLimit,
                             );
                             self.err_expr(pos)
                         }
@@ -1064,8 +1217,8 @@ impl<'p> Checker<'p> {
                     }
                 }
                 other => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::CoroutineReturnOrThrowCall,
                         format!("`{}` is outside the coroutine surface (next)", other),
                         prop_pos.clone(),
                     );
@@ -1084,7 +1237,14 @@ impl<'p> Checker<'p> {
                 match sig {
                     Some(sig) => {
                         if sig.is_async {
-                            let args = self.check_args(&sig.params, &c.args, fx, &pos, &name);
+                            let args = self.check_args(
+                                RejectionSite::AsyncMethodArgumentCount,
+                                &sig.params,
+                                &c.args,
+                                fx,
+                                &pos,
+                                &name,
+                            );
                             let origin = fx.register_async_origin(pos.clone());
                             return hir::Expr {
                                 kind: ExprKind::AsyncHandleCreate {
@@ -1100,24 +1260,31 @@ impl<'p> Checker<'p> {
                                 pos,
                             };
                         }
-                        let args = self.check_args(&sig.params, &c.args, fx, &pos, &name);
+                        let args = self.check_args(
+                            RejectionSite::InstanceMethodArgumentCount,
+                            &sig.params,
+                            &c.args,
+                            fx,
+                            &pos,
+                            &name,
+                        );
                         let value = mk(recv, args, sig.ret, pos);
                         self.track_async_call_result(value, fx)
                     }
                     None => {
                         let class_name = self.classes[id.0].name.clone();
                         if self.class_sigs[id.0].has_static_member(&name) {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
+                            self.reject_subset(RejectionSite::InstanceStaticMethodCall, format!(
                                     "`{class_name}.{name}` is static and must be accessed through the class name"
-                                ),
-                                prop_pos.clone(),
-                            );
+                                ), prop_pos.clone());
                             return self.err_expr(pos);
                         }
-                        self.error(
-                            RuleCode::S018,
+                        self.reject_subset(
+                            if super::is_object_member(&name) {
+                                RejectionSite::ClassObjectMethodCall
+                            } else {
+                                RejectionSite::ClassUndeclaredMethodCall
+                            },
                             format!("`{}` has no method `{}`", class_name, name),
                             prop_pos.clone(),
                         );
@@ -1127,8 +1294,15 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let type_name = self.type_name(&other);
-                self.error(
-                    RuleCode::S018,
+                self.reject_subset(
+                    match self.apparent_type(&other) {
+                        Type::Bool => RejectionSite::BooleanMethod,
+                        Type::Func(_) => RejectionSite::FunctionMethod,
+                        Type::Generator(_) => RejectionSite::GeneratorMethod,
+                        Type::Enum(_) => RejectionSite::EnumMethod,
+                        Type::StringAlias(_) => RejectionSite::LiteralAliasMethod,
+                        _ => RejectionSite::InvalidReceiverMethod,
+                    },
                     format!("`{}` has no method `{}`", type_name, name),
                     prop_pos.clone(),
                 );
@@ -1147,6 +1321,7 @@ impl<'p> Checker<'p> {
     /// callee `what`. A spread argument gives no count.
     fn check_argument_count(
         &mut self,
+        site: RejectionSite,
         (total, required): (usize, usize),
         args: &[ast::ExprOrSpread],
         pos: &Pos,
@@ -1154,8 +1329,8 @@ impl<'p> Checker<'p> {
     ) {
         let has_spread = args.iter().any(|arg| arg.spread.is_some());
         if !has_spread && (args.len() < required || args.len() > total) {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                site,
                 format!(
                     "`{}` expects {} argument(s) ({} required), got {}",
                     source_name(what),
@@ -1170,17 +1345,19 @@ impl<'p> Checker<'p> {
 
     pub(in crate::check) fn check_args(
         &mut self,
+        site: RejectionSite,
         params: &[ParamSig],
         args: &[ast::ExprOrSpread],
         fx: &mut FnCtx,
         pos: &Pos,
         what: &str,
     ) -> Vec<hir::Expr> {
-        self.check_args_with_arguments(params, args, fx, pos, what, None)
+        self.check_args_with_arguments(site, params, args, fx, pos, what, None)
     }
 
     pub(super) fn check_args_with_arguments(
         &mut self,
+        site: RejectionSite,
         params: &[ParamSig],
         args: &[ast::ExprOrSpread],
         fx: &mut FnCtx,
@@ -1190,14 +1367,19 @@ impl<'p> Checker<'p> {
     ) -> Vec<hir::Expr> {
         let mut checked = checked.unwrap_or_default().into_iter();
         let required = params.iter().filter(|p| !p.has_default).count();
-        self.check_argument_count((params.len(), required), args, pos, what);
+        if params
+            .iter()
+            .all(|parameter| self.apparent_type(&parameter.ty) != Type::Error)
+        {
+            self.check_argument_count(site, (params.len(), required), args, pos, what);
+        }
         let mut out = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let prechecked = checked.next().flatten();
             if arg.spread.is_some() {
                 let p = self.pos(arg.spread.unwrap_or_default());
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::CallSpread,
+                    RejectionSite::CallSpread,
                     "spread arguments require variadic parameters, which the language does not have",
                     p,
                 );
@@ -1207,12 +1389,7 @@ impl<'p> Checker<'p> {
             let checked =
                 prechecked.unwrap_or_else(|| self.check_expr(&arg.expr, param_ty.as_ref(), fx));
             if let Some(param_ty) = param_ty {
-                self.require_assignable(
-                    &checked.ty.clone(),
-                    &param_ty,
-                    checked.pos.clone(),
-                    "the argument",
-                );
+                self.require_expr_assignable(&checked, &param_ty, fx, "the argument");
                 if matches!(
                     &self.apparent_type(&param_ty),
                     Type::AsyncHandle(_) | Type::Array(_)
@@ -1239,7 +1416,7 @@ impl<'p> Checker<'p> {
         if let Some(spread) = argument.spread {
             let spread_pos = self.pos(spread);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::SetSourceSpread,
+                RejectionSite::SetSourceSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos,
             );
@@ -1267,7 +1444,7 @@ impl<'p> Checker<'p> {
                 None => {
                     let actual = self.type_name(other);
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::SetSourceDomain,
+                        RejectionSite::SetSourceDomain,
                         format!(
                             "`new Set(source)` accepts T[], FixedArray<T, N>, Set<T>, or \
                              string; got `{actual}`"
@@ -1297,7 +1474,11 @@ impl<'p> Checker<'p> {
             callee = &p.expr;
         }
         let ast::Expr::Ident(id) = callee else {
-            self.error(RuleCode::S100, "`new` requires a class name", pos.clone());
+            self.reject_subset(
+                RejectionSite::ConstructorNotNamedClass,
+                "`new` requires a class name",
+                pos.clone(),
+            );
             return self.err_expr(pos);
         };
         let name = id.sym.to_string();
@@ -1307,8 +1488,8 @@ impl<'p> Checker<'p> {
                 .lookup_local(&name, &ident_pos, fx)
                 .is_some_and(|local| !matches!(self.apparent_type(&local.ty), Type::Error))
             {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::LocalValueConstructed,
                     format!("`{name}` names a local value here, not a class"),
                     ident_pos.clone(),
                 );
@@ -1316,28 +1497,22 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if name == "Function" {
-            self.error_diverging(
-                RuleCode::S002,
+            self.reject_subset(
+                RejectionSite::DynamicFunctionConstructed,
                 "no dynamic code evaluation (`new Function`)",
                 pos.clone(),
-                Divergence::DynamicObjectModel,
             );
             return self.err_expr(pos);
         }
         if name == "Promise" {
-            self.error_diverging(
-                RuleCode::S013,
-                "Promise objects cannot be constructed; async functions expose no Promise object surface",
-                pos.clone(),
-                Divergence::PromiseObject,
-            );
+            self.reject_subset(RejectionSite::PromiseConstructed, "Promise objects cannot be constructed; async functions expose no Promise object surface", pos.clone());
             return self.err_expr(pos);
         }
         if matches!(name.as_str(), "Worker" | "Inbox" | "Outbox")
             && self.peek_scope_item(&name).is_none()
         {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::WorkerEndpointConstructed,
                 format!(
                     "`new {name}` is rejected; Q35 worker handles and endpoints are runtime-created"
                 ),
@@ -1382,8 +1557,8 @@ impl<'p> Checker<'p> {
                 return self.check_map_copy(n, ctx, fx, pos, ident_pos);
             }
             let Some(type_args) = &n.type_args else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ContainerConstructorTypeArgumentsMissing,
                     format!("`new {name}` requires explicit type arguments (Q24)"),
                     ident_pos.clone(),
                 );
@@ -1391,8 +1566,8 @@ impl<'p> Checker<'p> {
             };
             let expected = if name == "Map" { 2 } else { 1 };
             if type_args.params.len() != expected {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ContainerConstructorTypeArgumentCount,
                     format!("`new {name}` takes exactly {expected} type argument(s)"),
                     ident_pos.clone(),
                 );
@@ -1420,7 +1595,7 @@ impl<'p> Checker<'p> {
                 let key_pos = self.pos(type_args.params[0].span());
                 let key_name = self.type_name(&key);
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::NewMapSetKey,
+                    RejectionSite::NewMapSetKey,
                     format!("`{key_name}` is not a permitted Map/Set key kind (Q24)"),
                     key_pos,
                 );
@@ -1451,8 +1626,8 @@ impl<'p> Checker<'p> {
                     None => return self.err_expr(pos),
                 },
                 _ => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::SetConstructorSourceCount,
                         "`new Set` takes at most one source argument",
                         pos.clone(),
                     );
@@ -1477,8 +1652,8 @@ impl<'p> Checker<'p> {
             }
             Some(ScopeItem::Class(class_id)) => {
                 if n.type_args.is_some() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::NonGenericConstructorTypeArguments,
                         format!("`{}` is not generic", name),
                         ident_pos.clone(),
                     );
@@ -1503,6 +1678,7 @@ impl<'p> Checker<'p> {
                         if type_argument_count == Some(arguments.types.len()) {
                             if let Some(arity) = self.template_constructor_arity(&key) {
                                 self.check_argument_count(
+                                    RejectionSite::ValueConstructorArgumentCount,
                                     arity,
                                     constructor_arguments,
                                     &pos,
@@ -1516,8 +1692,8 @@ impl<'p> Checker<'p> {
                     self.instantiate_class(&key, &arguments, ident_pos.clone())
                 }
                 None => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GenericConstructorTypeArguments,
                         format!("generic class `{}` requires explicit type arguments", name),
                         ident_pos.clone(),
                     );
@@ -1525,12 +1701,15 @@ impl<'p> Checker<'p> {
                 }
             },
             _ => {
-                let code = if self.ambient_namespace(callee, fx).is_some() {
-                    RuleCode::S100
+                let site = if self.ambient_namespace(callee, fx).is_some()
+                    || (self.type_scope_item(&name).is_none()
+                        && crate::ambient::lib_value_name(&name))
+                {
+                    RejectionSite::UnknownNamespaceConstructor
                 } else {
-                    RuleCode::S016
+                    RejectionSite::UnknownClassConstructor
                 };
-                self.error(code, format!("unknown class `{}`", name), ident_pos.clone());
+                self.reject_subset(site, format!("unknown class `{}`", name), ident_pos.clone());
                 None
             }
         };
@@ -1538,8 +1717,8 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         if self.handle_classes.contains(&class_id) {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::OpaqueHandleConstructed,
                 format!(
                     "opaque handle `{}` is obtained from the host, not constructed",
                     name
@@ -1555,32 +1734,37 @@ impl<'p> Checker<'p> {
         // mirror constructor's contract. An instance of an ambient generic
         // template reaches this site through the template's status.
         if self.declared_classes.contains(&class_id) && !self.classes[class_id.0].is_boundary {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AmbientClassConstructed,
                 format!(
                     "ambient class `{name}` is obtained from the host, not constructed, because \
                      a `declare class` has no constructor body"
                 ),
                 pos.clone(),
-                Divergence::AmbientClassConstruction,
             );
             return self.err_expr(pos);
         }
         if self.classes[class_id.0].is_descriptor {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DescriptorClassConstructed,
                 format!(
                     "descriptor class `{name}` is constructed with an object literal, not `new`"
                 ),
                 pos.clone(),
-                Divergence::DescriptorConstruction,
             );
             return self.err_expr(pos);
         }
         let params = self.class_sigs[class_id.0].ctor.clone().unwrap_or_default();
         let empty: Vec<ast::ExprOrSpread> = Vec::new();
         let args_ast = n.args.as_deref().unwrap_or(&empty);
-        let args = self.check_args(&params, args_ast, fx, &pos, &name);
+        let args = self.check_args(
+            RejectionSite::ReferenceConstructorArgumentCount,
+            &params,
+            args_ast,
+            fx,
+            &pos,
+            &name,
+        );
         hir::Expr {
             kind: ExprKind::New {
                 class: class_id,

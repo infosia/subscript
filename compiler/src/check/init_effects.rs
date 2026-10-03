@@ -1,6 +1,7 @@
 //! Checks initializer read routes under compiler.md §137 rules 5, 5a, and 5b.
 
 use super::*;
+use crate::check::rejection::{diagnostic, RejectionFailure, RejectionSite};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum ModuleFunction {
@@ -635,11 +636,13 @@ impl<'a> ModuleItemScan<'a> {
         unit: &ModuleFunction,
         parent: usize,
         label: Option<&str>,
-    ) -> Result<(), String> {
-        let summary = self
-            .summaries
-            .get(unit)
-            .ok_or_else(|| "internal error: made function value has no summary".to_string())?;
+    ) -> Result<(), RejectionFailure> {
+        let summary = self.summaries.get(unit).ok_or_else(|| {
+            RejectionFailure::new(
+                RejectionSite::InitializerMissingSummary,
+                "internal error: made function value has no summary".to_string(),
+            )
+        })?;
         if self.memo.insert(unit.clone()) {
             let index = self.reads.routes.len();
             self.reads.routes.push(ModuleRoute {
@@ -663,7 +666,7 @@ impl ModuleRouteScan {
         &mut self,
         effects: &'a ModuleEffects,
         summaries: &'a HashMap<ModuleFunction, ModuleEffects>,
-    ) -> Result<ModuleReads, String> {
+    ) -> Result<ModuleReads, RejectionFailure> {
         let mut item = ModuleItemScan {
             summaries,
             memo: HashSet::new(),
@@ -752,18 +755,25 @@ fn validate_module_segment(
     segment: &hir::InitializerSegment,
     globals: &[hir::Global],
     statements: usize,
-) -> Result<(), String> {
+) -> Result<(), RejectionFailure> {
     if segment.top_level.start > segment.top_level.end || segment.top_level.end > statements {
-        return Err("internal error: initializer segment is outside the module body".to_string());
+        return Err(RejectionFailure::new(
+            RejectionSite::InitializerSegmentRange,
+            "internal error: initializer segment is outside the module body".to_string(),
+        ));
     }
     for &index in &segment.globals {
         let global = globals.get(index).ok_or_else(|| {
-            "internal error: initializer owner names a missing global".to_string()
+            RejectionFailure::new(
+                RejectionSite::InitializerMissingGlobal,
+                "internal error: initializer owner names a missing global".to_string(),
+            )
         })?;
         if !(segment.top_level.start..=segment.top_level.end).contains(&global.initializer_index) {
-            return Err(
+            return Err(RejectionFailure::new(
+                RejectionSite::GlobalInitializerOwnerRange,
                 "internal error: global initializer is outside its owner range".to_string(),
-            );
+            ));
         }
     }
     Ok(())
@@ -779,9 +789,9 @@ pub(super) fn module_initializer_diagnostics(
             if let Err(message) =
                 validate_module_segment(segment, &checker.globals, checker.top_level.len())
             {
-                return vec![Diagnostic::new(
-                    RuleCode::S100,
-                    message,
+                return vec![diagnostic(
+                    message.site,
+                    message.message,
                     Pos::new(&checker.prog.files[file].name, 1, 1),
                 )];
             }
@@ -869,7 +879,7 @@ pub(super) fn module_initializer_diagnostics(
         let reads = match scan.resolve(&scanner.effects, &summaries) {
             Ok(reads) => reads,
             Err(message) => {
-                diagnostics.push(Diagnostic::new(RuleCode::S100, message, pos.clone()));
+                diagnostics.push(diagnostic(message.site, message.message, pos.clone()));
                 return;
             }
         };
@@ -899,17 +909,18 @@ pub(super) fn module_initializer_diagnostics(
                 .join(" -> ");
             format!("through {path}")
         };
-        let mut diagnostic = Diagnostic::new(
-            RuleCode::S100,
+        let diagnostic = diagnostic(
+            if path.is_empty() {
+                RejectionSite::InitializerDirectRead
+            } else {
+                RejectionSite::InitializerRouteRead
+            },
             format!(
                 "`{}` is accessed before its declaration, {route}",
                 label(binding)
             ),
             pos.clone(),
         );
-        if !path.is_empty() {
-            diagnostic.divergence = Some(Divergence::ModuleInitializerOrder);
-        }
         diagnostics.push(diagnostic);
     };
     // compiler.md §137 rules 5 and 5a: each file checks its source order.
@@ -1139,7 +1150,10 @@ mod tests {
         }));
         assert_eq!(
             result.expect("the scan must not panic"),
-            Err("internal error: made function value has no summary".to_string())
+            Err(RejectionFailure::new(
+                RejectionSite::InitializerMissingSummary,
+                "internal error: made function value has no summary".to_string()
+            ))
         );
     }
 }

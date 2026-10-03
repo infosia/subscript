@@ -1515,7 +1515,7 @@ fn q35_affine_type_arguments_of_new_report_exactly_one_diagnostic() {
                 );
                 assert_eq!(
                     diagnostics[0].divergence,
-                    Some(crate::divergence::Divergence::WorkerContextAffinity),
+                    Some(crate::divergence::Divergence::ContextAffineContainerArgument),
                     "{slot} {statement}"
                 );
             }

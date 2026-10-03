@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     fn claim_class_member_name(
@@ -20,7 +21,7 @@ impl<'p> Checker<'p> {
         let existing = namespace.get(name).copied();
         let entry = match (existing, declaration) {
             (None, Field) => ClassMemberNamespaceEntry::Field,
-            (None, Method) => ClassMemberNamespaceEntry::Method,
+            (None, Method { has_body }) => ClassMemberNamespaceEntry::Method { has_body },
             (None, ReadAccessor) => Accessor {
                 read: true,
                 write: false,
@@ -30,8 +31,8 @@ impl<'p> Checker<'p> {
                 write: true,
             },
             (Some(Accessor { read: true, .. }), ReadAccessor) => {
-                self.error(
-                    RuleCode::S017,
+                self.reject_subset(
+                    RejectionSite::DuplicateReadAccessor,
                     format!(
                         "two {}accessors cannot declare the read member `{name}`",
                         if is_static { "static " } else { "" }
@@ -41,8 +42,8 @@ impl<'p> Checker<'p> {
                 return false;
             }
             (Some(Accessor { write: true, .. }), WriteAccessor) => {
-                self.error(
-                    RuleCode::S017,
+                self.reject_subset(
+                    RejectionSite::DuplicateWriteAccessor,
                     format!(
                         "two {}accessors cannot declare the write member `{name}`",
                         if is_static { "static " } else { "" }
@@ -56,12 +57,12 @@ impl<'p> Checker<'p> {
             (Some(existing), declaration) => {
                 let existing_kind = match existing {
                     ClassMemberNamespaceEntry::Field => "field",
-                    ClassMemberNamespaceEntry::Method => "method",
+                    ClassMemberNamespaceEntry::Method { .. } => "method",
                     Accessor { .. } => "accessor",
                 };
                 let declared_kind = match declaration {
                     Field => "field",
-                    Method => "method",
+                    Method { .. } => "method",
                     ReadAccessor | WriteAccessor => "accessor",
                 };
                 let message = match (existing_kind, declared_kind) {
@@ -80,7 +81,17 @@ impl<'p> Checker<'p> {
                 } else {
                     message
                 };
-                self.error(RuleCode::S017, message, pos);
+                let overload = matches!((existing, declaration),
+                    (ClassMemberNamespaceEntry::Method { has_body: first }, Method { has_body: second }) if !first || !second);
+                self.reject_subset(
+                    if overload {
+                        RejectionSite::ClassMemberNameClash
+                    } else {
+                        RejectionSite::ClassMemberDuplicateImplementation
+                    },
+                    message,
+                    pos,
+                );
                 return false;
             }
         };
@@ -133,22 +144,25 @@ impl<'p> Checker<'p> {
             ),
             _ => {
                 let pos = self.pos(method.span);
-                self.error(RuleCode::S100, "computed method names are not decided", pos);
+                self.reject_subset(
+                    RejectionSite::ComputedMethodName,
+                    "computed method names are not decided",
+                    pos,
+                );
                 return;
             }
         };
         if is_descriptor {
             if is_dispose {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DescriptorDisposeMethod,
                     "descriptor classes cannot declare `[Symbol.dispose]()`",
                     key_pos,
-                    Divergence::UsingDeclaration,
                 );
                 return;
             }
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DescriptorMethod,
                 if method.kind != ast::MethodKind::Method {
                     "descriptor classes cannot declare accessors"
                 } else {
@@ -159,43 +173,41 @@ impl<'p> Checker<'p> {
             return;
         }
         if method.is_static && (self.in_boundary || self.classes[id.0].is_boundary) {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::MirrorStaticMethod,
                 "mirror classes cannot declare static methods or accessors",
                 key_pos,
             );
             return;
         }
         if is_dispose && method.is_static {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DisposeStatic,
                 "`[Symbol.dispose]()` must be non-static",
                 key_pos,
             );
             return;
         }
         if method.is_static && method.function.is_async {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AsyncStaticMethod,
                 "async static methods are not in the decided surface",
                 self.pos(method.span),
-                Divergence::AsyncFunctionShape,
             );
             return;
         }
         if is_dispose && is_value {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ValueClassDisposeMethod,
                 "value classes cannot declare `[Symbol.dispose]()`",
                 key_pos,
-                Divergence::UsingDeclaration,
             );
             return;
         }
         if method.kind != ast::MethodKind::Method && self.in_boundary {
             let pos = self.pos(method.span);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::MirrorAccessor,
                 "mirror classes cannot declare accessors",
                 pos,
             );
@@ -212,16 +224,16 @@ impl<'p> Checker<'p> {
                 return;
             }
             if !method.function.params.is_empty() {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReadAccessorParameters,
                     "a read accessor must declare no parameters",
                     key_pos.clone(),
                 );
                 return;
             }
             let Some(return_type) = &method.function.return_type else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReadAccessorReturnMissing,
                     "a read accessor requires an explicit return type",
                     key_pos,
                 );
@@ -249,11 +261,10 @@ impl<'p> Checker<'p> {
             let write_name = format!("{name}=");
             if is_value && !method.is_static {
                 let class_name = self.classes[id.0].name.clone();
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ValueClassWriteAccessor,
                     format!("value class `{class_name}` cannot declare a write accessor"),
                     key_pos,
-                    Divergence::NamedAccessor,
                 );
                 return;
             }
@@ -267,16 +278,16 @@ impl<'p> Checker<'p> {
                 return;
             }
             if method.function.return_type.is_some() {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WriteAccessorReturnAnnotation,
                     "a write accessor cannot declare a return type",
                     key_pos,
                 );
                 return;
             }
             let [parameter] = method.function.params.as_slice() else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WriteAccessorParameterCount,
                     "a write accessor must declare exactly one parameter",
                     key_pos.clone(),
                 );
@@ -285,16 +296,16 @@ impl<'p> Checker<'p> {
             let binding = match &parameter.pat {
                 ast::Pat::Ident(binding) => binding,
                 ast::Pat::Assign(_) => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::WriteAccessorDefaultParameter,
                         "a write accessor parameter cannot have a default",
                         key_pos.clone(),
                     );
                     return;
                 }
                 _ => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::WriteAccessorPattern,
                         "a write accessor parameter must be an identifier",
                         key_pos.clone(),
                     );
@@ -302,8 +313,8 @@ impl<'p> Checker<'p> {
                 }
             };
             let Some(annotation) = &binding.type_ann else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WriteAccessorTypeMissing,
                     "a write accessor parameter requires a type annotation",
                     key_pos.clone(),
                 );
@@ -335,7 +346,9 @@ impl<'p> Checker<'p> {
         if !self.claim_class_member_name(
             id,
             &name,
-            ClassMemberDeclaration::Method,
+            ClassMemberDeclaration::Method {
+                has_body: method.function.body.is_some(),
+            },
             method.is_static,
             key_pos.clone(),
         ) {
@@ -344,15 +357,14 @@ impl<'p> Checker<'p> {
         if method.function.is_generator && !method.is_static {
             let pos = self.pos(method.span);
             if method.function.is_async {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::AsyncGeneratorMethod,
                     "async generator methods are not in the decided surface",
                     pos,
-                    Divergence::AsyncFunctionShape,
                 );
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::GeneratorMethodDeclaration,
                     "generator methods are not in the decided surface",
                     pos,
                 );
@@ -361,14 +373,18 @@ impl<'p> Checker<'p> {
         }
         if method.function.is_async && is_value && !method.is_static {
             let pos = self.pos(method.span);
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ValueClassAsyncMethod,
                 "async methods on `@ValueType` value classes are not in the decided surface",
                 pos,
-                Divergence::AsyncFunctionShape,
             );
             return;
         }
+        let rejected_default = method
+            .function
+            .type_params
+            .as_deref()
+            .is_some_and(|params| self.reject_type_parameter_defaults(params));
         // §82.4 rules 1 and 5: a method with type parameters
         // collects as a template. Each call instantiates it.
         if !(is_dispose || self.in_boundary || self.classes[id.0].is_boundary)
@@ -376,15 +392,21 @@ impl<'p> Checker<'p> {
         {
             let bodiless = method.function.body.is_none();
             if bodiless && declared && !method.function.is_async {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MethodBodyMissing,
                     "function bodies are required",
                     key_pos.clone(),
-                    Divergence::BodilessDeclareGenericMethod,
                 );
             } else if bodiless {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if super::rejection_facts::has_function_implementation(
+                        &self.prog.files[self.cur_file].module,
+                        &method.function,
+                    ) {
+                        RejectionSite::GenericMethodBodyMissing
+                    } else {
+                        RejectionSite::GenericMethodImplementationMissing
+                    },
                     "function bodies are required",
                     key_pos.clone(),
                 );
@@ -399,7 +421,7 @@ impl<'p> Checker<'p> {
                 file: self.cur_file,
                 type_params,
                 function: (*method.function).clone(),
-                rejected: bodiless || duplicate_type_parameter,
+                rejected: bodiless || duplicate_type_parameter || rejected_default,
             };
             if method.is_static {
                 self.class_sigs[id.0]
@@ -411,8 +433,8 @@ impl<'p> Checker<'p> {
             return;
         }
         if is_dispose && method.function.is_async {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DisposeAsync,
                 "`[Symbol.dispose]()` must be synchronous",
                 key_pos,
             );
@@ -420,8 +442,8 @@ impl<'p> Checker<'p> {
         }
         let sig = self.resolve_fn_sig(&method.function, key_pos.clone());
         if is_dispose && (!sig.params.is_empty() || sig.ret != Type::Void) {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::DisposeSignature,
                 "`[Symbol.dispose]()` takes no parameters and returns `void`",
                 key_pos,
             );
@@ -451,17 +473,20 @@ impl<'p> Checker<'p> {
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
             if is_value {
-                self.error_diverging(
-                    RuleCode::S006,
+                self.reject_subset(
+                    RejectionSite::ValueClassInheritance,
                     "value classes do not inherit",
                     pos,
-                    Divergence::ValueClassLayout,
                 );
             } else if is_descriptor {
-                self.error(RuleCode::S100, "descriptor classes do not inherit", pos);
+                self.reject_subset(
+                    RejectionSite::DescriptorInheritance,
+                    "descriptor classes do not inherit",
+                    pos,
+                );
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReferenceClassInheritance,
                     "class inheritance is not in the decided surface",
                     pos,
                 );
@@ -472,8 +497,12 @@ impl<'p> Checker<'p> {
                 ast::ClassMember::ClassProp(prop) => {
                     let ast::PropName::Ident(key) = &prop.key else {
                         let pos = self.pos(prop.span);
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if self.computed_field_unbound_name(&prop.key) {
+                                RejectionSite::ComputedFieldUnboundName
+                            } else {
+                                RejectionSite::ComputedFieldDeclaration
+                            },
                             "computed or non-identifier field names are not decided",
                             pos,
                         );
@@ -482,16 +511,16 @@ impl<'p> Checker<'p> {
                     if prop.is_static {
                         let pos = self.pos(key.span);
                         if is_descriptor {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::DescriptorStaticField,
                                 "descriptor classes cannot declare static fields",
                                 pos,
                             );
                             continue;
                         }
                         if self.in_boundary || self.classes[id.0].is_boundary {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::MirrorStaticField,
                                 "mirror classes cannot declare static fields",
                                 pos,
                             );
@@ -508,8 +537,8 @@ impl<'p> Checker<'p> {
                             continue;
                         }
                         if prop.is_optional {
-                            self.error(
-                                RuleCode::S012,
+                            self.reject_subset(
+                                RejectionSite::StaticFieldOptional,
                                 "optional static fields imply `undefined`; use `T | null`",
                                 self.pos(prop.span),
                             );
@@ -517,8 +546,8 @@ impl<'p> Checker<'p> {
                         let ty = match &prop.type_ann {
                             Some(annotation) => self.resolve_type(&annotation.type_ann),
                             None => {
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    RejectionSite::StaticFieldAnnotationMissing,
                                     "static fields require a type annotation",
                                     self.pos(key.span),
                                 );
@@ -526,8 +555,8 @@ impl<'p> Checker<'p> {
                             }
                         };
                         if self.is_context_affine_type(&ty) {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::ContextAffineStaticField,
                                 "Worker, Inbox, and Outbox values may not be static fields",
                                 self.pos(key.span),
                             );
@@ -558,33 +587,28 @@ impl<'p> Checker<'p> {
                             (true, false, false) | (false, true, true) | (false, true, false) => {}
                             (_, true, false) => {
                                 let pos = self.pos(prop.span);
-                                self.error_diverging(
-                                    RuleCode::S012,
+                                self.reject_subset(
+                                    RejectionSite::DescriptorOptionalDefaultMissing,
                                     "optional descriptor members require a default initializer",
                                     pos,
-                                    Divergence::OptionalDescriptorMember,
                                 );
                             }
                             (true, _, true) => {
                                 let pos = self.pos(prop.span);
-                                self.error(
-                                    RuleCode::S100,
-                                    "a required descriptor member (`name!: T`) cannot have an initializer",
-                                    pos,
-                                );
+                                self.reject_subset(RejectionSite::DescriptorRequiredInitializer, "a required descriptor member (`name!: T`) cannot have an initializer", pos);
                             }
                             (false, false, true) => {
                                 let pos = self.pos(prop.span);
-                                self.error(
-                                    RuleCode::S100,
-                                    "a descriptor member initializer requires the optional `?` spelling",
-                                    pos,
-                                );
+                                self.reject_subset(RejectionSite::DescriptorInitializerWithoutOptional, "a descriptor member initializer requires the optional `?` spelling", pos);
                             }
                             _ => {
                                 let pos = self.pos(prop.span);
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    if !declared && self.descriptor_field_unassigned(class, prop) {
+                                        RejectionSite::DescriptorRequiredFieldUnassigned
+                                    } else {
+                                        RejectionSite::DescriptorRequiredWithoutDefinite
+                                    },
                                     "required descriptor members must be spelled `name!: T`",
                                     pos,
                                 );
@@ -592,8 +616,8 @@ impl<'p> Checker<'p> {
                         }
                     } else if prop.is_optional {
                         let pos = self.pos(prop.span);
-                        self.error(
-                            RuleCode::S012,
+                        self.reject_subset(
+                            RejectionSite::InstanceFieldOptional,
                             "optional properties imply `undefined`; use `T | null`",
                             pos,
                         );
@@ -609,8 +633,8 @@ impl<'p> Checker<'p> {
                             ty
                         }
                         None => {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::InstanceFieldAnnotationMissing,
                                 "fields require a type annotation",
                                 pos.clone(),
                             );
@@ -621,14 +645,10 @@ impl<'p> Checker<'p> {
                         && Self::contains_string_alias(&ty)
                         && !Self::supported_wire_alias_boundary_type(&ty)
                     {
-                        self.error(
-                            RuleCode::S100,
-                            format!(
+                        self.reject_subset(RejectionSite::WireAliasNestedField, format!(
                                 "wire-mapped aliases are supported only as direct boundary-struct members or array-pair elements; member `{}` nests one inside another boundary type",
                                 key.sym
-                            ),
-                            pos.clone(),
-                        );
+                            ), pos.clone());
                     }
                     let is_absence_capable = is_descriptor
                         && !prop.definite
@@ -641,17 +661,16 @@ impl<'p> Checker<'p> {
                         && prop.value.is_none()
                         && !matches!(&self.apparent_type(&ty), Type::StringAlias(_) | Type::Error)
                     {
-                        self.error_diverging(
-                            RuleCode::S012,
+                        self.reject_subset(
+                            RejectionSite::DescriptorOptionalInitializerMissing,
                             "optional descriptor members require a default initializer",
                             self.pos(prop.span),
-                            Divergence::OptionalDescriptorMember,
                         );
                     }
                     let context_affine = self.is_context_affine_type(&ty);
                     if context_affine {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ContextAffineInstanceField,
                             "Worker, Inbox, and Outbox values may not be class fields",
                             pos.clone(),
                         );
@@ -676,8 +695,8 @@ impl<'p> Checker<'p> {
                         && !context_affine
                         && !self.value_field_ok(&ty)
                     {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ValueFieldOutsideWhitelist,
                             format!(
                                 "field type `{}` is outside the value-class whitelist \
                                  (sized numerics, boolean, value classes, FixedArray, enums)",
@@ -698,8 +717,8 @@ impl<'p> Checker<'p> {
                 }
                 ast::ClassMember::Constructor(ctor) => {
                     if is_descriptor {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::DescriptorConstructor,
                             "descriptor classes cannot declare constructors",
                             self.pos(ctor.span),
                         );
@@ -716,21 +735,17 @@ impl<'p> Checker<'p> {
                                     && Self::contains_string_alias(&resolved.ty)
                                     && !Self::supported_wire_alias_boundary_type(&resolved.ty)
                                 {
-                                    self.error(
-                                        RuleCode::S100,
-                                        format!(
+                                    self.reject_subset(RejectionSite::WireAliasNestedConstructorParameter, format!(
                                             "wire-mapped aliases are supported only as direct mirror-constructor parameters or array-pair elements; parameter `{}` nests one inside another boundary type",
                                             resolved.name
-                                        ),
-                                        self.pos(param.span),
-                                    );
+                                        ), self.pos(param.span));
                                 }
                                 params.push(resolved);
                             }
                             ast::ParamOrTsParamProp::TsParamProp(pp) => {
                                 let pos = self.pos(pp.span);
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    RejectionSite::ConstructorParameterProperty,
                                     "constructor parameter properties are not decided",
                                     pos,
                                 );
@@ -762,8 +777,13 @@ impl<'p> Checker<'p> {
                 ast::ClassMember::TsIndexSignature(signature) if !self.in_boundary => {
                     let pos = self.pos(signature.span);
                     if index_signature_pos.is_some() {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if self.classes[id.0].index_signature.as_ref().is_some_and(|first| matches!(self.apparent_type(&first.index_ty), Type::I32 | Type::U32))
+                                && matches!(signature.params.as_slice(), [ast::TsFnParam::Ident(binding)]
+                                    if binding.type_ann.as_ref().is_some_and(|annotation| matches!(annotation.type_ann.as_ref(), ast::TsType::TsTypeRef(reference)
+                                        if matches!(&reference.type_name, ast::TsEntityName::Ident(name) if matches!(name.sym.as_ref(), "i32" | "u32"))))) {
+                            RejectionSite::DuplicateNumericIndexSignature
+                        } else { RejectionSite::ClassIndexSignatureCount },
                             "a class can declare at most one index signature",
                             pos,
                         );
@@ -771,34 +791,32 @@ impl<'p> Checker<'p> {
                     }
                     index_signature_pos = Some(pos.clone());
                     if is_value || is_descriptor {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ClassIndexSignatureNonReference,
                             "only reference classes can declare an index signature",
                             pos.clone(),
                         );
                     }
                     if signature.is_static {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ClassIndexSignatureStatic,
                             "a class index signature cannot be static",
                             pos.clone(),
                         );
                     }
                     let index_ty = match signature.params.as_slice() {
-                        [ast::TsFnParam::Ident(binding)] => match &binding.type_ann {
-                            Some(annotation) => self.resolve_type(&annotation.type_ann),
-                            None => {
-                                self.error(
-                                    RuleCode::S100,
-                                    "a class index signature parameter requires a type annotation",
-                                    pos.clone(),
-                                );
-                                Type::Error
+                        [ast::TsFnParam::Ident(binding)] => {
+                            match &binding.type_ann {
+                                Some(annotation) => self.resolve_type(&annotation.type_ann),
+                                None => {
+                                    self.reject_subset(RejectionSite::IndexSignatureParameterAnnotationMissing, "a class index signature parameter requires a type annotation", pos.clone());
+                                    Type::Error
+                                }
                             }
-                        },
+                        }
                         _ => {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::IndexSignatureParameterKind,
                                 "a class index signature requires one identifier parameter",
                                 pos.clone(),
                             );
@@ -810,19 +828,15 @@ impl<'p> Checker<'p> {
                         Type::I32 | Type::U32 | Type::Error
                     ) {
                         let actual = self.type_name(&index_ty);
-                        self.error(
-                            RuleCode::S100,
-                            format!(
+                        self.reject_subset(RejectionSite::ClassIndexSignatureIndexType, format!(
                                 "a class index signature requires an `i32` or `u32` index, got `{actual}`"
-                            ),
-                            pos.clone(),
-                        );
+                            ), pos.clone());
                     }
                     let element_ty = match &signature.type_ann {
                         Some(annotation) => self.resolve_type(&annotation.type_ann),
                         None => {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::IndexSignatureElementAnnotationMissing,
                                 "a class index signature requires an element type",
                                 pos.clone(),
                             );
@@ -838,8 +852,22 @@ impl<'p> Checker<'p> {
                 ast::ClassMember::Empty(_) => {}
                 other => {
                     let pos = self.pos(other.span());
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        match other {
+                            ast::ClassMember::PrivateProp(_) => {
+                                RejectionSite::PrivateFieldDeclaration
+                            }
+                            ast::ClassMember::PrivateMethod(_) => {
+                                RejectionSite::PrivateMethodDeclaration
+                            }
+                            ast::ClassMember::StaticBlock(_) => {
+                                RejectionSite::StaticBlockDeclaration
+                            }
+                            ast::ClassMember::AutoAccessor(_) => {
+                                RejectionSite::AutoAccessorDeclaration
+                            }
+                            _ => RejectionSite::UnsupportedClassMemberKind,
+                        },
                         "class member form outside the decided surface",
                         pos,
                     );
@@ -856,8 +884,8 @@ impl<'p> Checker<'p> {
                 self.class_sigs[id.0].has_read_accessor(&name)
             };
             if !has_read {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::WriteAccessorWithoutRead,
                     format!(
                         "{}write accessor `{name}` requires a read accessor with the same name",
                         if is_static { "static " } else { "" }
@@ -878,8 +906,8 @@ impl<'p> Checker<'p> {
                 .map(|parameter| parameter.ty.clone());
             if let (Some(read_type), Some(write_type)) = (read_type, write_type) {
                 if read_type != write_type {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AccessorTypeMismatch,
                         format!("the read and write accessors of `{name}` must have the same type"),
                         pos,
                     );
@@ -906,14 +934,9 @@ impl<'p> Checker<'p> {
         if !get_matches {
             let index = self.type_name(&signature.index_ty);
             let element = self.type_name(&signature.element_ty);
-            self.error_diverging(
-                RuleCode::S100,
-                format!(
+            self.reject_subset(RejectionSite::IndexSignatureGetterMismatch, format!(
                     "the index signature requires `get(index: {index}): {element}` with exactly matching types"
-                ),
-                pos.clone(),
-                Divergence::ClassIndexSignature,
-            );
+                ), pos.clone());
         }
         if signature.readonly {
             return;
@@ -933,13 +956,9 @@ impl<'p> Checker<'p> {
         if !set_matches {
             let index = self.type_name(&signature.index_ty);
             let element = self.type_name(&signature.element_ty);
-            self.error(
-                RuleCode::S100,
-                format!(
+            self.reject_subset(RejectionSite::ClassIndexSetSignature, format!(
                     "the index signature requires `set(index: {index}, value: {element}): void` with exactly matching types"
-                ),
-                pos,
-            );
+                ), pos);
         }
     }
 

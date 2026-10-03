@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     /// Pass B for a mirror file: resolves type aliases first (so later
@@ -44,24 +45,16 @@ impl<'p> Checker<'p> {
                         if Self::contains_string_alias(&parameter.ty)
                             && !Self::supported_wire_alias_boundary_type(&parameter.ty)
                         {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
+                            self.reject_subset(RejectionSite::WireAliasNestedForeignParameter, format!(
                                     "wire-mapped aliases are supported only as direct foreign-function parameters or array-descriptor elements; `{}` nests one inside another boundary type",
                                     parameter.name
-                                ),
-                                pos.clone(),
-                            );
+                                ), pos.clone());
                         }
                     }
                     if Self::contains_string_alias(&sig.ret)
                         && !matches!(sig.ret, Type::StringAlias(_))
                     {
-                        self.error(
-                            RuleCode::S100,
-                            "wire-mapped aliases are supported only as direct foreign-function returns",
-                            pos.clone(),
-                        );
+                        self.reject_subset(RejectionSite::WireAliasNestedForeignReturn, "wire-mapped aliases are supported only as direct foreign-function returns", pos.clone());
                     }
                     let mut params = Vec::with_capacity(sig.params.len());
                     for (index, parameter) in sig.params.iter().enumerate() {
@@ -76,8 +69,8 @@ impl<'p> Checker<'p> {
                             parameter_pos.clone(),
                         );
                         if matches!(parameter.ty, Type::Func(_)) {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::ForeignDirectCallback,
                                 format!(
                                     "mirror `{}` foreign function `{}` parameter `{}` is a \
                                      direct callback; callbacks are supported only as fields \
@@ -103,8 +96,8 @@ impl<'p> Checker<'p> {
                         _ => None,
                     };
                     if let Some(kind) = unsupported_return {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ForeignReturnProvenance,
                             format!(
                                 "mirror `{}` foreign function `{}` returns {kind}; foreign \
                                  string-view, descriptor, and callback returns are unsupported \
@@ -116,8 +109,8 @@ impl<'p> Checker<'p> {
                         );
                     }
                     let Some(mirror) = self.foreign_mirror_ids.get(&file).copied() else {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ForeignFunctionHeaderMissing,
                             format!(
                                 "mirror `{}` has no header identity for foreign function `{}`",
                                 self.prog.files[file].name, name
@@ -184,11 +177,10 @@ impl<'p> Checker<'p> {
                         import.specifiers.first()
                     {
                         let pos = self.pos(namespace.local.span);
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::TypeOnlyNamespaceImport,
                             "`import type * as` is outside the decided surface",
                             pos.clone(),
-                            Divergence::NamedModuleSurface,
                         );
                         additions.push((
                             namespace.local.sym.to_string(),
@@ -210,7 +202,11 @@ impl<'p> Checker<'p> {
                         format!("imported module `{raw}` is not among the program's files");
                     if self.poison_missing_modules.contains(&stem) {
                         if import.specifiers.is_empty() {
-                            self.resolution_error(RuleCode::S100, missing_message, pos);
+                            self.resolution_error(
+                                RejectionSite::NamespaceImportTargetMissing,
+                                missing_message,
+                                pos,
+                            );
                             continue;
                         }
                         let mut names = Vec::new();
@@ -231,8 +227,12 @@ impl<'p> Checker<'p> {
                                 continue;
                             }
                             let ast::ImportSpecifier::Named(named) = spec else {
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    if raw.starts_with('.') {
+                                        RejectionSite::PoisonedRelativeDefaultImport
+                                    } else {
+                                        RejectionSite::PoisonedDefaultImport
+                                    },
                                     "only named imports are in the decided surface",
                                     self.pos(spec.span()),
                                 );
@@ -260,7 +260,15 @@ impl<'p> Checker<'p> {
                             });
                         }
                     } else {
-                        self.resolution_error(RuleCode::S100, missing_message, pos);
+                        self.resolution_error(
+                            if import.specifiers.is_empty() {
+                                RejectionSite::NamedImportModuleMissing
+                            } else {
+                                RejectionSite::NamedImportUnresolvedModule
+                            },
+                            missing_message,
+                            pos,
+                        );
                         for spec in &import.specifiers {
                             if let ast::ImportSpecifier::Namespace(namespace) = spec {
                                 additions.push((
@@ -297,8 +305,8 @@ impl<'p> Checker<'p> {
                     }
                     let ast::ImportSpecifier::Named(named) = spec else {
                         let pos = self.pos(spec.span());
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::DefaultImport,
                             "only named imports are in the decided surface",
                             pos,
                         );
@@ -313,9 +321,16 @@ impl<'p> Checker<'p> {
                     let type_only = type_only_import(import, named);
                     match self.exports[target].get(&imported_name) {
                         Some(item) => additions.push((local, item.clone(), pos, type_only)),
+                        None if self
+                            .rejected_module_exports
+                            .get(&stem)
+                            .is_some_and(|names| names.contains(&imported_name)) =>
+                        {
+                            additions.push((local, ScopeItem::Poisoned, pos, type_only));
+                        }
                         None => {
                             self.resolution_error(
-                                RuleCode::S016,
+                                RejectionSite::NamedImportMemberMissing,
                                 format!("`{imported_name}` is not exported by `{raw}`"),
                                 imported_pos,
                             );
@@ -370,8 +385,8 @@ impl<'p> Checker<'p> {
                             Some(ann) => self.resolve_type(&ann.type_ann),
                             None => {
                                 let pos = self.pos(binding.id.span);
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    RejectionSite::ModuleVariableAnnotationMissing,
                                     "module-level variables require a type annotation",
                                     pos,
                                 );
@@ -379,11 +394,10 @@ impl<'p> Checker<'p> {
                             }
                         };
                         if self.is_context_affine_type(&ty) {
-                            self.error_diverging(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::WorkerEndpointModuleGlobal,
                                 "Worker, Inbox, and Outbox values may not be module globals",
                                 self.pos(binding.id.span),
-                                Divergence::WorkerContextAffinity,
                             );
                         }
                         self.global_sigs.insert(
@@ -406,8 +420,8 @@ impl<'p> Checker<'p> {
         let params = self.resolve_params(&f.params);
         if f.is_async {
             if f.is_generator {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::AsyncGeneratorFunction,
                     "a function cannot be both async and a generator",
                     pos,
                 );
@@ -422,8 +436,8 @@ impl<'p> Checker<'p> {
             let ret = match &f.return_type {
                 Some(ann) => self.resolve_async_return(&ann.type_ann),
                 None => {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AsyncReturnAnnotationMissing,
                         "async functions require an explicit `Promise<T>` return annotation",
                         pos,
                     );
@@ -475,8 +489,8 @@ impl<'p> Checker<'p> {
         let ret = match &f.return_type {
             Some(ann) => self.resolve_result_type(&ann.type_ann),
             None => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::FunctionReturnAnnotationMissing,
                     "function return types must be annotated",
                     pos,
                 );
@@ -506,8 +520,8 @@ impl<'p> Checker<'p> {
                     // C7: optional parameters without defaults imply an
                     // observable `undefined`.
                     let pos = self.pos(binding.id.span);
-                    self.error(
-                        RuleCode::S012,
+                    self.reject_subset(
+                        RejectionSite::OptionalParameter,
                         "optional parameters imply `undefined`; use a default value or `T | null`",
                         pos,
                     );
@@ -516,7 +530,11 @@ impl<'p> Checker<'p> {
                     Some(ann) => self.resolve_type(&ann.type_ann),
                     None => {
                         let pos = self.pos(binding.id.span);
-                        self.error(RuleCode::S100, "parameters require a type annotation", pos);
+                        self.reject_subset(
+                            RejectionSite::NamedParameterAnnotationMissing,
+                            "parameters require a type annotation",
+                            pos,
+                        );
                         Type::Error
                     }
                 };
@@ -545,7 +563,11 @@ impl<'p> Checker<'p> {
                     Some(annotation) => self.resolve_type(&annotation.type_ann),
                     None => {
                         let pos = self.pos(pat.span());
-                        self.error(RuleCode::S100, "parameters require a type annotation", pos);
+                        self.reject_subset(
+                            RejectionSite::PatternParameterAnnotationMissing,
+                            "parameters require a type annotation",
+                            pos,
+                        );
                         Type::Error
                     }
                 };
@@ -560,7 +582,13 @@ impl<'p> Checker<'p> {
             other => {
                 let pos = self.pos(other.span());
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::MirrorParameter,
+                    if matches!(other, ast::Pat::Rest(_)) {
+                        RejectionSite::RestParameter
+                    } else if self.mirror_array_parameter_noniterable(other) {
+                        RejectionSite::MirrorArrayParameterNonIterable
+                    } else {
+                        RejectionSite::MirrorBindingPatternParameter
+                    },
                     "parameter pattern outside the decided surface",
                     pos,
                 );

@@ -7,6 +7,7 @@
 //! tree before constructing any language value. Representation-neutral
 //! leaves go through the shared `subscript_rt_json_*` runtime.
 
+use crate::check::rejection::{RejectionFailure, RejectionSite};
 use std::collections::HashSet;
 
 use swc_common::Spanned;
@@ -51,7 +52,7 @@ impl Checker<'_> {
         }
         if member != "stringify" {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonStaticMember,
+                RejectionSite::JsonStaticMember,
                 format!("`JSON.{member}` is outside the accepted JSON subset (Q28)"),
                 member_pos,
             );
@@ -59,7 +60,7 @@ impl Checker<'_> {
         }
         if call.args.len() != 1 {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonStringifyCount,
+                RejectionSite::JsonStringifyCount,
                 format!(
                     "`JSON.stringify` expects exactly 1 argument, got {}",
                     call.args.len()
@@ -71,7 +72,7 @@ impl Checker<'_> {
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonStringifySpread,
+                RejectionSite::JsonStringifySpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
@@ -105,7 +106,7 @@ impl Checker<'_> {
             }
             let name = self.type_name(&value.ty);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonStringifyDomain,
+                RejectionSite::JsonStringifyDomain,
                 format!(
                     "`JSON.stringify` cannot serialize `{name}`; P13 accepts sized numerics \
                      except f16, boolean, string, Date, arrays, @ValueType values, reference \
@@ -121,7 +122,7 @@ impl Checker<'_> {
             Ok(wrapper) => wrapper,
             Err(detail) => {
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::JsonStringifyHelper,
+                    detail.site,
                     format!("cannot generate `JSON.stringify` helper: {detail}"),
                     member_pos,
                 );
@@ -148,7 +149,7 @@ impl Checker<'_> {
     ) -> hir::Expr {
         if call.args.len() != 1 {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonParseCount,
+                RejectionSite::JsonParseCount,
                 format!(
                     "`JSON.parse` expects exactly 1 argument, got {}",
                     call.args.len()
@@ -160,7 +161,7 @@ impl Checker<'_> {
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonParseSpread,
+                RejectionSite::JsonParseSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
@@ -171,7 +172,7 @@ impl Checker<'_> {
         let (target, spelling) = if let Some(type_args) = &call.type_args {
             if type_args.params.len() != 1 {
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::JsonParseTypeCount,
+                    RejectionSite::JsonParseTypeCount,
                     "`JSON.parse<T>` takes exactly one type argument",
                     member_pos.clone(),
                 );
@@ -187,7 +188,7 @@ impl Checker<'_> {
             (target.clone(), None)
         } else {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonParseTarget,
+                RejectionSite::JsonParseTarget,
                 "`JSON.parse` requires a target type; use `JSON.parse<T>(text)` \
                  or a contextual type (Q28)",
                 member_pos,
@@ -236,7 +237,7 @@ impl Checker<'_> {
         if !self.json_serializable(&target) {
             let name = self.type_name(&target);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::JsonParseDomain,
+                RejectionSite::JsonParseDomain,
                 format!(
                     "`JSON.parse` cannot deserialize `{name}`; Q28 accepts sized numerics \
                      except f16, boolean, string, arrays, @ValueType values, reference \
@@ -251,7 +252,7 @@ impl Checker<'_> {
             Ok(wrapper) => wrapper,
             Err(detail) => {
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::JsonParseHelper,
+                    detail.site,
                     format!("cannot generate `JSON.parse` helper: {detail}"),
                     member_pos,
                 );
@@ -278,7 +279,7 @@ impl Checker<'_> {
             " it holds an Error at some depth, and".to_string()
         };
         self.reject_subset(
-            crate::check::rejection::RejectionSite::JsonError,
+            RejectionSite::JsonError,
             format!(
                 "`{operation}` cannot accept `{name}`:{detail} the Error classes are not JSON types"
             ),
@@ -442,7 +443,7 @@ impl Checker<'_> {
         root: &Type,
         tracked: bool,
         pos: Pos,
-    ) -> Result<String, String> {
+    ) -> Result<String, RejectionFailure> {
         let call_id = self.functions.len();
         let mut types = Vec::new();
         self.collect_json_types(root, &mut types);
@@ -540,7 +541,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let shape = self.apparent_type(ty);
         let ty = &shape;
 
@@ -633,9 +634,9 @@ impl Checker<'_> {
                     Ok(object)
                 }
             }
-            other => Err(format!(
-                "rejected JSON serializer type `{}`",
-                self.type_name(other)
+            other => Err(RejectionFailure::new(
+                RejectionSite::JsonSerializerTypeKind,
+                format!("rejected JSON serializer type `{}`", self.type_name(other)),
             )),
         }
     }
@@ -647,7 +648,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let locals = JsonLocals::new(pos);
         let raw = |text: &str| {
             hir::Stmt::Expr(self.json_call(
@@ -738,7 +739,7 @@ impl Checker<'_> {
         types: &[Type],
         names: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let locals = JsonLocals::new(pos);
         let raw = |text: &str| {
             hir::Stmt::Expr(self.json_call(
@@ -784,7 +785,7 @@ impl Checker<'_> {
         root: &Type,
         spelling: &str,
         pos: Pos,
-    ) -> Result<String, String> {
+    ) -> Result<String, RejectionFailure> {
         let call_id = self.functions.len();
         let mut types = Vec::new();
         self.collect_json_types(root, &mut types);
@@ -829,14 +830,20 @@ impl Checker<'_> {
         let syntax_error = {
             let message = self.json_call(JsonFn::ParseFailure, Vec::new(), Type::Str, &pos);
             self.error_new(
-                ErrorKind::from_name("SyntaxError").ok_or("missing SyntaxError class")?,
+                ErrorKind::from_name("SyntaxError").ok_or(RejectionFailure::new(
+                    RejectionSite::JsonMissingSyntaxError,
+                    "missing SyntaxError class",
+                ))?,
                 message,
                 pos.clone(),
             )
         };
         // §115.7 rule 5: the document is released before the raise.
         let type_error = self.error_new(
-            ErrorKind::from_name("TypeError").ok_or("missing TypeError class")?,
+            ErrorKind::from_name("TypeError").ok_or(RejectionFailure::new(
+                RejectionSite::JsonMissingTypeError,
+                "missing TypeError class",
+            ))?,
             json_string(
                 &format!("JSON.parse: document does not match {spelling}"),
                 &pos,
@@ -944,7 +951,7 @@ impl Checker<'_> {
         types: &[Type],
         validators: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let shape = self.apparent_type(ty);
         let ty = &shape;
 
@@ -1025,9 +1032,9 @@ impl Checker<'_> {
                 body.push(return_value(json_bool(true, pos)));
                 Ok(body)
             }
-            other => Err(format!(
-                "rejected JSON validator type `{}`",
-                self.type_name(other)
+            other => Err(RejectionFailure::new(
+                RejectionSite::JsonValidatorTypeKind,
+                format!("rejected JSON validator type `{}`", self.type_name(other)),
             )),
         }
     }
@@ -1039,7 +1046,7 @@ impl Checker<'_> {
         types: &[Type],
         validators: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let shape = self.apparent_type(array_ty);
         let array_ty = &shape;
 
@@ -1139,7 +1146,7 @@ impl Checker<'_> {
         types: &[Type],
         constructors: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let shape = self.apparent_type(ty);
         let ty = &shape;
 
@@ -1264,9 +1271,9 @@ impl Checker<'_> {
                 body.push(return_value(locals.value(Type::Class(*id))));
                 Ok(body)
             }
-            other => Err(format!(
-                "rejected JSON constructor type `{}`",
-                self.type_name(other)
+            other => Err(RejectionFailure::new(
+                RejectionSite::JsonConstructorTypeKind,
+                format!("rejected JSON constructor type `{}`", self.type_name(other)),
             )),
         }
     }
@@ -1278,7 +1285,7 @@ impl Checker<'_> {
         types: &[Type],
         constructors: &[String],
         pos: &Pos,
-    ) -> Result<Vec<hir::Stmt>, String> {
+    ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
         let shape = self.apparent_type(array_ty);
         let array_ty = &shape;
 
@@ -1302,9 +1309,12 @@ impl Checker<'_> {
                 },
             ),
             other => {
-                return Err(format!(
-                    "JSON array constructor received non-array type `{}`",
-                    self.type_name(other)
+                return Err(RejectionFailure::new(
+                    RejectionSite::JsonArrayConstructorTypeKind,
+                    format!(
+                        "JSON array constructor received non-array type `{}`",
+                        self.type_name(other)
+                    ),
                 ));
             }
         };
@@ -1373,9 +1383,12 @@ impl Checker<'_> {
                 pos,
             ),
             other => {
-                return Err(format!(
-                    "JSON array store received non-array type `{}`",
-                    self.type_name(other)
+                return Err(RejectionFailure::new(
+                    RejectionSite::JsonArrayStoreTypeKind,
+                    format!(
+                        "JSON array store received non-array type `{}`",
+                        self.type_name(other)
+                    ),
                 ));
             }
         };
@@ -1395,11 +1408,16 @@ impl Checker<'_> {
     }
 }
 
-fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, String> {
+fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, RejectionFailure> {
     types
         .iter()
         .position(|candidate| candidate == ty)
-        .ok_or_else(|| "JSON type graph is missing a declared type".to_string())
+        .ok_or_else(|| {
+            RejectionFailure::new(
+                RejectionSite::JsonMissingGraphType,
+                "JSON type graph is missing a declared type".to_string(),
+            )
+        })
 }
 
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {

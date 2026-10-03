@@ -158,7 +158,7 @@ fn a_bodiless_generic_method_fails_during_collection() {
     assert_eq!(diagnostics[0].pos.line, 1);
     assert!(
         !render_diagnostics(&files, &diagnostics).contains("= TypeScript accepts:"),
-        "a plain class has no divergence block"
+        "a method with no implementation is also rejected by TypeScript"
     );
 }
 

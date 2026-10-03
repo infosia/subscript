@@ -21,6 +21,739 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// The language has no variadic parameters.
+    RestParameter,
+    /// A string-valued enum member has no integer enum representation.
+    StringEnumMemberValue,
+    /// A static method accesses a member through this.
+    ThisStaticMethodMember,
+    /// A source abstract method has no body.
+    AbstractMethodBodyMissing,
+    /// A call loads a module dynamically.
+    DynamicImportCall,
+    /// Equality rejects types that TypeScript can compare after numeric erasure.
+    ErasedAssignableEquality,
+    /// No storage initialization is decided for a declare field.
+    DeclaredFieldWithoutValue,
+    /// Types require identical arguments; sized numerics erase to number in TypeScript.
+    ErasedAssignableTypeMismatch,
+    /// Only nullable types carry a null value.
+    NonNullableNullEquality,
+    /// A const assertion has no decided literal-preservation lowering.
+    ConstAssertionExpression,
+    /// The only type qualifier is a namespace import; an annotation names a declared or builtin type.
+    ImportAnnotation,
+    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
+    NullableNominalAssignmentNonNullFlow,
+    /// String concat takes exactly one string argument.
+    StringConcatArgumentCount,
+    /// Array concat takes exactly one array argument.
+    ArrayConcatArgumentCount,
+    /// The coroutine next call drives the frame without an input value.
+    GeneratorNextArgumentCount,
+    /// The array push surface appends exactly one element.
+    ArrayPushArgumentCount,
+    /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
+    FunctionParameterIdentity,
+    /// The admitted surface excludes this source form.
+    ArrayToFixedArray,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    EnumToInteger,
+    /// The admitted surface excludes this source form.
+    LiteralAliasToString,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    LiteralAliasMethod,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    EnumMethod,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    FunctionMethod,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    BooleanMethod,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    LiteralAliasMember,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    EnumMember,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    GeneratorMember,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    FunctionMember,
+    /// The lib surface is a subset, and a C function pointer has no properties.
+    BooleanMember,
+    /// No lowering is decided for this operator or expression form.
+    MetaPropertyExpression,
+    /// No lowering is decided for this operator or expression form.
+    ClassExpression,
+    /// No lowering is decided for this operator or expression form.
+    TaggedTemplateExpression,
+    /// No lowering is decided for this operator or expression form.
+    CommaExpression,
+    /// No lowering is decided for this operator or expression form.
+    InstantiationExpression,
+    /// No lowering is decided for this operator or expression form.
+    SatisfiesExpression,
+    /// No lowering is decided for this operator or expression form.
+    AngleAssertionExpression,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    StringAliasAssertion,
+    /// The admitted surface excludes this source form.
+    NullableClassAssertion,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    IntegerEnumAssertion,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    IdentityAssertion,
+    /// No lowering is decided for relational comparisons on two boolean operands.
+    BooleanRelationalOperand,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    BinaryStringOperand,
+    /// No lowering is decided for relational comparisons on two string operands.
+    StringRelationalOperand,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    BinaryEnumOperand,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    CompoundStringOperand,
+    /// The language has no implicit conversion, and an assertion does not check membership.
+    CompoundEnumOperand,
+    /// No lowering is decided for this operator or expression form.
+    ExponentOperator,
+    /// No lowering is decided for this operator or expression form.
+    InOperator,
+    /// No lowering is decided for this operator or expression form.
+    UnaryPlusOperator,
+    /// No lowering is decided for this operator or expression form.
+    VoidOperator,
+    /// No lowering is decided for this operator or expression form.
+    TypeofOperator,
+    /// An annotation names a declared or builtin type; types are nominal.
+    FunctionTypeObjectPattern,
+    /// An annotation names a declared or builtin type; types are nominal.
+    FunctionTypeArrayPattern,
+    /// An annotation names a declared or builtin type; types are nominal.
+    FunctionTypeRestParameter,
+    /// The admitted surface excludes this source form.
+    BigIntAnnotation,
+    /// The admitted surface excludes this source form.
+    SymbolAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    UnknownAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    NeverAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    TemplateLiteralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    BigIntLiteralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    BooleanLiteralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    NumberLiteralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    StringLiteralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    PredicateAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    MappedAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    IndexedAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    OperatorAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    ConditionalAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    StructuralAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    QueryAnnotation,
+    /// An annotation names a declared or builtin type; types are nominal.
+    ThisAnnotation,
+    /// The admitted surface excludes this source form.
+    TupleAnnotation,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    AutoAccessorDeclaration,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    StaticBlockDeclaration,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    PrivateMethodDeclaration,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    PrivateFieldDeclaration,
+    /// No lowering is decided for these statements; for-in reads dynamic properties.
+    DebuggerStatement,
+    /// No lowering is decided for these statements; for-in reads dynamic properties.
+    LabeledStatement,
+    /// No lowering is decided for these statements; for-in reads dynamic properties.
+    ForInStatement,
+    /// No lowering is decided for these statements; for-in reads dynamic properties.
+    DoWhileStatement,
+    /// The admitted surface excludes this source form.
+    SourceNamespaceDeclaration,
+    /// An interface is structural, and types are nominal.
+    SourceInterfaceDeclaration,
+    /// No lowering is decided for a local declaration.
+    LocalInterfaceDeclaration,
+    /// No lowering is decided for a local declaration.
+    LocalAliasDeclaration,
+    /// No lowering is decided for a local declaration.
+    LocalEnumDeclaration,
+    /// No lowering is decided for a local declaration.
+    LocalFunctionDeclaration,
+    /// No lowering is decided for a local declaration.
+    LocalClassDeclaration,
+    /// No lowering is decided for type-parameter defaults.
+    TypeParameterDefault,
+    /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
+    CollectionCallbackTypeMismatchForm,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    PrivateMemberAssignmentForm,
+    /// No lowering is decided for this operator or expression form.
+    NonPlaceAssignmentTargetForm,
+    /// No lowering is decided for this operator or expression form.
+    LogicalOrPowerAssignmentForm,
+    /// A lambda captures const locals only; a function expression binds its own this.
+    FunctionExpressionForm,
+    /// No lowering is decided for this operator or expression form.
+    NonNullAssertionExpressionForm,
+    /// A lambda captures const locals only; it cannot capture this.
+    ThisInMethodArrow,
+    /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
+    EnumObjectMember,
+    /// No first-class value is decided for a direct call target.
+    StaticMethodValueForm,
+    /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
+    ConstructorNotNamedClassForm,
+    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    CoroutineReturnOrThrowCallForm,
+    /// The yield type comes from the generator body.
+    GeneratorYieldTypeNotKnownForm,
+    /// The deterministic lib subset excludes this global call.
+    LibGlobalCall,
+    /// A descriptor literal fills data members by identifier.
+    DescriptorLiteralAccessorForm,
+    /// A descriptor literal fills data members by identifier.
+    DescriptorLiteralQuotedKeyForm,
+    /// A descriptor literal fills data members by identifier.
+    DescriptorLiteralSpreadForm,
+    /// The language has no any array or evolving array type.
+    EmptyArrayInferenceForm,
+    /// The deterministic lib subset excludes this global name as a value.
+    LibGlobalValue,
+    /// No first-class value is decided for a direct call target.
+    AmbientFunctionValueForm,
+    /// No first-class value is decided for a direct call target.
+    ForeignFunctionValueForm,
+    /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
+    EnumObjectValueForm,
+    /// Generic function values require instantiation outside the admitted inference surface.
+    GenericFunctionValue,
+    /// Interpolation formats scalars, strings, enums, and literal aliases.
+    TemplateInterpolationKindForm,
+    /// The language uses i64 and u64 and has no BigInt.
+    BigIntLiteral,
+    /// Enum, integer, and string switches need a default to prove complete return flow.
+    LambdaReturnFlowCoverage,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    BlockLambdaReturnAnnotationMissingForm,
+    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    GeneratorResultValueWriteForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    GeneratorResultDoneWriteForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    StringMethodValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    SetMethodValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    MapMethodValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    FixedArrayMethodValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    ArrayMethodValueForm,
+    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    NonIndexableReceiverForm,
+    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    FixedArrayConstantIndexBoundsForm,
+    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    FixedArrayIndexNotIntForm,
+    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    ArrayIndexNotIntForm,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    PrivateMemberReadForm,
+    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    YieldDelegationForm,
+    /// The language has no implicit conversion in a truth test.
+    ConditionalNonBooleanConditionForm,
+    /// The language has no implicit conversion in a truth test.
+    LogicalNonBooleanOperandForm,
+    /// The language has no implicit conversion in a truth test.
+    LogicalNotNonBooleanForm,
+    /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
+    DistinctNominalContainerAssignmentForm,
+    /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
+    ConstructorTypeAnnotationForm,
+    /// An annotation names a declared or builtin type; types are nominal.
+    IntersectionTypeAnnotationForm,
+    /// The deterministic lib subset excludes this global type name.
+    LibTypeName,
+    /// An annotation names a declared or builtin type; types are nominal.
+    GeneratorYieldTypeMissingForm,
+    /// Array in type position is a builtin that no declaration shadows.
+    ArrayTypeArgument,
+    /// An annotation names a declared or builtin type; types are nominal.
+    QualifiedSourceTypeNameForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    PatternParameterAnnotationMissingForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    NamedParameterAnnotationMissingForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    FunctionReturnAnnotationMissingForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    ModuleVariableAnnotationMissingForm,
+    /// The program is its files; node cannot load an absent module.
+    NamedImportModuleMissingForm,
+    /// The program is its files; node cannot load an absent module.
+    NamespaceImportTargetMissingForm,
+    /// A mirror declares C header items, and C has no namespace.
+    MirrorModuleDeclarationForm,
+    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
+    DuplicateLiteralAliasMemberForm,
+    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
+    SourceAliasNotLiteralUnionForm,
+    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
+    GenericSourceAliasForm,
+    /// No lowering is decided for string-literal enum member names or constructor parameter properties.
+    EnumStringMemberNameForm,
+    /// No lowering is decided for string-literal enum member names or constructor parameter properties.
+    ConstructorParameterPropertyForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    InstanceFieldAnnotationMissingForm,
+    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    StaticFieldAnnotationMissingForm,
+    /// Field names must be identifiers.
+    IdentifierFieldName,
+    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    GeneratorMethodForm,
+    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    SwitchDiscriminantKindForm,
+    /// Spread arguments require variadic parameters, which the language does not have.
+    ForOfSpreadCall,
+    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    ForOfBindingKindForm,
+    /// The language has no undefined value for the function-wide var binding.
+    ForOfVarBindingForm,
+    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    AsyncForOfForm,
+    /// The language has no implicit conversion in a truth test.
+    StatementNonBooleanConditionForm,
+    /// A finished generator result holds the zero value, so a return value has no slot.
+    GeneratorReturnValue,
+    /// A binding needs an initializer because the language has no undefined value.
+    LocalInitializerMissingForm,
+    /// The language has no undefined value for the function-wide var binding.
+    LocalVarDeclarationForm,
+    /// Enum, integer, and string switches need a default to prove complete return flow.
+    ReturnFlowCoverage,
+    /// A binding needs an initializer because the language has no undefined value.
+    ModuleInitializerMissingForm,
+    /// The language has no undefined value for the function-wide var binding.
+    ModuleVarDeclarationForm,
+    /// The deterministic lib subset excludes this constructor.
+    LibConstructorName,
+    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
+    NullableMemberNonNullFlow,
+    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
+    NullableCallNonNullFlow,
+    /// No first-class value is decided for a direct call target.
+    GeneratorFunctionValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    GenericSynchronousMethodValueForm,
+    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    SynchronousMethodValueForm,
+    /// A Map copy traverses a live source Map; a nullable source does not supply that map.
+    MapCopyNullableSource,
+
+    /// A nominal class has only its declared members; it does not inherit the JavaScript Object API.
+    ClassInheritedObjectMember,
+    /// A class names its nominal type and static declarations; the language has no runtime constructor object.
+    ClassRuntimeObject,
+
+    /// Unary negation takes a sized numeric operand; it does not coerce a string to a number.
+    UnaryNumericCoercion,
+    /// Bitwise operators take sized integer operands and preserve their integer width.
+    BitwiseIntegerOperand,
+    /// A class has a fixed C layout; delete cannot remove a property. Context.free releases an entire instance.
+    DeleteProperty,
+    /// The optional-chain surface tests a nullable receiver for a field read or a method call; it does not test a callable.
+    OptionalMethodCall,
+    /// The optional-chain surface tests a nullable receiver for a field read or a method call; it does not test a callable.
+    OptionalFunctionCall,
+    /// The undefined token appears only in a presence comparison with an absence-capable descriptor member.
+    UndefinedEqualityPair,
+    /// The undefined token appears only in a presence comparison with an absence-capable descriptor member.
+    UndefinedEqualityNonMember,
+    /// A bare yield carries no value, so only a void generator can use it.
+    BareYieldNonVoid,
+    /// An async method is a direct call target and has no first-class function value.
+    AsyncMethodValue,
+    /// A generic async method is a direct call target and has no first-class function value.
+    GenericAsyncMethodValue,
+    /// An async function is a direct call target and has no first-class function value.
+    AsyncFunctionValue,
+    /// A fixed array supplies length, numeric elements, and the admitted callback methods; it has no object reflection members.
+    FixedArrayObjectMember,
+    /// A Map supplies the declared container API; it has no Object reflection members.
+    MapObjectMember,
+    /// A Set supplies the declared container API; it has no Object reflection members.
+    SetObjectMember,
+    /// A coroutine step result contains done and value only; it has no Object methods.
+    GeneratorResultObjectMember,
+    /// A sized numeric supplies the admitted Number formatting methods; it has no Object reflection members.
+    NumericObjectMember,
+    /// The boundary object type has no field shape; member access requires a checked class narrowing.
+    BoundaryObjectMember,
+    /// The Worker static surface supplies spawn only; it has no Object methods.
+    WorkerStaticObjectMethod,
+    /// A Worker supplies post, poll, close, and join only; it has no Object methods.
+    WorkerObjectMethod,
+    /// An Inbox supplies wait and poll only; it has no Object methods.
+    InboxObjectMethod,
+    /// An Outbox supplies post only; it has no Object methods.
+    OutboxObjectMethod,
+    /// A fixed array supplies length, numeric elements, and the admitted callback methods; it has no Object methods.
+    FixedArrayObjectMethod,
+    /// A sized numeric supplies the admitted Number formatting methods; it has no Object methods.
+    NumericObjectMethod,
+    /// A string supplies the admitted UTF-8 string API; it has no Object reflection members.
+    StringObjectMember,
+    /// A Map supplies the admitted container API; it has no Object methods.
+    MapObjectMethod,
+    /// A Set supplies the admitted container API; it has no Object methods.
+    SetObjectMethod,
+    /// An array supplies the admitted container API; it has no Object reflection members.
+    ArrayObjectMember,
+    /// A RegExp pattern is fixed at construction; the admitted surface has no compile method.
+    RegexCompile,
+    /// A fractional literal requires a floating context; an integer context cannot represent its fraction.
+    FractionalIntegerLiteral,
+    /// A fixed-array annotation sets its C array length; the constructing literal must supply exactly that many elements.
+    FixedArrayLiteralLength,
+    /// A byte operation reads the exact declared aggregate type; a structurally compatible aggregate has a different storage layout.
+    ByteArgumentIdentity,
+    /// A generic constructor requires explicit type arguments; constructor argument inference is outside the admitted generic-call surface.
+    GenericConstructorTypeArguments,
+    /// Worker.spawn takes one directly named entry function; a spread argument does not supply that direct source form.
+    WorkerSpawnSpread,
+    /// A worker entry must directly name a module-level function; a local function value has no entry identity.
+    WorkerEntryLocalValue,
+    /// A worker entry must name a non-generic module-level function with the exact synchronous entry shape.
+    WorkerEntryGeneric,
+    /// A worker entry must have exactly two endpoint parameters, return void, and have no default parameter.
+    WorkerEntrySignature,
+    /// A worker entry uses the builtin Inbox and Outbox identities; same-shaped source classes are different endpoint types.
+    WorkerEntryStructuralEndpoints,
+    /// Explicit Worker.spawn arguments must name the entry message classes; structurally equal classes have different nominal identities.
+    WorkerExplicitMessageIdentity,
+    /// An await consumes an async handle or a direct admitted async call; a synchronous value carries no completion.
+    AwaitNonHandle,
+    /// An awaited call directly names an async function or instance method; a local callable is outside this source form.
+    AwaitLocalCall,
+    /// An awaited named call must resolve to a declared async function; an ambient synchronous call carries no async completion.
+    AwaitUndeclaredAsyncFunction,
+    /// An await requires an async completion; a synchronous function call supplies only its immediate result.
+    AwaitSynchronousFunction,
+    /// The admitted awaited method form directly names the instance method with an identifier.
+    AwaitComputedMethod,
+    /// An awaited instance method belongs to an admitted reference class; a primitive method is synchronous.
+    AwaitNonClassMethod,
+    /// An await requires an async completion; a synchronous method call supplies only its immediate result.
+    AwaitSynchronousMethod,
+    /// An awaited call directly names an async function or instance method; an indirect callee has no declared async target.
+    AwaitIndirectCall,
+    /// The unshift surface inserts exactly one element; it has no zero-element overload.
+    ArrayUnshiftEmpty,
+    /// An array callback receives values and an optional index; the callback API has no thisArg parameter.
+    ArrayCallbackThisArgument,
+    /// Map.forEach takes one callback; its API has no thisArg parameter.
+    MapCallbackThisArgument,
+    /// Set.forEach takes one callback; its API has no thisArg parameter.
+    SetCallbackThisArgument,
+    /// Map.groupBy takes a dynamic array; a source class that inherits Array has a different nominal identity.
+    MapGroupByArraySource,
+    /// Map.groupBy needs a storable key value; a void callback supplies no key.
+    MapGroupByVoidKey,
+
+    /// A bare null initializer supplies no inferred type, so the declaration needs an explicit nullable annotation.
+    NullInitializerInference,
+    /// A using binding must name a reference resource class with a disposal hook, optionally nullable.
+    UsingBindingResourceType,
+    /// A mirror declares the ambient C surface directly and cannot declare an export list.
+    MirrorExportList,
+    /// One declaration owns each top-level name in a module; a second declaration cannot add an overload or a merged declaration.
+    TopLevelNameClash,
+    /// The module surface uses export declarations, named export lists, named imports, and namespace imports only.
+    UnsupportedModuleDeclaration,
+    /// A default import stays outside the named module surface, even when module discovery marks the source absent.
+    PoisonedDefaultImport,
+    /// A default import stays outside the named module surface.
+    DefaultImport,
+    /// Only the disposal hook has a computed method name; every other computed method name is rejected.
+    ComputedMethodName,
+    /// A source function needs a body; an ambient function belongs in a host mirror.
+    FunctionBodyMissing,
+    /// A static field needs an initializer because its module storage must start with a value.
+    StaticFieldInitializerMissing,
+    /// A field assignment counts only before every constructor statement that contains a return.
+    FieldAssignmentAfterUnreachableReturn,
+    /// Every ordinary instance field needs an initializer or a top-level constructor assignment, even when the constructor always throws.
+    FieldAssignmentMissingNoNormalExit,
+    /// A constructor reads a field only after an initializer or an earlier top-level statement gives it a value.
+    ConstructorFieldReadWithAssignmentFact,
+    /// Disposal hooks run synchronously; an await using loop binding is outside this disposal surface.
+    ForOfAwaitUsing,
+    /// A switch over a string-literal alias requires each case label to spell a member literal.
+    AliasCaseNonLiteral,
+    /// One field, method, or accessor pair owns each name in its class member namespace.
+    ClassMemberNameClash,
+    /// A descriptor class contains data only and declares no method or accessor.
+    DescriptorMethod,
+    /// A mirror class describes C instance storage and declares no static method or accessor.
+    MirrorStaticMethod,
+    /// A disposal hook must be an instance method.
+    DisposeStatic,
+    /// A mirror class reads C fields and does not declare a script accessor.
+    MirrorAccessor,
+    /// A read accessor must declare an explicit return type.
+    ReadAccessorReturnMissing,
+    /// A write accessor must declare one named parameter with an explicit type.
+    WriteAccessorPattern,
+    /// A write accessor must declare an explicit parameter type.
+    WriteAccessorTypeMissing,
+    /// A generic method template needs a body at collection; a separate overload signature has no template body.
+    GenericMethodBodyMissing,
+    /// A disposal hook must run synchronously.
+    DisposeAsync,
+    /// A disposal hook takes no parameter and returns void.
+    DisposeSignature,
+    /// A descriptor class declares its own data and does not inherit.
+    DescriptorInheritance,
+    /// A reference class has its own nominal identity and C layout; the language has no class inheritance.
+    ReferenceClassInheritance,
+    /// A descriptor class declares instance data only and has no static field.
+    DescriptorStaticField,
+    /// A mirror class describes C instance storage and has no static field.
+    MirrorStaticField,
+    /// A static field cannot represent undefined; optional fields belong only to the descriptor surface.
+    StaticFieldOptional,
+    /// Worker, Inbox, and Outbox values belong to one Context and cannot enter static field storage.
+    ContextAffineStaticField,
+    /// A descriptor member with a default initializer must use the optional question-mark spelling.
+    DescriptorInitializerWithoutOptional,
+    /// A required descriptor member must use the definite-assignment spelling so a constructing literal supplies its value.
+    DescriptorRequiredWithoutDefinite,
+    /// An ordinary instance field cannot represent undefined; optional fields belong only to the descriptor surface.
+    InstanceFieldOptional,
+    /// A wire alias occupies a direct boundary field or an array-pair element; a nested boundary type has no declared wire position.
+    WireAliasNestedField,
+    /// Worker, Inbox, and Outbox values belong to one Context and cannot enter instance field storage.
+    ContextAffineInstanceField,
+    /// A value class contains only sized numerics, booleans, value classes, fixed arrays, enums, and admitted literal aliases.
+    ValueFieldOutsideWhitelist,
+    /// A descriptor class receives its fields from a constructing literal and declares no constructor.
+    DescriptorConstructor,
+    /// A wire alias is a direct mirror constructor parameter or an array-pair element; other nested positions have no wire representation.
+    WireAliasNestedConstructorParameter,
+    /// A class declares at most one index signature for its accessor pair.
+    ClassIndexSignatureCount,
+    /// Only an ordinary reference class can declare an index signature.
+    ClassIndexSignatureNonReference,
+    /// A class index signature describes instance access through its get and set methods.
+    ClassIndexSignatureStatic,
+    /// A class index signature requires an i32 or u32 index.
+    ClassIndexSignatureIndexType,
+    /// A write accessor needs a read accessor because property writes use the shared accessor type.
+    WriteAccessorWithoutRead,
+    /// A read accessor and its write accessor must share exactly one type.
+    AccessorTypeMismatch,
+    /// A mutable class index signature needs a synchronous set method with exactly matching index and element types.
+    ClassIndexSetSignature,
+    /// A using binding needs a function block scope for deterministic disposal; module bindings have no such exit.
+    ModuleUsing,
+    /// The Descriptor decorator accepts no options.
+    DescriptorOptions,
+    /// Only the ambient ValueType and Descriptor decorators define a class representation.
+    UnsupportedClassDecorator,
+    /// A descriptor is a reference class and cannot also declare value-class representation.
+    DescriptorValueType,
+    /// An enum member occupies i32 storage, so an implicit next value must fit the i32 range.
+    EnumImplicitValueOverflow,
+    /// A CEnum wire mapping must contain at least one member.
+    WireEnumEmpty,
+    /// A CEnum mapping consists of named properties whose types are integer literals, rather than methods or index signatures.
+    WireEnumMemberForm,
+    /// A CEnum member key must name a string-literal union member, so numeric property keys are excluded.
+    WireEnumMemberKey,
+    /// A mirror binds constants with non-negative integer-literal values; it does not bind a host data symbol.
+    MirrorVariableForm,
+    /// A wire alias is a direct foreign parameter or an array-pair element; another nested position has no declared wire representation.
+    WireAliasNestedForeignParameter,
+    /// A wire alias has a direct foreign return representation only; an array return has no declared wire representation.
+    WireAliasNestedForeignReturn,
+    /// A callback occupies a mirrored boundary-struct field; a direct foreign callback parameter has no declared provenance position.
+    ForeignDirectCallback,
+    /// A foreign string-view, descriptor, or callback return has no return provenance in the boundary vocabulary.
+    ForeignReturnProvenance,
+    /// An async function uses a Promise<T> return view; an async generator needs an async iterator return view.
+    AsyncGeneratorFunction,
+    /// An async function must declare its suspendable return view with an explicit Promise<T> annotation.
+    AsyncReturnAnnotationMissing,
+    /// An optional parameter implies undefined, which has no language value.
+    OptionalParameter,
+    /// An Error message must be a string; a nominal literal alias needs explicit formatting.
+    ErrorMessageType,
+    /// An Error constructor accepts an optional string message only; options and spread arguments are outside its surface.
+    ErrorConstructorArguments,
+    /// An Error-family object must use the new constructor spelling.
+    ErrorCallWithoutNew,
+    /// The ValueType decorator requires exactly one object-literal argument without a spread.
+    ValueTypeArgumentCount,
+    /// The ValueType decorator requires an object-literal options argument.
+    ValueTypeOptionsNonLiteral,
+    /// A ValueType options literal must contain exactly the align property.
+    ValueTypeOptionCount,
+    /// A ValueType options literal declares align directly and does not spread properties.
+    ValueTypeOptionSpread,
+    /// A ValueType options literal declares align as a key-value property.
+    ValueTypeOptionPropertyForm,
+    /// A ValueType options literal accepts only the align key.
+    ValueTypeOptionKey,
+    /// A ValueType alignment must be a numeric integer literal.
+    ValueTypeAlignmentNonLiteral,
+    /// A ValueType alignment must be one of 2, 4, 8, or 16.
+    ValueTypeAlignmentOutsideSet,
+    /// A program with multiple source files must name exactly one non-ambient entry module in its build input.
+    InvalidProgramEntry,
+    /// An async function must spell its suspendable return view as Promise<T>.
+    AsyncReturnNonReference,
+    /// An async function must spell its suspendable return view with the unqualified Promise<T> name.
+    AsyncReturnQualifiedName,
+    /// An async function must spell its suspendable return view as Promise<T>, rather than an alias.
+    AsyncReturnAlias,
+    /// The suspendable return view must state exactly one fulfilled-value type.
+    AsyncReturnMissingArgument,
+    /// The suspendable return view must state exactly one fulfilled-value type.
+    AsyncReturnArgumentCount,
+    /// A FixedArray must fit the signed aggregate byte limit, which excludes lengths above the element-count range.
+    FixedArrayLengthRange,
+    /// A C array layout needs a non-negative integer literal length at compile time.
+    FixedArrayLengthLiteral,
+    /// A generic constraint uses nominal class identity, rather than TypeScript structural compatibility.
+    GenericConstraintIdentity,
+    /// A namespace qualifier exposes only the declared named exports; a default export stays outside the module surface.
+    NamespaceUnexportedMember,
+    /// The corpus runner calls the entry module host function main; a library export cannot supply that entry.
+    RunnerMainMissing,
+
+    /// Final alignment contributes bytes to the object layout and must stay within the signed displacement limit.
+    ClassFinalAlignmentLimit,
+    /// Argument copies occupy stack storage and must stay within the accumulated frame limit.
+    AggregateArgumentFrameLimit,
+    /// A namespace import is a static qualifier and has no runtime value.
+    NamespaceAsValue,
+    /// A closure can run before the initializer of a binding in another case.
+    SwitchCaseClosureRead,
+    /// A block owns each declared name throughout its scope; an earlier read must not resolve to an outer declaration.
+    BlockNameReadBeforeDeclaration,
+    /// A block owns each declared name throughout its scope; an earlier write must not target an outer declaration.
+    BlockNameWriteBeforeDeclaration,
+    /// A worker handle belongs to one Context and cannot enter a closure environment.
+    ContextAffineCapture,
+    /// A closure copies const local values; mutable captures need shared storage that the language does not provide.
+    MutableLocalCapture,
+    /// A worker handle belongs to one Context and cannot enter array storage.
+    ContextAffineArrayElement,
+    /// A worker handle belongs to one Context and cannot enter container storage.
+    ContextAffineContainerArgument,
+    /// Worker messaging copies a plain reference class; scalar and decorated message types have no declared transfer shape.
+    WorkerMessagePlainClass,
+    /// A string-literal alias has no C wire representation for a mirror signature.
+    BoundaryLiteralAlias,
+    /// Only reference classes, opaque handles, function types, and boundary pointers have a nullable representation.
+    NullableNonReference,
+    /// A value class stores its fields inline and has no nullable pointer representation.
+    NullableValueClassAssignment,
+    /// Foreign functions need a header identity for C emission.
+    MirrorHeaderMissing,
+    /// Parameter provenance must name a parameter declared in the same mirror.
+    MirrorParameterTargetMissing,
+    /// Callback provenance must name a callback typedef declared in the same mirror.
+    MirrorCallbackTargetMissing,
+    /// A callback lifetime record must name a boundary class that carries a callback field.
+    MirrorLifetimeTargetMissing,
+    /// An absorbed array parameter needs its C aggregate or scalar-pair provenance for C emission.
+    MirrorArrayProvenanceMissing,
+    /// An absorbed string parameter needs its C string-view aggregate identity for C emission.
+    MirrorStringProvenanceMissing,
+    /// The declared parameter type must agree with its recorded C parameter shape.
+    MirrorParameterProvenanceMismatch,
+    /// A callback needs a named C typedef for its trampoline cast.
+    MirrorAnonymousCallback,
+    /// A callback needs its recorded C typedef identity for its trampoline cast.
+    MirrorCallbackProvenanceMissing,
+    /// A provenance record must use a declared record kind.
+    ProvenanceUnknownKind,
+    /// A provenance record needs a record kind.
+    ProvenanceMissingKind,
+    /// Whitespace must separate provenance fields.
+    ProvenanceFieldSeparator,
+    /// Each provenance field must use the key required by its record kind.
+    ProvenanceUnexpectedKey,
+    /// A provenance string must use quotes.
+    ProvenanceUnquotedString,
+    /// A provenance string must have a closing quote.
+    ProvenanceUnterminatedString,
+    /// A provenance escape must contain its escaped character.
+    ProvenanceUnterminatedEscape,
+    /// A provenance string must use a declared escape form.
+    ProvenanceUnsupportedEscape,
+    /// A provenance string must escape control characters.
+    ProvenanceControlCharacter,
+    /// A Unicode escape must contain four hexadecimal digits.
+    ProvenanceInvalidUnicodeDigits,
+    /// A provenance boolean must use true or false.
+    ProvenanceInvalidBoolean,
+    /// A provenance record must end after its declared fields.
+    ProvenanceTrailingData,
+    /// A Unicode escape must contain four hexadecimal digits.
+    ProvenanceShortUnicodeEscape,
+    /// A provenance string must contain Unicode scalar values.
+    ProvenanceInvalidUnicodeScalar,
+    /// A header identity must be a nonempty basename without control characters.
+    ProvenanceHeaderBasename,
+    /// A mirror has one header identity.
+    ProvenanceDuplicateHeader,
+    /// A descriptor record needs nonempty function, parameter, aggregate, and element identities.
+    ProvenanceEmptyDescriptor,
+    /// One parameter has one recorded C shape.
+    ProvenanceDuplicateDescriptor,
+    /// A string-view record needs nonempty function, parameter, and aggregate identities.
+    ProvenanceEmptyStringView,
+    /// One parameter has one recorded C shape.
+    ProvenanceDuplicateStringView,
+    /// A scalar-pair record needs nonempty function, parameter, and element identities.
+    ProvenanceEmptyScalarPair,
+    /// One parameter has one recorded C shape.
+    ProvenanceDuplicateScalarPair,
+    /// A callback record needs a nonempty C typedef identity.
+    ProvenanceEmptyCallback,
+    /// One callback typedef has one provenance record.
+    ProvenanceDuplicateCallback,
+    /// A callback lifetime record needs a nonempty aggregate identity.
+    ProvenanceEmptyCallbackLifetime,
+    /// One callback aggregate has one lifetime record.
+    ProvenanceDuplicateCallbackLifetime,
+    /// An external-type record needs a nonempty C type identity.
+    ProvenanceEmptyExternalType,
+    /// One external type has one provenance record.
+    ProvenanceDuplicateExternalType,
+    /// A CEnum record needs nonempty typedef and alias identities.
+    ProvenanceEmptyCEnum,
+    /// One CEnum typedef has one provenance record.
+    ProvenanceDuplicateCEnum,
+
     /// Iteration requires a declared container or string type; literal unions have no traversal representation.
     IterationSubjectDomain,
     /// FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.
@@ -85,7 +818,7 @@ pub enum Divergence {
     /// Operands and arguments of two different numeric widths.
     SizedOperandWidths,
     /// Arithmetic in the storage-only `f16` type.
-    StorageOnlyFloat16,
+    StorageOnlyHalfFloat,
     /// An integer literal outside the range of its contextual type.
     IntegerLiteralRange,
     /// A `CEnum` wire value that is fractional, repeated, or too wide.
@@ -237,7 +970,7 @@ pub enum Divergence {
     /// A `!` field that nothing assigns at the constructor's top level.
     DefiniteAssignmentAssertion,
     /// A field assigned only inside a nested statement of the constructor.
-    NestedFieldAssignment,
+    NestedFieldAssignmentEveryNormalExit,
     /// `new` on a `declare class` that a program file declares.
     AmbientClassConstruction,
     /// `this` that escapes a constructor before every field holds a value.
@@ -262,6 +995,370 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::RestParameter,
+        Divergence::ErasedAssignableEquality,
+        Divergence::DeclaredFieldWithoutValue,
+        Divergence::ErasedAssignableTypeMismatch,
+        Divergence::NonNullableNullEquality,
+        Divergence::DynamicImportCall,
+        Divergence::AbstractMethodBodyMissing,
+        Divergence::ThisStaticMethodMember,
+        Divergence::StringEnumMemberValue,
+        Divergence::ImportAnnotation,
+        Divergence::ConstAssertionExpression,
+        Divergence::NullableNominalAssignmentNonNullFlow,
+        Divergence::StringConcatArgumentCount,
+        Divergence::ArrayConcatArgumentCount,
+        Divergence::GeneratorNextArgumentCount,
+        Divergence::ArrayPushArgumentCount,
+        Divergence::FunctionParameterIdentity,
+        Divergence::ArrayToFixedArray,
+        Divergence::EnumToInteger,
+        Divergence::LiteralAliasToString,
+        Divergence::LiteralAliasMethod,
+        Divergence::EnumMethod,
+        Divergence::FunctionMethod,
+        Divergence::BooleanMethod,
+        Divergence::LiteralAliasMember,
+        Divergence::EnumMember,
+        Divergence::GeneratorMember,
+        Divergence::FunctionMember,
+        Divergence::BooleanMember,
+        Divergence::MetaPropertyExpression,
+        Divergence::ClassExpression,
+        Divergence::TaggedTemplateExpression,
+        Divergence::CommaExpression,
+        Divergence::InstantiationExpression,
+        Divergence::SatisfiesExpression,
+        Divergence::AngleAssertionExpression,
+        Divergence::StringAliasAssertion,
+        Divergence::NullableClassAssertion,
+        Divergence::IntegerEnumAssertion,
+        Divergence::IdentityAssertion,
+        Divergence::BooleanRelationalOperand,
+        Divergence::BinaryStringOperand,
+        Divergence::StringRelationalOperand,
+        Divergence::BinaryEnumOperand,
+        Divergence::CompoundStringOperand,
+        Divergence::CompoundEnumOperand,
+        Divergence::ExponentOperator,
+        Divergence::InOperator,
+        Divergence::UnaryPlusOperator,
+        Divergence::VoidOperator,
+        Divergence::TypeofOperator,
+        Divergence::FunctionTypeObjectPattern,
+        Divergence::FunctionTypeArrayPattern,
+        Divergence::FunctionTypeRestParameter,
+        Divergence::BigIntAnnotation,
+        Divergence::SymbolAnnotation,
+        Divergence::UnknownAnnotation,
+        Divergence::NeverAnnotation,
+        Divergence::TemplateLiteralAnnotation,
+        Divergence::BigIntLiteralAnnotation,
+        Divergence::BooleanLiteralAnnotation,
+        Divergence::NumberLiteralAnnotation,
+        Divergence::StringLiteralAnnotation,
+        Divergence::PredicateAnnotation,
+        Divergence::MappedAnnotation,
+        Divergence::IndexedAnnotation,
+        Divergence::OperatorAnnotation,
+        Divergence::ConditionalAnnotation,
+        Divergence::StructuralAnnotation,
+        Divergence::QueryAnnotation,
+        Divergence::ThisAnnotation,
+        Divergence::TupleAnnotation,
+        Divergence::AutoAccessorDeclaration,
+        Divergence::StaticBlockDeclaration,
+        Divergence::PrivateMethodDeclaration,
+        Divergence::PrivateFieldDeclaration,
+        Divergence::DebuggerStatement,
+        Divergence::LabeledStatement,
+        Divergence::ForInStatement,
+        Divergence::DoWhileStatement,
+        Divergence::SourceNamespaceDeclaration,
+        Divergence::SourceInterfaceDeclaration,
+        Divergence::LocalInterfaceDeclaration,
+        Divergence::LocalAliasDeclaration,
+        Divergence::LocalEnumDeclaration,
+        Divergence::LocalFunctionDeclaration,
+        Divergence::LocalClassDeclaration,
+        Divergence::TypeParameterDefault,
+        Divergence::CollectionCallbackTypeMismatchForm,
+        Divergence::PrivateMemberAssignmentForm,
+        Divergence::NonPlaceAssignmentTargetForm,
+        Divergence::LogicalOrPowerAssignmentForm,
+        Divergence::FunctionExpressionForm,
+        Divergence::NonNullAssertionExpressionForm,
+        Divergence::ThisInMethodArrow,
+        Divergence::EnumObjectMember,
+        Divergence::StaticMethodValueForm,
+        Divergence::ConstructorNotNamedClassForm,
+        Divergence::CoroutineReturnOrThrowCallForm,
+        Divergence::GeneratorYieldTypeNotKnownForm,
+        Divergence::LibGlobalCall,
+        Divergence::DescriptorLiteralAccessorForm,
+        Divergence::DescriptorLiteralQuotedKeyForm,
+        Divergence::DescriptorLiteralSpreadForm,
+        Divergence::EmptyArrayInferenceForm,
+        Divergence::LibGlobalValue,
+        Divergence::AmbientFunctionValueForm,
+        Divergence::ForeignFunctionValueForm,
+        Divergence::EnumObjectValueForm,
+        Divergence::GenericFunctionValue,
+        Divergence::TemplateInterpolationKindForm,
+        Divergence::BigIntLiteral,
+        Divergence::LambdaReturnFlowCoverage,
+        Divergence::BlockLambdaReturnAnnotationMissingForm,
+        Divergence::GeneratorResultValueWriteForm,
+        Divergence::GeneratorResultDoneWriteForm,
+        Divergence::StringMethodValueForm,
+        Divergence::SetMethodValueForm,
+        Divergence::MapMethodValueForm,
+        Divergence::FixedArrayMethodValueForm,
+        Divergence::ArrayMethodValueForm,
+        Divergence::NonIndexableReceiverForm,
+        Divergence::FixedArrayConstantIndexBoundsForm,
+        Divergence::FixedArrayIndexNotIntForm,
+        Divergence::ArrayIndexNotIntForm,
+        Divergence::PrivateMemberReadForm,
+        Divergence::YieldDelegationForm,
+        Divergence::ConditionalNonBooleanConditionForm,
+        Divergence::LogicalNonBooleanOperandForm,
+        Divergence::LogicalNotNonBooleanForm,
+        Divergence::DistinctNominalContainerAssignmentForm,
+        Divergence::ConstructorTypeAnnotationForm,
+        Divergence::IntersectionTypeAnnotationForm,
+        Divergence::LibTypeName,
+        Divergence::GeneratorYieldTypeMissingForm,
+        Divergence::ArrayTypeArgument,
+        Divergence::QualifiedSourceTypeNameForm,
+        Divergence::PatternParameterAnnotationMissingForm,
+        Divergence::NamedParameterAnnotationMissingForm,
+        Divergence::FunctionReturnAnnotationMissingForm,
+        Divergence::ModuleVariableAnnotationMissingForm,
+        Divergence::NamedImportModuleMissingForm,
+        Divergence::NamespaceImportTargetMissingForm,
+        Divergence::MirrorModuleDeclarationForm,
+        Divergence::DuplicateLiteralAliasMemberForm,
+        Divergence::SourceAliasNotLiteralUnionForm,
+        Divergence::GenericSourceAliasForm,
+        Divergence::EnumStringMemberNameForm,
+        Divergence::ConstructorParameterPropertyForm,
+        Divergence::InstanceFieldAnnotationMissingForm,
+        Divergence::StaticFieldAnnotationMissingForm,
+        Divergence::IdentifierFieldName,
+        Divergence::GeneratorMethodForm,
+        Divergence::SwitchDiscriminantKindForm,
+        Divergence::ForOfSpreadCall,
+        Divergence::ForOfBindingKindForm,
+        Divergence::ForOfVarBindingForm,
+        Divergence::AsyncForOfForm,
+        Divergence::StatementNonBooleanConditionForm,
+        Divergence::GeneratorReturnValue,
+        Divergence::LocalInitializerMissingForm,
+        Divergence::LocalVarDeclarationForm,
+        Divergence::ReturnFlowCoverage,
+        Divergence::ModuleInitializerMissingForm,
+        Divergence::ModuleVarDeclarationForm,
+        Divergence::LibConstructorName,
+        Divergence::NullableMemberNonNullFlow,
+        Divergence::NullableCallNonNullFlow,
+        Divergence::GeneratorFunctionValueForm,
+        Divergence::GenericSynchronousMethodValueForm,
+        Divergence::SynchronousMethodValueForm,
+        Divergence::MapCopyNullableSource,
+        Divergence::ClassInheritedObjectMember,
+        Divergence::ClassRuntimeObject,
+        Divergence::UnaryNumericCoercion,
+        Divergence::BitwiseIntegerOperand,
+        Divergence::DeleteProperty,
+        Divergence::OptionalMethodCall,
+        Divergence::OptionalFunctionCall,
+        Divergence::UndefinedEqualityPair,
+        Divergence::UndefinedEqualityNonMember,
+        Divergence::BareYieldNonVoid,
+        Divergence::AsyncMethodValue,
+        Divergence::GenericAsyncMethodValue,
+        Divergence::AsyncFunctionValue,
+        Divergence::FixedArrayObjectMember,
+        Divergence::MapObjectMember,
+        Divergence::SetObjectMember,
+        Divergence::GeneratorResultObjectMember,
+        Divergence::NumericObjectMember,
+        Divergence::BoundaryObjectMember,
+        Divergence::WorkerStaticObjectMethod,
+        Divergence::WorkerObjectMethod,
+        Divergence::InboxObjectMethod,
+        Divergence::OutboxObjectMethod,
+        Divergence::FixedArrayObjectMethod,
+        Divergence::NumericObjectMethod,
+        Divergence::StringObjectMember,
+        Divergence::MapObjectMethod,
+        Divergence::SetObjectMethod,
+        Divergence::ArrayObjectMember,
+        Divergence::RegexCompile,
+        Divergence::FractionalIntegerLiteral,
+        Divergence::FixedArrayLiteralLength,
+        Divergence::ByteArgumentIdentity,
+        Divergence::GenericConstructorTypeArguments,
+        Divergence::WorkerSpawnSpread,
+        Divergence::WorkerEntryLocalValue,
+        Divergence::WorkerEntryGeneric,
+        Divergence::WorkerEntrySignature,
+        Divergence::WorkerEntryStructuralEndpoints,
+        Divergence::WorkerExplicitMessageIdentity,
+        Divergence::AwaitNonHandle,
+        Divergence::AwaitLocalCall,
+        Divergence::AwaitUndeclaredAsyncFunction,
+        Divergence::AwaitSynchronousFunction,
+        Divergence::AwaitComputedMethod,
+        Divergence::AwaitNonClassMethod,
+        Divergence::AwaitSynchronousMethod,
+        Divergence::AwaitIndirectCall,
+        Divergence::ArrayUnshiftEmpty,
+        Divergence::ArrayCallbackThisArgument,
+        Divergence::MapCallbackThisArgument,
+        Divergence::SetCallbackThisArgument,
+        Divergence::MapGroupByArraySource,
+        Divergence::MapGroupByVoidKey,
+        Divergence::NullInitializerInference,
+        Divergence::UsingBindingResourceType,
+        Divergence::FunctionBodyMissing,
+        Divergence::StaticFieldInitializerMissing,
+        Divergence::FieldAssignmentAfterUnreachableReturn,
+        Divergence::FieldAssignmentMissingNoNormalExit,
+        Divergence::ConstructorFieldReadWithAssignmentFact,
+        Divergence::ForOfAwaitUsing,
+        Divergence::AliasCaseNonLiteral,
+        Divergence::ClassMemberNameClash,
+        Divergence::DescriptorMethod,
+        Divergence::MirrorStaticMethod,
+        Divergence::DisposeStatic,
+        Divergence::MirrorAccessor,
+        Divergence::ReadAccessorReturnMissing,
+        Divergence::WriteAccessorPattern,
+        Divergence::WriteAccessorTypeMissing,
+        Divergence::GenericMethodBodyMissing,
+        Divergence::DisposeAsync,
+        Divergence::DisposeSignature,
+        Divergence::DescriptorInheritance,
+        Divergence::ReferenceClassInheritance,
+        Divergence::DescriptorStaticField,
+        Divergence::MirrorStaticField,
+        Divergence::StaticFieldOptional,
+        Divergence::ContextAffineStaticField,
+        Divergence::DescriptorInitializerWithoutOptional,
+        Divergence::DescriptorRequiredWithoutDefinite,
+        Divergence::InstanceFieldOptional,
+        Divergence::WireAliasNestedField,
+        Divergence::ContextAffineInstanceField,
+        Divergence::ValueFieldOutsideWhitelist,
+        Divergence::DescriptorConstructor,
+        Divergence::WireAliasNestedConstructorParameter,
+        Divergence::ClassIndexSignatureCount,
+        Divergence::ClassIndexSignatureNonReference,
+        Divergence::ClassIndexSignatureStatic,
+        Divergence::ClassIndexSignatureIndexType,
+        Divergence::WriteAccessorWithoutRead,
+        Divergence::AccessorTypeMismatch,
+        Divergence::ClassIndexSetSignature,
+        Divergence::ModuleUsing,
+        Divergence::DescriptorOptions,
+        Divergence::UnsupportedClassDecorator,
+        Divergence::DescriptorValueType,
+        Divergence::EnumImplicitValueOverflow,
+        Divergence::WireEnumEmpty,
+        Divergence::WireEnumMemberForm,
+        Divergence::WireEnumMemberKey,
+        Divergence::MirrorVariableForm,
+        Divergence::WireAliasNestedForeignParameter,
+        Divergence::WireAliasNestedForeignReturn,
+        Divergence::ForeignDirectCallback,
+        Divergence::ForeignReturnProvenance,
+        Divergence::AsyncGeneratorFunction,
+        Divergence::AsyncReturnAnnotationMissing,
+        Divergence::OptionalParameter,
+        Divergence::ErrorMessageType,
+        Divergence::ErrorConstructorArguments,
+        Divergence::ErrorCallWithoutNew,
+        Divergence::ValueTypeArgumentCount,
+        Divergence::ValueTypeOptionsNonLiteral,
+        Divergence::ValueTypeOptionCount,
+        Divergence::ValueTypeOptionSpread,
+        Divergence::ValueTypeOptionPropertyForm,
+        Divergence::ValueTypeOptionKey,
+        Divergence::ValueTypeAlignmentNonLiteral,
+        Divergence::ValueTypeAlignmentOutsideSet,
+        Divergence::ComputedMethodName,
+        Divergence::MirrorExportList,
+        Divergence::TopLevelNameClash,
+        Divergence::UnsupportedModuleDeclaration,
+        Divergence::PoisonedDefaultImport,
+        Divergence::DefaultImport,
+        Divergence::InvalidProgramEntry,
+        Divergence::AsyncReturnNonReference,
+        Divergence::AsyncReturnQualifiedName,
+        Divergence::AsyncReturnAlias,
+        Divergence::AsyncReturnMissingArgument,
+        Divergence::AsyncReturnArgumentCount,
+        Divergence::FixedArrayLengthRange,
+        Divergence::FixedArrayLengthLiteral,
+        Divergence::GenericConstraintIdentity,
+        Divergence::NamespaceUnexportedMember,
+        Divergence::RunnerMainMissing,
+        Divergence::ClassFinalAlignmentLimit,
+        Divergence::AggregateArgumentFrameLimit,
+        Divergence::NamespaceAsValue,
+        Divergence::SwitchCaseClosureRead,
+        Divergence::BlockNameReadBeforeDeclaration,
+        Divergence::BlockNameWriteBeforeDeclaration,
+        Divergence::ContextAffineCapture,
+        Divergence::MutableLocalCapture,
+        Divergence::ContextAffineArrayElement,
+        Divergence::ContextAffineContainerArgument,
+        Divergence::WorkerMessagePlainClass,
+        Divergence::BoundaryLiteralAlias,
+        Divergence::NullableNonReference,
+        Divergence::NullableValueClassAssignment,
+        Divergence::MirrorHeaderMissing,
+        Divergence::MirrorParameterTargetMissing,
+        Divergence::MirrorCallbackTargetMissing,
+        Divergence::MirrorLifetimeTargetMissing,
+        Divergence::MirrorArrayProvenanceMissing,
+        Divergence::MirrorStringProvenanceMissing,
+        Divergence::MirrorParameterProvenanceMismatch,
+        Divergence::MirrorAnonymousCallback,
+        Divergence::MirrorCallbackProvenanceMissing,
+        Divergence::ProvenanceUnknownKind,
+        Divergence::ProvenanceMissingKind,
+        Divergence::ProvenanceFieldSeparator,
+        Divergence::ProvenanceUnexpectedKey,
+        Divergence::ProvenanceUnquotedString,
+        Divergence::ProvenanceUnterminatedString,
+        Divergence::ProvenanceUnterminatedEscape,
+        Divergence::ProvenanceUnsupportedEscape,
+        Divergence::ProvenanceControlCharacter,
+        Divergence::ProvenanceInvalidUnicodeDigits,
+        Divergence::ProvenanceInvalidBoolean,
+        Divergence::ProvenanceTrailingData,
+        Divergence::ProvenanceShortUnicodeEscape,
+        Divergence::ProvenanceInvalidUnicodeScalar,
+        Divergence::ProvenanceHeaderBasename,
+        Divergence::ProvenanceDuplicateHeader,
+        Divergence::ProvenanceEmptyDescriptor,
+        Divergence::ProvenanceDuplicateDescriptor,
+        Divergence::ProvenanceEmptyStringView,
+        Divergence::ProvenanceDuplicateStringView,
+        Divergence::ProvenanceEmptyScalarPair,
+        Divergence::ProvenanceDuplicateScalarPair,
+        Divergence::ProvenanceEmptyCallback,
+        Divergence::ProvenanceDuplicateCallback,
+        Divergence::ProvenanceEmptyCallbackLifetime,
+        Divergence::ProvenanceDuplicateCallbackLifetime,
+        Divergence::ProvenanceEmptyExternalType,
+        Divergence::ProvenanceDuplicateExternalType,
+        Divergence::ProvenanceEmptyCEnum,
+        Divergence::ProvenanceDuplicateCEnum,
         Divergence::IterationSubjectDomain,
         Divergence::FixedArrayMethods,
         Divergence::CompilerOwnedValue,
@@ -292,7 +1389,7 @@ impl Divergence {
         Divergence::ValueClassLayout,
         Divergence::BareNumber,
         Divergence::SizedOperandWidths,
-        Divergence::StorageOnlyFloat16,
+        Divergence::StorageOnlyHalfFloat,
         Divergence::IntegerLiteralRange,
         Divergence::WireEnumValues,
         Divergence::EscapingCapture,
@@ -368,923 +1465,14 @@ impl Divergence {
         Divergence::AssignmentPattern,
         Divergence::ModuleLevelPattern,
         Divergence::DefiniteAssignmentAssertion,
-        Divergence::NestedFieldAssignment,
+        Divergence::NestedFieldAssignmentEveryNormalExit,
         Divergence::AmbientClassConstruction,
         Divergence::ThisBeforeFieldValues,
     ];
-
-    /// The four facts for this topic.
-    ///
-    /// This `match` is the whole table (§79 rule 1).
-    #[must_use]
-    pub fn entry(self) -> DivergenceEntry {
-        match self {
-            Divergence::IterationSubjectDomain => DivergenceEntry {
-                ts: "type Dir = \"north\" | \"south\"; const d: Dir = \"north\"; for (const c of d) { print(c); }",
-                subscript: "const d: string = \"north\"; for (const c of d) { print(c); }",
-                why: "Iteration requires a declared container or string type; literal unions have no traversal representation.",
-                collision: "stdlib.md §14.2",
-            },
-            Divergence::FixedArrayMethods => DivergenceEntry {
-                ts: "const xs: FixedArray<i32, 3> = [1, 2, 3]; print(xs.toString());",
-                subscript: "const xs: i32[] = [1, 2, 3]; print(xs.toString());",
-                why: "FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.",
-                collision: "stdlib.md §12",
-            },
-            Divergence::CompilerOwnedValue => DivergenceEntry {
-                ts: "const held = Array;",
-                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
-                why: "Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them.",
-                collision: "stdlib.md §9.0",
-            },
-            Divergence::NamespaceObjectMember => DivergenceEntry {
-                ts: "Array.toString();",
-                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
-                why: "Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation.",
-                collision: "stdlib.md §9.0",
-            },
-            Divergence::UnicodeNormalization => DivergenceEntry {
-                ts: "const text: string = \"x\".normalize();",
-                subscript: "const text: string = \"x\";",
-                why: "Unicode normalization needs tables that the runtime does not provide.",
-                collision: "stdlib.md §8",
-            },
-            Divergence::MatchOptionalIndex => DivergenceEntry {
-                ts: "const hit = \"x\".match(/x/);",
-                subscript: "const pattern: RegExp = /x/; if (pattern.test(\"x\")) { const index: i32 = pattern.matchStart(0); }",
-                why: "TypeScript makes the match index optional; the language requires a definite i32 index and has no optional numeric field.",
-                collision: "stdlib.md §15.3",
-            },
-            Divergence::ArrayFlattenDepth => DivergenceEntry {
-                ts: "const xs: i32[][] = [[1]]; const flat = xs.flat();",
-                subscript: "const xs: i32[][] = [[1]]; const flat: i32[] = []; for (const inner of xs) { for (const value of inner) { flat.push(value); } }",
-                why: "A runtime flattening depth cannot determine one static result element type.",
-                collision: "stdlib.md §9",
-            },
-            Divergence::MethodTypeDomain => DivergenceEntry {
-                ts: "const value: i32 = 1; value.toFixed(2);",
-                subscript: "const value: i32 = 1; const text: string = (value as f64).toFixed(2);",
-                why: "Each method has a fixed receiver, element, result, and accumulator domain; TypeScript generic method domains include more kinds.",
-                collision: "stdlib.md §9",
-            },
-            Divergence::ArrayJoinDomain => DivergenceEntry {
-                ts: "const xs: i32[][] = [[1]]; xs.join();",
-                subscript: "const xs: i32[] = [1]; const text: string = xs.join();",
-                why: "Array join uses the interpolation rules; nested arrays and other non-interpolatable elements have no implicit string form.",
-                collision: "stdlib.md §9",
-            },
-            Divergence::FixedArraySpread => DivergenceEntry {
-                ts: "const xs: i32[] = [1]; const copy: FixedArray<i32, 1> = [...xs];",
-                subscript: "const xs: i32[] = [1]; const copy: i32[] = [...xs];",
-                why: "Array spread creates a dynamic array; its runtime length cannot construct a FixedArray with a static length.",
-                collision: "stdlib.md §14.4",
-            },
-            Divergence::ExplicitIntrinsicTypeArguments => DivergenceEntry {
-                ts: "Context.bytesOf(1);",
-                subscript: "const bytes: u8[] = Context.bytesOf<FixedArray<i32, 1>>([1]);",
-                why: "The intrinsic requires one explicit type argument for its storage or element type; inferred and mapper overloads do not supply that shape.",
-                collision: "stdlib.md §18.1",
-            },
-            Divergence::SourceConstructionDomain => DivergenceEntry {
-                ts: "const values = new Set<i32>(null);",
-                subscript: "const values: Set<i32> = new Set<i32>();",
-                why: "Source construction accepts arrays, FixedArray, Set, and string; null and JavaScript array-like objects are outside this domain.",
-                collision: "stdlib.md §14",
-            },
-            Divergence::CallbackParameterShape => DivergenceEntry {
-                ts: "const xs: i32[] = [1]; xs.map((): i32 => 1);",
-                subscript: "const xs: i32[] = [1]; xs.map((value: i32): i32 => value);",
-                why: "A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI.",
-                collision: "stdlib.md §12",
-            },
-            Divergence::JsonCallArguments => DivergenceEntry {
-                ts: "JSON.stringify(1, null);",
-                subscript: "const text: string = JSON.stringify(1);",
-                why: "JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface.",
-                collision: "stdlib.md §13",
-            },
-            Divergence::JsonTypeDomain => DivergenceEntry {
-                ts: "JSON.stringify(/x/);",
-                subscript: "const text: string = JSON.stringify(\"x\");",
-                why: "JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation.",
-                collision: "stdlib.md §13",
-            },
-            Divergence::StringSearchPattern => DivergenceEntry {
-                ts: "const index: i32 = \"x\".search(\"x\");",
-                subscript: "const index: i32 = \"x\".search(/x/);",
-                why: "String search requires a compiled RegExp; implicit conversion from a string pattern is outside the regular-expression interface.",
-                collision: "stdlib.md §15.3",
-            },
-            Divergence::MirrorParameterPattern => DivergenceEntry {
-                ts: "declare function first([value]: i32[]): void;",
-                subscript: "declare function first(value: i32): void;",
-                why: "A mirror function uses named C ABI parameters; parameter destructuring requires a script body that a mirror does not provide.",
-                collision: "compiler.md §107",
-            },
-            Divergence::LocaleNumberFormatting => DivergenceEntry {
-                ts: "const value: f64 = 1.0; value.toLocaleString();",
-                subscript: "const value: f64 = 1.0; const text: string = value.toFixed(2);",
-                why: "Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats.",
-                collision: "stdlib.md §11",
-            },
-            Divergence::UserIterationProtocol => DivergenceEntry {
-                ts: "class Bag { items: i32[] = [1, 2]; [Symbol.iterator](): Iterator<i32> { return this.items[Symbol.iterator](); } } for (const value of new Bag()) {}",
-                subscript: "const items: i32[] = [1, 2]; for (const value of items) {}",
-                why: "User iteration protocols require Symbol.iterator; the runtime traverses only its declared container types.",
-                collision: "stdlib.md §14.2",
-            },
-            Divergence::SetAlgebraDomain => DivergenceEntry {
-                ts: "class Values extends Set<i32> {} export function main(): void { const values: Set<i32> = new Set<i32>(); values.union(new Values()); }",
-                subscript: "const values: Set<i32> = new Set<i32>(); values.union(new Set<i32>());",
-                why: "Set algebra requires a native Set argument; a Set subclass has no runtime container representation.",
-                collision: "stdlib.md §14",
-            },
-            Divergence::VoidValue => DivergenceEntry {
-                ts: "function f(): void {} const a = f();",
-                subscript: "function f(): void {} f();",
-                why: "Call a void function as a statement. Use a bare return in a void function. A map callback must return a value.",
-                collision: "C21",
-            },
-            Divergence::GeneratorDoneValue => DivergenceEntry {
-                ts: "const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`);",
-                subscript: "if (!r.done) { const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`); }",
-                why: "A finished generator traps when its zero value contains a non-nullable null reference or a null string handle. Check done before the read.",
-                collision: "C23",
-            },
-            Divergence::ReferenceSearchMiss => DivergenceEntry {
-                ts: "const missing = values.get(key); print(`${missing === undefined}`);",
-                subscript: "const missing = values.get(key); print(`${missing == null}`);",
-                why: "JavaScript undefined becomes null for reference search misses and finished nullable-reference generators. Use == null to test absence in both languages.",
-                collision: "C22",
-            },
-            Divergence::LoneSurrogateEscape => DivergenceEntry {
-                ts: r#"const text: string = "\ud83d";"#,
-                subscript: r#"const text: string = "\ud83d\udc4d";"#,
-                why: "UTF-8 has no encoding for a lone surrogate. Write the paired escape or the character.",
-                collision: "compiler.md §96",
-            },
-            Divergence::AnyType => DivergenceEntry {
-                ts: "const value: any = 1;",
-                subscript: "const value: i32 = 1;",
-                why: "Every declaration must carry a C layout, and `any` carries none, \
-                      so no storage can be given to it.",
-                collision: "compiler.md §6",
-            },
-            Divergence::DynamicObjectModel => DivergenceEntry {
-                ts: "class Greeter { message: string = \"hello\"; }\n\
-                     Greeter.prototype.message = \"changed\";\n\
-                     eval(\"print(1)\");",
-                subscript: "class Greeter { message: string = \"hello\"; }\n\
-                            const g: Greeter = new Greeter();\n\
-                            g.message = \"changed\";",
-                why: "The compiler runs ahead of time and a class lowers to a fixed C \
-                      layout, so no code and no member appear at run time.",
-                collision: "compiler.md §6",
-            },
-            Divergence::NominalClassIdentity => DivergenceEntry {
-                ts: "class A { value: i32 = 1; }\n\
-                     class B { value: i32 = 2; }\n\
-                     const a: A = new B();",
-                subscript: "class A { value: i32 = 1; }\n\
-                            const a: A = new A();",
-                why: "Each class declaration is one nominal type, so a class with the \
-                      same shape is a different type.",
-                collision: "C1",
-            },
-            Divergence::ObjectLiteralConstruction => DivergenceEntry {
-                ts: "class Shape { value!: i32; }\n\
-                     const s: Shape = { value: 1 };",
-                subscript: "@Descriptor class Shape { value!: i32; }\n\
-                            const s: Shape = { value: 1 };",
-                why: "An object literal has no nominal identity, so only a `@Descriptor` \
-                      class takes a literal as its construction.",
-                collision: "C1",
-            },
-            Divergence::ValueClassLayout => DivergenceEntry {
-                ts: "@ValueType class Base { value: i32 = 4; }\n\
-                     @ValueType class Derived extends Base { extra: i32 = 5; }",
-                subscript: "@ValueType class Base { value: i32 = 4; }\n\
-                            @ValueType class Derived { base: Base = new Base(); extra: i32 = 5; }",
-                why: "A value class lowers to a plain C struct, so it has no base class \
-                      and no alignment below its natural one.",
-                collision: "C2",
-            },
-            Divergence::BareNumber => DivergenceEntry {
-                ts: "const count: number = 3;",
-                subscript: "const count: i32 = 3;",
-                why: "`number` is a 64-bit float with no C width, so every declaration \
-                      names one of the sized types.",
-                collision: "C3",
-            },
-            Divergence::SizedOperandWidths => DivergenceEntry {
-                ts: "const left: i8 = 1;\n\
-                     const right: i16 = 2;\n\
-                     const value: i16 = left + right;",
-                subscript: "const left: i8 = 1;\n\
-                            const right: i16 = 2;\n\
-                            const value: i16 = (left as i16) + right;",
-                why: "An implicit conversion hides a width change, so every mixed-width \
-                      operand and argument takes an explicit `as`.",
-                collision: "C3",
-            },
-            Divergence::StorageOnlyFloat16 => DivergenceEntry {
-                ts: "const left: f16 = 1.0;\n\
-                     const right: f16 = 2.0;\n\
-                     const value: f16 = left + right;",
-                subscript: "const left: f16 = 1.0;\n\
-                            const right: f16 = 2.0;\n\
-                            const value: f16 = ((left as f32) + (right as f32)) as f16;",
-                why: "`f16` is a storage format with no portable C arithmetic, so \
-                      computation runs in `f32` and converts back.",
-                collision: "compiler.md §16",
-            },
-            Divergence::IntegerLiteralRange => DivergenceEntry {
-                ts: "const big: i32 = 3000000000;",
-                subscript: "const big: i64 = 3000000000;",
-                why: "A literal takes the sized type of its context, so a value outside \
-                      that range has no representation.",
-                collision: "C4",
-            },
-            Divergence::WireEnumValues => DivergenceEntry {
-                ts: "type Wire = CEnum<{ \"m0\": 1.5 }>;",
-                subscript: "type Wire = CEnum<{ \"m0\": 1 }>;",
-                why: "A `CEnum` member carries a C constant, so each wire value is a \
-                      distinct integer inside the `i32` range.",
-                collision: "compiler.md §50",
-            },
-            Divergence::EscapingCapture => DivergenceEntry {
-                ts: "function makeAdder(k: i32): (v: i32) => i32 { const captured: i32 = k; return (v: i32): i32 => v + captured; }",
-                subscript: "function add(k: i32, v: i32): i32 { return k + v; }",
-                why: "A capturing lambda holds its environment on the stack, so it cannot \
-                      outlive the function that made it.",
-                collision: "C5",
-            },
-            Divergence::Exceptions => DivergenceEntry {
-                ts: "function fail(): void {\n\
-                     \x20 throw \"failure\";\n\
-                     }",
-                subscript: "function fail(): void {\n\
-                            \x20 throw new Error(\"failure\");\n\
-                            }",
-                why: "The decided surface throws only an Error-family object, reads a catch \
-                      binding only through `instanceof` or a rethrow, and has no `finally`.",
-                collision: "C6",
-            },
-            Divergence::InstanceofNonError => DivergenceEntry {
-                ts: "class Box {}\n\
-                     const box: Box = new Box();\n\
-                     const known: boolean = box instanceof Box;",
-                subscript: "no equivalent; the nominal static type already names the class",
-                why: "Only an Error-family object carries a runtime class tag, and a nominal \
-                      static type already decides every other class.",
-                collision: "C6",
-            },
-            Divergence::GeneralUnionAndUndefined => DivergenceEntry {
-                ts: "class Choice { value: i32 | string = 0; }\n\
-                     let maybe: i32 | undefined = undefined;",
-                subscript: "class Cell { value: i32 = 0; }\n\
-                            let maybe: Cell | null = null;",
-                why: "A general union has no single C layout, so the one union form is a \
-                      nullable reference and `undefined` stays out.",
-                collision: "C7",
-            },
-            Divergence::NullishNonNullable => DivergenceEntry {
-                ts: "class Box {}\nconst a: Box = new Box();\nconst b: Box = a ?? new Box();",
-                subscript: "class Box {}\nconst a: Box | null = new Box();\nconst b: Box = a ?? new Box();",
-                why: "The nullish test must inspect a nullable pointer, so a non-nullable value has no null branch.",
-                collision: "C7",
-            },
-            Divergence::OptionalChainNonNullable => DivergenceEntry {
-                ts: "class Box { value: i32 = 1; }\nconst a: Box = new Box();\nconst value: i32 = a?.value ?? 0;",
-                subscript: "class Box { value: i32 = 1; }\nconst a: Box = new Box();\nconst value: i32 = a.value;",
-                why: "The optional test must inspect a nullable pointer, so a non-nullable receiver has no null branch.",
-                collision: "C7",
-            },
-            Divergence::NullishAssignment => DivergenceEntry {
-                ts: "class Box {}\nlet a: Box | null = null;\na ??= new Box();",
-                subscript: "class Box {}\nlet a: Box | null = null;\nif (a === null) { a = new Box(); }",
-                why: "`??=` has no HIR form, so the explicit null test keeps assignment and evaluation order visible.",
-                collision: "C7",
-            },
-            Divergence::NonPlaceNullishInitializer => DivergenceEntry {
-                ts: "class Box {}\nfunction maybe(): Box | null { return null; }\nclass Holder { value: Box = maybe() ?? new Box(); }",
-                subscript: "class Box {}\nconst candidate: Box | null = null;\nclass Holder { value: Box = candidate ?? new Box(); }",
-                why: "A non-place receiver needs a synthetic local, and an initializer has no statement list that can declare it.",
-                collision: "C7",
-            },
-            Divergence::OptionalChainUnbound => DivergenceEntry {
-                ts: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value}`);",
-                subscript: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value ?? 0}`);",
-                why: "An unbound optional-chain result needs `undefined`, and this language has only `null`.",
-                collision: "C7",
-            },
-            Divergence::OptionalChainIndex => DivergenceEntry {
-                ts: "const values: i32[] | null = [];\nconst value = values?.[0];",
-                subscript: "class Values { [i: u32]: i32; data: i32[] = [1];\n  get(i: u32): i32 { return this.data[i as i32]; }\n  set(i: u32, value: i32): void { this.data[i as i32] = value; } }\nconst values: Values | null = new Values();\nconst value: i32 = values !== null ? values[0] : 0;",
-                why: "Computed optional access is outside the two chain forms that avoid binding `undefined`.",
-                collision: "C7",
-            },
-            Divergence::LiteralUnionAlias => DivergenceEntry {
-                ts: "type B = \"low\" | \"high\";\n\
-                     function f(level: \"low\" | \"high\"): B { return level; }",
-                subscript: "type Level = \"low\" | \"high\";\n\
-                            function f(level: Level): Level { return level; }",
-                why: "A closed literal set is nominal by its alias, so an inline set has \
-                      no identity and two aliases stay distinct.",
-                collision: "C7",
-            },
-            Divergence::OptionalDescriptorMember => DivergenceEntry {
-                ts: "@Descriptor class D { value?: i32; }\n\
-                     const d: D = { value: undefined };\n\
-                     print(`${d.value}`);",
-                subscript: "type Mode = \"fast\" | \"safe\";\n\
-                            @Descriptor class D { value?: i32 = 1; mode?: Mode; }\n\
-                            if (d.mode !== undefined) { print(`${d.mode}`); }",
-                why: "An optional member must still hold a value, so it carries a default; \
-                      only a closed literal set can be absent.",
-                collision: "C7",
-            },
-            Divergence::BoundaryOnlyObject => DivergenceEntry {
-                ts: "class Box { value: i32 = 1; }\n\
-                     JSON.stringify(new Box() as object);",
-                subscript: "class Box { value: i32 = 1; }\n\
-                            JSON.stringify(new Box());",
-                why: "`object` is the boundary-opaque handle with no field shape, so it is \
-                      legal only at the C boundary.",
-                collision: "C7",
-            },
-            Divergence::PromiseObject => DivergenceEntry {
-                ts: "const pending = Promise.resolve(1);\n\
-                     leaf().then((v) => print(`${v}`));",
-                subscript: "const value: i32 = await leaf();",
-                why: "No event loop and no `Promise` object exist; `await` polls the frame \
-                      that the Context owns.",
-                collision: "C8",
-            },
-            Divergence::AwaitOutsideAsync => DivergenceEntry {
-                ts: "await Context.suspend();",
-                subscript: "export async function main(): Promise<void> {\n\
-                            \x20 await Context.suspend();\n\
-                            }",
-                why: "Only an async function has the suspendable frame that `await` needs, \
-                      so top-level `await` has no frame.",
-                collision: "C8",
-            },
-            Divergence::AsyncFunctionShape => DivergenceEntry {
-                ts: "class W { static async work(): Promise<void> {} }\n\
-                     const work = async (): Promise<void> => {};",
-                subscript: "class W { async work(): Promise<void> { await Context.suspend(); } }",
-                why: "An async frame belongs to a Context-owned instance, so a static, a \
-                      value class, a generator, and a lambda have none.",
-                collision: "C8",
-            },
-            Divergence::DroppedAsyncHandle => DivergenceEntry {
-                ts: "work();",
-                subscript: "await work();",
-                why: "No scheduler exists, so an async frame that no holder awaits will \
-                      never run to completion.",
-                collision: "compiler.md §70",
-            },
-            Divergence::ThisInFieldInitializer => DivergenceEntry {
-                ts: "class C { value: i32 = this.read(); read(): i32 { return 3; } }",
-                subscript: "class C { value: i32 = 0; constructor() { this.value = this.read(); } \
-                            read(): i32 { return 3; } }",
-                why: "Initializers read only earlier initialized fields (§147 rule 2). \
-                      Descriptor defaults forbid `this` (§147 rule 3a). Other uses expose the partial instance.",
-                collision: "C9",
-            },
-            Divergence::ClassIndexSignature => DivergenceEntry {
-                ts: "class Values { [i: u32]: i32; }\n\
-                     const values: Values = new Values();\n\
-                     const changed: i32 = values[0] = 2;",
-                subscript: "class Values { [i: u32]: i32; get(i: u32): i32 { return 0; } \
-                            set(i: u32, v: i32): void {} }\n\
-                            values[0] = 2;\n\
-                            const changed: i32 = values[0];",
-                why: "Value-position writes and signatures without declared methods or on value \
-                      classes stay out.",
-                collision: "C10",
-            },
-            Divergence::UsingDeclaration => DivergenceEntry {
-                ts: "await using resource = new Resource();\n\
-                     const f = (): i32 => { using r = new Resource(); return 1; };",
-                subscript: "using resource = new Resource();",
-                why: "Disposal is synchronous and requires a reference class. Value-class hooks, \
-                      descriptor-class hooks, lambda bodies, and `await using` stay out.",
-                collision: "C11",
-            },
-            Divergence::NamedAccessor => DivergenceEntry {
-                ts: "class V { v: i32 = 1; get c(): i32 { return this.v; } \
-                     set c(x: i32) { this.v = x; } }\n\
-                     const a: V = new V();\n\
-                     const changed: i32 = a.c = 2;",
-                subscript: "class V { v: i32 = 1; get c(): i32 { return this.v; } \
-                            set c(x: i32) { this.v = x; } }\n\
-                            const a: V = new V();\n\
-                            a.c = 2;\n\
-                            const changed: i32 = a.c;",
-                why: "Value-position writes, value-class write accessors, and mirror accessors \
-                      stay out.",
-                collision: "C12",
-            },
-            Divergence::IteratorTemporary => DivergenceEntry {
-                ts: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                     const keys = map.keys();",
-                subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                            for (const key of map.keys()) { print(`${key}`); }",
-                why: "A held view needs a view type the language does not have \
-                      (stdlib.md §14.3).",
-                collision: "C13",
-            },
-            Divergence::HostApiSurface => DivergenceEntry {
-                ts: "export function read(): i32 { return 1; }",
-                subscript: "function read(): i32 { return 1; }\nexport function main(): void { print(`${read()}`); }",
-                why: "The entry module exports only functions with supported host boundary signatures.",
-                collision: "C18",
-            },
-            Divergence::NamedModuleSurface => DivergenceEntry {
-                ts: "// lib.ts\nexport const value: i32 = 1;\n// main.ts\nexport * from \"./lib\";",
-                subscript: "// lib.ts\nexport const value: i32 = 1;\n// main.ts\nexport { value } from \"./lib\";",
-                why: "Named exports keep each module's public surface explicit.",
-                collision: "C18",
-            },
-            Divergence::DeclarationScope => DivergenceEntry {
-                ts: "const outer: i32 = 3;\n\
-                     { const read = (): i32 => outer; const outer: i32 = 4; }",
-                subscript: "const outer: i32 = 3;\n\
-                            { const read = (): i32 => outer; }",
-                why: "The two languages resolve the name to different declarations, so this \
-                      compiler rejects instead of giving a different value.",
-                collision: "C14",
-            },
-            Divergence::ModuleInitializerOrder => DivergenceEntry {
-                ts: "const g: Box = f();\n\
-                     function f(): Box { return h; }\n\
-                     const h: Box = new Box();",
-                subscript: "const h: Box = new Box();\n\
-                            function f(): Box { return h; }\n\
-                            const g: Box = f();",
-                why: "Modules initialize in dependency order and each module in declaration \
-                      order, so an initializer must not read a binding that is initialized later.",
-                collision: "C14",
-            },
-            Divergence::GrowingInstanceChain => DivergenceEntry {
-                ts: "function f<T>(x: T): void { f<T[]>([x]); }",
-                subscript: "function f<T>(x: T): void { f<T>(x); }",
-                why: "This compiler makes one instance per type argument list, so a chain that grows without bound has no finite compiled form.",
-                collision: "C19",
-            },
-            Divergence::StaticMemberSurface => DivergenceEntry {
-                ts: "class Box<T> { static count: i32 = 0; }\n\
-                     class C { static value: i32 = 1; static read(): i32 { return this.value; } }",
-                subscript:
-                    "class C { static value: i32 = 1; static read(): i32 { return C.value; } }",
-                why: "A static member has one storage slot per class, so a generic class \
-                      has no single slot and `this` has no receiver.",
-                collision: "compiler.md §71",
-            },
-            Divergence::MathSubset => DivergenceEntry {
-                ts: "const m = Math;\n\
-                     print(`${Math.max(1, 2, 3)}`);",
-                subscript: "print(`${Math.max(Math.max(1, 2), 3)}`);",
-                why: "`Math` is a compiler namespace that lowers to intrinsics, so it is \
-                      not a value and it takes no variadic call.",
-                collision: "stdlib.md §1",
-            },
-            Divergence::DateSubset => DivergenceEntry {
-                ts: "const d: Date = new Date();\n\
-                     const y: i32 = d.getFullYear();\n\
-                     print(`now: ${d}`);",
-                subscript: "const d: Date = new Date(Date.now());\n\
-                            const y: i32 = d.getUTCFullYear();\n\
-                            print(`now: ${d.toISOString()}`);",
-                why: "The current clock, a local time zone, and a mutable Date make output \
-                      that depends on the host.",
-                collision: "stdlib.md §3",
-            },
-            Divergence::LocaleSensitiveString => DivergenceEntry {
-                ts: "const s: string = \"a\"; const t: string = s.toLocaleUpperCase(); const r: i32 = s.localeCompare(\"b\");",
-                subscript: "const s: string = \"a\"; const t: string = s.toUpperCase(); const same: boolean = s === \"b\";",
-                why: "Locale data is host state that changes the result, so only \
-                      locale-independent case mapping and equality are in the subset.",
-                collision: "stdlib.md §8",
-            },
-            Divergence::ArrayMethodDefaults => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2]; xs.sort();",
-                subscript: "const xs: i32[] = [1, 2]; xs.sort((a: i32, b: i32): i32 => a - b); const hit: i32 = xs.findIndex((v: i32): boolean => v > 1); const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);",
-                why: "The lib's defaults sort as strings, seed from the first element, and \
-                      need a miss value that a scalar has not.",
-                collision: "stdlib.md §9",
-            },
-            Divergence::VariadicArguments => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2]; xs.splice(1, 2, 9, 9, 9); xs.unshift(-1, 0);",
-                subscript: "const xs: i32[] = [1, 2]; xs.splice(1, 2); xs.unshift(-1);",
-                why: "The language has no variadic parameter, so every call takes a fixed \
-                      argument count.",
-                collision: "stdlib.md §12",
-            },
-            Divergence::MapKeyKind => DivergenceEntry {
-                ts: "const map: Map<i32[], i32> = new Map<i32[], i32>();",
-                subscript: "const map: Map<i32, i32> = new Map<i32, i32>();",
-                why: "A key needs a hash and an equality that the layout gives, so scalars, \
-                      strings, and reference handles are the kinds.",
-                collision: "stdlib.md §10",
-            },
-            Divergence::MapScalarGet => DivergenceEntry {
-                ts: "const map: Map<i32, i32> = new Map<i32, i32>(); print(`${map.get(1)}`);",
-                subscript: "const map: Map<i32, i32> = new Map<i32, i32>(); if (map.has(1)) { print(`${map.getOr(1, 0)}`); }",
-                why: "A scalar has no null miss value, so a lookup is a presence check plus \
-                      a defaulted read.",
-                collision: "stdlib.md §10",
-            },
-            Divergence::SharedLocationNarrowing => DivergenceEntry {
-                ts: "if (h.c !== null) { clear(h); print(`${h.c.v}`); }",
-                subscript: "const c = h.c; if (c !== null) { clear(h); print(`${c.v}`); }",
-                why: "Another frame or alias can change a shared location after its null check. Copy the value or narrow again before use.",
-                collision: "C17",
-            },
-            Divergence::MapNonNullableGet => DivergenceEntry {
-                ts: "const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.get(1);",
-                subscript: "function* fallback(): Generator<i32> { yield 1; } const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.getOr(1, fallback());",
-                why: "The value type has no `| null` form of the map's value representation; use a default value.",
-                collision: "compiler.md §123",
-            },
-            Divergence::NoTupleType => DivergenceEntry {
-                ts: "const map: Map<i32, i32> = new Map<i32, i32>([[1, 2]]);\n\
-                     for (const entry of map.entries()) { print(`${entry}`); }",
-                subscript: "const map: Map<i32, i32> = new Map<i32, i32>();\n\
-                            map.set(1, 2);\n\
-                            for (const key of map.keys()) { print(`${key}`); }",
-                why: "The language has no tuple type, so a pair has no element type to \
-                      construct from or to yield.",
-                collision: "stdlib.md §14",
-            },
-            Divergence::NumberCoercionAndArguments => DivergenceEntry {
-                ts: "print(`${isNaN(1.0)}`);\n\
-                     const value: f64 = Number(\"1\");\n\
-                     print(value.toPrecision());",
-                subscript: "print(`${Number.isNaN(1.0)}`);\n\
-                            const value: f64 = parseFloat(\"1\");\n\
-                            print(value.toPrecision(3));",
-                why: "A coercing call reads any run-time type, and an omitted radix or \
-                      digit count changes the output silently.",
-                collision: "stdlib.md §11",
-            },
-            Divergence::JsonSubset => DivergenceEntry {
-                ts: "JSON.stringify(new Map<i32, i32>());\n\
-                     const parsed = JSON.parse(\"{}\");",
-                subscript: "class Box { value: i32 = 1; }\n\
-                            print(JSON.stringify(new Box()));\n\
-                            const r: Box = JSON.parse<Box>('{\"value\":1}');",
-                why: "A container, a function, and a Date have no static field shape, and a \
-                      parse needs a declared target type.",
-                collision: "stdlib.md §13",
-            },
-            Divergence::AggregateLayoutLimit => DivergenceEntry {
-                ts: "const data: FixedArray<u8, 2147483648> = [];",
-                subscript: "const data: FixedArray<u8, 4> = [0, 0, 0, 0];",
-                why: "A field offset is a signed 32-bit displacement, so one aggregate and \
-                      the whole stack frame each have a byte limit.",
-                collision: "collisions.md Q29",
-            },
-            Divergence::RegExpSubset => DivergenceEntry {
-                ts: "const match = /x/.exec(\"x\");\n\
-                     const index: i32 = /x/g.lastIndex;",
-                subscript: "const found: boolean = /x/.test(\"x\");\n\
-                            print(`${\"x\".replace(/x/, \"y\")}`);",
-                why: "An exec result is an array with fields, and `lastIndex` is mutable \
-                      global state; the language has neither type.",
-                collision: "stdlib.md §15",
-            },
-            Divergence::ReplaceAllGlobalFlag => DivergenceEntry {
-                ts: "print(\"aaa\".replaceAll(/a/, \"Z\"));",
-                subscript: "print(\"aaa\".replaceAll(/a/g, \"Z\"));",
-                why: "The lib traps a non-global literal at run time; this compiler reads \
-                      the flag, so it reports it at check time.",
-                collision: "stdlib.md §15",
-            },
-            Divergence::WorkerEntryShape => DivergenceEntry {
-                ts: "class Message { value: i32 = 0; }\n\
-                     async function entry(inbox: Inbox<Message>, outbox: Outbox<Message>): \
-                     Promise<void> {}\n\
-                     Worker.spawn(entry);",
-                subscript: "class Message { value: i32 = 0; }\n\
-                            function entry(inbox: Inbox<Message>, outbox: Outbox<Message>): \
-                            void {}\n\
-                            function run(): void { \
-                            const w: Worker<Message, Message> = Worker.spawn(entry); }",
-                why: "A worker starts on another thread with its own Context, so its entry \
-                      is a named, non-capturing, synchronous module function.",
-                collision: "compiler.md §40",
-            },
-            Divergence::WorkerContextAffinity => DivergenceEntry {
-                ts: "class RefMessage { value: object = {}; }\n\
-                     const w: Worker<RefMessage, RefMessage> = Worker.spawn(echo);",
-                subscript: "class CountMessage { count: i32 = 0; }\n\
-                            function run(): void { \
-                            const w: Worker<CountMessage, CountMessage> = Worker.spawn(echo); }",
-                why: "A `string` field is copied by bytes; every other handle stays owned by \
-                      one Context.",
-                collision: "compiler.md §40",
-            },
-            Divergence::SwitchOverAlias => DivergenceEntry {
-                ts: "switch (phase) { case \"queued\": break; }",
-                subscript: "switch (phase) { case \"queued\": break; default: break; }",
-                why: "A closed literal set dispatches on an integer, so every member has one \
-                      arm, and no member has two.",
-                collision: "compiler.md §41",
-            },
-            Divergence::UnreachableInValuePosition => DivergenceEntry {
-                ts: "const value: i32 = unreachable();",
-                subscript: "unreachable();",
-                why: "`unreachable()` diverges and gives no value, so it is a statement and \
-                      never an operand.",
-                collision: "compiler.md §42",
-            },
-            Divergence::DescriptorConstruction => DivergenceEntry {
-                ts: "@Descriptor class D { value?: i32 = 1; }\n\
-                     const d: D = new D();",
-                subscript: "@Descriptor class D { value?: i32 = 1; }\n\
-                            const d: D = { value: 1 };",
-                why: "A descriptor class has no constructor and no heap identity, so a \
-                      literal in its position constructs it.",
-                collision: "compiler.md §25",
-            },
-            Divergence::ByteAccessTarget => DivergenceEntry {
-                ts: "class Node { value: i32 = 0; }\n\
-                     Context.bytesOf<Node>(node);",
-                subscript: "@ValueType class Point { x: i32 = 0; }\n\
-                            Context.bytesOf<Point>(point);",
-                why: "Storage bytes read only where the layout is C-identical, so a \
-                      reference class and a handle field have none.",
-                collision: "stdlib.md §18",
-            },
-            Divergence::EntryParameterType => DivergenceEntry {
-                ts: "type Level = \"low\" | \"high\";\n\
-                     export function configure(level: Level): void {}",
-                subscript: "type Level = CEnum<{ \"low\": 0; \"high\": 1 }>;\n\
-                            export function configure(level: Level): void {}",
-                why: "A host-callable entry takes a C type, and a plain literal alias has \
-                      no wire representation.",
-                collision: "compiler.md §61",
-            },
-            Divergence::EmbeddedHeaderCopy => DivergenceEntry {
-                ts: "const copied: SubChainHeader = extension.header;\n\
-                     print(`${copied.sType}`);",
-                subscript: "print(`${extension.header.sType}`);",
-                why: "A copy carries the extension's tag with no extension behind it, so \
-                      the host reads past the header.",
-                collision: "compiler.md §33.5",
-            },
-            Divergence::GenericInferenceCandidates => DivergenceEntry {
-                ts: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair(n, f);",
-                subscript: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair<f64>(n as f64, f);",
-                why: "Inference needs one candidate type for each parameter. Supply explicit type arguments when candidates conflict.",
-                collision: "compiler.md §149",
-            },
-            Divergence::GenericInferenceMissing => DivergenceEntry {
-                ts: "function empty<T>(): T | null { return null; }\nempty();",
-                subscript: "function empty<T>(): T | null { return null; }\nempty<i32>();",
-                why: "Inference needs an argument candidate for each type parameter. Supply explicit type arguments when no argument gives a candidate.",
-                collision: "compiler.md §149",
-            },
-            Divergence::GenericMethodTypeArguments => DivergenceEntry {
-                ts: "class Box { identity<T>(value: T): T { return value; } }\n\
-                     const box: Box = new Box();\n\
-                     print(`${box.identity(1)}`);",
-                subscript: "class Box { identity<T>(value: T): T { return value; } }\n\
-                            const box: Box = new Box();\n\
-                            print(`${box.identity<i32>(1)}`);",
-                why: "Each explicit type-argument list names one method instance. Generic method calls do not infer type arguments.",
-                collision: "compiler.md §64",
-            },
-            Divergence::BodilessDeclareGenericMethod => DivergenceEntry {
-                ts: "declare class Box { identity<T>(value: T): T; }",
-                subscript: "class Box { identity<T>(value: T): T { return value; } }",
-                why: "A template must carry the body that each explicit type-argument list instantiates.",
-                collision: "compiler.md §64",
-            },
-            Divergence::GenericMethodOnGenericClass => DivergenceEntry {
-                ts: "class Holder<T> { value: T;\n\
-                       constructor(value: T) { this.value = value; }\n\
-                       pick<U>(other: U): U { return other; } }",
-                subscript: "class Holder<T> { value: T;\n\
-                              constructor(value: T) { this.value = value; } }\n\
-                            function pick<U>(other: U): U { return other; }",
-                why: "The checker holds one substitution, so a class parameter and a \
-                      method parameter cannot bind at the same time.",
-                collision: "compiler.md §64",
-            },
-            Divergence::GeneratorSingleUse => DivergenceEntry {
-                ts: "function* one(): Generator<i32> { yield 1; }\n\
-                     const values: i32[] = [...one()];",
-                subscript: "function* one(): Generator<i32> { yield 1; }\n\
-                            const values: i32[] = [];\n\
-                            for (const value of one()) { values.push(value); }",
-                why: "A generator is single-use, so consuming it reads as a value \
-                      expression while it mutates the generator.",
-                collision: "stdlib.md §14.4",
-            },
-            Divergence::BareMapSubject => DivergenceEntry {
-                ts: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                     for (const entry of map) { print(`${entry}`); }",
-                subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                            for (const key of map.keys()) { print(`${key}`); }",
-                why: "TypeScript binds a `[K, V]` pair here and this language binds `K`, \
-                      so an accepted program fails the `tsc` gate.",
-                collision: "compiler.md §104",
-            },
-            Divergence::BareMapToArray => DivergenceEntry {
-                ts: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                     const entries = [...map];",
-                subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
-                            const keys: i32[] = [];\n\
-                            for (const key of map.keys()) { keys.push(key); }",
-                why: "TypeScript reads a `Map` element as a `[K, V]` pair and this language \
-                      reads `K`, so an accepted program fails the `tsc` gate.",
-                collision: "compiler.md §104",
-            },
-            Divergence::ArrayFromMapper => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2];\n\
-                     const doubled = Array.from(xs, (value: i32): i32 => value * 2);",
-                subscript: "const xs: i32[] = [1, 2];\n\
-                            const doubled: i32[] = [];\n\
-                            for (const value of xs) { doubled.push(value * 2); }",
-                why: "The mapper overload needs callback typing and traversal work, and that \
-                      cost is not measured.",
-                collision: "compiler.md §105.2",
-            },
-            Divergence::ArrayIsArray => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2];\n\
-                     const flag: boolean = Array.isArray(xs);",
-                subscript: "no equivalent; a declared type already answers it",
-                why: "A declared type answers this statically, and the runtime classification \
-                      a boundary-opaque value needs is not inspected.",
-                collision: "compiler.md §105.3",
-            },
-            Divergence::ArrayOfArity => DivergenceEntry {
-                ts: "const xs: i32[] = Array.of<i32>(1, 2);",
-                subscript: "const xs: i32[] = [1, 2];",
-                why: "Variable arity needs the variadic-parameter prerequisite.",
-                collision: "compiler.md §105.3",
-            },
-            Divergence::ArrayHoleConstruction => DivergenceEntry {
-                ts: "const xs: i32[] = new Array<i32>(3);",
-                subscript: "const xs: i32[] = [];\n\
-                            for (let index: i32 = 0; index < 3; index = index + 1) { \
-                            xs.push(0); }",
-                why: "The language has no array hole and no missing-element value, so a \
-                      filled array changes what a read means.",
-                collision: "compiler.md §105.3",
-            },
-            Divergence::PatternDefaultValue => DivergenceEntry {
-                ts: "const xs: i32[] = [];\n\
-                     const [first = 1] = xs;",
-                subscript: "const xs: i32[] = [];\n\
-                            const first: i32 = xs.length > 0 ? xs[0] : 1;",
-                why: "A default fires on a missing element, which TypeScript reads as \
-                      `undefined`; this language has no `undefined`.",
-                collision: "compiler.md §107.3",
-            },
-            Divergence::ArrayRestPattern => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2, 3];\n\
-                     const [head, ...rest] = xs;",
-                subscript: "const xs: i32[] = [1, 2, 3];\n\
-                            const head: i32 = xs[0];\n\
-                            const rest: i32[] = xs.slice(1);",
-                why: "A rest element needs allocation and copy semantics for a second array, \
-                      which this section does not decide.",
-                collision: "compiler.md §107.3",
-            },
-            Divergence::ObjectRestPattern => DivergenceEntry {
-                ts: "class Point { x: i32 = 1; y: i32 = 2; }\n\
-                     const { x, ...rest } = new Point();",
-                subscript: "class Point { x: i32 = 1; y: i32 = 2; }\n\
-                            function read(): i32 {\n\
-                            \x20 const point: Point = new Point();\n\
-                            \x20 const x: i32 = point.x;\n\
-                            \x20 return x;\n\
-                            }",
-                why: "A field rest needs a result shape and property-selection rules, and the \
-                      language has no object type.",
-                collision: "compiler.md §107.3",
-            },
-            Divergence::NestedPattern => DivergenceEntry {
-                ts: "const xss: i32[][] = [[1, 2]];\n\
-                     const [[first, second]] = xss;",
-                subscript: "function read(): i32 {\n\
-                            \x20 const xss: i32[][] = [[1, 2]];\n\
-                            \x20 const [inner] = xss;\n\
-                            \x20 const [first, second] = inner;\n\
-                            \x20 return first + second;\n\
-                            }",
-                why: "A pattern inside a pattern needs recursive type checks and an order for \
-                      its effects.",
-                collision: "compiler.md §107.3",
-            },
-            Divergence::PatternFieldName => DivergenceEntry {
-                ts: "class Point { x: i32 = 1; }\n\
-                     const key = \"x\" as const;\n\
-                     const { [key]: value } = new Point();",
-                subscript: "class Point { x: i32 = 1; }\n\
-                            function read(): i32 {\n\
-                            \x20 const { x: value } = new Point();\n\
-                            \x20 return value;\n\
-                            }",
-                why: "A field name is resolved at compile time, so a computed key names no \
-                      field.",
-                collision: "compiler.md §107.1",
-            },
-            Divergence::PatternSourceShape => DivergenceEntry {
-                ts: "const text = \"ab\";\n\
-                     const [first, second] = text;",
-                subscript: "no equivalent; a binding pattern reads a `T[]`, a \
-                            `FixedArray<T, N>`, or a class instance",
-                why: "A binding pattern reads an array by index, or a class by field name, so \
-                      another source shape has no pattern.",
-                collision: "compiler.md §107.1",
-            },
-            Divergence::AssignmentPattern => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2];\n\
-                     let first: i32 = 0;\n\
-                     [first] = xs;",
-                subscript: "const xs: i32[] = [1, 2];\n\
-                            let first: i32 = 0;\n\
-                            first = xs[0];",
-                why: "A pattern binds new names; a pattern that writes existing targets needs \
-                      an evaluation and write order.",
-                collision: "compiler.md §107.3",
-            },
-            Divergence::ModuleLevelPattern => DivergenceEntry {
-                ts: "const xs: i32[] = [1, 2];\n\
-                     const [first, second] = xs;",
-                subscript: "const xs: i32[] = [1, 2];\n\
-                            const first: i32 = xs[0];\n\
-                            const second: i32 = xs[1];",
-                why: "A module-level name carries a declared type, and a pattern gives each \
-                      name the type its read answers.",
-                collision: "compiler.md §107.1",
-            },
-            Divergence::DefiniteAssignmentAssertion => DivergenceEntry {
-                ts: "class Inner { v: i32 = 3; }\n\
-                     class Holder { inner!: Inner; }",
-                subscript: "class Inner { v: i32 = 3; }\n\
-                            class Holder {\n\
-                            \x20 inner: Inner;\n\
-                            \x20 constructor(inner: Inner) { this.inner = inner; }\n\
-                            }",
-                why: "The assertion asks `tsc` to trust the author; this language has no null \
-                      check on a non-nullable reference.",
-                collision: "compiler.md §108",
-            },
-            Divergence::NestedFieldAssignment => DivergenceEntry {
-                ts: "class Holder {\n\
-                     \x20 x: i32;\n\
-                     \x20 constructor(flag: boolean) {\n\
-                     \x20   if (flag) { this.x = 1; } else { this.x = 2; }\n\
-                     \x20 }\n\
-                     }",
-                subscript: "class Holder {\n\
-                            \x20 x: i32 = 2;\n\
-                            \x20 constructor(flag: boolean) {\n\
-                            \x20   if (flag) { this.x = 1; }\n\
-                            \x20 }\n\
-                            }",
-                why: "The rule reads the constructor's top level only; a definite-assignment \
-                      analysis is a larger change than a field needs.",
-                collision: "compiler.md §108",
-            },
-            Divergence::AmbientClassConstruction => DivergenceEntry {
-                ts: "declare class Ext { value: i32; }\n\
-                     const ext: Ext = new Ext();",
-                subscript: "no equivalent; declare the class in a `.d.ts` mirror, and take \
-                            the instance from a `declare function` there",
-                why: "A `declare class` has no constructor body, so `new` stores no argument \
-                      and every field of the instance holds no value.",
-                collision: "compiler.md §108",
-            },
-            Divergence::ThisBeforeFieldValues => DivergenceEntry {
-                ts: "class Holder {\n\
-                     \x20 inner: Inner;\n\
-                     \x20 constructor() {\n\
-                     \x20   this.show();\n\
-                     \x20   this.inner = new Inner();\n\
-                     \x20 }\n\
-                     }",
-                subscript: "class Holder {\n\
-                            \x20 inner: Inner;\n\
-                            \x20 constructor() {\n\
-                            \x20   this.inner = new Inner();\n\
-                            \x20   this.show();\n\
-                            \x20 }\n\
-                            }",
-                why: "The callee can read a field that holds no value, and the \
-                      definite-assignment analysis of `tsc` does not follow a call.",
-                collision: "compiler.md §108",
-            },
-        }
-    }
 }
+
+mod entries;
+mod type_flow;
 
 #[cfg(test)]
 mod tests {
@@ -1341,8 +1529,9 @@ mod tests {
     /// The variant names declared in the `Divergence` enum body.
     fn declared_variants() -> BTreeSet<String> {
         let start = SOURCE
-            .find("pub enum Divergence {")
-            .expect("the enum declaration");
+            .find("pub enum Divergence {\n")
+            .expect("Divergence enum")
+            + "pub enum Divergence {\n".len();
         let body = &SOURCE[start..];
         let end = body.find("\n}\n").expect("the end of the enum body");
         body[..end]
@@ -1502,7 +1691,7 @@ mod tests {
         );
         assert_eq!(
             entry.subscript,
-            "function empty<T>(): T | null { return null; }\nempty<i32>();"
+            "class Item {}\nfunction empty<T>(): T | null { return null; }\nempty<Item>();"
         );
         assert!(Divergence::ALL.contains(&divergence));
     }

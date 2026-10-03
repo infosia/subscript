@@ -473,7 +473,7 @@ pub fn render_markdown() -> String {
             "| {} | `{}` | {} | {} | {} | {} | {} |",
             escape_table(rejection.group),
             escape_table(rejection.surface),
-            rejection.code,
+            rejection.code(),
             rejection.q_rule,
             rejection
                 .replacement
@@ -611,7 +611,8 @@ mod tests {
                 Ok(_) => panic!("{file}: checker unexpectedly accepted corpus"),
             };
             assert_eq!(
-                diagnostics[0].code, rejection.code,
+                diagnostics[0].code,
+                rejection.code(),
                 "{file}: generated rejection code does not match the checker"
             );
         }
@@ -629,9 +630,11 @@ mod tests {
                 ),
             };
             assert_eq!(
-                diagnostics[0].code, rejection.code,
+                diagnostics[0].code,
+                rejection.code(),
                 "{} {}: generated code does not match the checker",
-                rejection.group, rejection.surface
+                rejection.group,
+                rejection.surface
             );
         }
     }

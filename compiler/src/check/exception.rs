@@ -8,13 +8,13 @@
 //! the seven `lib.es5.d.ts` interfaces as one shape, so an assignment
 //! between two of them is `tsc`-clean in both directions.
 
+use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, BinOp, ExprKind, ERROR_KIND_FIELD};
 use crate::types::{ClassId, Type};
 
@@ -215,8 +215,8 @@ impl Checker<'_> {
             return self.err_expr(pos);
         };
         if n.type_args.is_some() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ErrorConstructorTypeArguments,
                 format!("`{name}` is not generic"),
                 pos.clone(),
             );
@@ -232,8 +232,12 @@ impl Checker<'_> {
                 let message = self.check_expr(&argument.expr, Some(&Type::Str), fx);
                 if !matches!(self.apparent_type(&message.ty), Type::Str | Type::Error) {
                     let found = self.type_name(&message.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if matches!(self.apparent_type(&message.ty), Type::StringAlias(_)) {
+                            RejectionSite::ErrorMessageType
+                        } else {
+                            RejectionSite::ErrorMessageNonString
+                        },
                         format!("the `{name}` message must be a `string`, got `{found}`"),
                         message.pos.clone(),
                     );
@@ -241,8 +245,8 @@ impl Checker<'_> {
                 message
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ErrorConstructorArguments,
                     format!("`new {name}` takes one `string` message argument"),
                     pos.clone(),
                 );
@@ -279,11 +283,7 @@ impl Checker<'_> {
 
     /// A call of an Error-family name without `new` (§115.1 rule 2).
     pub(crate) fn reject_error_call(&mut self, name: &str, pos: Pos) -> hir::Expr {
-        self.error(
-            RuleCode::S100,
-            format!("`{name}` is constructed with `new {name}(message)`; a call without `new` is rejected"),
-            pos.clone(),
-        );
+        self.reject_subset(RejectionSite::ErrorCallWithoutNew, format!("`{name}` is constructed with `new {name}(message)`; a call without `new` is rejected"), pos.clone());
         self.err_expr(pos)
     }
 
@@ -325,14 +325,13 @@ impl Checker<'_> {
         if !local.caught || fx.narrowed.contains(name) {
             return false;
         }
-        self.error_diverging(
-            RuleCode::S010,
+        self.reject_subset(
+            RejectionSite::CatchBindingUnnarrowedUse,
             format!(
                 "the catch binding `{name}` is used outside `instanceof` and `throw`; \
                  narrow it first with `{name} instanceof Error`"
             ),
             pos.clone(),
-            Divergence::Exceptions,
         );
         true
     }
@@ -353,14 +352,13 @@ impl Checker<'_> {
                     && !self.is_error_type(&value.ty)
                 {
                     let found = self.type_name(&value.ty);
-                    self.error_diverging(
-                        RuleCode::S010,
+                    self.reject_subset(
+                        RejectionSite::ThrowOperandNotErrorFamily,
                         format!(
                             "`throw` requires an Error-family object; \
                              this operand has type `{found}`"
                         ),
                         pos.clone(),
-                        Divergence::Exceptions,
                     );
                 }
                 value
@@ -379,12 +377,11 @@ impl Checker<'_> {
     ) -> bool {
         let pos = self.pos(t.span);
         if let Some(finalizer) = &t.finalizer {
-            self.error_diverging(
-                RuleCode::S010,
+            self.reject_subset(
+                RejectionSite::FinallyClause,
                 "`finally` is not in the decided exception surface; \
                  repeat the cleanup after the `try` statement and in its `catch` block",
                 self.pos(finalizer.span),
-                Divergence::Exceptions,
             );
         }
         let Some(handler) = &t.handler else {
@@ -392,7 +389,10 @@ impl Checker<'_> {
         };
         let note_paths = fx.narrowing_note_paths();
         let base = fx.narrowed.clone();
+        let flow_base = fx.nonnull_flow_snapshot();
         let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
+        let body_flow = fx.nonnull_flow_snapshot();
+        fx.restore_nonnull_flow(&flow_base);
         let mut effects = self.body_narrowing_effects(&body);
         fx.narrowed = base.clone();
         self.apply_narrowing_effects(&effects, fx);
@@ -414,9 +414,26 @@ impl Checker<'_> {
         }
         let (handler_body, handler_terminates) = self.check_block(&handler.body.stmts, fx);
         fx.scopes.pop();
+        let handler_flow = fx.nonnull_flow_snapshot();
         effects.merge(self.body_narrowing_effects(&handler_body));
         fx.narrowed = base;
         self.apply_narrowing_effects(&effects, fx);
+        let body_terminal = super::stmt::always_returns(&body);
+        let handler_terminal = super::stmt::always_returns(&handler_body);
+        let joined_flow: Vec<_> = body_flow
+            .iter()
+            .zip(&handler_flow)
+            .map(|(yes, no)| {
+                if body_terminal {
+                    no.clone()
+                } else if handler_terminal {
+                    yes.clone()
+                } else {
+                    yes.intersection(no).cloned().collect()
+                }
+            })
+            .collect();
+        fx.restore_nonnull_flow(&joined_flow);
         fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::Try {
             body,
@@ -445,12 +462,12 @@ impl Checker<'_> {
     fn catch_binding(&mut self, handler: &ast::CatchClause) -> Option<(String, Pos)> {
         let param = handler.param.as_ref()?;
         let ast::Pat::Ident(binding) = param else {
-            self.error_diverging(
-                RuleCode::S010,
-                "a catch binding is one name; a binding pattern is not in the decided exception surface",
-                self.pos(param.span()),
-                Divergence::Exceptions,
-            );
+            let any_annotation = match param {
+                ast::Pat::Array(p) => p.type_ann.as_ref(),
+                ast::Pat::Object(p) => p.type_ann.as_ref(),
+                _ => None,
+            }.is_some_and(|a| matches!(a.type_ann.as_ref(), ast::TsType::TsKeywordType(k) if k.kind == ast::TsKeywordTypeKind::TsAnyKeyword));
+            self.reject_subset(if any_annotation { RejectionSite::CatchBindingPattern } else { RejectionSite::CatchBindingPatternWithoutAny }, "a catch binding is one name; a binding pattern is not in the decided exception surface", self.pos(param.span()));
             return None;
         };
         let pos = self.pos(binding.id.span);
@@ -461,12 +478,11 @@ impl Checker<'_> {
                     if keyword.kind == ast::TsKeywordTypeKind::TsUnknownKeyword
             );
             if !unknown {
-                self.error_diverging(
-                    RuleCode::S010,
+                self.reject_subset(
+                    if matches!(annotation.type_ann.as_ref(), ast::TsType::TsKeywordType(k) if k.kind == ast::TsKeywordTypeKind::TsAnyKeyword) { RejectionSite::CatchBindingAnnotation } else { RejectionSite::CatchBindingInvalidAnnotation },
                     "a catch binding annotation other than `unknown` is rejected; \
                      write `catch (e)` or `catch (e: unknown)`",
                     self.pos(binding.span()),
-                    Divergence::Exceptions,
                 );
             }
         }
@@ -508,11 +524,10 @@ impl Checker<'_> {
             _ => None,
         };
         let Some(kind) = kind else {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!(right, ast::Expr::Ident(id) if matches!(self.peek_scope_item(id.sym.as_ref()), Some(super::ScopeItem::Class(_) | super::ScopeItem::GenericClass(_) | super::ScopeItem::Func(_)))) { RejectionSite::InstanceofRightNotErrorFamily } else { RejectionSite::InstanceofRightNotClass },
                 "`instanceof` requires an Error-family class as its right operand",
                 pos.clone(),
-                Divergence::InstanceofNonError,
             );
             return self.err_expr(pos);
         };
@@ -523,14 +538,25 @@ impl Checker<'_> {
         };
         if !matches!(self.apparent_type(&value.ty), Type::Error) && !self.is_error_type(&value.ty) {
             let found = self.type_name(&value.ty);
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!(
+                    self.apparent_type(&value.ty),
+                    Type::Class(_)
+                        | Type::Func(_)
+                        | Type::Array(_)
+                        | Type::FixedArray(..)
+                        | Type::Map(..)
+                        | Type::Set(_)
+                ) {
+                    RejectionSite::InstanceofLeftNotErrorFamily
+                } else {
+                    RejectionSite::InstanceofLeftPrimitive
+                },
                 format!(
                     "`instanceof` tests an Error-family object or a catch binding; \
                      this operand has type `{found}`"
                 ),
                 value.pos.clone(),
-                Divergence::InstanceofNonError,
             );
             return self.err_expr(pos);
         }

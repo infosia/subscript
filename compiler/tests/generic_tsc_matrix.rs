@@ -565,9 +565,9 @@ struct Divergence {
 
 const DO_WHILE: Divergence = Divergence {
     code: RuleCode::S100,
-    record: "compiler.md §124",
+    record: "C24",
     message: "statement form outside the decided surface",
-    token: "`do…while` stays outside it",
+    token: "`do…while`, a labeled statement",
 };
 
 const VALUE_FIELD: Divergence = Divergence {
@@ -1287,7 +1287,16 @@ fn extra_concrete_source(name: &str, declaration: &str, main_body: &str) -> Stri
 fn diagnostic_matches(diagnostic: &Diagnostic, record: &Divergence) -> bool {
     diagnostic.code == record.code
         && match diagnostic.divergence {
-            Some(divergence) => divergence.entry().collision == record.record,
+            Some(divergence) => {
+                let collision = divergence.entry().collision;
+                collision
+                    .strip_prefix("collisions.md ")
+                    .unwrap_or(collision)
+                    == record.record
+                    && (record.record != "C24"
+                        || (!record.message.is_empty()
+                            && diagnostic.message.contains(record.message)))
+            }
             None => !record.message.is_empty() && diagnostic.message.contains(record.message),
         }
 }

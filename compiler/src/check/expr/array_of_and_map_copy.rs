@@ -1,9 +1,9 @@
 //! Fixed-arity array construction and shallow Map copies (stdlib.md §9.11 and §10.9).
 use super::*;
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 
 use crate::check::{ContainerSlot, FnCtx};
-use crate::diag::RuleCode;
 use crate::hir::{Callee, MapFn};
 
 impl<'p> Checker<'p> {
@@ -28,8 +28,8 @@ impl<'p> Checker<'p> {
                 }),
             )),
             Some(_) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ArrayOfTypeArgumentCount,
                     "`Array.of<T>` takes exactly one type argument",
                     prop_pos,
                 );
@@ -72,7 +72,7 @@ impl<'p> Checker<'p> {
                     && self.assoc_key_kind(&key).is_none()
                 {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::MapCopyKey,
+                        RejectionSite::MapCopyKey,
                         "type is not a permitted Map/Set key kind (Q24)",
                         pos.clone(),
                     );
@@ -84,8 +84,8 @@ impl<'p> Checker<'p> {
                 Some(Type::map(key, value))
             }
             Some(_) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapCopyTypeArgumentCount,
                     "`new Map` takes exactly 2 type argument(s)",
                     ident_pos,
                 );
@@ -104,8 +104,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if matches!(self.apparent_type(&source.ty), Type::Nullable(_)) {
-                    self.error(
-                        RuleCode::S011,
+                    self.reject_subset(
+                        if matches!(self.apparent_type(&source.ty), Type::Nullable(inner) if matches!(self.apparent_type(&inner), Type::Map(..))) { RejectionSite::MapCopyNullableSource } else { RejectionSite::MapCopyNullableNonMap },
                         format!(
                             "`{}` may be null here; narrow with a null check first",
                             self.type_name(&source.ty)
@@ -116,7 +116,7 @@ impl<'p> Checker<'p> {
                 }
                 if matches!(self.apparent_type(&source.ty), Type::Map(_, _)) {
                     let ty = declared.unwrap_or_else(|| source.ty.clone());
-                    self.require_assignable(&source.ty, &ty, source.pos.clone(), "the Map source");
+                    self.require_expr_assignable(&source, &ty, fx, "the Map source");
                     return hir::Expr {
                         kind: hir::ExprKind::Call {
                             callee: Callee::Map(MapFn::New),

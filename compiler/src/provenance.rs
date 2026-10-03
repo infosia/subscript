@@ -1,8 +1,9 @@
 //! Fixed-shape C provenance directives carried by generated ambient mirrors.
 
+use crate::check::rejection::{diagnostic, RejectionFailure, RejectionSite};
 use std::collections::{HashMap, HashSet};
 
-use crate::diag::{Diagnostic, Pos, RuleCode};
+use crate::diag::{Diagnostic, Pos};
 
 /// One parsed directive plus the source text used for loud diagnostics.
 #[derive(Debug, Clone)]
@@ -56,8 +57,8 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             continue;
         };
         let line_number = index as u32 + 1;
-        let parsed =
-            parse_line(body).map_err(|reason| malformed(name, line_number, trimmed, reason))?;
+        let parsed = parse_line(body)
+            .map_err(|reason| malformed(reason.site, name, line_number, trimmed, reason.message))?;
         match parsed {
             Parsed::Header(include) => {
                 if include.is_empty()
@@ -65,6 +66,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     || include.chars().any(char::is_control)
                 {
                     return Err(malformed(
+                        RejectionSite::ProvenanceHeaderBasename,
                         name,
                         line_number,
                         trimmed,
@@ -72,7 +74,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     ));
                 }
                 if mirror.header.is_some() {
-                    return Err(duplicate(name, line_number, trimmed, "header"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateHeader,
+                        name,
+                        line_number,
+                        trimmed,
+                        "header",
+                    ));
                 }
                 mirror.header = Some(Record {
                     value: include,
@@ -96,6 +104,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 .contains(&"")
                 {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyDescriptor,
                         name,
                         line_number,
                         trimmed,
@@ -104,7 +113,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(name, line_number, trimmed, "parameter"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateDescriptor,
+                        name,
+                        line_number,
+                        trimmed,
+                        "parameter",
+                    ));
                 }
                 mirror.parameters.insert(
                     key,
@@ -126,6 +141,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             } => {
                 if [function.as_str(), parameter.as_str(), aggregate.as_str()].contains(&"") {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyStringView,
                         name,
                         line_number,
                         trimmed,
@@ -134,7 +150,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(name, line_number, trimmed, "parameter"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateStringView,
+                        name,
+                        line_number,
+                        trimmed,
+                        "parameter",
+                    ));
                 }
                 mirror.parameters.insert(
                     key,
@@ -153,6 +175,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             } => {
                 if [function.as_str(), parameter.as_str(), element.as_str()].contains(&"") {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyScalarPair,
                         name,
                         line_number,
                         trimmed,
@@ -161,7 +184,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 let key = (function, parameter);
                 if mirror.parameters.contains_key(&key) {
-                    return Err(duplicate(name, line_number, trimmed, "parameter"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateScalarPair,
+                        name,
+                        line_number,
+                        trimmed,
+                        "parameter",
+                    ));
                 }
                 mirror.parameters.insert(
                     key,
@@ -178,6 +207,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             Parsed::Callback(typedef_name) => {
                 if typedef_name.is_empty() {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyCallback,
                         name,
                         line_number,
                         trimmed,
@@ -185,7 +215,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     ));
                 }
                 if mirror.callbacks.contains_key(&typedef_name) {
-                    return Err(duplicate(name, line_number, trimmed, "callback typedef"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateCallback,
+                        name,
+                        line_number,
+                        trimmed,
+                        "callback typedef",
+                    ));
                 }
                 mirror.callbacks.insert(
                     typedef_name.clone(),
@@ -199,6 +235,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             Parsed::CallbackLifetime(aggregate) => {
                 if aggregate.is_empty() {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyCallbackLifetime,
                         name,
                         line_number,
                         trimmed,
@@ -207,6 +244,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 }
                 if mirror.callback_lifetimes.contains_key(&aggregate) {
                     return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateCallbackLifetime,
                         name,
                         line_number,
                         trimmed,
@@ -225,6 +263,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             Parsed::External(type_name) => {
                 if type_name.is_empty() {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyExternalType,
                         name,
                         line_number,
                         trimmed,
@@ -232,7 +271,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     ));
                 }
                 if !externals.insert(type_name) {
-                    return Err(duplicate(name, line_number, trimmed, "external type"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateExternalType,
+                        name,
+                        line_number,
+                        trimmed,
+                        "external type",
+                    ));
                 }
             }
             Parsed::CEnum {
@@ -241,6 +286,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
             } => {
                 if typedef_name.is_empty() || alias.is_empty() {
                     return Err(malformed(
+                        RejectionSite::ProvenanceEmptyCEnum,
                         name,
                         line_number,
                         trimmed,
@@ -248,7 +294,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     ));
                 }
                 if mirror.cenums.contains_key(&typedef_name) {
-                    return Err(duplicate(name, line_number, trimmed, "cenum typedef"));
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateCEnum,
+                        name,
+                        line_number,
+                        trimmed,
+                        "cenum typedef",
+                    ));
                 }
                 mirror.cenums.insert(
                     typedef_name,
@@ -264,9 +316,15 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
     Ok(mirror)
 }
 
-fn malformed(name: &str, line: u32, raw: &str, reason: impl AsRef<str>) -> Diagnostic {
-    Diagnostic::new(
-        RuleCode::S100,
+fn malformed(
+    site: RejectionSite,
+    name: &str,
+    line: u32,
+    raw: &str,
+    reason: impl AsRef<str>,
+) -> Diagnostic {
+    diagnostic(
+        site,
         format!(
             "mirror `{name}` has malformed provenance record `{raw}`: {}",
             reason.as_ref()
@@ -275,9 +333,9 @@ fn malformed(name: &str, line: u32, raw: &str, reason: impl AsRef<str>) -> Diagn
     )
 }
 
-fn duplicate(name: &str, line: u32, raw: &str, kind: &str) -> Diagnostic {
-    Diagnostic::new(
-        RuleCode::S100,
+fn duplicate(site: RejectionSite, name: &str, line: u32, raw: &str, kind: &str) -> Diagnostic {
+    diagnostic(
+        site,
         format!("mirror `{name}` has duplicate provenance for one {kind}: `{raw}`"),
         Pos::new(name, line, 1),
     )
@@ -312,7 +370,7 @@ enum Parsed {
     },
 }
 
-fn parse_line(body: &str) -> Result<Parsed, String> {
+fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
     let mut cursor = Cursor::new(body);
     let kind = cursor.token()?;
     let parsed = match kind {
@@ -344,7 +402,12 @@ fn parse_line(body: &str) -> Result<Parsed, String> {
             typedef_name: cursor.string("typedef")?,
             alias: cursor.string("alias")?,
         },
-        other => return Err(format!("unknown record kind `{other}`")),
+        other => {
+            return Err(RejectionFailure::new(
+                RejectionSite::ProvenanceUnknownKind,
+                format!("unknown record kind `{other}`"),
+            ))
+        }
     };
     cursor.finish()?;
     Ok(parsed)
@@ -360,7 +423,7 @@ impl<'a> Cursor<'a> {
         Cursor { input, offset: 0 }
     }
 
-    fn token(&mut self) -> Result<&'a str, String> {
+    fn token(&mut self) -> Result<&'a str, RejectionFailure> {
         let start = self.offset;
         while self
             .input
@@ -371,13 +434,16 @@ impl<'a> Cursor<'a> {
             self.offset += 1;
         }
         if start == self.offset {
-            Err("record kind is missing".to_string())
+            Err(RejectionFailure::new(
+                RejectionSite::ProvenanceMissingKind,
+                "record kind is missing".to_string(),
+            ))
         } else {
             Ok(&self.input[start..self.offset])
         }
     }
 
-    fn separator(&mut self) -> Result<(), String> {
+    fn separator(&mut self) -> Result<(), RejectionFailure> {
         let start = self.offset;
         while self
             .input
@@ -388,33 +454,45 @@ impl<'a> Cursor<'a> {
             self.offset += 1;
         }
         if start == self.offset {
-            Err("fields must be separated by whitespace".to_string())
+            Err(RejectionFailure::new(
+                RejectionSite::ProvenanceFieldSeparator,
+                "fields must be separated by whitespace".to_string(),
+            ))
         } else {
             Ok(())
         }
     }
 
-    fn key(&mut self, expected: &str) -> Result<(), String> {
+    fn key(&mut self, expected: &str) -> Result<(), RejectionFailure> {
         self.separator()?;
         let key = format!("{expected}=");
         if self.input[self.offset..].starts_with(&key) {
             self.offset += key.len();
             Ok(())
         } else {
-            Err(format!("expected `{expected}=`"))
+            Err(RejectionFailure::new(
+                RejectionSite::ProvenanceUnexpectedKey,
+                format!("expected `{expected}=`"),
+            ))
         }
     }
 
-    fn string(&mut self, key: &str) -> Result<String, String> {
+    fn string(&mut self, key: &str) -> Result<String, RejectionFailure> {
         self.key(key)?;
         if self.input.as_bytes().get(self.offset) != Some(&b'"') {
-            return Err(format!("`{key}` must be a quoted string"));
+            return Err(RejectionFailure::new(
+                RejectionSite::ProvenanceUnquotedString,
+                format!("`{key}` must be a quoted string"),
+            ));
         }
         self.offset += 1;
         let mut out = String::new();
         loop {
             let Some(&byte) = self.input.as_bytes().get(self.offset) else {
-                return Err(format!("unterminated quoted value for `{key}`"));
+                return Err(RejectionFailure::new(
+                    RejectionSite::ProvenanceUnterminatedString,
+                    format!("unterminated quoted value for `{key}`"),
+                ));
             };
             match byte {
                 b'"' => {
@@ -424,7 +502,10 @@ impl<'a> Cursor<'a> {
                 b'\\' => {
                     self.offset += 1;
                     let Some(&escaped) = self.input.as_bytes().get(self.offset) else {
-                        return Err(format!("unterminated escape in `{key}`"));
+                        return Err(RejectionFailure::new(
+                            RejectionSite::ProvenanceUnterminatedEscape,
+                            format!("unterminated escape in `{key}`"),
+                        ));
                     };
                     self.offset += 1;
                     match escaped {
@@ -435,21 +516,26 @@ impl<'a> Cursor<'a> {
                         b't' => out.push('\t'),
                         b'u' => out.push(self.unicode_escape(key)?),
                         other => {
-                            return Err(format!(
-                                "unsupported escape `\\{}` in `{key}`",
-                                char::from(other)
+                            return Err(RejectionFailure::new(
+                                RejectionSite::ProvenanceUnsupportedEscape,
+                                format!("unsupported escape `\\{}` in `{key}`", char::from(other)),
                             ));
                         }
                     }
                 }
                 byte if byte < 0x20 => {
-                    return Err(format!("unescaped control character in `{key}`"));
+                    return Err(RejectionFailure::new(
+                        RejectionSite::ProvenanceControlCharacter,
+                        format!("unescaped control character in `{key}`"),
+                    ));
                 }
                 _ => {
-                    let ch = self.input[self.offset..]
-                        .chars()
-                        .next()
-                        .ok_or_else(|| format!("invalid UTF-8 in `{key}`"))?;
+                    let ch = self.input[self.offset..].chars().next().ok_or_else(|| {
+                        RejectionFailure::new(
+                            RejectionSite::ProvenanceInvalidUnicodeEncoding,
+                            format!("invalid UTF-8 in `{key}`"),
+                        )
+                    })?;
                     out.push(ch);
                     self.offset += ch.len_utf8();
                 }
@@ -457,22 +543,36 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn unicode_escape(&mut self, key: &str) -> Result<char, String> {
+    fn unicode_escape(&mut self, key: &str) -> Result<char, RejectionFailure> {
         let end = self.offset.saturating_add(4);
-        let digits = self
-            .input
-            .get(self.offset..end)
-            .ok_or_else(|| format!("short Unicode escape in `{key}`"))?;
+        let digits = self.input.get(self.offset..end).ok_or_else(|| {
+            RejectionFailure::new(
+                RejectionSite::ProvenanceShortUnicodeEscape,
+                format!("short Unicode escape in `{key}`"),
+            )
+        })?;
         if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(format!("invalid Unicode escape in `{key}`"));
+            return Err(RejectionFailure::new(
+                RejectionSite::ProvenanceInvalidUnicodeDigits,
+                format!("invalid Unicode escape in `{key}`"),
+            ));
         }
         self.offset = end;
-        let value = u32::from_str_radix(digits, 16)
-            .map_err(|_| format!("invalid Unicode escape in `{key}`"))?;
-        char::from_u32(value).ok_or_else(|| format!("invalid Unicode scalar in `{key}`"))
+        let value = u32::from_str_radix(digits, 16).map_err(|_| {
+            RejectionFailure::new(
+                RejectionSite::ProvenanceInvalidUnicode,
+                format!("invalid Unicode escape in `{key}`"),
+            )
+        })?;
+        char::from_u32(value).ok_or_else(|| {
+            RejectionFailure::new(
+                RejectionSite::ProvenanceInvalidUnicodeScalar,
+                format!("invalid Unicode scalar in `{key}`"),
+            )
+        })
     }
 
-    fn boolean(&mut self, key: &str) -> Result<bool, String> {
+    fn boolean(&mut self, key: &str) -> Result<bool, RejectionFailure> {
         self.key(key)?;
         let rest = &self.input[self.offset..];
         if rest.starts_with("true") {
@@ -482,11 +582,14 @@ impl<'a> Cursor<'a> {
             self.offset += 5;
             Ok(false)
         } else {
-            Err(format!("`{key}` must be `true` or `false`"))
+            Err(RejectionFailure::new(
+                RejectionSite::ProvenanceInvalidBoolean,
+                format!("`{key}` must be `true` or `false`"),
+            ))
         }
     }
 
-    fn finish(&mut self) -> Result<(), String> {
+    fn finish(&mut self) -> Result<(), RejectionFailure> {
         while self
             .input
             .as_bytes()
@@ -498,7 +601,10 @@ impl<'a> Cursor<'a> {
         if self.offset == self.input.len() {
             Ok(())
         } else {
-            Err("record has trailing data".to_string())
+            Err(RejectionFailure::new(
+                RejectionSite::ProvenanceTrailingData,
+                "record has trailing data".to_string(),
+            ))
         }
     }
 }

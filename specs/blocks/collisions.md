@@ -701,6 +701,8 @@ it as a candidate to accept.
 | 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 
+Reject: `r344`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

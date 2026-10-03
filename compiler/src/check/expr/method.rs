@@ -1,11 +1,11 @@
 //! Checks the built-in instance methods on numbers, strings, arrays, maps, and sets.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, ContainerSlot, FnCtx, ParamSig};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, ArrFn, Callee, ExprKind, MapFn, NumFn, SetFn, StrFn};
 use crate::types::{HandleKind, Type};
 
@@ -33,8 +33,12 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let type_name = self.type_name(&recv.ty);
-            self.error(
-                RuleCode::S018,
+            self.reject_subset(
+                if super::is_object_member(name) {
+                    RejectionSite::NumericObjectMethod
+                } else {
+                    RejectionSite::NumericUnknownMethod
+                },
                 format!("`{type_name}` has no method `{name}`"),
                 prop_pos,
             );
@@ -94,7 +98,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             self.reject_subset(
-                crate::check::rejection::RejectionSite::NumberMethodArgumentCount,
+                RejectionSite::NumberMethodArgumentCount,
                 format!("{arity_message}, got {} argument(s) (Q26)", c.args.len()),
                 pos.clone(),
             );
@@ -106,7 +110,14 @@ impl<'p> Checker<'p> {
             ty: Type::I32,
             has_default: optional,
         }];
-        let mut checked = self.check_args(&params, &c.args, fx, &pos, name);
+        let mut checked = self.check_args(
+            RejectionSite::NumericMethodCheckedArgumentCount,
+            &params,
+            &c.args,
+            fx,
+            &pos,
+            name,
+        );
         if optional && checked.is_empty() {
             checked.push(hir::Expr {
                 kind: ExprKind::Int(if f == NumFn::ToFixed { 0 } else { -1 }),
@@ -176,7 +187,18 @@ impl<'p> Checker<'p> {
                         && (optional_zero_position || optional_end_position || optional_pad)),
             })
             .collect();
-        let mut args = self.check_args(&params, &c.args, fx, &pos, name);
+        let mut args = self.check_args(
+            if name == "concat" {
+                RejectionSite::StringConcatArgumentCount
+            } else {
+                RejectionSite::FixedArrayAtArgumentCount
+            },
+            &params,
+            &c.args,
+            fx,
+            &pos,
+            name,
+        );
         if optional_slice && args.is_empty() {
             args.push(hir::Expr {
                 kind: ExprKind::Int(0),
@@ -239,8 +261,12 @@ impl<'p> Checker<'p> {
     /// The generic out-of-surface diagnostic for a string member that is
     /// neither accepted nor in the named Q21 rejected set.
     pub(super) fn str_surface_error(&mut self, name: &str, pos: Pos) {
-        self.error(
-            RuleCode::S100,
+        self.reject_subset(
+            if super::is_object_member(name) {
+                RejectionSite::StringObjectMember
+            } else {
+                RejectionSite::StringUnknownMember
+            },
             format!(
                 "`{}` is outside the string surface (length, slice, `+` \
                  concatenation, `===`/`!==`, and the Q21 String methods)",
@@ -299,7 +325,7 @@ impl<'p> Checker<'p> {
         {
             let elem_n = self.type_name(&elem);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ArrayElementDomain,
+                RejectionSite::ArrayElementDomain,
                 format!(
                     "`{}` is defined per element kind (scalars, strings, `Date`, \
                      reference classes); `{}` elements are outside that set (Q22)",
@@ -318,6 +344,7 @@ impl<'p> Checker<'p> {
             A::At => {
                 let mut args = vec![recv];
                 args.extend(self.check_args(
+                    RejectionSite::ArrayAtArgumentCount,
                     &[ParamSig::positional(Type::I32)],
                     &c.args,
                     fx,
@@ -336,7 +363,14 @@ impl<'p> Checker<'p> {
                     },
                 ];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, name));
+                args.extend(self.check_args(
+                    RejectionSite::ArraySearchArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    name,
+                ));
                 if args.len() == 2 {
                     args.push(int_default(
                         if f == A::LastIndexOf {
@@ -362,7 +396,7 @@ impl<'p> Checker<'p> {
                 {
                     let elem_n = self.type_name(&elem);
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::ArrayJoinDomain,
+                        RejectionSite::ArrayJoinDomain,
                         format!(
                             "`{name}` formats elements by the Q14 interpolation rules; \
                              `{}` elements are not interpolatable (Q22)",
@@ -377,7 +411,14 @@ impl<'p> Checker<'p> {
                     ty: Type::Str,
                     has_default: true,
                 }];
-                let mut checked = self.check_args(&params, &c.args, fx, &pos, name);
+                let mut checked = self.check_args(
+                    RejectionSite::ArrayJoinArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    name,
+                );
                 if checked.is_empty() {
                     checked.push(hir::Expr {
                         kind: ExprKind::Str(",".to_string()),
@@ -402,7 +443,14 @@ impl<'p> Checker<'p> {
                         has_default: true,
                     },
                 ];
-                let mut checked = self.check_args(&params, &c.args, fx, &pos, "slice");
+                let mut checked = self.check_args(
+                    RejectionSite::ArraySliceArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "slice",
+                );
                 if checked.is_empty() {
                     checked.push(int_default(0, &pos));
                 }
@@ -427,7 +475,14 @@ impl<'p> Checker<'p> {
                         has_default: true,
                     },
                 ];
-                let mut checked = self.check_args(&params, &c.args, fx, &pos, "fill");
+                let mut checked = self.check_args(
+                    RejectionSite::ArrayFillArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "fill",
+                );
                 if checked.len() == 1 {
                     checked.push(int_default(0, &pos));
                 }
@@ -439,7 +494,14 @@ impl<'p> Checker<'p> {
                 mk(args, arr_ty, pos)
             }
             A::Reverse => {
-                let args_checked = self.check_args(&[], &c.args, fx, &pos, "reverse");
+                let args_checked = self.check_args(
+                    RejectionSite::ArrayReverseArgumentCount,
+                    &[],
+                    &c.args,
+                    fx,
+                    &pos,
+                    "reverse",
+                );
                 let mut args = vec![recv];
                 args.extend(args_checked);
                 mk(args, arr_ty, pos)
@@ -447,7 +509,14 @@ impl<'p> Checker<'p> {
             A::Concat => {
                 let params = [ParamSig::positional(arr_ty.clone())];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, "concat"));
+                args.extend(self.check_args(
+                    RejectionSite::ArrayConcatCallArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "concat",
+                ));
                 mk(args, arr_ty, pos)
             }
             A::Splice => {
@@ -461,8 +530,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if c.args.is_empty() {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArraySpliceRequiredArgument,
                         format!(
                             "`splice` expects 1 or 2 arguments (start, deleteCount), got {}",
                             c.args.len()
@@ -480,7 +549,14 @@ impl<'p> Checker<'p> {
                     },
                 ];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, "splice"));
+                args.extend(self.check_args(
+                    RejectionSite::ArraySpliceArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "splice",
+                ));
                 if args.len() == 2 {
                     args.push(int_default(ArrFn::END_SENTINEL, &pos));
                 }
@@ -488,7 +564,14 @@ impl<'p> Checker<'p> {
             }
             A::Shift => {
                 let mut args = vec![recv];
-                args.extend(self.check_args(&[], &c.args, fx, &pos, "shift"));
+                args.extend(self.check_args(
+                    RejectionSite::ArrayShiftArgumentCount,
+                    &[],
+                    &c.args,
+                    fx,
+                    &pos,
+                    "shift",
+                ));
                 mk(args, elem, pos)
             }
             A::Unshift => {
@@ -502,23 +585,30 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArrayUnshiftEmpty,
                         format!("`unshift` expects 1 argument (value), got {}", c.args.len()),
                         pos.clone(),
                     );
                     return self.err_expr(pos);
                 }
                 let params = [ParamSig::positional(elem)];
-                let checked = self.check_args(&params, &c.args, fx, &pos, "unshift");
+                let checked = self.check_args(
+                    RejectionSite::ArrayUnshiftArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "unshift",
+                );
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(args, Type::I32, pos)
             }
             A::CopyWithin => {
                 if !(2..=3).contains(&c.args.len()) {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArrayCopyWithinRequiredArgumentCount,
                         format!(
                             "`copyWithin` expects 2 or 3 arguments (target, start, end?), got {}",
                             c.args.len()
@@ -536,7 +626,14 @@ impl<'p> Checker<'p> {
                         has_default: true,
                     },
                 ];
-                let mut checked = self.check_args(&params, &c.args, fx, &pos, "copyWithin");
+                let mut checked = self.check_args(
+                    RejectionSite::ArrayCopyWithinArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "copyWithin",
+                );
                 if checked.len() == 2 {
                     checked.push(int_default(ArrFn::END_SENTINEL, &pos));
                 }
@@ -550,8 +647,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArraySortArgumentCount,
                         format!(
                             "`sort` expects 1 argument (the comparator), got {}",
                             c.args.len()
@@ -580,8 +677,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if c.args.len() != 2 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ArrayReduceArgumentCount,
                         format!(
                             "`{}` expects 2 arguments (callback, init), got {}",
                             f.name(),
@@ -594,7 +691,7 @@ impl<'p> Checker<'p> {
                 if let Some(spread) = c.args[1].spread {
                     let p = self.pos(spread);
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::ArrayCallbackSpread,
+                        RejectionSite::ArrayCallbackSpread,
                         "spread arguments require variadic parameters, which the language \
                          does not have",
                         p.clone(),
@@ -616,10 +713,10 @@ impl<'p> Checker<'p> {
                     // The callback fixes `U`; a non-conforming init is
                     // reported against the init, not the callback.
                     Some(u) => {
-                        self.require_assignable(
-                            &init.ty,
+                        self.require_expr_assignable(
+                            &init,
                             u,
-                            init.pos.clone(),
+                            fx,
                             &format!("the `{}` init", f.name()),
                         );
                         u.clone()
@@ -636,7 +733,7 @@ impl<'p> Checker<'p> {
                 {
                     let acc_n = self.type_name(&acc_ty);
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::ArrayAccumulatorDomain,
+                        RejectionSite::ArrayAccumulatorDomain,
                         format!(
                             "the `{}` accumulator crosses the runtime↔script \
                              boundary; `{}` is outside the supported kinds (Q22)",
@@ -678,8 +775,12 @@ impl<'p> Checker<'p> {
             | A::FindLast
             | A::FindLastIndex => {
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if c.args.len() == 2 {
+                            RejectionSite::ArrayCallbackThisArgument
+                        } else {
+                            RejectionSite::ArrayCallbackArgumentCount
+                        },
                         format!(
                             "`{}` expects 1 argument (the callback), got {}",
                             f.name(),
@@ -733,11 +834,10 @@ impl<'p> Checker<'p> {
                             return self.err_expr(pos);
                         }
                         if matches!(&self.apparent_type(&u), Type::Void) {
-                            self.error_diverging(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::ArrayMapVoidCallback,
                                 "the `map` callback must return a value",
                                 cb.pos.clone(),
-                                Divergence::VoidValue,
                             );
                             return self.err_expr(pos);
                         }
@@ -751,7 +851,7 @@ impl<'p> Checker<'p> {
                         {
                             let u_n = self.type_name(&u);
                             self.reject_subset(
-                                crate::check::rejection::RejectionSite::ArrayMapResult,
+                                RejectionSite::ArrayMapResult,
                                 format!(
                                     "`map` produces a `{}[]`; `{}` is outside the \
                                      supported element kinds (Q22)",
@@ -806,8 +906,8 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         if c.args.len() != 2 {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::MapGroupByArgumentCount,
                 format!(
                     "`Map.groupBy` expects an array and a callback, got {} argument(s)",
                     c.args.len()
@@ -822,8 +922,8 @@ impl<'p> Checker<'p> {
             Type::Error => return self.err_expr(pos),
             other => {
                 let actual = self.type_name(other);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapGroupByArraySource,
                     format!("`Map.groupBy` items must be a `T[]`, got `{actual}`"),
                     items.pos.clone(),
                 );
@@ -840,8 +940,8 @@ impl<'p> Checker<'p> {
         let key = match &self.apparent_type(&callback.ty) {
             Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
             Type::Func(_) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapGroupByVoidKey,
                     "`Map.groupBy` callback must return a key",
                     callback.pos.clone(),
                 );
@@ -850,8 +950,8 @@ impl<'p> Checker<'p> {
             Type::Error => return self.err_expr(pos),
             other => {
                 let actual = self.type_name(other);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::MapGroupByNonFunctionCallback,
                     format!("`Map.groupBy` callback is not a function, got `{actual}`"),
                     callback.pos.clone(),
                 );
@@ -867,7 +967,7 @@ impl<'p> Checker<'p> {
         {
             let key_name = self.type_name(&key);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::MapGroupByKey,
+                RejectionSite::MapGroupByKey,
                 format!(
                     "`Map.groupBy` callback returns `{key_name}`, which is not a \
                      §10.2 Map/Set key kind (Q24)"
@@ -906,7 +1006,7 @@ impl<'p> Checker<'p> {
             "of" => self.check_array_of(call, ctx, fx, pos, prop_pos),
             other => {
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::ArrayStaticMember,
+                    RejectionSite::ArrayStaticMember,
                     format!("`Array.{other}` is outside the accepted Array namespace (Q22)"),
                     prop_pos,
                 );
@@ -944,7 +1044,7 @@ impl<'p> Checker<'p> {
             }
             Some(_) => {
                 self.reject_subset(
-                    crate::check::rejection::RejectionSite::ArrayFromTypeCount,
+                    RejectionSite::ArrayFromTypeCount,
                     "`Array.from<T>` takes exactly one type argument",
                     prop_pos,
                 );
@@ -968,7 +1068,7 @@ impl<'p> Checker<'p> {
         }
         let [argument] = &call.args[..] else {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ArrayFromArgumentCount,
+                RejectionSite::ArrayFromArgumentCount,
                 format!(
                     "`Array.from(source)` takes one source argument, got {}",
                     call.args.len()
@@ -981,7 +1081,7 @@ impl<'p> Checker<'p> {
         if let Some(spread) = argument.spread {
             let spread_pos = self.pos(spread);
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ArrayFromSpread,
+                RejectionSite::ArrayFromSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos,
             );
@@ -1017,7 +1117,7 @@ impl<'p> Checker<'p> {
                 None => {
                     let actual = self.type_name(other);
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::ArrayFromSource,
+                        RejectionSite::ArrayFromSource,
                         format!(
                             "`Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, \
                              or string; got `{actual}`"
@@ -1067,8 +1167,12 @@ impl<'p> Checker<'p> {
             if let Some(rejection) = crate::ambient::map_rejection(name) {
                 self.emit_api_rejection(rejection, name, prop_pos);
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if super::is_object_member(name) {
+                        RejectionSite::MapObjectMethod
+                    } else {
+                        RejectionSite::MapUnknownMethod
+                    },
                     format!("`Map` has no accepted method `{name}` (Q24)"),
                     prop_pos,
                 );
@@ -1102,7 +1206,14 @@ impl<'p> Checker<'p> {
                 }
                 let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.get"));
+                args.extend(self.check_args(
+                    RejectionSite::MapGetArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "Map.get",
+                ));
                 let ty = if matches!(&self.apparent_type(&value), Type::Nullable(_)) {
                     value
                 } else {
@@ -1116,12 +1227,26 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(value.clone()),
                 ];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.getOr"));
+                args.extend(self.check_args(
+                    RejectionSite::MapGetOrArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "Map.getOr",
+                ));
                 mk(MapFn::GetOr, args, value, pos)
             }
             M::Set => {
                 let params = [ParamSig::positional(key), ParamSig::positional(value)];
-                let checked = self.check_args(&params, &c.args, fx, &pos, "Map.set");
+                let checked = self.check_args(
+                    RejectionSite::MapSetArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    "Map.set",
+                );
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(MapFn::Set, args, map_ty, pos)
@@ -1130,6 +1255,7 @@ impl<'p> Checker<'p> {
                 let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
                 args.extend(self.check_args(
+                    RejectionSite::MapHasArgumentCount,
                     &params,
                     &c.args,
                     fx,
@@ -1143,15 +1269,26 @@ impl<'p> Checker<'p> {
                 mk(operation.operation(), args, Type::Bool, pos)
             }
             M::Clear => {
-                let checked = self.check_args(&[], &c.args, fx, &pos, "Map.clear");
+                let checked = self.check_args(
+                    RejectionSite::MapClearArgumentCount,
+                    &[],
+                    &c.args,
+                    fx,
+                    &pos,
+                    "Map.clear",
+                );
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(MapFn::Clear, args, Type::Void, pos)
             }
             M::ForEach => {
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if c.args.len() == 2 {
+                            RejectionSite::MapCallbackThisArgument
+                        } else {
+                            RejectionSite::MapCallbackArgumentCount
+                        },
                         format!(
                             "`Map.forEach` expects exactly 1 callback, got {}",
                             c.args.len()
@@ -1187,8 +1324,12 @@ impl<'p> Checker<'p> {
             if let Some(rejection) = crate::ambient::set_rejection(name) {
                 self.emit_api_rejection(rejection, name, prop_pos);
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if super::is_object_member(name) {
+                        RejectionSite::SetObjectMethod
+                    } else {
+                        RejectionSite::SetUnknownMethod
+                    },
                     format!("`Set` has no accepted method `{name}` (Q24)"),
                     prop_pos,
                 );
@@ -1209,7 +1350,14 @@ impl<'p> Checker<'p> {
             S::Add | S::Has | S::Delete => {
                 let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, &format!("Set.{name}")));
+                args.extend(self.check_args(
+                    RejectionSite::SetAddOrHasArgumentCount,
+                    &params,
+                    &c.args,
+                    fx,
+                    &pos,
+                    &format!("Set.{name}"),
+                ));
                 let ty = match operation {
                     S::Add => set_ty,
                     S::Has | S::Delete => Type::Bool,
@@ -1218,15 +1366,26 @@ impl<'p> Checker<'p> {
                 mk(operation.operation(), args, ty, pos)
             }
             S::Clear => {
-                let checked = self.check_args(&[], &c.args, fx, &pos, "Set.clear");
+                let checked = self.check_args(
+                    RejectionSite::SetClearArgumentCount,
+                    &[],
+                    &c.args,
+                    fx,
+                    &pos,
+                    "Set.clear",
+                );
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(SetFn::Clear, args, Type::Void, pos)
             }
             S::ForEach => {
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        if c.args.len() == 2 {
+                            RejectionSite::SetCallbackThisArgument
+                        } else {
+                            RejectionSite::SetCallbackArgumentCount
+                        },
                         format!(
                             "`Set.forEach` expects exactly 1 callback, got {}",
                             c.args.len()
@@ -1252,8 +1411,8 @@ impl<'p> Checker<'p> {
             | S::IsSupersetOf
             | S::IsDisjointFrom => {
                 if c.args.len() != 1 {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::SetBinaryRequiredArgumentCount,
                         format!(
                             "`Set.{name}` expects exactly 1 Set argument, got {}",
                             c.args.len()
@@ -1270,6 +1429,7 @@ impl<'p> Checker<'p> {
                     }
                     _ => {
                         let _ = self.check_args(
+                            RejectionSite::SetDeleteArgumentCount,
                             &[ParamSig::positional(Type::Error)],
                             &c.args,
                             fx,
@@ -1381,6 +1541,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         if arg.spread.is_some() {
             let checked = self.check_args(
+                RejectionSite::SetBinaryArgumentCount,
                 &[ParamSig::positional(Type::Error)],
                 std::slice::from_ref(arg),
                 fx,
@@ -1456,7 +1617,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         self.reject_subset(
-            crate::check::rejection::RejectionSite::CallbackParameterCount,
+            RejectionSite::CallbackParameterCount,
             if allow_index {
                 format!(
                     "`{method}` callbacks take {} parameter(s), or {} with a trailing \
@@ -1541,8 +1702,12 @@ impl<'p> Checker<'p> {
             Some(r) => self.type_name(r),
             None => "…".to_string(),
         };
-        self.error(
-            RuleCode::S100,
+        self.reject_subset(
+            if matches!(self.apparent_type(&checked.ty), Type::Func(_)) {
+                RejectionSite::CollectionCallbackTypeMismatch
+            } else {
+                RejectionSite::CollectionCallbackNotFunction
+            },
             format!(
                 "type mismatch: the `{}` callback expects `{}` => {}, got `{}`",
                 method, wanted, ret_n, got
@@ -1567,8 +1732,12 @@ impl<'p> Checker<'p> {
     /// The generic out-of-surface diagnostic for an array member that is
     /// neither accepted nor in the named Q22 rejected set.
     pub(super) fn arr_surface_error(&mut self, name: &str, pos: Pos) {
-        self.error(
-            RuleCode::S100,
+        self.reject_subset(
+            if super::is_object_member(name) {
+                RejectionSite::ArrayObjectMember
+            } else {
+                RejectionSite::ArrayUnknownMember
+            },
             format!(
                 "`{}` is outside the array surface (length, indexing, push, pop, \
                  and the Q22 Array methods)",

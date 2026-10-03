@@ -1,11 +1,11 @@
 //! Checks assignment expressions and the places that they write.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{static_member_symbol, Checker, FnCtx, ScopeItem};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, Callee, ExprKind};
 use crate::types::Type;
 
@@ -31,15 +31,14 @@ impl<'p> Checker<'p> {
             Some(op)
         } else {
             if a.op == A::NullishAssign {
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::UnsignedShiftAssignment,
                     "assignment operator outside the decided surface",
                     pos.clone(),
-                    Divergence::NullishAssignment,
                 );
             } else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::LogicalOrPowerAssignment,
                     "assignment operator outside the decided surface",
                     pos.clone(),
                 );
@@ -49,12 +48,7 @@ impl<'p> Checker<'p> {
         // §107.3: a pattern binds new names. A pattern that writes
         // existing targets carries its own reason.
         if let ast::AssignTarget::Pat(target) = &a.left {
-            self.error_diverging(
-                RuleCode::S100,
-                "a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names",
-                self.pos(target.span()),
-                Divergence::AssignmentPattern,
-            );
+            self.reject_subset(RejectionSite::DestructuringAssignment, "a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names", self.pos(target.span()));
             return self.err_expr(pos);
         }
         let source = match &a.left {
@@ -95,17 +89,16 @@ impl<'p> Checker<'p> {
         if let Some((receiver, index, signature, target_pos)) = signature_write {
             if !statement_position {
                 let spelling = write_spelling(WriteExpression::Assign(a), "a[i]");
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::IndexAssignmentExpressionValue,
                     format!("{spelling} cannot be used as a value"),
                     pos.clone(),
-                    Divergence::ClassIndexSignature,
                 );
                 return self.err_expr(pos);
             }
             if signature.readonly {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReadonlyIndexAssignment,
                     "`a[i] = v` cannot write through a readonly index signature",
                     pos.clone(),
                 );
@@ -141,12 +134,7 @@ impl<'p> Checker<'p> {
             } else {
                 (receiver, index, value)
             };
-            self.require_assignable(
-                &value.ty.clone(),
-                &signature.element_ty,
-                value.pos.clone(),
-                "the assignment",
-            );
+            self.require_expr_assignable(&value, &signature.element_ty, fx, "the assignment");
             return hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
@@ -173,11 +161,10 @@ impl<'p> Checker<'p> {
             if !statement_position {
                 let target = format!("{class_name}.{name}");
                 let spelling = write_spelling(WriteExpression::Assign(a), &target);
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::StaticAccessorAssignmentExpressionValue,
                     format!("{spelling} cannot be used as a value"),
                     pos.clone(),
-                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -189,16 +176,16 @@ impl<'p> Checker<'p> {
             else {
                 let target = format!("{class_name}.{name}");
                 let spelling = write_spelling(WriteExpression::Assign(a), &target);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReadonlyStaticAccessorAssignment,
                     format!("{spelling} cannot write through a read-only accessor"),
                     pos.clone(),
                 );
                 return self.err_expr(pos);
             };
             let Some(parameter) = signature.params.first() else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::StaticSetterParameterMissing,
                     format!(
                         "static write accessor `{class_name}.{name}` has no parameter signature"
                     ),
@@ -225,12 +212,7 @@ impl<'p> Checker<'p> {
             } else {
                 value
             };
-            self.require_assignable(
-                &value.ty.clone(),
-                &parameter.ty,
-                value.pos.clone(),
-                "the assignment",
-            );
+            self.require_expr_assignable(&value, &parameter.ty, fx, "the assignment");
             return hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Func(hir::Symbol::from_full_text(static_member_symbol(
@@ -257,11 +239,10 @@ impl<'p> Checker<'p> {
             if !statement_position {
                 let target = format!("x.{name}");
                 let spelling = write_spelling(WriteExpression::Assign(a), &target);
-                self.error_diverging(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::AccessorAssignmentExpressionValue,
                     format!("{spelling} cannot be used as a value"),
                     pos.clone(),
-                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -269,16 +250,16 @@ impl<'p> Checker<'p> {
             let Some(signature) = self.class_sigs[id.0].methods.get(&write_name).cloned() else {
                 let target = format!("x.{name}");
                 let spelling = write_spelling(WriteExpression::Assign(a), &target);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ReadonlyAccessorAssignment,
                     format!("{spelling} cannot write through a read-only accessor"),
                     pos.clone(),
                 );
                 return self.err_expr(pos);
             };
             let Some(parameter) = signature.params.first() else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::SetterParameterMissing,
                     format!("write accessor `{name}` has no parameter signature"),
                     pos.clone(),
                 );
@@ -313,12 +294,7 @@ impl<'p> Checker<'p> {
             } else {
                 (recv, value)
             };
-            self.require_assignable(
-                &value.ty.clone(),
-                &parameter.ty,
-                value.pos.clone(),
-                "the assignment",
-            );
+            self.require_expr_assignable(&value, &parameter.ty, fx, "the assignment");
             return hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
@@ -350,16 +326,20 @@ impl<'p> Checker<'p> {
         } else {
             target_ty.clone()
         };
-        self.require_assignable(
-            &if op.is_some() {
-                result_ty.clone()
-            } else {
-                value.ty.clone()
-            },
-            &target_ty,
-            value.pos.clone(),
-            "the assignment",
-        );
+        if op.is_none() {
+            self.require_expr_assignable(&value, &target_ty, fx, "the assignment");
+        } else {
+            self.require_assignable(
+                &if op.is_some() {
+                    result_ty.clone()
+                } else {
+                    value.ty.clone()
+                },
+                &target_ty,
+                value.pos.clone(),
+                "the assignment",
+            );
+        }
         if op.is_none() && self.apparent_type(&target_ty).carries_async_handle() {
             let origins = self.expr_async_origins(&value, fx);
             match &target.kind {
@@ -442,8 +422,8 @@ impl<'p> Checker<'p> {
                 if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
                         // §143 rule 2: the opaque check reports this diagnostic.
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::ConstLocalAssignment,
                             format!("cannot rebind `const` binding `{}`", name),
                             ident_pos.clone(),
                         );
@@ -463,8 +443,8 @@ impl<'p> Checker<'p> {
                     .is_some_and(|binding| binding.imported)
                 {
                     // §143 rule 2: the opaque check reports this diagnostic.
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ImportedBindingAssignment,
                         format!("cannot assign to `{name}` because it is an import"),
                         ident_pos.clone(),
                     );
@@ -475,8 +455,8 @@ impl<'p> Checker<'p> {
                     if let Some(sig) = sig {
                         if !sig.mutable {
                             // §143 rule 2: the opaque check reports this diagnostic.
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::ConstGlobalAssignment,
                                 format!("cannot rebind `const` binding `{}`", name),
                                 ident_pos.clone(),
                             );
@@ -488,8 +468,8 @@ impl<'p> Checker<'p> {
                         });
                     }
                 }
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::NonVariableAssignmentTarget,
                     format!("`{}` is not an assignable binding", name),
                     ident_pos.clone(),
                 );
@@ -497,8 +477,8 @@ impl<'p> Checker<'p> {
             }
             PlaceSource::Member(member) => self.check_member_place(member, fx),
             PlaceSource::Unsupported => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::NonPlaceAssignmentTarget,
                     "assignment target outside the decided surface",
                     pos.clone(),
                 );
@@ -509,6 +489,9 @@ impl<'p> Checker<'p> {
 
     fn check_member_place(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> Place {
         let pos = self.pos(m.span);
+        if self.reject_static_this_member(m, fx) {
+            return Place::Field(self.err_expr(pos));
+        }
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
@@ -534,12 +517,7 @@ impl<'p> Checker<'p> {
                 }
                 if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if let Some(signature) = self.classes[id.0].index_signature.clone() {
-                        self.require_assignable(
-                            &index.ty.clone(),
-                            &signature.index_ty,
-                            index.pos.clone(),
-                            "the index",
-                        );
+                        self.require_expr_assignable(&index, &signature.index_ty, fx, "the index");
                         return Place::IndexSignature {
                             receiver: obj,
                             index,
@@ -568,8 +546,8 @@ impl<'p> Checker<'p> {
                     }
                     if self.class_sigs[id.0].has_accessor(&name) {
                         let Some(signature) = self.class_sigs[id.0].methods.get(&name) else {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::WriteSetterOnlyAccessor,
                                 format!("read accessor `{name}` has no checker signature"),
                                 prop_pos.clone(),
                             );
@@ -595,8 +573,8 @@ impl<'p> Checker<'p> {
                 Place::Field(self.member_on(obj, &name, prop_pos, true))
             }
             ast::MemberProp::PrivateName(_) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::PrivateMemberAssignment,
                     "private names are not in the decided surface",
                     pos.clone(),
                 );
@@ -629,8 +607,8 @@ impl<'p> Checker<'p> {
         if let Some(signature) = self.class_sigs[class.0].static_fields.get(prop).cloned() {
             let symbol = static_member_symbol(class, &class_name, prop);
             if !signature.mutable {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ConstStaticFieldAssignment,
                     format!("cannot rebind `const` binding `{class_name}.{prop}`"),
                     prop_pos.clone(),
                 );
@@ -643,8 +621,8 @@ impl<'p> Checker<'p> {
         }
         if self.class_sigs[class.0].has_static_accessor(prop) {
             let Some(signature) = self.class_sigs[class.0].static_methods.get(prop) else {
-                self.error(
-                    RuleCode::S018,
+                self.reject_subset(
+                    RejectionSite::WriteStaticSetterOnlyAccessor,
                     format!("static read accessor `{class_name}.{prop}` is missing"),
                     prop_pos.clone(),
                 );

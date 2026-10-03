@@ -1,12 +1,12 @@
 //! SWC front end: parses TypeScript sources (TC39 standard decorators
 //! enabled) and maps byte positions back to file/line/column.
 
+use crate::check::rejection::{diagnostic, RejectionSite};
 use swc_common::{BytePos, FileName, SourceMap, Span, Spanned};
 use swc_ecma_ast as ast;
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
-use crate::diag::{Diagnostic, Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::{Diagnostic, Pos};
 use crate::provenance;
 use crate::SourceFile;
 
@@ -234,16 +234,10 @@ fn parser_diagnostic(err: &swc_ecma_parser::error::Error, pos: Pos) -> Diagnosti
         err.kind(),
         swc_ecma_parser::error::SyntaxError::LoneSurrogateEscape
     ) {
-        let mut diagnostic = Diagnostic::new(
-            RuleCode::S100,
-            "a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character",
-            pos,
-        );
-        diagnostic.divergence = Some(Divergence::LoneSurrogateEscape);
-        diagnostic
+        diagnostic(RejectionSite::ParserLoneSurrogateEscape, "a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character", pos)
     } else {
-        Diagnostic::new(
-            RuleCode::S100,
+        diagnostic(
+            RejectionSite::ParserSyntaxError,
             format!("parse error: {}", err.kind().msg()),
             pos,
         )
@@ -267,6 +261,8 @@ fn lookup(source_map: &SourceMap, fallback_file: &str, span: Span) -> Pos {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diag::RuleCode;
+    use crate::divergence::Divergence;
 
     fn src(name: &str, text: &str) -> SourceFile {
         SourceFile {

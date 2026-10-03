@@ -312,6 +312,17 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             token: "class field, array element, or lambda capture rejects",
         });
     }
+    if ["plain", "generic-class", "nullable-class"]
+        .iter()
+        .any(|kind| name.starts_with(&format!("product-{kind}-nullable-")))
+    {
+        records.push(Divergence {
+            code: RuleCode::S005,
+            record: "C24",
+            message: "nominal types are not interchangeable",
+            token: "No narrowing by assignment is decided",
+        });
+    }
     if name.starts_with("product-null-") {
         records.push(Divergence {
             code: RuleCode::S100,
@@ -388,11 +399,14 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             message: "type mismatch: the argument expects `Box`",
         });
     }
-    if name.starts_with("api-Worker-spawn-") {
+    if ["api-Worker-", "api-Inbox-", "api-Outbox-"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+    {
         records.push(Divergence {
             code: RuleCode::S100,
-            record: "compiler.md §40",
-            token: "Message classes are transferable per stdlib §16.2",
+            record: "stdlib.md §16.2",
+            token: "A message type is a plain reference class",
             message: "worker message type",
         });
     }

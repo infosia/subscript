@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     // ----- generic monomorphization (in HIR: templates never survive) -----
@@ -62,21 +63,17 @@ impl<'p> Checker<'p> {
             satisfied = false;
             let argument_name = self.type_name(argument);
             let constraint_name = self.type_name(&constraint);
-            self.error(
-                RuleCode::S100,
-                format!(
+            self.reject_subset(if matches!((&self.apparent_type(argument), &self.apparent_type(&constraint)), (Type::Class(_), Type::Class(_))) { RejectionSite::GenericConstraintIdentity } else { RejectionSite::GenericConstraintMismatch }, format!(
                     "type argument `{argument_name}` does not satisfy the constraint `{constraint_name}` of `{}`",
                     parameter.name.sym
-                ),
-                positions.get(index).cloned().unwrap_or_else(|| pos.clone()),
-            );
+                ), positions.get(index).cloned().unwrap_or_else(|| pos.clone()));
         }
         if root {
             for (parameter, argument) in declaration.params.iter().zip(args) {
                 if self.constraint_cycle(argument) {
                     satisfied = false;
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GenericConstraintCycle,
                         format!(
                             "type parameter `{}` has a circular constraint",
                             parameter.name.sym
@@ -280,8 +277,8 @@ impl<'p> Checker<'p> {
             return None;
         }
         if template.type_params.len() != args.len() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GenericFunctionTypeArgumentCount,
                 format!(
                     "`{}` expects {} type argument(s), got {}",
                     source_name(key),
@@ -372,8 +369,8 @@ impl<'p> Checker<'p> {
             return None;
         }
         if template.type_params.len() != args.len() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GenericMethodTypeArgumentCount,
                 format!(
                     "`{}` expects {} type argument(s), got {}",
                     name,
@@ -448,8 +445,8 @@ impl<'p> Checker<'p> {
                     false,
                     &sig,
                     (
-                        (!is_static).then_some(Type::Class(id)),
-                        is_static.then_some(Divergence::StaticMemberSurface),
+                        Some(Type::Class(id)),
+                        is_static.then_some(RejectionSite::ThisStaticField),
                     ),
                     pos,
                 )
@@ -489,8 +486,8 @@ impl<'p> Checker<'p> {
         let positions = &arguments.positions;
         let template = self.generic_classes.get(key)?.clone();
         if template.type_params.len() != args.len() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::GenericClassTypeArgumentCount,
                 format!(
                     "`{}` expects {} type argument(s), got {}",
                     source_name(key),
@@ -577,16 +574,16 @@ impl<'p> Checker<'p> {
     pub(crate) fn check_pending_instance_bodies(&mut self) {
         for (id, chain) in std::mem::take(&mut self.pending_instance_bodies) {
             let Some((key, args)) = self.instance_arguments.get(&id).cloned() else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DeferredInstanceArgumentsMissing,
                     "internal error: deferred instance has no type arguments",
                     Pos::new("", 1, 1),
                 );
                 continue;
             };
             let Some(template) = self.generic_classes.get(&key).cloned() else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DeferredInstanceTemplateMissing,
                     "internal error: deferred instance has no generic template",
                     Pos::new("", 1, 1),
                 );

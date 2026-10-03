@@ -1,13 +1,12 @@
 //! Statement checking: declarations, control flow, and the C7 flow
 //! narrowing that admits member access on `Ref | null` values.
 
+use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::diag::RuleCode;
-use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, ExprKind};
 use crate::types::Type;
 
@@ -184,6 +183,19 @@ impl<'p> Checker<'p> {
     ) -> bool {
         fx.ended_shared_narrowing
             .retain(|key| !fx.narrowed.contains(key));
+        let saved_rejected_names = std::mem::take(&mut self.rejected_local_names);
+        self.rejected_local_names = fx
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.vars)
+            .filter(|(_, local)| self.apparent_type(&local.ty) == Type::Error)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let loop_flow = matches!(
+            s,
+            ast::Stmt::While(_) | ast::Stmt::For(_) | ast::Stmt::ForOf(_)
+        )
+        .then(|| fx.nonnull_flow_snapshot());
         let start = out.len();
         let (terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),
@@ -194,11 +206,10 @@ impl<'p> Checker<'p> {
                 }
                 ast::Stmt::Decl(ast::Decl::Using(using)) => {
                     if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::LambdaUsingDeclaration,
                             "nested declarations are not in the decided surface",
                             self.pos(using.span),
-                            Divergence::UsingDeclaration,
                         );
                     } else {
                         self.check_using(using, fx, out);
@@ -207,8 +218,27 @@ impl<'p> Checker<'p> {
                 }
                 ast::Stmt::Decl(other) => {
                     let pos = self.pos(other.span());
-                    self.error(
-                        RuleCode::S100,
+                    for name in super::exports::declaration_names(other) {
+                        fx.declare(
+                            name.sym.as_ref(),
+                            Local {
+                                ty: Type::Error,
+                                mutable: false,
+                                async_origins: HashSet::new(),
+                                caught: false,
+                            },
+                        );
+                    }
+                    self.reject_subset(
+                        match other {
+                            ast::Decl::Class(_) => RejectionSite::LocalClassDeclaration,
+                            ast::Decl::Fn(_) => RejectionSite::LocalFunctionDeclaration,
+                            ast::Decl::TsEnum(_) => RejectionSite::LocalEnumDeclaration,
+                            ast::Decl::TsTypeAlias(_) => RejectionSite::LocalAliasDeclaration,
+                            ast::Decl::TsInterface(_) => RejectionSite::LocalInterfaceDeclaration,
+                            ast::Decl::TsModule(_) => RejectionSite::LocalNamespaceDeclaration,
+                            _ => RejectionSite::LocalRejectedDeclaration,
+                        },
                         "nested declarations are not in the decided surface",
                         pos,
                     );
@@ -238,11 +268,15 @@ impl<'p> Checker<'p> {
                 ast::Stmt::Break(b) => {
                     let pos = self.pos(b.span);
                     if b.label.is_some() {
-                        self.error(RuleCode::S100, "labeled break is not decided", pos.clone());
+                        self.reject_subset(
+                            RejectionSite::LabeledBreak,
+                            "labeled break is not decided",
+                            pos.clone(),
+                        );
                     }
                     if fx.loop_depth == 0 && fx.switch_depth == 0 {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::BreakOutsideLoopOrSwitch,
                             "`break` outside a loop or switch",
                             pos.clone(),
                         );
@@ -258,14 +292,18 @@ impl<'p> Checker<'p> {
                 ast::Stmt::Continue(c) => {
                     let pos = self.pos(c.span);
                     if c.label.is_some() {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::LabeledContinue,
                             "labeled continue is not decided",
                             pos.clone(),
                         );
                     }
                     if fx.loop_depth == 0 {
-                        self.error(RuleCode::S100, "`continue` outside a loop", pos.clone());
+                        self.reject_subset(
+                            RejectionSite::ContinueOutsideLoop,
+                            "`continue` outside a loop",
+                            pos.clone(),
+                        );
                     }
                     out.push(hir::Stmt::Continue(pos));
                     true
@@ -292,8 +330,15 @@ impl<'p> Checker<'p> {
                 ast::Stmt::Empty(_) => false,
                 other => {
                     let pos = self.pos(other.span());
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        match other {
+                            ast::Stmt::DoWhile(_) => RejectionSite::DoWhileStatement,
+                            ast::Stmt::ForIn(_) => RejectionSite::ForInStatement,
+                            ast::Stmt::Labeled(_) => RejectionSite::LabeledStatement,
+                            ast::Stmt::Debugger(_) => RejectionSite::DebuggerStatement,
+                            ast::Stmt::With(_) => RejectionSite::WithStatement,
+                            _ => RejectionSite::UnsupportedStatementKind,
+                        },
                         "statement form outside the decided surface",
                         pos,
                     );
@@ -301,6 +346,12 @@ impl<'p> Checker<'p> {
                 }
             },
         );
+        if let Some(before) = loop_flow {
+            for (scope, facts) in fx.scopes.iter_mut().zip(before) {
+                scope.nonnull_flow.retain(|key| facts.contains(key));
+            }
+        }
+        self.rejected_local_names = saved_rejected_names;
         out.splice(start..start, prefix);
         terminates
     }
@@ -308,11 +359,15 @@ impl<'p> Checker<'p> {
     fn check_let(&mut self, v: &ast::VarDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         if v.kind == ast::VarDeclKind::Var {
             let pos = self.pos(v.span);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::LocalVarDeclaration,
                 "`var` is not in the language; use `let` or `const`",
                 pos,
             );
+            for declaration in &v.decls {
+                let names = super::pattern::collect_names(&declaration.name);
+                self.bind_error_names(&names, fx);
+            }
             return;
         }
         let mutable = v.kind == ast::VarDeclKind::Let;
@@ -321,11 +376,10 @@ impl<'p> Checker<'p> {
 
     fn check_using(&mut self, using: &ast::UsingDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         if using.is_await {
-            self.error_diverging(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::AwaitUsingDeclaration,
                 "`await using` is not in the decided surface",
                 self.pos(using.span),
-                Divergence::UsingDeclaration,
             );
         }
         self.check_bindings(&using.decls, false, !using.is_await, fx, out);
@@ -351,19 +405,17 @@ impl<'p> Checker<'p> {
             };
             let pos = self.pos(pattern.span());
             let saved_divergence = self
-                .aggregate_type_divergence
-                .replace(Divergence::AggregateLayoutLimit);
+                .aggregate_type_site
+                .replace(RejectionSite::AggregateAnnotationLimit);
             let ann = pattern_type_ann(&d.name).map(|ann| self.resolve_type(&ann.type_ann));
-            self.aggregate_type_divergence = saved_divergence;
+            self.aggregate_type_site = saved_divergence;
             let Some(init_ast) = &d.init else {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::LocalInitializerMissing,
                     "local declarations require an initializer",
                     pos.clone(),
                 );
-                for binding in super::pattern::collect_names(&d.name) {
-                    fx.discard_pending(binding.id.sym.as_ref());
-                }
+                self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
                 continue;
             };
             let init = if declarations.len() > 1 {
@@ -378,18 +430,13 @@ impl<'p> Checker<'p> {
             };
             let ty = match ann {
                 Some(ann) => {
-                    self.require_assignable(
-                        &init.ty.clone(),
-                        &ann,
-                        init.pos.clone(),
-                        "the initializer",
-                    );
+                    self.require_expr_assignable(&init, &ann, fx, "the initializer");
                     ann
                 }
                 None => match &self.apparent_type(&init.ty) {
                     Type::Null => {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::NullInitializerInference,
                             "cannot infer a type from `null`; annotate the declaration",
                             pos.clone(),
                         );
@@ -422,7 +469,15 @@ impl<'p> Checker<'p> {
                     } else {
                         "a `using` binding must be a reference class with a disposal hook, or that class or null"
                     };
-                    self.error(RuleCode::S100, message, pos.clone());
+                    self.reject_subset(
+                        if self.apparent_type(&ty) == Type::Null {
+                            RejectionSite::UsingBindingResourceType
+                        } else {
+                            RejectionSite::UsingBindingNotDisposable
+                        },
+                        message,
+                        pos.clone(),
+                    );
                 }
             }
             if pattern.is_destructuring() {
@@ -446,6 +501,17 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
+            if !matches!(
+                self.apparent_type(&init.ty),
+                Type::Nullable(_) | Type::Null | Type::Error
+            ) {
+                if let Some(scope) = fx.scopes.last_mut() {
+                    scope
+                        .nonnull_flow
+                        .retain(|key| key != &name && !key.starts_with(&format!("{name}.")));
+                    scope.nonnull_flow.insert(name.clone());
+                }
+            }
             // A fresh binding invalidates stale narrowing facts rooted
             // at a shadowed name.
             let prefix = format!("{}.", name);
@@ -472,8 +538,8 @@ impl<'p> Checker<'p> {
         let value = match &r.arg {
             Some(arg) => {
                 if is_generator {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::GeneratorReturnValue,
                         "generator return values are not in the decided surface",
                         pos.clone(),
                     );
@@ -481,22 +547,20 @@ impl<'p> Checker<'p> {
                 } else if ret == Type::Void {
                     let checked = self.check_expr(arg, None, fx);
                     if self.apparent_type(&checked.ty) != Type::Error {
-                        self.error_diverging(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            if fx.frames.last().is_some_and(|frame| frame.contextual_void) {
+                                RejectionSite::VoidFunctionReturnValue
+                            } else {
+                                RejectionSite::ExplicitVoidReturnValue
+                            },
                             "a `void` function cannot return a value",
                             pos.clone(),
-                            Divergence::VoidValue,
                         );
                     }
                     Some(checked)
                 } else {
                     let checked = self.check_expr(arg, Some(&ret), fx);
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &ret,
-                        checked.pos.clone(),
-                        "the return value",
-                    );
+                    self.require_expr_assignable(&checked, &ret, fx, "the return value");
                     if matches!(
                         self.apparent_type(&checked.ty),
                         Type::AsyncHandle(_) | Type::Array(_)
@@ -513,8 +577,8 @@ impl<'p> Checker<'p> {
                     && !matches!(&self.apparent_type(&ret), Type::Error)
                 {
                     let name = self.type_name(&ret);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ReturnValueMissing,
                         format!("missing return value of type `{}`", name),
                         pos.clone(),
                     );
@@ -532,8 +596,15 @@ impl<'p> Checker<'p> {
         ) && !matches!(self.apparent_type(&cond.ty), Type::Bool | Type::Error)
         {
             let name = self.type_name(&cond.ty);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!(
+                    self.apparent_type(&cond.ty),
+                    Type::AsyncHandle(_) | Type::Func(_)
+                ) {
+                    RejectionSite::StatementAlwaysTruthyCondition
+                } else {
+                    RejectionSite::StatementNonBooleanCondition
+                },
                 format!("condition must be boolean, got `{}`", name),
                 cond.pos.clone(),
             );
@@ -563,16 +634,25 @@ impl<'p> Checker<'p> {
 
     fn check_if(&mut self, i: &ast::IfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
         let pos = self.pos(i.span);
-        let cond = self.check_expr(&i.test, None, fx);
+        let cond = self.check_truth_expr(&i.test, fx);
         self.require_bool(&cond);
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
 
         let mut base = fx.narrowed.clone();
         let note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
 
+        let flow_base = fx.nonnull_flow_snapshot();
+        for key in &then_extra {
+            fx.note_nonnull_flow(key.clone());
+        }
         fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
         let (then_stmts, then_term) = self.check_branch(&i.cons, fx);
         // compiler.md §124: a branch cannot restore a fact that a call ended.
+        let then_flow = fx.nonnull_flow_snapshot();
+        fx.restore_nonnull_flow(&flow_base);
+        for key in &else_extra {
+            fx.note_nonnull_flow(key.clone());
+        }
         let then_facts = fx.narrowed.clone();
         base.retain(|k| fx.narrowed.contains(k));
 
@@ -592,6 +672,23 @@ impl<'p> Checker<'p> {
             None => (None, false),
         };
 
+        let else_flow = fx.nonnull_flow_snapshot();
+        let then_terminal = always_returns(&then_stmts);
+        let else_terminal = els_stmts.as_ref().is_some_and(|body| always_returns(body));
+        let joined_flow: Vec<_> = then_flow
+            .iter()
+            .zip(&else_flow)
+            .map(|(yes, no)| {
+                if then_terminal {
+                    no.clone()
+                } else if else_terminal {
+                    yes.clone()
+                } else {
+                    yes.intersection(no).cloned().collect()
+                }
+            })
+            .collect();
+        fx.restore_nonnull_flow(&joined_flow);
         fx.narrowed = base;
         // A terminating branch propagates the other side's facts.
         match &i.alt {
@@ -638,7 +735,7 @@ impl<'p> Checker<'p> {
         let note_paths = fx.narrowing_note_paths();
         self.end_loop_narrowing(&pos, fx);
 
-        let cond = self.check_expr(&w.test, None, fx);
+        let cond = self.check_truth_expr(&w.test, fx);
         self.require_bool(&cond);
         let (then_extra, _) = self.narrowing_paths(&cond, fx);
 
@@ -693,7 +790,7 @@ impl<'p> Checker<'p> {
                 let (checked, prefix) = fx.with_synthetic_owner(
                     super::SyntheticOwnerKind::ForCond(self.pos(test.span())),
                     |fx| {
-                        let checked = self.check_expr(test, None, fx);
+                        let checked = self.check_truth_expr(test, fx);
                         self.require_bool(&checked);
                         checked
                     },
@@ -785,11 +882,7 @@ impl<'p> Checker<'p> {
     fn check_for_of(&mut self, f: &ast::ForOfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(f.span);
         if f.is_await {
-            self.error(
-                RuleCode::S013,
-                "`for await…of` requires the Promise object/iterator surface, which is not in the language",
-                pos,
-            );
+            self.reject_subset(RejectionSite::AsyncForOf, "`for await…of` requires the Promise object/iterator surface, which is not in the language", pos);
             return;
         }
 
@@ -991,8 +1084,8 @@ impl<'p> Checker<'p> {
         let (declarations, mutable, declaration_pos) = match head {
             ast::ForHead::VarDecl(decl) => {
                 if decl.kind == ast::VarDeclKind::Var {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ForOfVarBinding,
                         "`var` is not in the language; use `let` or `const`",
                         self.pos(decl.span),
                     );
@@ -1004,8 +1097,8 @@ impl<'p> Checker<'p> {
                 )
             }
             ast::ForHead::UsingDecl(using) => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ForOfAwaitUsing,
                     if using.is_await {
                         "`await using` in a `for` head is not in the decided surface"
                     } else {
@@ -1016,8 +1109,8 @@ impl<'p> Checker<'p> {
                 (&using.decls, false, self.pos(using.span))
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::ForOfBindingKind,
                     "`for…of` requires a `const` or `let` identifier binding",
                     self.pos(head.span()),
                 );
@@ -1025,8 +1118,8 @@ impl<'p> Checker<'p> {
             }
         };
         if declarations.len() != 1 {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ForOfBindingCount,
                 "`for…of` requires exactly one identifier binding",
                 declaration_pos,
             );
@@ -1034,8 +1127,8 @@ impl<'p> Checker<'p> {
         }
         let binding = &declarations[0];
         if binding.init.is_some() {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::ForOfBindingInitializer,
                 "`for…of` bindings cannot have an initializer",
                 self.pos(binding.span),
             );
@@ -1091,15 +1184,19 @@ impl<'p> Checker<'p> {
                             let prop_pos = self.pos(prop.span);
                             if name == "entries" {
                                 self.reject_subset(
-                                    crate::check::rejection::RejectionSite::ForOfEntries,
+                                    RejectionSite::ForOfEntries,
                                     "`entries()` yields a pair, but the language has no tuple type",
                                     prop_pos,
                                 );
                                 return (recv, None, Type::Error, false);
                             }
                             if !call.args.is_empty() {
-                                self.error(
-                                    RuleCode::S100,
+                                self.reject_subset(
+                                    if call.args.iter().all(|argument| argument.spread.is_some()) {
+                                        RejectionSite::IteratorMethodArgumentCount
+                                    } else {
+                                        RejectionSite::IteratorMethodValueArgumentCount
+                                    },
                                     format!("`{name}()` expects no arguments"),
                                     self.pos(call.span),
                                 );
@@ -1128,7 +1225,7 @@ impl<'p> Checker<'p> {
                             }
                             let actual = self.type_name(&recv.ty);
                             self.reject_subset(
-                                crate::check::rejection::RejectionSite::ForOfKeys,
+                                RejectionSite::ForOfKeys,
                                 format!(
                                     "`{name}()` is a subject-only fused view on Map, Set, \
                                      or T[]; receiver is `{actual}`"
@@ -1166,7 +1263,7 @@ impl<'p> Checker<'p> {
         // value is used.
         if matches!(self.apparent_type(&subject.ty), Type::Map(..)) {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ForOfMap,
+                RejectionSite::ForOfMap,
                 "a bare `Map` is not a `for…of` subject: Map traversal binds `K`; \
                  a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`",
                 subject.pos.clone(),
@@ -1192,7 +1289,7 @@ impl<'p> Checker<'p> {
         if let Type::Class(id) = self.apparent_type(&subject.ty) {
             let class = &self.classes[id.0].name;
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ForOfUserClass,
+                RejectionSite::ForOfUserClass,
                 format!(
                     "`for…of` cannot make user class `{class}` iterable (invariant 5): \
                      that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal"
@@ -1201,7 +1298,7 @@ impl<'p> Checker<'p> {
             );
         } else {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::ForOfSubject,
+                RejectionSite::ForOfSubject,
                 format!(
                     "`for…of` accepts only T[], FixedArray<T, N>, Set, string, \
                      or Generator<T>; got `{actual}`"
@@ -1227,43 +1324,25 @@ impl<'p> Checker<'p> {
                 ast::Expr::Lit(ast::Lit::Str(label)) => {
                     let label = label.value.to_string();
                     if let Some(index) = members.iter().position(|member| member == &label) {
-                        self.require_assignable(
-                            &checked.ty.clone(),
-                            disc_ty,
-                            checked.pos.clone(),
-                            "the case label",
-                        );
+                        self.require_expr_assignable(&checked, disc_ty, fx, "the case label");
                         if !alias_members_seen.insert(index) {
                             *alias_labels_valid = false;
-                            self.error_diverging(
-                                RuleCode::S100,
-                                format!(
+                            self.reject_subset(RejectionSite::LiteralAliasDuplicateCase, format!(
                                     "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
-                                ),
-                                checked.pos.clone(),
-                                Divergence::SwitchOverAlias,
-                            );
+                                ), checked.pos.clone());
                         }
                     } else {
                         *alias_labels_valid = false;
-                        self.error(
-                            RuleCode::S100,
-                            format!(
+                        self.reject_subset(RejectionSite::LiteralAliasUnknownCase, format!(
                                 "case label {label:?} is not a member of string-literal union alias `{alias_name}`"
-                            ),
-                            checked.pos.clone(),
-                        );
+                            ), checked.pos.clone());
                     }
                 }
                 _ => {
                     *alias_labels_valid = false;
-                    self.error(
-                        RuleCode::S100,
-                        format!(
+                    self.reject_subset(RejectionSite::AliasCaseNonLiteral, format!(
                             "case labels for string-literal union alias `{alias_name}` must be string literals naming a member"
-                        ),
-                        checked.pos.clone(),
-                    );
+                        ), checked.pos.clone());
                 }
             }
         } else if (self.involves_type_parameter(disc_ty)
@@ -1272,12 +1351,7 @@ impl<'p> Checker<'p> {
         {
             // §143 rule 1a: case labels compare values, rather than assign them.
         } else {
-            self.require_assignable(
-                &checked.ty.clone(),
-                disc_ty,
-                checked.pos.clone(),
-                "the case label",
-            );
+            self.require_expr_assignable(&checked, disc_ty, fx, "the case label");
         }
         checked
     }
@@ -1295,14 +1369,10 @@ impl<'p> Checker<'p> {
             )
         {
             let name = self.type_name(&disc.ty);
-            self.error(
-                RuleCode::S100,
-                format!(
+            self.reject_subset(RejectionSite::SwitchDiscriminantKind, format!(
                     "switch discriminants are integers, enums, strings, or string-literal union aliases; got `{}`",
                     name
-                ),
-                disc.pos.clone(),
-            );
+                ), disc.pos.clone());
         }
         let disc_ty = disc.ty.clone();
         let alias_switch = match &self.apparent_type(&disc_ty) {
@@ -1354,7 +1424,16 @@ impl<'p> Checker<'p> {
         let mut fallthrough: Option<HashSet<String>> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let mut cases = Vec::new();
+        let dispatch_flow = fx.nonnull_flow_snapshot();
+        let mut fallthrough_flow: Option<Vec<HashSet<String>>> = None;
         for (case_index, case) in sw.cases.iter().enumerate() {
+            let mut entry_flow = dispatch_flow.clone();
+            if let Some(previous) = &fallthrough_flow {
+                for (entry, previous) in entry_flow.iter_mut().zip(previous) {
+                    entry.retain(|key| previous.contains(key));
+                }
+            }
+            fx.restore_nonnull_flow(&entry_flow);
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.switch_case = Some(case_index);
             }
@@ -1391,6 +1470,7 @@ impl<'p> Checker<'p> {
             self.end_scope_narrowing(&body, fx);
             exit_notes.extend(fx.ended_shared_narrowing.iter().cloned());
             fallthrough = (!terminates).then(|| fx.narrowed.clone());
+            fallthrough_flow = (!terminates).then(|| fx.nonnull_flow_snapshot());
             cases.push(hir::SwitchCase {
                 test,
                 body,
@@ -1409,6 +1489,7 @@ impl<'p> Checker<'p> {
         for edge in exits {
             fx.narrowed.retain(|key| edge.contains(key));
         }
+        fx.restore_nonnull_flow(&dispatch_flow);
         for case in &cases {
             self.apply_narrowing_effects(&self.body_narrowing_effects(&case.body), fx);
         }
@@ -1425,14 +1506,9 @@ impl<'p> Checker<'p> {
                     .map(|(_, member)| format!("{member:?}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!(
+                self.reject_subset(RejectionSite::LiteralAliasSwitchCoverage, format!(
                         "non-exhaustive switch over string-literal union alias `{alias_name}`; missing case labels: {missing}"
-                    ),
-                    pos.clone(),
-                    Divergence::SwitchOverAlias,
-                );
+                    ), pos.clone());
             }
         }
         out.push(hir::Stmt::Switch { disc, cases, pos });

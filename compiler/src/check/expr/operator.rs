@@ -1,11 +1,11 @@
 //! Checks the operator expressions, the conditional expression, `yield`, and `as`.
 
+use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{static_member_symbol, Checker, FnCtx, ScopeItem};
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind, UnOp};
 use crate::types::Type;
 
@@ -42,7 +42,7 @@ impl<'p> Checker<'p> {
                 ) && !matches!(apparent, Type::Nullable(_));
                 if !parameter && apparent == Type::F16 {
                     self.reject_subset(
-                        crate::check::rejection::RejectionSite::Float16Unary,
+                        RejectionSite::HalfFloatUnary,
                         "arithmetic on `f16` is not supported; compute via `as f32`",
                         pos.clone(),
                     );
@@ -50,8 +50,8 @@ impl<'p> Checker<'p> {
                 }
                 if !parameter && !apparent.is_numeric() && !matches!(apparent, Type::Error) {
                     let name = self.type_name(&operand.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::UnaryNumericCoercion,
                         format!("unary `-` requires a numeric operand, got `{}`", name),
                         pos.clone(),
                     );
@@ -79,8 +79,8 @@ impl<'p> Checker<'p> {
                 ) && !matches!(self.apparent_type(&operand.ty), Type::Bool | Type::Error)
                 {
                     let name = self.type_name(&operand.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::LogicalNotNonBoolean,
                         format!("`!` requires a boolean operand, got `{}`", name),
                         pos.clone(),
                     );
@@ -103,8 +103,8 @@ impl<'p> Checker<'p> {
                 ) && !matches!(apparent, Type::Nullable(_));
                 if !parameter && !apparent.is_integer() && !matches!(apparent, Type::Error) {
                     let name = self.type_name(&operand.ty);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::BitwiseIntegerOperand,
                         format!("`~` requires an integer operand, got `{}`", name),
                         pos.clone(),
                     );
@@ -131,16 +131,20 @@ impl<'p> Checker<'p> {
                 self.check_expr(&u.arg, None, fx)
             }
             ast::UnaryOp::Delete => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::DeleteProperty,
                     "the `delete` operator is not in the language; use `Context.free`",
                     pos.clone(),
                 );
                 self.err_expr(pos)
             }
             _ => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    match u.op {
+                        ast::UnaryOp::TypeOf => RejectionSite::TypeofOperator,
+                        ast::UnaryOp::Void => RejectionSite::VoidOperator,
+                        _ => RejectionSite::UnaryPlusOperator,
+                    },
                     "unary operator outside the decided surface",
                     pos.clone(),
                 );
@@ -198,11 +202,10 @@ impl<'p> Checker<'p> {
             match &place {
                 Place::IndexSignature { .. } => {
                     let spelling = write_spelling(WriteExpression::Update(u), "a[i]");
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::IndexUpdateExpressionValue,
                         format!("{spelling} cannot be used as a value"),
                         pos.clone(),
-                        Divergence::ClassIndexSignature,
                     );
                     return self.err_expr(pos);
                 }
@@ -217,11 +220,10 @@ impl<'p> Checker<'p> {
                         |_| format!("x.{name}"),
                     );
                     let spelling = write_spelling(WriteExpression::Update(u), &target);
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::AccessorUpdateExpressionValue,
                         format!("{spelling} cannot be used as a value"),
                         pos.clone(),
-                        Divergence::NamedAccessor,
                     );
                     return self.err_expr(pos);
                 }
@@ -236,8 +238,8 @@ impl<'p> Checker<'p> {
             )
         {
             let name = self.type_name(&target_ty);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::UpdateNonNumericTarget,
                 format!("`++`/`--` require a numeric target, got `{}`", name),
                 pos.clone(),
             );
@@ -245,7 +247,7 @@ impl<'p> Checker<'p> {
         }
         if target_ty == Type::F16 {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::Float16Update,
+                RejectionSite::HalfFloatUpdate,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
             );
@@ -273,8 +275,8 @@ impl<'p> Checker<'p> {
                 pos: target_pos,
             } => {
                 if signature.readonly {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ReadonlyIndexUpdate,
                         "`a[i] = v` cannot write through a readonly index signature",
                         pos.clone(),
                     );
@@ -343,8 +345,8 @@ impl<'p> Checker<'p> {
                         |_| format!("x.{name}"),
                     );
                     let spelling = write_spelling(WriteExpression::Update(u), &target);
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::ReadonlyAccessorUpdate,
                         format!("{spelling} cannot write through a read-only accessor"),
                         pos.clone(),
                     );
@@ -375,8 +377,8 @@ impl<'p> Checker<'p> {
                     return result.expr;
                 }
                 let Some(parameter) = signature.params.first() else {
-                    self.error(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        RejectionSite::UpdateSetterParameterMissing,
                         format!("write accessor `{name}` has no parameter signature"),
                         pos.clone(),
                     );
@@ -453,8 +455,8 @@ impl<'p> Checker<'p> {
                     ) && !matches!(self.apparent_type(&side.ty), Type::Bool | Type::Error)
                     {
                         let name = self.type_name(&side.ty);
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::LogicalNonBooleanOperand,
                             format!("logical operators require booleans, got `{}`", name),
                             side.pos.clone(),
                         );
@@ -492,8 +494,12 @@ impl<'p> Checker<'p> {
             B::NullishCoalescing => self.check_nullish(b, fx, pos),
             B::InstanceOf => self.check_instanceof(b, fx, pos),
             B::In | B::Exp => {
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    if b.op == B::In {
+                        RejectionSite::InOperator
+                    } else {
+                        RejectionSite::ExponentOperator
+                    },
                     "operator outside the decided surface",
                     pos.clone(),
                 );
@@ -534,14 +540,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let name = self.type_name(&plan.value.ty);
-        self.error_diverging(
-            RuleCode::S012,
-            format!(
+        self.reject_subset(RejectionSite::OptionalCallValueWithoutFallback, format!(
                 "an optional chain has type `{name} | undefined` in TypeScript; give it a fallback with `??` or use it as a statement"
-            ),
-            pos.clone(),
-            Divergence::OptionalChainUnbound,
-        );
+            ), pos.clone());
         self.err_expr(pos)
     }
 
@@ -559,14 +560,9 @@ impl<'p> Checker<'p> {
         }
         if !plan.ends_in_call {
             let name = self.type_name(&plan.value.ty);
-            self.error_diverging(
-                RuleCode::S012,
-                format!(
+            self.reject_subset(RejectionSite::OptionalMemberValueWithoutFallback, format!(
                     "an optional chain has type `{name} | undefined` in TypeScript; give it a fallback with `??` or use it as a statement"
-                ),
-                pos.clone(),
-                Divergence::OptionalChainUnbound,
-            );
+                ), pos.clone());
             out.push(hir::Stmt::Expr(self.err_expr(pos)));
             return out;
         }
@@ -604,12 +600,7 @@ impl<'p> Checker<'p> {
             match &steps[index] {
                 OptionalStep::Member { member, tested } => {
                     if *tested && matches!(member.prop, ast::MemberProp::Computed(_)) {
-                        self.error_diverging(
-                            RuleCode::S100,
-                            "an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`",
-                            self.pos(member.span),
-                            Divergence::OptionalChainIndex,
-                        );
+                        self.reject_subset(RejectionSite::OptionalComputedMember, "an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`", self.pos(member.span));
                         return OptionalPlan {
                             tests,
                             value: self.err_expr(self.pos(member.span)),
@@ -620,7 +611,7 @@ impl<'p> Checker<'p> {
                         let Some(inner) = self.require_nullable_operand(
                             &current,
                             "the tested receiver",
-                            Divergence::OptionalChainNonNullable,
+                            RejectionSite::OptionalReceiverNonNullable,
                         ) else {
                             return OptionalPlan {
                                 tests,
@@ -639,8 +630,8 @@ impl<'p> Checker<'p> {
                     }) = steps.get(index + 1)
                     {
                         if *call_tested {
-                            self.error(
-                                RuleCode::S100,
+                            self.reject_subset(
+                                RejectionSite::OptionalMethodCall,
                                 "an optional call through `?.()` is not in the decided surface",
                                 self.pos(call.span),
                             );
@@ -676,8 +667,8 @@ impl<'p> Checker<'p> {
                 }
                 OptionalStep::Call { call, tested } => {
                     if *tested {
-                        self.error(
-                            RuleCode::S100,
+                        self.reject_subset(
+                            RejectionSite::OptionalFunctionCall,
                             "an optional call through `?.()` is not in the decided surface",
                             self.pos(call.span),
                         );
@@ -730,8 +721,8 @@ impl<'p> Checker<'p> {
             }
             ast::MemberProp::PrivateName(_) => {
                 let pos = self.pos(member.span);
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    RejectionSite::OptionalPrivateMember,
                     "private names are not in the decided surface",
                     pos.clone(),
                 );
@@ -774,7 +765,7 @@ impl<'p> Checker<'p> {
         let Some(inner) = self.require_nullable_operand(
             &left,
             "the left operand of `??`",
-            Divergence::NullishNonNullable,
+            RejectionSite::NullishReceiverNonNullable,
         ) else {
             return self.err_expr(pos);
         };
@@ -835,17 +826,16 @@ impl<'p> Checker<'p> {
         &mut self,
         operand: &hir::Expr,
         what: &str,
-        divergence: Divergence,
+        site: RejectionSite,
     ) -> Option<Type> {
         if let Type::Nullable(_) = self.apparent_type(&operand.ty) {
             return Some(self.non_null_type(&operand.ty));
         }
         let name = self.type_name(&operand.ty);
-        self.error_diverging(
-            RuleCode::S100,
+        self.reject_subset(
+            site,
             format!("{what} has type `{name}`, which is not nullable"),
             operand.pos.clone(),
-            divergence,
         );
         None
     }
@@ -965,11 +955,7 @@ impl<'p> Checker<'p> {
             &*binary.right
         };
         if left_undefined && right_undefined {
-            self.error(
-                RuleCode::S012,
-                "`undefined` is legal only in a presence test on an absence-capable descriptor member",
-                self.pos(undefined_source.span()),
-            );
+            self.reject_subset(RejectionSite::UndefinedEqualityPair, "`undefined` is legal only in a presence test on an absence-capable descriptor member", self.pos(undefined_source.span()));
             return Some(self.err_expr(pos));
         }
 
@@ -979,15 +965,11 @@ impl<'p> Checker<'p> {
             &*binary.left
         };
         let checked = match unparen_expr(member_source) {
-            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, true),
+            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, true, false),
             other => self.check_expr(other, None, fx),
         };
         if !self.is_absence_capable_member_expr(&checked) {
-            self.error(
-                RuleCode::S012,
-                "`undefined` is legal only in a presence test on an absence-capable descriptor member",
-                self.pos(undefined_source.span()),
-            );
+            self.reject_subset(RejectionSite::UndefinedEqualityNonMember, "`undefined` is legal only in a presence test on an absence-capable descriptor member", self.pos(undefined_source.span()));
             return Some(self.err_expr(pos));
         }
 
@@ -1075,7 +1057,7 @@ impl<'p> Checker<'p> {
             };
         if f16_arithmetic {
             self.reject_subset(
-                crate::check::rejection::RejectionSite::Float16Binary,
+                RejectionSite::HalfFloatBinary,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
             );
@@ -1233,8 +1215,14 @@ impl<'p> Checker<'p> {
                 B::ZeroFillRShift => ">>>=",
                 _ => "compound assignment",
             };
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!((&lt, &rt), (Type::Enum(_), _) | (_, Type::Enum(_))) {
+                    RejectionSite::CompoundEnumOperand
+                } else if lt == Type::Str || rt == Type::Str {
+                    RejectionSite::CompoundStringOperand
+                } else {
+                    RejectionSite::CompoundInvalidOperand
+                },
                 format!(
                     "operator `{operator}` is not defined for `{}` and `{}`",
                     self.type_name(&lt),
@@ -1283,18 +1271,55 @@ impl<'p> Checker<'p> {
             } else {
                 "arithmetic".to_string()
             };
-            self.error_diverging(
-                RuleCode::S007,
+            self.reject_subset(
+                RejectionSite::BinaryMixedNumericTypes,
                 format!(
                     "mixed-type {} (`{}` and `{}`) requires an explicit `as` conversion",
                     family, ln, rn
                 ),
                 pos.clone(),
-                Divergence::SizedOperandWidths,
             );
         } else {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if equality_operator.is_some() && (lt == Type::Null || rt == Type::Null) {
+                    RejectionSite::NonNullableNullEquality
+                } else if matches!((&lt, &rt), (Type::Enum(_), _) | (_, Type::Enum(_))) {
+                    if equality_operator.is_some()
+                        && matches!((&lt, &rt), (Type::Enum(a), Type::Enum(b)) if a != b)
+                    {
+                        RejectionSite::BinaryInvalidOperand
+                    } else if (matches!(lt, Type::Enum(_)) && rt.is_numeric())
+                        || (matches!(rt, Type::Enum(_)) && lt.is_numeric())
+                        || matches!((&lt, &rt), (Type::Enum(_), Type::Enum(_)))
+                        || (op == B::Add && (lt == Type::Str || rt == Type::Str))
+                    {
+                        RejectionSite::BinaryEnumOperand
+                    } else {
+                        RejectionSite::BinaryInvalidOperand
+                    }
+                } else if lt == Type::Str
+                    && rt == Type::Str
+                    && matches!(op, B::Lt | B::LtEq | B::Gt | B::GtEq)
+                {
+                    RejectionSite::StringRelationalOperand
+                } else if lt == Type::Str || rt == Type::Str {
+                    if op == B::Add {
+                        RejectionSite::BinaryStringOperand
+                    } else {
+                        RejectionSite::BinaryInvalidOperand
+                    }
+                } else if lt == Type::Bool
+                    && rt == Type::Bool
+                    && matches!(op, B::Lt | B::LtEq | B::Gt | B::GtEq)
+                {
+                    RejectionSite::BooleanRelationalOperand
+                } else if equality_operator.is_some()
+                    && (self.ts_erased_assignable(&lt, &rt) || self.ts_erased_assignable(&rt, &lt))
+                {
+                    RejectionSite::ErasedAssignableEquality
+                } else {
+                    RejectionSite::BinaryInvalidOperand
+                },
                 equality_operator.map_or_else(
                     || format!("operator not defined for `{ln}` and `{rn}`"),
                     |operator| format!("operator `{operator}` not defined for `{ln}` and `{rn}`"),
@@ -1372,15 +1397,22 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        let cond = self.check_expr(&c.test, None, fx);
+        let cond = self.check_truth_expr(&c.test, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
             &cond.ty,
         ) && !matches!(self.apparent_type(&cond.ty), Type::Bool | Type::Error)
         {
             let name = self.type_name(&cond.ty);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if matches!(
+                    self.apparent_type(&cond.ty),
+                    Type::AsyncHandle(_) | Type::Func(_)
+                ) {
+                    RejectionSite::ConditionalAlwaysTruthyCondition
+                } else {
+                    RejectionSite::ConditionalNonBooleanCondition
+                },
                 format!("condition must be boolean, got `{}`", name),
                 cond.pos.clone(),
             );
@@ -1433,22 +1465,21 @@ impl<'p> Checker<'p> {
             match self.conditional_join(&then.ty, &els.ty) {
                 Some(ty) => ty,
                 None => {
-                    let divergence = if self.apparent_type(&then.ty).is_numeric()
+                    let site = if self.apparent_type(&then.ty).is_numeric()
                         && self.apparent_type(&els.ty).is_numeric()
                     {
-                        Divergence::SizedOperandWidths
+                        RejectionSite::ConditionalJoinSizedOperandWidths
                     } else {
-                        Divergence::GeneralUnionAndUndefined
+                        RejectionSite::ConditionalJoinGeneralUnionAndUndefined
                     };
-                    self.error_diverging(
-                        RuleCode::S100,
+                    self.reject_subset(
+                        site,
                         format!(
                             "conditional branches have no common type: `{}` and `{}`",
                             self.type_name(&then.ty),
                             self.type_name(&els.ty),
                         ),
                         pos.clone(),
-                        divergence,
                     );
                     Type::Error
                 }
@@ -1477,16 +1508,20 @@ impl<'p> Checker<'p> {
             .map(|f| (f.is_generator, f.yield_ty.clone()))
             .unwrap_or((false, None));
         if !in_generator {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if fx.frames.last().is_some_and(|frame| frame.is_async) {
+                    RejectionSite::AsyncGeneratorYield
+                } else {
+                    RejectionSite::YieldOutsideGenerator
+                },
                 "`yield` is only available inside a `function*` coroutine",
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
         if y.delegate {
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                RejectionSite::YieldDelegation,
                 "`yield*` delegation is not in the decided surface",
                 pos.clone(),
             );
@@ -1511,11 +1546,7 @@ impl<'p> Checker<'p> {
                 if let Some(ty) = &known_yield {
                     if !matches!(self.apparent_type(ty), Type::Void | Type::Error) {
                         let name = self.type_name(ty);
-                        self.error(
-                            RuleCode::S100,
-                            format!("a bare `yield;` requires `void`, but the generator element type is `{name}`"),
-                            pos.clone(),
-                        );
+                        self.reject_subset(if fx.frames.last().is_some_and(|frame| frame.yield_annotated) { RejectionSite::BareYieldDeclaredNonVoid } else { RejectionSite::BareYieldNonVoid }, format!("a bare `yield;` requires `void`, but the generator element type is `{name}`"), pos.clone());
                     }
                 } else if let Some(frame) = fx.frames.last_mut() {
                     frame.yield_ty = Some(Type::Void);
@@ -1573,8 +1604,25 @@ impl<'p> Checker<'p> {
         if !ok {
             let from_n = self.type_name(&src);
             let to_n = self.type_name(&target);
-            self.error(
-                RuleCode::S100,
+            self.reject_subset(
+                if src == target {
+                    RejectionSite::IdentityAssertion
+                } else if matches!(self.apparent_type(&target), Type::Enum(_))
+                    && self.apparent_type(&src).is_integer()
+                {
+                    RejectionSite::IntegerEnumAssertion
+                } else if matches!(
+                    (&self.apparent_type(&src), &self.apparent_type(&target)),
+                    (Type::Nullable(_), Type::Class(_))
+                ) {
+                    RejectionSite::NullableClassAssertion
+                } else if self.apparent_type(&src) == Type::Str
+                    && matches!(self.apparent_type(&target), Type::StringAlias(_))
+                {
+                    RejectionSite::StringAliasAssertion
+                } else {
+                    RejectionSite::InvalidAssertion
+                },
                 format!(
                     "`as` converts between sized numerics, enum to integer, or narrows \
                      `object | null` to a class; cannot convert `{}` to `{}`",

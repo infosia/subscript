@@ -28,7 +28,7 @@ fn accepted(source: &str) {
 const MAIN: &str = "export function main(): void {}\n";
 
 #[test]
-fn an_unassigned_field_is_rejected_at_the_field_with_tsc_code_and_both_spellings() {
+fn an_unassigned_field_is_rejected_at_the_field_without_variant_and_with_both_spellings() {
     let source = format!("class Counter {{\n  count: i32;\n}}\n{MAIN}");
     let diagnostics = diagnostics(&source);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
@@ -38,7 +38,6 @@ fn an_unassigned_field_is_rejected_at_the_field_with_tsc_code_and_both_spellings
     assert_eq!(first.divergence, None);
     for needle in [
         "field `count` of `Counter`",
-        "TS2564",
         "`count: i32 = \u{2026}`",
         "`this.count = \u{2026}` at the top level of the constructor",
     ] {
@@ -78,7 +77,7 @@ fn a_top_level_constructor_assignment_satisfies_the_rule() {
 }
 
 #[test]
-fn a_nested_assignment_reports_the_nested_site_with_its_variant() {
+fn a_nested_assignment_states_its_normal_exit_class() {
     for (stem, body) in [
         ("one-arm", "if (flag) {\n      this.count = 1;\n    }"),
         (
@@ -97,7 +96,11 @@ fn a_nested_assignment_reports_the_nested_site_with_its_variant() {
         assert_eq!((first.pos.line, first.pos.col), (2, 3), "{stem}");
         assert_eq!(
             first.divergence,
-            Some(Divergence::NestedFieldAssignment),
+            if matches!(stem, "both-arms" | "block") {
+                Some(Divergence::NestedFieldAssignmentEveryNormalExit)
+            } else {
+                None
+            },
             "{stem}"
         );
         assert!(
@@ -112,8 +115,8 @@ fn a_nested_assignment_reports_the_nested_site_with_its_variant() {
 fn a_top_level_assignment_after_a_return_is_rejected_at_its_own_site() {
     // Rule 2: a top-level assignment counts only when no statement
     // before it holds a `return`. Measured with TypeScript 5.9.2 and the
-    // repository `tsconfig.json`: `tsc` answers TS2564 for both forms, so
-    // the site carries no divergence (§79 rules 2 and 4).
+    // repository `tsconfig.json`: `tsc` answers TS2564 for both forms.
+    // Section 154 separates these ordinary errors from accepted constructor forms.
     for (stem, before) in [
         ("early-return", "if (flag) {\n      return;\n    }"),
         (
@@ -130,7 +133,7 @@ fn a_top_level_assignment_after_a_return_is_rejected_at_its_own_site() {
         assert_eq!(first.code, RuleCode::S100, "{stem}");
         assert_eq!((first.pos.line, first.pos.col), (2, 3), "{stem}");
         assert_eq!(first.divergence, None, "{stem}");
-        for needle in ["field `count` of `Counter`", "holds a `return`", "TS2564"] {
+        for needle in ["field `count` of `Counter`", "holds a `return`"] {
             assert!(
                 first.message.contains(needle),
                 "{stem}: missing {needle:?}: {}",
@@ -166,7 +169,7 @@ fn a_compound_assignment_does_not_initialize() {
         .unwrap_or_else(|| panic!("no field diagnostic: {diagnostics:?}"));
     assert_eq!((field.pos.line, field.pos.col), (2, 3));
     assert_eq!(field.divergence, None);
-    assert!(field.message.contains("TS2564"), "{}", field.message);
+    assert!(!field.message.contains("TS2564"), "{}", field.message);
 }
 
 #[test]
@@ -348,7 +351,7 @@ fn new_on_a_program_file_declare_class_reports_the_ambient_variant() {
 #[test]
 fn a_read_before_the_assignment_reports_the_this_without_a_variant() {
     // compiler.md §108.4 rule 6 site A. Stock `tsc` answers TS2565 for
-    // this form, so the site carries no variant.
+    // this form. Section 154 keeps this ordinary error without a variant.
     let source = format!(
         "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  inner: Inner;\n  constructor() {{\n    print(`${{this.inner.value}}`);\n    this.inner = new Inner();\n  }}\n}}\n{MAIN}"
     );
@@ -626,7 +629,8 @@ fn a_parameter_default_reads_a_field_that_holds_a_value() {
         "{}",
         rule_one.message
     );
-    assert!(rule_one.message.contains("TS2564"), "{}", rule_one.message);
+    assert_eq!(rule_one.divergence, None);
+    assert!(!rule_one.message.contains("TS2564"), "{}", rule_one.message);
     let site_a = &diagnostics[1];
     assert_eq!(site_a.code, RuleCode::S100);
     assert_eq!(

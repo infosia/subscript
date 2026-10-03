@@ -650,6 +650,7 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r341-void-loop-binding-read`](../corpus/reject/r341-void-loop-binding-read.ts) | Rejects a void loop binding as an operand. | void | collisions.md C21, compiler.md §151 |
 | [`reject/r342-void-generator-value-read`](../corpus/reject/r342-void-generator-value-read.ts) | Rejects a void generator value as an operand. | void | collisions.md C21, compiler.md §151 |
 | [`reject/r343-generator-other-void-argument`](../corpus/reject/r343-generator-other-void-argument.ts) | Rejects void outside the generator element slot. | void, generator | collisions.md C21, compiler.md §151 |
+| [`reject/r344-type-parameter-default`](../corpus/reject/r344-type-parameter-default.ts) | Rejects a type-parameter default at its declaration. | generic, type-parameter-default | collisions.md C24, compiler.md §154 |
 | [`reject/r35-narrow-mixed-bitwise`](../corpus/reject/r35-narrow-mixed-bitwise.ts) | Rejects narrow mixed-width bitwise operands without an explicit conversion. | narrow-numerics, mixed-width-bitwise | Q18, Q23, C3 |
 | [`reject/r36-f16-arithmetic`](../corpus/reject/r36-f16-arithmetic.ts) | Rejects arithmetic in the storage-only binary16 type. | f16-storage-only, rejected-arithmetic | Q23 |
 | [`reject/r38-map-f16-key`](../corpus/reject/r38-map-f16-key.ts) | Rejects storage-only f16 as a Map key. | map-key-whitelist, f16 | Q24, Q23 |

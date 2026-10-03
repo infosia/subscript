@@ -1,4 +1,5 @@
 use super::*;
+use crate::check::rejection::{diagnostic, RejectionSite};
 
 /// The checked C boundary of one host entry.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,8 +34,8 @@ impl Module {
         let entry = self.host_entries.iter().find(|entry| entry.name == "main");
         match entry {
             Some(entry) if entry.signature.parameters.is_empty() => Ok(entry),
-            _ => Err(crate::Diagnostic::new(
-                crate::RuleCode::S100,
+            _ => Err(diagnostic(
+                RejectionSite::RunnerMainMissing,
                 if entry.is_some() {
                     "runner main must have signature `main(): void`"
                 } else {
