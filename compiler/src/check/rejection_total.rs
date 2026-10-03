@@ -39,7 +39,6 @@ struct Witness<'a> {
     codes: BTreeSet<String>,
     code: &'a str,
     mirror: &'a str,
-    unreachable: &'a str,
     message: &'a str,
     source: &'a str,
 }
@@ -62,7 +61,6 @@ fn witnesses() -> Vec<Witness<'static>> {
                     .collect(),
                 code: fields[3],
                 mirror: fields[4],
-                unreachable: fields[5],
                 message,
                 source,
             }
@@ -71,7 +69,10 @@ fn witnesses() -> Vec<Witness<'static>> {
 }
 
 fn checker_failures(witness: &Witness<'_>, site: RejectionSite) -> Vec<String> {
-    if !witness.unreachable.is_empty() {
+    if matches!(
+        index::witness_entry(site),
+        index::WitnessEntry::Unreachable { .. }
+    ) {
         return Vec::new();
     }
     let mut files = Vec::new();
@@ -113,30 +114,24 @@ fn checker_failures(witness: &Witness<'_>, site: RejectionSite) -> Vec<String> {
         expected,
         &files,
     ));
-    if witness.codes.is_empty() && expected.is_none() {
-        failures.push(format!(
-            "{}: accepted witness has no variant",
-            witness.target
-        ));
-    }
     failures
 }
 
 fn diagnostic_failures(
     target: &str,
     diagnostic: &Diagnostic,
-    expected: Option<Divergence>,
+    expected: Divergence,
     files: &[SourceFile],
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    if diagnostic.divergence != expected {
+    if diagnostic.divergence != Some(expected) {
         failures.push(format!(
             "{target}: variant {:?}, expected {:?}",
             diagnostic.divergence, expected
         ));
     }
     let rendered = crate::render_diagnostics(files, std::slice::from_ref(diagnostic));
-    if rendered.contains("= TypeScript accepts:") != expected.is_some() {
+    if !rendered.contains("= TypeScript accepts:") {
         failures.push(format!("{target}: divergence block absent"));
     }
     failures
@@ -151,6 +146,46 @@ fn tsc_class_failure(witness: &Witness<'_>, codes: &BTreeSet<String>) -> Option<
     })
 }
 
+fn table_failures(witnesses: &[Witness<'_>], sites: &[RejectionSite]) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut identities = BTreeSet::new();
+    for witness in witnesses {
+        if !identities.insert(witness.file) {
+            failures.push(format!(
+                "{}: duplicate witness identity {}",
+                witness.target, witness.file
+            ));
+        }
+    }
+    let listed: BTreeSet<_> = sites
+        .iter()
+        .flat_map(|site| index::witness_entry(*site).files().iter().copied())
+        .collect();
+    for witness in witnesses {
+        if !listed.contains(witness.file) {
+            failures.push(format!(
+                "{}: witness has no named target {}",
+                witness.target, witness.file
+            ));
+        }
+    }
+    for site in sites {
+        let entry = index::witness_entry(*site);
+        let (_, variant) = entry.key();
+        for key in entry.files() {
+            if !witnesses.iter().any(|w| w.file == *key) {
+                failures.push(format!("{site:?}: named target has no witness {key}"));
+            }
+        }
+        if site.divergence() != variant {
+            failures.push(format!(
+                "{site:?}: production variant disagrees with witness table"
+            ));
+        }
+    }
+    failures
+}
+
 fn class_controls() -> [Witness<'static>; 2] {
     [
         Witness {
@@ -159,7 +194,6 @@ fn class_controls() -> [Witness<'static>; 2] {
             codes: BTreeSet::new(),
             code: "",
             mirror: "",
-            unreachable: "",
             message: "",
             source: "export {}; const value: string = 1;",
         },
@@ -169,7 +203,6 @@ fn class_controls() -> [Witness<'static>; 2] {
             codes: BTreeSet::from(["TS2322".to_owned()]),
             code: "",
             mirror: "",
-            unreachable: "",
             message: "",
             source: "export {}; const value: string = \"x\";",
         },
@@ -177,7 +210,7 @@ fn class_controls() -> [Witness<'static>; 2] {
 }
 
 /// One tsc process measures all witnesses; the checker runs once per program.
-/// This test costs 0.39 seconds: tsc 0.28 seconds and checker 0.05 seconds.
+/// This test costs 0.38 seconds: tsc 0.28 seconds and checker 0.05 seconds.
 /// The batch proves both TypeScript classes without a second corpus or tier run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -190,32 +223,8 @@ fn every_subset_rejection_carries_its_divergence() {
     fs::create_dir_all(&temporary).unwrap();
     let witnesses = witnesses();
     let mut failures = Vec::new();
-    let mut identities = BTreeSet::new();
+    failures.extend(table_failures(&witnesses, &all_sites()));
     let mut paths = vec![root.join("prelude/lang.d.ts")];
-    for site in all_sites() {
-        let (key, variant) = index::witness_key(site);
-        let primary = witnesses
-            .iter()
-            .find(|w| w.file == key)
-            .expect("each target has a witness");
-        let target_witnesses: Vec<_> = witnesses
-            .iter()
-            .filter(|w| w.target == primary.target)
-            .collect();
-        let reachable = primary.unreachable.is_empty();
-        let accepted = target_witnesses.iter().any(|w| w.codes.is_empty());
-        if !identities.insert(key) {
-            failures.push(format!("{site:?}: duplicate witness identity {key}"));
-        }
-        if variant.is_some() != (reachable && accepted) {
-            failures.push(format!("{site:?}: witness class disagrees with variant"));
-        }
-        if site.divergence() != variant {
-            failures.push(format!(
-                "{site:?}: production variant disagrees with witness table"
-            ));
-        }
-    }
     for variant in index::NEW_VARIANTS {
         let path = temporary.join(format!("fragment-{variant:?}.ts"));
         let source = format!("export {{}};\n{}", variant.entry().ts);
@@ -284,16 +293,12 @@ fn every_subset_rejection_carries_its_divergence() {
         "tsc failed: {output}"
     );
     let checker_started = Instant::now();
-    let targets: BTreeMap<_, _> = all_sites()
-        .into_iter()
-        .map(|site| {
-            let key = index::witness_key(site).0;
-            let target = witnesses.iter().find(|w| w.file == key).unwrap().target;
-            (target, site)
-        })
-        .collect();
-    for witness in &witnesses {
-        failures.extend(checker_failures(witness, targets[witness.target]));
+    for site in all_sites() {
+        for file in index::witness_entry(site).files() {
+            if let Some(witness) = witnesses.iter().find(|w| w.file == *file) {
+                failures.extend(checker_failures(witness, site));
+            }
+        }
     }
     eprintln!(
         "s153: {} witnesses; tsc {:.3}s; checker {:.3}s; total {:.3}s",
@@ -317,8 +322,10 @@ fn every_subset_rejection_carries_its_divergence() {
 
 #[test]
 fn wrong_message_expectation_fires() {
-    let mut witness = witnesses().remove(0);
-    witness.message = "deliberately wrong target message";
+    let witness = Witness {
+        source: "export function main(): void {}",
+        ..witnesses().remove(0)
+    };
     assert!(checker_failures(&witness, all_sites()[0])
         .iter()
         .any(|failure| failure.contains("target message absent")));
@@ -326,52 +333,89 @@ fn wrong_message_expectation_fires() {
 
 #[test]
 fn variant_mismatch_fires() {
-    let files = [SourceFile::entry("control.ts", "const value = 1;")];
-    let diagnostic = Diagnostic {
-        divergence: Some(Divergence::MathSubset),
-        ..Diagnostic::new(
-            crate::diag::RuleCode::S014,
-            "control",
-            Pos::new("control.ts", 1, 1),
-        )
+    let witness = witnesses().remove(0);
+    let files = [SourceFile::entry(witness.file, witness.source)];
+    let diagnostics = check_program(&files).unwrap_err();
+    let entry = index::WitnessEntry::Reachable {
+        files: &["a001.ts"],
+        variant: Divergence::DateSubset,
     };
-    let failures =
-        diagnostic_failures("control", &diagnostic, Some(Divergence::DateSubset), &files);
+    let failures = diagnostic_failures(witness.target, &diagnostics[0], entry.key().1, &files);
     assert!(failures.iter().any(|failure| failure.contains("variant")));
-    assert!(!failures
-        .iter()
-        .any(|failure| failure.contains("block absent")));
 }
 
 #[test]
 fn absent_block_fires() {
-    let files = [SourceFile::entry("control.ts", "const value = 1;")];
-    let diagnostic = Diagnostic::new(
-        crate::diag::RuleCode::S014,
-        "control",
-        Pos::new("control.ts", 1, 1),
-    );
+    let files = [SourceFile::entry(
+        "control.ts",
+        "export function main(): void { missing(); }",
+    )];
+    let diagnostics = check_program(&files).unwrap_err();
+    let entry = index::WitnessEntry::Reachable {
+        files: &["control.ts"],
+        variant: Divergence::MathSubset,
+    };
     assert!(
-        diagnostic_failures("control", &diagnostic, Some(Divergence::MathSubset), &files)
+        diagnostic_failures("control", &diagnostics[0], entry.key().1, &files)
             .iter()
             .any(|failure| failure.contains("block absent"))
     );
 }
 
 #[test]
-fn empty_no_variant_reason_fires() {
-    for entry in [
-        index::WitnessEntry::RejectedOnly {
-            file: "control.ts",
-            reason: "",
-        },
-        index::WitnessEntry::Unreachable {
-            file: "control.ts",
-            reason: "",
-        },
-    ] {
-        assert!(std::panic::catch_unwind(|| entry.key()).is_err());
-    }
+fn named_target_absent_fires() {
+    let witness = witnesses().remove(0);
+    assert!(checker_failures(&witness, all_sites()[1])
+        .iter()
+        .any(|failure| failure.contains("named target absent")));
+}
+
+#[test]
+fn duplicate_witness_fires() {
+    let witnesses = vec![witnesses().remove(0), witnesses().remove(0)];
+    assert!(table_failures(&witnesses, &[])
+        .iter()
+        .any(|failure| failure.contains("duplicate witness")));
+}
+
+#[test]
+fn named_target_without_witness_fires() {
+    let witnesses = vec![witnesses().remove(1)];
+    assert!(table_failures(&witnesses, &all_sites()[..1])
+        .iter()
+        .any(|failure| failure.contains("named target has no witness")));
+}
+
+#[test]
+fn witness_without_named_target_fires() {
+    let witness = Witness {
+        file: "unlisted.ts",
+        ..witnesses().remove(0)
+    };
+    assert!(table_failures(&[witness], &all_sites()[..1])
+        .iter()
+        .any(|failure| failure.contains("witness has no named target")));
+}
+
+#[test]
+fn production_variant_mismatch_fires() {
+    let row = crate::ambient::ApiRejection {
+        divergence: Divergence::DateSubset,
+        ..crate::ambient::rejected_api()[0]
+    };
+    assert!(table_failures(&witnesses(), &[RejectionSite::Api(row)])
+        .iter()
+        .any(|failure| failure.contains("production variant disagrees")));
+}
+
+#[test]
+fn empty_unreachable_reason_fires() {
+    let entry = index::WitnessEntry::Unreachable {
+        files: &["control.ts"],
+        variant: Divergence::JsonTypeDomain,
+        reason: "",
+    };
+    assert!(std::panic::catch_unwind(|| entry.key()).is_err());
 }
 
 #[test]

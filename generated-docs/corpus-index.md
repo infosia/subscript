@@ -666,7 +666,6 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r49-number-to-string-radix`](../corpus/reject/r49-number-to-string-radix.ts) | Rejects numeric toString without its required radix. | required-number-formatting-argument | Q26 |
 | [`reject/r50-parse-int-no-radix`](../corpus/reject/r50-parse-int-no-radix.ts) | Rejects parseInt without the required explicit radix. | rejected-parse-arity | Q25 |
 | [`reject/r51-array-unshift-variadic`](../corpus/reject/r51-array-unshift-variadic.ts) | Rejects multi-element `unshift` because variadic parameters are the missing prerequisite; one-element unshift is accepted. | rejected-array-variadic-form, array-methods | Q27 |
-| [`reject/r52-object-groupby`](../corpus/reject/r52-object-groupby.ts) | Rejects Object.groupBy because its null-prototype object result has no language type. | Object.groupBy, null-prototype-object, rejected-standard-library | Q27 |
 | [`reject/r54-map-groupby-key`](../corpus/reject/r54-map-groupby-key.ts) | Applies the Q24 key whitelist to the key inferred from a Map.groupBy callback. | Map.groupBy, map-key-whitelist, callback-result | Q27, Q24 |
 | [`reject/r55-array-callback-container`](../corpus/reject/r55-array-callback-container.ts) | Rejects the callback's reference to the array being iterated. | Array-callback, container-parameter, non-escaping-by-construction | Q27, C5 |
 | [`reject/r56-json-stringify-map`](../corpus/reject/r56-json-stringify-map.ts) | Rejects Map as JSON.stringify input instead of silently emitting {}. | JSON.stringify, Map, rejected-input-family | Q28 |
@@ -685,8 +684,6 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r69-closure-environment-layout-too-large`](../corpus/reject/r69-closure-environment-layout-too-large.ts) | Rejects two individually valid captures whose closure environment exceeds the aggregate limit. | closure environment layout, accumulated captures | Q10 |
 | [`reject/r70-generator-frame-layout-too-large`](../corpus/reject/r70-generator-frame-layout-too-large.ts) | Rejects two individually valid parameters whose generator frame exceeds the aggregate limit. | generator frame layout, accumulated parameters, generator header | Q11 |
 | [`reject/r71-accumulated-frame-locals-too-large`](../corpus/reject/r71-accumulated-frame-locals-too-large.ts) | Rejects two individually valid local slots whose accumulated stack frame exceeds the frame limit. | accumulated stack-frame layout, multiple aggregate locals | none |
-| [`reject/r73-for-of-object`](../corpus/reject/r73-for-of-object.ts) | Rejects for-of over the opaque object type. | for-of-closed-list | Q30 |
-| [`reject/r74-for-of-number`](../corpus/reject/r74-for-of-number.ts) | Rejects for-of over a sized number. | for-of-closed-list | Q30 |
 | [`reject/r75-for-of-entries`](../corpus/reject/r75-for-of-entries.ts) | Rejects entries() even in direct for-of subject position. | missing-tuple-type, for-of-subject | Q30 |
 | [`reject/r78-call-spread-variadic`](../corpus/reject/r78-call-spread-variadic.ts) | Rejects call spread for its missing prerequisite. | call-spread, variadic-parameters | Q30 |
 | [`reject/r79-assign-entries`](../corpus/reject/r79-assign-entries.ts) | Rejects entries() as an ordinary value expression. | missing-tuple-type, entries-rejected-everywhere | Q30 |

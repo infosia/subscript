@@ -21,6 +21,25 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// Byte access takes one value argument; the intrinsic has no optional or extra argument form.
+    ContextCallArguments,
+    /// Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.
+    NumberFormattingArguments,
+    /// Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.
+    ArraySourceArguments,
+    /// Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.
+    NumberPredicateArguments,
+    /// JSON.parse uses one static target type; its explicit type argument list must name exactly that type.
+    JsonTypeArguments,
+    /// Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.
+    FusedViewDomain,
+    /// Iteration requires a declared container or string type; literal unions have no traversal representation.
+    IterationSubjectDomain,
+    /// FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.
+    FixedArrayMethods,
+    /// Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.
+    ObjectGroupByResult,
+
     /// Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them.
     CompilerOwnedValue,
     /// Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation.
@@ -257,6 +276,15 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::ContextCallArguments,
+        Divergence::NumberFormattingArguments,
+        Divergence::ArraySourceArguments,
+        Divergence::NumberPredicateArguments,
+        Divergence::JsonTypeArguments,
+        Divergence::FusedViewDomain,
+        Divergence::IterationSubjectDomain,
+        Divergence::FixedArrayMethods,
+        Divergence::ObjectGroupByResult,
         Divergence::CompilerOwnedValue,
         Divergence::NamespaceObjectMember,
         Divergence::UnicodeNormalization,
@@ -372,6 +400,60 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::ContextCallArguments => DivergenceEntry {
+                ts: "Context.bytesOf(1);",
+                subscript: "const bytes: u8[] = Context.bytesOf<FixedArray<i32, 1>>([1]);",
+                why: "Byte access takes one value argument; the intrinsic has no optional or extra argument form.",
+                collision: "stdlib.md §18.1",
+            },
+            Divergence::NumberFormattingArguments => DivergenceEntry {
+                ts: "const value: f64 = 1.0; value.toString();",
+                subscript: "const value: f64 = 1.0; const text: string = value.toString(10);",
+                why: "Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.",
+                collision: "stdlib.md §11",
+            },
+            Divergence::ArraySourceArguments => DivergenceEntry {
+                ts: "const xs: i32[] = [1]; Array.from(xs, (value: i32): i32 => value);",
+                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
+                why: "Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.",
+                collision: "stdlib.md §9.0",
+            },
+            Divergence::NumberPredicateArguments => DivergenceEntry {
+                ts: "Number.isFinite(1);",
+                subscript: "const value: f64 = 1.0; const finite: boolean = Number.isFinite(value);",
+                why: "Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.",
+                collision: "stdlib.md §11",
+            },
+            Divergence::JsonTypeArguments => DivergenceEntry {
+                ts: "const value: i32 = JSON.parse(\"1\");",
+                subscript: "const value: i32 = JSON.parse<i32>(\"1\");",
+                why: "JSON.parse uses one static target type; its explicit type argument list must name exactly that type.",
+                collision: "stdlib.md §13",
+            },
+            Divergence::FusedViewDomain => DivergenceEntry {
+                ts: "const xs: i32[] = [1]; for (const key of xs.keys()) {}",
+                subscript: "const xs: FixedArray<i32, 1> = [1]; for (let key: i32 = 0; key < xs.length; key = key + 1) {}",
+                why: "Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.",
+                collision: "stdlib.md §14.3",
+            },
+            Divergence::IterationSubjectDomain => DivergenceEntry {
+                ts: "type Dir = \"north\" | \"south\"; const d: Dir = \"north\"; for (const c of d) { print(c); }",
+                subscript: "const d: string = \"north\"; for (const c of d) { print(c); }",
+                why: "Iteration requires a declared container or string type; literal unions have no traversal representation.",
+                collision: "stdlib.md §14.2",
+            },
+            Divergence::FixedArrayMethods => DivergenceEntry {
+                ts: "const xs: FixedArray<i32, 3> = [1, 2, 3]; print(xs.toString());",
+                subscript: "const xs: i32[] = [1, 2, 3]; print(xs.toString());",
+                why: "FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.",
+                collision: "stdlib.md §12",
+            },
+            Divergence::ObjectGroupByResult => DivergenceEntry {
+                ts: "const groups = Object.create(null);",
+                subscript: "const groups: Map<string, i32[]> = new Map<string, i32[]>();",
+                why: "Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.",
+                collision: "stdlib.md §12",
+            },
             Divergence::CompilerOwnedValue => DivergenceEntry {
                 ts: "const held = Array;",
                 subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
@@ -1334,7 +1416,26 @@ mod tests {
     /// The variant names declared in the `Divergence` enum body.
     fn declared_variants() -> BTreeSet<String> {
         let start = SOURCE
-            .find("pub enum Divergence {")
+            .find("pub enum Divergence {
+    /// Byte access takes one value argument; the intrinsic has no optional or extra argument form.
+    ContextCallArguments,
+    /// Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.
+    NumberFormattingArguments,
+    /// Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.
+    ArraySourceArguments,
+    /// Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.
+    NumberPredicateArguments,
+    /// JSON.parse uses one static target type; its explicit type argument list must name exactly that type.
+    JsonTypeArguments,
+    /// Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.
+    FusedViewDomain,
+    /// Iteration requires a declared container or string type; literal unions have no traversal representation.
+    IterationSubjectDomain,
+    /// FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.
+    FixedArrayMethods,
+    /// Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.
+    ObjectGroupByResult,
+")
             .expect("the enum declaration");
         let body = &SOURCE[start..];
         let end = body.find("\n}\n").expect("the end of the enum body");

@@ -549,7 +549,7 @@ The JSON probes use recursive nullable class fields. Both pass the checker and n
 The iterable probe uses an interface and `Iterable<i32>`; tsc accepts it, but the checker reports S100 and S016 before traversal.
 The accepted numeric-format and mapper probes reach other rows that already carry variants.
 The invalid count probes report TS2554 or TS2558. Object.groupBy still reports TS2550 under the pinned ES2022 library.
-No probe reaches another no-variant target with tsc acceptance.
+This claim was false. Round 6 measures tsc acceptance for FixedArray.toString() and literal-union iteration at two former no-variant targets.
 
 Firing controls construct a wrong variant, an absent block, both false TypeScript classes, and both empty no-variant reasons.
 The TypeScript controls join the existing single tsc process; they add no duplicate corpus check.
@@ -598,3 +598,107 @@ such sites: `JSON.parse` with a reviver, a user class with
 string-literal-union subject of `for…of`. Each reason was a claim that
 no check could falsify. The contract now gives every S014 site a
 variant, so the class is unreachable.
+
+
+## Implementation round 6: every S014 site carries a variant
+
+This run uses the working tree at `ead1f251`. It records no Phase Review result.
+
+`RejectionSite::divergence` and `ApiRejection.divergence` now return or hold `Divergence`.
+The named constructor always gives S014 a divergence block.
+The witness index holds all witness file names for each target and an independent expected variant.
+Each witness retains its measured tsc error-code set. An empty set means that tsc accepts the program.
+Only unreachable entries retain a reason field.
+
+Every former no-variant target now has this variant:
+
+| Target | Variant |
+| --- | --- |
+| `DateLocalGetYear` | `DateSubset` |
+| `FormNonCallbackTMethods` | `FixedArrayMethods` |
+| `FormGroupBy` | `ObjectGroupByResult` |
+| `ContextBytesTypeCount` | `ExplicitIntrinsicTypeArguments` |
+| `ContextBytesArgumentCount` | `ContextCallArguments` |
+| `NumberMethodArgumentCount` | `NumberFormattingArguments` |
+| `ArrayFromArgumentCount` | `ArraySourceArguments` |
+| `NumberPredicateCount` | `NumberPredicateArguments` |
+| `JsonStringifyHelper` | `JsonTypeDomain` |
+| `JsonParseTypeCount` | `JsonTypeArguments` |
+| `JsonParseHelper` | `JsonTypeDomain` |
+| `ForOfKeys` | `FusedViewDomain` |
+| `ForOfSubject` | `IterationSubjectDomain` |
+
+New variants state these reasons and collision sections:
+
+| Variant | Why | Collision |
+| --- | --- | --- |
+| `ContextCallArguments` | Byte access takes one value argument. | `stdlib.md §18.1` |
+| `NumberFormattingArguments` | Numeric formats use fixed argument counts and an explicit radix. | `stdlib.md §11` |
+| `ArraySourceArguments` | Array.from takes one source argument; mapper and extra arguments have no intrinsic form. | `stdlib.md §9.0` |
+| `NumberPredicateArguments` | Number predicates require exactly one f64 argument. | `stdlib.md §11` |
+| `JsonTypeArguments` | JSON.parse requires exactly one explicit static target type. | `stdlib.md §13` |
+| `FusedViewDomain` | Fused keys and values views require Map, Set, or dynamic arrays. | `stdlib.md §14.3` |
+| `IterationSubjectDomain` | Literal unions have no traversal representation. | `stdlib.md §14.2` |
+| `FixedArrayMethods` | Other compiler-owned array methods require a dynamic array receiver. | `stdlib.md §12` |
+| `ObjectGroupByResult` | The language has no null-prototype object result with dynamic keys. | `stdlib.md §12` |
+
+All new subscript fragments pass this compiler. The single tsc batch accepts all new TypeScript fragments.
+The FixedArray.toString() call and member-value witnesses both pass tsc and reach `FormNonCallbackTMethods`.
+The literal-union loop passes tsc and reaches `ForOfSubject`.
+The old rejected-class witnesses remain.
+
+The corpus divergence check reports r52, r73, and r74. All three entries retire under acceptance 3.
+
+- r52: ES2022 has no Object.groupBy member; tsc reports TS2550. A declared replacement changes the standard-library purpose.
+- r73: the opaque object type has no iteration protocol; tsc reports TS2488. A typed iterable changes the opaque-object purpose.
+- r74: a sized number has no iteration protocol; tsc reports TS2488. A string or container changes the sized-number purpose.
+
+The old r52 program remains in `a082.ts`.
+The exact old r73 and r74 programs remain in `s078-r73-for-of-object-old.ts` and `s078-r74-for-of-number-old.ts`.
+The compiler test table and generated corpus index remove the retired entries.
+
+Firing controls build source programs or table inputs before each check.
+They cover absent messages, mismatched variants, absent blocks, absent named targets, duplicate witnesses, and targets without witnesses.
+They also cover unlisted witnesses, mismatched production/table variants, empty unreachable reasons, and both incorrect tsc-class labels.
+The wrong-message control now uses an empty main function. It preserves the expected target message.
+The two tsc-class controls use the existing batch; they start no second tsc process.
+
+The total test measures 324 witnesses: tsc 0.275 seconds, checker 0.055 seconds, total 0.381 seconds.
+Its doc comment records the rounded cost. The checker runs once per witness, except the two unreachable helper sites.
+No accept golden changes. No commit or `tools/gate.sh` run occurs.
+
+Validation:
+
+- `cargo test --offline --locked -p subscript-compiler`: 920 passed, zero failed, one ignored.
+- The reject corpus suite passes all 45 tests, including the divergence-header check.
+- `cargo fmt --check` passes.
+- `cargo clippy --offline --locked -p subscript-compiler --all-targets` exits zero.
+- The compiler library reports two existing warnings; `tools/gate.sh` sets its baseline to seven.
+- No warning points to a changed file.
+- The API-reference generator succeeds. Only `api-reference.md` and `corpus-index.md` change.
+- Every changed file remains below 2,000 lines. No file outside the authorized set changes.
+
+Changed files:
+
+- `compiler/src/ambient.rs`
+- `compiler/src/check/rejection.rs`
+- `compiler/src/check/rejection_total.rs`
+- `compiler/src/check/rejection_witness_index.rs`
+- `compiler/src/check/rejection_witnesses.txt`
+- `compiler/src/divergence.rs`
+- `compiler/tests/corpus_reject.rs`
+- `generated-docs/api-reference.md`
+- `generated-docs/corpus-index.md`
+- `specs/tracking/s153-rejection-tsc-class.md`
+
+Deleted files:
+
+- `corpus/reject/r52-object-groupby.ts`
+- `corpus/reject/r73-for-of-object.ts`
+- `corpus/reject/r74-for-of-number.ts`
+
+Round-6 gate:
+
+```text
+gate full ead1f2519dd5955beb19b9962d19d987704dcfb4 dirty:13 debug 2241/0/3 release 2238/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```

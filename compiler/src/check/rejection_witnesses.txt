@@ -1453,3 +1453,51 @@ export function main(): void {
     print(`${value}`);
   }
 }
+===
+a069-accepted.ts	FORM_REJECTIONS/FixedArray<T, N> / non-callback T[] methods		S014		
+`toString` is rejected: Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. (Q22/Q27)
+export function main(): void { const xs: FixedArray<i32, 3> = [1, 2, 3]; print(xs.toString()); }
+===
+s078-accepted.ts	stmt.rs:1208 for_of_subject_from		S014		
+`for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `Dir`
+type Dir = "north" | "south"; export function main(): void { const d: Dir = "north"; for (const c of d) { print(c); } }
+===
+a069-member-accepted.ts	FORM_REJECTIONS/FixedArray<T, N> / non-callback T[] methods		S014		
+`toString` is rejected: Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. (Q22/Q27)
+export function main(): void { const xs: FixedArray<i32, 3> = [1, 2, 3]; const method = xs.toString; }
+===
+s078-r73-for-of-object-old.ts	stmt.rs:1208 for_of_subject_from	TS2488	S014		
+`for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `object`
+// corpus: reject/r73-for-of-object
+// purpose: Rejects for-of over the opaque object type.
+// exercises: for-of-closed-list
+// questions: Q30
+// tsc: rejects TS2488
+// expected-error: object is not one of the built-in iterable containers
+class Box {
+  value: i32 = 0;
+}
+
+export function visit(source: Box): void {
+  for (const value of (source as object)) {
+    print(`${value}`);
+  }
+}
+
+export function main(): void {
+}
+===
+s078-r74-for-of-number-old.ts	stmt.rs:1208 for_of_subject_from	TS2488	S014		
+`for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `i32`
+// corpus: reject/r74-for-of-number
+// purpose: Rejects for-of over a sized number.
+// exercises: for-of-closed-list
+// questions: Q30
+// tsc: rejects TS2488
+// expected-error: i32 is not an iterable container
+export function main(): void {
+  const source: i32 = 3;
+  for (const value of source) {
+    print(`${value}`);
+  }
+}

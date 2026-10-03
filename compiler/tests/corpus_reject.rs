@@ -113,7 +113,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r49-number-to-string-radix.ts", RuleCode::S014, 9),
     ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
     ("r51-array-unshift-variadic.ts", RuleCode::S014, 10),
-    ("r52-object-groupby.ts", RuleCode::S014, 9),
     ("r54-map-groupby-key.ts", RuleCode::S014, 9),
     ("r55-array-callback-container.ts", RuleCode::S014, 11),
     ("r56-json-stringify-map.ts", RuleCode::S014, 9),
@@ -350,8 +349,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
-    ("r73-for-of-object.ts", RuleCode::S014, 12),
-    ("r74-for-of-number.ts", RuleCode::S014, 9),
     ("r75-for-of-entries.ts", RuleCode::S014, 9),
     ("r78-call-spread-variadic.ts", RuleCode::S014, 13),
     ("r79-assign-entries.ts", RuleCode::S014, 9),
@@ -1165,20 +1162,6 @@ fn q27_array_variadic_rejections_name_the_missing_prerequisite() {
             "{file}: diagnostic does not name the prerequisite: {message}"
         );
     }
-}
-
-#[test]
-fn q27_map_set_rejections_name_the_missing_language_shapes() {
-    let dir = corpus_dir().join("reject");
-    let (file, required) = ("r52-object-groupby.ts", "null-prototype object");
-    let source = fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
-    let diagnostics = check_program(&[SourceFile::new(file, source)])
-        .expect_err("Q27 Map/Set form must be rejected");
-    assert!(
-        diagnostics[0].message.contains(required),
-        "{file}: diagnostic does not explain the missing shape: {}",
-        diagnostics[0].message
-    );
 }
 
 #[test]
