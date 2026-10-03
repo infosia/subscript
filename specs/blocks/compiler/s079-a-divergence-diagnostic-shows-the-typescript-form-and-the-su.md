@@ -41,7 +41,8 @@ whose header says `tsc: rejects` must render none. The test reports
 every violating entry at once (CLAUDE.md workflow: a total check,
 not named sites).
 
-**Rule 5a — a `subscript` fragment is never compiled. Open.**
+**Rule 5a — a `subscript` fragment is never compiled. Open, except
+for the variants that §153 rule 7 checks.**
 *(Recorded 2026-09-11 by §107's round, which wrote a fragment that
 does not compile and watched every §79 test pass on it.)* Rule 5's
 tests check that a `collision` id names a heading, that every heading

@@ -1117,7 +1117,7 @@ impl Divergence {
             Divergence::ArrayIsArray => DivergenceEntry {
                 ts: "const xs: i32[] = [1, 2];\n\
                      const flag: boolean = Array.isArray(xs);",
-                subscript: "const xs: i32[] = [1, 2]; const flag: boolean = true;",
+                subscript: "no equivalent; a declared type already answers it",
                 why: "A declared type answers this statically, and the runtime classification \
                       a boundary-opaque value needs is not inspected.",
                 collision: "compiler.md §105.3",

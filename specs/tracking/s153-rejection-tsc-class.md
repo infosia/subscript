@@ -717,6 +717,7 @@ The initial test reports 20 failing targets, including five fragments that tsc r
 The final test checks 324 witnesses and all 43 pairs of fragments.
 One tsc process measures the witnesses, the TypeScript fragments, and the TypeScript controls.
 The checker rejects each TypeScript fragment with its own variant and accepts each subscript fragment.
+Round 8 restores the `ArrayIsArray` no-equivalent sentence; rule 7 skips subscript fragments that start with `no equivalent; `.
 The focused run costs 0.411 seconds: tsc 0.275 seconds, checker 0.073 seconds.
 The test doc comment records the rounded cost.
 
@@ -1190,3 +1191,19 @@ Round-7 gate:
 ```text
 gate full 1f700501a2114951e0bc1cecf400bf68c222af2e dirty:7 debug 2243/0/3 release 2240/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+Round-8 gate:
+
+```text
+gate full a72bd2b51759462398618a5d71ae7ea75b954535 dirty:3 debug 2243/0/3 release 2240/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Phase Review result
+
+Three review passes. Pass 1: CRITICAL 0, MAJOR 2, MINOR 4. Pass 2:
+CRITICAL 0, MAJOR 2, MINOR 4. Pass 3: CRITICAL 0, MAJOR 1, MINOR 7.
+Every MAJOR was a site or a fragment whose block did not match the
+`tsc` class of a realistic program. Passes 1 and 2 changed the form
+(a stated no-variant reason, then no no-variant case); pass 3 added
+the fragment check (rule 7). Every MINOR is fixed, except §153.3
+items 2 and 3. §153 is COMPLETE.

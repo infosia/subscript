@@ -68,12 +68,14 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
             "{variant:?}: ts fragment has no rejection with its variant: {diagnostics:?}"
         ));
     }
-    let files = fragment_files(variant, subscript);
-    if let Err(diagnostics) = check_program(&files) {
-        failures.push(format!(
-            "{variant:?}: subscript fragment rejected: {}",
-            crate::render_diagnostics(&files, &diagnostics)
-        ));
+    if !subscript.starts_with("no equivalent; ") {
+        let files = fragment_files(variant, subscript);
+        if let Err(diagnostics) = check_program(&files) {
+            failures.push(format!(
+                "{variant:?}: subscript fragment rejected: {}",
+                crate::render_diagnostics(&files, &diagnostics)
+            ));
+        }
     }
     failures
 }

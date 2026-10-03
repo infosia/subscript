@@ -100,3 +100,6 @@ programs in one process costs 0.05 s.
    shape (`CompilerOwnedValue` at `const g = d.getTime;` shows
    `const held = Array;` and cites `stdlib.md` §9.0, while the
    diagnostic cites Q20). Recorded by the Phase Review; MINOR.
+3. Rule 7 compiles the fragments of the variants that S014 sites and
+   rows carry. The fragments of the other variants stay unchecked
+   (§79 rule 5a).
