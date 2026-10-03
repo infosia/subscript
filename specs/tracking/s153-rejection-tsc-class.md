@@ -702,3 +702,491 @@ Round-6 gate:
 ```text
 gate full ead1f2519dd5955beb19b9962d19d987704dcfb4 dirty:13 debug 2241/0/3 release 2238/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Implementation round 7: fragment truth
+
+This run uses the working tree at `1f700501`. It records no Phase Review result.
+
+The total test derives its variant set from the named site enum list and the API rows.
+The source check compares the site list with the enum declaration.
+The set has 43 variants, including the mirror parameter variant.
+The old set had 49 carried variants. Seven variants retire; the reused `DynamicObjectModel` enters the set.
+`NEW_VARIANTS` and the separate fragment test are deleted.
+
+The initial test reports 20 failing targets, including five fragments that tsc rejects.
+The final test checks 324 witnesses and all 43 pairs of fragments.
+One tsc process measures the witnesses, the TypeScript fragments, and the TypeScript controls.
+The checker rejects each TypeScript fragment with its own variant and accepts each subscript fragment.
+The focused run costs 0.411 seconds: tsc 0.275 seconds, checker 0.073 seconds.
+The test doc comment records the rounded cost.
+
+The wrong-variant control builds a diagnostic with the wrong variant. It retains the independent expected variant.
+The fragment controls build a tsc type error, a checker-accepted TypeScript source, and a checker-rejected subscript source.
+The tsc fragment control uses the existing false-class source in the shared batch.
+The S014 source control supplies fixture text with `RuleCode::S014` outside the constructor.
+
+The enum anchor is `pub enum Divergence {`.
+The deleted JSON row has no API-reference witness arm.
+The Set algebra reason now names the argument type:
+
+- Old: Set algebra requires a native Set; structural Set implementations have no runtime container representation.
+- New: Set algebra requires a native Set argument; a Set subclass has no runtime container representation.
+
+Retired variants and reused topics:
+
+| Retired variant | Reused variant |
+| --- | --- |
+| `ContextCallArguments` | `ExplicitIntrinsicTypeArguments` |
+| `NumberFormattingArguments` | `NumberCoercionAndArguments` |
+| `ArraySourceArguments` | `ArrayFromMapper` |
+| `NumberPredicateArguments` | `NumberCoercionAndArguments` |
+| `JsonTypeArguments` | `JsonSubset` |
+| `FusedViewDomain` | `IteratorTemporary` |
+| `ObjectGroupByResult` | `DynamicObjectModel` |
+
+The nine rejected-class-only targets retain their witness programs:
+
+| Target | Final variant |
+| --- | --- |
+| `DateLocalGetYear` | `DateSubset` |
+| `FormGroupBy` | `DynamicObjectModel` |
+| `ContextBytesTypeCount` | `ExplicitIntrinsicTypeArguments` |
+| `ContextBytesArgumentCount` | `ExplicitIntrinsicTypeArguments` |
+| `NumberMethodArgumentCount` | `NumberCoercionAndArguments` |
+| `ArrayFromArgumentCount` | `ArrayFromMapper` |
+| `NumberPredicateCount` | `NumberCoercionAndArguments` |
+| `JsonParseTypeCount` | `JsonSubset` |
+| `ForOfKeys` | `IteratorTemporary` |
+
+Fragment changes follow. Each retired variant shows the fragments of its reused topic.
+
+### `ContextCallArguments` → `ExplicitIntrinsicTypeArguments`
+
+The `ts` fragment stays unchanged.
+
+The `subscript` fragment stays unchanged.
+
+### `NumberFormattingArguments` → `NumberCoercionAndArguments`
+
+Old `ts`:
+
+```ts
+const value: f64 = 1.0; value.toString();
+```
+
+New `ts`:
+
+```ts
+print(`${isNaN(1.0)}`);
+const value: f64 = Number("1");
+print(value.toPrecision());
+```
+
+Old `subscript`:
+
+```ts
+const value: f64 = 1.0; const text: string = value.toString(10);
+```
+
+New `subscript`:
+
+```ts
+print(`${Number.isNaN(1.0)}`);
+const value: f64 = parseFloat("1");
+print(value.toPrecision(3));
+```
+
+### `ArraySourceArguments` → `ArrayFromMapper`
+
+Old `ts`:
+
+```ts
+const xs: i32[] = [1]; Array.from(xs, (value: i32): i32 => value);
+```
+
+New `ts`:
+
+```ts
+const xs: i32[] = [1, 2];
+const doubled = Array.from(xs, (value: i32): i32 => value * 2);
+```
+
+Old `subscript`:
+
+```ts
+const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);
+```
+
+New `subscript`:
+
+```ts
+const xs: i32[] = [1, 2];
+const doubled: i32[] = [];
+for (const value of xs) { doubled.push(value * 2); }
+```
+
+### `NumberPredicateArguments` → `NumberCoercionAndArguments`
+
+Old `ts`:
+
+```ts
+Number.isFinite(1);
+```
+
+New `ts`:
+
+```ts
+print(`${isNaN(1.0)}`);
+const value: f64 = Number("1");
+print(value.toPrecision());
+```
+
+Old `subscript`:
+
+```ts
+const value: f64 = 1.0; const finite: boolean = Number.isFinite(value);
+```
+
+New `subscript`:
+
+```ts
+print(`${Number.isNaN(1.0)}`);
+const value: f64 = parseFloat("1");
+print(value.toPrecision(3));
+```
+
+### `JsonTypeArguments` → `JsonSubset`
+
+Old `ts`:
+
+```ts
+const value: i32 = JSON.parse("1");
+```
+
+New `ts`:
+
+```ts
+JSON.stringify(new Map<i32, i32>());
+const parsed = JSON.parse("{}");
+```
+
+Old `subscript`:
+
+```ts
+const value: i32 = JSON.parse<i32>("1");
+```
+
+New `subscript`:
+
+```ts
+class Box { value: i32 = 1; }
+print(JSON.stringify(new Box()));
+const r: Box = JSON.parse<Box>('{"value":1}');
+```
+
+### `FusedViewDomain` → `IteratorTemporary`
+
+Old `ts`:
+
+```ts
+const xs: i32[] = [1]; for (const key of xs.keys()) {}
+```
+
+New `ts`:
+
+```ts
+const map: Map<i32, string> = new Map<i32, string>();
+const keys = map.keys();
+```
+
+Old `subscript`:
+
+```ts
+const xs: FixedArray<i32, 1> = [1]; for (let key: i32 = 0; key < xs.length; key = key + 1) {}
+```
+
+New `subscript`:
+
+```ts
+const map: Map<i32, string> = new Map<i32, string>();
+for (const key of map.keys()) { print(`${key}`); }
+```
+
+### `ObjectGroupByResult` → `DynamicObjectModel`
+
+Old `ts`:
+
+```ts
+const groups = Object.create(null);
+```
+
+New `ts`:
+
+```ts
+class Greeter { message: string = "hello"; }
+Greeter.prototype.message = "changed";
+eval("print(1)");
+```
+
+Old `subscript`:
+
+```ts
+const groups: Map<string, i32[]> = new Map<string, i32[]>();
+```
+
+New `subscript`:
+
+```ts
+class Greeter { message: string = "hello"; }
+const g: Greeter = new Greeter();
+g.message = "changed";
+```
+
+### `LocaleSensitiveString`
+
+Old `ts`:
+
+```ts
+const t: string = s.toLocaleUpperCase();
+const r: i32 = s.localeCompare("b");
+```
+
+New `ts`:
+
+```ts
+const s: string = "a"; const t: string = s.toLocaleUpperCase(); const r: i32 = s.localeCompare("b");
+```
+
+Old `subscript`:
+
+```ts
+const t: string = s.toUpperCase();
+const same: boolean = s === "b";
+```
+
+New `subscript`:
+
+```ts
+const s: string = "a"; const t: string = s.toUpperCase(); const same: boolean = s === "b";
+```
+
+### `ArrayMethodDefaults`
+
+Old `ts`:
+
+```ts
+xs.sort();
+const hit = xs.find((v: i32): boolean => v > 1);
+const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v);
+```
+
+New `ts`:
+
+```ts
+const xs: i32[] = [1, 2]; xs.sort();
+```
+
+Old `subscript`:
+
+```ts
+xs.sort((a: i32, b: i32): i32 => a - b);
+const hit: i32 = xs.findIndex((v: i32): boolean => v > 1);
+const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);
+```
+
+New `subscript`:
+
+```ts
+const xs: i32[] = [1, 2]; xs.sort((a: i32, b: i32): i32 => a - b); const hit: i32 = xs.findIndex((v: i32): boolean => v > 1); const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);
+```
+
+### `VariadicArguments`
+
+Old `ts`:
+
+```ts
+xs.splice(1, 2, 9, 9, 9);
+xs.unshift(-1, 0);
+```
+
+New `ts`:
+
+```ts
+const xs: i32[] = [1, 2]; xs.splice(1, 2, 9, 9, 9); xs.unshift(-1, 0);
+```
+
+Old `subscript`:
+
+```ts
+xs.splice(1, 2);
+xs.unshift(-1);
+```
+
+New `subscript`:
+
+```ts
+const xs: i32[] = [1, 2]; xs.splice(1, 2); xs.unshift(-1);
+```
+
+### `MapScalarGet`
+
+Old `ts`:
+
+```ts
+print(`${map.get(1)}`);
+```
+
+New `ts`:
+
+```ts
+const map: Map<i32, i32> = new Map<i32, i32>(); print(`${map.get(1)}`);
+```
+
+Old `subscript`:
+
+```ts
+if (map.has(1)) { print(`${map.getOr(1, 0)}`); }
+```
+
+New `subscript`:
+
+```ts
+const map: Map<i32, i32> = new Map<i32, i32>(); if (map.has(1)) { print(`${map.getOr(1, 0)}`); }
+```
+
+### `MapNonNullableGet`
+
+Old `ts`:
+
+```ts
+map.get(1);
+```
+
+New `ts`:
+
+```ts
+const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.get(1);
+```
+
+Old `subscript`:
+
+```ts
+map.getOr(1, fallback);
+```
+
+New `subscript`:
+
+```ts
+function* fallback(): Generator<i32> { yield 1; } const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.getOr(1, fallback());
+```
+
+### `ArrayIsArray`
+
+The `ts` fragment stays unchanged.
+
+Old `subscript`:
+
+```ts
+no equivalent; a declared type already answers it
+```
+
+New `subscript`:
+
+```ts
+const xs: i32[] = [1, 2]; const flag: boolean = true;
+```
+
+### `EscapingCapture`
+
+Old `ts`:
+
+```ts
+function makeAdder(k: i32): (v: i32) => i32 {
+  return (v: i32): i32 => v + k;
+}
+```
+
+New `ts`:
+
+```ts
+function makeAdder(k: i32): (v: i32) => i32 { const captured: i32 = k; return (v: i32): i32 => v + captured; }
+```
+
+Old `subscript`:
+
+```ts
+function add(k: i32, v: i32): i32 {
+  return k + v;
+}
+```
+
+New `subscript`:
+
+```ts
+function add(k: i32, v: i32): i32 { return k + v; }
+```
+
+### `SetAlgebraDomain`
+
+Old `ts`:
+
+```ts
+class Values extends Set<i32> {} const values = new Set<i32>(); values.union(new Values());
+```
+
+New `ts`:
+
+```ts
+class Values extends Set<i32> {} export function main(): void { const values: Set<i32> = new Set<i32>(); values.union(new Values()); }
+```
+
+The `subscript` fragment stays unchanged.
+
+### Retired reject entries: measured first diagnostics
+
+Each source comes from the parent of its deletion commit.
+The round-7 checker measures its first diagnostic. Replacement probes are separate from these old programs.
+
+| Retired entry | First diagnostic position | First diagnostic message |
+| --- | --- | --- |
+| `r52-object-groupby.ts` | S014 at 9:10 | ```Object.groupBy` is rejected: It returns a null-prototype object, and the language has no such type. (Q27)`` |
+| `r53-set-algebra-nonset.ts` | S014 at 10:16 | ```Set.union non-Set argument` is rejected: The language has no set-like protocol; use `pass a Set<K>` (Q27)`` |
+| `r72-for-of-user-class.ts` | S014 at 13:23 | ```for…of` cannot make user class `Bag` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal`` |
+| `r73-for-of-object.ts` | S014 at 12:24 | ```for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `object``` |
+| `r74-for-of-number.ts` | S014 at 9:23 | ```for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `i32``` |
+| `r76-return-keys-view.ts` | S014 at 8:14 | ```keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)`` |
+| `r77-pass-keys-view.ts` | S014 at 13:15 | ```keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)`` |
+| `r198-set-source-map.ts` | S014 at 9:41 | ```new Set(map)` is rejected: A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5); use `pass a T[], FixedArray<T, N>, Set<T>, or string` (Q30)`` |
+
+The round-4 S100 measurements for r53 and r72 describe accepted replacement probes.
+The old retired programs first report S014, as this table records.
+No accept golden changes. No commit or `tools/gate.sh` run occurs.
+
+### Round-7 validation
+
+- `cargo test --offline --locked -p subscript-compiler`: 923 passed, zero failed, one ignored.
+- `cargo fmt --check` passes.
+- `cargo clippy --offline --locked -p subscript-compiler --all-targets` exits zero.
+- The compiler library reports two existing warnings against the `tools/gate.sh` baseline of seven.
+- No warning points to a changed file. The test warnings also point to existing unchanged code.
+- `cargo run --offline --locked -p subscript-compiler --bin generate-api-reference` succeeds.
+- All three generated references remain byte-identical.
+- The final focused total test costs 0.418 seconds: tsc 0.278 seconds, checker 0.075 seconds.
+- The final total test measures 324 witnesses and 43 carried variants.
+- Every changed file has fewer than 2,000 lines. No file outside the authorized set changes.
+
+Changed files:
+
+- `compiler/src/ambient.rs`
+- `compiler/src/api_reference.rs`
+- `compiler/src/check/rejection.rs`
+- `compiler/src/check/rejection_total.rs`
+- `compiler/src/check/rejection_witness_index.rs`
+- `compiler/src/divergence.rs`
+- `specs/tracking/s153-rejection-tsc-class.md`
+
+Round-7 gate:
+
+```text
+gate full 1f700501a2114951e0bc1cecf400bf68c222af2e dirty:7 debug 2243/0/3 release 2240/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```

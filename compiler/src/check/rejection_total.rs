@@ -30,6 +30,58 @@ fn all_sites() -> Vec<RejectionSite> {
         .collect()
 }
 
+fn carried_variants() -> Vec<Divergence> {
+    let mut variants = Vec::new();
+    for site in all_sites() {
+        let variant = site.divergence();
+        if !variants.contains(&variant) {
+            variants.push(variant);
+        }
+    }
+    variants
+}
+
+fn fragment_files(variant: Divergence, source: &str) -> Vec<SourceFile> {
+    if variant == Divergence::MirrorParameterPattern {
+        vec![
+            SourceFile::ambient(
+                "fragment.d.ts",
+                format!("// @subscript-c-header include=\"fragment.h\"\n{source}"),
+            ),
+            SourceFile::entry("main.ts", "export function main(): void {}"),
+        ]
+    } else {
+        vec![SourceFile::entry("fragment.ts", source)]
+    }
+}
+
+fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let diagnostics = check_program(&fragment_files(variant, ts))
+        .err()
+        .unwrap_or_default();
+    if !diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.divergence == Some(variant))
+    {
+        failures.push(format!(
+            "{variant:?}: ts fragment has no rejection with its variant: {diagnostics:?}"
+        ));
+    }
+    let files = fragment_files(variant, subscript);
+    if let Err(diagnostics) = check_program(&files) {
+        failures.push(format!(
+            "{variant:?}: subscript fragment rejected: {}",
+            crate::render_diagnostics(&files, &diagnostics)
+        ));
+    }
+    failures
+}
+
+fn fragment_tsc_failure(name: &str, codes: &BTreeSet<String>) -> Option<String> {
+    (!codes.is_empty()).then(|| format!("{name}: ts fragment rejected by tsc: {codes:?}"))
+}
+
 #[path = "../../tests/support/tsc.rs"]
 mod tsc;
 
@@ -209,9 +261,9 @@ fn class_controls() -> [Witness<'static>; 2] {
     ]
 }
 
-/// One tsc process measures all witnesses; the checker runs once per program.
-/// This test costs 0.38 seconds: tsc 0.28 seconds and checker 0.05 seconds.
-/// The batch proves both TypeScript classes without a second corpus or tier run.
+/// One tsc process measures all witnesses and every carried TypeScript fragment.
+/// This test costs 0.41 seconds: tsc 0.28 seconds and checker 0.07 seconds.
+/// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
     let started = Instant::now();
@@ -225,7 +277,7 @@ fn every_subset_rejection_carries_its_divergence() {
     let mut failures = Vec::new();
     failures.extend(table_failures(&witnesses, &all_sites()));
     let mut paths = vec![root.join("prelude/lang.d.ts")];
-    for variant in index::NEW_VARIANTS {
+    for variant in carried_variants() {
         let path = temporary.join(format!("fragment-{variant:?}.ts"));
         let source = format!("export {{}};\n{}", variant.entry().ts);
         fs::write(&path, source).unwrap();
@@ -286,6 +338,16 @@ fn every_subset_rejection_carries_its_divergence() {
     for control in &controls {
         let codes = measured.remove(control.file).unwrap_or_default();
         assert!(tsc_class_failure(control, &codes).is_some());
+        if control.file == "control-accepted.ts" {
+            assert!(fragment_tsc_failure(control.file, &codes).is_some());
+        }
+    }
+    for variant in carried_variants() {
+        let name = format!("fragment-{variant:?}.ts");
+        let codes = measured.remove(&name).unwrap_or_default();
+        if let Some(failure) = fragment_tsc_failure(&name, &codes) {
+            failures.push(failure);
+        }
     }
     assert!(measured.is_empty(), "unowned tsc errors: {measured:?}");
     assert!(
@@ -300,9 +362,18 @@ fn every_subset_rejection_carries_its_divergence() {
             }
         }
     }
+    for variant in carried_variants() {
+        let entry = variant.entry();
+        failures.extend(fragment_checker_failures(
+            variant,
+            entry.ts,
+            entry.subscript,
+        ));
+    }
     eprintln!(
-        "s153: {} witnesses; tsc {:.3}s; checker {:.3}s; total {:.3}s",
+        "s153: {} witnesses; {} variants; tsc {:.3}s; checker {:.3}s; total {:.3}s",
         witnesses.len(),
+        carried_variants().len(),
         tsc_cost.as_secs_f64(),
         checker_started.elapsed().as_secs_f64(),
         started.elapsed().as_secs_f64()
@@ -336,11 +407,14 @@ fn variant_mismatch_fires() {
     let witness = witnesses().remove(0);
     let files = [SourceFile::entry(witness.file, witness.source)];
     let diagnostics = check_program(&files).unwrap_err();
-    let entry = index::WitnessEntry::Reachable {
-        files: &["a001.ts"],
-        variant: Divergence::DateSubset,
-    };
-    let failures = diagnostic_failures(witness.target, &diagnostics[0], entry.key().1, &files);
+    let mut diagnostic = diagnostics[0].clone();
+    diagnostic.divergence = Some(Divergence::DateSubset);
+    let failures = diagnostic_failures(
+        witness.target,
+        &diagnostic,
+        index::witness_key(all_sites()[0]).1,
+        &files,
+    );
     assert!(failures.iter().any(|failure| failure.contains("variant")));
 }
 
@@ -419,32 +493,35 @@ fn empty_unreachable_reason_fires() {
 }
 
 #[test]
-fn new_subscript_fragments_are_accepted() {
-    let mut failures = Vec::new();
-    for variant in index::NEW_VARIANTS {
-        let fragment = variant.entry().subscript;
-        let files = if *variant == crate::divergence::Divergence::MirrorParameterPattern {
-            vec![
-                SourceFile::ambient(
-                    "fragment.d.ts",
-                    format!("// @subscript-c-header include=\"fragment.h\"\n{fragment}"),
-                ),
-                SourceFile::entry("main.ts", "export function main(): void {}"),
-            ]
-        } else {
-            vec![SourceFile::entry(
-                "main.ts",
-                format!("export function main(): void {{ {fragment} }}"),
-            )]
-        };
-        if let Err(diagnostics) = check_program(&files) {
-            failures.push(format!(
-                "{variant:?}: {}",
-                crate::render_diagnostics(&files, &diagnostics)
-            ));
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+fn accepted_ts_fragment_fires() {
+    let variant = Divergence::CompilerOwnedValue;
+    assert!(
+        fragment_checker_failures(variant, "const value: i32 = 1;", variant.entry().subscript)
+            .iter()
+            .any(|failure| failure.contains("ts fragment has no rejection"))
+    );
+}
+
+#[test]
+fn rejected_subscript_fragment_fires() {
+    let variant = Divergence::CompilerOwnedValue;
+    assert!(
+        fragment_checker_failures(variant, variant.entry().ts, "const held = Array;")
+            .iter()
+            .any(|failure| failure.contains("subscript fragment rejected"))
+    );
+}
+
+fn outside_s014_constructor(source: &str) -> bool {
+    let production = source.split("#[cfg(test)]\nmod tests").next().unwrap();
+    production.contains("RuleCode::S014")
+}
+
+#[test]
+fn outside_s014_constructor_fires() {
+    assert!(outside_s014_constructor(
+        "fn reject() { error(RuleCode::S014); }"
+    ));
 }
 
 #[test]
@@ -461,8 +538,7 @@ fn s014_has_one_checker_constructor() {
             {
                 let source = fs::read_to_string(&path).unwrap();
                 // Checker files put inline tests after their production items.
-                let production = source.split("#[cfg(test)]\nmod tests").next().unwrap();
-                if production.contains("RuleCode::S014") {
+                if outside_s014_constructor(&source) {
                     failures.push(path.display().to_string());
                 }
             }

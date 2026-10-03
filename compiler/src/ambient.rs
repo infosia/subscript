@@ -614,7 +614,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection((ApiRejectionId::FormIsArrayValue, Divergence::ArrayIsArray), "Array", "isArray(value)", "Q22", None, "A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3).", Some("r210-array-is-array.ts")),
     rejection((ApiRejectionId::FormOfValue, Divergence::ArrayOfArity), "Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
     rejection((ApiRejectionId::FormNewArrayLength, Divergence::ArrayHoleConstruction), "Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
-    rejection((ApiRejectionId::FormGroupBy, Divergence::ObjectGroupByResult), "Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", None),
+    rejection((ApiRejectionId::FormGroupBy, Divergence::DynamicObjectModel), "Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", None),
     rejection((ApiRejectionId::FormAlgebraNonSet, Divergence::SetAlgebraDomain), "Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", None),
 ];
 

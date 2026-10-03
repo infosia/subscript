@@ -172,7 +172,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             ApiRejectionId::FormNewArrayLength => {
                 WitnessEntry::Reachable { files: &["a081.ts", "a081-b.ts"], variant: Divergence::ArrayHoleConstruction }
             }
-            ApiRejectionId::FormGroupBy => WitnessEntry::Reachable { files: &["a082.ts"], variant: Divergence::ObjectGroupByResult },
+            ApiRejectionId::FormGroupBy => WitnessEntry::Reachable { files: &["a082.ts"], variant: Divergence::DynamicObjectModel },
             ApiRejectionId::FormAlgebraNonSet => WitnessEntry::Reachable { files: &["a083.ts", "a083-old.ts"], variant: Divergence::SetAlgebraDomain },
         },
         RejectionSite::MirrorParameter => {
@@ -187,7 +187,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             WitnessEntry::Reachable { files: &["s006.ts", "s006-c.ts"], variant: Divergence::ExplicitIntrinsicTypeArguments }
         }
         RejectionSite::ContextBytesTypeCount => WitnessEntry::Reachable { files: &["s007.ts"], variant: Divergence::ExplicitIntrinsicTypeArguments },
-        RejectionSite::ContextBytesArgumentCount => WitnessEntry::Reachable { files: &["s008.ts"], variant: Divergence::ContextCallArguments },
+        RejectionSite::ContextBytesArgumentCount => WitnessEntry::Reachable { files: &["s008.ts"], variant: Divergence::ExplicitIntrinsicTypeArguments },
         RejectionSite::ContextBytesSpread => WitnessEntry::Reachable { files: &["s009.ts", "s009-b.ts"], variant: Divergence::VariadicArguments },
         RejectionSite::CallSpread => WitnessEntry::Reachable { files: &["s010.ts", "s010-b.ts", "r201-new-class-spread-variadic-old.ts", "r78-call-spread-variadic-old.ts"], variant: Divergence::VariadicArguments },
         RejectionSite::SetSourceSpread => WitnessEntry::Reachable { files: &["s011.ts", "s011-b.ts"], variant: Divergence::VariadicArguments },
@@ -207,7 +207,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::DateMemberWrite => WitnessEntry::Reachable { files: &["s023.ts", "s023-b.ts"], variant: Divergence::DateSubset },
         RejectionSite::DateMethodValue => WitnessEntry::Reachable { files: &["s024.ts", "s024-b.ts"], variant: Divergence::CompilerOwnedValue },
         RejectionSite::NumberMethodValue => WitnessEntry::Reachable { files: &["s025.ts", "s025-b.ts"], variant: Divergence::CompilerOwnedValue },
-        RejectionSite::NumberMethodArgumentCount => WitnessEntry::Reachable { files: &["s026.ts"], variant: Divergence::NumberFormattingArguments },
+        RejectionSite::NumberMethodArgumentCount => WitnessEntry::Reachable { files: &["s026.ts"], variant: Divergence::NumberCoercionAndArguments },
         RejectionSite::ArrayElementDomain => WitnessEntry::Reachable { files: &["s027.ts", "s027-b.ts"], variant: Divergence::MethodTypeDomain },
         RejectionSite::ArrayJoinDomain => WitnessEntry::Reachable { files: &["s028.ts", "s028-b.ts"], variant: Divergence::ArrayJoinDomain },
         RejectionSite::ArrayCallbackSpread => WitnessEntry::Reachable { files: &["s029.ts", "s029-b.ts"], variant: Divergence::VariadicArguments },
@@ -218,7 +218,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::ArrayFromTypeCount => {
             WitnessEntry::Reachable { files: &["s034.ts", "s034-d.ts"], variant: Divergence::ExplicitIntrinsicTypeArguments }
         }
-        RejectionSite::ArrayFromArgumentCount => WitnessEntry::Reachable { files: &["s035.ts"], variant: Divergence::ArraySourceArguments },
+        RejectionSite::ArrayFromArgumentCount => WitnessEntry::Reachable { files: &["s035.ts"], variant: Divergence::ArrayFromMapper },
         RejectionSite::ArrayFromSpread => WitnessEntry::Reachable { files: &["s036.ts", "s036-b.ts"], variant: Divergence::VariadicArguments },
         RejectionSite::ArrayFromSource => WitnessEntry::Reachable { files: &["s037.ts", "s037-b.ts"], variant: Divergence::SourceConstructionDomain },
         RejectionSite::CallbackParameterCount => {
@@ -237,7 +237,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::NumberMemberWrite => WitnessEntry::Reachable { files: &["s049.ts", "s049-b.ts"], variant: Divergence::CompilerOwnedValue },
         RejectionSite::NumberStaticValue => WitnessEntry::Reachable { files: &["s050.ts", "s050-b.ts"], variant: Divergence::CompilerOwnedValue },
         RejectionSite::NumberMember => WitnessEntry::Reachable { files: &["s051.ts", "s051-b.ts"], variant: Divergence::NamespaceObjectMember },
-        RejectionSite::NumberPredicateCount => WitnessEntry::Reachable { files: &["s052.ts"], variant: Divergence::NumberPredicateArguments },
+        RejectionSite::NumberPredicateCount => WitnessEntry::Reachable { files: &["s052.ts"], variant: Divergence::NumberCoercionAndArguments },
         RejectionSite::NumberGlobalCount => WitnessEntry::Reachable { files: &["s053.ts", "s053-old.ts"], variant: Divergence::NumberCoercionAndArguments },
         RejectionSite::RegexExec => WitnessEntry::Reachable { files: &["s054.ts", "s054-b.ts"], variant: Divergence::RegExpSubset },
         RejectionSite::StringPatternSpread => WitnessEntry::Reachable { files: &["s055.ts", "s055-b.ts"], variant: Divergence::VariadicArguments },
@@ -254,13 +254,13 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::JsonStringifyHelper => WitnessEntry::Unreachable { files: &["s066.ts"], variant: Divergence::JsonTypeDomain, reason: "The json_serializable guard and collect_json_types graph closure admit only serializer helper types." },
         RejectionSite::JsonParseCount => WitnessEntry::Reachable { files: &["s067.ts", "s067-old.ts"], variant: Divergence::JsonCallArguments },
         RejectionSite::JsonParseSpread => WitnessEntry::Reachable { files: &["s068.ts", "s068-b.ts"], variant: Divergence::VariadicArguments },
-        RejectionSite::JsonParseTypeCount => WitnessEntry::Reachable { files: &["s069.ts"], variant: Divergence::JsonTypeArguments },
+        RejectionSite::JsonParseTypeCount => WitnessEntry::Reachable { files: &["s069.ts"], variant: Divergence::JsonSubset },
         RejectionSite::JsonParseTarget => WitnessEntry::Reachable { files: &["s070.ts", "s070-b.ts"], variant: Divergence::JsonSubset },
         RejectionSite::JsonParseDomain => WitnessEntry::Reachable { files: &["s071.ts", "s071-b.ts"], variant: Divergence::JsonTypeDomain },
         RejectionSite::JsonParseHelper => WitnessEntry::Unreachable { files: &["s072.ts"], variant: Divergence::JsonTypeDomain, reason: "The serializable, Error, and Date guards plus graph closure admit only parser helper types." },
         RejectionSite::JsonError => WitnessEntry::Reachable { files: &["s073.ts", "s073-b.ts"], variant: Divergence::JsonSubset },
         RejectionSite::ForOfEntries => WitnessEntry::Reachable { files: &["s074.ts", "s074-b.ts"], variant: Divergence::NoTupleType },
-        RejectionSite::ForOfKeys => WitnessEntry::Reachable { files: &["s075.ts"], variant: Divergence::FusedViewDomain },
+        RejectionSite::ForOfKeys => WitnessEntry::Reachable { files: &["s075.ts"], variant: Divergence::IteratorTemporary },
         RejectionSite::ForOfMap => WitnessEntry::Reachable { files: &["s076.ts", "s076-b.ts"], variant: Divergence::BareMapSubject },
         RejectionSite::ForOfUserClass => WitnessEntry::Reachable { files: &["s077.ts", "s077-old.ts", "s077-corpus-old.ts"], variant: Divergence::UserIterationProtocol },
         RejectionSite::ForOfSubject => WitnessEntry::Reachable { files: &["s078.ts", "s078-accepted.ts", "s078-r73-for-of-object-old.ts", "s078-r74-for-of-number-old.ts"], variant: Divergence::IterationSubjectDomain },
@@ -355,34 +355,4 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::Float16Update,
     RejectionSite::Float16Binary,
     RejectionSite::MirrorParameter,
-];
-
-pub(super) const NEW_VARIANTS: &[Divergence] = &[
-    Divergence::ContextCallArguments,
-    Divergence::NumberFormattingArguments,
-    Divergence::ArraySourceArguments,
-    Divergence::NumberPredicateArguments,
-    Divergence::JsonTypeArguments,
-    Divergence::FusedViewDomain,
-    Divergence::IterationSubjectDomain,
-    Divergence::FixedArrayMethods,
-    Divergence::ObjectGroupByResult,
-    Divergence::CompilerOwnedValue,
-    Divergence::NamespaceObjectMember,
-    Divergence::UnicodeNormalization,
-    Divergence::MatchOptionalIndex,
-    Divergence::ArrayFlattenDepth,
-    Divergence::MethodTypeDomain,
-    Divergence::ArrayJoinDomain,
-    Divergence::FixedArraySpread,
-    Divergence::ExplicitIntrinsicTypeArguments,
-    Divergence::SourceConstructionDomain,
-    Divergence::CallbackParameterShape,
-    Divergence::JsonCallArguments,
-    Divergence::JsonTypeDomain,
-    Divergence::StringSearchPattern,
-    Divergence::MirrorParameterPattern,
-    Divergence::LocaleNumberFormatting,
-    Divergence::UserIterationProtocol,
-    Divergence::SetAlgebraDomain,
 ];

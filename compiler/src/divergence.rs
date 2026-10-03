@@ -21,24 +21,10 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
-    /// Byte access takes one value argument; the intrinsic has no optional or extra argument form.
-    ContextCallArguments,
-    /// Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.
-    NumberFormattingArguments,
-    /// Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.
-    ArraySourceArguments,
-    /// Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.
-    NumberPredicateArguments,
-    /// JSON.parse uses one static target type; its explicit type argument list must name exactly that type.
-    JsonTypeArguments,
-    /// Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.
-    FusedViewDomain,
     /// Iteration requires a declared container or string type; literal unions have no traversal representation.
     IterationSubjectDomain,
     /// FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.
     FixedArrayMethods,
-    /// Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.
-    ObjectGroupByResult,
 
     /// Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them.
     CompilerOwnedValue,
@@ -74,7 +60,7 @@ pub enum Divergence {
     LocaleNumberFormatting,
     /// User iteration protocols require Symbol.iterator, which the runtime does not provide.
     UserIterationProtocol,
-    /// Set algebra requires a native Set; structural Set implementations have no runtime container representation.
+    /// Set algebra requires a native Set argument; a Set subclass has no runtime container representation.
     SetAlgebraDomain,
     /// A surrogate escape without an adjacent paired escape.
     LoneSurrogateEscape,
@@ -276,15 +262,8 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
-        Divergence::ContextCallArguments,
-        Divergence::NumberFormattingArguments,
-        Divergence::ArraySourceArguments,
-        Divergence::NumberPredicateArguments,
-        Divergence::JsonTypeArguments,
-        Divergence::FusedViewDomain,
         Divergence::IterationSubjectDomain,
         Divergence::FixedArrayMethods,
-        Divergence::ObjectGroupByResult,
         Divergence::CompilerOwnedValue,
         Divergence::NamespaceObjectMember,
         Divergence::UnicodeNormalization,
@@ -400,42 +379,6 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
-            Divergence::ContextCallArguments => DivergenceEntry {
-                ts: "Context.bytesOf(1);",
-                subscript: "const bytes: u8[] = Context.bytesOf<FixedArray<i32, 1>>([1]);",
-                why: "Byte access takes one value argument; the intrinsic has no optional or extra argument form.",
-                collision: "stdlib.md §18.1",
-            },
-            Divergence::NumberFormattingArguments => DivergenceEntry {
-                ts: "const value: f64 = 1.0; value.toString();",
-                subscript: "const value: f64 = 1.0; const text: string = value.toString(10);",
-                why: "Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.",
-                collision: "stdlib.md §11",
-            },
-            Divergence::ArraySourceArguments => DivergenceEntry {
-                ts: "const xs: i32[] = [1]; Array.from(xs, (value: i32): i32 => value);",
-                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
-                why: "Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.",
-                collision: "stdlib.md §9.0",
-            },
-            Divergence::NumberPredicateArguments => DivergenceEntry {
-                ts: "Number.isFinite(1);",
-                subscript: "const value: f64 = 1.0; const finite: boolean = Number.isFinite(value);",
-                why: "Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.",
-                collision: "stdlib.md §11",
-            },
-            Divergence::JsonTypeArguments => DivergenceEntry {
-                ts: "const value: i32 = JSON.parse(\"1\");",
-                subscript: "const value: i32 = JSON.parse<i32>(\"1\");",
-                why: "JSON.parse uses one static target type; its explicit type argument list must name exactly that type.",
-                collision: "stdlib.md §13",
-            },
-            Divergence::FusedViewDomain => DivergenceEntry {
-                ts: "const xs: i32[] = [1]; for (const key of xs.keys()) {}",
-                subscript: "const xs: FixedArray<i32, 1> = [1]; for (let key: i32 = 0; key < xs.length; key = key + 1) {}",
-                why: "Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.",
-                collision: "stdlib.md §14.3",
-            },
             Divergence::IterationSubjectDomain => DivergenceEntry {
                 ts: "type Dir = \"north\" | \"south\"; const d: Dir = \"north\"; for (const c of d) { print(c); }",
                 subscript: "const d: string = \"north\"; for (const c of d) { print(c); }",
@@ -446,12 +389,6 @@ impl Divergence {
                 ts: "const xs: FixedArray<i32, 3> = [1, 2, 3]; print(xs.toString());",
                 subscript: "const xs: i32[] = [1, 2, 3]; print(xs.toString());",
                 why: "FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.",
-                collision: "stdlib.md §12",
-            },
-            Divergence::ObjectGroupByResult => DivergenceEntry {
-                ts: "const groups = Object.create(null);",
-                subscript: "const groups: Map<string, i32[]> = new Map<string, i32[]>();",
-                why: "Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.",
                 collision: "stdlib.md §12",
             },
             Divergence::CompilerOwnedValue => DivergenceEntry {
@@ -557,9 +494,9 @@ impl Divergence {
                 collision: "stdlib.md §14.2",
             },
             Divergence::SetAlgebraDomain => DivergenceEntry {
-                ts: "class Values extends Set<i32> {} const values = new Set<i32>(); values.union(new Values());",
+                ts: "class Values extends Set<i32> {} export function main(): void { const values: Set<i32> = new Set<i32>(); values.union(new Values()); }",
                 subscript: "const values: Set<i32> = new Set<i32>(); values.union(new Set<i32>());",
-                why: "Set algebra requires a native Set; structural Set implementations have no runtime container representation.",
+                why: "Set algebra requires a native Set argument; a Set subclass has no runtime container representation.",
                 collision: "stdlib.md §14",
             },
             Divergence::VoidValue => DivergenceEntry {
@@ -676,12 +613,8 @@ impl Divergence {
                 collision: "compiler.md §50",
             },
             Divergence::EscapingCapture => DivergenceEntry {
-                ts: "function makeAdder(k: i32): (v: i32) => i32 {\n\
-                     \x20 return (v: i32): i32 => v + k;\n\
-                     }",
-                subscript: "function add(k: i32, v: i32): i32 {\n\
-                            \x20 return k + v;\n\
-                            }",
+                ts: "function makeAdder(k: i32): (v: i32) => i32 { const captured: i32 = k; return (v: i32): i32 => v + captured; }",
+                subscript: "function add(k: i32, v: i32): i32 { return k + v; }",
                 why: "A capturing lambda holds its environment on the stack, so it cannot \
                       outlive the function that made it.",
                 collision: "C5",
@@ -930,30 +863,22 @@ impl Divergence {
                 collision: "stdlib.md §3",
             },
             Divergence::LocaleSensitiveString => DivergenceEntry {
-                ts: "const t: string = s.toLocaleUpperCase();\n\
-                     const r: i32 = s.localeCompare(\"b\");",
-                subscript: "const t: string = s.toUpperCase();\n\
-                            const same: boolean = s === \"b\";",
+                ts: "const s: string = \"a\"; const t: string = s.toLocaleUpperCase(); const r: i32 = s.localeCompare(\"b\");",
+                subscript: "const s: string = \"a\"; const t: string = s.toUpperCase(); const same: boolean = s === \"b\";",
                 why: "Locale data is host state that changes the result, so only \
                       locale-independent case mapping and equality are in the subset.",
                 collision: "stdlib.md §8",
             },
             Divergence::ArrayMethodDefaults => DivergenceEntry {
-                ts: "xs.sort();\n\
-                     const hit = xs.find((v: i32): boolean => v > 1);\n\
-                     const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v);",
-                subscript: "xs.sort((a: i32, b: i32): i32 => a - b);\n\
-                            const hit: i32 = xs.findIndex((v: i32): boolean => v > 1);\n\
-                            const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);",
+                ts: "const xs: i32[] = [1, 2]; xs.sort();",
+                subscript: "const xs: i32[] = [1, 2]; xs.sort((a: i32, b: i32): i32 => a - b); const hit: i32 = xs.findIndex((v: i32): boolean => v > 1); const total: i32 = xs.reduce((a: i32, v: i32): i32 => a + v, 0);",
                 why: "The lib's defaults sort as strings, seed from the first element, and \
                       need a miss value that a scalar has not.",
                 collision: "stdlib.md §9",
             },
             Divergence::VariadicArguments => DivergenceEntry {
-                ts: "xs.splice(1, 2, 9, 9, 9);\n\
-                     xs.unshift(-1, 0);",
-                subscript: "xs.splice(1, 2);\n\
-                            xs.unshift(-1);",
+                ts: "const xs: i32[] = [1, 2]; xs.splice(1, 2, 9, 9, 9); xs.unshift(-1, 0);",
+                subscript: "const xs: i32[] = [1, 2]; xs.splice(1, 2); xs.unshift(-1);",
                 why: "The language has no variadic parameter, so every call takes a fixed \
                       argument count.",
                 collision: "stdlib.md §12",
@@ -966,8 +891,8 @@ impl Divergence {
                 collision: "stdlib.md §10",
             },
             Divergence::MapScalarGet => DivergenceEntry {
-                ts: "print(`${map.get(1)}`);",
-                subscript: "if (map.has(1)) { print(`${map.getOr(1, 0)}`); }",
+                ts: "const map: Map<i32, i32> = new Map<i32, i32>(); print(`${map.get(1)}`);",
+                subscript: "const map: Map<i32, i32> = new Map<i32, i32>(); if (map.has(1)) { print(`${map.getOr(1, 0)}`); }",
                 why: "A scalar has no null miss value, so a lookup is a presence check plus \
                       a defaulted read.",
                 collision: "stdlib.md §10",
@@ -979,8 +904,8 @@ impl Divergence {
                 collision: "C17",
             },
             Divergence::MapNonNullableGet => DivergenceEntry {
-                ts: "map.get(1);",
-                subscript: "map.getOr(1, fallback);",
+                ts: "const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.get(1);",
+                subscript: "function* fallback(): Generator<i32> { yield 1; } const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>(); map.getOr(1, fallback());",
                 why: "The value type has no `| null` form of the map's value representation; use a default value.",
                 collision: "compiler.md §123",
             },
@@ -1192,7 +1117,7 @@ impl Divergence {
             Divergence::ArrayIsArray => DivergenceEntry {
                 ts: "const xs: i32[] = [1, 2];\n\
                      const flag: boolean = Array.isArray(xs);",
-                subscript: "no equivalent; a declared type already answers it",
+                subscript: "const xs: i32[] = [1, 2]; const flag: boolean = true;",
                 why: "A declared type answers this statically, and the runtime classification \
                       a boundary-opaque value needs is not inspected.",
                 collision: "compiler.md §105.3",
@@ -1416,26 +1341,7 @@ mod tests {
     /// The variant names declared in the `Divergence` enum body.
     fn declared_variants() -> BTreeSet<String> {
         let start = SOURCE
-            .find("pub enum Divergence {
-    /// Byte access takes one value argument; the intrinsic has no optional or extra argument form.
-    ContextCallArguments,
-    /// Numeric formatting uses fixed argument counts; radix formatting requires an explicit radix.
-    NumberFormattingArguments,
-    /// Array.from takes one source argument; mapper and extra argument forms are outside the intrinsic interface.
-    ArraySourceArguments,
-    /// Number predicates take exactly one f64 argument; coercion and optional argument forms are outside the intrinsic interface.
-    NumberPredicateArguments,
-    /// JSON.parse uses one static target type; its explicit type argument list must name exactly that type.
-    JsonTypeArguments,
-    /// Fused keys and values views require Map, Set, or dynamic array receivers; FixedArray has no fused view operation.
-    FusedViewDomain,
-    /// Iteration requires a declared container or string type; literal unions have no traversal representation.
-    IterationSubjectDomain,
-    /// FixedArray supports the callback family; other compiler-owned array methods require a dynamic array receiver.
-    FixedArrayMethods,
-    /// Object.groupBy returns a null-prototype object with dynamic keys; the language has no such result type.
-    ObjectGroupByResult,
-")
+            .find("pub enum Divergence {")
             .expect("the enum declaration");
         let body = &SOURCE[start..];
         let end = body.find("\n}\n").expect("the end of the enum body");
