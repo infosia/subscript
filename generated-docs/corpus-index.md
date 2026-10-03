@@ -471,7 +471,6 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r195-using-nullable-member`](../corpus/reject/r195-using-nullable-member.ts) | Rejects a member read without null narrowing. | using-declaration, nullable-reference, symbol-dispose | §97, §60 |
 | [`reject/r196-high-surrogate-before-brace-character`](../corpus/reject/r196-high-surrogate-before-brace-character.ts) | Rejects a high surrogate before a brace escape with a non-surrogate value. | string-escape, lone-surrogate | Q5, §96 |
 | [`reject/r197-high-surrogate-before-high`](../corpus/reject/r197-high-surrogate-before-high.ts) | Rejects a high surrogate before another high surrogate. | string-escape, lone-surrogate | Q5, §96 |
-| [`reject/r198-set-source-map`](../corpus/reject/r198-set-source-map.ts) | Rejects a Map as the source of a Set construction. | set-source-construction, missing-tuple-type | Q30, compiler section 103 |
 | [`reject/r199-set-source-generator`](../corpus/reject/r199-set-source-generator.ts) | Rejects a Generator as the source of a Set construction. | set-source-construction, generator, single-use | Q30, compiler section 103 |
 | [`reject/r20-date-setter`](../corpus/reject/r20-date-setter.ts) | Rejects Date setters; a Date is an immutable value. | rejected-date-subset, date-intrinsics | Q20 |
 | [`reject/r200-map-source-map`](../corpus/reject/r200-map-source-map.ts) | Rejects a pair-array source for a Map construction. | map-api-subset, missing-tuple-type | Q30, compiler section 103 |
@@ -691,8 +690,6 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r73-for-of-object`](../corpus/reject/r73-for-of-object.ts) | Rejects for-of over the opaque object type. | for-of-closed-list | Q30 |
 | [`reject/r74-for-of-number`](../corpus/reject/r74-for-of-number.ts) | Rejects for-of over a sized number. | for-of-closed-list | Q30 |
 | [`reject/r75-for-of-entries`](../corpus/reject/r75-for-of-entries.ts) | Rejects entries() even in direct for-of subject position. | missing-tuple-type, for-of-subject | Q30 |
-| [`reject/r76-return-keys-view`](../corpus/reject/r76-return-keys-view.ts) | Rejects returning a subject-only fused keys() view. | for-of-subject-restriction, escaping-iterator-temporary | Q30 |
-| [`reject/r77-pass-keys-view`](../corpus/reject/r77-pass-keys-view.ts) | Rejects passing a subject-only fused keys() view. | for-of-subject-restriction, escaping-iterator-temporary | Q30 |
 | [`reject/r78-call-spread-variadic`](../corpus/reject/r78-call-spread-variadic.ts) | Rejects call spread for its missing prerequisite. | call-spread, variadic-parameters | Q30 |
 | [`reject/r79-assign-entries`](../corpus/reject/r79-assign-entries.ts) | Rejects entries() as an ordinary value expression. | missing-tuple-type, entries-rejected-everywhere | Q30 |
 | [`reject/r80-regex-exec`](../corpus/reject/r80-regex-exec.ts) | Rejects exec because its result needs both an array-with-fields shape and tuple typing, which the language does not have. | RegExp.exec, array-with-fields, tuple-typing | Q31 |

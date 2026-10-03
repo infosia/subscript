@@ -366,3 +366,130 @@ The JSON f16 row renders a block despite `corpus: None`: `json.rs` emits `JsonSu
 | diag.rs:130 explanation | — | unreachable | — | — | — | — | adapter: no diagnostic constructor |
 | signatures.rs:563 resolve_param_pat | mirror-main.ts | S100 | parameter pattern outside the decided surface | no | accepts | yes | new |
 | signatures.rs:563 resolve_param_pat | mirror-main-b.ts | S100 | parameter pattern outside the decided surface | no | TS2488 | no | — |
+
+## Implementation
+
+Red test at contract pin `647f2769`: all 86 measured targets fail in one report.
+The test reuses all 315 measured programs and both mirrors. One tsc process costs 0.272 seconds.
+The checker costs 0.049 seconds; the complete test costs 0.367 seconds.
+No production change precedes this test. The shared tsc helper retains the corpus gate's options and binary lookup.
+
+The implementation uses 79 rows, 82 S014 sites, and the mirror parameter site.
+The four unread metadata rows are deleted. Their direct-site witnesses remain.
+The witness table retains both TypeScript classes and all six old reject programs.
+It has 313 programs: 315 minus eight deleted-row observations, plus six old corpus programs.
+One tsc process also checks both mirrors, all 16 new TypeScript fragments, and the three retained rewritten reject entries.
+The round-3 focused test costs 0.438 seconds: tsc 0.334 seconds, checker and render 0.071 seconds.
+All 16 new subscript fragments pass the checker. The wrong-message control fires.
+The source guard admits S014 construction only in the common checker module.
+The witness index uses exhaustive matches for both closed enums. It compares independent expected variants.
+
+Retained rewrites: `r27-string-match.ts`, `r78-call-spread-variadic.ts`, and `r201-new-class-spread-variadic.ts` state `tsc: accepts`.
+Retired entries: `r76-return-keys-view.ts`, `r77-pass-keys-view.ts`, and `r198-set-source-map.ts`.
+Their old witness programs match `0c75792b` byte-for-byte, except trailing whitespace. The accepted-class witnesses remain.
+The Set row has no corpus reference. The corpus index no longer lists the three retired entries.
+The corpus gates read the first diagnostic again. No expected diagnostic hides an earlier rejection.
+First diagnostics: `r27` S014 at 9:25; `r78` S014 at 13:8; `r201` S014 at 17:34.
+The `r27` message names the optional-index gap. Both spread messages state: `spread arguments require variadic parameters, which the language does not have`.
+
+Five sites remove tsc outcome statements. The old and new texts follow.
+
+- `string.match` row reason:
+  Old: `RegExpMatchArray.index` is optional under stock `tsc --strict`, so the result cannot satisfy the language's `i32` index contract.
+  New: The match result requires an optional numeric index, but the language requires a definite `i32` index.
+- `new Set(Map)` row reason:
+  Old: A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source.
+  New: A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5).
+- `Array.from(Map)` row reason:
+  Old: TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1).
+  New: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1).
+- Array spread message:
+  Old: a bare `Map` is not an array-literal spread operand: this language binds `K` and TypeScript binds a `[K, V]` pair, so an accepted program fails the `tsc` gate; push `map.keys()` or `map.values()` into the array with a `for…of` loop
+  New: a bare `Map` is not an array-literal spread operand: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; push `map.keys()` or `map.values()` into the array with a `for…of` loop
+- For-of message:
+  Old: a bare `Map` is not a `for…of` subject: this language binds `K` and TypeScript binds a `[K, V]` pair, so an accepted program fails the `tsc` gate; iterate `map.keys()` or `map.values()`
+  New: a bare `Map` is not a `for…of` subject: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`
+
+The message scan covers all checker files and ambient row summaries. The remaining outcome statements occur at sites without variants.
+The witness messages and reason tests use the new text. Variant fragments and `why` records keep their accepted-class explanations.
+
+New variants and reasons:
+
+| Variant | why | collision |
+|---|---|---|
+| `CompilerOwnedValue` | Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them. | stdlib.md §9.0 |
+| `NamespaceObjectMember` | Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation. | stdlib.md §9.0 |
+| `UnicodeNormalization` | Unicode normalization needs tables that the runtime does not provide. | stdlib.md §8 |
+| `MatchOptionalIndex` | TypeScript makes the match index optional; the language requires a definite i32 index and has no optional numeric field. | stdlib.md §15.3 |
+| `ArrayFlattenDepth` | A runtime flattening depth cannot determine one static result element type. | stdlib.md §9 |
+| `MethodTypeDomain` | Each method has a fixed receiver, element, result, and accumulator domain; TypeScript generic method domains include more kinds. | stdlib.md §9 |
+| `ArrayJoinDomain` | Array join uses the interpolation rules; nested arrays and other non-interpolatable elements have no implicit string form. | stdlib.md §9 |
+| `FixedArraySpread` | Array spread creates a dynamic array; its runtime length cannot construct a FixedArray with a static length. | stdlib.md §14.4 |
+| `ExplicitIntrinsicTypeArguments` | The intrinsic requires one explicit type argument for its storage or element type; inferred and mapper overloads do not supply that shape. | stdlib.md §18.1 |
+| `SourceConstructionDomain` | Source construction accepts arrays, FixedArray, Set, and string; null and JavaScript array-like objects are outside this domain. | stdlib.md §14 |
+| `CallbackParameterShape` | A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI. | stdlib.md §12 |
+| `JsonCallArguments` | JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface. | stdlib.md §13 |
+| `JsonTypeDomain` | JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation. | stdlib.md §13 |
+| `StringSearchPattern` | String search requires a compiled RegExp; implicit conversion from a string pattern is outside the regular-expression interface. | stdlib.md §15.3 |
+| `MirrorParameterPattern` | A mirror function uses named C ABI parameters; parameter destructuring requires a script body that a mirror does not provide. | compiler.md §107 |
+| `LocaleNumberFormatting` | Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats. | stdlib.md §11 |
+
+
+Validation:
+
+- The focused total test passes with 313 witnesses. Its single tsc process also accepts the three retained rewritten entries.
+- Each of the six round-2 rewrites passed an individual tsc run before the three retirements.
+- `cargo test --offline --locked -p subscript-compiler` passes: 914 passed, zero failed, one ignored.
+- The final corpus run passes all 46 tests. The divergence-header gate reports no additional entry.
+- The generic matrix uses the callback variant's `stdlib.md §12` record.
+- `cargo fmt --check` passes.
+- Clippy exits zero. The compiler library has two warnings; `tools/gate.sh` permits seven.
+- The test targets have 13 distinct warnings. All 15 distinct warnings precede this change.
+- The change added one identical-branch warning in `generic_tsc_matrix/api.rs`. The combined condition removes it.
+- The API-reference generator runs with `--offline --locked`. `generated-docs/api-reference.md` and `generated-docs/corpus-index.md` change.
+- No accept golden changes. No commit or `tools/gate.sh` run occurs.
+
+Changed files:
+
+- `compiler/src/ambient.rs`
+- `compiler/src/ambient/rejection_id.rs`
+- `compiler/src/check/expr/aggregate.rs`
+- `compiler/src/check/expr/array_of_and_map_copy.rs`
+- `compiler/src/check/expr/call.rs`
+- `compiler/src/check/expr/entry.rs`
+- `compiler/src/check/expr/literal.rs`
+- `compiler/src/check/expr/member.rs`
+- `compiler/src/check/expr/method.rs`
+- `compiler/src/check/expr/namespace.rs`
+- `compiler/src/check/expr/operator.rs`
+- `compiler/src/check/json.rs`
+- `compiler/src/check/mod.rs`
+- `compiler/src/check/rejection.rs`
+- `compiler/src/check/rejection_mirrors.txt`
+- `compiler/src/check/rejection_total.rs`
+- `compiler/src/check/rejection_witness_index.rs`
+- `compiler/src/check/rejection_witnesses.txt`
+- `compiler/src/check/signatures.rs`
+- `compiler/src/check/stmt.rs`
+- `compiler/src/check/tyres.rs`
+- `compiler/src/divergence.rs`
+- `compiler/src/tests/collections.rs`
+- `compiler/tests/corpus_reject.rs`
+- `compiler/tests/generic_tsc_matrix/api.rs`
+- `compiler/tests/support/tsc.rs`
+- `compiler/tests/tsc_corpus.rs`
+- Deleted: `corpus/reject/r198-set-source-map.ts`
+- `corpus/reject/r201-new-class-spread-variadic.ts`
+- `corpus/reject/r27-string-match.ts`
+- Deleted: `corpus/reject/r76-return-keys-view.ts`
+- Deleted: `corpus/reject/r77-pass-keys-view.ts`
+- `corpus/reject/r78-call-spread-variadic.ts`
+- `generated-docs/api-reference.md`
+- `generated-docs/corpus-index.md`
+- `specs/tracking/s153-rejection-tsc-class.md`
+
+## Landing gate
+
+```text
+gate full 0c75792b9903a681766aa3f278e31c4792983b03 dirty:36 debug 2234/0/3 release 2231/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```

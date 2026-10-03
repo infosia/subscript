@@ -362,7 +362,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | string | `toLocaleUpperCase` | S014 | Q21 | `toUpperCase` | Locale-sensitive case conversion is unavailable. | `r28-string-tolocaleupper.ts` |
 | string | `toLocaleLowerCase` | S014 | Q21 | `toLowerCase` | Locale-sensitive case conversion is unavailable. | — |
 | string | `normalize` | S014 | Q21 | — | Unicode normalization tables are unavailable. | — |
-| string | `match` | S014 | Q31 | — | `RegExpMatchArray.index` is optional under stock `tsc --strict`, so the result cannot satisfy the language's `i32` index contract. | `r27-string-match.ts` |
+| string | `match` | S014 | Q31 | — | The match result requires an optional numeric index, but the language requires a definite `i32` index. | `r27-string-match.ts` |
 | string | `matchAll` | S014 | Q31/Q30 | — | It needs a Q30 fusion decision and each iteration step still yields an object. | `r81-regex-match-all.ts` |
 | T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |
 | T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
@@ -398,7 +398,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | JSON | `stringify(object)` | S014 | Q28 | — | The boundary-opaque object type has no static field shape to serialize. | `r58-json-stringify-object.ts` |
 | JSON | `stringify(function)` | S014 | Q28 | — | Function values are not JSON data. | `r59-json-stringify-function.ts` |
 | JSON | `stringify(f16)` | S014 | Q28 | — | f16 is a storage-only type with no arithmetic/formatting domain. | — |
-| JSON | `parse(text) without target type` | S014 | Q28 | `JSON.parse<T>(text)` | The checker has no static type to monomorphize. | `r60-json-parse-no-context.ts` |
 | JSON | `parse<Date>(text)` | S014 | Q28 | — | An untagged ISO string cannot identify a Date, so the target could never match. | `r61-json-parse-date.ts` |
 | global | `isNaN(value)` | S014 | Q25 | `Number.isNaN` | The global form coerces its argument. | `r46-number-global-isnan.ts` |
 | global | `isFinite(value)` | S014 | Q25 | `Number.isFinite` | The global form coerces its argument. | — |
@@ -427,20 +426,17 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
 | Map<K, V with no shared nullable-pointer form> | `get(key)` | S014 | Q24 | `getOr` | The value type has no `\| null` form of the map's value representation. | `r250-map-generator-get.ts` |
 | Map | `new Map(iterable)` | S014 | Q30 | `construct empty, then set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
-| Set | `new Set(Map)` | S014 | Q30 | `pass a T[], FixedArray<T, N>, Set<T>, or string` | A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source. | `r198-set-source-map.ts` |
+| Set | `new Set(Map)` | S014 | Q30 | `pass a T[], FixedArray<T, N>, Set<T>, or string` | A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5). | — |
 | Set | `new Set(Generator<T>)` | S014 | Q30 | `collect the generator with for…of, then add` | A generator is single-use, and construction is a value expression (stdlib.md §14.4). | `r199-set-source-generator.ts` |
 | Array | `Array used as a value` | S014 | Q22 | `Array.from(source)` | Array is a compiler-owned namespace. | — |
 | Array | `Array.from(source, mapFn)` | S014 | Q22 | `Array.from(source), then a for…of loop that pushes the mapped value` | The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2). | `r209-array-from-mapper.ts` |
-| Array | `Array.from(Map)` | S014 | Q22 | `push map.keys() or map.values() into an array with a for…of loop` | TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1). | `r206-array-from-bare-map.ts` |
+| Array | `Array.from(Map)` | S014 | Q22 | `push map.keys() or map.values() into an array with a for…of loop` | Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1). | `r206-array-from-bare-map.ts` |
 | Array | `Array.from(Generator<T>)` | S014 | Q22 | `collect the generator with for…of, then push` | A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4). | `r207-array-from-generator.ts` |
 | Array | `isArray(value)` | S014 | Q22 | — | A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). | `r210-array-is-array.ts` |
 | Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3). | `r211-array-of-variadic.ts` |
 | Array | `new Array(length)` | S014 | Q22 | `an array literal, or push in a loop` | The language has no array hole and no missing-element value (compiler.md §105.3). | `r212-new-array-length.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
-| RegExp | `exec` | S014 | Q31 | — | Its result needs an array with extra fields and a tuple type, neither of which the language has. | `r80-regex-exec.ts` |
-| RegExp | `lastIndex` | S014 | Q31 | — | Mutable global-match state would drive `exec`, whose result is not representable. | `r82-regex-last-index.ts` |
-| RegExpMatchArray | `groups` | S014 | Q31 | — | Named groups require an object with dynamic keys, which the language does not have. | `r83-regex-groups.ts` |
 
 ## Divergences from ECMA
 

@@ -1,0 +1,1414 @@
+===
+a001.ts	STRING_REJECTIONS/string / localeCompare		S014		
+`localeCompare` is rejected: Locale-dependent collation is unavailable. (Q21)
+export function main(): void {
+  const s: string = "a";
+  const r: i32 = s.localeCompare("b");
+  print(`${r}`);
+}
+===
+a002.ts	STRING_REJECTIONS/string / toLocaleUpperCase		S014		
+`toLocaleUpperCase` is rejected: Locale-sensitive case conversion is unavailable; use `toUpperCase` (Q21)
+export function main(): void {
+  const s: string = "hi";
+  const t: string = s.toLocaleUpperCase();
+  print(t);
+}
+===
+a003.ts	STRING_REJECTIONS/string / toLocaleLowerCase		S014		
+`toLocaleLowerCase` is rejected: Locale-sensitive case conversion is unavailable; use `toLowerCase` (Q21)
+export function main(): void { const s: string = "x"; s.toLocaleLowerCase(); }
+===
+a004.ts	STRING_REJECTIONS/string / normalize		S014		
+`normalize` is rejected: Unicode normalization tables are unavailable. (Q21)
+export function main(): void { const s: string = "x"; s.normalize(); }
+===
+a005.ts	REGEX_STRING_REJECTIONS/string / match		S014		
+`match` is rejected: The match result requires an optional numeric index, but the language requires a definite `i32` index. (Q31)
+export function main(): void { const match = "x".match(/x/); }
+===
+a006.ts	REGEX_STRING_REJECTIONS/string / matchAll		S014		
+`matchAll` is rejected: It needs a Q30 fusion decision and each iteration step still yields an object. (Q31/Q30)
+export function main(): void {
+  const matches = "x".matchAll(/x/g);
+  print(`${matches}`);
+}
+===
+a010.ts	ARRAY_REJECTIONS/T[] / find		S014		
+`find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+export function main(): void {
+  const xs: i32[] = [3, 1, 2];
+  const hit = xs.find((v: i32): boolean => v > 1);
+  print(`${hit}`);
+}
+===
+a011.ts	ARRAY_REJECTIONS/T[] / findLast		S014		
+`findLast` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.findLast((v: i32): boolean => v > 0); }
+===
+a012.ts	ARRAY_REJECTIONS/T[] / flat		S014		
+`flat` is rejected: Runtime flattening depth cannot determine a static result type. (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.flat(); }
+===
+a013.ts	ARRAY_REJECTIONS/T[] / flatMap		S014		
+`flatMap` is rejected: The callback must return an array. (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.flatMap((v: i32): i32 => v); }
+===
+a014.ts	ARRAY_REJECTIONS/T[] / entries		S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void { const xs: i32[] = [1]; const held = xs.entries(); }
+===
+a015.ts	ARRAY_REJECTIONS/T[] / keys		S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). (Q30)
+export function main(): void { const xs: i32[] = [1]; const held = xs.keys(); }
+===
+a016.ts	ARRAY_REJECTIONS/T[] / values		S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). (Q30)
+export function main(): void { const xs: i32[] = [1]; const held = xs.values(); }
+===
+a017.ts	DATE_LOCAL_REJECTIONS/Date / getFullYear		S014		
+`getFullYear` is rejected: Local-time accessors are unavailable; use `getUTCFullYear` (Q20)
+export function main(): void {
+  const d: Date = new Date(0);
+  const y: i32 = d.getFullYear();
+  print(`${y}`);
+}
+===
+a018.ts	DATE_LOCAL_REJECTIONS/Date / getMonth		S014		
+`getMonth` is rejected: Local-time accessors are unavailable; use `getUTCMonth` (Q20)
+export function main(): void { const d = new Date(0); d.getMonth(); }
+===
+a019.ts	DATE_LOCAL_REJECTIONS/Date / getDate		S014		
+`getDate` is rejected: Local-time accessors are unavailable; use `getUTCDate` (Q20)
+export function main(): void { const d = new Date(0); d.getDate(); }
+===
+a020.ts	DATE_LOCAL_REJECTIONS/Date / getDay		S014		
+`getDay` is rejected: Local-time accessors are unavailable; use `getUTCDay` (Q20)
+export function main(): void { const d = new Date(0); d.getDay(); }
+===
+a021.ts	DATE_LOCAL_REJECTIONS/Date / getHours		S014		
+`getHours` is rejected: Local-time accessors are unavailable; use `getUTCHours` (Q20)
+export function main(): void { const d = new Date(0); d.getHours(); }
+===
+a022.ts	DATE_LOCAL_REJECTIONS/Date / getMinutes		S014		
+`getMinutes` is rejected: Local-time accessors are unavailable; use `getUTCMinutes` (Q20)
+export function main(): void { const d = new Date(0); d.getMinutes(); }
+===
+a023.ts	DATE_LOCAL_REJECTIONS/Date / getSeconds		S014		
+`getSeconds` is rejected: Local-time accessors are unavailable; use `getUTCSeconds` (Q20)
+export function main(): void { const d = new Date(0); d.getSeconds(); }
+===
+a024.ts	DATE_LOCAL_REJECTIONS/Date / getMilliseconds		S014		
+`getMilliseconds` is rejected: Local-time accessors are unavailable; use `getUTCMilliseconds` (Q20)
+export function main(): void { const d = new Date(0); d.getMilliseconds(); }
+===
+a025.ts	DATE_LOCAL_REJECTIONS/Date / getTimezoneOffset		S014		
+`getTimezoneOffset` is rejected: The runtime has no timezone database. (Q20)
+export function main(): void { const d = new Date(0); d.getTimezoneOffset(); }
+===
+a026.ts	DATE_LOCAL_REJECTIONS/Date / getYear	TS2339	S014		
+`getYear` is rejected: Local-time accessors are unavailable; use `getUTCFullYear` (Q20)
+export function main(): void { const d = new Date(0); d.getYear(); }
+===
+a027.ts	DATE_STRING_REJECTIONS/Date / toString		S014		
+`toString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toString(); }
+===
+a028.ts	DATE_STRING_REJECTIONS/Date / toDateString		S014		
+`toDateString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toDateString(); }
+===
+a029.ts	DATE_STRING_REJECTIONS/Date / toTimeString		S014		
+`toTimeString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toTimeString(); }
+===
+a030.ts	DATE_STRING_REJECTIONS/Date / toLocaleString		S014		
+`toLocaleString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleString(); }
+===
+a031.ts	DATE_STRING_REJECTIONS/Date / toLocaleDateString		S014		
+`toLocaleDateString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleDateString(); }
+===
+a032.ts	DATE_STRING_REJECTIONS/Date / toLocaleTimeString		S014		
+`toLocaleTimeString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleTimeString(); }
+===
+a033.ts	MAP_REJECTIONS/Map<K, V> / keys		S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const m = new Map<i32, i32>(); const held = m.keys(); }
+===
+a034.ts	MAP_REJECTIONS/Map<K, V> / values		S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const m = new Map<i32, i32>(); const held = m.values(); }
+===
+a035.ts	MAP_REJECTIONS/Map<K, V> / entries		S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void {
+  const map: Map<i32, string> = new Map<i32, string>();
+  const entries = map.entries();
+  print(`${entries}`);
+}
+===
+a036.ts	SET_REJECTIONS/Set<K> / keys		S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const s = new Set<i32>(); const held = s.keys(); }
+===
+a037.ts	SET_REJECTIONS/Set<K> / values		S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const s = new Set<i32>(); const held = s.values(); }
+===
+a038.ts	SET_REJECTIONS/Set<K> / entries		S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void { const s = new Set<i32>(); const held = s.entries(); }
+===
+a039.ts	JSON_REJECTIONS/JSON / stringify(Map<K, V>)		S014		
+`JSON.stringify` is rejected: Map is rejected rather than silently serialized as an empty object. (Q28)
+export function main(): void { const m = new Map<i32, i32>(); JSON.stringify(m); }
+===
+a040.ts	JSON_REJECTIONS/JSON / stringify(Set<K>)		S014		
+`JSON.stringify` is rejected: Set is rejected rather than silently serialized as an empty object. (Q28)
+export function main(): void { const s = new Set<i32>(); JSON.stringify(s); }
+===
+a041.ts	JSON_REJECTIONS/JSON / stringify(object)		S014		
+`JSON.stringify` is rejected: The boundary-opaque object type has no static field shape to serialize. (Q28)
+class Box {
+  constructor() {}
+}
+
+export function main(): void {
+  JSON.stringify(new Box() as object);
+}
+===
+a042.ts	JSON_REJECTIONS/JSON / stringify(function)		S014		
+`JSON.stringify` is rejected: Function values are not JSON data. (Q28)
+function identity(value: i32): i32 {
+  return value;
+}
+
+export function main(): void {
+  const value: (value: i32) => i32 = identity;
+  JSON.stringify(value);
+}
+===
+a043.ts	JSON_REJECTIONS/JSON / stringify(f16)		S014		
+`JSON.stringify` is rejected: f16 is a storage-only type with no arithmetic/formatting domain. (Q28)
+export function main(): void { const x: f16 = 1.0 as f16; JSON.stringify(x); }
+===
+a045.ts	JSON_REJECTIONS/JSON / parse<Date>(text)		S014		
+`JSON.parse<Date>` is rejected: An untagged ISO string cannot identify a Date, so the target could never match. (Q28)
+export function main(): void {
+  JSON.parse<Date>('"2020-01-01T00:00:00.000Z"');
+}
+===
+a046.ts	FORM_REJECTIONS/global / isNaN(value)		S014		
+`isNaN(value)` is rejected: The global form coerces its argument; use `Number.isNaN` (Q25)
+export function main(): void { isNaN(1.0); }
+===
+a047.ts	FORM_REJECTIONS/global / isFinite(value)		S014		
+`isFinite(value)` is rejected: The global form coerces its argument; use `Number.isFinite` (Q25)
+export function main(): void { isFinite(1.0); }
+===
+a048.ts	FORM_REJECTIONS/global / parseInt(value)		S014		
+`parseInt(value)` is rejected: The radix is a required `i32` argument; use `parseInt(value, radix)` (Q25)
+export function main(): void { parseInt("1"); }
+===
+a049.ts	FORM_REJECTIONS/Number / Number(value)		S014		
+`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+export function main(): void { Number("1"); }
+===
+a050.ts	FORM_REJECTIONS/Number / new Number(value)		S014		
+`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `value as f64` (Q25)
+export function main(): void { new Number(1.0); }
+===
+a051.ts	FORM_REJECTIONS/f32 / f64 / toLocaleString		S014		
+`toLocaleString` is rejected: Locale-sensitive number formatting is unavailable. (Q25)
+export function main(): void { const x: f64 = 1.0; x.toLocaleString(); }
+===
+a052.ts	FORM_REJECTIONS/f32 / f64 / toString()		S014		
+`toString()` is rejected: An explicit radix is required; use `toString(radix)` (Q26)
+export function main(): void { const x: f64 = 1.0; x.toString(); }
+===
+a053.ts	FORM_REJECTIONS/f32 / f64 / toPrecision()		S014		
+`toPrecision()` is rejected: An explicit digit count is required; use `toPrecision(digits)` (Q26)
+export function main(): void { const x: f64 = 1.0; x.toPrecision(); }
+===
+a054.ts	FORM_REJECTIONS/sized integers / toFixed/toString/toExponential/toPrecision		S014		
+`toFixed` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
+export function main(): void { const x: i32 = 1; x.toFixed(2); }
+===
+a055.ts	FORM_REJECTIONS/Math / max/min/hypot with more than two arguments		S014		
+`max` is rejected: Variadic parameters are outside the language. (Q19)
+export function main(): void { Math.max(1, 2, 3); }
+===
+a056.ts	FORM_REJECTIONS/Math / Math used as a value		S014		
+`Math used as a value` is rejected: Math is a compiler-owned namespace; use `Math.<member>` (Q19)
+export function main(): void { const held = Math; }
+===
+a057.ts	FORM_REJECTIONS/Date / Date.parse		S014		
+`Date.parse` is rejected: Parsing depends on timezone rules the runtime does not provide; use `Date.UTC` (Q20)
+export function main(): void { Date.parse("2020-01-01"); }
+===
+a058.ts	FORM_REJECTIONS/Date / new Date()		S014		
+`new Date()` is rejected: The zero-argument constructor reads nondeterministic current time; use `new Date(Date.now())` (Q20)
+export function main(): void { new Date(); }
+===
+a059.ts	FORM_REJECTIONS/Date / new Date(year, month, ...)		S014		
+`new Date(year, month, ...)` is rejected: The multi-argument constructor uses local time; use `new Date(Date.UTC(...))` (Q20)
+export function main(): void { new Date(2020, 0); }
+===
+a060.ts	FORM_REJECTIONS/Date / template interpolation		S014		
+`Date template interpolation` is rejected: Date has no implicit local-time string form; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); const text = `${d}`; }
+===
+a061.ts	FORM_REJECTIONS/Date / direct comparison		S014		
+`Date direct comparison `===`` is rejected: Date values do not compare implicitly; use `compare getTime() values` (Q20)
+export function main(): void { const d = new Date(0); const equal = d === new Date(1); }
+===
+a062.ts	FORM_REJECTIONS/Date / set*		S014		
+`setTime` is rejected: Date is an immutable value; use `construct a new Date` (Q20)
+export function main(): void { const d = new Date(0); d.setTime(1); }
+===
+a063.ts	FORM_REJECTIONS/T[] / sort()		S014		
+`sort()` is rejected: The no-argument overload coerces elements to strings; use `sort(comparator)` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.sort(); }
+===
+a064.ts	FORM_REJECTIONS/T[] / reduce(callback)		S014		
+`reduce(callback)` is rejected: An explicit initial accumulator is required; use `reduce(callback, init)` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.reduce((a: i32, v: i32): i32 => a + v); }
+===
+a065.ts	FORM_REJECTIONS/T[] / reduceRight(callback)		S014		
+`reduceRight(callback)` is rejected: An explicit initial accumulator is required; use `reduceRight(callback, init)` (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.reduceRight((a: i32, v: i32): i32 => a + v); }
+===
+a066.ts	FORM_REJECTIONS/T[] / callback(value, index, array)		S014		
+`map callback with the container parameter` is rejected: Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule; use `callback(value, index)` (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.map((v: i32, i: i32, a: i32[]): i32 => v); }
+===
+a067.ts	FORM_REJECTIONS/T[] / splice(start, deleteCount, ...items)		S014		
+`splice with inserted elements` is rejected: Variadic parameters are the missing prerequisite for insertion through `splice`. (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.splice(0, 0, 2); }
+===
+a068.ts	FORM_REJECTIONS/T[] / unshift(value, ...values)		S014		
+`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.unshift(1, 2); }
+===
+a069.ts	FORM_REJECTIONS/FixedArray<T, N> / non-callback T[] methods	TS2339	S014		
+`slice` is rejected: Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. (Q22/Q27)
+export function main(): void { const xs: FixedArray<i32, 1> = [1]; xs.slice(); }
+===
+a070.ts	FORM_REJECTIONS/Map<K, scalar V> / get(key)		S014		
+`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)
+export function main(): void { const m = new Map<i32, i32>(); m.get(1); }
+===
+a071.ts	FORM_REJECTIONS/Map<K, V with no shared nullable-pointer form> / get(key)		S014		
+`get(key)` is rejected: The value type has no `| null` form of the map's value representation; use `getOr` (Q24)
+export function main(): void { const m = new Map<i32, Generator<i32>>(); m.get(1); }
+===
+a072.ts	FORM_REJECTIONS/Map / new Map(iterable)		S014		
+`new Map(iterable)` is rejected: `new Map([[k, v]])` requires a pair element, but the language has no tuple type; use `construct empty, then set` (Q30)
+export function main(): void { new Map<i32, i32>([[1, 2]]); }
+===
+a073.ts	FORM_REJECTIONS/Set / new Set(Map)	TS2769	S014		
+`new Set(map)` is rejected: A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5); use `pass a T[], FixedArray<T, N>, Set<T>, or string` (Q30)
+export function main(): void {
+  const source: Map<i32, string> = new Map<i32, string>();
+  const values: Set<i32> = new Set<i32>(source);
+  print(`${values.size}`);
+}
+===
+a074.ts	FORM_REJECTIONS/Set / new Set(Generator<T>)		S014		
+`new Set(generator)` is rejected: A generator is single-use, and construction is a value expression (stdlib.md §14.4); use `collect the generator with for…of, then add` (Q30)
+function* one(): Generator<i32> {
+  yield 1;
+}
+export function main(): void {
+  const values: Set<i32> = new Set<i32>(one());
+  print(`${values.size}`);
+}
+===
+a075.ts	FORM_REJECTIONS/Array / Array used as a value		S014		
+`Array used as a value` is rejected: Array is a compiler-owned namespace; use `Array.from(source)` (Q22)
+export function main(): void { const held = Array; }
+===
+a076.ts	FORM_REJECTIONS/Array / Array.from(source, mapFn)		S014		
+`Array.from(source, mapFn)` is rejected: The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2); use `Array.from(source), then a for…of loop that pushes the mapped value` (Q22)
+export function main(): void { const xs: i32[] = [1]; Array.from(xs, (v: i32): i32 => v); }
+===
+a077.ts	FORM_REJECTIONS/Array / Array.from(Map)		S014		
+`Array.from(map)` is rejected: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1); use `push map.keys() or map.values() into an array with a for…of loop` (Q22)
+export function main(): void { const m = new Map<i32, i32>(); Array.from(m); }
+===
+a078.ts	FORM_REJECTIONS/Array / Array.from(Generator<T>)		S014		
+`Array.from(generator)` is rejected: A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4); use `collect the generator with for…of, then push` (Q22)
+function* one(): Generator<i32> {
+  yield 1;
+}
+export function main(): void {
+  const values = Array.from(one());
+  print(`${values.length}`);
+}
+===
+a079.ts	FORM_REJECTIONS/Array / isArray(value)		S014		
+`Array.isArray` is rejected: A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). (Q22)
+export function main(): void { Array.isArray([1]); }
+===
+a080.ts	FORM_REJECTIONS/Array / of(value, …)		S014		
+`Array.of` is rejected: Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3); use `an array literal` (Q22)
+export function main(): void { Array.of<i32>(1, 2); }
+===
+a081.ts	FORM_REJECTIONS/Array / new Array(length)		S014		
+`new Array(length)` is rejected: The language has no array hole and no missing-element value (compiler.md §105.3); use `an array literal, or push in a loop` (Q22)
+export function main(): void { new Array<i32>(1); }
+===
+a082.ts	FORM_REJECTIONS/Object / groupBy	TS2550	S014		
+`Object.groupBy` is rejected: It returns a null-prototype object, and the language has no such type. (Q27)
+export function main(): void {
+  Object.groupBy([1, 2], (value: i32): string => `${value}`);
+}
+===
+a083.ts	FORM_REJECTIONS/Set<K> / algebra(non-Set)	TS2345	S014		
+`Set.union non-Set argument` is rejected: The language has no set-like protocol; use `pass a Set<K>` (Q27)
+export function main(): void {
+  const values: Set<i32> = new Set<i32>();
+  values.union([1, 2]);
+}
+===
+s001.ts	expr/aggregate.rs:290 check_array_spread_lit		S014		
+array-literal spread produces a fresh T[]; it cannot construct a FixedArray
+export function main(): void { const xs: i32[] = [1]; const copy: FixedArray<i32, 1> = [...xs]; }
+===
+s002.ts	expr/aggregate.rs:322 check_array_spread_lit		S014		
+a bare `Map` is not an array-literal spread operand: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; push `map.keys()` or `map.values()` into the array with a `for…of` loop
+export function main(): void { const m = new Map<i32, i32>(); const copy = [...m]; }
+===
+s003.ts	expr/aggregate.rs:334 check_array_spread_lit		S014		
+Generator<T> is single-use; array-literal spread would consume a value expression
+function* one(): Generator<i32> { yield 1; }
+export function main(): void { const copy = [...one()]; }
+===
+s004.ts	expr/aggregate.rs:348 check_array_spread_lit	TS2488	S014		
+array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `i32`
+export function main(): void { const copy = [...1]; }
+===
+s005.ts	expr/array_of_and_map_copy.rs:75 check_map_copy	TS2769	S014		
+type is not a permitted Map/Set key kind (Q24)
+export function main(): void { const m = new Map<i32[], i32>(new Map<i32, i32>()); }
+===
+s006.ts	expr/call.rs:365 check_context_bytes_call		S014		
+`Context.bytesOf<T>` takes exactly one type argument
+export function main(): void { Context.bytesOf(1); }
+===
+s007.ts	expr/call.rs:373 check_context_bytes_call	TS2558	S014		
+`Context.bytesOf<T>` takes exactly one type argument
+export function main(): void { Context.bytesOf<i32, i32>(1); }
+===
+s008.ts	expr/call.rs:446 check_context_bytes_call	TS2554	S014		
+`Context.bytesOf` expects exactly 1 argument(s), got 0
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { Context.bytesOf<Box>(); }
+===
+s009.ts	expr/call.rs:461 check_context_bytes_call	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const boxes: Box[] = [new Box()]; Context.bytesOf<Box>(...boxes); }
+===
+s010.ts	expr/call.rs:1201 check_args_with_arguments	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+function take(x: i32): void {}
+export function main(): void { const xs: i32[] = [1]; take(...xs); }
+===
+s011.ts	expr/call.rs:1243 check_set_source	TS2769	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: i32[] = [1]; new Set<i32>(...xs); }
+===
+s012.ts	expr/call.rs:1273 check_set_source	TS2769	S014		
+`new Set(source)` accepts T[], FixedArray<T, N>, Set<T>, or string; got `i32`
+export function main(): void { new Set<i32>(1); }
+===
+s013.ts	expr/call.rs:1426 check_new		S014		
+`i32[]` is not a permitted Map/Set key kind (Q24)
+export function main(): void { new Map<i32[], i32>(); }
+===
+s014.ts	expr/literal.rs:64 check_lit		S014		
+`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)
+export function main(): void { const re = /x/y; }
+===
+s015.ts	expr/literal.rs:467 check_ident		S014		
+`Context` is an ambient namespace, not a value; use `Context.collect()`, `Context.free(value)`, or await `Context.suspend()` (Q6/Q7/Q34)
+export function main(): void { const held = Context; }
+===
+s016.ts	expr/literal.rs:497 check_ident		S014		
+`Number` is an ambient namespace, not a value or coercion; use `Number.<member>` (Q25)
+export function main(): void { const held = Number; }
+===
+s017.ts	expr/literal.rs:505 check_ident		S014		
+`JSON` is an ambient namespace, not a value; use `JSON.stringify(value)` or `JSON.parse<T>(text)` (Q28)
+export function main(): void { const held = JSON; }
+===
+s018.ts	expr/literal.rs:515 check_ident		S014		
+`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, and `Date.now()` are accepted (Q20)
+export function main(): void { const held = Date; }
+===
+s019.ts	expr/literal.rs:523 check_ident		S014		
+`Map` is a generic reference class, not a value; construct it with explicit type arguments (Q24)
+export function main(): void { const held = Map; }
+===
+s020.ts	expr/literal.rs:540 check_ident		S014		
+`parseInt` may only be called, not read as a value (Q25)
+export function main(): void { const held = parseInt; }
+===
+s021.ts	expr/literal.rs:547 check_ident		S014		
+the coercing global `isFinite` is rejected; use `Number.isFinite` (Q25)
+export function main(): void { const held = isFinite; }
+===
+s022.ts	expr/member.rs:545 member_on		S014		
+`RegExp.lastIndex` is rejected: mutable global-match state would drive `exec`, which is not representable (Q31)
+export function main(): void { const held = /x/g.lastIndex; }
+===
+s023.ts	expr/member.rs:600 member_on		S014		
+`Date` is an immutable value; `getTime` cannot be assigned (Q20)
+export function main(): void { const d = new Date(0); d.getTime = () : i64 => 0; }
+===
+s024.ts	expr/member.rs:611 member_on		S014		
+`getTime` may only be called, not read as a value (Q20)
+export function main(): void { const d = new Date(0); const held = d.getTime; }
+===
+s025.ts	expr/member.rs:627 member_on		S014		
+numeric method `toFixed` may only appear in an accepted call (Number formatting on f32/f64; Q25/Q26)
+export function main(): void { const x: f64 = 1.0; const held = x.toFixed; }
+===
+s026.ts	expr/method.rs:97 check_number_method	TS2554	S014		
+`toFixed` takes zero or one i32 digit count, got 2 argument(s) (Q26)
+export function main(): void { const x: f64 = 1.0; x.toFixed(1, 2); }
+===
+s027.ts	expr/method.rs:302 check_array_method		S014		
+`includes` is defined per element kind (scalars, strings, `Date`, reference classes); `Box` elements are outside that set (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: Box[] = [new Box()]; xs.includes(new Box()); }
+===
+s028.ts	expr/method.rs:365 check_array_method		S014		
+`join` formats elements by the Q14 interpolation rules; `i32[]` elements are not interpolatable (Q22)
+export function main(): void { const xs: i32[][] = [[1]]; xs.join(); }
+===
+s029.ts	expr/method.rs:597 check_array_method	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: i32[] = [1]; const init: i32[] = [0]; xs.reduce((a: i32, v: i32): i32 => a + v, ...init); }
+===
+s030.ts	expr/method.rs:639 check_array_method		S014		
+the `reduce` accumulator crosses the runtime↔script boundary; `Box` is outside the supported kinds (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: i32[] = [1]; xs.reduce((a: Box, v: i32): Box => a, new Box()); }
+===
+s031.ts	expr/method.rs:754 check_array_method		S014		
+`map` produces a `Box[]`; `Box` is outside the supported element kinds (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: i32[] = [1]; xs.map((v: i32): Box => new Box()); }
+===
+s032.ts	expr/method.rs:870 check_map_group_by		S014		
+`Map.groupBy` callback returns `i32[]`, which is not a §10.2 Map/Set key kind (Q24)
+export function main(): void { const xs: i32[] = [1]; Map.groupBy(xs, (v: i32): i32[] => [v]); }
+===
+s033.ts	expr/method.rs:910 check_array_static_call	TS2339	S014		
+`Array.nope` is outside the accepted Array namespace (Q22)
+export function main(): void { Array.nope(); }
+===
+s034.ts	expr/method.rs:948 check_array_from	TS2554	S014		
+`Array.from<T>` takes exactly one type argument
+export function main(): void { const xs: i32[] = [1]; Array.from<i32, i32>(xs); }
+===
+s035.ts	expr/method.rs:972 check_array_from	TS2554	S014		
+`Array.from(source)` takes one source argument, got 0
+export function main(): void { Array.from(); }
+===
+s036.ts	expr/method.rs:985 check_array_from	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const sources: i32[][] = [[1]]; Array.from(...sources); }
+===
+s037.ts	expr/method.rs:1022 check_array_from	TS2769	S014		
+`Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, or string; got `i32`
+export function main(): void { Array.from(1); }
+===
+s038.ts	expr/method.rs:1470 callback_params_for_arity	TS2345	S014		
+`map` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 4 (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.map((v: i32, index: i32, array: i32[], extra: i32): i32 => v); }
+===
+s039.ts	expr/namespace.rs:69 check_namespace_member		S014		
+`Context.collect` may only be called, not read as a value (Q6/Q7/Q34)
+export function main(): void { const held = Context.collect; }
+===
+s040.ts	expr/namespace.rs:94 check_namespace_member		S014		
+`JSON.stringify` may only be called, not read as a value (Q28)
+export function main(): void { const held = JSON.stringify; }
+===
+s041.ts	expr/namespace.rs:108 check_namespace_member		S014		
+`Array.from` may only be called, not read as a value (Q22)
+export function main(): void { const held = Array.from; }
+===
+s042.ts	expr/namespace.rs:114 check_namespace_member		S014		
+`Array.prototype` is outside the accepted Array namespace (Q22)
+export function main(): void { const held = Array.prototype; }
+===
+s043.ts	expr/namespace.rs:124 check_namespace_member		S014		
+`Map.groupBy` may only be called, not read as a value (Q27)
+export function main(): void { const held = Map.groupBy; }
+===
+s044.ts	expr/namespace.rs:131 check_namespace_member		S014		
+`Set.prototype` is outside the accepted Map/Set subset; iterator-based APIs are rejected (Q24)
+export function main(): void { const held = Set.prototype; }
+===
+s045.ts	expr/namespace.rs:316 check_math_member	TS2540	S014		
+`Math.PI` is read-only (Q19)
+export function main(): void { Math.PI = 3.0; }
+===
+s046.ts	expr/namespace.rs:331 check_math_member		S014		
+`Math.sin` may only be called, not read as a value
+export function main(): void { const held = Math.sin; }
+===
+s047.ts	expr/namespace.rs:338 check_math_member	TS2339	S014		
+`Math.nope` is outside the accepted Math subset (Q19)
+export function main(): void { const held = Math.nope; }
+===
+s048.ts	expr/namespace.rs:375 check_math_call	TS2554	S014		
+`Math.sin` takes exactly 1 f64 argument(s), got 0 (Q19: the lib's variadic forms are out of subset)
+export function main(): void { Math.sin(); }
+===
+s049.ts	expr/namespace.rs:422 check_number_member	TS2540	S014		
+`Number.EPSILON` is read-only (Q25)
+export function main(): void { Number.EPSILON = 1.0; }
+===
+s050.ts	expr/namespace.rs:437 check_number_member		S014		
+`Number.isFinite` may only be called, not read as a value (Q25)
+export function main(): void { const held = Number.isFinite; }
+===
+s051.ts	expr/namespace.rs:444 check_number_member		S014		
+`Number.prototype` is outside the accepted Number subset (Q25)
+export function main(): void { const held = Number.prototype; }
+===
+s052.ts	expr/namespace.rs:462 check_number_predicate_call	TS2554	S014		
+`Number.isFinite` takes exactly 1 f64 argument, got 0 (Q25)
+export function main(): void { Number.isFinite(); }
+===
+s053.ts	expr/namespace.rs:521 check_number_global_call	TS2554	S014		
+`parseFloat` takes exactly 1 argument(s), got 0 (Q25)
+export function main(): void { parseFloat(); }
+===
+s054.ts	expr/namespace.rs:869 check_regex_method		S014		
+`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)
+export function main(): void { const held = /x/.exec("x"); }
+===
+s055.ts	expr/namespace.rs:956 check_string_pattern_method	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const args: string[] = ["x"]; "x".split(...args); }
+===
+s056.ts	expr/namespace.rs:1028 check_string_pattern_method		S014		
+`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)
+export function main(): void { "x".search("x"); }
+===
+s057.ts	expr/namespace.rs:1078 check_date_member		S014		
+`Date.now` is read-only (Q20)
+export function main(): void { Date.now = (): i64 => 0; }
+===
+s058.ts	expr/namespace.rs:1097 check_date_member		S014		
+`Date.now` may only be called, not read as a value (Q20)
+export function main(): void { const held = Date.now; }
+===
+s059.ts	expr/namespace.rs:1175 check_date_new	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const args: i64[] = [0]; new Date(...args); }
+===
+s060.ts	expr/namespace.rs:1274 date_subset_rejection	TS2339	S014		
+`nope` is outside the accepted Date subset (Q20)
+export function main(): void { const d = new Date(0); d.nope(); }
+===
+s061.ts	expr/operator.rs:45 check_unary		S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { const x: f16 = 1.0 as f16; const y = -x; }
+===
+s062.ts	json.rs:55 check_json_call	TS2339	S014		
+`JSON.nope` is outside the accepted JSON subset (Q28)
+export function main(): void { JSON.nope(); }
+===
+s063.ts	json.rs:63 check_json_call		S014		
+`JSON.stringify` expects exactly 1 argument, got 2
+export function main(): void { JSON.stringify(1, null); }
+===
+s064.ts	json.rs:75 check_json_call	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: i32[] = [1]; JSON.stringify(...xs); }
+===
+s065.ts	json.rs:114 check_json_call		S014		
+`JSON.stringify` cannot serialize `RegExp`; P13 accepts sized numerics except f16, boolean, string, Date, arrays, @ValueType values, reference classes, and Ref | null
+export function main(): void { JSON.stringify(/x/); }
+===
+s066.ts	json.rs:130 check_json_call				R3: json_serializable admits only helper types; collect_json_types includes every child and root.
+
+class Box { value: i32 = 1; next: Box | null = null; }
+export function main(): void { JSON.stringify(new Box()); }
+===
+s067.ts	json.rs:157 check_json_parse	TS2554	S014		
+`JSON.parse` expects exactly 1 argument, got 0
+export function main(): void { JSON.parse<i32>(); }
+===
+s068.ts	json.rs:169 check_json_parse	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: string[] = ["1"]; JSON.parse<i32>(...xs); }
+===
+s069.ts	json.rs:180 check_json_parse	TS2558	S014		
+`JSON.parse<T>` takes exactly one type argument
+export function main(): void { JSON.parse<i32, i32>("1"); }
+===
+s070.ts	json.rs:196 check_json_parse		S014		
+`JSON.parse` requires a target type; use `JSON.parse<T>(text)` or a contextual type (Q28)
+export function main(): void { JSON.parse("1"); }
+===
+s071.ts	json.rs:251 check_json_parse		S014		
+`JSON.parse` cannot deserialize `Map<i32, i32>`; Q28 accepts sized numerics except f16, boolean, string, arrays, @ValueType values, reference classes, and Ref | null
+export function main(): void { JSON.parse<Map<i32, i32>>("{}"); }
+===
+s072.ts	json.rs:266 check_json_parse				R4: serializable, Error, and Date guards admit only parser types; graph closure makes lookups total.
+
+class Box { value: i32 = 1; next: Box | null = null; }
+export function main(): void { JSON.parse<Box>("{}"); }
+===
+s073.ts	json.rs:293 reject_json_error_type		S014		
+`JSON.stringify` cannot accept `Error`: the Error classes are not JSON types
+export function main(): void { JSON.stringify(new Error("x")); }
+===
+s074.ts	stmt.rs:1094 check_for_of_subject_under_flag		S014		
+`entries()` yields a pair, but the language has no tuple type
+export function main(): void { const m = new Map<i32, i32>(); for (const pair of m.entries()) {} }
+===
+s075.ts	stmt.rs:1132 check_for_of_subject_under_flag	TS2339	S014		
+`keys()` is a subject-only fused view on Map, Set, or T[]; receiver is `FixedArray<i32, 1>`
+export function main(): void { const xs: FixedArray<i32, 1> = [1]; for (const key of xs.keys()) {} }
+===
+s076.ts	stmt.rs:1170 for_of_subject_from		S014		
+a bare `Map` is not a `for…of` subject: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`
+export function main(): void { const m = new Map<i32, i32>(); for (const pair of m) {} }
+===
+s077.ts	stmt.rs:1198 for_of_subject_from	TS2488	S014		
+`for…of` cannot make user class `Box` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; stock `tsc` rejects this subject too
+class Box {}
+export function main(): void { for (const v of new Box()) {} }
+===
+s078.ts	stmt.rs:1208 for_of_subject_from	TS2488	S014		
+`for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `i32`
+export function main(): void { for (const v of 1) {} }
+===
+s079.ts	tyres.rs:274 resolve_type_ref		S014		
+`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)
+export function main(): void { const match: RegExpMatchArray | null = null; }
+===
+s080.ts	tyres.rs:466 resolve_type_ref		S014		
+`i32[]` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes
+function take(m: Map<i32[], i32>): void {}
+export function main(): void {  }
+===
+s081.ts	expr/operator.rs:249 check_update		S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { let x: f16 = 1.0 as f16; x++; }
+===
+s082.ts	expr/operator.rs:1081 bin_result		S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { const x: f16 = 1.0 as f16; const y = x + x; }
+===
+mirror-main.ts	signatures.rs:563 resolve_param_pat		S100	mirror-pattern.d.ts	
+parameter pattern outside the decided surface
+export function main(): void {}
+===
+a001-b.ts	STRING_REJECTIONS/string / localeCompare	TS2769	S014		
+`localeCompare` is rejected: Locale-dependent collation is unavailable. (Q21)
+export function main(): void { "x".localeCompare(1); }
+===
+a002-b.ts	STRING_REJECTIONS/string / toLocaleUpperCase	TS2769	S014		
+`toLocaleUpperCase` is rejected: Locale-sensitive case conversion is unavailable; use `toUpperCase` (Q21)
+export function main(): void { "x".toLocaleUpperCase(1); }
+===
+a003-b.ts	STRING_REJECTIONS/string / toLocaleLowerCase	TS2769	S014		
+`toLocaleLowerCase` is rejected: Locale-sensitive case conversion is unavailable; use `toLowerCase` (Q21)
+export function main(): void { "x".toLocaleLowerCase(1); }
+===
+a004-b.ts	STRING_REJECTIONS/string / normalize	TS2769	S014		
+`normalize` is rejected: Unicode normalization tables are unavailable. (Q21)
+export function main(): void { "x".normalize(1); }
+===
+a005-b.ts	REGEX_STRING_REJECTIONS/string / match	TS2322	S014		
+`match` is rejected: The match result requires an optional numeric index, but the language requires a definite `i32` index. (Q31)
+export function main(): void { const match = "x".match(/x/); if (match !== null) { const index: i32 = match.index; } }
+===
+a006-b.ts	REGEX_STRING_REJECTIONS/string / matchAll	TS2345	S014		
+`matchAll` is rejected: It needs a Q30 fusion decision and each iteration step still yields an object. (Q31/Q30)
+export function main(): void { "x".matchAll(1); }
+===
+a010-b.ts	ARRAY_REJECTIONS/T[] / find	TS2769	S014		
+`find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.find((v: string): boolean => true); }
+===
+a011-b.ts	ARRAY_REJECTIONS/T[] / findLast	TS2345	S014		
+`findLast` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.findLast((v: string): boolean => true); }
+===
+a012-b.ts	ARRAY_REJECTIONS/T[] / flat	TS2345	S014		
+`flat` is rejected: Runtime flattening depth cannot determine a static result type. (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.flat("one"); }
+===
+a014-b.ts	ARRAY_REJECTIONS/T[] / entries	TS2554	S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void { const xs: i32[] = [1]; xs.entries(1); }
+===
+a015-b.ts	ARRAY_REJECTIONS/T[] / keys	TS2554	S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). (Q30)
+export function main(): void { const xs: i32[] = [1]; xs.keys(1); }
+===
+a016-b.ts	ARRAY_REJECTIONS/T[] / values	TS2554	S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). (Q30)
+export function main(): void { const xs: i32[] = [1]; xs.values(1); }
+===
+a017-b.ts	DATE_LOCAL_REJECTIONS/Date / getFullYear	TS2554	S014		
+`getFullYear` is rejected: Local-time accessors are unavailable; use `getUTCFullYear` (Q20)
+export function main(): void { const d = new Date(0); d.getFullYear(1); }
+===
+a033-b.ts	MAP_REJECTIONS/Map<K, V> / keys	TS2554	S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const m = new Map<i32, i32>(); m.keys(1); }
+===
+a034-b.ts	MAP_REJECTIONS/Map<K, V> / values	TS2554	S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const m = new Map<i32, i32>(); m.values(1); }
+===
+a035-b.ts	MAP_REJECTIONS/Map<K, V> / entries	TS2554	S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void { const m = new Map<i32, i32>(); m.entries(1); }
+===
+a036-b.ts	SET_REJECTIONS/Set<K> / keys	TS2554	S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const s = new Set<i32>(); s.keys(1); }
+===
+a037-b.ts	SET_REJECTIONS/Set<K> / values	TS2554	S014		
+`values` is rejected: `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+export function main(): void { const s = new Set<i32>(); s.values(1); }
+===
+a038-b.ts	SET_REJECTIONS/Set<K> / entries	TS2554	S014		
+`entries` is rejected: `entries()` yields a pair, but the language has no tuple type. (Q30)
+export function main(): void { const s = new Set<i32>(); s.entries(1); }
+===
+a039-b.ts	JSON_REJECTIONS/JSON / stringify(Map<K, V>)	TS2322	S014		
+`JSON.stringify` is rejected: Map is rejected rather than silently serialized as an empty object. (Q28)
+export function main(): void { const m = new Map<i32, i32>(); const text: i32 = JSON.stringify(m); }
+===
+a040-b.ts	JSON_REJECTIONS/JSON / stringify(Set<K>)	TS2322	S014		
+`JSON.stringify` is rejected: Set is rejected rather than silently serialized as an empty object. (Q28)
+export function main(): void { const s = new Set<i32>(); const text: i32 = JSON.stringify(s); }
+===
+a041-b.ts	JSON_REJECTIONS/JSON / stringify(object)	TS2322	S014		
+`JSON.stringify` is rejected: The boundary-opaque object type has no static field shape to serialize. (Q28)
+class Box {}
+export function main(): void { const text: i32 = JSON.stringify(new Box() as object); }
+===
+a042-b.ts	JSON_REJECTIONS/JSON / stringify(function)	TS2322	S014		
+`JSON.stringify` is rejected: Function values are not JSON data. (Q28)
+function identity(x: i32): i32 { return x; }
+export function main(): void { const text: i32 = JSON.stringify(identity); }
+===
+a043-b.ts	JSON_REJECTIONS/JSON / stringify(f16)	TS2322	S014		
+`JSON.stringify` is rejected: f16 is a storage-only type with no arithmetic/formatting domain. (Q28)
+export function main(): void { const x: f16 = 1.0 as f16; const text: i32 = JSON.stringify(x); }
+===
+a045-b.ts	JSON_REJECTIONS/JSON / parse<Date>(text)	TS2345	S014		
+`JSON.parse<Date>` is rejected: An untagged ISO string cannot identify a Date, so the target could never match. (Q28)
+export function main(): void { JSON.parse<Date>(1); }
+===
+a046-b.ts	FORM_REJECTIONS/global / isNaN(value)	TS2345	S014		
+`isNaN(value)` is rejected: The global form coerces its argument; use `Number.isNaN` (Q25)
+export function main(): void { isNaN("one"); }
+===
+a047-b.ts	FORM_REJECTIONS/global / isFinite(value)	TS2345	S014		
+`isFinite(value)` is rejected: The global form coerces its argument; use `Number.isFinite` (Q25)
+export function main(): void { isFinite("one"); }
+===
+a048-b.ts	FORM_REJECTIONS/global / parseInt(value)	TS2345	S014		
+`parseInt(value)` is rejected: The radix is a required `i32` argument; use `parseInt(value, radix)` (Q25)
+export function main(): void { parseInt(1); }
+===
+a049-b.ts	FORM_REJECTIONS/Number / Number(value)	TS2554	S014		
+`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+export function main(): void { Number("1", 2); }
+===
+a050-b.ts	FORM_REJECTIONS/Number / new Number(value)	TS2554	S014		
+`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `value as f64` (Q25)
+export function main(): void { new Number(1, 2); }
+===
+a051-b.ts	FORM_REJECTIONS/f32 / f64 / toLocaleString	TS2769	S014		
+`toLocaleString` is rejected: Locale-sensitive number formatting is unavailable. (Q25)
+export function main(): void { const x: f64 = 1.0; x.toLocaleString(1); }
+===
+a052-b.ts	FORM_REJECTIONS/f32 / f64 / toString()	TS2322	S014		
+`toString()` is rejected: An explicit radix is required; use `toString(radix)` (Q26)
+export function main(): void { const x: f64 = 1.0; const text: i32 = x.toString(); }
+===
+a053-b.ts	FORM_REJECTIONS/f32 / f64 / toPrecision()	TS2322	S014		
+`toPrecision()` is rejected: An explicit digit count is required; use `toPrecision(digits)` (Q26)
+export function main(): void { const x: f64 = 1.0; const text: i32 = x.toPrecision(); }
+===
+a054-b.ts	FORM_REJECTIONS/sized integers / toFixed/toString/toExponential/toPrecision	TS2345	S014		
+`toFixed` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
+export function main(): void { const x: i32 = 1; x.toFixed("two"); }
+===
+a055-b.ts	FORM_REJECTIONS/Math / max/min/hypot with more than two arguments	TS2345	S014		
+`max` is rejected: Variadic parameters are outside the language. (Q19)
+export function main(): void { Math.max(1, 2, "3"); }
+===
+a056-b.ts	FORM_REJECTIONS/Math / Math used as a value	TS2322	S014		
+`Math used as a value` is rejected: Math is a compiler-owned namespace; use `Math.<member>` (Q19)
+export function main(): void { const held: i32 = Math; }
+===
+a057-b.ts	FORM_REJECTIONS/Date / Date.parse	TS2345	S014		
+`Date.parse` is rejected: Parsing depends on timezone rules the runtime does not provide; use `Date.UTC` (Q20)
+export function main(): void { Date.parse(1); }
+===
+a058-b.ts	FORM_REJECTIONS/Date / new Date()	TS2322	S014		
+`new Date()` is rejected: The zero-argument constructor reads nondeterministic current time; use `new Date(Date.now())` (Q20)
+export function main(): void { const d: string = new Date(); }
+===
+a059-b.ts	FORM_REJECTIONS/Date / new Date(year, month, ...)	TS2345	S014		
+`new Date(year, month, ...)` is rejected: The multi-argument constructor uses local time; use `new Date(Date.UTC(...))` (Q20)
+export function main(): void { new Date(2020, "January"); }
+===
+a060-b.ts	FORM_REJECTIONS/Date / template interpolation	TS2322	S014		
+`Date template interpolation` is rejected: Date has no implicit local-time string form; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); const text: i32 = `${d}`; }
+===
+a061-b.ts	FORM_REJECTIONS/Date / direct comparison	TS2322	S014		
+`Date direct comparison `===`` is rejected: Date values do not compare implicitly; use `compare getTime() values` (Q20)
+export function main(): void { const d = new Date(0); const equal: i32 = d === new Date(1); }
+===
+a062-b.ts	FORM_REJECTIONS/Date / set*	TS2345	S014		
+`setTime` is rejected: Date is an immutable value; use `construct a new Date` (Q20)
+export function main(): void { const d = new Date(0); d.setTime("now"); }
+===
+a063-b.ts	FORM_REJECTIONS/T[] / sort()	TS2322	S014		
+`sort()` is rejected: The no-argument overload coerces elements to strings; use `sort(comparator)` (Q22)
+export function main(): void { const xs: i32[] = [1]; const sorted: string = xs.sort(); }
+===
+a064-b.ts	FORM_REJECTIONS/T[] / reduce(callback)	TS2345	S014		
+`reduce(callback)` is rejected: An explicit initial accumulator is required; use `reduce(callback, init)` (Q22)
+export function main(): void { const xs: i32[] = [1]; xs.reduce((a: string, v: i32): string => a); }
+===
+a065-b.ts	FORM_REJECTIONS/T[] / reduceRight(callback)	TS2345	S014		
+`reduceRight(callback)` is rejected: An explicit initial accumulator is required; use `reduceRight(callback, init)` (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.reduceRight((a: string, v: i32): string => a); }
+===
+a066-b.ts	FORM_REJECTIONS/T[] / callback(value, index, array)	TS2345	S014		
+`map callback with the container parameter` is rejected: Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule; use `callback(value, index)` (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.map((v: string, i: i32, array: i32[]): string => v); }
+===
+a067-b.ts	FORM_REJECTIONS/T[] / splice(start, deleteCount, ...items)	TS2345	S014		
+`splice with inserted elements` is rejected: Variadic parameters are the missing prerequisite for insertion through `splice`. (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.splice(0, 0, "one"); }
+===
+a068-b.ts	FORM_REJECTIONS/T[] / unshift(value, ...values)	TS2345	S014		
+`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.unshift("one", "two"); }
+===
+a070-b.ts	FORM_REJECTIONS/Map<K, scalar V> / get(key)	TS2345	S014		
+`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)
+export function main(): void { const m = new Map<i32, i32>(); m.get("one"); }
+===
+a071-b.ts	FORM_REJECTIONS/Map<K, V with no shared nullable-pointer form> / get(key)	TS2345	S014		
+`get(key)` is rejected: The value type has no `| null` form of the map's value representation; use `getOr` (Q24)
+export function main(): void { const m = new Map<i32, Generator<i32>>(); m.get("one"); }
+===
+a072-b.ts	FORM_REJECTIONS/Map / new Map(iterable)	TS2769	S014		
+`new Map(iterable)` is rejected: `new Map([[k, v]])` requires a pair element, but the language has no tuple type; use `construct empty, then set` (Q30)
+export function main(): void { new Map<i32, i32>([1, 2]); }
+===
+a073-b.ts	FORM_REJECTIONS/Set / new Set(Map)		S014		
+`new Set(map)` is rejected: A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5); use `pass a T[], FixedArray<T, N>, Set<T>, or string` (Q30)
+export function main(): void { const m = new Map<i32, i32>(); new Set<i32[]>(m); }
+===
+a074-b.ts	FORM_REJECTIONS/Set / new Set(Generator<T>)	TS2769	S014		
+`new Set(generator)` is rejected: A generator is single-use, and construction is a value expression (stdlib.md §14.4); use `collect the generator with for…of, then add` (Q30)
+function* one(): Generator<i32> { yield 1; }
+export function main(): void { new Set<string>(one()); }
+===
+a075-b.ts	FORM_REJECTIONS/Array / Array used as a value	TS2322	S014		
+`Array used as a value` is rejected: Array is a compiler-owned namespace; use `Array.from(source)` (Q22)
+export function main(): void { const held: i32 = Array; }
+===
+a076-b.ts	FORM_REJECTIONS/Array / Array.from(source, mapFn)	TS2769	S014		
+`Array.from(source, mapFn)` is rejected: The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2); use `Array.from(source), then a for…of loop that pushes the mapped value` (Q22)
+export function main(): void { const xs: i32[] = [1]; Array.from(xs, (v: string): string => v); }
+===
+a077-b.ts	FORM_REJECTIONS/Array / Array.from(Map)	TS2322	S014		
+`Array.from(map)` is rejected: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1); use `push map.keys() or map.values() into an array with a for…of loop` (Q22)
+export function main(): void { const m = new Map<i32, i32>(); const values: i32[] = Array.from(m); }
+===
+a078-b.ts	FORM_REJECTIONS/Array / Array.from(Generator<T>)	TS2322	S014		
+`Array.from(generator)` is rejected: A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4); use `collect the generator with for…of, then push` (Q22)
+function* one(): Generator<i32> { yield 1; }
+export function main(): void { const values: string[] = Array.from(one()); }
+===
+a079-b.ts	FORM_REJECTIONS/Array / isArray(value)	TS2554	S014		
+`Array.isArray` is rejected: A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). (Q22)
+export function main(): void { Array.isArray(); }
+===
+a080-b.ts	FORM_REJECTIONS/Array / of(value, …)	TS2345	S014		
+`Array.of` is rejected: Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3); use `an array literal` (Q22)
+export function main(): void { Array.of<i32>(1, "two"); }
+===
+a081-b.ts	FORM_REJECTIONS/Array / new Array(length)	TS2769	S014		
+`new Array(length)` is rejected: The language has no array hole and no missing-element value (compiler.md §105.3); use `an array literal, or push in a loop` (Q22)
+export function main(): void { new Array<i32>(true); }
+===
+s001-b.ts	expr/aggregate.rs:290 check_array_spread_lit	TS2322	S014		
+array-literal spread produces a fresh T[]; it cannot construct a FixedArray
+export function main(): void { const xs: string[] = ["x"]; const copy: FixedArray<i32, 1> = [...xs]; }
+===
+s002-b.ts	expr/aggregate.rs:322 check_array_spread_lit	TS2322	S014		
+a bare `Map` is not an array-literal spread operand: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; push `map.keys()` or `map.values()` into the array with a `for…of` loop
+export function main(): void { const m = new Map<i32, i32>(); const copy: i32[] = [...m]; }
+===
+s003-b.ts	expr/aggregate.rs:334 check_array_spread_lit	TS2322	S014		
+Generator<T> is single-use; array-literal spread would consume a value expression
+function* one(): Generator<i32> { yield 1; }
+export function main(): void { const copy: string[] = [...one()]; }
+===
+s009-b.ts	expr/call.rs:461 check_context_bytes_call		S014		
+spread arguments require variadic parameters, which the language does not have
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { Context.bytesOf<Box>(...[new Box()]); }
+===
+s010-b.ts	expr/call.rs:1201 check_args_with_arguments		S014		
+spread arguments require variadic parameters, which the language does not have
+function take(x: i32): void {}
+export function main(): void { take(...[1]); }
+===
+s011-b.ts	expr/call.rs:1243 check_set_source		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { new Set<i32>(...[[1]]); }
+===
+s014-b.ts	expr/literal.rs:64 check_lit	TS2322	S014		
+`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)
+export function main(): void { const re: string = /x/y; }
+===
+s015-b.ts	expr/literal.rs:467 check_ident	TS2322	S014		
+`Context` is an ambient namespace, not a value; use `Context.collect()`, `Context.free(value)`, or await `Context.suspend()` (Q6/Q7/Q34)
+export function main(): void { const held: i32 = Context; }
+===
+s016-b.ts	expr/literal.rs:497 check_ident	TS2322	S014		
+`Number` is an ambient namespace, not a value or coercion; use `Number.<member>` (Q25)
+export function main(): void { const held: i32 = Number; }
+===
+s017-b.ts	expr/literal.rs:505 check_ident	TS2322	S014		
+`JSON` is an ambient namespace, not a value; use `JSON.stringify(value)` or `JSON.parse<T>(text)` (Q28)
+export function main(): void { const held: i32 = JSON; }
+===
+s018-b.ts	expr/literal.rs:515 check_ident	TS2322	S014		
+`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, and `Date.now()` are accepted (Q20)
+export function main(): void { const held: i32 = Date; }
+===
+s019-b.ts	expr/literal.rs:523 check_ident	TS2322	S014		
+`Map` is a generic reference class, not a value; construct it with explicit type arguments (Q24)
+export function main(): void { const held: i32 = Map; }
+===
+s020-b.ts	expr/literal.rs:540 check_ident	TS2322	S014		
+`parseInt` may only be called, not read as a value (Q25)
+export function main(): void { const held: i32 = parseInt; }
+===
+s021-b.ts	expr/literal.rs:547 check_ident	TS2322	S014		
+the coercing global `isFinite` is rejected; use `Number.isFinite` (Q25)
+export function main(): void { const held: i32 = isFinite; }
+===
+s022-b.ts	expr/member.rs:545 member_on	TS2322	S014		
+`RegExp.lastIndex` is rejected: mutable global-match state would drive `exec`, which is not representable (Q31)
+export function main(): void { const index: string = /x/g.lastIndex; }
+===
+s023-b.ts	expr/member.rs:600 member_on	TS2322	S014		
+`Date` is an immutable value; `getTime` cannot be assigned (Q20)
+export function main(): void { const d = new Date(0); d.getTime = "now"; }
+===
+s024-b.ts	expr/member.rs:611 member_on	TS2322	S014		
+`getTime` may only be called, not read as a value (Q20)
+export function main(): void { const d = new Date(0); const held: i32 = d.getTime; }
+===
+s025-b.ts	expr/member.rs:627 member_on	TS2322	S014		
+numeric method `toFixed` may only appear in an accepted call (Number formatting on f32/f64; Q25/Q26)
+export function main(): void { const x: f64 = 1.0; const held: i32 = x.toFixed; }
+===
+s027-b.ts	expr/method.rs:302 check_array_method	TS2345	S014		
+`includes` is defined per element kind (scalars, strings, `Date`, reference classes); `Box` elements are outside that set (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: Box[] = [new Box()]; xs.includes(1); }
+===
+s028-b.ts	expr/method.rs:365 check_array_method	TS2345	S014		
+`join` formats elements by the Q14 interpolation rules; `i32[]` elements are not interpolatable (Q22)
+export function main(): void { const xs: i32[][] = [[1]]; xs.join(1); }
+===
+s029-b.ts	expr/method.rs:597 check_array_method		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: i32[] = [1]; xs.reduce((a: i32, v: i32): i32 => a + v, ...[0]); }
+===
+s030-b.ts	expr/method.rs:639 check_array_method	TS2769	S014		
+the `reduce` accumulator crosses the runtime↔script boundary; `Box` is outside the supported kinds (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: i32[] = [1]; xs.reduce((a: Box, v: i32): Box => a, 1); }
+===
+s031-b.ts	expr/method.rs:754 check_array_method	TS2322	S014		
+`map` produces a `Box[]`; `Box` is outside the supported element kinds (Q22)
+@ValueType class Box { x: i32 = 1; }
+export function main(): void { const xs: i32[] = [1]; const values: i32[] = xs.map((v: i32): Box => new Box()); }
+===
+s032-b.ts	expr/method.rs:870 check_map_group_by	TS2322	S014		
+`Map.groupBy` callback returns `i32[]`, which is not a §10.2 Map/Set key kind (Q24)
+export function main(): void { const xs: i32[] = [1]; const groups: Map<i32, i32[]> = Map.groupBy(xs, (v: i32): i32[] => [v]); }
+===
+s036-b.ts	expr/method.rs:985 check_array_from		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { const xs: i32[] = [1]; Array.from(...[xs]); }
+===
+s037-b.ts	expr/method.rs:1022 check_array_from		S014		
+`Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, or string; got `Source`
+class Source { readonly [index: u32]: i32; length: i32 = 1; get(index: u32): i32 { return 1; } }
+export function main(): void { Array.from(new Source()); }
+===
+s039-b.ts	expr/namespace.rs:69 check_namespace_member	TS2339	S014		
+`Context.nope` is outside the accepted Context subset (Q6/Q7/Q34)
+export function main(): void { const held = Context.nope; }
+===
+s040-b.ts	expr/namespace.rs:94 check_namespace_member	TS2339	S014		
+`JSON.nope` is outside the accepted JSON subset (Q28)
+export function main(): void { const held = JSON.nope; }
+===
+s041-b.ts	expr/namespace.rs:108 check_namespace_member	TS2322	S014		
+`Array.from` may only be called, not read as a value (Q22)
+export function main(): void { const held: i32 = Array.from; }
+===
+s042-b.ts	expr/namespace.rs:114 check_namespace_member	TS2339	S014		
+`Array.nope` is outside the accepted Array namespace (Q22)
+export function main(): void { const held = Array.nope; }
+===
+s043-b.ts	expr/namespace.rs:124 check_namespace_member	TS2322	S014		
+`Map.groupBy` may only be called, not read as a value (Q27)
+export function main(): void { const held: i32 = Map.groupBy; }
+===
+s044-b.ts	expr/namespace.rs:131 check_namespace_member	TS2339	S014		
+`Set.nope` is outside the accepted Map/Set subset; iterator-based APIs are rejected (Q24)
+export function main(): void { const held = Set.nope; }
+===
+s045-b.ts	expr/namespace.rs:316 check_math_member		S014		
+`Math.sin` is read-only (Q19)
+export function main(): void { Math.sin = Math.cos; }
+===
+s046-b.ts	expr/namespace.rs:331 check_math_member	TS2322	S014		
+`Math.sin` may only be called, not read as a value
+export function main(): void { const held: i32 = Math.sin; }
+===
+s048-b.ts	expr/namespace.rs:375 check_math_call		S014		
+`Math.max` takes exactly 2 f64 argument(s), got 1 (Q19: the lib's variadic forms are out of subset)
+export function main(): void { Math.max(1.0); }
+===
+s049-b.ts	expr/namespace.rs:422 check_number_member		S014		
+`Number.isFinite` is read-only (Q25)
+export function main(): void { Number.isFinite = (x: f64): boolean => true; }
+===
+s050-b.ts	expr/namespace.rs:437 check_number_member	TS2322	S014		
+`Number.isFinite` may only be called, not read as a value (Q25)
+export function main(): void { const held: i32 = Number.isFinite; }
+===
+s051-b.ts	expr/namespace.rs:444 check_number_member	TS2339	S014		
+`Number.nope` is outside the accepted Number subset (Q25)
+export function main(): void { const held = Number.nope; }
+===
+s054-b.ts	expr/namespace.rs:869 check_regex_method	TS2345	S014		
+`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)
+export function main(): void { /x/.exec(1); }
+===
+s055-b.ts	expr/namespace.rs:956 check_string_pattern_method		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { "x".split(...["x"]); }
+===
+s056-b.ts	expr/namespace.rs:1028 check_string_pattern_method	TS2769	S014		
+`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)
+export function main(): void { "x".search(1); }
+===
+s057-b.ts	expr/namespace.rs:1078 check_date_member	TS2322	S014		
+`Date.now` is read-only (Q20)
+export function main(): void { Date.now = "now"; }
+===
+s059-b.ts	expr/namespace.rs:1175 check_date_new		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { new Date(...[0]); }
+===
+s060-b.ts	expr/namespace.rs:1274 date_subset_rejection		S014		
+`hasOwnProperty` is outside the accepted Date subset (Q20)
+export function main(): void { const d = new Date(0); d.hasOwnProperty("x"); }
+===
+s061-b.ts	expr/operator.rs:45 check_unary	TS2322	S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { const x: f16 = 1.0 as f16; const y: string = -x; }
+===
+s063-b.ts	json.rs:63 check_json_call	TS2554	S014		
+`JSON.stringify` expects exactly 1 argument, got 0
+export function main(): void { JSON.stringify(); }
+===
+s064-b.ts	json.rs:75 check_json_call		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { JSON.stringify(...[1]); }
+===
+s065-b.ts	json.rs:114 check_json_call	TS2322	S014		
+`JSON.stringify` cannot serialize `RegExp`; P13 accepts sized numerics except f16, boolean, string, Date, arrays, @ValueType values, reference classes, and Ref | null
+export function main(): void { const text: i32 = JSON.stringify(/x/); }
+===
+s068-b.ts	json.rs:169 check_json_parse		S014		
+spread arguments require variadic parameters, which the language does not have
+export function main(): void { JSON.parse<i32>(...["1"]); }
+===
+s070-b.ts	json.rs:196 check_json_parse	TS2769	S014		
+`JSON.parse` requires a target type; use `JSON.parse<T>(text)` or a contextual type (Q28)
+export function main(): void { JSON.parse(1); }
+===
+s071-b.ts	json.rs:251 check_json_parse	TS2345	S014		
+`JSON.parse` cannot deserialize `Map<i32, i32>`; Q28 accepts sized numerics except f16, boolean, string, arrays, @ValueType values, reference classes, and Ref | null
+export function main(): void { JSON.parse<Map<i32, i32>>(1); }
+===
+s073-b.ts	json.rs:293 reject_json_error_type	TS2322	S014		
+`JSON.stringify` cannot accept `Error`: the Error classes are not JSON types
+export function main(): void { const text: i32 = JSON.stringify(new Error("x")); }
+===
+s074-b.ts	stmt.rs:1094 check_for_of_subject_under_flag	TS2554	S014		
+`entries()` yields a pair, but the language has no tuple type
+export function main(): void { const m = new Map<i32, i32>(); for (const pair of m.entries(1)) {} }
+===
+s076-b.ts	stmt.rs:1170 for_of_subject_from	TS2322	S014		
+a bare `Map` is not a `for…of` subject: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`
+export function main(): void { const m = new Map<i32, i32>(); for (const key of m) { const x: i32 = key; } }
+===
+s079-b.ts	tyres.rs:274 resolve_type_ref	TS2322	S014		
+`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)
+function read(match: RegExpMatchArray): void { const index: string = match.index; }
+export function main(): void {  }
+===
+s080-b.ts	tyres.rs:466 resolve_type_ref	TS2322	S014		
+`i32[]` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes
+export function main(): void { const m: Map<i32[], i32> = new Map<i32, i32>(); }
+===
+s082-b.ts	expr/operator.rs:1081 bin_result	TS2322	S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { const x: f16 = 1.0 as f16; const y: string = x + x; }
+===
+a018-b.ts	DATE_LOCAL_REJECTIONS/Date / getMonth	TS2554	S014		
+`getMonth` is rejected: Local-time accessors are unavailable; use `getUTCMonth` (Q20)
+export function main(): void { const d = new Date(0); d.getMonth(1); }
+===
+a019-b.ts	DATE_LOCAL_REJECTIONS/Date / getDate	TS2554	S014		
+`getDate` is rejected: Local-time accessors are unavailable; use `getUTCDate` (Q20)
+export function main(): void { const d = new Date(0); d.getDate(1); }
+===
+a020-b.ts	DATE_LOCAL_REJECTIONS/Date / getDay	TS2554	S014		
+`getDay` is rejected: Local-time accessors are unavailable; use `getUTCDay` (Q20)
+export function main(): void { const d = new Date(0); d.getDay(1); }
+===
+a021-b.ts	DATE_LOCAL_REJECTIONS/Date / getHours	TS2554	S014		
+`getHours` is rejected: Local-time accessors are unavailable; use `getUTCHours` (Q20)
+export function main(): void { const d = new Date(0); d.getHours(1); }
+===
+a022-b.ts	DATE_LOCAL_REJECTIONS/Date / getMinutes	TS2554	S014		
+`getMinutes` is rejected: Local-time accessors are unavailable; use `getUTCMinutes` (Q20)
+export function main(): void { const d = new Date(0); d.getMinutes(1); }
+===
+a023-b.ts	DATE_LOCAL_REJECTIONS/Date / getSeconds	TS2554	S014		
+`getSeconds` is rejected: Local-time accessors are unavailable; use `getUTCSeconds` (Q20)
+export function main(): void { const d = new Date(0); d.getSeconds(1); }
+===
+a024-b.ts	DATE_LOCAL_REJECTIONS/Date / getMilliseconds	TS2554	S014		
+`getMilliseconds` is rejected: Local-time accessors are unavailable; use `getUTCMilliseconds` (Q20)
+export function main(): void { const d = new Date(0); d.getMilliseconds(1); }
+===
+a025-b.ts	DATE_LOCAL_REJECTIONS/Date / getTimezoneOffset	TS2554	S014		
+`getTimezoneOffset` is rejected: The runtime has no timezone database. (Q20)
+export function main(): void { const d = new Date(0); d.getTimezoneOffset(1); }
+===
+a026-b.ts	DATE_LOCAL_REJECTIONS/Date / getYear	TS2339	S014		
+`getYear` is rejected: Local-time accessors are unavailable; use `getUTCFullYear` (Q20)
+export function main(): void { const d = new Date(0); d.getYear(1); }
+===
+a027-b.ts	DATE_STRING_REJECTIONS/Date / toString	TS2554	S014		
+`toString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toString({}); }
+===
+a028-b.ts	DATE_STRING_REJECTIONS/Date / toDateString	TS2554	S014		
+`toDateString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toDateString({}); }
+===
+a029-b.ts	DATE_STRING_REJECTIONS/Date / toTimeString	TS2554	S014		
+`toTimeString` is rejected: Local-time formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toTimeString({}); }
+===
+a030-b.ts	DATE_STRING_REJECTIONS/Date / toLocaleString	TS2769	S014		
+`toLocaleString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleString({}); }
+===
+a031-b.ts	DATE_STRING_REJECTIONS/Date / toLocaleDateString	TS2769	S014		
+`toLocaleDateString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleDateString({}); }
+===
+a032-b.ts	DATE_STRING_REJECTIONS/Date / toLocaleTimeString	TS2769	S014		
+`toLocaleTimeString` is rejected: Locale and timezone formatting is unavailable; use `toISOString` (Q20)
+export function main(): void { const d = new Date(0); d.toLocaleTimeString({}); }
+===
+s006-c.ts	expr/call.rs:365 check_context_bytes_call	TS2554	S014		
+`Context.bytesOf<T>` takes exactly one type argument
+export function main(): void { Context.bytesOf(); }
+===
+s005-c.ts	expr/array_of_and_map_copy.rs:75 check_map_copy		S014		
+type is not a permitted Map/Set key kind (Q24)
+export function main(): void { const source = new Map<i32[], i32>(); new Map<i32[], i32>(source); }
+===
+s012-c.ts	expr/call.rs:1273 check_set_source		S014		
+`new Set(source)` accepts T[], FixedArray<T, N>, Set<T>, or string; got `null`
+export function main(): void { new Set<i32>(null); }
+===
+s013-c.ts	expr/call.rs:1426 check_new	TS2322	S014		
+`i32[]` is not a permitted Map/Set key kind (Q24)
+export function main(): void { const m: Map<i32, i32> = new Map<i32[], i32>(); }
+===
+s033-c.ts	expr/method.rs:910 check_array_static_call		S014		
+`Array.toString` is outside the accepted Array namespace (Q22)
+export function main(): void { Array.toString(); }
+===
+s047-c.ts	expr/namespace.rs:338 check_math_member		S014		
+`Math.toString` is outside the accepted Math subset (Q19)
+export function main(): void { const held = Math.toString; }
+===
+s058-c.ts	expr/namespace.rs:1097 check_date_member	TS2339	S014		
+`Date.invalid` is outside the accepted Date subset (Q20)
+export function main(): void { const held = Date.invalid; }
+===
+s062-c.ts	json.rs:55 check_json_call		S014		
+`JSON.toString` is outside the accepted JSON subset (Q28)
+export function main(): void { JSON.toString(); }
+===
+s081-c.ts	expr/operator.rs:249 check_update	TS2322	S014		
+arithmetic on `f16` is not supported; compute via `as f32`
+export function main(): void { let x: f16 = 1.0 as f16; const y: string = x++; }
+===
+a013-c.ts	ARRAY_REJECTIONS/T[] / flatMap	TS2322	S014		
+`flatMap` is rejected: The callback must return an array. (Q22)
+export function main(): void { const xs: i32[] = [1]; const result: string[] = xs.flatMap((v: i32): i32 => v); }
+===
+mirror-main-b.ts	signatures.rs:563 resolve_param_pat	TS2488	S100	mirror-pattern-b.d.ts	
+parameter pattern outside the decided surface
+export function main(): void {  }
+===
+s034-d.ts	expr/method.rs:948 check_array_from		S014		
+`Array.from<T>` takes exactly one type argument
+export function main(): void { const xs: i32[] = [1]; Array.from<i32, i32>(xs, (v: i32): i32 => v); }
+===
+s038-d.ts	expr/method.rs:1470 callback_params_for_arity		S014		
+`map` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 0 (Q27)
+export function main(): void { const xs: i32[] = [1]; xs.map((): i32 => 1); }
+===
+r27-string-match-old.ts	REGEX_STRING_REJECTIONS/string / match	TS2322	S014		
+`match` is rejected: The match result requires an optional numeric index, but the language requires a definite `i32` index. (Q31)
+// corpus: reject/r27-string-match
+// purpose: Rejects `match`: strict TS makes its index optional, which
+//          the language cannot represent as its required i32 result.
+// exercises: rejected-string-subset, string-methods
+// questions: Q31
+// tsc: rejects TS2322
+// expected-error: S014 naming the optional-index type gap
+export function main(): void {
+  const match = "hello".match(/l/);
+  if (match !== null) {
+    const index: i32 = match.index;
+    print(`${index}`);
+  }
+}
+===
+r198-set-source-map-old.ts	FORM_REJECTIONS/Set / new Set(Map)	TS2769	S014		
+`new Set(map)` is rejected: A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5); use `pass a T[], FixedArray<T, N>, Set<T>, or string` (Q30)
+// corpus: reject/r198-set-source-map
+// purpose: Rejects a Map as the source of a Set construction.
+// exercises: set-source-construction, missing-tuple-type
+// questions: Q30, compiler section 103
+// tsc: rejects TS2769
+// expected-error: S014 naming invariant 5 and TS2769
+export function main(): void {
+  const source: Map<i32, string> = new Map<i32, string>();
+  const values: Set<i32> = new Set<i32>(source);
+  print(`${values.size}`);
+}
+===
+r201-new-class-spread-variadic-old.ts	expr/call.rs:1201 check_args_with_arguments	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+// corpus: reject/r201-new-class-spread-variadic
+// purpose: Rejects a spread argument in a class construction.
+// exercises: construction, spread-argument, variadic
+// questions: Q30, compiler section 103
+// tsc: rejects TS2556
+// expected-error: S014 naming the missing variadic parameters
+class Point {
+  x: i32;
+  y: i32;
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+}
+export function main(): void {
+  const parts: i32[] = [1, 2];
+  const point: Point = new Point(...parts);
+  print(`${point.x}`);
+}
+===
+r76-return-keys-view-old.ts	MAP_REJECTIONS/Map<K, V> / keys	TS2740	S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+// corpus: reject/r76-return-keys-view
+// purpose: Rejects returning a subject-only fused keys() view.
+// exercises: for-of-subject-restriction, escaping-iterator-temporary
+// questions: Q30
+// tsc: rejects TS2740
+// expected-error: keys() may not outlive the call that creates it
+function leak(map: Map<i32, string>): i32[] {
+  return map.keys();
+}
+
+export function main(): void {
+  const map: Map<i32, string> = new Map<i32, string>();
+  print(`${leak(map).length}`);
+}
+===
+r77-pass-keys-view-old.ts	MAP_REJECTIONS/Map<K, V> / keys	TS2345	S014		
+`keys` is rejected: `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3); use `use directly as a for…of subject` (Q30)
+// corpus: reject/r77-pass-keys-view
+// purpose: Rejects passing a subject-only fused keys() view.
+// exercises: for-of-subject-restriction, escaping-iterator-temporary
+// questions: Q30
+// tsc: rejects TS2345
+// expected-error: keys() may not outlive the call that creates it
+function consume(values: i32[]): void {
+  print(`${values.length}`);
+}
+
+export function main(): void {
+  const map: Map<i32, string> = new Map<i32, string>();
+  consume(map.keys());
+}
+===
+r78-call-spread-variadic-old.ts	expr/call.rs:1201 check_args_with_arguments	TS2556	S014		
+spread arguments require variadic parameters, which the language does not have
+// corpus: reject/r78-call-spread-variadic
+// purpose: Rejects call spread for its missing prerequisite.
+// exercises: call-spread, variadic-parameters
+// questions: Q30
+// tsc: rejects TS2556
+// expected-error: call spread requires variadic parameters
+function pair(left: i32, right: i32): void {
+  print(`${left}:${right}`);
+}
+
+export function main(): void {
+  const values: i32[] = [1, 2];
+  pair(...values);
+}

@@ -1,0 +1,5 @@
+// @subscript-c-header include="measurement.h"
+declare function mirrorPattern([first]: i32[]): void;
+===
+// @subscript-c-header include="measurement.h"
+export declare function mirrorPatternBad([first]: i32): void;

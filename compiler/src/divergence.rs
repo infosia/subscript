@@ -21,6 +21,38 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them.
+    CompilerOwnedValue,
+    /// Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation.
+    NamespaceObjectMember,
+    /// Unicode normalization needs tables that the runtime does not provide.
+    UnicodeNormalization,
+    /// TypeScript makes the match index optional; the language requires a definite i32 index and has no optional numeric field.
+    MatchOptionalIndex,
+    /// A runtime flattening depth cannot determine one static result element type.
+    ArrayFlattenDepth,
+    /// Each method has a fixed receiver, element, result, and accumulator domain; TypeScript generic method domains include more kinds.
+    MethodTypeDomain,
+    /// Array join uses the interpolation rules; nested arrays and other non-interpolatable elements have no implicit string form.
+    ArrayJoinDomain,
+    /// Array spread creates a dynamic array; its runtime length cannot construct a FixedArray with a static length.
+    FixedArraySpread,
+    /// The intrinsic requires one explicit type argument for its storage or element type; inferred and mapper overloads do not supply that shape.
+    ExplicitIntrinsicTypeArguments,
+    /// Source construction accepts arrays, FixedArray, Set, and string; null and JavaScript array-like objects are outside this domain.
+    SourceConstructionDomain,
+    /// A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI.
+    CallbackParameterShape,
+    /// JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface.
+    JsonCallArguments,
+    /// JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation.
+    JsonTypeDomain,
+    /// String search requires a compiled RegExp; implicit conversion from a string pattern is outside the regular-expression interface.
+    StringSearchPattern,
+    /// A mirror function uses named C ABI parameters; parameter destructuring requires a script body that a mirror does not provide.
+    MirrorParameterPattern,
+    /// Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats.
+    LocaleNumberFormatting,
     /// A surrogate escape without an adjacent paired escape.
     LoneSurrogateEscape,
     /// An inferred `void` binding, a void map callback, or a value return from a void function.
@@ -221,6 +253,22 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::CompilerOwnedValue,
+        Divergence::NamespaceObjectMember,
+        Divergence::UnicodeNormalization,
+        Divergence::MatchOptionalIndex,
+        Divergence::ArrayFlattenDepth,
+        Divergence::MethodTypeDomain,
+        Divergence::ArrayJoinDomain,
+        Divergence::FixedArraySpread,
+        Divergence::ExplicitIntrinsicTypeArguments,
+        Divergence::SourceConstructionDomain,
+        Divergence::CallbackParameterShape,
+        Divergence::JsonCallArguments,
+        Divergence::JsonTypeDomain,
+        Divergence::StringSearchPattern,
+        Divergence::MirrorParameterPattern,
+        Divergence::LocaleNumberFormatting,
         Divergence::VoidValue,
         Divergence::ReferenceSearchMiss,
         Divergence::GeneratorDoneValue,
@@ -318,6 +366,102 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::CompilerOwnedValue => DivergenceEntry {
+                ts: "const held = Array;",
+                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
+                why: "Compiler-owned namespaces and methods lower to direct operations; the language has no value or writable storage for them.",
+                collision: "stdlib.md §9.0",
+            },
+            Divergence::NamespaceObjectMember => DivergenceEntry {
+                ts: "Array.toString();",
+                subscript: "const xs: i32[] = [1]; const copy: i32[] = Array.from(xs);",
+                why: "Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation.",
+                collision: "stdlib.md §9.0",
+            },
+            Divergence::UnicodeNormalization => DivergenceEntry {
+                ts: "const text: string = \"x\".normalize();",
+                subscript: "const text: string = \"x\";",
+                why: "Unicode normalization needs tables that the runtime does not provide.",
+                collision: "stdlib.md §8",
+            },
+            Divergence::MatchOptionalIndex => DivergenceEntry {
+                ts: "const hit = \"x\".match(/x/);",
+                subscript: "const pattern: RegExp = /x/; if (pattern.test(\"x\")) { const index: i32 = pattern.matchStart(0); }",
+                why: "TypeScript makes the match index optional; the language requires a definite i32 index and has no optional numeric field.",
+                collision: "stdlib.md §15.3",
+            },
+            Divergence::ArrayFlattenDepth => DivergenceEntry {
+                ts: "const xs: i32[][] = [[1]]; const flat = xs.flat();",
+                subscript: "const xs: i32[][] = [[1]]; const flat: i32[] = []; for (const inner of xs) { for (const value of inner) { flat.push(value); } }",
+                why: "A runtime flattening depth cannot determine one static result element type.",
+                collision: "stdlib.md §9",
+            },
+            Divergence::MethodTypeDomain => DivergenceEntry {
+                ts: "const value: i32 = 1; value.toFixed(2);",
+                subscript: "const value: i32 = 1; const text: string = (value as f64).toFixed(2);",
+                why: "Each method has a fixed receiver, element, result, and accumulator domain; TypeScript generic method domains include more kinds.",
+                collision: "stdlib.md §9",
+            },
+            Divergence::ArrayJoinDomain => DivergenceEntry {
+                ts: "const xs: i32[][] = [[1]]; xs.join();",
+                subscript: "const xs: i32[] = [1]; const text: string = xs.join();",
+                why: "Array join uses the interpolation rules; nested arrays and other non-interpolatable elements have no implicit string form.",
+                collision: "stdlib.md §9",
+            },
+            Divergence::FixedArraySpread => DivergenceEntry {
+                ts: "const xs: i32[] = [1]; const copy: FixedArray<i32, 1> = [...xs];",
+                subscript: "const xs: i32[] = [1]; const copy: i32[] = [...xs];",
+                why: "Array spread creates a dynamic array; its runtime length cannot construct a FixedArray with a static length.",
+                collision: "stdlib.md §14.4",
+            },
+            Divergence::ExplicitIntrinsicTypeArguments => DivergenceEntry {
+                ts: "Context.bytesOf(1);",
+                subscript: "const bytes: u8[] = Context.bytesOf<FixedArray<i32, 1>>([1]);",
+                why: "The intrinsic requires one explicit type argument for its storage or element type; inferred and mapper overloads do not supply that shape.",
+                collision: "stdlib.md §18.1",
+            },
+            Divergence::SourceConstructionDomain => DivergenceEntry {
+                ts: "const values = new Set<i32>(null);",
+                subscript: "const values: Set<i32> = new Set<i32>();",
+                why: "Source construction accepts arrays, FixedArray, Set, and string; null and JavaScript array-like objects are outside this domain.",
+                collision: "stdlib.md §14",
+            },
+            Divergence::CallbackParameterShape => DivergenceEntry {
+                ts: "const xs: i32[] = [1]; xs.map((): i32 => 1);",
+                subscript: "const xs: i32[] = [1]; xs.map((value: i32): i32 => value);",
+                why: "A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI.",
+                collision: "stdlib.md §12",
+            },
+            Divergence::JsonCallArguments => DivergenceEntry {
+                ts: "JSON.stringify(1, null);",
+                subscript: "const text: string = JSON.stringify(1);",
+                why: "JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface.",
+                collision: "stdlib.md §13",
+            },
+            Divergence::JsonTypeDomain => DivergenceEntry {
+                ts: "JSON.stringify(/x/);",
+                subscript: "const text: string = JSON.stringify(\"x\");",
+                why: "JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation.",
+                collision: "stdlib.md §13",
+            },
+            Divergence::StringSearchPattern => DivergenceEntry {
+                ts: "const index: i32 = \"x\".search(\"x\");",
+                subscript: "const index: i32 = \"x\".search(/x/);",
+                why: "String search requires a compiled RegExp; implicit conversion from a string pattern is outside the regular-expression interface.",
+                collision: "stdlib.md §15.3",
+            },
+            Divergence::MirrorParameterPattern => DivergenceEntry {
+                ts: "declare function first([value]: i32[]): void;",
+                subscript: "declare function first(value: i32): void;",
+                why: "A mirror function uses named C ABI parameters; parameter destructuring requires a script body that a mirror does not provide.",
+                collision: "compiler.md §107",
+            },
+            Divergence::LocaleNumberFormatting => DivergenceEntry {
+                ts: "const value: f64 = 1.0; value.toLocaleString();",
+                subscript: "const value: f64 = 1.0; const text: string = value.toFixed(2);",
+                why: "Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats.",
+                collision: "stdlib.md §11",
+            },
             Divergence::VoidValue => DivergenceEntry {
                 ts: "function f(): void {} const a = f();",
                 subscript: "function f(): void {} f();",

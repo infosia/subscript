@@ -541,11 +541,10 @@ impl<'p> Checker<'p> {
                     format!("`RegExp` has no accepted member `{name}`")
                 };
                 if matches!(name, "lastIndex" | "exec") {
-                    self.error_diverging(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::RegexMember,
                         message,
                         prop_pos.clone(),
-                        Divergence::RegExpSubset,
                     );
                 } else {
                     self.error(RuleCode::S100, message, prop_pos.clone());
@@ -596,8 +595,8 @@ impl<'p> Checker<'p> {
                 // A member on a Date receiver outside a call position
                 // (stdlib.md §3): the accepted members are all methods.
                 if for_write {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::DateMemberWrite,
                         format!(
                             "`Date` is an immutable value; `{}` cannot be assigned (Q20)",
                             name
@@ -607,8 +606,8 @@ impl<'p> Checker<'p> {
                 } else if matches!(name, "getTime" | "valueOf")
                     || crate::ambient::date_method(name).is_some()
                 {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::DateMethodValue,
                         format!("`{}` may only be called, not read as a value (Q20)", name),
                         prop_pos.clone(),
                     );
@@ -623,8 +622,8 @@ impl<'p> Checker<'p> {
                     "toFixed" | "toPrecision" | "toExponential" | "toLocaleString" | "toString"
                 );
                 if known {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::NumberMethodValue,
                         format!(
                             "numeric method `{name}` may only appear in an accepted call \
                              (Number formatting on f32/f64; Q25/Q26)"

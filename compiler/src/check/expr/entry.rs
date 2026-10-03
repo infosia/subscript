@@ -107,75 +107,18 @@ impl<'p> Checker<'p> {
         true
     }
 
-    pub(super) fn emit_api_rejection(
+    pub(in crate::check) fn emit_api_rejection(
         &mut self,
         rejection: crate::ambient::ApiRejection,
         actual: &str,
         pos: Pos,
     ) {
-        let divergence = match rejection.corpus {
-            Some("r16-math-variadic-max.ts" | "r18-math-value.ts") => Some(Divergence::MathSubset),
-            Some(
-                "r19-date-local-accessor.ts"
-                | "r20-date-setter.ts"
-                | "r21-date-multiarg-ctor.ts"
-                | "r22-date-template.ts"
-                | "r23-date-zero-arg-ctor.ts"
-                | "r24-date-compare.ts",
-            ) => Some(Divergence::DateSubset),
-            Some("r26-string-localecompare.ts" | "r28-string-tolocaleupper.ts") => {
-                Some(Divergence::LocaleSensitiveString)
-            }
-            Some(
-                "r29-array-sort-noarg.ts" | "r30-array-find.ts" | "r31-array-reduce-noinit.ts",
-            ) => Some(Divergence::ArrayMethodDefaults),
-            Some("r32-array-splice.ts" | "r51-array-unshift-variadic.ts") => {
-                Some(Divergence::VariadicArguments)
-            }
-            Some("r41-map-scalar-get.ts") => Some(Divergence::MapScalarGet),
-            Some("r250-map-generator-get.ts") => Some(Divergence::MapNonNullableGet),
-            Some("r42-map-iterator-member.ts") => Some(Divergence::IteratorTemporary),
-            Some("r43-map-iterable-constructor.ts" | "r79-assign-entries.ts") => {
-                Some(Divergence::NoTupleType)
-            }
-            Some("r199-set-source-generator.ts" | "r207-array-from-generator.ts") => {
-                Some(Divergence::GeneratorSingleUse)
-            }
-            Some("r206-array-from-bare-map.ts") => Some(Divergence::BareMapToArray),
-            Some("r209-array-from-mapper.ts") => Some(Divergence::ArrayFromMapper),
-            Some("r210-array-is-array.ts") => Some(Divergence::ArrayIsArray),
-            Some("r211-array-of-variadic.ts") => Some(Divergence::ArrayOfArity),
-            Some("r212-new-array-length.ts") => Some(Divergence::ArrayHoleConstruction),
-            Some(
-                "r46-number-global-isnan.ts"
-                | "r47-number-coercion.ts"
-                | "r48-number-to-precision.ts"
-                | "r49-number-to-string-radix.ts"
-                | "r50-parse-int-no-radix.ts",
-            ) => Some(Divergence::NumberCoercionAndArguments),
-            Some("r55-array-callback-container.ts") => Some(Divergence::EscapingCapture),
-            Some(
-                "r56-json-stringify-map.ts"
-                | "r57-json-stringify-set.ts"
-                | "r58-json-stringify-object.ts"
-                | "r59-json-stringify-function.ts"
-                | "r60-json-parse-no-context.ts"
-                | "r61-json-parse-date.ts",
-            ) => Some(Divergence::JsonSubset),
-            Some(
-                "r80-regex-exec.ts"
-                | "r81-regex-match-all.ts"
-                | "r82-regex-last-index.ts"
-                | "r83-regex-groups.ts",
-            ) => Some(Divergence::RegExpSubset),
-            _ => None,
-        };
         let message = crate::ambient::rejection_message(rejection, actual);
-        if let Some(divergence) = divergence {
-            self.error_diverging(rejection.code, message, pos, divergence);
-        } else {
-            self.error(rejection.code, message, pos);
-        }
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::Api(rejection),
+            message,
+            pos,
+        );
     }
 
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {

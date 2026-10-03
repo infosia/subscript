@@ -5,9 +5,12 @@
 //! declarations; the checker does not parse it.
 
 use crate::diag::RuleCode;
+use crate::divergence::Divergence;
+mod rejection_id;
 use crate::hir::RegexFn;
 use crate::hir::{AmbientFn, ArrFn, ContextBytesFn, DateFn, MapFn, MathFn, NumFn, SetFn, StrFn};
 use crate::types::Type;
+pub(crate) use rejection_id::ApiRejectionId;
 
 /// One accepted checker-owned API entry rendered by the generated
 /// reference.
@@ -25,6 +28,10 @@ pub(crate) struct ApiItem {
 /// rendered by the generated reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ApiRejection {
+    /// Closed identity for the total witness table.
+    pub id: ApiRejectionId,
+    /// The accepted TypeScript class rejected by this row.
+    pub divergence: Option<Divergence>,
     /// Receiver, namespace, or source-form heading.
     pub group: &'static str,
     /// Rejected spelling or call shape.
@@ -136,6 +143,10 @@ const NUMBER_CONSTS: &[NamedF64] = &[
 
 const STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (
+            ApiRejectionId::StringLocaleCompare,
+            Some(Divergence::LocaleSensitiveString),
+        ),
         "string",
         "localeCompare",
         "Q21",
@@ -144,6 +155,10 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         Some("r26-string-localecompare.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::StringToLocaleUpperCase,
+            Some(Divergence::LocaleSensitiveString),
+        ),
         "string",
         "toLocaleUpperCase",
         "Q21",
@@ -152,6 +167,10 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         Some("r28-string-tolocaleupper.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::StringToLocaleLowerCase,
+            Some(Divergence::LocaleSensitiveString),
+        ),
         "string",
         "toLocaleLowerCase",
         "Q21",
@@ -160,6 +179,10 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::StringNormalize,
+            Some(Divergence::UnicodeNormalization),
+        ),
         "string",
         "normalize",
         "Q21",
@@ -170,15 +193,15 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
 ];
 
 const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
-    rejection(
+    rejection((ApiRejectionId::RegexStringMatch, Some(Divergence::MatchOptionalIndex)),
         "string",
         "match",
         "Q31",
         None,
-        "`RegExpMatchArray.index` is optional under stock `tsc --strict`, so the result cannot satisfy the language's `i32` index contract.",
+        "The match result requires an optional numeric index, but the language requires a definite `i32` index.",
         Some("r27-string-match.ts"),
     ),
-    rejection(
+    rejection((ApiRejectionId::RegexStringMatchAll, Some(Divergence::RegExpSubset)),
         "string",
         "matchAll",
         "Q31/Q30",
@@ -188,35 +211,12 @@ const REGEX_STRING_REJECTIONS: &[ApiRejection] = &[
     ),
 ];
 
-const REGEX_REJECTIONS: &[ApiRejection] = &[
-    rejection(
-        "RegExp",
-        "exec",
-        "Q31",
-        None,
-        "Its result needs an array with extra fields and a tuple type, neither of which the language has.",
-        Some("r80-regex-exec.ts"),
-    ),
-    rejection(
-        "RegExp",
-        "lastIndex",
-        "Q31",
-        None,
-        "Mutable global-match state would drive `exec`, whose result is not representable.",
-        Some("r82-regex-last-index.ts"),
-    ),
-    rejection(
-        "RegExpMatchArray",
-        "groups",
-        "Q31",
-        None,
-        "Named groups require an object with dynamic keys, which the language does not have.",
-        Some("r83-regex-groups.ts"),
-    ),
-];
-
 const ARRAY_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (
+            ApiRejectionId::ArrayFind,
+            Some(Divergence::ArrayMethodDefaults),
+        ),
         "T[]",
         "find",
         "Q22",
@@ -225,6 +225,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         Some("r30-array-find.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::ArrayFindLast,
+            Some(Divergence::ArrayMethodDefaults),
+        ),
         "T[]",
         "findLast",
         "Q22",
@@ -233,6 +237,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::ArrayFlat,
+            Some(Divergence::ArrayFlattenDepth),
+        ),
         "T[]",
         "flat",
         "Q22",
@@ -241,6 +249,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::ArrayFlatMap,
+            Some(Divergence::MethodTypeDomain),
+        ),
         "T[]",
         "flatMap",
         "Q22",
@@ -249,6 +261,7 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (ApiRejectionId::ArrayEntries, Some(Divergence::NoTupleType)),
         "T[]",
         "entries",
         "Q30",
@@ -257,6 +270,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::ArrayKeys,
+            Some(Divergence::IteratorTemporary),
+        ),
         "T[]",
         "keys",
         "Q30",
@@ -266,6 +283,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::ArrayValues,
+            Some(Divergence::IteratorTemporary),
+        ),
         "T[]",
         "values",
         "Q30",
@@ -278,6 +299,10 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
 
 const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (
+            ApiRejectionId::DateLocalGetFullYear,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getFullYear",
         "Q20",
@@ -286,6 +311,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         Some("r19-date-local-accessor.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetMonth,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getMonth",
         "Q20",
@@ -294,6 +323,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetDate,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getDate",
         "Q20",
@@ -302,6 +335,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetDay,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getDay",
         "Q20",
@@ -310,6 +347,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetHours,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getHours",
         "Q20",
@@ -318,6 +359,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetMinutes,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getMinutes",
         "Q20",
@@ -326,6 +371,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetSeconds,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getSeconds",
         "Q20",
@@ -334,6 +383,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetMilliseconds,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getMilliseconds",
         "Q20",
@@ -342,6 +395,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateLocalGetTimezoneOffset,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "getTimezoneOffset",
         "Q20",
@@ -350,6 +407,7 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (ApiRejectionId::DateLocalGetYear, None),
         "Date",
         "getYear",
         "Q20",
@@ -361,6 +419,10 @@ const DATE_LOCAL_REJECTIONS: &[ApiRejection] = &[
 
 const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (
+            ApiRejectionId::DateStringToString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toString",
         "Q20",
@@ -369,6 +431,10 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateStringToDateString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toDateString",
         "Q20",
@@ -377,6 +443,10 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateStringToTimeString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toTimeString",
         "Q20",
@@ -385,6 +455,10 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateStringToLocaleString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toLocaleString",
         "Q20",
@@ -393,6 +467,10 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateStringToLocaleDateString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toLocaleDateString",
         "Q20",
@@ -401,6 +479,10 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::DateStringToLocaleTimeString,
+            Some(Divergence::DateSubset),
+        ),
         "Date",
         "toLocaleTimeString",
         "Q20",
@@ -412,6 +494,7 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
 
 const MAP_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (ApiRejectionId::MapKeys, Some(Divergence::IteratorTemporary)),
         "Map<K, V>",
         "keys",
         "Q30",
@@ -421,6 +504,10 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
         Some("r42-map-iterator-member.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::MapValues,
+            Some(Divergence::IteratorTemporary),
+        ),
         "Map<K, V>",
         "values",
         "Q30",
@@ -430,6 +517,7 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (ApiRejectionId::MapEntries, Some(Divergence::NoTupleType)),
         "Map<K, V>",
         "entries",
         "Q30",
@@ -441,6 +529,7 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
 
 const SET_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (ApiRejectionId::SetKeys, Some(Divergence::IteratorTemporary)),
         "Set<K>",
         "keys",
         "Q30",
@@ -450,6 +539,10 @@ const SET_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (
+            ApiRejectionId::SetValues,
+            Some(Divergence::IteratorTemporary),
+        ),
         "Set<K>",
         "values",
         "Q30",
@@ -459,6 +552,7 @@ const SET_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
+        (ApiRejectionId::SetEntries, Some(Divergence::NoTupleType)),
         "Set<K>",
         "entries",
         "Q30",
@@ -470,6 +564,10 @@ const SET_REJECTIONS: &[ApiRejection] = &[
 
 const JSON_REJECTIONS: &[ApiRejection] = &[
     rejection(
+        (
+            ApiRejectionId::JsonStringifyMapKV,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "stringify(Map<K, V>)",
         "Q28",
@@ -478,6 +576,10 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         Some("r56-json-stringify-map.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::JsonStringifySetK,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "stringify(Set<K>)",
         "Q28",
@@ -486,6 +588,10 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         Some("r57-json-stringify-set.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::JsonStringifyObject,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "stringify(object)",
         "Q28",
@@ -494,6 +600,10 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         Some("r58-json-stringify-object.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::JsonStringifyFunction,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "stringify(function)",
         "Q28",
@@ -502,6 +612,10 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         Some("r59-json-stringify-function.ts"),
     ),
     rejection(
+        (
+            ApiRejectionId::JsonStringifyF16,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "stringify(f16)",
         "Q28",
@@ -510,14 +624,10 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
         None,
     ),
     rejection(
-        "JSON",
-        "parse(text) without target type",
-        "Q28",
-        Some("JSON.parse<T>(text)"),
-        "The checker has no static type to monomorphize.",
-        Some("r60-json-parse-no-context.ts"),
-    ),
-    rejection(
+        (
+            ApiRejectionId::JsonParseDateText,
+            Some(Divergence::JsonSubset),
+        ),
         "JSON",
         "parse<Date>(text)",
         "Q28",
@@ -528,47 +638,48 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
 ];
 
 const FORM_REJECTIONS: &[ApiRejection] = &[
-    rejection("global", "isNaN(value)", "Q25", Some("Number.isNaN"), "The global form coerces its argument.", Some("r46-number-global-isnan.ts")),
-    rejection("global", "isFinite(value)", "Q25", Some("Number.isFinite"), "The global form coerces its argument.", None),
-    rejection("global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
-    rejection("Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
-    rejection("Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),
-    rejection("f32 / f64", "toLocaleString", "Q25", None, "Locale-sensitive number formatting is unavailable.", None),
-    rejection("f32 / f64", "toString()", "Q26", Some("toString(radix)"), "An explicit radix is required.", Some("r49-number-to-string-radix.ts")),
-    rejection("f32 / f64", "toPrecision()", "Q26", Some("toPrecision(digits)"), "An explicit digit count is required.", Some("r48-number-to-precision.ts")),
-    rejection("sized integers", "toFixed/toString/toExponential/toPrecision", "Q25/Q26", Some("convert to f32 or f64 first"), "Number formatting methods are accepted only on floating-point receivers.", None),
-    rejection("Math", "max/min/hypot with more than two arguments", "Q19", None, "Variadic parameters are outside the language.", Some("r16-math-variadic-max.ts")),
-    rejection("Math", "Math used as a value", "Q19", Some("Math.<member>"), "Math is a compiler-owned namespace.", Some("r18-math-value.ts")),
-    rejection("Date", "Date.parse", "Q20", Some("Date.UTC"), "Parsing depends on timezone rules the runtime does not provide.", None),
-    rejection("Date", "new Date()", "Q20", Some("new Date(Date.now())"), "The zero-argument constructor reads nondeterministic current time.", Some("r23-date-zero-arg-ctor.ts")),
-    rejection("Date", "new Date(year, month, ...)", "Q20", Some("new Date(Date.UTC(...))"), "The multi-argument constructor uses local time.", Some("r21-date-multiarg-ctor.ts")),
-    rejection("Date", "template interpolation", "Q20", Some("toISOString"), "Date has no implicit local-time string form.", Some("r22-date-template.ts")),
-    rejection("Date", "direct comparison", "Q20", Some("compare getTime() values"), "Date values do not compare implicitly.", Some("r24-date-compare.ts")),
-    rejection("Date", "set*", "Q20", Some("construct a new Date"), "Date is an immutable value.", Some("r20-date-setter.ts")),
-    rejection("T[]", "sort()", "Q22", Some("sort(comparator)"), "The no-argument overload coerces elements to strings.", Some("r29-array-sort-noarg.ts")),
-    rejection("T[]", "reduce(callback)", "Q22", Some("reduce(callback, init)"), "An explicit initial accumulator is required.", Some("r31-array-reduce-noinit.ts")),
-    rejection("T[]", "reduceRight(callback)", "Q27", Some("reduceRight(callback, init)"), "An explicit initial accumulator is required.", None),
-    rejection("T[]", "callback(value, index, array)", "Q27", Some("callback(value, index)"), "Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule.", Some("r55-array-callback-container.ts")),
-    rejection("T[]", "splice(start, deleteCount, ...items)", "Q27", None, "Variadic parameters are the missing prerequisite for insertion through `splice`.", Some("r32-array-splice.ts")),
-    rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
-    rejection("FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
-    rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
-    rejection("Map<K, V with no shared nullable-pointer form>", "get(key)", "Q24", Some("getOr"), "The value type has no `| null` form of the map's value representation.", Some("r250-map-generator-get.ts")),
-    rejection("Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
-    rejection("Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source.", Some("r198-set-source-map.ts")),
-    rejection("Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),
-    rejection("Array", "Array used as a value", "Q22", Some("Array.from(source)"), "Array is a compiler-owned namespace.", None),
-    rejection("Array", "Array.from(source, mapFn)", "Q22", Some("Array.from(source), then a for…of loop that pushes the mapped value"), "The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2).", Some("r209-array-from-mapper.ts")),
-    rejection("Array", "Array.from(Map)", "Q22", Some("push map.keys() or map.values() into an array with a for…of loop"), "TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1).", Some("r206-array-from-bare-map.ts")),
-    rejection("Array", "Array.from(Generator<T>)", "Q22", Some("collect the generator with for…of, then push"), "A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4).", Some("r207-array-from-generator.ts")),
-    rejection("Array", "isArray(value)", "Q22", None, "A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3).", Some("r210-array-is-array.ts")),
-    rejection("Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
-    rejection("Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
-    rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
-    rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
+    rejection((ApiRejectionId::FormIsNaNValue, Some(Divergence::NumberCoercionAndArguments)), "global", "isNaN(value)", "Q25", Some("Number.isNaN"), "The global form coerces its argument.", Some("r46-number-global-isnan.ts")),
+    rejection((ApiRejectionId::FormIsFiniteValue, Some(Divergence::NumberCoercionAndArguments)), "global", "isFinite(value)", "Q25", Some("Number.isFinite"), "The global form coerces its argument.", None),
+    rejection((ApiRejectionId::FormParseIntValue, Some(Divergence::NumberCoercionAndArguments)), "global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
+    rejection((ApiRejectionId::FormNumberValue, Some(Divergence::NumberCoercionAndArguments)), "Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
+    rejection((ApiRejectionId::FormNewNumberValue, Some(Divergence::NumberCoercionAndArguments)), "Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),
+    rejection((ApiRejectionId::FormToLocaleString, Some(Divergence::LocaleNumberFormatting)), "f32 / f64", "toLocaleString", "Q25", None, "Locale-sensitive number formatting is unavailable.", None),
+    rejection((ApiRejectionId::FormToString, Some(Divergence::NumberCoercionAndArguments)), "f32 / f64", "toString()", "Q26", Some("toString(radix)"), "An explicit radix is required.", Some("r49-number-to-string-radix.ts")),
+    rejection((ApiRejectionId::FormToPrecision, Some(Divergence::NumberCoercionAndArguments)), "f32 / f64", "toPrecision()", "Q26", Some("toPrecision(digits)"), "An explicit digit count is required.", Some("r48-number-to-precision.ts")),
+    rejection((ApiRejectionId::FormToFixedToStringToExponentialToPrecision, Some(Divergence::MethodTypeDomain)), "sized integers", "toFixed/toString/toExponential/toPrecision", "Q25/Q26", Some("convert to f32 or f64 first"), "Number formatting methods are accepted only on floating-point receivers.", None),
+    rejection((ApiRejectionId::FormMaxMinHypotWithMoreThanTwoArguments, Some(Divergence::MathSubset)), "Math", "max/min/hypot with more than two arguments", "Q19", None, "Variadic parameters are outside the language.", Some("r16-math-variadic-max.ts")),
+    rejection((ApiRejectionId::FormMathUsedAsAValue, Some(Divergence::MathSubset)), "Math", "Math used as a value", "Q19", Some("Math.<member>"), "Math is a compiler-owned namespace.", Some("r18-math-value.ts")),
+    rejection((ApiRejectionId::FormDateParse, Some(Divergence::DateSubset)), "Date", "Date.parse", "Q20", Some("Date.UTC"), "Parsing depends on timezone rules the runtime does not provide.", None),
+    rejection((ApiRejectionId::FormNewDate, Some(Divergence::DateSubset)), "Date", "new Date()", "Q20", Some("new Date(Date.now())"), "The zero-argument constructor reads nondeterministic current time.", Some("r23-date-zero-arg-ctor.ts")),
+    rejection((ApiRejectionId::FormNewDateYearMonth, Some(Divergence::DateSubset)), "Date", "new Date(year, month, ...)", "Q20", Some("new Date(Date.UTC(...))"), "The multi-argument constructor uses local time.", Some("r21-date-multiarg-ctor.ts")),
+    rejection((ApiRejectionId::FormTemplateInterpolation, Some(Divergence::DateSubset)), "Date", "template interpolation", "Q20", Some("toISOString"), "Date has no implicit local-time string form.", Some("r22-date-template.ts")),
+    rejection((ApiRejectionId::FormDirectComparison, Some(Divergence::DateSubset)), "Date", "direct comparison", "Q20", Some("compare getTime() values"), "Date values do not compare implicitly.", Some("r24-date-compare.ts")),
+    rejection((ApiRejectionId::FormSet, Some(Divergence::DateSubset)), "Date", "set*", "Q20", Some("construct a new Date"), "Date is an immutable value.", Some("r20-date-setter.ts")),
+    rejection((ApiRejectionId::FormSort, Some(Divergence::ArrayMethodDefaults)), "T[]", "sort()", "Q22", Some("sort(comparator)"), "The no-argument overload coerces elements to strings.", Some("r29-array-sort-noarg.ts")),
+    rejection((ApiRejectionId::FormReduceCallback, Some(Divergence::ArrayMethodDefaults)), "T[]", "reduce(callback)", "Q22", Some("reduce(callback, init)"), "An explicit initial accumulator is required.", Some("r31-array-reduce-noinit.ts")),
+    rejection((ApiRejectionId::FormReduceRightCallback, Some(Divergence::ArrayMethodDefaults)), "T[]", "reduceRight(callback)", "Q27", Some("reduceRight(callback, init)"), "An explicit initial accumulator is required.", None),
+    rejection((ApiRejectionId::FormCallbackValueIndexArray, Some(Divergence::EscapingCapture)), "T[]", "callback(value, index, array)", "Q27", Some("callback(value, index)"), "Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule.", Some("r55-array-callback-container.ts")),
+    rejection((ApiRejectionId::FormSpliceStartDeleteCountItems, Some(Divergence::VariadicArguments)), "T[]", "splice(start, deleteCount, ...items)", "Q27", None, "Variadic parameters are the missing prerequisite for insertion through `splice`.", Some("r32-array-splice.ts")),
+    rejection((ApiRejectionId::FormUnshiftValueValues, Some(Divergence::VariadicArguments)), "T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
+    rejection((ApiRejectionId::FormNonCallbackTMethods, None), "FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
+    rejection((ApiRejectionId::MapScalarGet, Some(Divergence::MapScalarGet)), "Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
+    rejection((ApiRejectionId::MapNonNullableGet, Some(Divergence::MapNonNullableGet)), "Map<K, V with no shared nullable-pointer form>", "get(key)", "Q24", Some("getOr"), "The value type has no `| null` form of the map's value representation.", Some("r250-map-generator-get.ts")),
+    rejection((ApiRejectionId::FormNewMapIterable, Some(Divergence::NoTupleType)), "Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
+    rejection((ApiRejectionId::FormNewSetMap, Some(Divergence::NoTupleType)), "Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5).", None),
+    rejection((ApiRejectionId::FormNewSetGeneratorT, Some(Divergence::GeneratorSingleUse)), "Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),
+    rejection((ApiRejectionId::FormArrayUsedAsAValue, Some(Divergence::CompilerOwnedValue)), "Array", "Array used as a value", "Q22", Some("Array.from(source)"), "Array is a compiler-owned namespace.", None),
+    rejection((ApiRejectionId::FormArrayFromSourceMapFn, Some(Divergence::ArrayFromMapper)), "Array", "Array.from(source, mapFn)", "Q22", Some("Array.from(source), then a for…of loop that pushes the mapped value"), "The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2).", Some("r209-array-from-mapper.ts")),
+    rejection((ApiRejectionId::FormArrayFromMap, Some(Divergence::BareMapToArray)), "Array", "Array.from(Map)", "Q22", Some("push map.keys() or map.values() into an array with a for…of loop"), "Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1).", Some("r206-array-from-bare-map.ts")),
+    rejection((ApiRejectionId::FormArrayFromGeneratorT, Some(Divergence::GeneratorSingleUse)), "Array", "Array.from(Generator<T>)", "Q22", Some("collect the generator with for…of, then push"), "A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4).", Some("r207-array-from-generator.ts")),
+    rejection((ApiRejectionId::FormIsArrayValue, Some(Divergence::ArrayIsArray)), "Array", "isArray(value)", "Q22", None, "A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3).", Some("r210-array-is-array.ts")),
+    rejection((ApiRejectionId::FormOfValue, Some(Divergence::ArrayOfArity)), "Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
+    rejection((ApiRejectionId::FormNewArrayLength, Some(Divergence::ArrayHoleConstruction)), "Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
+    rejection((ApiRejectionId::FormGroupBy, None), "Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
+    rejection((ApiRejectionId::FormAlgebraNonSet, None), "Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
 ];
 
 const fn rejection(
+    site: (ApiRejectionId, Option<Divergence>),
     group: &'static str,
     surface: &'static str,
     q_rule: &'static str,
@@ -577,6 +688,8 @@ const fn rejection(
     corpus: Option<&'static str>,
 ) -> ApiRejection {
     ApiRejection {
+        id: site.0,
+        divergence: site.1,
         group,
         surface,
         code: RuleCode::S014,
@@ -1209,7 +1322,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
 /// Every checker-owned named rejection rendered by the generated
 /// reference.
 pub(crate) fn rejected_api() -> Vec<ApiRejection> {
-    let mut out: Vec<ApiRejection> = [
+    let out: Vec<ApiRejection> = [
         STRING_REJECTIONS,
         REGEX_STRING_REJECTIONS,
         ARRAY_REJECTIONS,
@@ -1224,7 +1337,6 @@ pub(crate) fn rejected_api() -> Vec<ApiRejection> {
     .flatten()
     .copied()
     .collect();
-    out.extend(REGEX_REJECTIONS.iter().copied());
     out
 }
 

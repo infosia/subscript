@@ -486,7 +486,7 @@ fn a_bare_map_is_rejected_in_both_iteration_positions() {
         assert!(
             err[0].message.contains("bare `Map`")
                 && err[0].message.contains("`[K, V]` pair")
-                && err[0].message.contains("`tsc` gate"),
+                && err[0].message.contains("no tuple representation"),
             "{form}: {}",
             err[0].message
         );

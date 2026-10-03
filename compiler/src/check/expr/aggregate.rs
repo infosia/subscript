@@ -5,7 +5,6 @@ use swc_ecma_ast as ast;
 
 use crate::check::{Checker, ContainerSlot, FnCtx};
 use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
 
@@ -286,8 +285,8 @@ impl<'p> Checker<'p> {
             ctx.map(|ty| self.apparent_type(ty)),
             Some(Type::FixedArray(..))
         ) {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ArraySpreadFixedArray,
                 "array-literal spread produces a fresh T[]; it cannot construct a FixedArray",
                 pos.clone(),
             );
@@ -318,24 +317,22 @@ impl<'p> Checker<'p> {
                     // serves both `tsc` classes, and its variant explains
                     // the unannotated form that stock `tsc` accepts.
                     Type::Map(..) => {
-                        self.error_diverging(
-                            RuleCode::S014,
-                            "a bare `Map` is not an array-literal spread operand: this \
-                             language binds `K` and TypeScript binds a `[K, V]` pair, so an \
-                             accepted program fails the `tsc` gate; push `map.keys()` or \
+                        self.reject_subset(
+                            crate::check::rejection::RejectionSite::ArraySpreadMap,
+                            "a bare `Map` is not an array-literal spread operand: Map \
+                             traversal binds `K`; a `[K, V]` pair has no tuple representation \
+                             in the language; push `map.keys()` or \
                              `map.values()` into the array with a `for…of` loop",
                             spread_pos,
-                            Divergence::BareMapToArray,
                         );
                         None
                     }
                     Type::Generator(_) => {
-                        self.error_diverging(
-                            RuleCode::S014,
+                        self.reject_subset(
+                            crate::check::rejection::RejectionSite::ArraySpreadGenerator,
                             "Generator<T> is single-use; array-literal spread would consume \
                              a value expression",
                             spread_pos,
-                            Divergence::GeneratorSingleUse,
                         );
                         None
                     }
@@ -344,8 +341,8 @@ impl<'p> Checker<'p> {
                         Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
                         None => {
                             let actual = self.type_name(other);
-                            self.error(
-                                RuleCode::S014,
+                            self.reject_subset(
+                                crate::check::rejection::RejectionSite::ArraySpreadSource,
                                 format!(
                                     "array-literal spread accepts T[], FixedArray<T, N>, Set, \
                                      or string; got `{actual}`"

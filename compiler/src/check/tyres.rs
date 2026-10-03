@@ -271,7 +271,11 @@ impl<'p> Checker<'p> {
             }
             "RegExpMatchArray" if self.type_scope_item(name).is_none() => {
                 let message = "`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)";
-                self.error_diverging(RuleCode::S014, message, pos, Divergence::RegExpSubset);
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::RegexMatchType,
+                    message,
+                    pos,
+                );
                 return Type::Error;
             }
             "Promise" => {
@@ -462,15 +466,14 @@ impl<'p> Checker<'p> {
             {
                 let key_pos = self.pos(args.params[0].span());
                 let key_name = self.type_name(&key);
-                self.error_diverging(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::MapSetTypeKey,
                     format!(
                         "`{key_name}` is not a Map/Set key kind; Q24 permits sized \
                          integers, boolean, enum, f32/f64, string, Date, and \
                          reference classes"
                     ),
                     key_pos,
-                    Divergence::MapKeyKind,
                 );
             }
             if name == "Map" {

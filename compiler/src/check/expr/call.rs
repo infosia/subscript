@@ -361,16 +361,16 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let name = function.name();
         let Some(type_args) = &call.type_args else {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ContextBytesMissingType,
                 format!("`Context.{name}<T>` takes exactly one type argument"),
                 member_pos,
             );
             return self.err_expr(pos);
         };
         if type_args.params.len() != 1 {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ContextBytesTypeCount,
                 format!("`Context.{name}<T>` takes exactly one type argument"),
                 member_pos,
             );
@@ -442,8 +442,8 @@ impl<'p> Checker<'p> {
             }
         };
         if call.args.len() != params.len() {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ContextBytesArgumentCount,
                 format!(
                     "`Context.{name}` expects exactly {} argument(s), got {}",
                     params.len(),
@@ -457,8 +457,8 @@ impl<'p> Checker<'p> {
         for (argument, expected) in call.args.iter().zip(&params) {
             if let Some(spread) = argument.spread {
                 let spread_pos = self.pos(spread);
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::ContextBytesSpread,
                     "spread arguments require variadic parameters, which the language does not have",
                     spread_pos.clone(),
                 );
@@ -755,7 +755,7 @@ impl<'p> Checker<'p> {
             return self.check_indirect_call(handled, c, fx, pos);
         }
         let recv = self.check_receiver(&m.obj, fx);
-        self.check_method_call_on(recv, prop, c, ctx, fx, pos)
+        self.check_method_call_on(recv, prop, c, fx, pos)
     }
 
     /// Resolves the explicit type arguments of a generic method call and
@@ -790,7 +790,6 @@ impl<'p> Checker<'p> {
         recv: hir::Expr,
         property: &ast::IdentName,
         c: &ast::CallExpr,
-        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -800,7 +799,7 @@ impl<'p> Checker<'p> {
             for member in members.iter() {
                 let mut value = recv.clone();
                 value.ty = member.clone();
-                let checked = self.check_method_call_on(value, property, c, ctx, fx, pos.clone());
+                let checked = self.check_method_call_on(value, property, c, fx, pos.clone());
                 if let Some(result) = &mut result {
                     result.ty = self.generic_union(&result.ty, &checked.ty);
                 } else {
@@ -862,7 +861,7 @@ impl<'p> Checker<'p> {
             }
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
-                self.check_map_method(recv, *key, *value, &name, c, ctx, fx, pos, prop_pos)
+                self.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
             }
             Type::Set(key) => self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos),
             Type::Worker(input, output) => {
@@ -1197,8 +1196,8 @@ impl<'p> Checker<'p> {
             let prechecked = checked.next().flatten();
             if arg.spread.is_some() {
                 let p = self.pos(arg.spread.unwrap_or_default());
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::CallSpread,
                     "spread arguments require variadic parameters, which the language does not have",
                     p,
                 );
@@ -1239,19 +1238,17 @@ impl<'p> Checker<'p> {
     ) -> Option<hir::Expr> {
         if let Some(spread) = argument.spread {
             let spread_pos = self.pos(spread);
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::SetSourceSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos,
-                Divergence::VariadicArguments,
             );
             return None;
         }
         let source = self.check_expr(&argument.expr, None, fx);
         let element = match &self.apparent_type(&source.ty) {
             Type::Error => return None,
-            // Stock `tsc` answers TS2769 here, because `Map<K, V>` is
-            // `Iterable<[K, V]>` and not `Iterable<K>`.
+            // A Map source yields pairs, which need a tuple type.
             Type::Map(..) => {
                 self.reject_api_form("Set", "new Set(Map)", "new Set(map)", source.pos.clone());
                 return None;
@@ -1269,8 +1266,8 @@ impl<'p> Checker<'p> {
                 Some((_, element)) => element,
                 None => {
                     let actual = self.type_name(other);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::SetSourceDomain,
                         format!(
                             "`new Set(source)` accepts T[], FixedArray<T, N>, Set<T>, or \
                              string; got `{actual}`"
@@ -1422,8 +1419,8 @@ impl<'p> Checker<'p> {
             {
                 let key_pos = self.pos(type_args.params[0].span());
                 let key_name = self.type_name(&key);
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::NewMapSetKey,
                     format!("`{key_name}` is not a permitted Map/Set key kind (Q24)"),
                     key_pos,
                 );

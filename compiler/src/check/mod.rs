@@ -11,6 +11,9 @@ mod host_entries;
 mod identity;
 mod init_effects;
 mod init_order;
+mod rejection;
+#[cfg(test)]
+mod rejection_total;
 pub(crate) use crate::hir::source_name;
 pub(crate) use container_argument::ContainerSlot;
 use init_effects::module_initializer_diagnostics;
@@ -1288,7 +1291,7 @@ mod tests {
             (
                 "const m: Map<i32, string> = new Map<i32, string>();\n\
                  export function main(): void { const s: Set<i32> = new Set<i32>(m); }\n",
-                "TS2769",
+                "no tuple type",
             ),
             (
                 "function* one(): Generator<i32> { yield 1; }\n\

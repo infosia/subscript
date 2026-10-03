@@ -559,8 +559,8 @@ impl<'p> Checker<'p> {
             }
             other => {
                 let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::MirrorParameter,
                     "parameter pattern outside the decided surface",
                     pos,
                 );

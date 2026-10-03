@@ -331,27 +331,16 @@ pub(super) fn cells() -> Vec<Cell> {
                             message: "type mismatch: the argument expects `object`",
                             token: "reference-class instance immediately",
                         })
-                    } else if api.owner == "FixedArray"
-                        && position == 0
-                        && role == "value"
+                    } else if role == "value"
                         && kind.name == "function-return"
+                        && ((api.owner == "FixedArray" && position == 0)
+                            || (api.name == "MapConstructor.groupBy" && position == 1))
                     {
                         Some(Divergence {
                             code: RuleCode::S014,
-                            record: "stdlib.md §9",
+                            record: "stdlib.md §12",
                             message: "callbacks take",
-                            token: "two arities accepted since Q27",
-                        })
-                    } else if api.name == "MapConstructor.groupBy"
-                        && position == 1
-                        && role == "value"
-                        && kind.name == "function-return"
-                    {
-                        Some(Divergence {
-                            code: RuleCode::S014,
-                            record: "stdlib.md §10",
-                            message: "callbacks take",
-                            token: "as Q22 fixes callback arities",
+                            token: "fixed-arity checking",
                         })
                     } else {
                         None

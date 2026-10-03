@@ -12,8 +12,7 @@ use std::collections::HashSet;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::diag::{Pos, RuleCode};
-use crate::divergence::Divergence;
+use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn, UnOp};
 use crate::types::{ClassId, Type};
 
@@ -51,16 +50,16 @@ impl Checker<'_> {
             return self.check_json_parse(call, ctx, fx, pos, member_pos);
         }
         if member != "stringify" {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonStaticMember,
                 format!("`JSON.{member}` is outside the accepted JSON subset (Q28)"),
                 member_pos,
             );
             return self.err_expr(pos);
         }
         if call.args.len() != 1 {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonStringifyCount,
                 format!(
                     "`JSON.stringify` expects exactly 1 argument, got {}",
                     call.args.len()
@@ -71,8 +70,8 @@ impl Checker<'_> {
         }
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonStringifySpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
@@ -101,17 +100,12 @@ impl Checker<'_> {
         }
         if !self.json_serializable(&value.ty) {
             if let Some(rejection) = crate::ambient::json_rejection(&value.ty) {
-                self.error_diverging(
-                    rejection.code,
-                    crate::ambient::rejection_message(rejection, "JSON.stringify"),
-                    member_pos,
-                    Divergence::JsonSubset,
-                );
+                self.emit_api_rejection(rejection, "JSON.stringify", member_pos);
                 return self.err_expr(pos);
             }
             let name = self.type_name(&value.ty);
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonStringifyDomain,
                 format!(
                     "`JSON.stringify` cannot serialize `{name}`; P13 accepts sized numerics \
                      except f16, boolean, string, Date, arrays, @ValueType values, reference \
@@ -126,8 +120,8 @@ impl Checker<'_> {
         let wrapper = match self.synthesize_json_serializer(&value.ty, tracked, pos.clone()) {
             Ok(wrapper) => wrapper,
             Err(detail) => {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::JsonStringifyHelper,
                     format!("cannot generate `JSON.stringify` helper: {detail}"),
                     member_pos,
                 );
@@ -153,8 +147,8 @@ impl Checker<'_> {
         member_pos: Pos,
     ) -> hir::Expr {
         if call.args.len() != 1 {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonParseCount,
                 format!(
                     "`JSON.parse` expects exactly 1 argument, got {}",
                     call.args.len()
@@ -165,8 +159,8 @@ impl Checker<'_> {
         }
         if let Some(spread) = call.args[0].spread {
             let spread_pos = self.pos(spread);
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonParseSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos.clone(),
             );
@@ -176,8 +170,8 @@ impl Checker<'_> {
         // `spelling` is the target as the source spells it (§115.7 rule 5).
         let (target, spelling) = if let Some(type_args) = &call.type_args {
             if type_args.params.len() != 1 {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::JsonParseTypeCount,
                     "`JSON.parse<T>` takes exactly one type argument",
                     member_pos.clone(),
                 );
@@ -192,12 +186,11 @@ impl Checker<'_> {
         } else if let Some(target) = ctx {
             (target.clone(), None)
         } else {
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonParseTarget,
                 "`JSON.parse` requires a target type; use `JSON.parse<T>(text)` \
                  or a contextual type (Q28)",
                 member_pos,
-                Divergence::JsonSubset,
             );
             return self.err_expr(pos);
         };
@@ -237,18 +230,13 @@ impl Checker<'_> {
             } else {
                 "JSON.parse target containing Date"
             };
-            self.error_diverging(
-                rejection.code,
-                crate::ambient::rejection_message(rejection, actual),
-                member_pos,
-                Divergence::JsonSubset,
-            );
+            self.emit_api_rejection(rejection, actual, member_pos);
             return self.err_expr(pos);
         }
         if !self.json_serializable(&target) {
             let name = self.type_name(&target);
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonParseDomain,
                 format!(
                     "`JSON.parse` cannot deserialize `{name}`; Q28 accepts sized numerics \
                      except f16, boolean, string, arrays, @ValueType values, reference \
@@ -262,8 +250,8 @@ impl Checker<'_> {
         let wrapper = match self.synthesize_json_parser(&target, &spelling, pos.clone()) {
             Ok(wrapper) => wrapper,
             Err(detail) => {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::JsonParseHelper,
                     format!("cannot generate `JSON.parse` helper: {detail}"),
                     member_pos,
                 );
@@ -289,13 +277,12 @@ impl Checker<'_> {
         } else {
             " it holds an Error at some depth, and".to_string()
         };
-        self.error_diverging(
-            RuleCode::S014,
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::JsonError,
             format!(
                 "`{operation}` cannot accept `{name}`:{detail} the Error classes are not JSON types"
             ),
             pos,
-            Divergence::JsonSubset,
         );
     }
 

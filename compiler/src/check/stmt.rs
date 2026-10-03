@@ -1085,16 +1085,15 @@ impl<'p> Checker<'p> {
                             if !self.is_fused_view_receiver(&recv.ty) {
                                 let call_pos = self.pos(call.span);
                                 let subject =
-                                    self.check_method_call_on(recv, prop, call, None, fx, call_pos);
+                                    self.check_method_call_on(recv, prop, call, fx, call_pos);
                                 return self.for_of_subject_from(subject);
                             }
                             let prop_pos = self.pos(prop.span);
                             if name == "entries" {
-                                self.error_diverging(
-                                    RuleCode::S014,
+                                self.reject_subset(
+                                    crate::check::rejection::RejectionSite::ForOfEntries,
                                     "`entries()` yields a pair, but the language has no tuple type",
                                     prop_pos,
-                                    Divergence::NoTupleType,
                                 );
                                 return (recv, None, Type::Error, false);
                             }
@@ -1128,8 +1127,8 @@ impl<'p> Checker<'p> {
                                 return (recv, Some(kind), elem, false);
                             }
                             let actual = self.type_name(&recv.ty);
-                            self.error(
-                                RuleCode::S014,
+                            self.reject_subset(
+                                crate::check::rejection::RejectionSite::ForOfKeys,
                                 format!(
                                     "`{name}()` is a subject-only fused view on Map, Set, \
                                      or T[]; receiver is `{actual}`"
@@ -1166,13 +1165,11 @@ impl<'p> Checker<'p> {
         // resolved subject type, and it does not read how the bound
         // value is used.
         if matches!(self.apparent_type(&subject.ty), Type::Map(..)) {
-            self.error_diverging(
-                RuleCode::S014,
-                "a bare `Map` is not a `for…of` subject: this language binds `K` and \
-                 TypeScript binds a `[K, V]` pair, so an accepted program fails the \
-                 `tsc` gate; iterate `map.keys()` or `map.values()`",
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ForOfMap,
+                "a bare `Map` is not a `for…of` subject: Map traversal binds `K`; \
+                 a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`",
                 subject.pos.clone(),
-                Divergence::BareMapSubject,
             );
             return (subject, None, Type::Error, false);
         }
@@ -1194,8 +1191,8 @@ impl<'p> Checker<'p> {
         let actual = self.type_name(&subject.ty);
         if let Type::Class(id) = self.apparent_type(&subject.ty) {
             let class = &self.classes[id.0].name;
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ForOfUserClass,
                 format!(
                     "`for…of` cannot make user class `{class}` iterable (invariant 5): \
                      that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; \
@@ -1204,8 +1201,8 @@ impl<'p> Checker<'p> {
                 subject.pos.clone(),
             );
         } else {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ForOfSubject,
                 format!(
                     "`for…of` accepts only T[], FixedArray<T, N>, Set, string, \
                      or Generator<T>; got `{actual}`"

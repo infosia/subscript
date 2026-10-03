@@ -41,11 +41,10 @@ impl<'p> Checker<'p> {
                     &operand.ty,
                 ) && !matches!(apparent, Type::Nullable(_));
                 if !parameter && apparent == Type::F16 {
-                    self.error_diverging(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::Float16Unary,
                         "arithmetic on `f16` is not supported; compute via `as f32`",
                         pos.clone(),
-                        Divergence::StorageOnlyFloat16,
                     );
                     return self.err_expr(pos);
                 }
@@ -245,11 +244,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if target_ty == Type::F16 {
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::Float16Update,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
-                Divergence::StorageOnlyFloat16,
             );
             return self.err_expr(pos);
         }
@@ -663,7 +661,6 @@ impl<'p> Checker<'p> {
                             current,
                             property,
                             &call,
-                            None,
                             fx,
                             self.pos(call.span),
                         );
@@ -1077,11 +1074,10 @@ impl<'p> Checker<'p> {
                 BinUse::CompoundAssignment => left_storage_only,
             };
         if f16_arithmetic {
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::Float16Binary,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
-                Divergence::StorageOnlyFloat16,
             );
             return BinResult {
                 expr: self.err_expr(pos),

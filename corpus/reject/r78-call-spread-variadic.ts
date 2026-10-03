@@ -2,7 +2,7 @@
 // purpose: Rejects call spread for its missing prerequisite.
 // exercises: call-spread, variadic-parameters
 // questions: Q30
-// tsc: rejects TS2556
+// tsc: accepts
 // expected-error: call spread requires variadic parameters
 function pair(left: i32, right: i32): void {
   print(`${left}:${right}`);
@@ -10,5 +10,5 @@ function pair(left: i32, right: i32): void {
 
 export function main(): void {
   const values: i32[] = [1, 2];
-  pair(...values);
+  pair(...[values[0], values[1]]);
 }

@@ -273,7 +273,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         8,
     ),
     ("r197-high-surrogate-before-high.ts", RuleCode::S100, 8),
-    ("r198-set-source-map.ts", RuleCode::S014, 9),
     ("r199-set-source-generator.ts", RuleCode::S014, 11),
     ("r200-map-source-map.ts", RuleCode::S014, 9),
     ("r201-new-class-spread-variadic.ts", RuleCode::S014, 17),
@@ -356,8 +355,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r73-for-of-object.ts", RuleCode::S014, 12),
     ("r74-for-of-number.ts", RuleCode::S014, 9),
     ("r75-for-of-entries.ts", RuleCode::S014, 9),
-    ("r76-return-keys-view.ts", RuleCode::S014, 8),
-    ("r77-pass-keys-view.ts", RuleCode::S014, 13),
     ("r78-call-spread-variadic.ts", RuleCode::S014, 13),
     ("r79-assign-entries.ts", RuleCode::S014, 9),
     ("r240-parameter-stored-in-field.ts", RuleCode::S009, 16),
@@ -1226,16 +1223,7 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
             "r42-map-iterator-member.ts",
             &["direct subject", "view type", "stdlib.md §14.3"][..],
         ),
-        (
-            "r76-return-keys-view.ts",
-            &["direct subject", "view type", "stdlib.md §14.3"][..],
-        ),
-        (
-            "r77-pass-keys-view.ts",
-            &["direct subject", "view type", "stdlib.md §14.3"][..],
-        ),
         ("r78-call-spread-variadic.ts", &["variadic parameters"][..]),
-        ("r198-set-source-map.ts", &["invariant 5", "TS2769"][..]),
         ("r199-set-source-generator.ts", &["single-use"][..]),
         ("r200-map-source-map.ts", &["pair", "no tuple type"][..]),
         (
@@ -1245,24 +1233,23 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
         ("r202-array-spread-generator.ts", &["single-use"][..]),
         (
             "r204-for-of-bare-map.ts",
-            &["bare `Map`", "`[K, V]` pair", "`tsc` gate"][..],
+            &["bare `Map`", "`[K, V]` pair", "no tuple representation"][..],
         ),
         (
             "r205-array-spread-bare-map.ts",
-            &["bare `Map`", "`[K, V]` pair", "`tsc` gate"][..],
+            &["bare `Map`", "`[K, V]` pair", "no tuple representation"][..],
         ),
     ] {
         let source =
             fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics =
             check_program(&[SourceFile::new(file, source)]).expect_err("Q30 rejection must fail");
-        let message = &diagnostics[0].message;
-        for needle in required {
-            assert!(
-                message.contains(needle),
-                "{file}: diagnostic does not name {needle:?}: {message}"
-            );
-        }
+        assert!(
+            required
+                .iter()
+                .all(|needle| diagnostics[0].message.contains(needle)),
+            "{file}: no diagnostic names {required:?}: {diagnostics:?}"
+        );
     }
 }
 
@@ -1275,7 +1262,7 @@ fn q22_array_namespace_rejections_each_name_their_own_record() {
     for (file, required) in [
         (
             "r206-array-from-bare-map.ts",
-            &["`[K, V]` pair", "`tsc` gate"][..],
+            &["`[K, V]` pair", "no tuple representation"][..],
         ),
         ("r207-array-from-generator.ts", &["single-use"][..]),
         (

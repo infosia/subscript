@@ -71,8 +71,8 @@ impl<'p> Checker<'p> {
                 ) && self.apparent_type(&(key)) != Type::Error
                     && self.assoc_key_kind(&key).is_none()
                 {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::MapCopyKey,
                         "type is not a permitted Map/Set key kind (Q24)",
                         pos.clone(),
                     );

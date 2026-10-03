@@ -66,7 +66,11 @@ impl<'p> Checker<'p> {
             } else {
                 format!("`Context.{prop}` is outside the accepted Context subset (Q6/Q7/Q34)")
             };
-            self.error(RuleCode::S014, detail, prop_pos.clone());
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ContextMember,
+                detail,
+                prop_pos.clone(),
+            );
             return Some(self.err_expr(prop_pos));
         }
         // `Math.<member>` (stdlib.md §1): the ambient namespace applies
@@ -91,7 +95,11 @@ impl<'p> Checker<'p> {
             } else {
                 format!("`JSON.{prop}` is outside the accepted JSON subset (Q28)")
             };
-            self.error(RuleCode::S014, detail, prop_pos.clone());
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::JsonMember,
+                detail,
+                prop_pos.clone(),
+            );
             return Some(self.err_expr(prop_pos));
         }
         // `Date.<member>` (stdlib.md §3): the static function members
@@ -104,14 +112,14 @@ impl<'p> Checker<'p> {
         // intercepted in call position, so a read here is a rejection.
         if name == "Array" && self.ambient_visible(&name, fx) {
             if matches!(prop, "from" | "isArray" | "of") {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::ArrayFromValue,
                     format!("`Array.{prop}` may only be called, not read as a value (Q22)"),
                     prop_pos.clone(),
                 );
             } else {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::ArrayMember,
                     format!("`Array.{prop}` is outside the accepted Array namespace (Q22)"),
                     prop_pos.clone(),
                 );
@@ -120,15 +128,15 @@ impl<'p> Checker<'p> {
         }
         if (name == "Map" || name == "Set") && self.ambient_visible(&name, fx) {
             if name == "Map" && prop == "groupBy" {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::MapGroupByValue,
                     "`Map.groupBy` may only be called, not read as a value (Q27)",
                     prop_pos.clone(),
                 );
                 return Some(self.err_expr(prop_pos));
             }
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::MapSetMember,
                 format!(
                     "`{name}.{prop}` is outside the accepted Map/Set subset; \
                      iterator-based APIs are rejected (Q24)"
@@ -312,8 +320,8 @@ impl<'p> Checker<'p> {
     /// with the Q19 subset code.
     fn check_math_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
         if for_write {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::MathMemberWrite,
                 format!("`Math.{}` is read-only (Q19)", prop),
                 prop_pos.clone(),
             );
@@ -327,15 +335,15 @@ impl<'p> Checker<'p> {
             };
         }
         if crate::ambient::math_fn(prop).is_some() {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::MathMethodValue,
                 format!("`Math.{}` may only be called, not read as a value", prop),
                 prop_pos.clone(),
             );
             return self.err_expr(prop_pos);
         }
-        self.error(
-            RuleCode::S014,
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::MathMember,
             format!("`Math.{}` is outside the accepted Math subset (Q19)", prop),
             prop_pos.clone(),
         );
@@ -371,8 +379,8 @@ impl<'p> Checker<'p> {
                 MathFn::Imul => "i32",
                 _ => "f64",
             };
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::MathCallCount,
                 format!(
                     "`Math.{}` takes exactly {} {} argument(s), got {} \
                      (Q19: the lib's variadic forms are out of subset)",
@@ -418,8 +426,8 @@ impl<'p> Checker<'p> {
     /// are rejected under Q25/Q27.
     fn check_number_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
         if for_write {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::NumberMemberWrite,
                 format!("`Number.{prop}` is read-only (Q25)"),
                 prop_pos.clone(),
             );
@@ -433,15 +441,15 @@ impl<'p> Checker<'p> {
             };
         }
         if crate::ambient::number_static(prop).is_some() {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::NumberStaticValue,
                 format!("`Number.{prop}` may only be called, not read as a value (Q25)"),
                 prop_pos.clone(),
             );
             return self.err_expr(prop_pos);
         }
-        self.error(
-            RuleCode::S014,
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::NumberMember,
             format!("`Number.{prop}` is outside the accepted Number subset (Q25)"),
             prop_pos.clone(),
         );
@@ -458,8 +466,8 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         if c.args.len() != 1 {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::NumberPredicateCount,
                 format!(
                     "`Number.{}` takes exactly 1 f64 argument, got {} (Q25)",
                     f.name(),
@@ -517,8 +525,8 @@ impl<'p> Checker<'p> {
             if f == NumFn::ParseInt && c.args.len() == 1 && call_name == "parseInt" {
                 self.reject_api_form("global", "parseInt(value)", "parseInt(value)", pos.clone());
             } else {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::NumberGlobalCount,
                     format!(
                         "`{}` takes exactly {} argument(s), got {} (Q25)",
                         call_name,
@@ -865,12 +873,11 @@ impl<'p> Checker<'p> {
             "matchStart" => (RegexFn::MatchStart, Type::I32, Type::I32),
             "matchEnd" => (RegexFn::MatchEnd, Type::I32, Type::I32),
             "exec" => {
-                self.error_diverging(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::RegexExec,
                     "`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)",
-                    prop_pos,
-                    Divergence::RegExpSubset,
-                );
+                    prop_pos
+);
                 return self.err_expr(pos);
             }
             _ => {
@@ -952,8 +959,8 @@ impl<'p> Checker<'p> {
         for (index, arg) in c.args.iter().enumerate() {
             if arg.spread.is_some() {
                 let spread_pos = self.pos(arg.spread.unwrap_or_default());
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::StringPatternSpread,
                     "spread arguments require variadic parameters, which the language does not have",
                     spread_pos,
                 );
@@ -1025,7 +1032,11 @@ impl<'p> Checker<'p> {
         if name == "search" {
             if self.apparent_type(&(pattern.ty)) != Type::Error {
                 let message = "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
-                self.error(RuleCode::S014, message, prop_pos);
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::StringSearchPattern,
+                    message,
+                    prop_pos,
+                );
             }
             return self.err_expr(pos);
         }
@@ -1074,8 +1085,8 @@ impl<'p> Checker<'p> {
     /// there are no constant members, so every read is a Q20 rejection.
     fn check_date_member(&mut self, prop: &str, prop_pos: Pos, for_write: bool) -> hir::Expr {
         if for_write {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::DateStaticWrite,
                 format!("`Date.{}` is read-only (Q20)", prop),
                 prop_pos.clone(),
             );
@@ -1094,7 +1105,11 @@ impl<'p> Checker<'p> {
         } else {
             format!("`Date.{}` is outside the accepted Date subset (Q20)", prop)
         };
-        self.error(RuleCode::S014, why, prop_pos.clone());
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::DateStaticValue,
+            why,
+            prop_pos.clone(),
+        );
         self.err_expr(prop_pos)
     }
 
@@ -1171,8 +1186,8 @@ impl<'p> Checker<'p> {
                 let arg = &args_ast[0];
                 if let Some(spread) = arg.spread {
                     let spread_pos = self.pos(spread);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::DateNewSpread,
                         "spread arguments require variadic parameters, which the language does not have",
                         spread_pos,
                     );
@@ -1264,21 +1279,14 @@ impl<'p> Checker<'p> {
     /// Emits the Q20 rejection for an out-of-subset `Date` instance
     /// member, naming the member and pointing at the accepted spelling.
     pub(super) fn date_subset_rejection(&mut self, name: &str, pos: Pos) {
-        let (code, why) = if let Some(rejection) = crate::ambient::date_rejection(name) {
-            (
-                rejection.code,
-                crate::ambient::rejection_message(rejection, name),
-            )
-        } else {
-            (
-                RuleCode::S014,
-                format!("`{}` is outside the accepted Date subset (Q20)", name),
-            )
-        };
         if let Some(rejection) = crate::ambient::date_rejection(name) {
             self.emit_api_rejection(rejection, name, pos);
         } else {
-            self.error_diverging(code, why, pos, Divergence::DateSubset);
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::DateMember,
+                format!("`{}` is outside the accepted Date subset (Q20)", name),
+                pos,
+            );
         }
     }
 }

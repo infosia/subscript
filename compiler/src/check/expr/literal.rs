@@ -60,12 +60,11 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if flags.contains('y') {
-                    self.error_diverging(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::RegexSticky,
                         "`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)",
-                        pos.clone(),
-                        Divergence::RegExpSubset,
-                    );
+                        pos.clone()
+);
                     return self.err_expr(pos);
                 }
                 if let Err(error) = crate::regex::validate_literal(&pattern, &flags) {
@@ -463,8 +462,8 @@ impl<'p> Checker<'p> {
                     );
                     self.err_expr(pos)
                 } else if name == "Context" {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::ContextValue,
                         "`Context` is an ambient namespace, not a value; use \
                          `Context.collect()`, `Context.free(value)`, or await \
                          `Context.suspend()` (Q6/Q7/Q34)",
@@ -493,16 +492,16 @@ impl<'p> Checker<'p> {
                     );
                     self.err_expr(pos)
                 } else if name == "Number" {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::NumberValue,
                         "`Number` is an ambient namespace, not a value or coercion; \
                          use `Number.<member>` (Q25)",
                         pos.clone(),
                     );
                     self.err_expr(pos)
                 } else if name == "JSON" {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::JsonValue,
                         "`JSON` is an ambient namespace, not a value; use \
                          `JSON.stringify(value)` or `JSON.parse<T>(text)` (Q28)",
                         pos.clone(),
@@ -511,16 +510,16 @@ impl<'p> Checker<'p> {
                 } else if name == "Date" {
                     // The ambient Date surface is a type and a namespace,
                     // never a value (Q20).
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::DateValue,
                         "`Date` is not a value; only `new Date(ms)`, `Date.UTC(…)`, \
                          and `Date.now()` are accepted (Q20)",
                         pos.clone(),
                     );
                     self.err_expr(pos)
                 } else if name == "Map" || name == "Set" {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::MapSetValue,
                         format!(
                             "`{name}` is a generic reference class, not a value; \
                              construct it with explicit type arguments (Q24)"
@@ -536,15 +535,15 @@ impl<'p> Checker<'p> {
                     );
                     self.err_expr(pos)
                 } else if crate::ambient::number_global(&name).is_some() {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::NumberGlobalValue,
                         format!("`{name}` may only be called, not read as a value (Q25)"),
                         pos.clone(),
                     );
                     self.err_expr(pos)
                 } else if name == "isNaN" || name == "isFinite" {
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::CoercingGlobalValue,
                         format!(
                             "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
                         ),

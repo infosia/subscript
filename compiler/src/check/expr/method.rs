@@ -93,8 +93,8 @@ impl<'p> Checker<'p> {
             }) {
                 return self.err_expr(pos);
             }
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::NumberMethodArgumentCount,
                 format!("{arity_message}, got {} argument(s) (Q26)", c.args.len()),
                 pos.clone(),
             );
@@ -298,8 +298,8 @@ impl<'p> Checker<'p> {
             && self.arr_elem_kind(&elem).is_none()
         {
             let elem_n = self.type_name(&elem);
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ArrayElementDomain,
                 format!(
                     "`{}` is defined per element kind (scalars, strings, `Date`, \
                      reference classes); `{}` elements are outside that set (Q22)",
@@ -361,8 +361,8 @@ impl<'p> Checker<'p> {
                 ) && hir::ArrFmtKind::of(&elem).is_none()
                 {
                     let elem_n = self.type_name(&elem);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::ArrayJoinDomain,
                         format!(
                             "`{name}` formats elements by the Q14 interpolation rules; \
                              `{}` elements are not interpolatable (Q22)",
@@ -593,8 +593,8 @@ impl<'p> Checker<'p> {
                 }
                 if let Some(spread) = c.args[1].spread {
                     let p = self.pos(spread);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::ArrayCallbackSpread,
                         "spread arguments require variadic parameters, which the language \
                          does not have",
                         p.clone(),
@@ -635,8 +635,8 @@ impl<'p> Checker<'p> {
                 ) && self.arr_elem_kind(&acc_ty).is_none()
                 {
                     let acc_n = self.type_name(&acc_ty);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::ArrayAccumulatorDomain,
                         format!(
                             "the `{}` accumulator crosses the runtime↔script \
                              boundary; `{}` is outside the supported kinds (Q22)",
@@ -750,8 +750,8 @@ impl<'p> Checker<'p> {
                             && self.arr_elem_kind(&u).is_none()
                         {
                             let u_n = self.type_name(&u);
-                            self.error(
-                                RuleCode::S014,
+                            self.reject_subset(
+                                crate::check::rejection::RejectionSite::ArrayMapResult,
                                 format!(
                                     "`map` produces a `{}[]`; `{}` is outside the \
                                      supported element kinds (Q22)",
@@ -866,14 +866,13 @@ impl<'p> Checker<'p> {
             && self.assoc_key_kind(&key).is_none()
         {
             let key_name = self.type_name(&key);
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::MapGroupByKey,
                 format!(
                     "`Map.groupBy` callback returns `{key_name}`, which is not a \
                      §10.2 Map/Set key kind (Q24)"
                 ),
                 callback.pos.clone(),
-                Divergence::MapKeyKind,
             );
             return self.err_expr(pos);
         }
@@ -906,8 +905,8 @@ impl<'p> Checker<'p> {
             }
             "of" => self.check_array_of(call, ctx, fx, pos, prop_pos),
             other => {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::ArrayStaticMember,
                     format!("`Array.{other}` is outside the accepted Array namespace (Q22)"),
                     prop_pos,
                 );
@@ -944,8 +943,8 @@ impl<'p> Checker<'p> {
                 Some(resolved)
             }
             Some(_) => {
-                self.error(
-                    RuleCode::S014,
+                self.reject_subset(
+                    crate::check::rejection::RejectionSite::ArrayFromTypeCount,
                     "`Array.from<T>` takes exactly one type argument",
                     prop_pos,
                 );
@@ -968,8 +967,8 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let [argument] = &call.args[..] else {
-            self.error(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ArrayFromArgumentCount,
                 format!(
                     "`Array.from(source)` takes one source argument, got {}",
                     call.args.len()
@@ -981,11 +980,10 @@ impl<'p> Checker<'p> {
         };
         if let Some(spread) = argument.spread {
             let spread_pos = self.pos(spread);
-            self.error_diverging(
-                RuleCode::S014,
+            self.reject_subset(
+                crate::check::rejection::RejectionSite::ArrayFromSpread,
                 "spread arguments require variadic parameters, which the language does not have",
                 spread_pos,
-                Divergence::VariadicArguments,
             );
             self.check_poisoned_arguments(&call.args, fx);
             return self.err_expr(pos);
@@ -1018,8 +1016,8 @@ impl<'p> Checker<'p> {
                 Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
                 None => {
                     let actual = self.type_name(other);
-                    self.error(
-                        RuleCode::S014,
+                    self.reject_subset(
+                        crate::check::rejection::RejectionSite::ArrayFromSource,
                         format!(
                             "`Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, \
                              or string; got `{actual}`"
@@ -1061,22 +1059,13 @@ impl<'p> Checker<'p> {
         value: Type,
         name: &str,
         c: &ast::CallExpr,
-        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
         let Some(operation) = crate::ambient::map_method(name) else {
             if let Some(rejection) = crate::ambient::map_rejection(name) {
-                if name == "keys" && ctx.is_some() {
-                    self.error(
-                        rejection.code,
-                        crate::ambient::rejection_message(rejection, name),
-                        prop_pos,
-                    );
-                } else {
-                    self.emit_api_rejection(rejection, name, prop_pos);
-                }
+                self.emit_api_rejection(rejection, name, prop_pos);
             } else {
                 self.error(
                     RuleCode::S100,
@@ -1466,8 +1455,8 @@ impl<'p> Checker<'p> {
             let _ = self.reject_api_form("T[]", "callback(value, index, array)", &actual, pos);
             return None;
         }
-        self.error(
-            RuleCode::S014,
+        self.reject_subset(
+            crate::check::rejection::RejectionSite::CallbackParameterCount,
             if allow_index {
                 format!(
                     "`{method}` callbacks take {} parameter(s), or {} with a trailing \
