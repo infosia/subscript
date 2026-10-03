@@ -45,7 +45,11 @@ programs in one process costs 0.05 s.
    - an accepted witness: a program that `tsc` accepts and that
      reaches the target;
    - a rejected-only witness: a program that `tsc` rejects and that
-     reaches the target, when no `tsc`-accepted program reaches it;
+     reaches the target, when no `tsc`-accepted program reaches it.
+     The entry states why no `tsc`-accepted program reaches the
+     target, in one sentence that names the `tsc` rule or the checker
+     guard that excludes it. A witness alone does not prove that no
+     accepted program exists;
    - unreachable, with the reason, when no program reaches it.
 6. **The check is total.** One test runs the checker on every witness
    and asserts the target's message and its block: a block for each
@@ -78,8 +82,9 @@ programs in one process costs 0.05 s.
    accepted form needs `IterableIterator`, which is S016 here), and
    `r198-set-source-map` (the accepted form reaches the key-kind site
    first).
-4. A message at a site that carries a variant states no `tsc` outcome,
-   because the site serves both classes.
+4. An S014 message states no `tsc` outcome. A site with a variant
+   serves both classes, and a site with no variant rests on the
+   rule 5 reason, not on the message.
 5. The rule 6 test states its measured cost in its doc comment.
 6. No accept golden moves. A reject entry's pinned message does not
    change, except where acceptance 4 changes it.
@@ -90,3 +95,8 @@ programs in one process costs 0.05 s.
    that rejects a `tsc`-accepted program carries a variant only if a
    reject entry pins it (§79 rule 4). No measurement of those codes
    exists.
+2. A shared variant cites one `collision` section and shows one `ts`
+   fragment, so a site of another Q-rule renders an example of another
+   shape (`CompilerOwnedValue` at `const g = d.getTime;` shows
+   `const held = Array;` and cites `stdlib.md` §9.0, while the
+   diagnostic cites Q20). Recorded by the Phase Review; MINOR.
