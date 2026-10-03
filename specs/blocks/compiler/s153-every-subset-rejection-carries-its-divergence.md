@@ -48,7 +48,19 @@ programs in one process costs 0.05 s.
    and asserts the target's message and the target's variant in the
    block. The same test runs `tsc` once over all witnesses and asserts
    each label.
-7. **Scope.** Rules 4 to 6 cover S014. The mirror pattern-parameter
+7. **A fragment is true.** Each variant that an S014 site or a row
+   carries has a `ts` fragment that `tsc` accepts and that this
+   checker rejects with a diagnostic carrying that same variant. Its
+   `subscript` fragment is a program this checker accepts. One test
+   checks every such variant; the set is derived from the site enum
+   and the rows, not from a hand list. A site that only
+   `tsc`-rejected programs reach carries a variant whose fragment
+   meets this rule, so its block shows the nearest form that `tsc`
+   accepts and this language rejects.
+8. **Consequence for the corpus.** With §79 rule 4, no reject entry
+   can pin a `tsc`-rejected S014 program. The rule 5 table pins such
+   programs.
+9. **Scope.** Rules 4 to 7 cover S014. The mirror pattern-parameter
    site (S100, `resolve_param_pat`) gets its variant as a named site.
    §153.3 records the other codes.
 
@@ -68,11 +80,8 @@ programs in one process costs 0.05 s.
    Its old program becomes the site's rejected-class witness in the
    rule 5 table. If no `tsc`-accepted program has the site's
    diagnostic as its first diagnostic and keeps the purpose, the entry
-   retires, and its old program stays as the witness. Measured
-   retirements: `r76-return-keys-view` and `r77-pass-keys-view` (the
-   accepted form needs `IterableIterator`, which is S016 here), and
-   `r198-set-source-map` (the accepted form reaches the key-kind site
-   first).
+   retires, and its old program stays as the witness. The tracking
+   note lists each retirement with its measured first diagnostic.
 4. An S014 message states no `tsc` outcome, because every S014 site
    serves both classes.
 5. The rule 6 test states its measured cost in its doc comment.
