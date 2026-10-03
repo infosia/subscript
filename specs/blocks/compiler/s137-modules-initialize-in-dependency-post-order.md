@@ -227,9 +227,4 @@ An indirect call follows every function value made so far (rule 5b),
 so a program is rejected when an unrelated earlier lambda reads a
 later global. A scan that knows which value a call runs accepts it.
 
-A `using` declaration in a top-level block never runs its dispose hook
-(`{ using r: R = new R(); print("in"); }` prints `in` here and at the
-pin; `node` prints `in / d`). The top-level form has no `Stmt::Using`,
-so the scan sees no hook. The fix of that defect must give the
-top-level block the `Stmt::Using` form, or it opens an early-read
-route. It is a separate section.
+The `using` declaration in a top-level block is closed by §139.
