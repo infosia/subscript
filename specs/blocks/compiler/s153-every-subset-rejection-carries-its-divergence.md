@@ -51,7 +51,8 @@ programs in one process costs 0.05 s.
 7. **A fragment is true.** Each variant that an S014 site or a row
    carries has a `ts` fragment that `tsc` accepts and that this
    checker rejects with a diagnostic carrying that same variant. Its
-   `subscript` fragment is a program this checker accepts. One test
+   `subscript` fragment is a program this checker accepts, or the
+   §79 rule 1 sentence "no equivalent; <what to do instead>". One test
    checks every such variant; the set is derived from the site enum
    and the rows, not from a hand list. A site that only
    `tsc`-rejected programs reach carries a variant whose fragment
