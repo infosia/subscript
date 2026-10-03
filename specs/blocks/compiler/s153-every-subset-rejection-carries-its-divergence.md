@@ -91,15 +91,11 @@ programs in one process costs 0.05 s.
 
 ### 153.3 Open
 
-1. Codes other than S014 have no total check. A site of another code
-   that rejects a `tsc`-accepted program carries a variant only if a
-   reject entry pins it (§79 rule 4). No measurement of those codes
-   exists.
+1. Codes other than S014: closed by §154.
 2. A shared variant cites one `collision` section and shows one `ts`
    fragment, so a site of another Q-rule renders an example of another
    shape (`CompilerOwnedValue` at `const g = d.getTime;` shows
    `const held = Array;` and cites `stdlib.md` §9.0, while the
    diagnostic cites Q20). Recorded by the Phase Review; MINOR.
-3. Rule 7 compiles the fragments of the variants that S014 sites and
-   rows carry. The fragments of the other variants stay unchecked
-   (§79 rule 5a).
+3. Fragments of variants that S014 sites do not carry: closed by §154
+   rule 5.

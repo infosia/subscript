@@ -161,8 +161,9 @@ to general declarations:
 
 Parameters with defaults (`a11`) are legal — the default fills the value;
 no `undefined` is observable. In-language `Ref | null` lowers to a
-nullable pointer; narrowing is required before member access (`tsc`
-already enforces this under `strictNullChecks`).
+nullable pointer; narrowing is required before member access. `tsc` also narrows a
+local by its non-null initializer or assignment; this checker does
+not (C24).
 
 **Q33 exception (owner, 2026-07-31): defaulted optional members on
 descriptor classes.** Inside a `@Descriptor` class (Q33) — and only
@@ -657,6 +658,48 @@ gives `TypeError: Cannot read properties of undefined` under `node`;
 storing `b` in a `Box[]` and printing its length prints `1`.
 
 Trap: `t75`–`t78`, `t80`, `t81`; `retired:t79-generator-done-destructuring`. Reject: `r301`.
+
+### C24. Forms outside the subset
+
+`tsc` accepts every form below, and this checker rejects it with a
+divergence block (`compiler.md` §154). A row states the reason. Where
+no reason holds for every rejected program, the row says "no lowering
+is decided"; such a row is a decision, and `compiler.md` §154.3 lists
+it as a candidate to accept.
+
+| # | Form | Rule | Write instead |
+|---|---|---|---|
+| 1 | A truth test (`if`, `while`, `for`, `?:`, `!`, `&&`, `\|\|`) on a value that is not `boolean` | The language has no implicit conversion (C3). | `n !== 0`, `x !== null` |
+| 2 | `var` | `var` binds its name for the whole function, with the value `undefined` before its declaration. The language has no `undefined` (C7), and C14 rejects where scope diverges. | `let`, `const` |
+| 3 | A module variable or a local with no initializer | The binding holds `undefined` until its first assignment (C7). | an initializer |
+| 4 | A module variable, a field, a static field, a parameter, a function result, or a block-lambda result with no type annotation | No inference is decided at these positions. The checker infers locals and expression-lambda results only. | an annotation |
+| 5 | A class, function, enum, type alias, interface, or namespace declared in a function body | No lowering is decided for a local declaration. | a module-level declaration; an arrow for a function |
+| 6 | `interface` | An interface is a structural type, and types are nominal (C1). | a class |
+| 7 | A type alias that is not a string-literal union (Q32): a transparent alias, a generic alias; a repeated member of a literal union | No lowering is decided. | the aliased type |
+| 8 | A string-literal enum member name; a constructor parameter property | No lowering is decided. | an identifier member; a field and an assignment |
+| 9 | `declare namespace` and `declare module` in a mirror | A mirror declares the C items of a header (§12.2), and C has no namespace. | — |
+| 10 | An import of a module that no program file supplies | The program is its files (C18). `node` cannot load such a module. | add the file |
+| 11 | A `#name` member, `static {}`, an `accessor` field, a `declare` field, an `abstract` member, an instance generator method | No lowering is decided. TypeScript `private` is the member privacy. | `private`; a static generator method |
+| 12 | A method read as a value | The value loses its receiver. A bound value captures the receiver, and C5 forbids the escape of a capturing value. | `(x) => o.m(x)` |
+| 13 | A generator function, a static method, an ambient function, or a foreign function read as a value | No first-class value is decided for a direct call target. | a lambda that calls it |
+| 14 | A class or an enum as a run-time object: `new (expr)()`, a constructor type, an enum value as an object, an enum member such as `toString` | A class lowers to a C layout, and an enum lowers to integer constants. Neither has a run-time object. | a direct `new C()`; the enum member |
+| 15 | `this` in a lambda; `this` in a static method; a `function` expression | A lambda captures `const` locals only (C5). A `function` expression binds its own `this`. | `const self = this;`; an arrow |
+| 16 | `yield*`; a generator `return()` call; a generator return value; a write to a step result | A generator gives values of one yield type through `next()`, and its finished result carries a zero (C8). For `yield*`, no lowering is decided. | `for (const x of xs) yield x;` |
+| 17 | A type annotation that is not a declared or builtin type: a type literal, a literal type, `keyof`, `typeof`, an indexed, mapped, or conditional type, a type predicate, the `this` type, `readonly T[]`, `never`, `unknown`, a qualified name other than a namespace import (§148), an intersection, a constructor type, a rest parameter or a pattern in a function type | An annotation names a declared or builtin type. Types are nominal (C1). | the declared type |
+| 18 | `typeof`, `void`, unary `+`, `in`, `**`, `&&=`, `\|\|=`, `**=`, a comma expression, a tagged template, a class expression, `import.meta`, `new.target`, `<T>x`, `x satisfies T`, `x as const`, an instantiation expression, `x!` | No lowering is decided, except: `in` reads dynamic properties (C10); `void` gives `undefined` (C7); unary `+` converts (Q25). | `Math.pow`; an explicit comparison; a null check |
+| 19 | Arithmetic or comparison outside the operand rules: enum arithmetic, `string` with a non-`string` operand, an `as` that is an identity or converts an integer or a `string` to an enum or alias | The language has no implicit conversion (C3), and an `as` does not check membership. | `as` to the integer; a template |
+| 20 | An index that is not `i32`; a constant index outside a `FixedArray` length; an index on a `string` | An index is `i32` (C3). A constant index outside the length always traps (Q3). `s[i]` gives `undefined` out of range (C7). | `as i32`; `s.at(i)` |
+| 21 | A spread, a quoted key, an accessor, or a method in a descriptor literal | A descriptor literal fills data members by identifier (Q33). | the identifier member |
+| 22 | A class or an array in a template interpolation | Interpolation formats scalars, strings, enums, and literal aliases (Q14). | `xs.join(",")`; a method call |
+| 23 | An empty array literal with no context | The language has no `any[]` and no evolving array type (C4, S001). | `const xs: i32[] = [];` |
+| 24 | A `switch` on `boolean`; `for await` over values that are not handles; a `for…of` head that assigns an existing binding | A `switch` dispatches on integer, enum, string, or alias constants (§41). `for await` reads async iteration (§26.1). No lowering is decided for an assigning head. | `if`; `await` in the body; a `const` head |
+| 25 | Instances or function types with other type arguments or parameter types | Types match only when their arguments are identical: no implicit conversion (C3), no structural substitution (C1), and no variance. | the identical type |
+| 26 | A member of a nullable local that its non-null initializer or assignment proves non-null | No narrowing by assignment is decided (C7). | an explicit null check |
+| 27 | A call of an unannotated generator before the checker reads its body | The yield type comes from the body. | a `Generator<T>` result annotation |
+| 28 | A type-parameter default (`<T = i32>`) | No lowering is decided. | an explicit type argument |
+| 29 | `do…while`, a labeled statement, `debugger`, `for…in` | No lowering is decided, except: `for…in` reads dynamic properties (C10). | `while`; a flag |
+| 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
+| 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 
 ## 2. Q-register resolutions not covered above
 

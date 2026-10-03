@@ -138,4 +138,4 @@ only pin the form had.
 `§79` rule 6a. Rule 4's total gate reads the reject corpus, so an
 `ambient` rejection row that no entry pins carries no divergence and
 nothing reports it. Twelve `tsc`-accepted forms are measured rejected
-with no block, most of them older than §105. Closed for S014 by §153.
+with no block, most of them older than §105. Closed by §153 and §154.

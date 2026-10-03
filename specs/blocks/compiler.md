@@ -195,3 +195,4 @@ Every section, with its status:
 | §151 | A void generator runs on every tier | active | [`s151-a-void-generator-runs-on-every-tier.md`](compiler/s151-a-void-generator-runs-on-every-tier.md) |
 | §152 | A worker trap reports its own site | active | [`s152-a-worker-trap-reports-its-own-site.md`](compiler/s152-a-worker-trap-reports-its-own-site.md) |
 | §153 | Every subset rejection carries its divergence | active | [`s153-every-subset-rejection-carries-its-divergence.md`](compiler/s153-every-subset-rejection-carries-its-divergence.md) |
+| §154 | Every rejection site states its tsc class | active | [`s154-every-rejection-site-states-its-tsc-class.md`](compiler/s154-every-rejection-site-states-its-tsc-class.md) |

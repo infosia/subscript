@@ -31,8 +31,8 @@ Phase Review found §15 citing a tracking file that did not exist, and
    into the lib interface — the `Map`/`Set`/`RegExp` mechanism, and
    §17's two `Math` members. This
    compiler accepts a **deterministic subset** of the lib API with
-   sized-type signatures and rejects out-of-subset members with a clear
-   S-code — the same shape as rejecting `any`: `tsc` accepts more than
+   sized-type signatures and rejects out-of-subset members and global
+   names with a clear S-code — the same shape as rejecting `any`: `tsc` accepts more than
    the language does, never less (invariant 5).
 2. **One implementation, both tiers.** Every stdlib operation with a
    runtime component is implemented once, in runtime Rust, and both
