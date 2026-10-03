@@ -194,3 +194,4 @@ Every section, with its status:
 | §150 | A postfix update yields the old value | active | [`s150-a-postfix-update-yields-the-old-value.md`](compiler/s150-a-postfix-update-yields-the-old-value.md) |
 | §151 | A void generator runs on every tier | active | [`s151-a-void-generator-runs-on-every-tier.md`](compiler/s151-a-void-generator-runs-on-every-tier.md) |
 | §152 | A worker trap reports its own site | active | [`s152-a-worker-trap-reports-its-own-site.md`](compiler/s152-a-worker-trap-reports-its-own-site.md) |
+| §153 | Every subset rejection carries its divergence | active | [`s153-every-subset-rejection-carries-its-divergence.md`](compiler/s153-every-subset-rejection-carries-its-divergence.md) |

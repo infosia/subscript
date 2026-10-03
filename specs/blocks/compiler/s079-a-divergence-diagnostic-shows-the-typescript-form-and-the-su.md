@@ -58,8 +58,8 @@ because that count is the work, and it decides then whether the `ts`
 fragment gets the same treatment through the `tsc` harness.
 
 **Rule 6a — an `ambient` rejection row is not reached by rule 4.**
-*(Recorded 2026-09-10 by the §104/§105 Phase Review. Open; no round
-is scheduled.)* Rule 4's total gate reads the **reject corpus**, so a
+*(Recorded 2026-09-10 by the §104/§105 Phase Review. Closed for S014
+by §153; §153.3 records the other codes.)* Rule 4's total gate reads the **reject corpus**, so a
 row in `compiler/src/ambient.rs` that no entry pins carries no
 variant and nothing reports it. Measured `tsc`-accepted and rejected
 here with no block: `const held = Array;`, `const f = Array.from;`,

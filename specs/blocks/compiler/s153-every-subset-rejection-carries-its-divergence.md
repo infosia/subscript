@@ -1,0 +1,92 @@
+<!-- §153 of the compiler contract. The index is `specs/blocks/compiler.md` §0. -->
+
+## 153. Every subset rejection carries its divergence
+
+*(Added 2026-10-03.)* Origin: §79 rule 6a, open since the §104/§105
+Phase Review. The measurement is
+`specs/tracking/s153-rejection-tsc-class.md`.
+
+Problem: §79 rule 2 requires a variant at every site that rejects a
+program `tsc` accepts. Rule 4 reads only the reject corpus, so a site
+that no entry pins carries no variant, and nothing reports it.
+`emit_api_rejection` selects the variant from the row's corpus file
+name, so a row with `corpus: None` never carries one.
+
+Measured at `5daba081` with one witness per row and per S014 site:
+83 `rejected_api()` rows, 82 S014 construction sites, and the mirror
+pattern-parameter site. 86 targets reject a `tsc`-accepted witness with
+no block: 35 rows, 50 S014 sites, and the mirror site. Examples:
+`const held = Array;`, `const j = JSON;`, `m.values()` held in a
+`const`, `isFinite(x)`, `"x".match(/x/)`, `xs.flat()`. One `tsc` run
+over all 318 witness files costs 0.27 s. The checker over all 315
+programs in one process costs 0.05 s.
+
+### 153.1 Rules
+
+1. **A site carries the variant of the accepted class.** If any
+   program that `tsc` accepts reaches a rejection site, that site
+   carries a `Divergence` variant. This applies §79 rule 6 to every
+   site: the variant explains the `tsc`-accepted program, and a
+   `tsc`-rejected program at the same site renders the same block.
+2. **A row carries its variant.** `ApiRejection` gains
+   `divergence: Option<Divergence>`. `emit_api_rejection` reads that
+   field. The corpus-name selection is deleted.
+3. **A row is read by the site that emits it.** A row that no checker
+   lookup reads is deleted, or the direct site that emits its
+   diagnostic reads the row. Measured: the three `REGEX_REJECTIONS`
+   rows and the `JSON` `parse(text) without target type` row.
+4. **An S014 site is named.** Every S014 diagnostic goes through one
+   checker function that takes a site name from one closed enum. The
+   enum maps each site to its `Option<Divergence>` in one exhaustive
+   `match`. `RuleCode::S014` appears in no other checker file.
+5. **Every row and every named site has a witness.** One table, keyed
+   by the row and by the site enum through an exhaustive `match`,
+   gives each target one of:
+   - an accepted witness: a program that `tsc` accepts and that
+     reaches the target;
+   - a rejected-only witness: a program that `tsc` rejects and that
+     reaches the target, when no `tsc`-accepted program reaches it;
+   - unreachable, with the reason, when no program reaches it.
+6. **The check is total.** One test runs the checker on every witness
+   and asserts the target's message and its block: a block for each
+   accepted witness, and the target's variant (or none) otherwise. The
+   same test runs `tsc` once over all witnesses and asserts each class.
+   A target with a variant must have an accepted witness. A target
+   with no variant must have a rejected-only witness or be unreachable.
+7. **Scope.** Rules 4 to 6 cover S014. The mirror pattern-parameter
+   site (S100, `resolve_param_pat`) gets its variant as a named site.
+   §153.3 records the other codes.
+
+### 153.2 Acceptance
+
+1. Red first: the rule 6 test, run against the pin's rows and sites,
+   reports all 86 measured targets at once.
+2. Each missing variant uses an existing `Divergence` variant when its
+   `why` states the reason. Otherwise it uses a new variant, whose
+   `collision` names the `stdlib.md` or `compiler.md` section of the
+   Q-rule that the diagnostic already cites.
+3. A reject entry whose header says `tsc: rejects` and whose site gains
+   a variant breaks §79 rule 4. The corpus divergence gate reports
+   every such entry at once; no list here is complete. Each entry
+   changes its program to a `tsc`-accepted form that reaches the same
+   site and keeps the entry's purpose, with the header `tsc: accepts`.
+   Its old program becomes the site's rejected-class witness in the
+   rule 5 table. If no `tsc`-accepted program has the site's
+   diagnostic as its first diagnostic and keeps the purpose, the entry
+   retires, and its old program stays as the witness. Measured
+   retirements: `r76-return-keys-view` and `r77-pass-keys-view` (the
+   accepted form needs `IterableIterator`, which is S016 here), and
+   `r198-set-source-map` (the accepted form reaches the key-kind site
+   first).
+4. A message at a site that carries a variant states no `tsc` outcome,
+   because the site serves both classes.
+5. The rule 6 test states its measured cost in its doc comment.
+6. No accept golden moves. A reject entry's pinned message does not
+   change, except where acceptance 4 changes it.
+
+### 153.3 Open
+
+1. Codes other than S014 have no total check. A site of another code
+   that rejects a `tsc`-accepted program carries a variant only if a
+   reject entry pins it (§79 rule 4). No measurement of those codes
+   exists.
