@@ -373,19 +373,15 @@ fn an_exception_that_leaves_a_worker_entry_is_the_worker_trap() {
         Err(RunError::Trap(report)) => report,
         other => panic!("ship C did not trap: {other:?}"),
     };
-    // The Worker trap text carries the Worker's raw position id, and each
-    // tier numbers its own position table, so the number is not compared.
+    // §152: both tiers report the Worker's throw site and the same message.
     for (tier, report) in [("dev JIT", &jit), ("ship C", &ship)] {
         assert_eq!(report.rule, TrapKind::WorkerTrapped, "{tier}");
         assert_eq!(report.stdout, b"joining\n", "{tier}");
-        assert_eq!((report.pos.line, report.pos.col), (0, 0), "{tier}");
-        assert!(
-            report
-                .message
-                .starts_with("worker trapped with uncaught-exception at position ")
-                && report.message.ends_with(": TypeError: job 7 failed"),
-            "{tier}: {}",
-            report.message
+        assert_eq!(report.pos.file, "exception.ts", "{tier}");
+        assert_eq!((report.pos.line, report.pos.col), (8, 5), "{tier}");
+        assert_eq!(
+            report.message, "worker trapped with uncaught-exception: TypeError: job 7 failed",
+            "{tier}"
         );
     }
 }

@@ -1208,9 +1208,10 @@ mod tests {
         // SAFETY: the parent is live; the trap record is read in place.
         let trap = unsafe { &*parent }.trap_record().expect("worker trap");
         assert_eq!(trap.kind, TrapKind::WorkerTrapped);
+        assert_eq!(trap.pos_id, 41);
         assert_eq!(
             trap.message,
-            "worker trapped with uncaught-exception at position 41: TypeError: worker failed"
+            "worker trapped with uncaught-exception: TypeError: worker failed"
         );
         // SAFETY: the parent Context has no pending exception of its own.
         assert!(!unsafe { &*parent }.exception_pending());

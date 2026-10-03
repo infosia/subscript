@@ -979,12 +979,12 @@ impl Context {
                 self.trap(
                     TrapKind::WorkerTrapped,
                     format!(
-                        "worker trapped with {} at position {}: {}",
+                        "worker trapped with {}: {}",
                         record.kind.rule(),
-                        record.pos_id,
+                        // The parent uses the Worker's trap site.
                         record.message
                     ),
-                    0,
+                    record.pos_id,
                 );
                 false
             }
