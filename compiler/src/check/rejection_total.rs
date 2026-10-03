@@ -7,7 +7,8 @@ use std::process::Command;
 use std::time::Instant;
 
 use super::rejection::RejectionSite;
-use crate::diag::Pos;
+use crate::diag::{Diagnostic, Pos};
+use crate::divergence::Divergence;
 use crate::{check_program, SourceFile};
 
 #[path = "rejection_witness_index.rs"]
@@ -106,27 +107,77 @@ fn checker_failures(witness: &Witness<'_>, site: RejectionSite) -> Vec<String> {
             witness.target, witness.file
         ));
     }
-    if diagnostic.divergence != expected {
-        failures.push(format!(
-            "{}: {}: variant {:?}, expected {:?}",
-            witness.target, witness.file, diagnostic.divergence, expected
-        ));
-    }
+    failures.extend(diagnostic_failures(
+        witness.target,
+        diagnostic,
+        expected,
+        &files,
+    ));
     if witness.codes.is_empty() && expected.is_none() {
         failures.push(format!(
             "{}: accepted witness has no variant",
             witness.target
         ));
     }
-    let rendered = crate::render_diagnostics(&files, std::slice::from_ref(diagnostic));
+    failures
+}
+
+fn diagnostic_failures(
+    target: &str,
+    diagnostic: &Diagnostic,
+    expected: Option<Divergence>,
+    files: &[SourceFile],
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    if diagnostic.divergence != expected {
+        failures.push(format!(
+            "{target}: variant {:?}, expected {:?}",
+            diagnostic.divergence, expected
+        ));
+    }
+    let rendered = crate::render_diagnostics(files, std::slice::from_ref(diagnostic));
     if rendered.contains("= TypeScript accepts:") != expected.is_some() {
-        failures.push(format!("{}: divergence block absent", witness.target));
+        failures.push(format!("{target}: divergence block absent"));
     }
     failures
 }
 
+fn tsc_class_failure(witness: &Witness<'_>, codes: &BTreeSet<String>) -> Option<String> {
+    (codes != &witness.codes).then(|| {
+        format!(
+            "{}: tsc {:?}, expected {:?}",
+            witness.file, codes, witness.codes
+        )
+    })
+}
+
+fn class_controls() -> [Witness<'static>; 2] {
+    [
+        Witness {
+            file: "control-accepted.ts",
+            target: "control",
+            codes: BTreeSet::new(),
+            code: "",
+            mirror: "",
+            unreachable: "",
+            message: "",
+            source: "export {}; const value: string = 1;",
+        },
+        Witness {
+            file: "control-rejected.ts",
+            target: "control",
+            codes: BTreeSet::from(["TS2322".to_owned()]),
+            code: "",
+            mirror: "",
+            unreachable: "",
+            message: "",
+            source: "export {}; const value: string = \"x\";",
+        },
+    ]
+}
+
 /// One tsc process measures all witnesses; the checker runs once per program.
-/// This test costs 0.44 seconds: tsc 0.33 seconds and checker 0.07 seconds.
+/// This test costs 0.39 seconds: tsc 0.28 seconds and checker 0.05 seconds.
 /// The batch proves both TypeScript classes without a second corpus or tier run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -165,23 +216,14 @@ fn every_subset_rejection_carries_its_divergence() {
             ));
         }
     }
-    // The rewritten reject entries join this same tsc process.
-    for file in [
-        "r27-string-match",
-        "r78-call-spread-variadic",
-        "r201-new-class-spread-variadic",
-    ] {
-        let path = temporary.join(format!("{file}-rewritten.ts"));
-        fs::copy(root.join(format!("corpus/reject/{file}.ts")), &path).unwrap();
-        paths.push(path);
-    }
     for variant in index::NEW_VARIANTS {
         let path = temporary.join(format!("fragment-{variant:?}.ts"));
         let source = format!("export {{}};\n{}", variant.entry().ts);
         fs::write(&path, source).unwrap();
         paths.push(path);
     }
-    for witness in &witnesses {
+    let controls = class_controls();
+    for witness in witnesses.iter().chain(&controls) {
         let path = temporary.join(witness.file);
         fs::write(&path, witness.source).unwrap();
         paths.push(path);
@@ -227,12 +269,14 @@ fn every_subset_rejection_carries_its_divergence() {
         if !witness.mirror.is_empty() {
             codes.extend(measured.remove(witness.mirror).unwrap_or_default());
         }
-        if codes != witness.codes {
-            failures.push(format!(
-                "{}: tsc {:?}, expected {:?}",
-                witness.file, codes, witness.codes
-            ));
+        if let Some(failure) = tsc_class_failure(witness, &codes) {
+            failures.push(failure);
         }
+    }
+    // Construct both false class claims; the same tsc batch measures their sources.
+    for control in &controls {
+        let codes = measured.remove(control.file).unwrap_or_default();
+        assert!(tsc_class_failure(control, &codes).is_some());
     }
     assert!(measured.is_empty(), "unowned tsc errors: {measured:?}");
     assert!(
@@ -278,6 +322,56 @@ fn wrong_message_expectation_fires() {
     assert!(checker_failures(&witness, all_sites()[0])
         .iter()
         .any(|failure| failure.contains("target message absent")));
+}
+
+#[test]
+fn variant_mismatch_fires() {
+    let files = [SourceFile::entry("control.ts", "const value = 1;")];
+    let diagnostic = Diagnostic {
+        divergence: Some(Divergence::MathSubset),
+        ..Diagnostic::new(
+            crate::diag::RuleCode::S014,
+            "control",
+            Pos::new("control.ts", 1, 1),
+        )
+    };
+    let failures =
+        diagnostic_failures("control", &diagnostic, Some(Divergence::DateSubset), &files);
+    assert!(failures.iter().any(|failure| failure.contains("variant")));
+    assert!(!failures
+        .iter()
+        .any(|failure| failure.contains("block absent")));
+}
+
+#[test]
+fn absent_block_fires() {
+    let files = [SourceFile::entry("control.ts", "const value = 1;")];
+    let diagnostic = Diagnostic::new(
+        crate::diag::RuleCode::S014,
+        "control",
+        Pos::new("control.ts", 1, 1),
+    );
+    assert!(
+        diagnostic_failures("control", &diagnostic, Some(Divergence::MathSubset), &files)
+            .iter()
+            .any(|failure| failure.contains("block absent"))
+    );
+}
+
+#[test]
+fn empty_no_variant_reason_fires() {
+    for entry in [
+        index::WitnessEntry::RejectedOnly {
+            file: "control.ts",
+            reason: "",
+        },
+        index::WitnessEntry::Unreachable {
+            file: "control.ts",
+            reason: "",
+        },
+    ] {
+        assert!(std::panic::catch_unwind(|| entry.key()).is_err());
+    }
 }
 
 #[test]

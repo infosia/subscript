@@ -675,7 +675,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection((ApiRejectionId::FormOfValue, Some(Divergence::ArrayOfArity)), "Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
     rejection((ApiRejectionId::FormNewArrayLength, Some(Divergence::ArrayHoleConstruction)), "Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
     rejection((ApiRejectionId::FormGroupBy, None), "Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
-    rejection((ApiRejectionId::FormAlgebraNonSet, None), "Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
+    rejection((ApiRejectionId::FormAlgebraNonSet, Some(Divergence::SetAlgebraDomain)), "Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", None),
 ];
 
 const fn rejection(

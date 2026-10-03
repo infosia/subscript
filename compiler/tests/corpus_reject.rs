@@ -114,7 +114,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r50-parse-int-no-radix.ts", RuleCode::S014, 8),
     ("r51-array-unshift-variadic.ts", RuleCode::S014, 10),
     ("r52-object-groupby.ts", RuleCode::S014, 9),
-    ("r53-set-algebra-nonset.ts", RuleCode::S014, 10),
     ("r54-map-groupby-key.ts", RuleCode::S014, 9),
     ("r55-array-callback-container.ts", RuleCode::S014, 11),
     ("r56-json-stringify-map.ts", RuleCode::S014, 9),
@@ -351,7 +350,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
-    ("r72-for-of-user-class.ts", RuleCode::S014, 13),
     ("r73-for-of-object.ts", RuleCode::S014, 12),
     ("r74-for-of-number.ts", RuleCode::S014, 9),
     ("r75-for-of-entries.ts", RuleCode::S014, 9),
@@ -1172,20 +1170,15 @@ fn q27_array_variadic_rejections_name_the_missing_prerequisite() {
 #[test]
 fn q27_map_set_rejections_name_the_missing_language_shapes() {
     let dir = corpus_dir().join("reject");
-    for (file, required) in [
-        ("r52-object-groupby.ts", "null-prototype object"),
-        ("r53-set-algebra-nonset.ts", "no set-like protocol"),
-    ] {
-        let source =
-            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
-        let diagnostics = check_program(&[SourceFile::new(file, source)])
-            .expect_err("Q27 Map/Set form must be rejected");
-        assert!(
-            diagnostics[0].message.contains(required),
-            "{file}: diagnostic does not explain the missing shape: {}",
-            diagnostics[0].message
-        );
-    }
+    let (file, required) = ("r52-object-groupby.ts", "null-prototype object");
+    let source = fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("Q27 Map/Set form must be rejected");
+    assert!(
+        diagnostics[0].message.contains(required),
+        "{file}: diagnostic does not explain the missing shape: {}",
+        diagnostics[0].message
+    );
 }
 
 #[test]
@@ -1209,10 +1202,6 @@ fn q27_array_callback_container_rejection_names_c5_and_the_reason() {
 fn q30_rejections_name_the_actual_missing_prerequisite() {
     let dir = corpus_dir().join("reject");
     for (file, required) in [
-        (
-            "r72-for-of-user-class.ts",
-            &["invariant 5", "Symbol.iterator", "stock `tsc`"][..],
-        ),
         (
             "r43-map-iterable-constructor.ts",
             &["pair", "no tuple type"][..],

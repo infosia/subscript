@@ -4,232 +4,263 @@ use crate::ambient::ApiRejectionId;
 use crate::check::rejection::RejectionSite;
 use crate::divergence::Divergence;
 
+pub(super) enum WitnessEntry {
+    Accepted {
+        file: &'static str,
+        variant: Divergence,
+    },
+    RejectedOnly {
+        file: &'static str,
+        reason: &'static str,
+    },
+    Unreachable {
+        file: &'static str,
+        reason: &'static str,
+    },
+}
+
+impl WitnessEntry {
+    pub(super) fn key(&self) -> (&'static str, Option<Divergence>) {
+        match self {
+            Self::Accepted { file, variant } => (file, Some(*variant)),
+            Self::RejectedOnly { file, reason } | Self::Unreachable { file, reason } => {
+                assert!(!reason.is_empty(), "no-variant entry needs a reason");
+                (file, None)
+            }
+        }
+    }
+}
+
 pub(super) fn witness_key(site: RejectionSite) -> (&'static str, Option<Divergence>) {
+    witness_entry(site).key()
+}
+
+pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
     match site {
         RejectionSite::Api(row) => match row.id {
             ApiRejectionId::StringLocaleCompare => {
-                ("a001.ts", Some(Divergence::LocaleSensitiveString))
+                WitnessEntry::Accepted { file: "a001.ts", variant: Divergence::LocaleSensitiveString }
             }
             ApiRejectionId::StringToLocaleUpperCase => {
-                ("a002.ts", Some(Divergence::LocaleSensitiveString))
+                WitnessEntry::Accepted { file: "a002.ts", variant: Divergence::LocaleSensitiveString }
             }
             ApiRejectionId::StringToLocaleLowerCase => {
-                ("a003.ts", Some(Divergence::LocaleSensitiveString))
+                WitnessEntry::Accepted { file: "a003.ts", variant: Divergence::LocaleSensitiveString }
             }
-            ApiRejectionId::StringNormalize => ("a004.ts", Some(Divergence::UnicodeNormalization)),
-            ApiRejectionId::RegexStringMatch => ("a005.ts", Some(Divergence::MatchOptionalIndex)),
-            ApiRejectionId::RegexStringMatchAll => ("a006.ts", Some(Divergence::RegExpSubset)),
-            ApiRejectionId::ArrayFind => ("a010.ts", Some(Divergence::ArrayMethodDefaults)),
-            ApiRejectionId::ArrayFindLast => ("a011.ts", Some(Divergence::ArrayMethodDefaults)),
-            ApiRejectionId::ArrayFlat => ("a012.ts", Some(Divergence::ArrayFlattenDepth)),
-            ApiRejectionId::ArrayFlatMap => ("a013.ts", Some(Divergence::MethodTypeDomain)),
-            ApiRejectionId::ArrayEntries => ("a014.ts", Some(Divergence::NoTupleType)),
-            ApiRejectionId::ArrayKeys => ("a015.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::ArrayValues => ("a016.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::DateLocalGetFullYear => ("a017.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetMonth => ("a018.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetDate => ("a019.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetDay => ("a020.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetHours => ("a021.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetMinutes => ("a022.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetSeconds => ("a023.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetMilliseconds => ("a024.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetTimezoneOffset => ("a025.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateLocalGetYear => ("a026.ts", None),
-            ApiRejectionId::DateStringToString => ("a027.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateStringToDateString => ("a028.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateStringToTimeString => ("a029.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::DateStringToLocaleString => ("a030.ts", Some(Divergence::DateSubset)),
+            ApiRejectionId::StringNormalize => WitnessEntry::Accepted { file: "a004.ts", variant: Divergence::UnicodeNormalization },
+            ApiRejectionId::RegexStringMatch => WitnessEntry::Accepted { file: "a005.ts", variant: Divergence::MatchOptionalIndex },
+            ApiRejectionId::RegexStringMatchAll => WitnessEntry::Accepted { file: "a006.ts", variant: Divergence::RegExpSubset },
+            ApiRejectionId::ArrayFind => WitnessEntry::Accepted { file: "a010.ts", variant: Divergence::ArrayMethodDefaults },
+            ApiRejectionId::ArrayFindLast => WitnessEntry::Accepted { file: "a011.ts", variant: Divergence::ArrayMethodDefaults },
+            ApiRejectionId::ArrayFlat => WitnessEntry::Accepted { file: "a012.ts", variant: Divergence::ArrayFlattenDepth },
+            ApiRejectionId::ArrayFlatMap => WitnessEntry::Accepted { file: "a013.ts", variant: Divergence::MethodTypeDomain },
+            ApiRejectionId::ArrayEntries => WitnessEntry::Accepted { file: "a014.ts", variant: Divergence::NoTupleType },
+            ApiRejectionId::ArrayKeys => WitnessEntry::Accepted { file: "a015.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::ArrayValues => WitnessEntry::Accepted { file: "a016.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::DateLocalGetFullYear => WitnessEntry::Accepted { file: "a017.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetMonth => WitnessEntry::Accepted { file: "a018.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetDate => WitnessEntry::Accepted { file: "a019.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetDay => WitnessEntry::Accepted { file: "a020.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetHours => WitnessEntry::Accepted { file: "a021.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetMinutes => WitnessEntry::Accepted { file: "a022.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetSeconds => WitnessEntry::Accepted { file: "a023.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetMilliseconds => WitnessEntry::Accepted { file: "a024.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetTimezoneOffset => WitnessEntry::Accepted { file: "a025.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateLocalGetYear => WitnessEntry::RejectedOnly { file: "a026.ts", reason: "The ES2022 Date interface has no getYear member (TS2339)." },
+            ApiRejectionId::DateStringToString => WitnessEntry::Accepted { file: "a027.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateStringToDateString => WitnessEntry::Accepted { file: "a028.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateStringToTimeString => WitnessEntry::Accepted { file: "a029.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::DateStringToLocaleString => WitnessEntry::Accepted { file: "a030.ts", variant: Divergence::DateSubset },
             ApiRejectionId::DateStringToLocaleDateString => {
-                ("a031.ts", Some(Divergence::DateSubset))
+                WitnessEntry::Accepted { file: "a031.ts", variant: Divergence::DateSubset }
             }
             ApiRejectionId::DateStringToLocaleTimeString => {
-                ("a032.ts", Some(Divergence::DateSubset))
+                WitnessEntry::Accepted { file: "a032.ts", variant: Divergence::DateSubset }
             }
-            ApiRejectionId::MapKeys => ("a033.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::MapValues => ("a034.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::MapEntries => ("a035.ts", Some(Divergence::NoTupleType)),
-            ApiRejectionId::SetKeys => ("a036.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::SetValues => ("a037.ts", Some(Divergence::IteratorTemporary)),
-            ApiRejectionId::SetEntries => ("a038.ts", Some(Divergence::NoTupleType)),
-            ApiRejectionId::JsonStringifyMapKV => ("a039.ts", Some(Divergence::JsonSubset)),
-            ApiRejectionId::JsonStringifySetK => ("a040.ts", Some(Divergence::JsonSubset)),
-            ApiRejectionId::JsonStringifyObject => ("a041.ts", Some(Divergence::JsonSubset)),
-            ApiRejectionId::JsonStringifyFunction => ("a042.ts", Some(Divergence::JsonSubset)),
-            ApiRejectionId::JsonStringifyF16 => ("a043.ts", Some(Divergence::JsonSubset)),
-            ApiRejectionId::JsonParseDateText => ("a045.ts", Some(Divergence::JsonSubset)),
+            ApiRejectionId::MapKeys => WitnessEntry::Accepted { file: "a033.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::MapValues => WitnessEntry::Accepted { file: "a034.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::MapEntries => WitnessEntry::Accepted { file: "a035.ts", variant: Divergence::NoTupleType },
+            ApiRejectionId::SetKeys => WitnessEntry::Accepted { file: "a036.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::SetValues => WitnessEntry::Accepted { file: "a037.ts", variant: Divergence::IteratorTemporary },
+            ApiRejectionId::SetEntries => WitnessEntry::Accepted { file: "a038.ts", variant: Divergence::NoTupleType },
+            ApiRejectionId::JsonStringifyMapKV => WitnessEntry::Accepted { file: "a039.ts", variant: Divergence::JsonSubset },
+            ApiRejectionId::JsonStringifySetK => WitnessEntry::Accepted { file: "a040.ts", variant: Divergence::JsonSubset },
+            ApiRejectionId::JsonStringifyObject => WitnessEntry::Accepted { file: "a041.ts", variant: Divergence::JsonSubset },
+            ApiRejectionId::JsonStringifyFunction => WitnessEntry::Accepted { file: "a042.ts", variant: Divergence::JsonSubset },
+            ApiRejectionId::JsonStringifyF16 => WitnessEntry::Accepted { file: "a043.ts", variant: Divergence::JsonSubset },
+            ApiRejectionId::JsonParseDateText => WitnessEntry::Accepted { file: "a045.ts", variant: Divergence::JsonSubset },
             ApiRejectionId::FormIsNaNValue => {
-                ("a046.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a046.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormIsFiniteValue => {
-                ("a047.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a047.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormParseIntValue => {
-                ("a048.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a048.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormNumberValue => {
-                ("a049.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a049.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormNewNumberValue => {
-                ("a050.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a050.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormToLocaleString => {
-                ("a051.ts", Some(Divergence::LocaleNumberFormatting))
+                WitnessEntry::Accepted { file: "a051.ts", variant: Divergence::LocaleNumberFormatting }
             }
             ApiRejectionId::FormToString => {
-                ("a052.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a052.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormToPrecision => {
-                ("a053.ts", Some(Divergence::NumberCoercionAndArguments))
+                WitnessEntry::Accepted { file: "a053.ts", variant: Divergence::NumberCoercionAndArguments }
             }
             ApiRejectionId::FormToFixedToStringToExponentialToPrecision => {
-                ("a054.ts", Some(Divergence::MethodTypeDomain))
+                WitnessEntry::Accepted { file: "a054.ts", variant: Divergence::MethodTypeDomain }
             }
             ApiRejectionId::FormMaxMinHypotWithMoreThanTwoArguments => {
-                ("a055.ts", Some(Divergence::MathSubset))
+                WitnessEntry::Accepted { file: "a055.ts", variant: Divergence::MathSubset }
             }
-            ApiRejectionId::FormMathUsedAsAValue => ("a056.ts", Some(Divergence::MathSubset)),
-            ApiRejectionId::FormDateParse => ("a057.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormNewDate => ("a058.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormNewDateYearMonth => ("a059.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormTemplateInterpolation => ("a060.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormDirectComparison => ("a061.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormSet => ("a062.ts", Some(Divergence::DateSubset)),
-            ApiRejectionId::FormSort => ("a063.ts", Some(Divergence::ArrayMethodDefaults)),
+            ApiRejectionId::FormMathUsedAsAValue => WitnessEntry::Accepted { file: "a056.ts", variant: Divergence::MathSubset },
+            ApiRejectionId::FormDateParse => WitnessEntry::Accepted { file: "a057.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormNewDate => WitnessEntry::Accepted { file: "a058.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormNewDateYearMonth => WitnessEntry::Accepted { file: "a059.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormTemplateInterpolation => WitnessEntry::Accepted { file: "a060.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormDirectComparison => WitnessEntry::Accepted { file: "a061.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormSet => WitnessEntry::Accepted { file: "a062.ts", variant: Divergence::DateSubset },
+            ApiRejectionId::FormSort => WitnessEntry::Accepted { file: "a063.ts", variant: Divergence::ArrayMethodDefaults },
             ApiRejectionId::FormReduceCallback => {
-                ("a064.ts", Some(Divergence::ArrayMethodDefaults))
+                WitnessEntry::Accepted { file: "a064.ts", variant: Divergence::ArrayMethodDefaults }
             }
             ApiRejectionId::FormReduceRightCallback => {
-                ("a065.ts", Some(Divergence::ArrayMethodDefaults))
+                WitnessEntry::Accepted { file: "a065.ts", variant: Divergence::ArrayMethodDefaults }
             }
             ApiRejectionId::FormCallbackValueIndexArray => {
-                ("a066.ts", Some(Divergence::EscapingCapture))
+                WitnessEntry::Accepted { file: "a066.ts", variant: Divergence::EscapingCapture }
             }
             ApiRejectionId::FormSpliceStartDeleteCountItems => {
-                ("a067.ts", Some(Divergence::VariadicArguments))
+                WitnessEntry::Accepted { file: "a067.ts", variant: Divergence::VariadicArguments }
             }
             ApiRejectionId::FormUnshiftValueValues => {
-                ("a068.ts", Some(Divergence::VariadicArguments))
+                WitnessEntry::Accepted { file: "a068.ts", variant: Divergence::VariadicArguments }
             }
-            ApiRejectionId::FormNonCallbackTMethods => ("a069.ts", None),
-            ApiRejectionId::MapScalarGet => ("a070.ts", Some(Divergence::MapScalarGet)),
-            ApiRejectionId::MapNonNullableGet => ("a071.ts", Some(Divergence::MapNonNullableGet)),
-            ApiRejectionId::FormNewMapIterable => ("a072.ts", Some(Divergence::NoTupleType)),
-            ApiRejectionId::FormNewSetMap => ("a073.ts", Some(Divergence::NoTupleType)),
+            ApiRejectionId::FormNonCallbackTMethods => WitnessEntry::RejectedOnly { file: "a069.ts", reason: "The prelude FixedArray interface has no non-callback array methods (TS2339)." },
+            ApiRejectionId::MapScalarGet => WitnessEntry::Accepted { file: "a070.ts", variant: Divergence::MapScalarGet },
+            ApiRejectionId::MapNonNullableGet => WitnessEntry::Accepted { file: "a071.ts", variant: Divergence::MapNonNullableGet },
+            ApiRejectionId::FormNewMapIterable => WitnessEntry::Accepted { file: "a072.ts", variant: Divergence::NoTupleType },
+            ApiRejectionId::FormNewSetMap => WitnessEntry::Accepted { file: "a073.ts", variant: Divergence::NoTupleType },
             ApiRejectionId::FormNewSetGeneratorT => {
-                ("a074.ts", Some(Divergence::GeneratorSingleUse))
+                WitnessEntry::Accepted { file: "a074.ts", variant: Divergence::GeneratorSingleUse }
             }
             ApiRejectionId::FormArrayUsedAsAValue => {
-                ("a075.ts", Some(Divergence::CompilerOwnedValue))
+                WitnessEntry::Accepted { file: "a075.ts", variant: Divergence::CompilerOwnedValue }
             }
             ApiRejectionId::FormArrayFromSourceMapFn => {
-                ("a076.ts", Some(Divergence::ArrayFromMapper))
+                WitnessEntry::Accepted { file: "a076.ts", variant: Divergence::ArrayFromMapper }
             }
-            ApiRejectionId::FormArrayFromMap => ("a077.ts", Some(Divergence::BareMapToArray)),
+            ApiRejectionId::FormArrayFromMap => WitnessEntry::Accepted { file: "a077.ts", variant: Divergence::BareMapToArray },
             ApiRejectionId::FormArrayFromGeneratorT => {
-                ("a078.ts", Some(Divergence::GeneratorSingleUse))
+                WitnessEntry::Accepted { file: "a078.ts", variant: Divergence::GeneratorSingleUse }
             }
-            ApiRejectionId::FormIsArrayValue => ("a079.ts", Some(Divergence::ArrayIsArray)),
-            ApiRejectionId::FormOfValue => ("a080.ts", Some(Divergence::ArrayOfArity)),
+            ApiRejectionId::FormIsArrayValue => WitnessEntry::Accepted { file: "a079.ts", variant: Divergence::ArrayIsArray },
+            ApiRejectionId::FormOfValue => WitnessEntry::Accepted { file: "a080.ts", variant: Divergence::ArrayOfArity },
             ApiRejectionId::FormNewArrayLength => {
-                ("a081.ts", Some(Divergence::ArrayHoleConstruction))
+                WitnessEntry::Accepted { file: "a081.ts", variant: Divergence::ArrayHoleConstruction }
             }
-            ApiRejectionId::FormGroupBy => ("a082.ts", None),
-            ApiRejectionId::FormAlgebraNonSet => ("a083.ts", None),
+            ApiRejectionId::FormGroupBy => WitnessEntry::RejectedOnly { file: "a082.ts", reason: "The ES2022 ObjectConstructor interface has no groupBy member (TS2550)." },
+            ApiRejectionId::FormAlgebraNonSet => WitnessEntry::Accepted { file: "a083.ts", variant: Divergence::SetAlgebraDomain },
         },
         RejectionSite::MirrorParameter => {
-            ("mirror-main.ts", Some(Divergence::MirrorParameterPattern))
+            WitnessEntry::Accepted { file: "mirror-main.ts", variant: Divergence::MirrorParameterPattern }
         }
-        RejectionSite::ArraySpreadFixedArray => ("s001.ts", Some(Divergence::FixedArraySpread)),
-        RejectionSite::ArraySpreadMap => ("s002.ts", Some(Divergence::BareMapToArray)),
-        RejectionSite::ArraySpreadGenerator => ("s003.ts", Some(Divergence::GeneratorSingleUse)),
-        RejectionSite::ArraySpreadSource => ("s004.ts", None),
-        RejectionSite::MapCopyKey => ("s005.ts", Some(Divergence::MapKeyKind)),
+        RejectionSite::ArraySpreadFixedArray => WitnessEntry::Accepted { file: "s001.ts", variant: Divergence::FixedArraySpread },
+        RejectionSite::ArraySpreadMap => WitnessEntry::Accepted { file: "s002.ts", variant: Divergence::BareMapToArray },
+        RejectionSite::ArraySpreadGenerator => WitnessEntry::Accepted { file: "s003.ts", variant: Divergence::GeneratorSingleUse },
+        RejectionSite::ArraySpreadSource => WitnessEntry::Accepted { file: "s004.ts", variant: Divergence::UserIterationProtocol },
+        RejectionSite::MapCopyKey => WitnessEntry::Accepted { file: "s005.ts", variant: Divergence::MapKeyKind },
         RejectionSite::ContextBytesMissingType => {
-            ("s006.ts", Some(Divergence::ExplicitIntrinsicTypeArguments))
+            WitnessEntry::Accepted { file: "s006.ts", variant: Divergence::ExplicitIntrinsicTypeArguments }
         }
-        RejectionSite::ContextBytesTypeCount => ("s007.ts", None),
-        RejectionSite::ContextBytesArgumentCount => ("s008.ts", None),
-        RejectionSite::ContextBytesSpread => ("s009.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::CallSpread => ("s010.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::SetSourceSpread => ("s011.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::SetSourceDomain => ("s012.ts", Some(Divergence::SourceConstructionDomain)),
-        RejectionSite::NewMapSetKey => ("s013.ts", Some(Divergence::MapKeyKind)),
-        RejectionSite::RegexSticky => ("s014.ts", Some(Divergence::RegExpSubset)),
-        RejectionSite::ContextValue => ("s015.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberValue => ("s016.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::JsonValue => ("s017.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::DateValue => ("s018.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::MapSetValue => ("s019.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberGlobalValue => ("s020.ts", Some(Divergence::CompilerOwnedValue)),
+        RejectionSite::ContextBytesTypeCount => WitnessEntry::RejectedOnly { file: "s007.ts", reason: "The prelude Context.bytesOf signature permits exactly one type argument (TS2558)." },
+        RejectionSite::ContextBytesArgumentCount => WitnessEntry::RejectedOnly { file: "s008.ts", reason: "The prelude Context.bytesOf signature requires exactly one value argument (TS2554)." },
+        RejectionSite::ContextBytesSpread => WitnessEntry::Accepted { file: "s009.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::CallSpread => WitnessEntry::Accepted { file: "s010.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::SetSourceSpread => WitnessEntry::Accepted { file: "s011.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::SetSourceDomain => WitnessEntry::Accepted { file: "s012.ts", variant: Divergence::SourceConstructionDomain },
+        RejectionSite::NewMapSetKey => WitnessEntry::Accepted { file: "s013.ts", variant: Divergence::MapKeyKind },
+        RejectionSite::RegexSticky => WitnessEntry::Accepted { file: "s014.ts", variant: Divergence::RegExpSubset },
+        RejectionSite::ContextValue => WitnessEntry::Accepted { file: "s015.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberValue => WitnessEntry::Accepted { file: "s016.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::JsonValue => WitnessEntry::Accepted { file: "s017.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::DateValue => WitnessEntry::Accepted { file: "s018.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::MapSetValue => WitnessEntry::Accepted { file: "s019.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberGlobalValue => WitnessEntry::Accepted { file: "s020.ts", variant: Divergence::CompilerOwnedValue },
         RejectionSite::CoercingGlobalValue => {
-            ("s021.ts", Some(Divergence::NumberCoercionAndArguments))
+            WitnessEntry::Accepted { file: "s021.ts", variant: Divergence::NumberCoercionAndArguments }
         }
-        RejectionSite::RegexMember => ("s022.ts", Some(Divergence::RegExpSubset)),
-        RejectionSite::DateMemberWrite => ("s023.ts", Some(Divergence::DateSubset)),
-        RejectionSite::DateMethodValue => ("s024.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberMethodValue => ("s025.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberMethodArgumentCount => ("s026.ts", None),
-        RejectionSite::ArrayElementDomain => ("s027.ts", Some(Divergence::MethodTypeDomain)),
-        RejectionSite::ArrayJoinDomain => ("s028.ts", Some(Divergence::ArrayJoinDomain)),
-        RejectionSite::ArrayCallbackSpread => ("s029.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::ArrayAccumulatorDomain => ("s030.ts", Some(Divergence::MethodTypeDomain)),
-        RejectionSite::ArrayMapResult => ("s031.ts", Some(Divergence::MethodTypeDomain)),
-        RejectionSite::MapGroupByKey => ("s032.ts", Some(Divergence::MapKeyKind)),
-        RejectionSite::ArrayStaticMember => ("s033.ts", Some(Divergence::NamespaceObjectMember)),
+        RejectionSite::RegexMember => WitnessEntry::Accepted { file: "s022.ts", variant: Divergence::RegExpSubset },
+        RejectionSite::DateMemberWrite => WitnessEntry::Accepted { file: "s023.ts", variant: Divergence::DateSubset },
+        RejectionSite::DateMethodValue => WitnessEntry::Accepted { file: "s024.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberMethodValue => WitnessEntry::Accepted { file: "s025.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberMethodArgumentCount => WitnessEntry::RejectedOnly { file: "s026.ts", reason: "The ES2022 numeric formatting signatures permit at most one argument (TS2554)." },
+        RejectionSite::ArrayElementDomain => WitnessEntry::Accepted { file: "s027.ts", variant: Divergence::MethodTypeDomain },
+        RejectionSite::ArrayJoinDomain => WitnessEntry::Accepted { file: "s028.ts", variant: Divergence::ArrayJoinDomain },
+        RejectionSite::ArrayCallbackSpread => WitnessEntry::Accepted { file: "s029.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::ArrayAccumulatorDomain => WitnessEntry::Accepted { file: "s030.ts", variant: Divergence::MethodTypeDomain },
+        RejectionSite::ArrayMapResult => WitnessEntry::Accepted { file: "s031.ts", variant: Divergence::MethodTypeDomain },
+        RejectionSite::MapGroupByKey => WitnessEntry::Accepted { file: "s032.ts", variant: Divergence::MapKeyKind },
+        RejectionSite::ArrayStaticMember => WitnessEntry::Accepted { file: "s033.ts", variant: Divergence::NamespaceObjectMember },
         RejectionSite::ArrayFromTypeCount => {
-            ("s034.ts", Some(Divergence::ExplicitIntrinsicTypeArguments))
+            WitnessEntry::Accepted { file: "s034.ts", variant: Divergence::ExplicitIntrinsicTypeArguments }
         }
-        RejectionSite::ArrayFromArgumentCount => ("s035.ts", None),
-        RejectionSite::ArrayFromSpread => ("s036.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::ArrayFromSource => ("s037.ts", Some(Divergence::SourceConstructionDomain)),
+        RejectionSite::ArrayFromArgumentCount => WitnessEntry::RejectedOnly { file: "s035.ts", reason: "The mapper guard takes two or three arguments; all other non-single counts violate Array.from overloads (TS2554)." },
+        RejectionSite::ArrayFromSpread => WitnessEntry::Accepted { file: "s036.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::ArrayFromSource => WitnessEntry::Accepted { file: "s037.ts", variant: Divergence::SourceConstructionDomain },
         RejectionSite::CallbackParameterCount => {
-            ("s038.ts", Some(Divergence::CallbackParameterShape))
+            WitnessEntry::Accepted { file: "s038.ts", variant: Divergence::CallbackParameterShape }
         }
-        RejectionSite::ContextMember => ("s039.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::JsonMember => ("s040.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::ArrayFromValue => ("s041.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::ArrayMember => ("s042.ts", Some(Divergence::NamespaceObjectMember)),
-        RejectionSite::MapGroupByValue => ("s043.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::MapSetMember => ("s044.ts", Some(Divergence::NamespaceObjectMember)),
-        RejectionSite::MathMemberWrite => ("s045.ts", Some(Divergence::MathSubset)),
-        RejectionSite::MathMethodValue => ("s046.ts", Some(Divergence::MathSubset)),
-        RejectionSite::MathMember => ("s047.ts", Some(Divergence::MathSubset)),
-        RejectionSite::MathCallCount => ("s048.ts", Some(Divergence::MathSubset)),
-        RejectionSite::NumberMemberWrite => ("s049.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberStaticValue => ("s050.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::NumberMember => ("s051.ts", Some(Divergence::NamespaceObjectMember)),
-        RejectionSite::NumberPredicateCount => ("s052.ts", None),
-        RejectionSite::NumberGlobalCount => ("s053.ts", None),
-        RejectionSite::RegexExec => ("s054.ts", Some(Divergence::RegExpSubset)),
-        RejectionSite::StringPatternSpread => ("s055.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::StringSearchPattern => ("s056.ts", Some(Divergence::StringSearchPattern)),
-        RejectionSite::DateStaticWrite => ("s057.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::DateStaticValue => ("s058.ts", Some(Divergence::CompilerOwnedValue)),
-        RejectionSite::DateNewSpread => ("s059.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::DateMember => ("s060.ts", Some(Divergence::DateSubset)),
-        RejectionSite::Float16Unary => ("s061.ts", Some(Divergence::StorageOnlyFloat16)),
-        RejectionSite::JsonStaticMember => ("s062.ts", Some(Divergence::NamespaceObjectMember)),
-        RejectionSite::JsonStringifyCount => ("s063.ts", Some(Divergence::JsonCallArguments)),
-        RejectionSite::JsonStringifySpread => ("s064.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::JsonStringifyDomain => ("s065.ts", Some(Divergence::JsonTypeDomain)),
-        RejectionSite::JsonStringifyHelper => ("s066.ts", None),
-        RejectionSite::JsonParseCount => ("s067.ts", None),
-        RejectionSite::JsonParseSpread => ("s068.ts", Some(Divergence::VariadicArguments)),
-        RejectionSite::JsonParseTypeCount => ("s069.ts", None),
-        RejectionSite::JsonParseTarget => ("s070.ts", Some(Divergence::JsonSubset)),
-        RejectionSite::JsonParseDomain => ("s071.ts", Some(Divergence::JsonTypeDomain)),
-        RejectionSite::JsonParseHelper => ("s072.ts", None),
-        RejectionSite::JsonError => ("s073.ts", Some(Divergence::JsonSubset)),
-        RejectionSite::ForOfEntries => ("s074.ts", Some(Divergence::NoTupleType)),
-        RejectionSite::ForOfKeys => ("s075.ts", None),
-        RejectionSite::ForOfMap => ("s076.ts", Some(Divergence::BareMapSubject)),
-        RejectionSite::ForOfUserClass => ("s077.ts", None),
-        RejectionSite::ForOfSubject => ("s078.ts", None),
-        RejectionSite::RegexMatchType => ("s079.ts", Some(Divergence::RegExpSubset)),
-        RejectionSite::MapSetTypeKey => ("s080.ts", Some(Divergence::MapKeyKind)),
-        RejectionSite::Float16Update => ("s081.ts", Some(Divergence::StorageOnlyFloat16)),
-        RejectionSite::Float16Binary => ("s082.ts", Some(Divergence::StorageOnlyFloat16)),
+        RejectionSite::ContextMember => WitnessEntry::Accepted { file: "s039.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::JsonMember => WitnessEntry::Accepted { file: "s040.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::ArrayFromValue => WitnessEntry::Accepted { file: "s041.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::ArrayMember => WitnessEntry::Accepted { file: "s042.ts", variant: Divergence::NamespaceObjectMember },
+        RejectionSite::MapGroupByValue => WitnessEntry::Accepted { file: "s043.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::MapSetMember => WitnessEntry::Accepted { file: "s044.ts", variant: Divergence::NamespaceObjectMember },
+        RejectionSite::MathMemberWrite => WitnessEntry::Accepted { file: "s045.ts", variant: Divergence::MathSubset },
+        RejectionSite::MathMethodValue => WitnessEntry::Accepted { file: "s046.ts", variant: Divergence::MathSubset },
+        RejectionSite::MathMember => WitnessEntry::Accepted { file: "s047.ts", variant: Divergence::MathSubset },
+        RejectionSite::MathCallCount => WitnessEntry::Accepted { file: "s048.ts", variant: Divergence::MathSubset },
+        RejectionSite::NumberMemberWrite => WitnessEntry::Accepted { file: "s049.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberStaticValue => WitnessEntry::Accepted { file: "s050.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::NumberMember => WitnessEntry::Accepted { file: "s051.ts", variant: Divergence::NamespaceObjectMember },
+        RejectionSite::NumberPredicateCount => WitnessEntry::RejectedOnly { file: "s052.ts", reason: "The ES2022 Number predicate signatures require exactly one argument (TS2554)." },
+        RejectionSite::NumberGlobalCount => WitnessEntry::Accepted { file: "s053.ts", variant: Divergence::NumberCoercionAndArguments },
+        RejectionSite::RegexExec => WitnessEntry::Accepted { file: "s054.ts", variant: Divergence::RegExpSubset },
+        RejectionSite::StringPatternSpread => WitnessEntry::Accepted { file: "s055.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::StringSearchPattern => WitnessEntry::Accepted { file: "s056.ts", variant: Divergence::StringSearchPattern },
+        RejectionSite::DateStaticWrite => WitnessEntry::Accepted { file: "s057.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::DateStaticValue => WitnessEntry::Accepted { file: "s058.ts", variant: Divergence::CompilerOwnedValue },
+        RejectionSite::DateNewSpread => WitnessEntry::Accepted { file: "s059.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::DateMember => WitnessEntry::Accepted { file: "s060.ts", variant: Divergence::DateSubset },
+        RejectionSite::Float16Unary => WitnessEntry::Accepted { file: "s061.ts", variant: Divergence::StorageOnlyFloat16 },
+        RejectionSite::JsonStaticMember => WitnessEntry::Accepted { file: "s062.ts", variant: Divergence::NamespaceObjectMember },
+        RejectionSite::JsonStringifyCount => WitnessEntry::Accepted { file: "s063.ts", variant: Divergence::JsonCallArguments },
+        RejectionSite::JsonStringifySpread => WitnessEntry::Accepted { file: "s064.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::JsonStringifyDomain => WitnessEntry::Accepted { file: "s065.ts", variant: Divergence::JsonTypeDomain },
+        RejectionSite::JsonStringifyHelper => WitnessEntry::Unreachable { file: "s066.ts", reason: "The json_serializable guard and collect_json_types graph closure admit only serializer helper types." },
+        RejectionSite::JsonParseCount => WitnessEntry::Accepted { file: "s067.ts", variant: Divergence::JsonCallArguments },
+        RejectionSite::JsonParseSpread => WitnessEntry::Accepted { file: "s068.ts", variant: Divergence::VariadicArguments },
+        RejectionSite::JsonParseTypeCount => WitnessEntry::RejectedOnly { file: "s069.ts", reason: "The prelude JSON.parse overload permits zero or one type argument (TS2558)." },
+        RejectionSite::JsonParseTarget => WitnessEntry::Accepted { file: "s070.ts", variant: Divergence::JsonSubset },
+        RejectionSite::JsonParseDomain => WitnessEntry::Accepted { file: "s071.ts", variant: Divergence::JsonTypeDomain },
+        RejectionSite::JsonParseHelper => WitnessEntry::Unreachable { file: "s072.ts", reason: "The serializable, Error, and Date guards plus graph closure admit only parser helper types." },
+        RejectionSite::JsonError => WitnessEntry::Accepted { file: "s073.ts", variant: Divergence::JsonSubset },
+        RejectionSite::ForOfEntries => WitnessEntry::Accepted { file: "s074.ts", variant: Divergence::NoTupleType },
+        RejectionSite::ForOfKeys => WitnessEntry::RejectedOnly { file: "s075.ts", reason: "The fused receiver guard leaves only FixedArray here; its prelude interface has no keys or values member (TS2339)." },
+        RejectionSite::ForOfMap => WitnessEntry::Accepted { file: "s076.ts", variant: Divergence::BareMapSubject },
+        RejectionSite::ForOfUserClass => WitnessEntry::Accepted { file: "s077.ts", variant: Divergence::UserIterationProtocol },
+        RejectionSite::ForOfSubject => WitnessEntry::RejectedOnly { file: "s078.ts", reason: "The resolved-type guard accepts containers and routes classes elsewhere; remaining scalar or nullable subjects lack a non-null iteration protocol (TS2488/TS18047)." },
+        RejectionSite::RegexMatchType => WitnessEntry::Accepted { file: "s079.ts", variant: Divergence::RegExpSubset },
+        RejectionSite::MapSetTypeKey => WitnessEntry::Accepted { file: "s080.ts", variant: Divergence::MapKeyKind },
+        RejectionSite::Float16Update => WitnessEntry::Accepted { file: "s081.ts", variant: Divergence::StorageOnlyFloat16 },
+        RejectionSite::Float16Binary => WitnessEntry::Accepted { file: "s082.ts", variant: Divergence::StorageOnlyFloat16 },
     }
 }
 
@@ -336,4 +367,6 @@ pub(super) const NEW_VARIANTS: &[Divergence] = &[
     Divergence::StringSearchPattern,
     Divergence::MirrorParameterPattern,
     Divergence::LocaleNumberFormatting,
+    Divergence::UserIterationProtocol,
+    Divergence::SetAlgebraDomain,
 ];

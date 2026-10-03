@@ -1,4 +1,3 @@
-===
 a001.ts	STRING_REJECTIONS/string / localeCompare		S014		
 `localeCompare` is rejected: Locale-dependent collation is unavailable. (Q21)
 export function main(): void {
@@ -367,7 +366,12 @@ export function main(): void {
   Object.groupBy([1, 2], (value: i32): string => `${value}`);
 }
 ===
-a083.ts	FORM_REJECTIONS/Set<K> / algebra(non-Set)	TS2345	S014		
+a083.ts	FORM_REJECTIONS/Set<K> / algebra(non-Set)		S014		
+`Set.union non-Set argument` is rejected: The language has no set-like protocol; use `pass a Set<K>` (Q27)
+class Values extends Set<i32> {}
+export function main(): void { const values = new Set<i32>(); values.union(new Values()); }
+===
+a083-old.ts	FORM_REJECTIONS/Set<K> / algebra(non-Set)	TS2345	S014		
 `Set.union non-Set argument` is rejected: The language has no set-like protocol; use `pass a Set<K>` (Q27)
 export function main(): void {
   const values: Set<i32> = new Set<i32>();
@@ -387,7 +391,12 @@ Generator<T> is single-use; array-literal spread would consume a value expressio
 function* one(): Generator<i32> { yield 1; }
 export function main(): void { const copy = [...one()]; }
 ===
-s004.ts	expr/aggregate.rs:348 check_array_spread_lit	TS2488	S014		
+s004.ts	expr/aggregate.rs:348 check_array_spread_lit		S014		
+array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `Bag`
+class Bag { items: i32[] = [1, 2]; [Symbol.iterator](): Iterator<i32> { return this.items[Symbol.iterator](); } }
+export function main(): void { const copy = [...new Bag()]; }
+===
+s004-old.ts	expr/aggregate.rs:348 check_array_spread_lit	TS2488	S014		
 array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `i32`
 export function main(): void { const copy = [...1]; }
 ===
@@ -589,7 +598,11 @@ s052.ts	expr/namespace.rs:462 check_number_predicate_call	TS2554	S014
 `Number.isFinite` takes exactly 1 f64 argument, got 0 (Q25)
 export function main(): void { Number.isFinite(); }
 ===
-s053.ts	expr/namespace.rs:521 check_number_global_call	TS2554	S014		
+s053.ts	expr/namespace.rs:521 check_number_global_call		S014		
+`Number.parseInt` takes exactly 2 argument(s), got 1 (Q25)
+export function main(): void { Number.parseInt("1"); }
+===
+s053-old.ts	expr/namespace.rs:521 check_number_global_call	TS2554	S014		
 `parseFloat` takes exactly 1 argument(s), got 0 (Q25)
 export function main(): void { parseFloat(); }
 ===
@@ -646,7 +659,11 @@ s066.ts	json.rs:130 check_json_call				R3: json_serializable admits only helper 
 class Box { value: i32 = 1; next: Box | null = null; }
 export function main(): void { JSON.stringify(new Box()); }
 ===
-s067.ts	json.rs:157 check_json_parse	TS2554	S014		
+s067.ts	json.rs:157 check_json_parse		S014		
+`JSON.parse` expects exactly 1 argument, got 2
+export function main(): void { const v = JSON.parse("1", (k: string, value: i32): i32 => value); }
+===
+s067-old.ts	json.rs:157 check_json_parse	TS2554	S014		
 `JSON.parse` expects exactly 1 argument, got 0
 export function main(): void { JSON.parse<i32>(); }
 ===
@@ -687,8 +704,13 @@ s076.ts	stmt.rs:1170 for_of_subject_from		S014
 a bare `Map` is not a `for…of` subject: Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language; iterate `map.keys()` or `map.values()`
 export function main(): void { const m = new Map<i32, i32>(); for (const pair of m) {} }
 ===
-s077.ts	stmt.rs:1198 for_of_subject_from	TS2488	S014		
-`for…of` cannot make user class `Box` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; stock `tsc` rejects this subject too
+s077.ts	stmt.rs:1198 for_of_subject_from		S014		
+`for…of` cannot make user class `Bag` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal
+class Bag { items: i32[] = [1, 2]; [Symbol.iterator](): Iterator<i32> { return this.items[Symbol.iterator](); } }
+export function main(): void { for (const v of new Bag()) { print(`${v}`); } }
+===
+s077-old.ts	stmt.rs:1198 for_of_subject_from	TS2488	S014		
+`for…of` cannot make user class `Box` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal
 class Box {}
 export function main(): void { for (const v of new Box()) {} }
 ===
@@ -1411,4 +1433,23 @@ function pair(left: i32, right: i32): void {
 export function main(): void {
   const values: i32[] = [1, 2];
   pair(...values);
+}
+===
+s077-corpus-old.ts	stmt.rs:1198 for_of_subject_from	TS2488	S014		
+`for…of` cannot make user class `Bag` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal
+// corpus: reject/r72-for-of-user-class
+// purpose: Rejects user-defined iteration under invariant 5.
+// exercises: for-of-closed-list, symbol-iterator-nongoal
+// questions: Q30
+// tsc: rejects TS2488
+// expected-error: a user class needs Symbol.iterator and stock tsc rejects it
+class Bag {
+  value: i32 = 1;
+}
+
+export function main(): void {
+  const bag: Bag = new Bag();
+  for (const value of bag) {
+    print(`${value}`);
+  }
 }

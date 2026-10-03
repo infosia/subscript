@@ -53,6 +53,10 @@ pub enum Divergence {
     MirrorParameterPattern,
     /// Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats.
     LocaleNumberFormatting,
+    /// User iteration protocols require Symbol.iterator, which the runtime does not provide.
+    UserIterationProtocol,
+    /// Set algebra requires a native Set; structural Set implementations have no runtime container representation.
+    SetAlgebraDomain,
     /// A surrogate escape without an adjacent paired escape.
     LoneSurrogateEscape,
     /// An inferred `void` binding, a void map callback, or a value return from a void function.
@@ -269,6 +273,8 @@ impl Divergence {
         Divergence::StringSearchPattern,
         Divergence::MirrorParameterPattern,
         Divergence::LocaleNumberFormatting,
+        Divergence::UserIterationProtocol,
+        Divergence::SetAlgebraDomain,
         Divergence::VoidValue,
         Divergence::ReferenceSearchMiss,
         Divergence::GeneratorDoneValue,
@@ -461,6 +467,18 @@ impl Divergence {
                 subscript: "const value: f64 = 1.0; const text: string = value.toFixed(2);",
                 why: "Locale-sensitive number formatting needs host locale data; the runtime provides only explicit locale-independent formats.",
                 collision: "stdlib.md §11",
+            },
+            Divergence::UserIterationProtocol => DivergenceEntry {
+                ts: "class Bag { items: i32[] = [1, 2]; [Symbol.iterator](): Iterator<i32> { return this.items[Symbol.iterator](); } } for (const value of new Bag()) {}",
+                subscript: "const items: i32[] = [1, 2]; for (const value of items) {}",
+                why: "User iteration protocols require Symbol.iterator; the runtime traverses only its declared container types.",
+                collision: "stdlib.md §14.2",
+            },
+            Divergence::SetAlgebraDomain => DivergenceEntry {
+                ts: "class Values extends Set<i32> {} const values = new Set<i32>(); values.union(new Values());",
+                subscript: "const values: Set<i32> = new Set<i32>(); values.union(new Set<i32>());",
+                why: "Set algebra requires a native Set; structural Set implementations have no runtime container representation.",
+                collision: "stdlib.md §14",
             },
             Divergence::VoidValue => DivergenceEntry {
                 ts: "function f(): void {} const a = f();",

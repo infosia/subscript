@@ -436,7 +436,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3). | `r211-array-of-variadic.ts` |
 | Array | `new Array(length)` | S014 | Q22 | `an array literal, or push in a loop` | The language has no array hole and no missing-element value (compiler.md §105.3). | `r212-new-array-length.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
-| Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
+| Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | — |
 
 ## Divergences from ECMA
 

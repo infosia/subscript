@@ -2,7 +2,7 @@
 
 use super::Checker;
 use crate::ambient::ApiRejection;
-use crate::diag::{Pos, RuleCode};
+use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::divergence::Divergence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +101,7 @@ impl RejectionSite {
             Self::ArraySpreadFixedArray => Some(Divergence::FixedArraySpread),
             Self::ArraySpreadMap => Some(Divergence::BareMapToArray),
             Self::ArraySpreadGenerator => Some(Divergence::GeneratorSingleUse),
-            Self::ArraySpreadSource => None,
+            Self::ArraySpreadSource => Some(Divergence::UserIterationProtocol),
             Self::MapCopyKey => Some(Divergence::MapKeyKind),
             Self::ContextBytesMissingType => Some(Divergence::ExplicitIntrinsicTypeArguments),
             Self::ContextBytesTypeCount => None,
@@ -150,7 +150,7 @@ impl RejectionSite {
             Self::NumberStaticValue => Some(Divergence::CompilerOwnedValue),
             Self::NumberMember => Some(Divergence::NamespaceObjectMember),
             Self::NumberPredicateCount => None,
-            Self::NumberGlobalCount => None,
+            Self::NumberGlobalCount => Some(Divergence::NumberCoercionAndArguments),
             Self::RegexExec => Some(Divergence::RegExpSubset),
             Self::StringPatternSpread => Some(Divergence::VariadicArguments),
             Self::StringSearchPattern => Some(Divergence::StringSearchPattern),
@@ -164,7 +164,7 @@ impl RejectionSite {
             Self::JsonStringifySpread => Some(Divergence::VariadicArguments),
             Self::JsonStringifyDomain => Some(Divergence::JsonTypeDomain),
             Self::JsonStringifyHelper => None,
-            Self::JsonParseCount => None,
+            Self::JsonParseCount => Some(Divergence::JsonCallArguments),
             Self::JsonParseSpread => Some(Divergence::VariadicArguments),
             Self::JsonParseTypeCount => None,
             Self::JsonParseTarget => Some(Divergence::JsonSubset),
@@ -174,7 +174,7 @@ impl RejectionSite {
             Self::ForOfEntries => Some(Divergence::NoTupleType),
             Self::ForOfKeys => None,
             Self::ForOfMap => Some(Divergence::BareMapSubject),
-            Self::ForOfUserClass => None,
+            Self::ForOfUserClass => Some(Divergence::UserIterationProtocol),
             Self::ForOfSubject => None,
             Self::RegexMatchType => Some(Divergence::RegExpSubset),
             Self::MapSetTypeKey => Some(Divergence::MapKeyKind),
@@ -199,10 +199,8 @@ impl Checker<'_> {
         } else {
             RuleCode::S014
         };
-        if let Some(divergence) = site.divergence() {
-            self.error_diverging(code, message, pos, divergence);
-        } else {
-            self.error(code, message, pos);
-        }
+        let mut diagnostic = Diagnostic::new(code, message, pos);
+        diagnostic.divergence = site.divergence();
+        self.diags.push(diagnostic);
     }
 }

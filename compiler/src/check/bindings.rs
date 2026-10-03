@@ -222,6 +222,7 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn error(&mut self, code: RuleCode, message: impl Into<String>, pos: Pos) {
+        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
         self.diags.push(Diagnostic::new(code, message, pos));
     }
 
@@ -231,6 +232,7 @@ impl<'p> Checker<'p> {
         message: impl Into<String>,
         pos: Pos,
     ) {
+        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
         let mut diagnostic = Diagnostic::new(code, message, pos);
         diagnostic.resolution = true;
         self.diags.push(diagnostic);
@@ -243,6 +245,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
         divergence: Divergence,
     ) {
+        debug_assert_ne!(code.as_str(), "S014", "use reject_subset for S014");
         let mut diagnostic = Diagnostic::new(code, message, pos);
         diagnostic.divergence = Some(divergence);
         self.diags.push(diagnostic);

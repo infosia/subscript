@@ -1195,8 +1195,7 @@ impl<'p> Checker<'p> {
                 crate::check::rejection::RejectionSite::ForOfUserClass,
                 format!(
                     "`for…of` cannot make user class `{class}` iterable (invariant 5): \
-                     that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; \
-                     stock `tsc` rejects this subject too"
+                     that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal"
                 ),
                 subject.pos.clone(),
             );

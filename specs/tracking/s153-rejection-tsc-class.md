@@ -493,3 +493,98 @@ Changed files:
 ```text
 gate full 0c75792b9903a681766aa3f278e31c4792983b03 dirty:36 debug 2234/0/3 release 2231/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Round 4 implementation fixes
+
+The total witness test passes with 319 witnesses: tsc 0.277 s, checker 0.057 s, total 0.385 s.
+This run uses the working tree. It records no Phase Review result.
+
+Five targets gain variants from accepted witnesses:
+
+- `JsonParseCount`: `JSON.parse` with a reviver; `JsonCallArguments`.
+- `ForOfUserClass`: a class with `Symbol.iterator`; `UserIterationProtocol`.
+- `ArraySpreadSource`: spread of that iterable class; `UserIterationProtocol`.
+- `NumberGlobalCount`: `Number.parseInt("1")`; `NumberCoercionAndArguments`.
+- `FormAlgebraNonSet`: a class that extends `Set<i32>`; `SetAlgebraDomain`.
+
+The corpus divergence gate reports r53 and r72. Both entries retire under acceptance 3.
+Their old programs remain as rejected-class witnesses: `a083-old.ts` and `s077-corpus-old.ts`.
+Both replacement probes pass tsc with the pinned configuration.
+
+- r53's Set subclass first reports S100: "class inheritance is not in the decided surface".
+- r72's iterable class first reports S100: "computed method names are not decided".
+
+A structural Set implementation needs undeclared interfaces or computed members; a user iterator needs a computed method or inheritance.
+Those declarations precede the target diagnostic. Neither accepted replacement preserves the purpose with the target diagnostic first.
+The retired corpus rows and r53's ambient corpus link are deleted.
+
+The witness index now requires a reason field for each no-variant entry.
+Every no-variant target has this required reason:
+
+- `DateLocalGetYear` (`a026.ts`): The ES2022 Date interface has no getYear member (TS2339).
+- `FormNonCallbackTMethods` (`a069.ts`): The prelude FixedArray interface has no non-callback array methods (TS2339).
+- `FormGroupBy` (`a082.ts`): The ES2022 ObjectConstructor interface has no groupBy member (TS2550).
+- `ContextBytesTypeCount` (`s007.ts`): The prelude Context.bytesOf signature permits exactly one type argument (TS2558).
+- `ContextBytesArgumentCount` (`s008.ts`): The prelude Context.bytesOf signature requires exactly one value argument (TS2554).
+- `NumberMethodArgumentCount` (`s026.ts`): The ES2022 numeric formatting signatures permit at most one argument (TS2554).
+- `ArrayFromArgumentCount` (`s035.ts`): The mapper guard takes two or three arguments; all other non-single counts violate Array.from overloads (TS2554).
+- `NumberPredicateCount` (`s052.ts`): The ES2022 Number predicate signatures require exactly one argument (TS2554).
+- `JsonStringifyHelper` (`s066.ts`): The json_serializable guard and collect_json_types graph closure admit only serializer helper types.
+- `JsonParseTypeCount` (`s069.ts`): The prelude JSON.parse overload permits zero or one type argument (TS2558).
+- `JsonParseHelper` (`s072.ts`): The serializable, Error, and Date guards plus graph closure admit only parser helper types.
+- `ForOfKeys` (`s075.ts`): The fused receiver guard leaves only FixedArray here; its prelude interface has no keys or values member (TS2339).
+- `ForOfSubject` (`s078.ts`): The resolved-type guard accepts containers and routes classes elsewhere; remaining scalar or nullable subjects lack a non-null iteration protocol (TS2488/TS18047).
+
+The S014 text scan finds one outcome claim in a production message and its witness:
+
+- Old: "`for…of` cannot make user class `Box` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal; stock `tsc` rejects this subject too".
+- New: "`for…of` cannot make user class `Box` iterable (invariant 5): that requires `Symbol.iterator`, and `Symbol` is a permanent non-goal".
+
+No API row summary contains a tsc outcome claim.
+General error, resolution_error, and error_diverging paths assert that the code is not S014.
+The source guard remains; it reports explicit S014 references outside the named constructor and checks the exhaustive site list.
+The duplicate tsc corpus block for r27, r78, and r201 is deleted.
+The no-variant probes use a Date subclass, readonly arrays, a mapper overload, omitted arguments, and extra generic arguments.
+The JSON probes use recursive nullable class fields. Both pass the checker and never reach the helper failure guards.
+The iterable probe uses an interface and `Iterable<i32>`; tsc accepts it, but the checker reports S100 and S016 before traversal.
+The accepted numeric-format and mapper probes reach other rows that already carry variants.
+The invalid count probes report TS2554 or TS2558. Object.groupBy still reports TS2550 under the pinned ES2022 library.
+No probe reaches another no-variant target with tsc acceptance.
+
+Firing controls construct a wrong variant, an absent block, both false TypeScript classes, and both empty no-variant reasons.
+The TypeScript controls join the existing single tsc process; they add no duplicate corpus check.
+The reason field is required at compile time. An empty string remains possible and both entry kinds reject it at runtime.
+
+Validation:
+
+- `cargo test --offline --locked -p subscript-compiler`: 917 passed, zero failed, one ignored.
+- The corpus suite passes all 46 tests; the divergence-header gate reports no remaining entry.
+- `cargo fmt --check` and `tools/hygiene.sh` pass.
+- All changed files have fewer than 2,000 lines.
+- Clippy exits zero; the compiler library has two warnings against the gate baseline of seven.
+- No new warning remains against the recorded round-2 clippy log.
+- The API-reference generator changes `api-reference.md` and `corpus-index.md`; other generated references remain byte-identical.
+- No accept golden changes. No commit or `tools/gate.sh` run occurs.
+
+Changed files for this implementation round:
+
+- `compiler/src/ambient.rs`
+- `compiler/src/check/bindings.rs`
+- `compiler/src/check/rejection.rs`
+- `compiler/src/check/rejection_total.rs`
+- `compiler/src/check/rejection_witness_index.rs`
+- `compiler/src/check/rejection_witnesses.txt`
+- `compiler/src/check/stmt.rs`
+- `compiler/src/divergence.rs`
+- `compiler/tests/corpus_reject.rs`
+- Deleted: `corpus/reject/r53-set-algebra-nonset.ts`
+- Deleted: `corpus/reject/r72-for-of-user-class.ts`
+- `generated-docs/api-reference.md`
+- `generated-docs/corpus-index.md`
+- `specs/tracking/s153-rejection-tsc-class.md`
+
+Fix-round gate:
+
+```text
+gate full 376fcdf7ac150fe4407be12a3704e93e8fe3bdc2 dirty:14 debug 2237/0/3 release 2234/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
