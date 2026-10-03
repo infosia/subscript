@@ -511,11 +511,12 @@ What changes for the host:
   After every worker joins, a body-only edit swaps normally.
 - **A worker fault is loud at the join.** `join` on a worker whose
   Context trapped traps the joining Context, and the host receives
-  it as an ordinary `RunError::Trap`:
+  it as an ordinary `RunError::Trap`, whose position is the worker's
+  trap site:
 
   ```text
   rule:    WorkerTrapped        (Display: worker-trapped)
-  message: worker trapped with division-by-zero at position 3: integer division by zero
+  message: worker trapped with division-by-zero: integer division by zero
   stdout:  "posted\n"
   ```
 

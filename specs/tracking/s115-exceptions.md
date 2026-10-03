@@ -127,7 +127,7 @@ JSON loop (200,000 parses, ship tier, 11 runs): pin 0.32 s with
 
 ## Open items
 
-- A Worker trap position is not tier-identical: the parent's
+- *(Closed by `compiler.md` §152: the parent's trap carries the Worker's trap site, and the message holds no position id.)* A Worker trap position is not tier-identical: the parent's
   `WorkerTrapped` message holds the Worker's raw `pos_id`, and the tiers
   number position tables differently (13 on the JIT, 8 on ship, in the
   round 2 test). This held for every Worker trap before §115.
