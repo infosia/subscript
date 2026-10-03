@@ -588,3 +588,13 @@ Fix-round gate:
 ```text
 gate full 376fcdf7ac150fe4407be12a3704e93e8fe3bdc2 dirty:14 debug 2237/0/3 release 2234/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Contract change: every S014 site carries a variant
+
+Rules 1, 5 and 6 at `376fcdf7` let a site carry no variant on a stated
+reason. Two reviews found four realistic `tsc`-accepted programs at
+such sites: `JSON.parse` with a reviver, a user class with
+`Symbol.iterator`, `toString()` on a `FixedArray`, and a
+string-literal-union subject of `for…of`. Each reason was a claim that
+no check could falsify. The contract now gives every S014 site a
+variant, so the class is unreachable.

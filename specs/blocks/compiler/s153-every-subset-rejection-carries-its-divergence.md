@@ -23,40 +23,31 @@ programs in one process costs 0.05 s.
 
 ### 153.1 Rules
 
-1. **A site carries the variant of the accepted class.** If any
-   program that `tsc` accepts reaches a rejection site, that site
-   carries a `Divergence` variant. This applies §79 rule 6 to every
-   site: the variant explains the `tsc`-accepted program, and a
-   `tsc`-rejected program at the same site renders the same block.
+1. **Every S014 site carries a variant.** S014 rejects a standard
+   library form that TypeScript has, so every S014 diagnostic is a
+   divergence and renders a block. A site has no "no variant" case.
+   §79 rule 6 permits the block on a `tsc`-rejected program at the
+   same site.
 2. **A row carries its variant.** `ApiRejection` gains
-   `divergence: Option<Divergence>`. `emit_api_rejection` reads that
-   field. The corpus-name selection is deleted.
+   `divergence: Divergence`. `emit_api_rejection` reads that field.
+   The corpus-name selection is deleted.
 3. **A row is read by the site that emits it.** A row that no checker
    lookup reads is deleted, or the direct site that emits its
    diagnostic reads the row. Measured: the three `REGEX_REJECTIONS`
    rows and the `JSON` `parse(text) without target type` row.
 4. **An S014 site is named.** Every S014 diagnostic goes through one
    checker function that takes a site name from one closed enum. The
-   enum maps each site to its `Option<Divergence>` in one exhaustive
-   `match`. `RuleCode::S014` appears in no other checker file.
+   enum maps each site to its `Divergence` in one exhaustive `match`.
+   `RuleCode::S014` appears in no other checker file.
 5. **Every row and every named site has a witness.** One table, keyed
    by the row and by the site enum through an exhaustive `match`,
-   gives each target one of:
-   - an accepted witness: a program that `tsc` accepts and that
-     reaches the target;
-   - a rejected-only witness: a program that `tsc` rejects and that
-     reaches the target, when no `tsc`-accepted program reaches it.
-     The entry states why no `tsc`-accepted program reaches the
-     target, in one sentence that names the `tsc` rule or the checker
-     guard that excludes it. A witness alone does not prove that no
-     accepted program exists;
-   - unreachable, with the reason, when no program reaches it.
+   gives each target one or more witness programs that reach it, each
+   labelled with its measured `tsc` class, or "unreachable" with the
+   reason when no program reaches it.
 6. **The check is total.** One test runs the checker on every witness
-   and asserts the target's message and its block: a block for each
-   accepted witness, and the target's variant (or none) otherwise. The
-   same test runs `tsc` once over all witnesses and asserts each class.
-   A target with a variant must have an accepted witness. A target
-   with no variant must have a rejected-only witness or be unreachable.
+   and asserts the target's message and the target's variant in the
+   block. The same test runs `tsc` once over all witnesses and asserts
+   each label.
 7. **Scope.** Rules 4 to 6 cover S014. The mirror pattern-parameter
    site (S100, `resolve_param_pat`) gets its variant as a named site.
    §153.3 records the other codes.
@@ -82,9 +73,8 @@ programs in one process costs 0.05 s.
    accepted form needs `IterableIterator`, which is S016 here), and
    `r198-set-source-map` (the accepted form reaches the key-kind site
    first).
-4. An S014 message states no `tsc` outcome. A site with a variant
-   serves both classes, and a site with no variant rests on the
-   rule 5 reason, not on the message.
+4. An S014 message states no `tsc` outcome, because every S014 site
+   serves both classes.
 5. The rule 6 test states its measured cost in its doc comment.
 6. No accept golden moves. A reject entry's pinned message does not
    change, except where acceptance 4 changes it.
