@@ -9,7 +9,7 @@ Problem: when a Worker traps, the parent's `join` traps with
 `worker-trapped`. That trap has position 0 (no script site), and its
 message embeds the Worker's raw position id, which each tier numbers
 differently. Measured at `8db62b3c` with this program (the Worker's
-read is at `w.ts:9:17`):
+read is at `w.ts:9:14`):
 
 ```ts
 class Msg {
@@ -58,7 +58,7 @@ source site.
 
 1. Red first: a trap corpus entry with the Problem program, whose
    expected trap kind is `worker-trapped` at the Worker's read site
-   (`9:17`), on the dev tier and the ship tier. At the contract pin the
+   (`9:14`), on the dev tier and the ship tier. At the contract pin the
    position is `0:0` and the messages differ (record both).
 2. The existing tests that pin the old message text change to rule 2's
    text; each is listed with its old and new expectation.
