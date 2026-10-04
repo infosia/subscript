@@ -186,21 +186,12 @@ and were present before §154; each is realistic.
 7. An `abstract` property: the missing-initializer site with no block.
 8. An optional parameter in a function type
    (`cb: (a: i32, b?: i32) => void` called with one argument): the
-   arity site with no block.
+   arity site with no block. Closed by §155 rule 5.
 9. `this` in an arrow inside a static method: no block.
 10. Reverse cost at C6, C21, and C14 sites: `e.message` on an untyped
     catch binding (TS18046), `const x: i32 = f()` with `f(): void`
     (TS2322), and a read before its `const` in one block (TS2448)
     carry a block.
 
-Outside this section: four acceptance gaps break invariant 5. Each is
-realistic, and each is present before §154. Found by the §154 Phase
-Reviews.
-
-1. `private` is not enforced: `new A().x` with `private x` is accepted
-   (TS2341).
-2. `new S()` of an `abstract` class is accepted (TS2511).
-3. An assignment to a `readonly` field is accepted (TS2540).
-4. A function type `(a: i32, b?: i32) => void` is accepted and treated
-   as if `b` were required, so passing `(a: i32, b: i32): void => …` is
-   accepted (TS2345).
+Outside this section: four acceptance gaps that broke invariant 5. Closed
+by §155.
