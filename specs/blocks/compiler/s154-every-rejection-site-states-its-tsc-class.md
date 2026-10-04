@@ -152,7 +152,8 @@ None is decided.
    identifier-spelled string enum members (row 8).
 7. `x!` as a checked narrowing; `&&=` and `||=` (row 18).
 8. `this` captured in a lambda, and a `function` expression that does
-   not read `this` (row 15).
+   not read `this` (row 15). `this` in a lambda in a reference-class method is
+   closed by §157.
 9. Nullable-parameter contravariance of function types (row 25).
 10. Narrowing by a non-null initializer or assignment (row 26).
 11. Order-independent yield-type inference (row 27).

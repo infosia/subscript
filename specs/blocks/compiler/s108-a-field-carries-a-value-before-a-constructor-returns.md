@@ -261,8 +261,9 @@ Every other appearance is rejected at the `this`:
 
 A parameter default evaluates after the field initializers (§57.1
 step 4), so an initialized field holds a value inside a default. A
-lambda body cannot mention `this` (§57.1, C9), so rule 6 does not
-reach one. After the prefix every rule-1 field holds a value, and
+lambda in a default cannot capture `this` (§157 rule 4), so rule 6
+does not reach one. A lambda in the constructor body that reads `this`
+is a member use when it is called, or passed to a call (§157 rule 3). After the prefix every rule-1 field holds a value, and
 the rule ends. Rule 1 and rule 6 are independent: a class that
 violates both reports both.
 
