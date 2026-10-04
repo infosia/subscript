@@ -110,7 +110,8 @@ impl Divergence {
             Divergence::NonNullAssertionExpressionForm => {
                 surface_forms::NONNULLASSERTIONEXPRESSIONFORM
             }
-            Divergence::ThisInMethodArrow => surface_forms::THISINMETHODARROW,
+            Divergence::ThisInParameterDefaultArrow => surface_forms::THISINPARAMETERDEFAULTARROW,
+            Divergence::ThisInValueTypeArrow => surface_forms::THISINVALUETYPEARROW,
             Divergence::EnumObjectMember => surface_forms::ENUMOBJECTMEMBER,
             Divergence::StaticMethodValueForm => surface_forms::STATICMETHODVALUEFORM,
             Divergence::ConstructorNotNamedClassForm => surface_forms::CONSTRUCTORNOTNAMEDCLASSFORM,

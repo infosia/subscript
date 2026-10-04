@@ -44,6 +44,9 @@ mod generics;
 mod inference;
 mod initializer;
 mod initializer_finish;
+mod receiver_capture;
+#[cfg(test)]
+mod receiver_capture_tests;
 use initializer::{DeferredExpression, Initializer, TypeState};
 mod instance_chain;
 use instance_chain::InstanceArguments;
@@ -620,7 +623,7 @@ enum PrefixThis {
 /// Form (b) is a read `this.g` of a field in `held`: an operand, a
 /// member write `this.g.x = …`, a compound assignment, an increment, an
 /// argument, and the receiver of `this.g.m()` all lower to that shape.
-/// A lambda body cannot mention `this`, so the walk finds none there.
+/// A lambda body runs only at a call; receiver_capture checks those calls.
 fn prefix_this_violations(
     node: hir::HirChild<'_>,
     held: &HashSet<String>,
@@ -636,6 +639,7 @@ fn prefix_this_violations(
         hir::HirChild::Expr(expression) => expression,
     };
     match &expression.kind {
+        hir::ExprKind::Lambda { .. } => {}
         hir::ExprKind::Assign {
             op: None,
             target,
@@ -776,6 +780,8 @@ pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
     pub lexical_class: Option<ClassId>,
     parameter_decisions: HashSet<(usize, String)>,
+    /// Defaults execute in the caller, outside the receiver's method frame.
+    parameter_default: bool,
     pub constructor_body: bool,
     field_initializer: Option<field_initializer::FieldInitializer>,
     descriptor_default: Option<Type>,
@@ -916,6 +922,7 @@ impl FnCtx {
         FnCtx {
             lexical_class: None,
             parameter_decisions: HashSet::new(),
+            parameter_default: false,
             constructor_body: false,
             field_initializer: None,
             descriptor_default: None,
@@ -930,12 +937,28 @@ impl FnCtx {
                 contextual_void: false,
                 lambda_id: None,
                 captures: Vec::new(),
-                this_ty,
+                this_ty: this_ty.clone(),
                 missing_this_site: None,
                 static_this_class: None,
                 super_call_available: false,
             }],
-            scopes: vec![Scope::default()],
+            scopes: vec![Scope {
+                vars: this_ty
+                    .map(|ty| {
+                        (
+                            "this".to_string(),
+                            Local {
+                                ty,
+                                mutable: false,
+                                async_origins: HashSet::new(),
+                                caught: false,
+                            },
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            }],
             narrowed: HashSet::new(),
             ended_shared_narrowing: HashSet::new(),
             loop_depth: 0,

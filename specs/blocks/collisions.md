@@ -111,7 +111,8 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   inferred, and its callers pass clean values.
 
 Accept: `a13`, `a14`, `a262`. Reject: `r10-escaping-capture` (returns a
-capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean).
+capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean), `r353`, `r354`, `r357`, `r358`
+(a lambda that captures `this`, §157; `tsc`-clean).
 
 ### C6. Exceptions (Q9) — `Error`-family only, uncatchable traps
 
@@ -701,7 +702,8 @@ it as a candidate to accept.
 | 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 
-Reject: `r344`, `r352` (row 4, a generic-class default, §156).
+Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
+(row 15, a `@ValueType` receiver, §157).
 
 ## 2. Q-register resolutions not covered above
 

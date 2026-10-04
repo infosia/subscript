@@ -36,7 +36,13 @@ impl RejectionSite {
                 RuleCode::S100,
                 Diverges(Divergence::NonNullableNullEquality),
             ),
-            Self::ThisInMethodArrow => (RuleCode::S100, Diverges(Divergence::ThisInMethodArrow)),
+            Self::ThisInParameterDefaultArrow => (
+                RuleCode::S009,
+                Diverges(Divergence::ThisInParameterDefaultArrow),
+            ),
+            Self::ThisInValueTypeArrow => {
+                (RuleCode::S100, Diverges(Divergence::ThisInValueTypeArrow))
+            }
             Self::SwitchCaseClosureRead => {
                 (RuleCode::S100, Diverges(Divergence::SwitchCaseClosureRead))
             }
@@ -168,6 +174,9 @@ impl RejectionSite {
                 (RuleCode::S100, Diverges(Divergence::LibConstructorName))
             }
             Self::UnknownClassConstructor => (RuleCode::S016, TscRejects),
+            Self::ThisInStaticMethodArrow => {
+                (RuleCode::S100, Diverges(Divergence::ThisStaticMethodMember))
+            }
             Self::ThisStaticField => (RuleCode::S100, Diverges(Divergence::StaticMemberSurface)),
             Self::RunnerMainMissing => (RuleCode::S100, Diverges(Divergence::RunnerMainMissing)),
             Self::ContextAffineContainerArgument => (

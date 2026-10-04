@@ -183,8 +183,8 @@ impl<'p> Checker<'p> {
             lambda_id: Some(id),
             captures: Vec::new(),
             this_ty: None,
-            missing_this_site: None,
-            static_this_class: None,
+            missing_this_site: fx.frames.last().and_then(|frame| frame.missing_this_site),
+            static_this_class: fx.frames.last().and_then(|frame| frame.static_this_class),
             super_call_available: false,
         });
         fx.scopes.push(Scope {
@@ -194,6 +194,7 @@ impl<'p> Checker<'p> {
         // Lambda bodies start without the enclosing narrowing facts
         // (conservative: the lambda may run later).
         let saved_narrowed = std::mem::take(&mut fx.narrowed);
+        let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut hir_params = Vec::new();
         for (p, pattern) in params.iter().zip(&a.params) {
             if let Some(frame) = fx.frames.last_mut() {
@@ -235,6 +236,7 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             });
         }
+        fx.parameter_default = saved_default;
         let parameter_patterns = params
             .iter()
             .cloned()

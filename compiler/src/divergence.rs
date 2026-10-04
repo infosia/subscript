@@ -209,8 +209,10 @@ pub enum Divergence {
     FunctionExpressionForm,
     /// No lowering is decided for this operator or expression form.
     NonNullAssertionExpressionForm,
-    /// A lambda captures const locals only; it cannot capture this.
-    ThisInMethodArrow,
+    /// A parameter default executes outside the method frame that holds the receiver.
+    ThisInParameterDefaultArrow,
+    /// A ValueType receiver capture copies the receiver.
+    ThisInValueTypeArrow,
     /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
     EnumObjectMember,
     /// No first-class value is decided for a direct call target.
@@ -1087,7 +1089,8 @@ impl Divergence {
         Divergence::LogicalOrPowerAssignmentForm,
         Divergence::FunctionExpressionForm,
         Divergence::NonNullAssertionExpressionForm,
-        Divergence::ThisInMethodArrow,
+        Divergence::ThisInParameterDefaultArrow,
+        Divergence::ThisInValueTypeArrow,
         Divergence::EnumObjectMember,
         Divergence::StaticMethodValueForm,
         Divergence::ConstructorNotNamedClassForm,

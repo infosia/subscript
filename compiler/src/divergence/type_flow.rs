@@ -42,7 +42,7 @@ pub(super) const ABSTRACTMETHODBODYMISSING: DivergenceEntry = DivergenceEntry {
 pub(super) const THISSTATICMETHODMEMBER: DivergenceEntry = DivergenceEntry {
     ts: "class C { static x:i32=0; static f():i32 { return this.x; } }",
     subscript: "class C { static x:i32=0; static f():i32 { return C.x; } }",
-    why: "A static method must name its class explicitly; no static this receiver is decided.",
+    why: "A static method has no instance receiver; it must name its class explicitly.",
     collision: "C24",
 };
 

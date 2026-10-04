@@ -212,155 +212,180 @@ impl<'p> Checker<'p> {
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
-        let mut checked =
-            match e {
-                ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
-                    &p.expr,
-                    ctx,
-                    fx,
-                    allow_embedded_header_receiver,
-                ),
-                ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
-                ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
-                ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
-                ast::Expr::This(_) => {
-                    if fx.descriptor_default.is_some() {
-                        self.reject_subset(
-                            RejectionSite::DescriptorDefaultThisUse,
-                            "§147 rule 3a: `this` is forbidden in a descriptor member default",
-                            pos.clone(),
-                        );
-                        return self.err_expr(pos);
-                    }
-                    if let Some(initializer) = &fx.field_initializer {
-                        let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                            "`this` inside a lambda is forbidden"
-                        } else if initializer.write {
-                            "a write through `this` is forbidden"
-                        } else {
-                            "`this` as a value is forbidden"
-                        };
-                        self.reject_subset(
-                            RejectionSite::FieldInitializerThisUse,
-                            format!("§147 rule 2: {reason}"),
-                            pos.clone(),
-                        );
-                        return self.err_expr(pos);
-                    }
-                    let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
-                    match this_ty {
-                        Some(ty) => hir::Expr {
-                            pending_work: None,
-                            kind: ExprKind::This,
-                            ty,
-                            pos,
-                        },
-                        None => {
-                            let site = fx.frames.last().and_then(|frame| frame.missing_this_site);
-                            if let Some(site) = site {
-                                self.reject_subset(
-                                    site,
-                                    "`this` is only available in constructors and methods",
-                                    pos.clone(),
-                                );
-                            } else {
-                                self.reject_subset(
-                                if fx.frames.last().is_some_and(|frame| frame.is_lambda)
-                                    && fx.frames.iter().any(|frame| frame.this_ty.is_some()) {
-                                    RejectionSite::ThisInMethodArrow
-                                } else { RejectionSite::ThisOutsideMethod },
-                                if fx.frames.last().is_some_and(|frame| frame.is_lambda)
-                                    && fx.frames.iter().any(|frame| frame.this_ty.is_some()) {
-                                    "a lambda cannot capture `this`; capture a const local instead"
-                                } else { "`this` is only available in constructors and methods" },
-                                pos.clone(),
-                            );
-                            }
-                            self.err_expr(pos)
-                        }
-                    }
-                }
-                ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
-                ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
-                ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
-                ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
-                ast::Expr::Member(m) => self.check_member_read(m, fx),
-                ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
-                ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
-                ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
-                ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
-                ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
-                ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
-                ast::Expr::Object(object) => {
-                    match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
-                        Some(id) if self.classes[id.0].is_descriptor => {
-                            self.check_descriptor_lit(object, id, fx, pos)
-                        }
-                        Some(_) => {
-                            self.reject_subset(
-                                RejectionSite::NominalObjectLiteral,
-                                "object literals do not satisfy nominal class types",
-                                pos.clone(),
-                            );
-                            self.err_expr(pos)
-                        }
-                        _ => {
-                            // C1: the literal has no standalone type, so only a
-                            // `@Descriptor` context constructs from one.
-                            self.reject_subset(
-                                RejectionSite::ObjectLiteralWithoutDescriptorContext,
-                                "object literals are not in the decided surface",
-                                pos.clone(),
-                            );
-                            self.err_expr(pos)
-                        }
-                    }
-                }
-                ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
-                ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
-                ast::Expr::Await(a) => self.check_await(a, fx, pos),
-                ast::Expr::TsNonNull(t) => {
-                    let p = self.pos(t.span);
+        let mut checked = match e {
+            ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
+                &p.expr,
+                ctx,
+                fx,
+                allow_embedded_header_receiver,
+            ),
+            ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
+            ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
+            ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
+            ast::Expr::This(_) => {
+                if fx.descriptor_default.is_some() {
                     self.reject_subset(
-                        RejectionSite::NonNullAssertionExpression,
-                        "the `!` assertion is not in the decided surface; narrow with a null check",
-                        p.clone(),
-                    );
-                    self.err_expr(p)
-                }
-                ast::Expr::Fn(_) => {
-                    self.reject_subset(
-                        RejectionSite::FunctionExpression,
-                        "function expressions are not in the decided surface; use an arrow",
+                        RejectionSite::DescriptorDefaultThisUse,
+                        "§147 rule 3a: `this` is forbidden in a descriptor member default",
                         pos.clone(),
                     );
-                    self.err_expr(pos)
+                    return self.err_expr(pos);
                 }
-                other => {
-                    let p = self.pos(other.span());
+                if let Some(initializer) = &fx.field_initializer {
+                    let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                        "`this` inside a lambda is forbidden"
+                    } else if initializer.write {
+                        "a write through `this` is forbidden"
+                    } else {
+                        "`this` as a value is forbidden"
+                    };
                     self.reject_subset(
-                        match other {
-                            ast::Expr::TsTypeAssertion(_) => {
-                                RejectionSite::AngleAssertionExpression
-                            }
-                            ast::Expr::TsSatisfies(_) => RejectionSite::SatisfiesExpression,
-                            ast::Expr::TsInstantiation(_) => RejectionSite::InstantiationExpression,
-                            ast::Expr::Seq(_) => RejectionSite::CommaExpression,
-                            ast::Expr::TaggedTpl(_) => RejectionSite::TaggedTemplateExpression,
-                            ast::Expr::Class(_) => RejectionSite::ClassExpression,
-                            ast::Expr::MetaProp(_) => RejectionSite::MetaPropertyExpression,
-                            ast::Expr::PrivateName(_) => RejectionSite::PrivateNameExpression,
-                            ast::Expr::TsConstAssertion(_) => {
-                                RejectionSite::ConstAssertionExpression
-                            }
-                            _ => RejectionSite::UnsupportedExpressionKind,
-                        },
-                        "expression form outside the decided surface",
-                        p.clone(),
+                        RejectionSite::FieldInitializerThisUse,
+                        format!("§147 rule 2: {reason}"),
+                        pos.clone(),
                     );
-                    self.err_expr(p)
+                    return self.err_expr(pos);
                 }
-            };
+                let is_lambda = fx.frames.last().is_some_and(|frame| frame.is_lambda);
+                let this_ty = fx.frames.first().and_then(|frame| frame.this_ty.clone());
+                if is_lambda {
+                    if fx.parameter_default && this_ty.is_some() {
+                        self.reject_subset(
+                            RejectionSite::ThisInParameterDefaultArrow,
+                            "a lambda in a parameter default cannot capture `this`",
+                            pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
+                    if let Some(Type::Class(id)) = this_ty.as_ref().map(|ty| self.apparent_type(ty))
+                    {
+                        if self.classes[id.0].is_value {
+                            self.reject_subset(
+                                    RejectionSite::ThisInValueTypeArrow,
+                                    "a lambda cannot capture a ValueType receiver; the capture is a copy",
+                                    pos.clone(),
+                                );
+                            return self.err_expr(pos);
+                        }
+                    }
+                    if this_ty.is_some() {
+                        if let Some(local) = self.lookup_local("this", &pos, fx) {
+                            return hir::Expr {
+                                pending_work: None,
+                                kind: ExprKind::Local("this".to_string(), local.ty.clone()),
+                                ty: local.ty,
+                                pos,
+                            };
+                        }
+                    }
+                }
+                match this_ty {
+                    Some(ty) => hir::Expr {
+                        pending_work: None,
+                        kind: ExprKind::This,
+                        ty,
+                        pos,
+                    },
+                    None => {
+                        let site = if is_lambda
+                            && fx
+                                .frames
+                                .first()
+                                .is_some_and(|frame| frame.static_this_class.is_some())
+                        {
+                            RejectionSite::ThisInStaticMethodArrow
+                        } else {
+                            fx.frames
+                                .last()
+                                .and_then(|frame| frame.missing_this_site)
+                                .unwrap_or(RejectionSite::ThisOutsideMethod)
+                        };
+                        self.reject_subset(
+                            site,
+                            "`this` is only available in constructors and methods",
+                            pos.clone(),
+                        );
+                        self.err_expr(pos)
+                    }
+                }
+            }
+            ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
+            ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
+            ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
+            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
+            ast::Expr::Member(m) => self.check_member_read(m, fx),
+            ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
+            ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
+            ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
+            ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
+            ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
+            ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
+            ast::Expr::Object(object) => {
+                match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
+                    Some(id) if self.classes[id.0].is_descriptor => {
+                        self.check_descriptor_lit(object, id, fx, pos)
+                    }
+                    Some(_) => {
+                        self.reject_subset(
+                            RejectionSite::NominalObjectLiteral,
+                            "object literals do not satisfy nominal class types",
+                            pos.clone(),
+                        );
+                        self.err_expr(pos)
+                    }
+                    _ => {
+                        // C1: the literal has no standalone type, so only a
+                        // `@Descriptor` context constructs from one.
+                        self.reject_subset(
+                            RejectionSite::ObjectLiteralWithoutDescriptorContext,
+                            "object literals are not in the decided surface",
+                            pos.clone(),
+                        );
+                        self.err_expr(pos)
+                    }
+                }
+            }
+            ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
+            ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
+            ast::Expr::Await(a) => self.check_await(a, fx, pos),
+            ast::Expr::TsNonNull(t) => {
+                let p = self.pos(t.span);
+                self.reject_subset(
+                    RejectionSite::NonNullAssertionExpression,
+                    "the `!` assertion is not in the decided surface; narrow with a null check",
+                    p.clone(),
+                );
+                self.err_expr(p)
+            }
+            ast::Expr::Fn(_) => {
+                self.reject_subset(
+                    RejectionSite::FunctionExpression,
+                    "function expressions are not in the decided surface; use an arrow",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            other => {
+                let p = self.pos(other.span());
+                self.reject_subset(
+                    match other {
+                        ast::Expr::TsTypeAssertion(_) => RejectionSite::AngleAssertionExpression,
+                        ast::Expr::TsSatisfies(_) => RejectionSite::SatisfiesExpression,
+                        ast::Expr::TsInstantiation(_) => RejectionSite::InstantiationExpression,
+                        ast::Expr::Seq(_) => RejectionSite::CommaExpression,
+                        ast::Expr::TaggedTpl(_) => RejectionSite::TaggedTemplateExpression,
+                        ast::Expr::Class(_) => RejectionSite::ClassExpression,
+                        ast::Expr::MetaProp(_) => RejectionSite::MetaPropertyExpression,
+                        ast::Expr::PrivateName(_) => RejectionSite::PrivateNameExpression,
+                        ast::Expr::TsConstAssertion(_) => RejectionSite::ConstAssertionExpression,
+                        _ => RejectionSite::UnsupportedExpressionKind,
+                    },
+                    "expression form outside the decided surface",
+                    p.clone(),
+                );
+                self.err_expr(p)
+            }
+        };
         self.end_shared_narrowing(&checked, fx);
         if !allow_embedded_header_receiver {
             self.reject_embedded_header_copy(&mut checked, ctx);

@@ -460,7 +460,7 @@ pub struct Function {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Capture {
-    /// Captured local name.
+    /// Captured local name. The reserved name `this` identifies a lexical receiver.
     pub name: String,
     /// Resolved type stored in the environment.
     pub ty: Type,

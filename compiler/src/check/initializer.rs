@@ -314,6 +314,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         owner: Option<&ParameterOwner>,
     ) {
+        let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let scope_index = fx.scopes.len().saturating_sub(1);
         for (index, param) in params.iter_mut().enumerate() {
             if let Some(stored) = owner.and_then(|owner| self.owner_parameter(owner, index)) {
@@ -401,6 +402,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+        fx.parameter_default = saved_default;
     }
 
     // Rule 6 reads declared parameter identity; constraint projection loses that identity.

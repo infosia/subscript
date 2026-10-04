@@ -507,7 +507,7 @@ VoidExpressionValue	a-s078	S100	a `void` expression is only allowed as an expres
 DescriptorDefaultThisUse	a-s079	S100	§147 rule 3a: `this` is forbidden in a descriptor member default
 FieldInitializerThisUse	a-s080	S100	§147 rule 2: `this` as a value is forbidden
 FieldInitializerThisUse	a-s222	S100	§147 rule 2: `this` as a value is forbidden
-ThisInMethodArrow	a-s082	S100	a lambda cannot capture `this`; capture a const local instead
+ThisInValueTypeArrow	a-s082	S100	a lambda cannot capture a ValueType receiver; the capture is a copy
 NominalObjectLiteral	a-s083	S005	object literals do not satisfy nominal class types
 ObjectLiteralWithoutDescriptorContext	a-s084	S100	object literals are not in the decided surface
 NonNullAssertionExpression	a-s085	S100	the `!` assertion is not in the decided surface; narrow with a null check
@@ -1140,10 +1140,10 @@ ThisOutsideMethod	this-module-0	S100	`this` is only available in constructors an
 ThisOutsideMethod	this-module-1	S100	`this` is only available in constructors and methods
 ThisOutsideMethod	this-module-2	S100	`this` is only available in constructors and methods
 ThisOutsideMethod	this-module-3	S100	`this` is only available in constructors and methods
-ThisInMethodArrow	this-arrow-0	S100	a lambda cannot capture `this`; capture a const local instead
-ThisInMethodArrow	this-arrow-1	S100	a lambda cannot capture `this`; capture a const local instead
-ThisInMethodArrow	this-arrow-2	S100	a lambda cannot capture `this`; capture a const local instead
-ThisInMethodArrow	this-arrow-3	S100	a lambda cannot capture `this`; capture a const local instead
+ThisInValueTypeArrow	this-arrow-0	S100	a lambda cannot capture a ValueType receiver; the capture is a copy
+ThisInValueTypeArrow	this-arrow-1	S100	a lambda cannot capture a ValueType receiver; the capture is a copy
+ThisInValueTypeArrow	this-arrow-2	S100	a lambda cannot capture a ValueType receiver; the capture is a copy
+ThisInValueTypeArrow	this-arrow-3	S100	a lambda cannot capture a ValueType receiver; the capture is a copy
 SwitchCaseRead	switch-direct-0	S100	`x` is read from a different switch case
 SwitchCaseClosureRead	switch-closure-0	S100	`x` is read from a different switch case
 SwitchCaseRead	switch-direct-1	S100	`x` is read from a different switch case
@@ -1412,3 +1412,6 @@ StaticFieldTypeWithoutInitializer	s156-static-field-type	S100	static fields with
 FunctionValueParameterAnnotationNeeded	s156-function-value-parameter	S100	avoid a recursive function value in the parameter default
 GenericCallbackParameterAnnotationMissing	s156-generic-callback	S100	parameters require a type annotation
 GenericClassDefaultParameterAnnotationNeeded	s156-generic-class-default	S100	a generic-class default needs a parameter type; annotate the parameter
+ThisInStaticMethodArrow	this-static-arrow	S100	`this` is only available in constructors and methods
+ThisInParameterDefaultArrow	this-default-inferred	S009	a lambda in a parameter default cannot capture `this`
+ThisInParameterDefaultArrow	this-default-annotated	S009	a lambda in a parameter default cannot capture `this`

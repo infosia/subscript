@@ -539,7 +539,7 @@ END FILE
 END PROGRAM
 PROGRAM	a-s082			0
 FILE	E	target/s154/forms/a-s082/main.ts
-class C { x: i32 = 1; f(): i32 { const fn = (): i32 => this.x; return fn(); } }
+@ValueType class C { x: i32 = 1; f(): i32 { const fn = (): i32 => this.x; return fn(); } }
 export function main(): void { new C().f(); }
 END FILE
 END PROGRAM
@@ -7207,25 +7207,25 @@ END PROGRAM
 PROGRAM	this-arrow-0			0
 FILE	E	main.ts
 export {};
-class A{x:i32=1; f():void{const cb=():i32=>this.x;}}
+@ValueType class A{x:i32=1; f():void{const cb=():i32=>this.x;}}
 END FILE
 END PROGRAM
 PROGRAM	this-arrow-1			0
 FILE	E	main.ts
 export {};
-class A{x:i32=1; f():void{const cb=():void=>{this;};}}
+@ValueType class A{x:i32=1; f():void{const cb=():void=>{this;};}}
 END FILE
 END PROGRAM
 PROGRAM	this-arrow-2			0
 FILE	E	main.ts
 export {};
-class A{x:i32=1; f():void{const cb=():void=>{const self=this;};}}
+@ValueType class A{x:i32=1; f():void{const cb=():void=>{const self=this;};}}
 END FILE
 END PROGRAM
 PROGRAM	this-arrow-3			0
 FILE	E	main.ts
 export {};
-class A{x:i32=1; f():void{const cb=():i32=>{return this.x;};}}
+@ValueType class A{x:i32=1; f():void{const cb=():i32=>{return this.x;};}}
 END FILE
 END PROGRAM
 PROGRAM	switch-direct-0	TS2454		0
@@ -8859,5 +8859,21 @@ PROGRAM	s156-generic-class-default			0
 FILE	E	main.ts
 class Cell<T> { v: T; constructor(v: T) { this.v = v; } pair(other = this.v): string { return `${other}`; } }
 export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	this-static-arrow			0
+FILE	E	main.ts
+class C { static f(): void { const read = (): void => { this; }; read(); } }
+export function main(): void { C.f(); }
+END FILE
+END PROGRAM
+PROGRAM	this-default-inferred			0
+FILE	E	target/s154/forms/this-default-inferred/main.ts
+class C { n:i32=1; m(f = () => this.n):i32 { return f(); } } export function main():void {}
+END FILE
+END PROGRAM
+PROGRAM	this-default-annotated			0
+FILE	E	target/s154/forms/this-default-annotated/main.ts
+class C { n:i32=1; m(f:()=>i32 = ():i32=>this.n):i32 { return f(); } } export function main():void {}
 END FILE
 END PROGRAM

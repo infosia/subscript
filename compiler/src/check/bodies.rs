@@ -350,6 +350,7 @@ impl<'p> Checker<'p> {
         sig: &FnSig,
         fx: &mut FnCtx,
     ) -> (Vec<hir::Param>, Vec<hir::Stmt>) {
+        let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut out = Vec::new();
         let mut patterns = Vec::new();
         for (i, p) in f.params.iter().enumerate() {
@@ -405,6 +406,7 @@ impl<'p> Checker<'p> {
             });
             patterns.push((ps.clone(), p.pat.clone()));
         }
+        fx.parameter_default = saved_default;
         let prologue = self.bind_parameter_patterns(patterns, fx);
         (out, prologue)
     }
@@ -575,6 +577,7 @@ impl<'p> Checker<'p> {
                     fx.lexical_class = Some(id);
                     fx.constructor_body = true;
                     fx.frames[0].super_call_available = class.super_class.is_some();
+                    fx.parameter_default = true;
                     let mut hir_params = Vec::new();
                     let mut patterns = Vec::new();
                     for parameter in &ctor.params {
@@ -639,6 +642,7 @@ impl<'p> Checker<'p> {
                         });
                         patterns.push((ps.clone(), param.pat.clone()));
                     }
+                    fx.parameter_default = false;
                     let mut body = self.bind_parameter_patterns(patterns, &mut fx);
                     if let Some(block) = &ctor.body {
                         self.reserve_block_declarations(&block.stmts, &mut fx);
@@ -945,9 +949,19 @@ impl<'p> Checker<'p> {
         };
         let mut collected: Vec<PrefixViolation> = Vec::new();
         let mut found = Vec::new();
+        let mut receiver_lambdas = HashMap::new();
         for parameter in &ctor.params {
             if let Some(default) = &parameter.default {
                 prefix_this_violations(hir::HirChild::Expr(default), &held, &mut found);
+                super::receiver_capture::collect(
+                    hir::HirChild::Expr(default),
+                    &mut receiver_lambdas,
+                    &mut found,
+                );
+                receiver_lambdas.insert(
+                    parameter.name.clone(),
+                    super::receiver_capture::carries_receiver(default, &receiver_lambdas),
+                );
             }
         }
         record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
@@ -958,6 +972,11 @@ impl<'p> Checker<'p> {
         for statement in &ctor.body {
             let mut found = Vec::new();
             prefix_this_violations(hir::HirChild::Stmt(statement), &held, &mut found);
+            super::receiver_capture::collect(
+                hir::HirChild::Stmt(statement),
+                &mut receiver_lambdas,
+                &mut found,
+            );
             record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
             if let Some(name) = this_field_assignment(statement) {
                 held.insert(name.to_string());

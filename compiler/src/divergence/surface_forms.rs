@@ -503,10 +503,10 @@ pub(super) const ENUMOBJECTMEMBER: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 14,
 };
 
-pub(super) const THISINMETHODARROW: DivergenceEntry = DivergenceEntry {
-    ts: "class C { x: i32 = 1; f(): i32 { const fn = (): i32 => this.x; return fn(); } }\nexport function main(): void { new C().f(); }",
-    subscript: "no equivalent; capture a const self local",
-    why: "A lambda captures const locals only; it cannot capture this.",
+pub(super) const THISINVALUETYPEARROW: DivergenceEntry = DivergenceEntry {
+    ts: "@ValueType class C { x: i32 = 1; f(): i32 { const fn = (): i32 => this.x; return fn(); } }\nexport function main(): void { new C().f(); }",
+    subscript: "class C { x: i32 = 1; f(): i32 { const fn = (): i32 => this.x; return fn(); } }\nexport function main(): void { new C().f(); }",
+    why: "A ValueType receiver capture is a copy (C2); a write through it does not reach the receiver.",
     collision: "C24", // row 15,
 };
 
@@ -519,8 +519,8 @@ pub(super) const NONNULLASSERTIONEXPRESSIONFORM: DivergenceEntry = DivergenceEnt
 
 pub(super) const FUNCTIONEXPRESSIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const f = function*() { yield 1; }; }",
-    subscript: "no equivalent; capture a const self local",
-    why: "A lambda captures const locals only; it cannot capture this.",
+    subscript: "no equivalent; use an arrow or a function declaration",
+    why: "A function expression binds its own this; the subset uses lexical receivers.",
     collision: "C24", // row 15,
 };
 
@@ -625,4 +625,12 @@ pub(super) const GENERICCLASSDEFAULTPARAMETERANNOTATIONNEEDED: DivergenceEntry =
     subscript: "no equivalent; annotate the parameter",
     why: "A generic-class default needs an annotation to preserve the uninstantiated class parameter type that TypeScript uses.",
     collision: "C24", // row 4
+};
+
+/// A receiver capture in a parameter default.
+pub(super) const THISINPARAMETERDEFAULTARROW: DivergenceEntry = DivergenceEntry {
+    ts: "class C { n:i32=1; m(f:()=>i32=():i32=>this.n):i32 { return f(); } } export function main():void {}",
+    subscript: "class C { n:i32=1; m():i32 { const f=():i32=>this.n; return f(); } } export function main():void {}",
+    why: "A parameter default executes outside the method frame that holds the receiver; its lambda cannot capture that receiver.",
+    collision: "C5", // compiler.md §157 rule 4
 };
