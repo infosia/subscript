@@ -23,6 +23,7 @@ use super::{Checker, FnCtx};
 impl Checker<'_> {
     fn json_call(&self, function: JsonFn, args: Vec<hir::Expr>, ty: Type, pos: &Pos) -> hir::Expr {
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Json(function),
                 args,
@@ -90,6 +91,7 @@ impl Checker<'_> {
             &value.ty,
         ) {
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Null,
                 ty: Type::Str,
                 pos,
@@ -130,6 +132,7 @@ impl Checker<'_> {
             }
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Func(hir::Symbol::from_full_text(wrapper)),
                 args: vec![value],
@@ -215,6 +218,7 @@ impl Checker<'_> {
             &target,
         ) {
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Null,
                 ty: target,
                 pos,
@@ -260,6 +264,7 @@ impl Checker<'_> {
             }
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Func(hir::Symbol::from_full_text(wrapper)),
                 args: vec![text],
@@ -577,11 +582,13 @@ impl Checker<'_> {
             }
             Type::Nullable(inner) => {
                 let null = hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Null,
                     ty: Type::Null,
                     pos: pos.clone(),
                 };
                 let cond = hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Binary {
                         op: BinOp::Eq,
                         left: Box::new(locals.value(ty.clone())),
@@ -659,10 +666,12 @@ impl Checker<'_> {
             ))
         };
         let condition = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Binary {
                 op: BinOp::Lt,
                 left: Box::new(locals.index()),
                 right: Box::new(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Length(Box::new(locals.value(array_ty.clone()))),
                     ty: Type::I32,
                     pos: pos.clone(),
@@ -672,6 +681,7 @@ impl Checker<'_> {
             pos: pos.clone(),
         };
         let comma_condition = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Binary {
                 op: BinOp::Ne,
                 left: Box::new(locals.index()),
@@ -681,6 +691,7 @@ impl Checker<'_> {
             pos: pos.clone(),
         };
         let indexed = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Index {
                 obj: Box::new(locals.value(array_ty.clone())),
                 index: Box::new(locals.index()),
@@ -690,6 +701,7 @@ impl Checker<'_> {
             pos: pos.clone(),
         };
         let step = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Assign {
                 update: None,
                 op: Some(BinOp::Add),
@@ -762,6 +774,7 @@ impl Checker<'_> {
             )));
             body.push(raw(":"));
             let field_value = hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Field {
                     obj: Box::new(locals.value(Type::Class(id))),
                     name: field.name.clone(),
@@ -851,6 +864,7 @@ impl Checker<'_> {
             pos.clone(),
         );
         let not = |operand: hir::Expr| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Unary {
                 op: UnOp::Not,
                 operand: Box::new(operand),
@@ -1206,6 +1220,7 @@ impl Checker<'_> {
                     pos,
                 ),
                 then: vec![return_value(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Null,
                     ty: Type::Null,
                     pos: pos.clone(),
@@ -1226,6 +1241,7 @@ impl Checker<'_> {
                     json_zero(Type::Class(*id), pos)
                 } else {
                     hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::RawNew { class: *id },
                         ty: Type::Class(*id),
                         pos: pos.clone(),
@@ -1303,6 +1319,7 @@ impl Checker<'_> {
                     pos,
                 ),
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::ArrayLit(Vec::new()),
                     ty: array_ty.clone(),
                     pos: pos.clone(),
@@ -1358,6 +1375,7 @@ impl Checker<'_> {
         );
         let store = match array_ty {
             Type::Array(_) => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(locals.value(array_ty.clone())),
@@ -1370,6 +1388,7 @@ impl Checker<'_> {
             },
             Type::FixedArray(..) => json_assign(
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Index {
                         obj: Box::new(locals.value(array_ty.clone())),
                         index: Box::new(locals.index()),
@@ -1423,6 +1442,7 @@ fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, RejectionFailure>
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
     hir::Param {
         escapes: false,
+        default_can_raise: false,
         name: name.to_string(),
         ty,
         default: None,
@@ -1433,6 +1453,7 @@ fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
 
 fn json_local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Local(name.to_string(), ty.clone()),
         ty,
         pos: pos.clone(),
@@ -1483,6 +1504,7 @@ impl<'a> JsonLocals<'a> {
 
 fn json_string(value: &str, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Str(value.to_string()),
         ty: Type::Str,
         pos: pos.clone(),
@@ -1491,6 +1513,7 @@ fn json_string(value: &str, pos: &Pos) -> hir::Expr {
 
 fn json_int(value: i64, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Int(value),
         ty: Type::I32,
         pos: pos.clone(),
@@ -1499,6 +1522,7 @@ fn json_int(value: i64, pos: &Pos) -> hir::Expr {
 
 fn json_u64(value: u64, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Int(value as i64),
         ty: Type::U64,
         pos: pos.clone(),
@@ -1507,6 +1531,7 @@ fn json_u64(value: u64, pos: &Pos) -> hir::Expr {
 
 fn json_bool(value: bool, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Bool(value),
         ty: Type::Bool,
         pos: pos.clone(),
@@ -1515,6 +1540,7 @@ fn json_bool(value: bool, pos: &Pos) -> hir::Expr {
 
 fn json_zero(ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Zero,
         ty,
         pos: pos.clone(),
@@ -1523,6 +1549,7 @@ fn json_zero(ty: Type, pos: &Pos) -> hir::Expr {
 
 fn json_field(obj: hir::Expr, name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Field {
             obj: Box::new(obj),
             name: name.to_string(),
@@ -1534,6 +1561,7 @@ fn json_field(obj: hir::Expr, name: &str, ty: Type, pos: &Pos) -> hir::Expr {
 
 fn json_assign(target: hir::Expr, value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Assign {
             update: None,
             op: None,
@@ -1547,6 +1575,7 @@ fn json_assign(target: hir::Expr, value: hir::Expr, ty: Type, pos: &Pos) -> hir:
 
 fn json_binary(op: BinOp, left: hir::Expr, right: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Binary {
             op,
             left: Box::new(left),
@@ -1560,6 +1589,7 @@ fn json_binary(op: BinOp, left: hir::Expr, right: hir::Expr, ty: Type, pos: &Pos
 fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
     hir::Stmt::If {
         cond: hir::Expr {
+            pending_work: None,
             kind: ExprKind::Unary {
                 op: UnOp::Not,
                 operand: Box::new(condition),
@@ -1578,6 +1608,7 @@ fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
 
 fn json_increment(index: hir::Expr, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Assign {
             update: None,
             op: Some(BinOp::Add),
@@ -1618,6 +1649,7 @@ fn json_number_target(ty: &Type) -> Option<i64> {
 
 fn json_cast(value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Cast(Box::new(value)),
         ty,
         pos: pos.clone(),
@@ -1626,6 +1658,7 @@ fn json_cast(value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
 
 fn script_call(name: String, args: Vec<hir::Expr>, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Call {
             callee: Callee::Func(hir::Symbol::from_full_text(name)),
             args,

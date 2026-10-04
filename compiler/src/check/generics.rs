@@ -323,8 +323,13 @@ impl<'p> Checker<'p> {
         );
         let check_body = satisfied && self.instance_body_is_checked(args, root);
         let sig = self.resolve_fn_sig(&template.function, pos.clone());
-        self.fn_sigs.insert(name.clone(), sig.clone());
-        let function = check_body
+        self.fn_sigs.insert(name.clone(), sig);
+        self.decide_function_parameters(&name);
+        let sig = self.fn_sigs[&name].clone();
+        if check_body && self.deciding_type {
+            self.defer_function_body(&template.function, &name, None, false, &pos);
+        }
+        let function = (check_body && !self.deciding_type)
             .then(|| self.check_function(&template.function, &name, false, &sig, (None, None), pos))
             .flatten();
         if let Some(function) = function {
@@ -421,7 +426,7 @@ impl<'p> Checker<'p> {
             &pos,
         );
         let check_body = satisfied && self.instance_body_is_checked(args, root);
-        let sig = self.resolve_fn_sig(&template.function, pos.clone());
+        let mut sig = self.resolve_fn_sig(&template.function, pos.clone());
         // The signature lands before the body check, so a recursive call
         // inside the body resolves against this instance.
         let function_name = if is_static {
@@ -429,6 +434,8 @@ impl<'p> Checker<'p> {
             self.class_sigs[id.0]
                 .static_methods
                 .insert(instance.clone(), sig.clone());
+            self.static_method_owners
+                .insert(symbol.clone(), (id, instance.clone()));
             self.fn_sigs.insert(symbol.clone(), sig.clone());
             symbol
         } else {
@@ -437,7 +444,22 @@ impl<'p> Checker<'p> {
                 .insert(instance.clone(), sig.clone());
             instance.clone()
         };
-        let function = check_body
+        self.decide_method_parameters(id, &instance, is_static);
+        sig = if is_static {
+            self.class_sigs[id.0].static_methods[&instance].clone()
+        } else {
+            self.class_sigs[id.0].methods[&instance].clone()
+        };
+        if check_body && self.deciding_type {
+            self.defer_function_body(
+                &template.function,
+                &function_name,
+                Some(id),
+                is_static,
+                &pos,
+            );
+        }
+        let function = (check_body && !self.deciding_type)
             .then(|| {
                 self.check_function(
                     &template.function,
@@ -553,7 +575,7 @@ impl<'p> Checker<'p> {
             self.opaque_instances.insert(id);
         }
         self.resolve_class_shape(id, &template.class, template.declared);
-        if check_body && !self.signatures_resolved {
+        if check_body && (!self.signatures_resolved || self.deciding_type) {
             self.pending_instance_bodies
                 .push((id, self.instance_chain.clone()));
         } else if check_body && template.is_descriptor {

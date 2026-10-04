@@ -157,18 +157,51 @@ pub(crate) fn run(
     // compiler.md §135.1 rule 1: the bodies of the opaque check add theirs.
     let entry_file = host_entries::entry_file(prog)?;
     let initializer_files = init_order::files(prog, entry_file);
-    let (mut provisional, opaque_loops) =
-        run_with_effects(prog, options, entry_file, &initializer_files, None)?;
-    let mut analysis = narrowing::Analysis::from_module(&mut provisional);
-    analysis.merge_loops(opaque_loops);
-    run_with_effects(
-        prog,
-        options,
-        entry_file,
-        &initializer_files,
-        Some(analysis),
-    )
-    .map(|(module, _)| module)
+    let result = (|| {
+        let (mut provisional, opaque_loops) =
+            run_with_effects(prog, options, entry_file, &initializer_files, None)?;
+        let mut analysis = narrowing::Analysis::from_module(&mut provisional);
+        analysis.merge_loops(opaque_loops);
+        run_with_effects(
+            prog,
+            options,
+            entry_file,
+            &initializer_files,
+            Some(analysis),
+        )
+        .map(|(module, _)| module)
+    })();
+    let declaration_starts = initializer_files
+        .iter()
+        .map(|&file| {
+            prog.files[file]
+                .module
+                .body
+                .iter()
+                .map(|item| {
+                    let pos = prog.pos(item.span());
+                    (pos.line, pos.col)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    result.map_err(|mut diagnostics| {
+        // §156 rule 12: keep emission order within each top-level declaration.
+        // Deferred expressions retain the source position of their declaration slot.
+        diagnostics.sort_by_key(|d| {
+            let module = initializer_files
+                .iter()
+                .position(|&file| prog.files[file].name == d.pos.file)
+                .unwrap_or(initializer_files.len());
+            let declaration = declaration_starts.get(module).and_then(|starts| {
+                starts
+                    .iter()
+                    .rposition(|&start| start <= (d.pos.line, d.pos.col))
+            });
+            (module, declaration)
+        });
+        diagnostics
+    })
 }
 
 fn run_with_effects(
@@ -186,6 +219,18 @@ fn run_with_effects(
         })
     }).then(|| prog.clone());
     let mut ck = Checker {
+        deciding_type: false,
+        generic_callback_context: false,
+        initializer_call: None,
+        active_call: None,
+        function_value_decision: false,
+        initializer_root: None,
+        static_method_owners: HashMap::new(),
+        next_deferred_id: 0,
+        expression_work: Vec::new(),
+        deferred_expressions: Vec::new(),
+        deferred_captures: HashMap::new(),
+        pending_function_bodies: Vec::new(),
         narrowing_analysis,
         prog,
         diags: DiagnosticSink::default(),
@@ -332,9 +377,13 @@ fn run_with_effects(
         }
     }
     ck.signatures_resolved = true;
+    ck.decide_declarations();
     // §149: symbolic inference records §140 edges before concrete bodies request instances.
     let opaque_diagnostics = ck.check_generic_bodies_opaque();
-    ck.check_pending_instance_bodies();
+    while !ck.pending_instance_bodies.is_empty() || !ck.pending_function_bodies.is_empty() {
+        ck.check_pending_instance_bodies();
+        ck.check_pending_function_bodies();
+    }
     // Descriptor defaults need every class and function signature, but
     // constructing literals in ordinary bodies need the checked defaults.
     // Check all non-generic descriptor defaults in this intermediate pass.
@@ -359,6 +408,10 @@ fn run_with_effects(
                 globals: (global_start..ck.globals.len()).collect(),
             });
         }
+    }
+    while !ck.pending_instance_bodies.is_empty() || !ck.pending_function_bodies.is_empty() {
+        ck.check_pending_instance_bodies();
+        ck.check_pending_function_bodies();
     }
     ck.merge_generic_body_diagnostics(opaque_diagnostics);
     let opaque_loops = std::mem::take(&mut ck.opaque_loop_effects);

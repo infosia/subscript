@@ -159,6 +159,7 @@ mod tests {
             ))
         };
         let expr = |kind, ty| Expr {
+            pending_work: None,
             kind,
             ty,
             pos: Pos {
@@ -225,8 +226,10 @@ mod tests {
             };
             for receiver in [target.clone(), storage.clone()] {
                 let field = Expr {
+                    pending_work: None,
                     kind: ExprKind::Field {
                         obj: Box::new(Expr {
+                            pending_work: None,
                             kind: ExprKind::Local("t".into(), storage.clone()),
                             ty: receiver,
                             pos: crate::Pos::new("test.ts", 1, 1),
@@ -238,6 +241,7 @@ mod tests {
                 };
                 assert_eq!(field.is_shared_location(&module.classes), boxed);
                 let nested = Expr {
+                    pending_work: None,
                     kind: ExprKind::Field {
                         obj: Box::new(field.clone()),
                         name: "colorOperation".into(),

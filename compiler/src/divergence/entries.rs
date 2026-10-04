@@ -139,9 +139,6 @@ impl Divergence {
             }
             Divergence::BigIntLiteral => surface_forms::BIGINTLITERAL,
             Divergence::LambdaReturnFlowCoverage => surface_forms::LAMBDARETURNFLOWCOVERAGE,
-            Divergence::BlockLambdaReturnAnnotationMissingForm => {
-                surface_forms::BLOCKLAMBDARETURNANNOTATIONMISSINGFORM
-            }
             Divergence::GeneratorResultValueWriteForm => {
                 surface_forms::GENERATORRESULTVALUEWRITEFORM
             }
@@ -179,17 +176,20 @@ impl Divergence {
             }
             Divergence::ArrayTypeArgument => surface_forms::ARRAYTYPEARGUMENT,
             Divergence::QualifiedSourceTypeNameForm => surface_forms::QUALIFIEDSOURCETYPENAMEFORM,
-            Divergence::PatternParameterAnnotationMissingForm => {
-                surface_forms::PATTERNPARAMETERANNOTATIONMISSINGFORM
+            Divergence::GenericClassDefaultParameterAnnotationNeeded => {
+                surface_forms::GENERICCLASSDEFAULTPARAMETERANNOTATIONNEEDED
             }
-            Divergence::NamedParameterAnnotationMissingForm => {
-                surface_forms::NAMEDPARAMETERANNOTATIONMISSINGFORM
+            Divergence::BlockLambdaReturnAnnotationMissingForm => {
+                surface_forms::BLOCKLAMBDARETURNANNOTATIONMISSINGFORM
+            }
+            Divergence::GenericCallbackParameterAnnotationNeeded => {
+                surface_forms::GENERICCALLBACKPARAMETERANNOTATIONNEEDED
+            }
+            Divergence::FunctionValueParameterAnnotationNeeded => {
+                surface_forms::FUNCTIONVALUEPARAMETERANNOTATIONNEEDED
             }
             Divergence::FunctionReturnAnnotationMissingForm => {
                 surface_forms::FUNCTIONRETURNANNOTATIONMISSINGFORM
-            }
-            Divergence::ModuleVariableAnnotationMissingForm => {
-                surface_forms::MODULEVARIABLEANNOTATIONMISSINGFORM
             }
             Divergence::NamedImportModuleMissingForm => surface_forms::NAMEDIMPORTMODULEMISSINGFORM,
             Divergence::NamespaceImportTargetMissingForm => {
@@ -207,12 +207,7 @@ impl Divergence {
             Divergence::ConstructorParameterPropertyForm => {
                 surface_forms::CONSTRUCTORPARAMETERPROPERTYFORM
             }
-            Divergence::InstanceFieldAnnotationMissingForm => {
-                surface_forms::INSTANCEFIELDANNOTATIONMISSINGFORM
-            }
-            Divergence::StaticFieldAnnotationMissingForm => {
-                surface_forms::STATICFIELDANNOTATIONMISSINGFORM
-            }
+            Divergence::FieldTypeWithoutInitializer => surface_forms::FIELDTYPEWITHOUTINITIALIZER,
             Divergence::IdentifierFieldName => surface_forms::IDENTIFIERFIELDNAME,
             Divergence::GeneratorMethodForm => surface_forms::GENERATORMETHODFORM,
             Divergence::SwitchDiscriminantKindForm => surface_forms::SWITCHDISCRIMINANTKINDFORM,

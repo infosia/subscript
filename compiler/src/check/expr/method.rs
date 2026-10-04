@@ -107,7 +107,8 @@ impl<'p> Checker<'p> {
 
         let params = [ParamSig {
             name: String::new(),
-            ty: Type::I32,
+            state: crate::check::initializer::TypeState::decided(Type::I32),
+            initializer: None,
             has_default: optional,
         }];
         let mut checked = self.check_args(
@@ -120,6 +121,7 @@ impl<'p> Checker<'p> {
         );
         if optional && checked.is_empty() {
             checked.push(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Int(if f == NumFn::ToFixed { 0 } else { -1 }),
                 ty: Type::I32,
                 pos: pos.clone(),
@@ -129,6 +131,7 @@ impl<'p> Checker<'p> {
         let recv_pos = recv.pos.clone();
         let recv = if self.apparent_type(&(recv.ty)) == Type::F32 && f != NumFn::ToStringF32 {
             hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Cast(Box::new(recv)),
                 ty: Type::F64,
                 pos: recv_pos,
@@ -140,6 +143,7 @@ impl<'p> Checker<'p> {
         args.push(recv);
         args.extend(checked);
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Num(f),
                 args,
@@ -178,10 +182,11 @@ impl<'p> Checker<'p> {
             .enumerate()
             .map(|(i, p)| ParamSig {
                 name: String::new(),
-                ty: match p {
+                state: crate::check::initializer::TypeState::decided(match p {
                     hir::StrParam::Str => Type::Str,
                     hir::StrParam::I32 => Type::I32,
-                },
+                }),
+                initializer: None,
                 has_default: optional_slice
                     || (i == 1
                         && (optional_zero_position || optional_end_position || optional_pad)),
@@ -201,6 +206,7 @@ impl<'p> Checker<'p> {
         );
         if optional_slice && args.is_empty() {
             args.push(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Int(0),
                 ty: Type::I32,
                 pos: pos.clone(),
@@ -209,18 +215,21 @@ impl<'p> Checker<'p> {
         if args.len() + 1 == params.len() {
             if optional_slice || optional_end_position {
                 args.push(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Int(i64::from(i32::MAX)),
                     ty: Type::I32,
                     pos: pos.clone(),
                 });
             } else if optional_zero_position {
                 args.push(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Int(0),
                     ty: Type::I32,
                     pos: pos.clone(),
                 });
             } else if optional_pad {
                 args.push(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Str(" ".to_string()),
                     ty: Type::Str,
                     pos: pos.clone(),
@@ -237,6 +246,7 @@ impl<'p> Checker<'p> {
         all.push(recv);
         all.extend(args);
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Str(f),
                 args: all,
@@ -300,6 +310,7 @@ impl<'p> Checker<'p> {
         use ArrFn as A;
         let arr_ty = Type::array(elem.clone());
         let mk = |args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Arr(f),
                 args,
@@ -308,6 +319,7 @@ impl<'p> Checker<'p> {
             pos,
         };
         let int_default = |value: i64, pos: &Pos| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Int(value),
             ty: Type::I32,
             pos: pos.clone(),
@@ -358,7 +370,8 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(elem.clone()),
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                 ];
@@ -408,7 +421,8 @@ impl<'p> Checker<'p> {
                 }
                 let params = [ParamSig {
                     name: String::new(),
-                    ty: Type::Str,
+                    state: crate::check::initializer::TypeState::decided(Type::Str),
+                    initializer: None,
                     has_default: true,
                 }];
                 let mut checked = self.check_args(
@@ -421,6 +435,7 @@ impl<'p> Checker<'p> {
                 );
                 if checked.is_empty() {
                     checked.push(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Str(",".to_string()),
                         ty: Type::Str,
                         pos: pos.clone(),
@@ -434,12 +449,14 @@ impl<'p> Checker<'p> {
                 let params = [
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                 ];
@@ -466,12 +483,14 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(elem.clone()),
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                 ];
@@ -544,7 +563,8 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(Type::I32),
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                 ];
@@ -622,7 +642,8 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(Type::I32),
                     ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: true,
                     },
                 ];
@@ -977,6 +998,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Map(MapFn::GroupBy),
                 args: vec![items, callback],
@@ -1142,6 +1164,7 @@ impl<'p> Checker<'p> {
         let element = declared.unwrap_or(element);
         let element = self.container_argument(ContainerSlot::ArrayElement, element, pos.clone());
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::ArraySpreadLit(vec![hir::ArrayLitElem {
                 expr: source,
                 spread: Some(spread),
@@ -1182,6 +1205,7 @@ impl<'p> Checker<'p> {
         use crate::ambient::MapMethod as M;
         let map_ty = Type::map(key.clone(), value.clone());
         let mk = |f: MapFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Map(f),
                 args,
@@ -1339,6 +1363,7 @@ impl<'p> Checker<'p> {
         use crate::ambient::SetMethod as S;
         let set_ty = Type::set(key.clone());
         let mk = |f: SetFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Set(f),
                 args,

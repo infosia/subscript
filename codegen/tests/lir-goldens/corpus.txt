@@ -25006,6 +25006,1589 @@ fn f5 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %39: Data(Str) = Template([Text("while "), Operand { index: 0, format: Bool }])(%38) traps=[Trap { kind: Allocation, pos: Pos { file: "a327-void-generator.ts", line: 40, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a327-void-generator.ts", line: 40, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a327-void-generator.ts", line: 40, col: 9 } }] @ a327-void-generator.ts:40:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%39) @ a327-void-generator.ts:40:3
     -> Return { value: None, pos: Pos { file: "a327-void-generator.ts", line: 23, col: 17 } }
+===== a329-initializer-inference =====
+module initializer=Some(FunctionId(77))
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "Pool" value=false descriptor=false boundary=false align=None @ main.ts:22:7
+  field d3 "size": I32 defaulted=false absence=false foreign=None @ main.ts:23:5
+  field d4 "label": Str defaulted=false absence=false foreign=None @ main.ts:24:5
+  field d5 "ratio": F64 defaulted=false absence=false foreign=None @ main.ts:25:5
+class c2 "Point" value=true descriptor=false boundary=false align=None @ main.ts:30:7
+  field d6 "x": I32 defaulted=false absence=false foreign=None @ main.ts:31:5
+class c3 "Builtins" value=false descriptor=false boundary=false align=None @ main.ts:52:7
+  field d7 "sliced": Array(I32) defaulted=false absence=false foreign=None @ main.ts:53:5
+  field d8 "joined": Str defaulted=false absence=false foreign=None @ main.ts:54:5
+  field d9 "indexed": I32 defaulted=false absence=false foreign=None @ main.ts:55:5
+  field d10 "included": Bool defaulted=false absence=false foreign=None @ main.ts:56:5
+  field d11 "fixed": Str defaulted=false absence=false foreign=None @ main.ts:57:5
+  field d12 "textSlice": Str defaulted=false absence=false foreign=None @ main.ts:58:5
+  field d13 "step": I32 defaulted=false absence=false foreign=None @ main.ts:65:5
+  method m1 "m" -> f1
+class c4 "PriorDefaults" value=false descriptor=false boundary=false align=None @ main.ts:88:7
+  field d14 "v": I32 defaulted=false absence=false foreign=None @ main.ts:89:5
+  field d15 "total": I32 defaulted=false absence=false foreign=None @ main.ts:90:5
+  method m2 "constructor" -> f2
+  method m3 "pick" -> f3
+class c5 "Tree" value=false descriptor=false boundary=false align=None @ main.ts:94:7
+  field d16 "child": Nullable(Class(ClassId(5))) defaulted=false absence=false foreign=None @ main.ts:95:5
+  method m4 "constructor" -> f4
+class c6 "DirectMethod" value=false descriptor=false boundary=false align=None @ main.ts:102:7
+  method m5 "m" -> f5
+class c7 "S" value=false descriptor=false boundary=false align=None @ main.ts:105:7
+  field d17 "base": I32 defaulted=false absence=false foreign=None @ main.ts:106:5
+  method m6 "m" -> f6
+class c8 "Box<f64>" value=false descriptor=false boundary=false align=None @ main.ts:74:7
+  field d18 "store": Array(F64) defaulted=false absence=false foreign=None @ main.ts:74:16
+global g0 "MAX": I32 mutable=false @ main.ts:9:7
+global g1 "count": I32 mutable=true @ main.ts:10:5
+global g2 "RATE": F64 mutable=false @ main.ts:11:7
+global g3 "NAME": Str mutable=false @ main.ts:12:7
+global g4 "ids": Array(I32) mutable=false @ main.ts:13:7
+global g5 "twice": Func(FuncType { params: [I32], ret: I32 }) mutable=false @ main.ts:14:7
+global g6 "readLater": Func(FuncType { params: [], ret: I32 }) mutable=false @ main.ts:15:7
+global g7 "later": I32 mutable=false @ main.ts:16:7
+global g8 "countdown": Func(FuncType { params: [I32], ret: I32 }) mutable=false @ main.ts:17:7
+global g9 "read": Func(FuncType { params: [], ret: I32 }) mutable=false @ main.ts:19:7
+global g10 "value": Func(FuncType { params: [], ret: I32 }) mutable=false @ main.ts:20:7
+global g11 "Pool.limit": I32 mutable=true @ main.ts:26:12
+global g12 "sliced": Array(I32) mutable=false @ main.ts:43:7
+global g13 "joined": Str mutable=false @ main.ts:44:7
+global g14 "indexed": I32 mutable=false @ main.ts:45:7
+global g15 "included": Bool mutable=false @ main.ts:46:7
+global g16 "fixed": Str mutable=false @ main.ts:47:7
+global g17 "textSlice": Str mutable=false @ main.ts:48:7
+global g18 "total": I32 mutable=false @ main.ts:49:7
+global g19 "Builtins.sliced": Array(I32) mutable=true @ main.ts:59:12
+global g20 "Builtins.joined": Str mutable=true @ main.ts:60:12
+global g21 "Builtins.indexed": I32 mutable=true @ main.ts:61:12
+global g22 "Builtins.included": Bool mutable=true @ main.ts:62:12
+global g23 "Builtins.fixed": Str mutable=true @ main.ts:63:12
+global g24 "Builtins.textSlice": Str mutable=true @ main.ts:64:12
+global g25 "addDefaults": Func(FuncType { params: [I32, I32], ret: I32 }) mutable=false @ main.ts:87:7
+global g26 "imported": I32 mutable=false @ lib.ts:7:14
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "m" kind=Method { class: ClassId(3), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ main.ts:66:5
+  param %0 "this": Data(Class(ClassId(3))) kind=Receiver storage=None @ main.ts:66:5
+  param %1 "by": Data(I32) kind=Explicit storage=None @ main.ts:66:7
+  value %0: Data(Class(ClassId(3))) name=Some("this")
+  value %1: Data(I32) name=Some("by")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 66, col: 30 } }
+fn f2 "constructor" kind=Constructor { class: ClassId(4), method: MethodId(2) } exported=false generator=false async=false -> Void entry=b0 @ main.ts:91:5
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:91:5
+  param %1 "x": Data(I32) kind=Explicit storage=None @ main.ts:91:17
+  param %2 "y": Data(I32) kind=Explicit storage=None @ main.ts:91:24
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(I32) name=Some("x")
+  value %2: Data(I32) name=Some("y")
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(15)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 91, col: 37 } }] @ main.ts:91:42
+    StoreAddress(%3, %2) @ main.ts:91:42
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 91, col: 5 } }
+fn f3 "pick" kind=Method { class: ClassId(4), method: MethodId(3) } exported=false generator=false async=false -> I32 entry=b0 @ main.ts:92:5
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:92:5
+  param %1 "alt": Data(I32) kind=Explicit storage=None @ main.ts:92:10
+  param %2 "list": Data(Array(I32)) kind=Explicit storage=None @ main.ts:92:24
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(I32) name=Some("alt")
+  value %2: Data(Array(I32)) name=Some("list")
+  value %3: Address(AddressType { pointee: I32, array_base: Some(ValueId(2)) }) name=None
+  value %4: Data(I32) name=None
+  value %5: Address(AddressType { pointee: I32, array_base: Some(ValueId(2)) }) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: I32, array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 60 } }, Trap { kind: IndexRead, pos: Pos { file: "main.ts", line: 92, col: 60 } }] @ main.ts:92:60
+    %4: Data(I32) = LoadAddress(%3) @ main.ts:92:60
+    %5: Address(AddressType { pointee: I32, array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 70 } }, Trap { kind: IndexRead, pos: Pos { file: "main.ts", line: 92, col: 70 } }] @ main.ts:92:70
+    %6: Data(I32) = LoadAddress(%5) @ main.ts:92:70
+    %7: Data(I32) = Binary(Add)(%4, %6) @ main.ts:92:60
+    -> Return { value: Some(Value(ValueId(7))), pos: Pos { file: "main.ts", line: 92, col: 53 } }
+fn f4 "constructor" kind=Constructor { class: ClassId(5), method: MethodId(4) } exported=false generator=false async=false -> Void entry=b0 @ main.ts:96:5
+  param %0 "this": Data(Class(ClassId(5))) kind=Receiver storage=None @ main.ts:96:5
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:96:17
+  param %2 "child": Data(Nullable(Class(ClassId(5)))) kind=Explicit storage=None @ main.ts:96:25
+  value %0: Data(Class(ClassId(5))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(Nullable(Class(ClassId(5)))) name=Some("child")
+  value %3: Address(AddressType { pointee: Nullable(Class(ClassId(5))), array_base: None }) name=None
+  b0 Some("entry"):
+    %3: Address(AddressType { pointee: Nullable(Class(ClassId(5))), array_base: None }) = AddressOfField(Class(FieldId(16)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 96, col: 67 } }] @ main.ts:96:72
+    StoreAddress(%3, %2) @ main.ts:96:72
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 96, col: 5 } }
+fn f5 "m" kind=Method { class: ClassId(6), method: MethodId(5) } exported=false generator=false async=false -> I32 entry=b0 @ main.ts:103:5
+  param %0 "this": Data(Class(ClassId(6))) kind=Receiver storage=None @ main.ts:103:5
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:103:7
+  param %2 "k": Data(I32) kind=Explicit storage=None @ main.ts:103:15
+  value %0: Data(Class(ClassId(6))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(I32) name=Some("k")
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Add)(%1, %2) @ main.ts:103:51
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 103, col: 44 } }
+fn f6 "m" kind=Method { class: ClassId(7), method: MethodId(6) } exported=false generator=false async=true -> I32 entry=b0 @ main.ts:107:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 107, col: 11 } }]
+  param %0 "this": Data(Class(ClassId(7))) kind=Receiver storage=None @ main.ts:107:11
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:107:13
+  param %2 "k": Data(I32) kind=Explicit storage=None @ main.ts:107:33
+  value %0: Data(Class(ClassId(7))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(I32) name=Some("k")
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Add)(%1, %2) @ main.ts:107:67
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 107, col: 60 } }
+fn f7 "grow" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:34:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:34:15
+  param %1 "by": Data(I32) kind=Explicit storage=None @ main.ts:34:23
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("by")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:34:45
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 34, col: 38 } }
+fn f8 "first" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:36:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:36:16
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 36, col: 38 } }
+fn f9 "second" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:37:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:37:17
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 37, col: 38 } }
+fn f10 "annotatedFirst" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:38:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:38:25
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 38, col: 61 } }
+fn f11 "annotatedSecond" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:39:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:39:26
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 39, col: 61 } }
+fn f12 "host" kind=Free exported=true generator=false async=false -> Void entry=b0 @ main.ts:41:17
+  param %0 "by": Data(I32) kind=Explicit storage=None @ main.ts:41:22
+  value %0: Data(I32) name=Some("by")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 41, col: 47 } }] @ main.ts:41:44
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ main.ts:41:38
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 41, col: 17 } }
+fn f13 "sum" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:50:10
+  param %0 "base": Data(I32) kind=Explicit storage=None @ main.ts:50:14
+  value %0: Data(I32) name=Some("base")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 50, col: 35 } }
+fn f14 "builtinDefaults" kind=Free exported=false generator=false async=false -> Void entry=b0 @ main.ts:68:10
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:68:26
+  param %1 "j": Data(Str) kind=Explicit storage=None @ main.ts:68:50
+  param %2 "i": Data(I32) kind=Explicit storage=None @ main.ts:69:5
+  param %3 "b": Data(Bool) kind=Explicit storage=None @ main.ts:69:31
+  param %4 "f": Data(Str) kind=Explicit storage=None @ main.ts:70:5
+  param %5 "t": Data(Str) kind=Explicit storage=None @ main.ts:70:27
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=Some("j")
+  value %2: Data(I32) name=Some("i")
+  value %3: Data(Bool) name=Some("b")
+  value %4: Data(Str) name=Some("f")
+  value %5: Data(Str) name=Some("t")
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  b0 Some("entry"):
+    %6: Data(I32) = Length(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 71, col: 14 } }] @ main.ts:71:16
+    %7: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: Str }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: Bool }, Text(","), Operand { index: 4, format: Str }, Text(","), Operand { index: 5, format: Str }])(%6, %1, %2, %3, %4, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 71, col: 11 } }] @ main.ts:71:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) invalidates=[ValueId(0)] @ main.ts:71:5
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 68, col: 10 } }
+fn f15 "depthA" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:76:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:76:17
+  param %1 "acc": Data(I32) kind=Explicit storage=None @ main.ts:76:25
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("acc")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:76:72
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 76, col: 65 } }
+fn f16 "depthB" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:77:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:77:17
+  param %1 "acc": Data(I32) kind=Explicit storage=None @ main.ts:77:25
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("acc")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:77:72
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 77, col: 65 } }
+fn f17 "typedDepthA" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:78:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:78:22
+  param %1 "acc": Data(I32) kind=Explicit storage=None @ main.ts:78:30
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("acc")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:78:87
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 78, col: 80 } }
+fn f18 "typedDepthB" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:79:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:79:22
+  param %1 "acc": Data(I32) kind=Explicit storage=None @ main.ts:79:30
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("acc")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:79:87
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 79, col: 80 } }
+fn f19 "rec" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:80:10
+  can-raise
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:80:14
+  param %1 "k": Data(Func(FuncType { params: [I32], ret: I32 })) kind=Explicit storage=None @ main.ts:80:22
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Func(FuncType { params: [I32], ret: I32 })) name=Some("k")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%1, %0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 80, col: 83 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 80, col: 83 } }] @ main.ts:80:83
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 80, col: 76 } }
+fn f20 "shadow" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:81:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:81:17
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 81, col: 52 } }
+fn f21 "localShadow" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:82:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:82:22
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 82, col: 76 } }
+fn f22 "mapShadow" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:83:10
+  param %0 "list": Data(Array(I32)) kind=Explicit storage=None @ main.ts:83:20
+  value %0: Data(Array(I32)) name=Some("list")
+  value %1: Address(AddressType { pointee: I32, array_base: Some(ValueId(0)) }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: Some(ValueId(0)) }) = AddressOfIndex { checked: true }(%0, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 83, col: 66 } }, Trap { kind: IndexRead, pos: Pos { file: "main.ts", line: 83, col: 66 } }] @ main.ts:83:66
+    %2: Data(I32) = LoadAddress(%1) @ main.ts:83:66
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 83, col: 59 } }
+fn f23 "earlier" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:85:10
+  param %0 "a": Data(I32) kind=Explicit storage=None @ main.ts:85:18
+  param %1 "b": Data(I32) kind=Explicit storage=None @ main.ts:85:26
+  param %2 "c": Data(I32) kind=Explicit storage=None @ main.ts:85:33
+  value %0: Data(I32) name=Some("a")
+  value %1: Data(I32) name=Some("b")
+  value %2: Data(I32) name=Some("c")
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Add)(%0, %2) @ main.ts:85:58
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 85, col: 51 } }
+fn f24 "range" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:86:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ main.ts:86:16
+  param %1 "y": Data(I32) kind=Explicit storage=None @ main.ts:86:23
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(I32) name=Some("y")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 86, col: 41 } }
+fn f25 "direct" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:98:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:98:17
+  param %1 "k": Data(I32) kind=Explicit storage=None @ main.ts:98:25
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("k")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:98:61
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 98, col: 54 } }
+fn f26 "omitted" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:99:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:99:18
+  param %1 "k": Data(I32) kind=Explicit storage=None @ main.ts:99:26
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("k")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:99:72
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 99, col: 65 } }
+fn f27 "pairedFirst" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:100:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:100:22
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 100, col: 54 } }
+fn f28 "pairedSecond" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:101:10
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:101:23
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 101, col: 50 } }
+fn f29 "S.numbers" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ main.ts:108:13
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 108, col: 13 } }]
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:108:21
+  param %1 "k": Data(I32) kind=Explicit storage=None @ main.ts:108:28
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("k")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:108:63
+    -> Suspend { kind: Yield(Some(ValueId(2))), pos: Pos { file: "main.ts", line: 108, col: 57 }, successor: BlockId(1), resume_value: None, arguments: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 108, col: 13 } }
+fn f30 "receiverDefaults" kind=Free exported=false generator=false async=true -> Void entry=b0 @ main.ts:110:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 110, col: 16 } }]
+  value %0: Data(Class(ClassId(7))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(7))) = AllocateClass(ClassId(7))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 110, col: 67 } }] @ main.ts:110:67
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(17)))(%0) @ main.ts:106:5
+    StoreAddress(%1, Integer(7):I32) @ main.ts:106:5
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(35)), parameter_types: [Data(Class(ClassId(7)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 107, col: 27 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 107, col: 27 } }] @ main.ts:107:27
+    %3: Data(I32) = Call(CallTarget { kind: Function(FunctionId(36)), parameter_types: [Data(Class(ClassId(7))), Data(I32)], return_type: Some(Data(I32)) })(%0, %2) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 107, col: 37 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 107, col: 37 } }] @ main.ts:107:37
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Method(MethodId(6)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(0), ValueId(2), ValueId(3)] }, pos: Pos { file: "main.ts", line: 110, col: 61 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [], invalidates: [], traps: [Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 110, col: 67 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 110, col: 61 } }] }
+  b1(%4: Data(I32)) Some("async-call.resume"):
+    %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 110, col: 61 } }] @ main.ts:110:58
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ main.ts:110:52
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 110, col: 16 } }
+fn f31 "fill<string>" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:126:34
+  param %0 "v": Data(Str) kind=Explicit storage=None @ main.ts:75:18
+  param %1 "arr": Data(Array(Str)) kind=Explicit storage=None @ main.ts:75:24
+  value %0: Data(Str) name=Some("v")
+  value %1: Data(Array(Str)) name=Some("arr")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Length(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 75, col: 56 } }] @ main.ts:75:60
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 75, col: 49 } }
+fn f32 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ main.ts:112:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 112, col: 23 } }]
+  can-raise
+  value %0: Data(Class(ClassId(1))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Str) name=None
+  value %3: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %4: Address(AddressType { pointee: F64, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Class(ClassId(2)), array_base: None }) name=None
+  value %6: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %7: Data(Class(ClassId(2))) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(F64) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(Array(I32)) name=None
+  value %16: Address(AddressType { pointee: I32, array_base: Some(ValueId(15)) }) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(Str) name=None
+  value %24: Data(F64) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Str) name=None
+  value %28: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Str) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Array(I32)) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Str) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(Bool) name=None
+  value %43: Data(Str) name=None
+  value %44: Data(Str) name=None
+  value %45: Data(Str) name=None
+  value %46: Data(Class(ClassId(3))) name=None
+  value %47: Data(Array(I32)) name=None
+  value %48: Data(Array(I32)) name=None
+  value %49: Address(AddressType { pointee: Array(I32), array_base: None }) name=None
+  value %50: Data(Str) name=None
+  value %51: Data(Str) name=None
+  value %52: Data(Array(Str)) name=None
+  value %53: Data(Str) name=None
+  value %54: Data(Str) name=None
+  value %55: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %56: Data(Array(I32)) name=None
+  value %57: Data(I32) name=None
+  value %58: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %59: Data(Array(I32)) name=None
+  value %60: Data(Bool) name=None
+  value %61: Address(AddressType { pointee: Bool, array_base: None }) name=None
+  value %62: Data(Str) name=None
+  value %63: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %64: Data(Str) name=None
+  value %65: Data(Str) name=None
+  value %66: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %67: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %68: Data(Array(I32)) name=None
+  value %69: Data(I32) name=None
+  value %70: Data(Str) name=None
+  value %71: Data(I32) name=None
+  value %72: Data(Bool) name=None
+  value %73: Data(Str) name=None
+  value %74: Data(Str) name=None
+  value %75: Data(Str) name=None
+  value %76: Data(Array(I32)) name=None
+  value %77: Data(I32) name=None
+  value %78: Data(Str) name=None
+  value %79: Data(I32) name=None
+  value %80: Data(Bool) name=None
+  value %81: Data(Str) name=None
+  value %82: Data(Str) name=None
+  value %83: Data(Str) name=None
+  value %84: Data(Array(I32)) name=None
+  value %85: Data(Str) name=None
+  value %86: Data(I32) name=None
+  value %87: Data(Bool) name=None
+  value %88: Data(Str) name=None
+  value %89: Data(Str) name=None
+  value %90: Data(Class(ClassId(8))) name=None
+  value %91: Data(Array(F64)) name=None
+  value %92: Address(AddressType { pointee: Array(F64), array_base: None }) name=None
+  value %93: Data(Array(F64)) name=None
+  value %94: Data(I32) name=None
+  value %95: Data(Str) name=None
+  value %96: Data(Array(Str)) name=None
+  value %97: Data(I32) name=None
+  value %98: Data(Str) name=None
+  value %99: Data(I32) name=None
+  value %100: Data(I32) name=None
+  value %101: Data(I32) name=None
+  value %102: Data(I32) name=None
+  value %103: Data(I32) name=None
+  value %104: Data(I32) name=None
+  value %105: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %106: Data(I32) name=None
+  value %107: Data(I32) name=None
+  value %108: Data(I32) name=None
+  value %109: Data(Str) name=None
+  value %110: Data(I32) name=None
+  value %111: Data(I32) name=None
+  value %112: Data(I32) name=None
+  value %113: Data(I32) name=None
+  value %114: Data(Array(I32)) name=None
+  value %115: Data(I32) name=None
+  value %116: Data(I32) name=None
+  value %117: Data(I32) name=None
+  value %118: Data(I32) name=None
+  value %119: Data(Str) name=None
+  value %120: Data(Class(ClassId(4))) name=None
+  value %121: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %122: Data(I32) name=None
+  value %123: Data(I32) name=None
+  value %124: Data(I32) name=None
+  value %125: Data(I32) name=None
+  value %126: Data(I32) name=None
+  value %127: Data(I32) name=None
+  value %128: Data(I32) name=None
+  value %129: Data(I32) name=None
+  value %130: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %131: Data(I32) name=None
+  value %132: Data(I32) name=None
+  value %133: Data(I32) name=None
+  value %134: Data(Array(I32)) name=None
+  value %135: Data(I32) name=None
+  value %136: Data(Str) name=None
+  value %137: Data(Class(ClassId(5))) name=None
+  value %138: Data(Nullable(Class(ClassId(5)))) name=None
+  value %139: Data(Nullable(Class(ClassId(5)))) name=None
+  value %140: Data(Bool) name=None
+  value %141: Data(I32) name=None
+  value %142: Data(I32) name=None
+  value %143: Data(I32) name=None
+  value %144: Data(I32) name=None
+  value %145: Data(I32) name=None
+  value %146: Data(I32) name=None
+  value %147: Data(I32) name=None
+  value %148: Data(I32) name=None
+  value %149: Data(Class(ClassId(6))) name=None
+  value %150: Data(I32) name=None
+  value %151: Data(I32) name=None
+  value %152: Data(Str) name=None
+  value %153: Data(I32) name=None
+  value %154: Data(I32) name=None
+  value %155: Data(Generator(I32)) name=None
+  value %156: Data(IterResult(I32)) name=None
+  value %157: Data(Bool) name=None
+  value %158: Data(I32) name=None
+  value %159: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 113, col: 18 } }] @ main.ts:113:18
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) @ main.ts:23:5
+    StoreAddress(%1, Integer(4):I32) @ main.ts:23:5
+    %2: Data(Str) = StringLiteral("c")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 24, col: 13 } }] @ main.ts:24:13
+    %3: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) @ main.ts:24:5
+    StoreAddress(%3, %2) @ main.ts:24:5
+    %4: Address(AddressType { pointee: F64, array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) @ main.ts:25:5
+    StoreAddress(%4, FloatBits(4609434218613702656):F64) @ main.ts:25:5
+    %5: Address(AddressType { pointee: Class(ClassId(2)), array_base: None }) = AllocateClass(ClassId(2))() @ main.ts:114:19
+    %6: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%5) @ main.ts:31:5
+    StoreAddress(%6, Integer(3):I32) @ main.ts:31:5
+    %7: Data(Class(ClassId(2))) = LoadAddress(%5) @ main.ts:114:19
+    %8: Data(I32) = LoadGlobal(GlobalId(1))() @ main.ts:115:18
+    %9: Data(I32) = Call(CallTarget { kind: Function(FunctionId(37)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%8) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 34, col: 28 } }] @ main.ts:34:28
+    %10: Data(I32) = Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%8, %9) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 115, col: 13 } }] @ main.ts:115:13
+    StoreGlobal(GlobalId(1))(%10) @ main.ts:115:5
+    %11: Data(I32) = LoadGlobal(GlobalId(0))() @ main.ts:116:14
+    %12: Data(I32) = LoadGlobal(GlobalId(1))() @ main.ts:116:21
+    %13: Data(F64) = LoadGlobal(GlobalId(2))() @ main.ts:116:30
+    %14: Data(Str) = LoadGlobal(GlobalId(3))() @ main.ts:116:38
+    %15: Data(Array(I32)) = LoadGlobal(GlobalId(4))() @ main.ts:116:46
+    %16: Address(AddressType { pointee: I32, array_base: Some(ValueId(15)) }) = AddressOfIndex { checked: true }(%15, Integer(2):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 116, col: 46 } }, Trap { kind: IndexRead, pos: Pos { file: "main.ts", line: 116, col: 46 } }] @ main.ts:116:46
+    %17: Data(I32) = LoadAddress(%16) @ main.ts:116:46
+    %18: Data(Func(FuncType { params: [I32], ret: I32 })) = LoadGlobal(GlobalId(5))() @ main.ts:116:56
+    %19: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%18, Integer(3):I32) invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 116, col: 56 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 116, col: 56 } }] @ main.ts:116:56
+    %20: Data(I32) = LoadGlobal(GlobalId(26))() @ main.ts:116:68
+    %21: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }, Text(","), Operand { index: 2, format: F64 }, Text(","), Operand { index: 3, format: Str }, Text(","), Operand { index: 4, format: I32 }, Text(","), Operand { index: 5, format: I32 }, Text(","), Operand { index: 6, format: I32 }])(%11, %12, %13, %14, %17, %19, %20) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 46 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 56 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 68 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 116, col: 11 } }] @ main.ts:116:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) invalidates=[ValueId(15)] @ main.ts:116:5
+    %22: Data(I32) = LoadField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 117, col: 14 } }] @ main.ts:117:19
+    %23: Data(Str) = LoadField(Class(FieldId(4)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 117, col: 27 } }] @ main.ts:117:32
+    %24: Data(F64) = LoadField(Class(FieldId(5)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 117, col: 41 } }] @ main.ts:117:46
+    %25: Data(I32) = LoadGlobal(GlobalId(11))() @ main.ts:117:60
+    %26: Data(I32) = LoadField(Class(FieldId(6)))(%7) @ main.ts:117:75
+    %27: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: Str }, Text(","), Operand { index: 2, format: F64 }, Text(","), Operand { index: 3, format: I32 }, Text(","), Operand { index: 4, format: I32 }])(%22, %23, %24, %25, %26) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 46 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 60 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 75 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 117, col: 11 } }] @ main.ts:117:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%27) invalidates=[ValueId(15)] @ main.ts:117:5
+    %28: Data(Func(FuncType { params: [I32], ret: I32 })) = LoadGlobal(GlobalId(8))() @ main.ts:118:14
+    %29: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%28, Integer(3):I32) invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 118, col: 14 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 118, col: 14 } }] @ main.ts:118:14
+    %30: Data(Func(FuncType { params: [], ret: I32 })) = LoadGlobal(GlobalId(6))() @ main.ts:118:30
+    %31: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%30) invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 118, col: 30 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 118, col: 30 } }] @ main.ts:118:30
+    %32: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }])(%29, %31) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 118, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 118, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 118, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 118, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 118, col: 11 } }] @ main.ts:118:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%32) invalidates=[ValueId(15)] @ main.ts:118:5
+    %33: Data(I32) = Call(CallTarget { kind: Function(FunctionId(38)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 36, col: 20 } }] @ main.ts:36:20
+    %34: Data(I32) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%33) invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 119, col: 14 } }] @ main.ts:119:14
+    %35: Data(I32) = Call(CallTarget { kind: Function(FunctionId(39)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 38, col: 34 } }] @ main.ts:38:34
+    %36: Data(I32) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%35) invalidates=[ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 119, col: 25 } }] @ main.ts:119:25
+    %37: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }])(%34, %36) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 119, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 119, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 119, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 119, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 119, col: 11 } }] @ main.ts:119:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%37) invalidates=[ValueId(15)] @ main.ts:119:5
+    %38: Data(Array(I32)) = LoadGlobal(GlobalId(12))() @ main.ts:120:14
+    %39: Data(I32) = Length(%38) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 120, col: 14 } }] @ main.ts:120:21
+    %40: Data(Str) = LoadGlobal(GlobalId(13))() @ main.ts:120:31
+    %41: Data(I32) = LoadGlobal(GlobalId(14))() @ main.ts:120:41
+    %42: Data(Bool) = LoadGlobal(GlobalId(15))() @ main.ts:120:52
+    %43: Data(Str) = LoadGlobal(GlobalId(16))() @ main.ts:120:64
+    %44: Data(Str) = LoadGlobal(GlobalId(17))() @ main.ts:120:73
+    %45: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: Str }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: Bool }, Text(","), Operand { index: 4, format: Str }, Text(","), Operand { index: 5, format: Str }])(%39, %40, %41, %42, %43, %44) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 52 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 120, col: 11 } }] @ main.ts:120:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%45) invalidates=[ValueId(15), ValueId(38)] @ main.ts:120:5
+    %46: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 121, col: 22 } }] @ main.ts:121:22
+    %47: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 53, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 53, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 53, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 53, col: 21 } }] @ main.ts:53:14
+    %48: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Array(I32))) })(%47, Integer(1):I32, Integer(2147483647):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 53, col: 14 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 53, col: 14 } }] @ main.ts:53:14
+    %49: Address(AddressType { pointee: Array(I32), array_base: None }) = AddressOfField(Class(FieldId(7)))(%46) @ main.ts:53:5
+    StoreAddress(%49, %48) @ main.ts:53:5
+    %50: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 15 } }] @ main.ts:54:15
+    %51: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 20 } }] @ main.ts:54:20
+    %52: Data(Array(Str)) = ArrayLiteral(%50, %51) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 20 } }] @ main.ts:54:14
+    %53: Data(Str) = StringLiteral("+")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 54, col: 30 } }] @ main.ts:54:30
+    %54: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%52, %53) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 54, col: 14 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 54, col: 14 } }] @ main.ts:54:14
+    %55: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(8)))(%46) @ main.ts:54:5
+    StoreAddress(%55, %54) @ main.ts:54:5
+    %56: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 55, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 55, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 55, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 55, col: 22 } }] @ main.ts:55:15
+    %57: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%56, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 55, col: 15 } }] @ main.ts:55:15
+    %58: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(9)))(%46) @ main.ts:55:5
+    StoreAddress(%58, %57) @ main.ts:55:5
+    %59: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 56, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 56, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 56, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 56, col: 23 } }] @ main.ts:56:16
+    %60: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%59, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 56, col: 16 } }] @ main.ts:56:16
+    %61: Address(AddressType { pointee: Bool, array_base: None }) = AddressOfField(Class(FieldId(10)))(%46) @ main.ts:56:5
+    StoreAddress(%61, %60) @ main.ts:56:5
+    %62: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Number, operation: 6, type_argument: None, worker_entry: None }), parameter_types: [Data(F64), Data(I32)], return_type: Some(Data(Str)) })(FloatBits(4609434218613702656):F64, Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 57, col: 13 } }] @ main.ts:57:13
+    %63: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(11)))(%46) @ main.ts:57:5
+    StoreAddress(%63, %62) @ main.ts:57:5
+    %64: Data(Str) = StringLiteral("hello")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 58, col: 17 } }] @ main.ts:58:17
+    %65: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: String, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str), Data(I32), Data(I32)], return_type: Some(Data(Str)) })(%64, Integer(1):I32, Integer(3):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 58, col: 17 } }] @ main.ts:58:17
+    %66: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(12)))(%46) @ main.ts:58:5
+    StoreAddress(%66, %65) @ main.ts:58:5
+    %67: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(13)))(%46) @ main.ts:65:5
+    StoreAddress(%67, Integer(3):I32) @ main.ts:65:5
+    %68: Data(Array(I32)) = LoadField(Class(FieldId(7)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 14 } }] @ main.ts:122:23
+    %69: Data(I32) = Length(%68) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 23 } }] @ main.ts:122:30
+    %70: Data(Str) = LoadField(Class(FieldId(8)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 40 } }] @ main.ts:122:49
+    %71: Data(I32) = LoadField(Class(FieldId(9)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 59 } }] @ main.ts:122:68
+    %72: Data(Bool) = LoadField(Class(FieldId(10)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 79 } }] @ main.ts:122:88
+    %73: Data(Str) = LoadField(Class(FieldId(11)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 100 } }] @ main.ts:122:109
+    %74: Data(Str) = LoadField(Class(FieldId(12)))(%46) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 122, col: 118 } }] @ main.ts:122:127
+    %75: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: Str }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: Bool }, Text(","), Operand { index: 4, format: Str }, Text(","), Operand { index: 5, format: Str }])(%69, %70, %71, %72, %73, %74) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 68 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 88 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 122, col: 11 } }] @ main.ts:122:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%75) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68)] @ main.ts:122:5
+    %76: Data(Array(I32)) = LoadGlobal(GlobalId(19))() @ main.ts:123:23
+    %77: Data(I32) = Length(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 123, col: 23 } }] @ main.ts:123:30
+    %78: Data(Str) = LoadGlobal(GlobalId(20))() @ main.ts:123:49
+    %79: Data(I32) = LoadGlobal(GlobalId(21))() @ main.ts:123:68
+    %80: Data(Bool) = LoadGlobal(GlobalId(22))() @ main.ts:123:88
+    %81: Data(Str) = LoadGlobal(GlobalId(23))() @ main.ts:123:109
+    %82: Data(Str) = LoadGlobal(GlobalId(24))() @ main.ts:123:127
+    %83: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: Str }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: Bool }, Text(","), Operand { index: 4, format: Str }, Text(","), Operand { index: 5, format: Str }])(%77, %78, %79, %80, %81, %82) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 68 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 88 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 123, col: 11 } }] @ main.ts:123:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%83) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76)] @ main.ts:123:5
+    %84: Data(Array(I32)) = Call(CallTarget { kind: Function(FunctionId(40)), parameter_types: [], return_type: Some(Data(Array(I32))) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 68, col: 30 } }] @ main.ts:68:30
+    %85: Data(Str) = Call(CallTarget { kind: Function(FunctionId(41)), parameter_types: [Data(Array(I32))], return_type: Some(Data(Str)) })(%84) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 68, col: 54 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 68, col: 54 } }] @ main.ts:68:54
+    %86: Data(I32) = Call(CallTarget { kind: Function(FunctionId(42)), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(I32)) })(%84, %85) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 69, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 69, col: 9 } }] @ main.ts:69:9
+    %87: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(43)), parameter_types: [Data(Array(I32)), Data(Str), Data(I32)], return_type: Some(Data(Bool)) })(%84, %85, %86) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 69, col: 35 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 69, col: 35 } }] @ main.ts:69:35
+    %88: Data(Str) = Call(CallTarget { kind: Function(FunctionId(44)), parameter_types: [Data(Array(I32)), Data(Str), Data(I32), Data(Bool)], return_type: Some(Data(Str)) })(%84, %85, %86, %87) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 70, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 70, col: 9 } }] @ main.ts:70:9
+    %89: Data(Str) = Call(CallTarget { kind: Function(FunctionId(45)), parameter_types: [Data(Array(I32)), Data(Str), Data(I32), Data(Bool), Data(Str)], return_type: Some(Data(Str)) })(%84, %85, %86, %87, %88) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 70, col: 31 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 70, col: 31 } }] @ main.ts:70:31
+    Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(Array(I32)), Data(Str), Data(I32), Data(Bool), Data(Str), Data(Str)], return_type: None })(%84, %85, %86, %87, %88, %89) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 124, col: 5 } }] @ main.ts:124:5
+    %90: Data(Class(ClassId(8))) = AllocateClass(ClassId(8))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 125, col: 17 } }] @ main.ts:125:17
+    %91: Data(Array(F64)) = Call(CallTarget { kind: Function(FunctionId(33)), parameter_types: [Data(I32)], return_type: Some(Data(Array(F64))) })(Integer(1):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 74, col: 24 } }] @ main.ts:74:24
+    %92: Address(AddressType { pointee: Array(F64), array_base: None }) = AddressOfField(Class(FieldId(18)))(%90) @ main.ts:74:16
+    StoreAddress(%92, %91) @ main.ts:74:16
+    %93: Data(Array(F64)) = LoadField(Class(FieldId(18)))(%90) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 126, col: 14 } }] @ main.ts:126:18
+    %94: Data(I32) = Length(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 126, col: 18 } }] @ main.ts:126:24
+    %95: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 39 } }] @ main.ts:126:39
+    %96: Data(Array(Str)) = Call(CallTarget { kind: Function(FunctionId(46)), parameter_types: [Data(Str)], return_type: Some(Data(Array(Str))) })(%95) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 75, col: 30 } }] @ main.ts:75:30
+    %97: Data(I32) = Call(CallTarget { kind: Function(FunctionId(31)), parameter_types: [Data(Str), Data(Array(Str))], return_type: Some(Data(I32)) })(%95, %96) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 126, col: 34 } }] @ main.ts:126:34
+    %98: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }])(%94, %97) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 126, col: 11 } }] @ main.ts:126:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%98) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] @ main.ts:126:5
+    %99: Data(I32) = Call(CallTarget { kind: Function(FunctionId(47)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(6):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 76, col: 31 } }] @ main.ts:76:31
+    %100: Data(I32) = Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(6):I32, %99) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 127, col: 14 } }] @ main.ts:127:14
+    %101: Data(I32) = Binary(Add)(%100, Integer(1):I32) @ main.ts:127:14
+    %102: Data(I32) = Call(CallTarget { kind: Function(FunctionId(49)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(6):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 78, col: 41 } }] @ main.ts:78:41
+    %103: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(6):I32, %102) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 127, col: 31 } }] @ main.ts:127:31
+    %104: Data(I32) = Binary(Add)(%103, Integer(1):I32) @ main.ts:127:31
+    %105: Data(Func(FuncType { params: [I32], ret: I32 })) = Call(CallTarget { kind: Function(FunctionId(51)), parameter_types: [Data(I32)], return_type: Some(Data(Func(FuncType { params: [I32], ret: I32 }))) })(Integer(3):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 80, col: 26 } }] @ main.ts:80:26
+    %106: Data(I32) = Call(CallTarget { kind: Function(FunctionId(19)), parameter_types: [Data(I32), Data(Func(FuncType { params: [I32], ret: I32 }))], return_type: Some(Data(I32)) })(Integer(3):I32, %105) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 127, col: 53 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 127, col: 53 } }] @ main.ts:127:53
+    %107: Data(I32) = Call(CallTarget { kind: Function(FunctionId(53)), parameter_types: [Data(Class(ClassId(3)))], return_type: Some(Data(I32)) })(%46) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 66, col: 17 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 66, col: 17 } }] @ main.ts:66:17
+    %108: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(3))), Data(I32)], return_type: Some(Data(I32)) })(%46, %107) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 127, col: 63 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 127, col: 63 } }] @ main.ts:127:63
+    %109: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: I32 }])(%101, %104, %106, %108) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 53 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 63 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 127, col: 11 } }] @ main.ts:127:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%109) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] @ main.ts:127:5
+    %110: Data(I32) = Call(CallTarget { kind: Function(FunctionId(54)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 81, col: 21 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 81, col: 21 } }] @ main.ts:81:21
+    %111: Data(I32) = Call(CallTarget { kind: Function(FunctionId(20)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%110) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 128, col: 14 } }] @ main.ts:128:14
+    %112: Data(I32) = Call(CallTarget { kind: Function(FunctionId(56)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 82, col: 26 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 82, col: 26 } }] @ main.ts:82:26
+    %113: Data(I32) = Call(CallTarget { kind: Function(FunctionId(21)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%112) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 128, col: 26 } }] @ main.ts:128:26
+    %114: Data(Array(I32)) = Call(CallTarget { kind: Function(FunctionId(58)), parameter_types: [], return_type: Some(Data(Array(I32))) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 83, col: 27 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 83, col: 27 } }] @ main.ts:83:27
+    %115: Data(I32) = Call(CallTarget { kind: Function(FunctionId(22)), parameter_types: [Data(Array(I32))], return_type: Some(Data(I32)) })(%114) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 128, col: 43 } }] @ main.ts:128:43
+    %116: Data(I32) = LoadGlobal(GlobalId(18))() @ main.ts:128:58
+    %117: Data(I32) = Call(CallTarget { kind: Function(FunctionId(60)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 50, col: 21 } }] @ main.ts:50:21
+    %118: Data(I32) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%117) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 128, col: 67 } }] @ main.ts:128:67
+    %119: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: I32 }, Text(","), Operand { index: 4, format: I32 }])(%111, %113, %115, %116, %118) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 43 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 58 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 67 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 128, col: 11 } }] @ main.ts:128:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%119) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] @ main.ts:128:5
+    %120: Data(Class(ClassId(4))) = AllocateClass(ClassId(4))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 129, col: 19 } }] @ main.ts:129:19
+    %121: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(14)))(%120) @ main.ts:89:5
+    StoreAddress(%121, Integer(3):I32) @ main.ts:89:5
+    %122: Data(I32) = Call(CallTarget { kind: Function(FunctionId(61)), parameter_types: [Data(Class(ClassId(4)))], return_type: Some(Data(I32)) })(%120) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 91, col: 21 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 91, col: 21 } }] @ main.ts:91:21
+    %123: Data(I32) = Call(CallTarget { kind: Function(FunctionId(62)), parameter_types: [Data(Class(ClassId(4))), Data(I32)], return_type: Some(Data(I32)) })(%120, %122) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 91, col: 28 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 91, col: 28 } }] @ main.ts:91:28
+    Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(4))), Data(I32), Data(I32)], return_type: None })(%120, %122, %123) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 129, col: 19 } }] @ main.ts:129:19
+    %124: Data(I32) = Call(CallTarget { kind: Function(FunctionId(63)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 85, col: 30 } }] @ main.ts:85:30
+    %125: Data(I32) = Call(CallTarget { kind: Function(FunctionId(64)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32, %124) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 85, col: 37 } }] @ main.ts:85:37
+    %126: Data(I32) = Call(CallTarget { kind: Function(FunctionId(23)), parameter_types: [Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32, %124, %125) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 130, col: 14 } }] @ main.ts:130:14
+    %127: Data(I32) = Call(CallTarget { kind: Function(FunctionId(65)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 86, col: 20 } }] @ main.ts:86:20
+    %128: Data(I32) = Call(CallTarget { kind: Function(FunctionId(66)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%127) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 86, col: 27 } }] @ main.ts:86:27
+    %129: Data(I32) = Call(CallTarget { kind: Function(FunctionId(24)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%127, %128) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 130, col: 28 } }] @ main.ts:130:28
+    %130: Data(Func(FuncType { params: [I32, I32], ret: I32 })) = LoadGlobal(GlobalId(25))() @ main.ts:130:39
+    %131: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: I32 })), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%130, Integer(1):I32, Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 130, col: 39 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 130, col: 39 } }] @ main.ts:130:39
+    %132: Data(I32) = LoadField(Class(FieldId(15)))(%120) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 130, col: 60 } }] @ main.ts:130:66
+    %133: Data(I32) = Call(CallTarget { kind: Function(FunctionId(67)), parameter_types: [Data(Class(ClassId(4)))], return_type: Some(Data(I32)) })(%120) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 92, col: 21 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 21 } }] @ main.ts:92:21
+    %134: Data(Array(I32)) = Call(CallTarget { kind: Function(FunctionId(68)), parameter_types: [Data(Class(ClassId(4))), Data(I32)], return_type: Some(Data(Array(I32))) })(%120, %133) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 92, col: 31 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 31 } }] @ main.ts:92:31
+    %135: Data(I32) = Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(4))), Data(I32), Data(Array(I32))], return_type: Some(Data(I32)) })(%120, %133, %134) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 130, col: 75 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 130, col: 75 } }] @ main.ts:130:75
+    %136: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: I32 }, Text(","), Operand { index: 4, format: I32 }])(%126, %129, %131, %132, %135) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 66 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 75 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 130, col: 11 } }] @ main.ts:130:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%136) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] @ main.ts:130:5
+    %137: Data(Class(ClassId(5))) = AllocateClass(ClassId(5))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 14 } }] @ main.ts:131:14
+    %138: Data(Nullable(Class(ClassId(5)))) = Call(CallTarget { kind: Function(FunctionId(69)), parameter_types: [Data(Class(ClassId(5))), Data(I32)], return_type: Some(Data(Nullable(Class(ClassId(5))))) })(%137, Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 96, col: 33 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 96, col: 33 } }] @ main.ts:96:33
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Data(Class(ClassId(5))), Data(I32), Data(Nullable(Class(ClassId(5))))], return_type: None })(%137, Integer(2):I32, %138) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 14 } }] @ main.ts:131:14
+    %139: Data(Nullable(Class(ClassId(5)))) = LoadField(Class(FieldId(16)))(%137) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 131, col: 14 } }] @ main.ts:131:26
+    %140: Data(Bool) = Binary(Ne)(%139, Null:Null) @ main.ts:131:14
+    %141: Data(I32) = Call(CallTarget { kind: Function(FunctionId(70)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 98, col: 29 } }] @ main.ts:98:29
+    %142: Data(I32) = Call(CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32, %141) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 44 } }] @ main.ts:131:44
+    %143: Data(I32) = Call(CallTarget { kind: Function(FunctionId(71)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 99, col: 30 } }] @ main.ts:99:30
+    %144: Data(I32) = Call(CallTarget { kind: Function(FunctionId(26)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32, %143) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 57 } }] @ main.ts:131:57
+    %145: Data(I32) = Call(CallTarget { kind: Function(FunctionId(72)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 100, col: 26 } }] @ main.ts:100:26
+    %146: Data(I32) = Call(CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%145) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 71 } }] @ main.ts:131:71
+    %147: Data(I32) = Call(CallTarget { kind: Function(FunctionId(73)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 101, col: 27 } }] @ main.ts:101:27
+    %148: Data(I32) = Call(CallTarget { kind: Function(FunctionId(28)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%147) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 88 } }] @ main.ts:131:88
+    %149: Data(Class(ClassId(6))) = AllocateClass(ClassId(6))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 106 } }] @ main.ts:131:106
+    %150: Data(I32) = Call(CallTarget { kind: Function(FunctionId(74)), parameter_types: [Data(Class(ClassId(6))), Data(I32)], return_type: Some(Data(I32)) })(%149, Integer(2):I32) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 103, col: 19 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 103, col: 19 } }] @ main.ts:103:19
+    %151: Data(I32) = Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(6))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%149, Integer(2):I32, %150) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 131, col: 106 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 131, col: 106 } }] @ main.ts:131:106
+    %152: Data(Str) = Template([Operand { index: 0, format: Bool }, Text(","), Operand { index: 1, format: I32 }, Text(","), Operand { index: 2, format: I32 }, Text(","), Operand { index: 3, format: I32 }, Text(","), Operand { index: 4, format: I32 }, Text(","), Operand { index: 5, format: I32 }])(%140, %142, %144, %146, %148, %151) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 57 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 71 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 88 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 106 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 131, col: 11 } }] @ main.ts:131:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%152) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] @ main.ts:131:5
+    %153: Data(I32) = Call(CallTarget { kind: Function(FunctionId(75)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 108, col: 25 } }] @ main.ts:108:25
+    %154: Data(I32) = Call(CallTarget { kind: Function(FunctionId(76)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%153) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 108, col: 32 } }] @ main.ts:108:32
+    %155: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(29)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(%153, %154) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 132, col: 21 } }] @ main.ts:132:21
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b1 Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
+  b2 Some("while.body"):
+    %156: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%155) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 132, col: 21 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "main.ts", line: 132, col: 5 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 132, col: 5 } }] @ main.ts:132:5
+    %157: Data(Bool) = LoadField(IterDone)(%156) @ main.ts:132:5
+    -> ConditionalBranch { condition: Value(ValueId(157)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3 Some("while.exit"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(30)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "main.ts", line: 133, col: 5 }, successor: BlockId(7), resume_value: None, arguments: [], invalidates: [ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)], traps: [Trap { kind: Call, pos: Pos { file: "main.ts", line: 133, col: 5 } }] }
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [] })
+  b6 Some("if.join"):
+    %158: Data(I32) = LoadField(IterValue)(%156) @ main.ts:132:16
+    %159: Data(Str) = Template([Operand { index: 0, format: I32 }])(%158) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 132, col: 45 } }] @ main.ts:132:42
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%159) invalidates=[ValueId(15), ValueId(38), ValueId(47), ValueId(48), ValueId(52), ValueId(56), ValueId(59), ValueId(68), ValueId(76), ValueId(84), ValueId(91), ValueId(93), ValueId(96), ValueId(114), ValueId(134)] @ main.ts:132:36
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [] })
+  b7 Some("async-call.resume"):
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 112, col: 23 } }
+fn f33 "make<f64>" kind=Free exported=false generator=false async=false -> Array(F64) entry=b0 @ main.ts:74:24
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:73:18
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Array(F64)) name=None
+  b0 Some("entry"):
+    %1: Data(Array(F64)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 73, col: 50 } }] @ main.ts:73:50
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 73, col: 54 } }
+fn f34 "make<string>" kind=Free exported=false generator=false async=false -> Array(Str) entry=b0 @ main.ts:75:30
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:73:18
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Array(Str)) name=None
+  b0 Some("entry"):
+    %1: Data(Array(Str)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 73, col: 50 } }] @ main.ts:73:50
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 73, col: 54 } }
+fn f35 "<default main.ts:107:27>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:107:27
+  param %0 "this": Data(Class(ClassId(7))) kind=Receiver storage=None @ main.ts:107:27
+  value %0: Data(Class(ClassId(7))) name=Some("this")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadField(Class(FieldId(17)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 107, col: 22 } }] @ main.ts:107:27
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 107, col: 27 } }
+fn f36 "<default main.ts:107:37>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:107:37
+  param %0 "this": Data(Class(ClassId(7))) kind=Receiver storage=None @ main.ts:107:37
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:107:37
+  value %0: Data(Class(ClassId(7))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, Integer(2):I32) @ main.ts:107:37
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 107, col: 37 } }
+fn f37 "<default main.ts:34:28>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:34:28
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:34:28
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(2) })), pos: Pos { file: "main.ts", line: 34, col: 28 } }
+fn f38 "<default main.ts:36:20>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:36:20
+  value %0: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 36, col: 20 } }] @ main.ts:36:20
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 36, col: 20 } }
+fn f39 "<default main.ts:38:34>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:38:34
+  value %0: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 38, col: 34 } }] @ main.ts:38:34
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 38, col: 34 } }
+fn f40 "<default main.ts:68:30>" kind=SynthesizedHelper exported=false generator=false async=false -> Array(I32) entry=b0 @ main.ts:68:30
+  value %0: Data(Array(I32)) name=None
+  value %1: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 37 } }] @ main.ts:68:30
+    %1: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Array(I32))) })(%0, Integer(1):I32, Integer(2147483647):I32) invalidates=[ValueId(0), ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 68, col: 30 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 68, col: 30 } }] @ main.ts:68:30
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 68, col: 30 } }
+fn f41 "<default main.ts:68:54>" kind=SynthesizedHelper exported=false generator=false async=false -> Str entry=b0 @ main.ts:68:54
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:68:54
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Array(Str)) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 55 } }] @ main.ts:68:55
+    %2: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 60 } }] @ main.ts:68:60
+    %3: Data(Array(Str)) = ArrayLiteral(%1, %2) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 54 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 55 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 60 } }] @ main.ts:68:54
+    %4: Data(Str) = StringLiteral("+")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 68, col: 70 } }] @ main.ts:68:70
+    %5: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%3, %4) invalidates=[ValueId(0), ValueId(3)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 68, col: 54 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 68, col: 54 } }] @ main.ts:68:54
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "main.ts", line: 68, col: 54 } }
+fn f42 "<default main.ts:69:9>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:69:9
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:69:9
+  param %1 "j": Data(Str) kind=Explicit storage=None @ main.ts:69:9
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=Some("j")
+  value %2: Data(Array(I32)) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 10 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 16 } }] @ main.ts:69:9
+    %3: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%2, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(0), ValueId(2)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 69, col: 9 } }] @ main.ts:69:9
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 69, col: 9 } }
+fn f43 "<default main.ts:69:35>" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ main.ts:69:35
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:69:35
+  param %1 "j": Data(Str) kind=Explicit storage=None @ main.ts:69:35
+  param %2 "i": Data(I32) kind=Explicit storage=None @ main.ts:69:35
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=Some("j")
+  value %2: Data(I32) name=Some("i")
+  value %3: Data(Array(I32)) name=None
+  value %4: Data(Bool) name=None
+  b0 Some("entry"):
+    %3: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 69, col: 42 } }] @ main.ts:69:35
+    %4: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%3, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(0), ValueId(3)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 69, col: 35 } }] @ main.ts:69:35
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "main.ts", line: 69, col: 35 } }
+fn f44 "<default main.ts:70:9>" kind=SynthesizedHelper exported=false generator=false async=false -> Str entry=b0 @ main.ts:70:9
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:70:9
+  param %1 "j": Data(Str) kind=Explicit storage=None @ main.ts:70:9
+  param %2 "i": Data(I32) kind=Explicit storage=None @ main.ts:70:9
+  param %3 "b": Data(Bool) kind=Explicit storage=None @ main.ts:70:9
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=Some("j")
+  value %2: Data(I32) name=Some("i")
+  value %3: Data(Bool) name=Some("b")
+  value %4: Data(Str) name=None
+  b0 Some("entry"):
+    %4: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Number, operation: 6, type_argument: None, worker_entry: None }), parameter_types: [Data(F64), Data(I32)], return_type: Some(Data(Str)) })(FloatBits(4609434218613702656):F64, Integer(2):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 70, col: 9 } }] @ main.ts:70:9
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "main.ts", line: 70, col: 9 } }
+fn f45 "<default main.ts:70:31>" kind=SynthesizedHelper exported=false generator=false async=false -> Str entry=b0 @ main.ts:70:31
+  param %0 "a": Data(Array(I32)) kind=Explicit storage=None @ main.ts:70:31
+  param %1 "j": Data(Str) kind=Explicit storage=None @ main.ts:70:31
+  param %2 "i": Data(I32) kind=Explicit storage=None @ main.ts:70:31
+  param %3 "b": Data(Bool) kind=Explicit storage=None @ main.ts:70:31
+  param %4 "f": Data(Str) kind=Explicit storage=None @ main.ts:70:31
+  value %0: Data(Array(I32)) name=Some("a")
+  value %1: Data(Str) name=Some("j")
+  value %2: Data(I32) name=Some("i")
+  value %3: Data(Bool) name=Some("b")
+  value %4: Data(Str) name=Some("f")
+  value %5: Data(Str) name=None
+  value %6: Data(Str) name=None
+  b0 Some("entry"):
+    %5: Data(Str) = StringLiteral("hello")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 70, col: 31 } }] @ main.ts:70:31
+    %6: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: String, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str), Data(I32), Data(I32)], return_type: Some(Data(Str)) })(%5, Integer(1):I32, Integer(3):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 70, col: 31 } }] @ main.ts:70:31
+    -> Return { value: Some(Value(ValueId(6))), pos: Pos { file: "main.ts", line: 70, col: 31 } }
+fn f46 "<default main.ts:75:30>" kind=SynthesizedHelper exported=false generator=false async=false -> Array(Str) entry=b0 @ main.ts:75:30
+  param %0 "v": Data(Str) kind=Explicit storage=None @ main.ts:75:30
+  value %0: Data(Str) name=Some("v")
+  value %1: Data(Array(Str)) name=None
+  b0 Some("entry"):
+    %1: Data(Array(Str)) = Call(CallTarget { kind: Function(FunctionId(34)), parameter_types: [Data(I32)], return_type: Some(Data(Array(Str))) })(Integer(0):I32) invalidates=[ValueId(1)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 75, col: 30 } }] @ main.ts:75:30
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 75, col: 30 } }
+fn f47 "<default main.ts:76:31>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:76:31
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:76:31
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Gt)(%0, Integer(0):I32) @ main.ts:76:31
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:76:46
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(48)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 77, col: 31 } }] @ main.ts:77:31
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(16)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 76, col: 39 } }] @ main.ts:76:39
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 76, col: 31 } }
+fn f48 "<default main.ts:77:31>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:77:31
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:77:31
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Gt)(%0, Integer(0):I32) @ main.ts:77:31
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:77:46
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(47)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 76, col: 31 } }] @ main.ts:76:31
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 77, col: 39 } }] @ main.ts:77:39
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 77, col: 31 } }
+fn f49 "<default main.ts:78:41>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:78:41
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:78:41
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Gt)(%0, Integer(0):I32) @ main.ts:78:41
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:78:61
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(50)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 79, col: 41 } }] @ main.ts:79:41
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(18)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 78, col: 49 } }] @ main.ts:78:49
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 78, col: 41 } }
+fn f50 "<default main.ts:79:41>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:79:41
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:79:41
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Gt)(%0, Integer(0):I32) @ main.ts:79:41
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:79:61
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(49)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 78, col: 41 } }] @ main.ts:78:41
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 79, col: 49 } }] @ main.ts:79:49
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 79, col: 41 } }
+fn f51 "<default main.ts:80:26>" kind=SynthesizedHelper exported=false generator=false async=false -> Func(FuncType { params: [I32], ret: I32 }) entry=b0 @ main.ts:80:26
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:80:26
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  b0 Some("entry"):
+    %1: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(52))() @ main.ts:80:26
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 80, col: 26 } }
+fn f52 "<lambda main.ts:80:26>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:80:26
+  can-raise
+  param %0 "m": Data(I32) kind=Explicit storage=None @ main.ts:80:26
+  value %0: Data(I32) name=Some("m")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Eq)(%0, Integer(0):I32) @ main.ts:80:43
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:80:61
+    %5: Data(Func(FuncType { params: [I32], ret: I32 })) = Call(CallTarget { kind: Function(FunctionId(51)), parameter_types: [Data(I32)], return_type: Some(Data(Func(FuncType { params: [I32], ret: I32 }))) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 80, col: 26 } }] @ main.ts:80:26
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(19)), parameter_types: [Data(I32), Data(Func(FuncType { params: [I32], ret: I32 }))], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 80, col: 57 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 80, col: 57 } }] @ main.ts:80:57
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 80, col: 43 } }
+fn f53 "<default main.ts:66:17>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:66:17
+  param %0 "this": Data(Class(ClassId(3))) kind=Receiver storage=None @ main.ts:66:17
+  value %0: Data(Class(ClassId(3))) name=Some("this")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadField(Class(FieldId(13)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 66, col: 12 } }] @ main.ts:66:17
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 66, col: 17 } }
+fn f54 "<default main.ts:81:21>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:81:21
+  can-raise
+  value %0: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(55))() @ main.ts:81:22
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%0, Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 81, col: 21 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 81, col: 21 } }] @ main.ts:81:21
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 81, col: 21 } }
+fn f55 "<lambda main.ts:81:22>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:81:22
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:81:22
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Add)(%0, Integer(1):I32) @ main.ts:81:34
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 81, col: 34 } }
+fn f56 "<default main.ts:82:26>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:82:26
+  can-raise
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(57))() @ main.ts:82:27
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 82, col: 26 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 82, col: 26 } }] @ main.ts:82:26
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 82, col: 26 } }
+fn f57 "<lambda main.ts:82:27>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:82:27
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(2) })), pos: Pos { file: "main.ts", line: 82, col: 53 } }
+fn f58 "<default main.ts:83:27>" kind=SynthesizedHelper exported=false generator=false async=false -> Array(I32) entry=b0 @ main.ts:83:27
+  can-raise
+  value %0: Data(Array(I32)) name=None
+  value %1: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Array(I32)) name=None
+  value %5: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %6: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Array(I32)) name=None
+  value %10: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %11: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Array(I32)) name=None
+  value %15: Data(Array(I32)) name=None
+  value %16: Data(Bool) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %21: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Array(I32)) = ArrayLiteral(Integer(5):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 83, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 83, col: 28 } }] @ main.ts:83:27
+    %1: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(59))() @ main.ts:83:35
+    %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 83, col: 27 } }] @ main.ts:83:27
+    %3: Data(I32) = IteratorBound(%2) @ main.ts:83:27
+    %4: Data(Array(I32)) = ArrayWithCapacity(%3) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 83, col: 27 } }] @ main.ts:83:27
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(2)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(3)), Value(ValueId(4))] })
+  b1(%5: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %6: Data(Func(FuncType { params: [I32], ret: I32 })), %7: Data(I32), %8: Data(I32), %9: Data(Array(I32))) Some("array-callback.cond"):
+    %16: Data(Bool) = IteratorHasNext(%5, %7, %8) @ main.ts:83:27
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(9))] } }
+  b2 Some("array-callback.body"):
+    %17: Data(I32) = IteratorValue(%5, %7, %8) @ main.ts:83:27
+    %18: Data(I32) = Call(CallTarget { kind: StaticClosure(FunctionId(59)), parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%6, %17) invalidates=[ValueId(0), ValueId(4), ValueId(9), ValueId(14), ValueId(15)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 83, col: 27 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 83, col: 27 } }] @ main.ts:83:27
+    %19: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%9, %18) invalidates=[ValueId(0), ValueId(4), ValueId(9), ValueId(14), ValueId(15)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 83, col: 27 } }] @ main.ts:83:27
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8)), Value(ValueId(9))] })
+  b3(%10: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %11: Data(Func(FuncType { params: [I32], ret: I32 })), %12: Data(I32), %13: Data(I32), %14: Data(Array(I32))) Some("array-callback.step"):
+    %20: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%10, %12, %13) @ main.ts:83:27
+    %21: Data(I32) = Binary(Add)(%12, Integer(1):I32) @ main.ts:83:27
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(10)), Value(ValueId(11)), Value(ValueId(21)), Value(ValueId(13)), Value(ValueId(14))] })
+  b4(%15: Data(Array(I32))) Some("array-callback.exit"):
+    -> Return { value: Some(Value(ValueId(15))), pos: Pos { file: "main.ts", line: 83, col: 27 } }
+fn f59 "<lambda main.ts:83:35>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:83:35
+  param %0 "list": Data(I32) kind=Explicit storage=None @ main.ts:83:35
+  value %0: Data(I32) name=Some("list")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 83, col: 45 } }
+fn f60 "<default main.ts:50:21>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:50:21
+  value %0: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = LoadGlobal(GlobalId(18))() @ main.ts:50:21
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 50, col: 21 } }
+fn f61 "<default main.ts:91:21>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:91:21
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:91:21
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(1) })), pos: Pos { file: "main.ts", line: 91, col: 21 } }
+fn f62 "<default main.ts:91:28>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:91:28
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:91:28
+  param %1 "x": Data(I32) kind=Explicit storage=None @ main.ts:91:28
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(I32) name=Some("x")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Mul)(%1, Integer(2):I32) @ main.ts:91:28
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 91, col: 28 } }
+fn f63 "<default main.ts:85:30>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:85:30
+  param %0 "a": Data(I32) kind=Explicit storage=None @ main.ts:85:30
+  value %0: Data(I32) name=Some("a")
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(2) })), pos: Pos { file: "main.ts", line: 85, col: 30 } }
+fn f64 "<default main.ts:85:37>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:85:37
+  param %0 "a": Data(I32) kind=Explicit storage=None @ main.ts:85:37
+  param %1 "b": Data(I32) kind=Explicit storage=None @ main.ts:85:37
+  value %0: Data(I32) name=Some("a")
+  value %1: Data(I32) name=Some("b")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ main.ts:85:37
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 85, col: 37 } }
+fn f65 "<default main.ts:86:20>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:86:20
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(1) })), pos: Pos { file: "main.ts", line: 86, col: 20 } }
+fn f66 "<default main.ts:86:27>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:86:27
+  param %0 "x": Data(I32) kind=Explicit storage=None @ main.ts:86:27
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ main.ts:86:27
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 86, col: 27 } }
+fn f67 "<default main.ts:92:21>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:92:21
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:92:21
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadField(Class(FieldId(14)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 16 } }] @ main.ts:92:21
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 92, col: 21 } }
+fn f68 "<default main.ts:92:31>" kind=SynthesizedHelper exported=false generator=false async=false -> Array(I32) entry=b0 @ main.ts:92:31
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ main.ts:92:31
+  param %1 "alt": Data(I32) kind=Explicit storage=None @ main.ts:92:31
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(I32) name=Some("alt")
+  value %2: Data(I32) name=None
+  value %3: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = LoadField(Class(FieldId(14)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 92, col: 37 } }] @ main.ts:92:42
+    %3: Data(Array(I32)) = ArrayLiteral(%1, %2) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 92, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 92, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 92, col: 42 } }] @ main.ts:92:31
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 92, col: 31 } }
+fn f69 "<default main.ts:96:33>" kind=SynthesizedHelper exported=false generator=false async=false -> Nullable(Class(ClassId(5))) entry=b0 @ main.ts:96:33
+  param %0 "this": Data(Class(ClassId(5))) kind=Receiver storage=None @ main.ts:96:33
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:96:33
+  value %0: Data(Class(ClassId(5))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(Bool) name=None
+  value %3: Data(Nullable(Class(ClassId(5)))) name=None
+  value %4: Data(Class(ClassId(5))) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Class(ClassId(5))) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Nullable(Class(ClassId(5)))) name=None
+  value %9: Data(Nullable(Class(ClassId(5)))) name=None
+  value %10: Data(Nullable(Class(ClassId(5)))) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Binary(Gt)(%1, Integer(0):I32) @ main.ts:96:33
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %6: Data(Class(ClassId(5))) = AllocateClass(ClassId(5))() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 96, col: 41 } }] @ main.ts:96:41
+    %7: Data(I32) = Binary(Sub)(%1, Integer(1):I32) @ main.ts:96:50
+    %8: Data(Nullable(Class(ClassId(5)))) = Call(CallTarget { kind: Function(FunctionId(69)), parameter_types: [Data(Class(ClassId(5))), Data(I32)], return_type: Some(Data(Nullable(Class(ClassId(5))))) })(%6, %7) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 96, col: 33 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 96, col: 33 } }] @ main.ts:96:33
+    Call(CallTarget { kind: Method(MethodId(4)), parameter_types: [Data(Class(ClassId(5))), Data(I32), Data(Nullable(Class(ClassId(5))))], return_type: None })(%6, %7, %8) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 96, col: 41 } }] @ main.ts:96:41
+    %9: Data(Nullable(Class(ClassId(5)))) = Coerce(%6) @ main.ts:96:41
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(9)), Value(ValueId(0)), Value(ValueId(1))] })
+  b2 Some("cond.else"):
+    %10: Data(Nullable(Class(ClassId(5)))) = Coerce(Null:Null) @ main.ts:96:59
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(10)), Value(ValueId(0)), Value(ValueId(1))] })
+  b3(%3: Data(Nullable(Class(ClassId(5)))), %4: Data(Class(ClassId(5))), %5: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 96, col: 33 } }
+fn f70 "<default main.ts:98:29>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:98:29
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:98:29
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:98:36
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%1, Integer(0):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 98, col: 29 } }] @ main.ts:98:29
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 98, col: 29 } }
+fn f71 "<default main.ts:99:30>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:99:30
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:99:30
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Gt)(%0, Integer(0):I32) @ main.ts:99:30
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:99:46
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(71)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 99, col: 30 } }] @ main.ts:99:30
+    %6: Data(I32) = Call(CallTarget { kind: Function(FunctionId(26)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 99, col: 38 } }] @ main.ts:99:38
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 99, col: 30 } }
+fn f72 "<default main.ts:100:26>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:100:26
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Call(CallTarget { kind: Function(FunctionId(28)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 100, col: 26 } }] @ main.ts:100:26
+    %1: Data(I32) = Binary(Add)(%0, Integer(0):I32) @ main.ts:100:26
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 100, col: 26 } }
+fn f73 "<default main.ts:101:27>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:101:27
+  value %0: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Call(CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 101, col: 27 } }] @ main.ts:101:27
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 101, col: 27 } }
+fn f74 "<default main.ts:103:19>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:103:19
+  param %0 "this": Data(Class(ClassId(6))) kind=Receiver storage=None @ main.ts:103:19
+  param %1 "n": Data(I32) kind=Explicit storage=None @ main.ts:103:19
+  value %0: Data(Class(ClassId(6))) name=Some("this")
+  value %1: Data(I32) name=Some("n")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Sub)(%1, Integer(1):I32) @ main.ts:103:26
+    %3: Data(I32) = Call(CallTarget { kind: Method(MethodId(5)), parameter_types: [Data(Class(ClassId(6))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%0, %2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 103, col: 19 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 103, col: 19 } }] @ main.ts:103:19
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "main.ts", line: 103, col: 19 } }
+fn f75 "<default main.ts:108:25>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:108:25
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(7) })), pos: Pos { file: "main.ts", line: 108, col: 25 } }
+fn f76 "<default main.ts:108:32>" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ main.ts:108:32
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:108:32
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Add)(%0, Integer(2):I32) @ main.ts:108:32
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 108, col: 32 } }
+fn f77 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ main.ts:9:7
+  value %0: Data(Str) name=None
+  value %1: Data(Array(I32)) name=None
+  value %2: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %6: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %7: Data(Array(I32)) name=None
+  value %8: Data(Array(I32)) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(Array(Str)) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Array(I32)) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Array(I32)) name=None
+  value %17: Data(Bool) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(Array(I32)) name=None
+  value %23: Data(Array(I32)) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(Array(Str)) name=None
+  value %27: Data(Str) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(Array(I32)) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(Array(I32)) name=None
+  value %32: Data(Bool) name=None
+  value %33: Data(Str) name=None
+  value %34: Data(Str) name=None
+  value %35: Data(Str) name=None
+  value %36: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  b0 Some("entry"):
+    StoreGlobal(GlobalId(26))(Integer(7):I32) @ lib.ts:7:14
+    StoreGlobal(GlobalId(0))(Integer(10):I32) @ main.ts:9:7
+    StoreGlobal(GlobalId(1))(Integer(0):I32) @ main.ts:10:5
+    StoreGlobal(GlobalId(2))(FloatBits(4602678819172646912):F64) @ main.ts:11:7
+    %0: Data(Str) = StringLiteral("pool")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 12, col: 14 } }] @ main.ts:12:14
+    StoreGlobal(GlobalId(3))(%0) @ main.ts:12:7
+    %1: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 13, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 13, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 13, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 13, col: 20 } }] @ main.ts:13:13
+    StoreGlobal(GlobalId(4))(%1) @ main.ts:13:7
+    %2: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(78))() @ main.ts:14:15
+    StoreGlobal(GlobalId(5))(%2) @ main.ts:14:7
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(79))() @ main.ts:15:19
+    StoreGlobal(GlobalId(6))(%3) @ main.ts:15:7
+    StoreGlobal(GlobalId(7))(Integer(1):I32) @ main.ts:16:7
+    %4: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(80))() @ main.ts:18:5
+    StoreGlobal(GlobalId(8))(%4) @ main.ts:17:7
+    %5: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(81))() @ main.ts:19:14
+    StoreGlobal(GlobalId(9))(%5) @ main.ts:19:7
+    %6: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(82))() @ main.ts:20:26
+    StoreGlobal(GlobalId(10))(%6) @ main.ts:20:7
+    StoreGlobal(GlobalId(11))(Integer(8):I32) @ main.ts:26:12
+    %7: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 43, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 43, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 43, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 43, col: 23 } }] @ main.ts:43:16
+    %8: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Array(I32))) })(%7, Integer(1):I32, Integer(2147483647):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 43, col: 16 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 43, col: 16 } }] @ main.ts:43:16
+    StoreGlobal(GlobalId(12))(%8) @ main.ts:43:7
+    %9: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 17 } }] @ main.ts:44:17
+    %10: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 22 } }] @ main.ts:44:22
+    %11: Data(Array(Str)) = ArrayLiteral(%9, %10) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 22 } }] @ main.ts:44:16
+    %12: Data(Str) = StringLiteral("+")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 44, col: 32 } }] @ main.ts:44:32
+    %13: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%11, %12) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 44, col: 16 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 44, col: 16 } }] @ main.ts:44:16
+    StoreGlobal(GlobalId(13))(%13) @ main.ts:44:7
+    %14: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 45, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 45, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 45, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 45, col: 24 } }] @ main.ts:45:17
+    %15: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%14, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 45, col: 17 } }] @ main.ts:45:17
+    StoreGlobal(GlobalId(14))(%15) @ main.ts:45:7
+    %16: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 46, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 46, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 46, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 46, col: 25 } }] @ main.ts:46:18
+    %17: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%16, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 46, col: 18 } }] @ main.ts:46:18
+    StoreGlobal(GlobalId(15))(%17) @ main.ts:46:7
+    %18: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Number, operation: 6, type_argument: None, worker_entry: None }), parameter_types: [Data(F64), Data(I32)], return_type: Some(Data(Str)) })(FloatBits(4609434218613702656):F64, Integer(2):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 47, col: 15 } }] @ main.ts:47:15
+    StoreGlobal(GlobalId(16))(%18) @ main.ts:47:7
+    %19: Data(Str) = StringLiteral("hello")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 48, col: 19 } }] @ main.ts:48:19
+    %20: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: String, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str), Data(I32), Data(I32)], return_type: Some(Data(Str)) })(%19, Integer(1):I32, Integer(3):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 48, col: 19 } }] @ main.ts:48:19
+    StoreGlobal(GlobalId(17))(%20) @ main.ts:48:7
+    %21: Data(I32) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 49, col: 15 } }] @ main.ts:49:15
+    StoreGlobal(GlobalId(18))(%21) @ main.ts:49:7
+    %22: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 59, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 59, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 59, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 59, col: 28 } }] @ main.ts:59:21
+    %23: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Array(I32))) })(%22, Integer(1):I32, Integer(2147483647):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 59, col: 21 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 59, col: 21 } }] @ main.ts:59:21
+    StoreGlobal(GlobalId(19))(%23) @ main.ts:59:12
+    %24: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 22 } }] @ main.ts:60:22
+    %25: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 27 } }] @ main.ts:60:27
+    %26: Data(Array(Str)) = ArrayLiteral(%24, %25) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 27 } }] @ main.ts:60:21
+    %27: Data(Str) = StringLiteral("+")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 60, col: 37 } }] @ main.ts:60:37
+    %28: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%26, %27) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23), ValueId(26)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 60, col: 21 } }, Trap { kind: Call, pos: Pos { file: "main.ts", line: 60, col: 21 } }] @ main.ts:60:21
+    StoreGlobal(GlobalId(20))(%28) @ main.ts:60:12
+    %29: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 61, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 61, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 61, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 61, col: 29 } }] @ main.ts:61:22
+    %30: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%29, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23), ValueId(26), ValueId(29)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 61, col: 22 } }] @ main.ts:61:22
+    StoreGlobal(GlobalId(21))(%30) @ main.ts:61:12
+    %31: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 62, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 62, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 62, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 62, col: 30 } }] @ main.ts:62:23
+    %32: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%31, Integer(2):I32, Integer(0):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23), ValueId(26), ValueId(29), ValueId(31)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "main.ts", line: 62, col: 23 } }] @ main.ts:62:23
+    StoreGlobal(GlobalId(22))(%32) @ main.ts:62:12
+    %33: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Number, operation: 6, type_argument: None, worker_entry: None }), parameter_types: [Data(F64), Data(I32)], return_type: Some(Data(Str)) })(FloatBits(4609434218613702656):F64, Integer(2):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23), ValueId(26), ValueId(29), ValueId(31)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 63, col: 20 } }] @ main.ts:63:20
+    StoreGlobal(GlobalId(23))(%33) @ main.ts:63:12
+    %34: Data(Str) = StringLiteral("hello")() traps=[Trap { kind: Allocation, pos: Pos { file: "main.ts", line: 64, col: 24 } }] @ main.ts:64:24
+    %35: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: String, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str), Data(I32), Data(I32)], return_type: Some(Data(Str)) })(%34, Integer(1):I32, Integer(3):I32) invalidates=[ValueId(1), ValueId(7), ValueId(8), ValueId(11), ValueId(14), ValueId(16), ValueId(22), ValueId(23), ValueId(26), ValueId(29), ValueId(31)] traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 64, col: 24 } }] @ main.ts:64:24
+    StoreGlobal(GlobalId(24))(%35) @ main.ts:64:12
+    %36: Data(Func(FuncType { params: [I32, I32], ret: I32 })) = MakeClosure(FunctionId(83))() @ main.ts:87:21
+    StoreGlobal(GlobalId(25))(%36) @ main.ts:87:7
+    -> Return { value: None, pos: Pos { file: "main.ts", line: 9, col: 7 } }
+fn f78 "<lambda main.ts:14:15>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:14:15
+  param %0 "x": Data(I32) kind=Explicit storage=None @ main.ts:14:15
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ main.ts:14:41
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 14, col: 34 } }
+fn f79 "<lambda main.ts:15:19>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:15:19
+  value %0: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = LoadGlobal(GlobalId(7))() @ main.ts:15:25
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "main.ts", line: 15, col: 25 } }
+fn f80 "<lambda main.ts:18:5>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:18:5
+  can-raise
+  param %0 "n": Data(I32) kind=Explicit storage=None @ main.ts:18:5
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Eq)(%0, Integer(0):I32) @ main.ts:18:22
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("cond.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0))] })
+  b2 Some("cond.else"):
+    %4: Data(Func(FuncType { params: [I32], ret: I32 })) = LoadGlobal(GlobalId(8))() @ main.ts:18:36
+    %5: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ main.ts:18:46
+    %6: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 18, col: 36 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 18, col: 36 } }] @ main.ts:18:36
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))] })
+  b3(%2: Data(I32), %3: Data(I32)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 18, col: 22 } }
+fn f81 "<lambda main.ts:19:14>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:19:14
+  can-raise
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = LoadGlobal(GlobalId(10))() @ main.ts:19:20
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 19, col: 20 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 19, col: 20 } }] @ main.ts:19:20
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 19, col: 20 } }
+fn f82 "<lambda main.ts:20:26>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:20:26
+  can-raise
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = LoadGlobal(GlobalId(9))() @ main.ts:20:37
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 20, col: 37 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 20, col: 37 } }] @ main.ts:20:37
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "main.ts", line: 20, col: 37 } }
+fn f83 "<lambda main.ts:87:21>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ main.ts:87:21
+  param %0 "a": Data(I32) kind=Explicit storage=None @ main.ts:87:21
+  param %1 "b": Data(I32) kind=Explicit storage=None @ main.ts:87:21
+  value %0: Data(I32) name=Some("a")
+  value %1: Data(I32) name=Some("b")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ main.ts:87:48
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 87, col: 48 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

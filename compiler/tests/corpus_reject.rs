@@ -481,6 +481,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r348-readonly-write.ts", RuleCode::S100, 9),
     ("r349-optional-function-type.ts", RuleCode::S012, 8),
     ("r350-value-type-constructor.ts", RuleCode::S100, 8),
+    ("r351-initializer-type-cycle.ts", RuleCode::S100, 8),
+    ("r352-generic-class-default.ts", RuleCode::S100, 11),
     ("r334-bare-yield-nonvoid.ts", RuleCode::S100, 7),
     ("r335-annotated-void-binding.ts", RuleCode::S100, 9),
     ("r336-void-parameter.ts", RuleCode::S100, 8),

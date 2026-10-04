@@ -63,6 +63,7 @@ impl<'p> Checker<'p> {
                     operand.ty.clone()
                 };
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Unary {
                         op: UnOp::Neg,
                         operand: Box::new(operand),
@@ -86,6 +87,7 @@ impl<'p> Checker<'p> {
                     );
                 }
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Unary {
                         op: UnOp::Not,
                         operand: Box::new(operand),
@@ -116,6 +118,7 @@ impl<'p> Checker<'p> {
                     operand.ty.clone()
                 };
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Unary {
                         op: UnOp::BitNot,
                         operand: Box::new(operand),
@@ -176,6 +179,7 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Local(name, ty.clone()),
             ty,
             pos,
@@ -259,6 +263,7 @@ impl<'p> Checker<'p> {
             BinOp::Sub
         };
         let one = hir::Expr {
+            pending_work: None,
             kind: if target_ty.is_float() {
                 ExprKind::Float(1.0)
             } else {
@@ -312,6 +317,7 @@ impl<'p> Checker<'p> {
                     "the assignment",
                 );
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Method {
                             recv: Box::new(receiver),
@@ -386,7 +392,7 @@ impl<'p> Checker<'p> {
                 };
                 self.require_assignable(
                     &result.expr.ty.clone(),
-                    &parameter.ty,
+                    parameter.ty(),
                     result.expr.pos.clone(),
                     "the assignment",
                 );
@@ -403,6 +409,7 @@ impl<'p> Checker<'p> {
                     )))
                 };
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee,
                         args: vec![result.expr],
@@ -414,6 +421,7 @@ impl<'p> Checker<'p> {
             place => {
                 let target = place.into_read(self);
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Assign {
                         update: Some(if u.prefix {
                             hir::UpdateKind::Prefix
@@ -482,6 +490,7 @@ impl<'p> Checker<'p> {
                     BinOp::Or
                 };
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Binary {
                         op,
                         left: Box::new(left),
@@ -754,6 +763,7 @@ impl<'p> Checker<'p> {
                 left.ty.clone()
             };
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Binary {
                     op: BinOp::Or,
                     left: Box::new(left),
@@ -873,6 +883,7 @@ impl<'p> Checker<'p> {
             mutable: true,
             dispose: false,
             init: hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Null,
                 ty: Type::Null,
                 pos: pos.clone(),
@@ -880,11 +891,13 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         let target = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Local(name.clone(), nullable.clone()),
             ty: nullable.clone(),
             pos: pos.clone(),
         };
         let assigned = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Assign {
                 update: None,
                 op: None,
@@ -895,6 +908,7 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         };
         let value = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Local(name, nullable),
             ty: inner,
             pos: pos.clone(),
@@ -904,10 +918,12 @@ impl<'p> Checker<'p> {
 
     fn null_test(&self, value: hir::Expr, pos: Pos) -> hir::Expr {
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Binary {
                 op: BinOp::Ne,
                 left: Box::new(value),
                 right: Box::new(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Null,
                     ty: Type::Null,
                     pos: pos.clone(),
@@ -927,6 +943,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         tests.into_iter().rev().fold(value, |then, cond| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Cond {
                 cond: Box::new(cond),
                 then: Box::new(then),
@@ -975,6 +992,7 @@ impl<'p> Checker<'p> {
         }
 
         Some(hir::Expr {
+            pending_work: None,
             kind: ExprKind::AbsenceTest {
                 value: Box::new(checked),
                 negated: matches!(binary.op, ast::BinaryOp::NotEq | ast::BinaryOp::NotEqEq),
@@ -1068,6 +1086,7 @@ impl<'p> Checker<'p> {
             };
         }
         let mk = |op: BinOp, ty: Type| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Binary {
                 op,
                 left: Box::new(left.clone()),
@@ -1487,6 +1506,7 @@ impl<'p> Checker<'p> {
             }
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Cond {
                 cond: Box::new(cond),
                 then: Box::new(then),
@@ -1556,6 +1576,7 @@ impl<'p> Checker<'p> {
             }
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Yield(arg),
             ty: Type::Void,
             pos,
@@ -1634,6 +1655,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Cast(Box::new(inner)),
             ty: target,
             pos,

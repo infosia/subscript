@@ -235,6 +235,7 @@ fn local(name: &str, ty: Type, init: ExprKind, pos: &Pos) -> Stmt {
         mutable: true,
         dispose: false,
         init: Expr {
+            pending_work: None,
             kind: init,
             ty,
             pos: pos.clone(),
@@ -246,15 +247,18 @@ fn local(name: &str, ty: Type, init: ExprKind, pos: &Pos) -> Stmt {
 /// `name = value` as a statement.
 fn assign(name: &str, ty: Type, value: ExprKind, value_ty: Type, pos: &Pos) -> Stmt {
     Stmt::Expr(Expr {
+        pending_work: None,
         kind: ExprKind::Assign {
             update: None,
             op: None,
             target: Box::new(Expr {
+                pending_work: None,
                 kind: ExprKind::Local(name.to_string(), ty.clone()),
                 ty: ty.clone(),
                 pos: pos.clone(),
             }),
             value: Box::new(Expr {
+                pending_work: None,
                 kind: value,
                 ty: value_ty,
                 pos: pos.clone(),

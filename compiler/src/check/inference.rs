@@ -71,7 +71,13 @@ impl<'p> Checker<'p> {
                         Some(context)
                     }
                 });
+            let saved = std::mem::replace(
+                &mut self.generic_callback_context,
+                index < template.function.params.len()
+                    && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)),
+            );
             let value = self.check_expr(&argument.expr, context.as_ref(), fx);
+            self.generic_callback_context = saved;
             if value.ty == Type::Error {
                 return None;
             }

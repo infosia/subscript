@@ -183,6 +183,7 @@ impl<'a> Lowering<'a> {
             fields,
             functions: vec![None; next_function as usize],
             next_function,
+            default_functions: HashMap::new(),
             classes: Vec::new(),
             foreign: Vec::new(),
         };

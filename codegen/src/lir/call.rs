@@ -90,6 +90,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                             name: format!("arg{index}"),
                             ty: argument.ty.clone(),
                             default: None,
+                            default_can_raise: false,
                             pos: argument.pos.clone(),
                         })
                         .collect()
@@ -97,8 +98,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let foreign = matches!(kind, l::CallTargetKind::Foreign(_));
         let explicit_offset = operands.len();
-        let explicit =
-            self.lower_call_arguments(&params, args, receiver_for_defaults.as_ref(), foreign)?;
+        let explicit = self.lower_call_arguments(
+            defaults::DefaultOwner::from_target(&kind),
+            &params,
+            args,
+            receiver_for_defaults.as_ref(),
+            foreign,
+        )?;
         operands.extend(explicit);
         if matches!(kind, l::CallTargetKind::Method(_)) {
             if let Some(PreparedBase::Place(place)) = receiver_for_defaults {
@@ -248,6 +254,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         l::ValueType::Address(_) | l::ValueType::Iterator(_) => argument.ty.clone(),
                     },
                     default: None,
+                    default_can_raise: false,
                     pos: argument.pos.clone(),
                 })
                 .collect()
@@ -494,6 +501,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         name: format!("arg{index}"),
                         ty: ty.clone(),
                         default: None,
+                        default_can_raise: false,
                         pos: value.pos.clone(),
                     })
                     .collect();
@@ -659,7 +667,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     (address.clone(), Some(PreparedBase::Value(address)))
                 }
             } else {
-                (self.require_expr(recv)?, None)
+                let value = self.require_expr(recv)?;
+                (value.clone(), Some(PreparedBase::Value(value)))
             };
             return Ok((
                 l::CallTargetKind::Method(record.method.expect("method id")),
@@ -690,13 +699,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     pub(super) fn lower_call_arguments(
         &mut self,
+        owner: Option<defaults::DefaultOwner>,
         params: &[CallParam],
         args: &[hir::Expr],
         receiver: Option<&PreparedBase>,
         foreign: bool,
     ) -> Result<Vec<l::Operand>, LowerError> {
         let mut pending = self.lower_explicit_arguments(params, args, foreign)?;
-        self.lower_argument_defaults(params, args, receiver, foreign, &mut pending)?;
+        self.lower_argument_defaults(owner, params, args, receiver, foreign, &mut pending)?;
         self.finish_call_arguments(pending)
     }
 
@@ -751,6 +761,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     /// values that are already lowered.
     pub(super) fn lower_argument_defaults(
         &mut self,
+        owner: Option<defaults::DefaultOwner>,
         params: &[CallParam],
         args: &[hir::Expr],
         receiver: Option<&PreparedBase>,
@@ -764,34 +775,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     format!("missing argument `{}` with no default", parameter.name),
                 )
             })?;
-            let substitutions = params
-                .iter()
-                .zip(&pending.values)
-                .map(|(parameter, value)| (parameter.name.clone(), value.clone()))
-                .collect();
-            self.substitutions.push(substitutions);
-            let saved_this = self.this_value.clone();
-            if let Some(receiver) = receiver {
-                self.this_value = Some(match receiver {
-                    PreparedBase::Value(value) => value.clone(),
-                    PreparedBase::Place(place) => {
-                        let address = self.materialize_address_inner(place, &default.pos, false)?;
-                        self.emit(
-                            l::InstructionKind::LoadAddress,
-                            vec![address],
-                            Some(l::ValueType::Data(self.place_type(place).clone())),
-                            false,
-                            Vec::new(),
-                            default.pos.clone(),
-                        )?
-                        .expect("default receiver load")
-                    }
-                });
-            }
-            let lowered = self.lower_stored_expr_at(&parameter.ty, default, &parameter.pos);
-            self.this_value = saved_this;
-            self.substitutions.pop();
-            let value = lowered?;
+            let owner = owner.ok_or_else(|| {
+                self.error(&default.pos, "parameter default has no function identity")
+            })?;
+            let value =
+                self.lower_default_function(owner, params, index, default, receiver, pending)?;
             self.record_argument(index, parameter, None, value, foreign, pending)?;
         }
         Ok(())

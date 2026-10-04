@@ -118,6 +118,7 @@ impl<'p> Checker<'p> {
                     let ty = declared.unwrap_or_else(|| source.ty.clone());
                     self.require_expr_assignable(&source, &ty, fx, "the Map source");
                     return hir::Expr {
+                        pending_work: None,
                         kind: hir::ExprKind::Call {
                             callee: Callee::Map(MapFn::New),
                             args: vec![source],

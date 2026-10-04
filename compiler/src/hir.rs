@@ -628,6 +628,8 @@ pub struct SwitchCase {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Expr {
+    /// Checker-owned work that must finish before the HIR leaves the checker.
+    pub(crate) pending_work: Option<usize>,
     /// Expression payload.
     pub kind: ExprKind,
     /// Resolved type. Where flow narrowing applies (C7), this is the

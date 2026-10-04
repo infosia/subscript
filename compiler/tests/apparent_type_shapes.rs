@@ -578,7 +578,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("capture.rs", "type_name", 0x538ecbfbc819af8a),
     ] },
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[
-        ("expr/call.rs", "check_indirect_call", 0xed9d360786d01965),
+        ("expr/call.rs", "check_indirect_call_with_arguments", 0xed9d360786d01965),
         ("expr/call.rs", "check_method_call_on", 0x193473593e642b0b),
         ("expr/member.rs", "member_on_context", 0xb1ffa3a2183a7b30),
     ] },
@@ -607,7 +607,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "mirror-declarations", reason: "C mirror declarations have concrete boundary types and cannot declare type parameters.", sites: &[
         ("mirror_provenance.rs", "foreign_parameter_provenance", 0xdb604f5c10d571),
-        ("signatures.rs", "resolve_mirror_signatures", 0xcbafc9db0a7db707),
+        ("signatures.rs", "resolve_mirror_signatures", 0x7c623947688f146e),
     ] },
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),
@@ -615,6 +615,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("opaque.rs", "generic_overlap", 0xf7d270efc3e83c05),
         ("opaque.rs", "generic_union", 0x00bd1f8d43511104),
         ("opaque.rs", "involves_type_parameter", 0x73713f5554ee1dc7),
+        ("initializer.rs", "default_contains_class_parameter", 0xd076751c8d5a2849),
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
         ("opaque.rs", "is_unconstrained_type_parameter", 0xc11d80573c40a67b),
         ("opaque.rs", "non_null_type", 0x2c00558477fad7c),
@@ -634,6 +635,16 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("type_rules.rs", "contains_string_alias", 0xac8041c10ca4be34),
         ("type_rules.rs", "supported_wire_alias_boundary_type", 0xda2c3c78f1e6611c),
     ] },
+    AllowGroup {
+        name: "initializer-poison-identity",
+        reason: "Declaration inference distinguishes the exact Error poison from a decided type; constraint projection cannot change this state (§156).",
+        sites: &[
+            ("class_shape.rs", "check_inferred_field_type", 0x290c3692806808c5),
+            ("class_shape.rs", "resolve_class_shape", 0xf61b779abfbd6fdd),
+            ("expr/lambda.rs", "check_lambda_with", 0x6501432f76082482),
+            ("initializer.rs", "decided", 0x31bbf142683fd569),
+        ],
+    },
     AllowGroup {
         name: "signature-identity",
         reason: "These declarations and return checks require exactly Void; constraint projection changes that identity (§143 rule 1b).",

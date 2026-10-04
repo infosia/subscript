@@ -73,6 +73,7 @@ pub(crate) fn instanceof_narrowed_path(condition: &hir::Expr) -> Option<String> 
 
 fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Local(name.to_string(), ty.clone()),
         ty,
         pos,
@@ -81,12 +82,15 @@ fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
 
 fn this_field_store(class: ClassId, field: &str, ty: Type, pos: &Pos) -> hir::Stmt {
     hir::Stmt::Expr(hir::Expr {
+        pending_work: None,
         kind: ExprKind::Assign {
             update: None,
             op: None,
             target: Box::new(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Field {
                     obj: Box::new(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::This,
                         ty: Type::Class(class),
                         pos: pos.clone(),
@@ -132,6 +136,7 @@ impl Checker<'_> {
         ];
         let parameter = |name: &str, ty: Type| hir::Param {
             escapes: false,
+            default_can_raise: false,
             name: name.to_string(),
             ty,
             default: None,
@@ -224,6 +229,7 @@ impl Checker<'_> {
         let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
         let message = match arguments {
             [] => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Str(String::new()),
                 ty: Type::Str,
                 pos: pos.clone(),
@@ -260,15 +266,18 @@ impl Checker<'_> {
     pub(crate) fn error_new(&mut self, kind: ErrorKind, message: hir::Expr, pos: Pos) -> hir::Expr {
         let class = self.error_class;
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::New {
                 class,
                 args: vec![
                     hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Int(kind.tag()),
                         ty: Type::U32,
                         pos: pos.clone(),
                     },
                     hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Str(kind.name().to_string()),
                         ty: Type::Str,
                         pos: pos.clone(),
@@ -561,6 +570,7 @@ impl Checker<'_> {
             return self.err_expr(pos);
         }
         let tag = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Field {
                 obj: Box::new(hir::Expr {
                     ty: Type::Class(class),
@@ -577,10 +587,12 @@ impl Checker<'_> {
             other => (BinOp::Eq, other.tag()),
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Binary {
                 op,
                 left: Box::new(tag),
                 right: Box::new(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Int(constant),
                     ty: Type::U32,
                     pos: pos.clone(),

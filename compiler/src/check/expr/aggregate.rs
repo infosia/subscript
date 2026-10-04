@@ -60,6 +60,7 @@ impl<'p> Checker<'p> {
                     out.push(checked);
                 }
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::ArrayLit(out),
                     ty: Type::array(elem_ty),
                     pos,
@@ -87,6 +88,7 @@ impl<'p> Checker<'p> {
                     out.push(checked);
                 }
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::ArrayLit(out),
                     ty: Type::fixed_array(elem_ty, n),
                     pos,
@@ -122,6 +124,7 @@ impl<'p> Checker<'p> {
                     out[0].pos.clone(),
                 );
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::ArrayLit(out),
                     ty: Type::array(elem_ty),
                     pos,
@@ -227,6 +230,7 @@ impl<'p> Checker<'p> {
                         _ => -1,
                     };
                     Some(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Int(sentinel),
                         ty: field.ty.clone(),
                         pos: pos.clone(),
@@ -255,6 +259,7 @@ impl<'p> Checker<'p> {
         }
 
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::DescriptorLit {
                 class: class_id,
                 fields,
@@ -386,6 +391,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::ArraySpreadLit(checked),
             ty: Type::array(elem_ty),
             pos,

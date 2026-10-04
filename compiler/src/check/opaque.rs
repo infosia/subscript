@@ -40,6 +40,10 @@ struct OpaqueSnapshot {
     regex_literals: HashMap<(String, u32, u32), String>,
     worker_entries: usize,
     top_level: usize,
+    deferred_expressions: Vec<DeferredExpression>,
+    deferred_captures: HashMap<hir::LambdaId, Vec<hir::Capture>>,
+    pending_function_bodies: Vec<deferred_body::PendingFunctionBody>,
+    pending_instance_bodies: Vec<(ClassId, Vec<instance_chain::InstanceRequest>)>,
 }
 
 /// The constraint of one opaque parameter identity (§143 rule 1d).
@@ -586,6 +590,10 @@ impl<'p> Checker<'p> {
             regex_literals: self.regex_literals.clone(),
             worker_entries: self.worker_entries.len(),
             top_level: self.top_level.len(),
+            deferred_expressions: self.deferred_expressions.clone(),
+            deferred_captures: self.deferred_captures.clone(),
+            pending_function_bodies: self.pending_function_bodies.clone(),
+            pending_instance_bodies: self.pending_instance_bodies.clone(),
         }
     }
 
@@ -607,6 +615,10 @@ impl<'p> Checker<'p> {
         self.regex_literals = snapshot.regex_literals;
         self.worker_entries.truncate(snapshot.worker_entries);
         self.top_level.truncate(snapshot.top_level);
+        self.deferred_expressions = snapshot.deferred_expressions;
+        self.deferred_captures = snapshot.deferred_captures;
+        self.pending_function_bodies = snapshot.pending_function_bodies;
+        self.pending_instance_bodies = snapshot.pending_instance_bodies;
         let classes = snapshot.classes;
         self.handle_classes.retain(|id| id.0 < classes);
         self.declared_classes.retain(|id| id.0 < classes);

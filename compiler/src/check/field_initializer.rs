@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::types::Type;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct FieldInitializer {
     pub class_type: Type,
     pub earlier: HashSet<String>,

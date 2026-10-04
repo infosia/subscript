@@ -14,6 +14,7 @@ mod address_taken;
 mod builder;
 mod call;
 mod construct;
+mod defaults;
 mod exception;
 mod expr;
 mod lambda;
@@ -258,6 +259,7 @@ struct CallParam {
     name: String,
     ty: Type,
     default: Option<hir::Expr>,
+    default_can_raise: bool,
     pos: Pos,
 }
 
@@ -287,6 +289,7 @@ impl From<&hir::Param> for CallParam {
             name: parameter.name.clone(),
             ty: parameter.ty.clone(),
             default: parameter.default.clone(),
+            default_can_raise: parameter.default_can_raise,
             pos: parameter.pos.clone(),
         }
     }
@@ -303,6 +306,7 @@ struct Lowering<'a> {
     fields: HashMap<(usize, String), l::FieldId>,
     functions: Vec<Option<l::Function>>,
     next_function: u32,
+    default_functions: HashMap<(defaults::DefaultOwner, usize), l::FunctionId>,
     classes: Vec<l::Class>,
     foreign: Vec<l::ForeignFunction>,
 }

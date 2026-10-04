@@ -94,6 +94,7 @@ impl<'p> Checker<'p> {
         let ty = value.ty.clone();
         let origin = fx.register_async_origin(pos.clone());
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::AsyncHandleTransfer {
                 value: Box::new(value),
                 origin,
@@ -134,6 +135,7 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Null,
             ty: Type::Error,
             pos,
@@ -193,6 +195,22 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
+        self.expression_work.push(None);
+        let mut checked =
+            self.check_expr_inner_untracked(e, ctx, fx, allow_embedded_header_receiver);
+        if let Some(work) = self.expression_work.pop().flatten() {
+            checked.pending_work = Some(work);
+        }
+        checked
+    }
+
+    fn check_expr_inner_untracked(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        allow_embedded_header_receiver: bool,
+    ) -> hir::Expr {
         let pos = self.pos(e.span());
         let mut checked =
             match e {
@@ -232,6 +250,7 @@ impl<'p> Checker<'p> {
                     let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
                     match this_ty {
                         Some(ty) => hir::Expr {
+                            pending_work: None,
                             kind: ExprKind::This,
                             ty,
                             pos,
@@ -483,6 +502,7 @@ impl<'p> Checker<'p> {
             let origins = self.expr_async_origins(&handle, fx);
             fx.handle_async_origins(&origins);
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
                 ty: *value,
                 pos,
@@ -514,6 +534,7 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 return hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::AsyncSuspend,
                     ty: Type::Void,
                     pos,
@@ -541,7 +562,9 @@ impl<'p> Checker<'p> {
                 }
                 let callee_pos = self.pos(ident.span);
                 let item = self.scope_item(&name, &callee_pos);
-                if matches!(item, Some(ScopeItem::Poisoned)) {
+                if matches!(item, Some(ScopeItem::Poisoned))
+                    || matches!(&item, Some(ScopeItem::Global(g)) if self.global_sigs.get(g).is_some_and(|s| matches!(s.state, crate::check::initializer::TypeState::Rejected)))
+                {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);
                 }
@@ -604,8 +627,10 @@ impl<'p> Checker<'p> {
                     &pos,
                     &checked_name,
                     checked,
+                    sig.generic,
                 );
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::AsyncCall {
                         callee: AsyncCallee::Function(hir::Symbol::from_full_text(function)),
                         args,
@@ -686,15 +711,18 @@ impl<'p> Checker<'p> {
                         method_pos,
                     );
                 }
-                let args = self.check_args(
+                let args = self.check_args_with_arguments(
                     RejectionSite::AwaitFunctionArgumentCount,
                     &sig.params,
                     &call.args,
                     fx,
                     &pos,
                     &name,
+                    None,
+                    sig.generic,
                 );
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::AsyncCall {
                         callee: AsyncCallee::Method {
                             class,

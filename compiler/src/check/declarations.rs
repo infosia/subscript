@@ -488,6 +488,7 @@ impl<'p> Checker<'p> {
             self.fn_sigs.insert(
                 symbol.clone(),
                 FnSig {
+                    generic: false,
                     params: Vec::new(),
                     ret: Type::Error,
                     is_generator: false,

@@ -116,6 +116,7 @@ impl Place {
                 signature,
                 pos,
             } => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(receiver),
@@ -133,6 +134,7 @@ impl Place {
                 ty,
                 pos,
             } => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: if let Some(receiver) = receiver {
                         Callee::Method {

@@ -240,6 +240,7 @@ impl<'p> Checker<'p> {
                 return;
             };
             let sig = FnSig {
+                generic: false,
                 params: Vec::new(),
                 ret: self.resolve_result_type(&return_type.type_ann),
                 is_generator: false,
@@ -250,7 +251,9 @@ impl<'p> Checker<'p> {
                 let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
                 self.class_sigs[id.0]
                     .static_methods
-                    .insert(name, sig.clone());
+                    .insert(name.clone(), sig.clone());
+                self.static_method_owners
+                    .insert(symbol.clone(), (id, name.clone()));
                 self.fn_sigs.insert(symbol, sig);
             } else {
                 self.class_sigs[id.0].methods.insert(name, sig);
@@ -321,9 +324,13 @@ impl<'p> Checker<'p> {
                 return;
             };
             let sig = FnSig {
+                generic: false,
                 params: vec![ParamSig {
                     name: binding.id.sym.to_string(),
-                    ty: self.resolve_type(&annotation.type_ann),
+                    state: crate::check::initializer::TypeState::decided(
+                        self.resolve_type(&annotation.type_ann),
+                    ),
+                    initializer: None,
                     has_default: false,
                 }],
                 ret: Type::Void,
@@ -336,7 +343,9 @@ impl<'p> Checker<'p> {
                 let symbol = static_member_symbol(id, &self.classes[id.0].name, &write_name);
                 self.class_sigs[id.0]
                     .static_methods
-                    .insert(write_name, sig.clone());
+                    .insert(write_name.clone(), sig.clone());
+                self.static_method_owners
+                    .insert(symbol.clone(), (id, write_name.clone()));
                 self.fn_sigs.insert(symbol, sig);
             } else {
                 self.class_sigs[id.0].methods.insert(write_name, sig);
@@ -453,7 +462,9 @@ impl<'p> Checker<'p> {
             let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
             self.class_sigs[id.0]
                 .static_methods
-                .insert(name, sig.clone());
+                .insert(name.clone(), sig.clone());
+            self.static_method_owners
+                .insert(symbol.clone(), (id, name.clone()));
             self.fn_sigs.insert(symbol, sig);
         } else {
             self.class_sigs[id.0].methods.insert(name, sig);
@@ -545,17 +556,18 @@ impl<'p> Checker<'p> {
                                 self.pos(prop.span),
                             );
                         }
-                        let ty = match &prop.type_ann {
-                            Some(annotation) => self.resolve_type(&annotation.type_ann),
+                        let state = match &prop.type_ann {
+                            Some(annotation) => {
+                                TypeState::decided(self.resolve_type(&annotation.type_ann))
+                            }
+                            None if prop.value.is_some() => TypeState::Undecided,
                             None => {
-                                self.reject_subset(
-                                    RejectionSite::StaticFieldAnnotationMissing,
-                                    "static fields require a type annotation",
-                                    self.pos(key.span),
-                                );
-                                Type::Error
+                                self.reject_subset(RejectionSite::StaticFieldTypeWithoutInitializer,
+                                    "static fields without an initializer require a type annotation", self.pos(key.span));
+                                TypeState::Rejected
                             }
                         };
+                        let ty = state.ty().clone();
                         if self.is_context_affine_type(&ty) {
                             self.reject_subset(
                                 RejectionSite::ContextAffineStaticField,
@@ -564,7 +576,8 @@ impl<'p> Checker<'p> {
                             );
                         }
                         let signature = GlobalSig {
-                            ty,
+                            state,
+                            initializer: prop.value.as_ref().map(|e| self.initializer(e, Some(id))),
                             mutable: !prop.readonly,
                         };
                         let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
@@ -635,11 +648,20 @@ impl<'p> Checker<'p> {
                             ty
                         }
                         None => {
-                            self.reject_subset(
-                                RejectionSite::InstanceFieldAnnotationMissing,
-                                "fields require a type annotation",
-                                pos.clone(),
-                            );
+                            if prop.value.is_none() {
+                                let site = if !class.body.iter().any(|member| {
+                                    matches!(member, ast::ClassMember::Constructor(_))
+                                }) {
+                                    RejectionSite::UnassignedFieldTypeWithoutInitializer
+                                } else {
+                                    RejectionSite::FieldTypeWithoutInitializer
+                                };
+                                self.reject_subset(
+                                    site,
+                                    "fields without an initializer require a type annotation",
+                                    pos.clone(),
+                                );
+                            }
                             Type::Error
                         }
                     };
@@ -695,6 +717,7 @@ impl<'p> Checker<'p> {
                     if is_value
                         && !self.boundary_classes.contains(&id)
                         && !context_affine
+                        && ty != Type::Error
                         && !self.value_field_ok(&ty)
                     {
                         self.reject_subset(
@@ -707,6 +730,24 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
+                    let initializer = prop
+                        .value
+                        .as_ref()
+                        .map(|e| self.field_source(e, id, class, prop));
+                    self.class_sigs[id.0].fields.insert(
+                        name.clone(),
+                        GlobalSig {
+                            state: if prop.type_ann.is_some() {
+                                TypeState::decided(ty.clone())
+                            } else if prop.value.is_some() {
+                                TypeState::Undecided
+                            } else {
+                                TypeState::Rejected
+                            },
+                            initializer,
+                            mutable: !prop.readonly,
+                        },
+                    );
                     self.classes[id.0].fields.push(hir::Field {
                         name: key.sym.to_string(),
                         ty,
@@ -734,8 +775,8 @@ impl<'p> Checker<'p> {
                                 let resolved = self.resolve_param_pat(&param.pat);
                                 self.allow_wire_alias_boundary = false;
                                 if self.in_boundary
-                                    && Self::contains_string_alias(&resolved.ty)
-                                    && !Self::supported_wire_alias_boundary_type(&resolved.ty)
+                                    && Self::contains_string_alias(resolved.ty())
+                                    && !Self::supported_wire_alias_boundary_type(resolved.ty())
                                 {
                                     self.reject_subset(RejectionSite::WireAliasNestedConstructorParameter, format!(
                                             "wire-mapped aliases are supported only as direct mirror-constructor parameters or array-pair elements; parameter `{}` nests one inside another boundary type",
@@ -905,7 +946,7 @@ impl<'p> Checker<'p> {
             let write_type = methods
                 .get(&format!("{name}="))
                 .and_then(|signature| signature.params.first())
-                .map(|parameter| parameter.ty.clone());
+                .map(|parameter| parameter.ty().clone());
             if let (Some(read_type), Some(write_type)) = (read_type, write_type) {
                 if read_type != write_type {
                     self.reject_subset(
@@ -930,7 +971,7 @@ impl<'p> Checker<'p> {
                     && !method.is_generator
                     && method.params.len() == 1
                     && !method.params[0].has_default
-                    && method.params[0].ty == signature.index_ty
+                    && *method.params[0].ty() == signature.index_ty
                     && method.ret == signature.element_ty
             });
         if !get_matches {
@@ -951,8 +992,8 @@ impl<'p> Checker<'p> {
                     && !method.is_generator
                     && method.params.len() == 2
                     && method.params.iter().all(|parameter| !parameter.has_default)
-                    && method.params[0].ty == signature.index_ty
-                    && method.params[1].ty == signature.element_ty
+                    && *method.params[0].ty() == signature.index_ty
+                    && *method.params[1].ty() == signature.element_ty
                     && method.ret == Type::Void
             });
         if !set_matches {
@@ -985,7 +1026,24 @@ impl<'p> Checker<'p> {
         )
     }
 
-    fn value_field_ok(&self, ty: &Type) -> bool {
+    pub(super) fn check_inferred_field_type(&mut self, id: ClassId, ty: &Type, pos: Pos) {
+        if self.is_context_affine_type(ty) {
+            self.reject_subset(
+                RejectionSite::ContextAffineInstanceField,
+                "Worker, Inbox, and Outbox values may not be class fields",
+                pos,
+            );
+        } else if self.classes[id.0].is_value
+            && !self.classes[id.0].is_boundary
+            && *ty != Type::Error
+            && !self.value_field_ok(ty)
+        {
+            self.reject_subset(RejectionSite::ValueFieldOutsideWhitelist,
+                format!("field type `{}` is outside the value-class whitelist (sized numerics, boolean, value classes, FixedArray, enums)", self.type_name(ty)), pos);
+        }
+    }
+
+    pub(super) fn value_field_ok(&self, ty: &Type) -> bool {
         if self.instance_restriction(super::opaque::InstanceRestriction::ValueField, ty)
             || self.plain_value_leaf(ty)
         {

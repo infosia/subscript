@@ -1,4 +1,6 @@
 ParserLoneSurrogateEscape	c-parse-surrogate	S100	a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character
+BlockLambdaReturnAnnotationMissing	a-s105	S100	a lambda with a block body requires a return type annotation
+BlockLambdaReturnAnnotationMissing	new-shared-nullable-call	S100	a lambda with a block body requires a return type annotation
 ParserSyntaxError	a-s214	S100	parse error: A `set` accessor must have exactly one parameter
 ParserSyntaxError	a-s231	S100	parse error: Expression expected
 ParserSyntaxError	parser-syntax-error	S100	parse error: A `get` accessor cannot have parameters
@@ -119,14 +121,12 @@ ComputedFieldUnboundName	computed-field-unbound-name-witness-2	S100	computed or 
 DescriptorStaticField	descriptor-static-field	S100	descriptor classes cannot declare static fields
 MirrorStaticField	mirror-static-field	S100	mirror classes cannot declare static fields
 StaticFieldOptional	static-field-optional	S012	optional static fields imply `undefined`; use `T | null`
-StaticFieldAnnotationMissing	static-field-annotation-missing	S100	static fields require a type annotation
 ContextAffineStaticField	context-affine-static-field	S100	Worker, Inbox, and Outbox values may not be static fields
 DescriptorRequiredInitializer	descriptor-required-initializer	S100	a required descriptor member (`name!: T`) cannot have an initializer
 DescriptorInitializerWithoutOptional	descriptor-initializer-without-optional	S100	a descriptor member initializer requires the optional `?` spelling
 DescriptorRequiredFieldUnassigned	descriptor-required-field-unassigned	S100	required descriptor members must be spelled `name!: T`
 DescriptorRequiredWithoutDefinite	descriptor-required-without-definite	S100	required descriptor members must be spelled `name!: T`
 InstanceFieldOptional	instance-field-optional	S012	optional properties imply `undefined`; use `T | null`
-InstanceFieldAnnotationMissing	instance-field-annotation-missing	S100	fields require a type annotation
 WireAliasNestedField	wire-alias-nested-field	S100	wire-mapped aliases are supported only as direct boundary-struct members or array-pair elements; member `x` nests one inside another boundary type
 DescriptorOptionalInitializerMissing	descriptor-optional-initializer-missing	S012	optional descriptor members require a default initializer
 ContextAffineInstanceField	context-affine-instance-field	S100	Worker, Inbox, and Outbox values may not be class fields
@@ -255,7 +255,6 @@ NamedImportModuleMissing	named-import-module-missing	S100	imported module `s154_
 DefaultImport	default-import	S100	only named imports are in the decided surface
 NamedImportMemberMissing	named-import-member-missing	S016	`missing` is not exported by `./other`
 NamedImportMemberMissing	named-import-member-missing-witness-2	S016	`missing_signatures_317_augment` is not exported by `./other`
-ModuleVariableAnnotationMissing	module-variable-annotation-missing	S100	module-level variables require a type annotation
 WorkerEndpointModuleGlobal	worker-endpoint-module-global	S100	Worker, Inbox, and Outbox values may not be module globals
 AsyncGeneratorFunction	async-generator-function	S100	a function cannot be both async and a generator
 AsyncReturnAnnotationMissing	async-return-annotation-missing	S100	async functions require an explicit `Promise<T>` return annotation
@@ -402,7 +401,6 @@ ArrayOfTypeArgumentCount	a-s010	S100	`Array.of<T>` takes exactly one type argume
 MapCopyTypeArgumentCount	a-s011	S100	`new Map` takes exactly 2 type argument(s)
 MapCopyNullableSource	a-s012	S011	`Map<i32, i32> | null` may be null here; narrow with a null check first
 AsyncArrowFunction	a-s103	S100	async arrow functions are not in the decided surface; use an async function declaration
-BlockLambdaReturnAnnotationMissing	a-s105	S100	a lambda with a block body requires a return type annotation
 LambdaReturnCoverage	a-s106	S100	not all paths return a value
 RegexLiteralUnicodeSetsFlag	a-s107	S100	the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, "v")`
 BigIntLiteral	a-s109	S100	literal form outside the decided surface
@@ -870,7 +868,6 @@ MirrorModuleDeclaration	reexport-member-missing-witness-2	S100	mirror declaratio
 MirrorModuleDeclaration	poisoned-default-import	S100	mirror declaration form outside the decided surface
 MirrorModuleDeclaration	named-import-module-missing	S100	mirror declaration form outside the decided surface
 MirrorModuleDeclaration	named-import-member-missing-witness-2	S100	mirror declaration form outside the decided surface
-ModuleVariableAnnotationMissing	a-s089	S100	module-level variables require a type annotation
 BigIntAnnotation	BigIntAnnotation	S100	keyword type outside the decided surface
 AwaitMethodArgumentCount	AwaitMethodArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
 UnknownAnnotation	UnknownAnnotation	S100	keyword type outside the decided surface
@@ -986,7 +983,6 @@ FunctionTypeRestParameter	FunctionTypeRestParameter	S100	function type parameter
 RegexExecArgumentCount	RegexExecArgumentCount	S100	`test` expects 1 argument(s) (1 required), got 2
 FixedArrayAtArgumentCount	FixedArrayAtArgumentCount	S100	`slice` expects 2 argument(s) (0 required), got 3
 CommaExpression	CommaExpression	S100	expression form outside the decided surface
-BlockLambdaReturnAnnotationMissing	new-shared-nullable-call	S100	a lambda with a block body requires a return type annotation
 SatisfiesExpression	SatisfiesExpression	S100	expression form outside the decided surface
 IdentityAssertion	a-s234	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
 IdentityAssertion	IdentityAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
@@ -1409,3 +1405,10 @@ ReadonlyFieldWriteOutsideConstructor	s155-readonly-nullish	S100	field `s` is rea
 UnsignedShiftAssignment	s155-mutable-nullish	S100	assignment operator outside the decided surface
 OptionalFunctionTypeParameter	s155-optional-field	S012	optional parameters in function types are not supported (C7)
 OptionalFunctionTypeParameter	s155-optional-initialized-field	S012	optional parameters in function types are not supported (C7)
+InitializerTypeCycle	s156-cycle	S100	initializer type depends on its own undecided type
+FieldTypeWithoutInitializer	s156-constructor-field-type	S100	fields without an initializer require a type annotation
+UnassignedFieldTypeWithoutInitializer	s156-unassigned-field-type	S100	fields without an initializer require a type annotation
+StaticFieldTypeWithoutInitializer	s156-static-field-type	S100	static fields without an initializer require a type annotation
+FunctionValueParameterAnnotationNeeded	s156-function-value-parameter	S100	avoid a recursive function value in the parameter default
+GenericCallbackParameterAnnotationMissing	s156-generic-callback	S100	parameters require a type annotation
+GenericClassDefaultParameterAnnotationNeeded	s156-generic-class-default	S100	a generic-class default needs a parameter type; annotate the parameter

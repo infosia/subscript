@@ -142,18 +142,11 @@ pub(super) const IDENTIFIERFIELDNAME: DivergenceEntry = DivergenceEntry {
     collision: "collisions.md Q28",
 };
 
-pub(super) const STATICFIELDANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class A { static x=1; }\nexport function main(): void {  }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
-};
-
-pub(super) const INSTANCEFIELDANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class A { x=1; }\nexport function main(): void {  }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
+pub(super) const FIELDTYPEWITHOUTINITIALIZER: DivergenceEntry = DivergenceEntry {
+    ts: "class C { x; constructor() { this.x = 1; } }\nexport function main(): void {}",
+    subscript: "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {}",
+    why: "A field type comes from its annotation or initializer. Constructor assignments do not supply a declaration type.",
+    collision: "compiler.md §156",
 };
 
 pub(super) const CONSTRUCTORPARAMETERPROPERTYFORM: DivergenceEntry = DivergenceEntry {
@@ -212,31 +205,10 @@ pub(super) const NAMEDIMPORTMODULEMISSINGFORM: DivergenceEntry = DivergenceEntry
     collision: "C24", // row 10,
 };
 
-pub(super) const MODULEVARIABLEANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "const x=1;\nexport function main(): void {  }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
-};
-
 pub(super) const FUNCTIONRETURNANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
     ts: "function f() {}\nexport function main(): void {  }",
     subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
-};
-
-pub(super) const NAMEDPARAMETERANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "function f(x=1):void {}\nexport function main(): void {  }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
-};
-
-pub(super) const PATTERNPARAMETERANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "function f([x]=[1]):void {}\nexport function main(): void {  }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
+    why: "A function result annotation states the contract of a call, and the host binds its declared type.",
     collision: "C24", // row 4,
 };
 
@@ -400,13 +372,6 @@ pub(super) const GENERATORRESULTVALUEWRITEFORM: DivergenceEntry = DivergenceEntr
     subscript: "no equivalent; iterate with for-of and yield each value",
     why: "A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.",
     collision: "C24", // row 16,
-};
-
-pub(super) const BLOCKLAMBDARETURNANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "export function main(): void { const f = () => { return 1; }; }",
-    subscript: "no equivalent; supply a type annotation",
-    why: "No inference is decided at signature positions; the checker infers locals and expression-lambda results only.",
-    collision: "C24", // row 4,
 };
 
 pub(super) const LAMBDARETURNFLOWCOVERAGE: DivergenceEntry = DivergenceEntry {
@@ -632,4 +597,32 @@ pub(super) const CONSTASSERTIONEXPRESSION: DivergenceEntry = DivergenceEntry {
     subscript: "no equivalent; use an explicit type annotation",
     why: "No lowering is decided for const assertions that preserve literal types.",
     collision: "C24", // row 18
+};
+
+pub(super) const BLOCKLAMBDARETURNANNOTATIONMISSINGFORM: DivergenceEntry = DivergenceEntry {
+    ts: "export function main(): void { const f = () => { return 1; }; }",
+    subscript: "no equivalent; supply a type annotation",
+    why: "A block result has no inference that agrees with tsc for every program.",
+    collision: "C24", // row 4,
+};
+
+pub(super) const FUNCTIONVALUEPARAMETERANNOTATIONNEEDED: DivergenceEntry = DivergenceEntry {
+    ts: "function f(n: i32, k = f): void {}",
+    subscript: "function f(n: i32, k = 0): void {} export function main(): void {}",
+    why: "A function value needs decided parameter types; use a default without the recursive signature dependency.",
+    collision: "C24", // row 4
+};
+
+pub(super) const GENERICCALLBACKPARAMETERANNOTATIONNEEDED: DivergenceEntry = DivergenceEntry {
+    ts: "function each<T>(xs: T[], f: (x: T) => void): void {} each([1, 2], (x) => {}); export function main(): void {}",
+    subscript: "function each<T>(xs: T[], f: (x: T) => void): void {} each([1, 2], (x: i32): void => {}); export function main(): void {}",
+    why: "Generic argument inference checks callback parameters before the callee supplies their context; annotate each callback parameter.",
+    collision: "C24", // row 4
+};
+
+pub(super) const GENERICCLASSDEFAULTPARAMETERANNOTATIONNEEDED: DivergenceEntry = DivergenceEntry {
+    ts: "class Cell<T> { v: T; constructor(v: T) { this.v = v; } pair(other = this.v): string { return `${other}`; } }",
+    subscript: "no equivalent; annotate the parameter",
+    why: "A generic-class default needs an annotation to preserve the uninstantiated class parameter type that TypeScript uses.",
+    collision: "C24", // row 4
 };

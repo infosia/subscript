@@ -26,6 +26,7 @@ impl<'p> Checker<'p> {
                             .and_then(|index| alias.member_discriminant(index))
                     }) {
                         return hir::Expr {
+                            pending_work: None,
                             kind: ExprKind::Int(discriminant),
                             ty: Type::StringAlias(*id),
                             pos,
@@ -33,17 +34,20 @@ impl<'p> Checker<'p> {
                     }
                 }
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Str(value),
                     ty: Type::Str,
                     pos,
                 }
             }
             ast::Lit::Bool(b) => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Bool(b.value),
                 ty: Type::Bool,
                 pos,
             },
             ast::Lit::Null(_) => hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Null,
                 ty: Type::Null,
                 pos,
@@ -84,15 +88,18 @@ impl<'p> Checker<'p> {
                         }
                     };
                     let init = hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Regex(RegexFn::New),
                             args: vec![
                                 hir::Expr {
+                                    pending_work: None,
                                     kind: ExprKind::Str(pattern),
                                     ty: Type::Str,
                                     pos: pos.clone(),
                                 },
                                 hir::Expr {
+                                    pending_work: None,
                                     kind: ExprKind::Str(flags),
                                     ty: Type::Str,
                                     pos: pos.clone(),
@@ -116,6 +123,7 @@ impl<'p> Checker<'p> {
                     name
                 };
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Global(hir::Symbol::from_full_text(name)),
                     ty: Type::RegExp,
                     pos,
@@ -169,6 +177,7 @@ impl<'p> Checker<'p> {
         // §143: a numeric parameter context gives a literal no concrete storage width.
         if matches!(self.apparent_type(&target), Type::GenericNumber) {
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Float(value),
                 ty: target,
                 pos,
@@ -186,6 +195,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Float(value),
                 ty: target,
                 pos,
@@ -224,6 +234,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Int(integer),
             ty: target,
             pos,
@@ -272,6 +283,7 @@ impl<'p> Checker<'p> {
             }
         }
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Template(parts),
             ty: Type::Str,
             pos,
@@ -301,11 +313,22 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if let Some(scope) = fx.scopes.iter().rposition(|s| {
+            s.vars.contains_key(&name)
+                || s.pending.contains(&name)
+                || s.switch_declarations.contains_key(&name)
+        }) {
+            if fx.parameter_decisions.contains(&(scope, name.clone())) {
+                self.cycle(pos.clone());
+                return self.err_expr(pos);
+            }
+        }
         if let Some(local) = self.lookup_local(&name, &pos, fx) {
             if self.reject_caught_read(&name, &local, &pos, fx) {
                 return self.err_expr(pos);
             }
             let mut expr = hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Local(name, local.ty.clone()),
                 ty: local.ty,
                 pos,
@@ -349,17 +372,15 @@ impl<'p> Checker<'p> {
                 // both tiers emit an immediate rather than reading a global.
                 if let Some((value, ty)) = self.ambient_int_consts.get(&g).cloned() {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Int(value),
                         ty,
                         pos,
                     };
                 }
-                let ty = self
-                    .global_sigs
-                    .get(&g)
-                    .map(|s| s.ty.clone())
-                    .unwrap_or(Type::Error);
+                let ty = self.decide_global(&g, pos.clone());
                 let mut expr = hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
                     ty,
                     pos,
@@ -368,9 +389,26 @@ impl<'p> Checker<'p> {
                 expr
             }
             Some(ScopeItem::Func(f)) => {
+                let direct_value = self.initializer_root == Some(id.span);
+                let value_decision =
+                    std::mem::replace(&mut self.function_value_decision, direct_value);
+                self.decide_function_parameters(&f);
+                self.function_value_decision = value_decision;
                 let Some(sig) = self.fn_sigs.get(&f).cloned() else {
                     return self.err_expr(pos);
                 };
+                if sig
+                    .params
+                    .iter()
+                    .any(|p| matches!(p.state, crate::check::initializer::TypeState::InProgress))
+                {
+                    if direct_value {
+                        self.parameter_value_cycle(pos.clone());
+                    } else {
+                        self.cycle(pos.clone());
+                    }
+                    return self.err_expr(pos);
+                }
                 if sig.is_generator || sig.is_async {
                     self.reject_subset(if sig.is_async { RejectionSite::AsyncFunctionValue } else { RejectionSite::GeneratorFunctionValue }, if sig.is_async {
                             "async functions are not first-class values; call them directly in await position"
@@ -379,8 +417,9 @@ impl<'p> Checker<'p> {
                         }, pos.clone());
                     return self.err_expr(pos);
                 }
-                let ty = Type::func(sig.params.iter().map(|p| p.ty.clone()).collect(), sig.ret);
+                let ty = Type::func(sig.params.iter().map(|p| p.ty().clone()).collect(), sig.ret);
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),
                     ty,
                     pos,
@@ -441,6 +480,7 @@ impl<'p> Checker<'p> {
                 if name == "NaN" || name == "Infinity" {
                     // Local and program declarations shadow ambient constants.
                     hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Float(if name == "NaN" {
                             f64::NAN
                         } else {

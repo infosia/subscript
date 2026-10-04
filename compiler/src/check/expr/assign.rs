@@ -142,6 +142,7 @@ impl<'p> Checker<'p> {
             };
             self.require_expr_assignable(&value, &signature.element_ty, fx, "the assignment");
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(receiver),
@@ -218,8 +219,9 @@ impl<'p> Checker<'p> {
             } else {
                 value
             };
-            self.require_expr_assignable(&value, &parameter.ty, fx, "the assignment");
+            self.require_expr_assignable(&value, parameter.ty(), fx, "the assignment");
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Func(hir::Symbol::from_full_text(static_member_symbol(
                         id,
@@ -300,8 +302,9 @@ impl<'p> Checker<'p> {
             } else {
                 (recv, value)
             };
-            self.require_expr_assignable(&value, &parameter.ty, fx, "the assignment");
+            self.require_expr_assignable(&value, parameter.ty(), fx, "the assignment");
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(recv),
@@ -368,6 +371,7 @@ impl<'p> Checker<'p> {
                 .retain(|path| path != &key && !path.starts_with(&prefix));
         }
         let assigned = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Assign {
                 update: None,
                 op,
@@ -435,6 +439,7 @@ impl<'p> Checker<'p> {
                         );
                     }
                     return Place::Local(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Local(name, local.ty.clone()),
                         ty: local.ty,
                         pos: ident_pos,
@@ -467,9 +472,11 @@ impl<'p> Checker<'p> {
                                 ident_pos.clone(),
                             );
                         }
+                        let ty = self.decide_global(&g, ident_pos.clone());
                         return Place::Global(hir::Expr {
+                            pending_work: None,
                             kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
-                            ty: sig.ty,
+                            ty,
                             pos: ident_pos,
                         });
                     }
@@ -737,9 +744,11 @@ impl<'p> Checker<'p> {
                     prop_pos.clone(),
                 );
             }
+            let ty = self.decide_global(&symbol, prop_pos.clone());
             return Some(Place::StaticField(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Global(hir::Symbol::from_full_text(symbol)),
-                ty: signature.ty,
+                ty,
                 pos: prop_pos,
             }));
         }

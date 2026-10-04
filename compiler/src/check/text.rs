@@ -20,6 +20,7 @@ pub(crate) fn uri_function(name: &str) -> Option<TextFn> {
 
 fn call(function: TextFn, args: Vec<hir::Expr>, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Call {
             callee: Callee::Text(function),
             args,
@@ -31,6 +32,7 @@ fn call(function: TextFn, args: Vec<hir::Expr>, pos: &Pos) -> hir::Expr {
 
 fn local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
+        pending_work: None,
         kind: ExprKind::Local(name.into(), ty.clone()),
         ty,
         pos: pos.clone(),
@@ -81,10 +83,12 @@ impl Checker<'_> {
             },
             hir::Stmt::If {
                 cond: hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Binary {
                         op: BinOp::Ne,
                         left: Box::new(local("message", Type::Str, &pos)),
                         right: Box::new(hir::Expr {
+                            pending_work: None,
                             kind: ExprKind::Str(String::new()),
                             ty: Type::Str,
                             pos: pos.clone(),
@@ -110,6 +114,7 @@ impl Checker<'_> {
 
     pub(crate) fn error_to_string(&mut self, recv: hir::Expr, pos: Pos) -> hir::Expr {
         let field = |name: &str| hir::Expr {
+            pending_work: None,
             kind: ExprKind::Field {
                 obj: Box::new(local("value", recv.ty.clone(), &pos)),
                 name: name.into(),
@@ -143,6 +148,7 @@ impl Checker<'_> {
                 name: "value".into(),
                 ty: parameter_type,
                 escapes: false,
+                default_can_raise: false,
                 default: None,
                 foreign_provenance: None,
                 pos: pos.clone(),
@@ -152,6 +158,7 @@ impl Checker<'_> {
             pos.clone(),
         ));
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Func(hir::Symbol::from_full_text(name)),
                 args,

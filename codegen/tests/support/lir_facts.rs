@@ -484,8 +484,9 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
     }
 
     let mut expected = BTreeMap::<TrapKey, usize>::new();
+    let mut seen_defaults = std::collections::BTreeSet::new();
     walk_execution_root_expressions(hir, &mut |expr| {
-        collect_trap_expression(expr, hir, &mut expected, findings);
+        collect_trap_expression(expr, hir, &mut expected, findings, &mut seen_defaults);
     });
     lifetime::statements(&hir.top_level, hir, &mut expected);
     for function in all_declared_functions(hir) {
@@ -554,6 +555,7 @@ fn collect_trap_expression(
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
+    seen_defaults: &mut std::collections::BTreeSet<usize>,
 ) {
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
@@ -585,7 +587,13 @@ fn collect_trap_expression(
                     for (slot, field) in fields.iter().zip(&definition.fields) {
                         if slot.is_none() && !field.is_absence_capable {
                             if let Some(default) = &field.init {
-                                collect_trap_expression(default, hir, expected, findings);
+                                collect_trap_expression(
+                                    default,
+                                    hir,
+                                    expected,
+                                    findings,
+                                    seen_defaults,
+                                );
                             }
                         }
                     }
@@ -595,16 +603,23 @@ fn collect_trap_expression(
                 if let Some(definition) = hir.classes.get(class.0) {
                     for field in &definition.fields {
                         if let Some(initializer) = &field.init {
-                            collect_trap_expression(initializer, hir, expected, findings);
+                            collect_trap_expression(
+                                initializer,
+                                hir,
+                                expected,
+                                findings,
+                                seen_defaults,
+                            );
                         }
                     }
                     if let Some(constructor) = &definition.ctor {
                         collect_missing_parameter_defaults(
                             &constructor.params,
-                            args.len(),
+                            (args.len(), Some(Type::Class(*class))),
                             hir,
                             expected,
                             findings,
+                            seen_defaults,
                         );
                     }
                 }
@@ -613,10 +628,17 @@ fn collect_trap_expression(
                 match declared_callee_parameters(hir, callee, &node.pos) {
                     Ok(Some(parameters)) => collect_missing_parameter_defaults(
                         parameters,
-                        args.len(),
+                        (
+                            args.len(),
+                            match callee {
+                                hir::Callee::Method { recv, .. } => Some(recv.ty.clone()),
+                                _ => None,
+                            },
+                        ),
                         hir,
                         expected,
                         findings,
+                        seen_defaults,
                     ),
                     Ok(None) => {}
                     Err(finding) => findings.push(finding),
@@ -627,10 +649,17 @@ fn collect_trap_expression(
                 match declared_async_callee_parameters(hir, callee, &node.pos) {
                     Ok(parameters) => collect_missing_parameter_defaults(
                         parameters,
-                        args.len(),
+                        (
+                            args.len(),
+                            match callee {
+                                hir::AsyncCallee::Method { class, .. } => Some(Type::Class(*class)),
+                                _ => None,
+                            },
+                        ),
                         hir,
                         expected,
                         findings,
+                        seen_defaults,
                     ),
                     Err(finding) => findings.push(finding),
                 }
@@ -768,14 +797,45 @@ fn declared_async_callee_parameters<'a>(
 
 fn collect_missing_parameter_defaults(
     parameters: &[hir::Param],
-    supplied: usize,
+    call: (usize, Option<Type>),
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
+    seen_defaults: &mut std::collections::BTreeSet<usize>,
 ) {
-    for parameter in parameters.iter().skip(supplied) {
+    let classes: Vec<_> = hir
+        .classes
+        .iter()
+        .map(subscript_compiler::types::HandleClass::from)
+        .collect();
+    for (index, parameter) in parameters.iter().enumerate().skip(call.0) {
         if let Some(default) = &parameter.default {
-            collect_trap_expression(default, hir, expected, findings);
+            *expected
+                .entry(trap_key(&default.pos, "Call".to_string()))
+                .or_default() += 1;
+            if parameter.default_can_raise {
+                *expected
+                    .entry(trap_key(&default.pos, "Raise".to_string()))
+                    .or_default() += 1;
+            }
+            for ty in call
+                .1
+                .iter()
+                .chain(parameters[..index].iter().map(|parameter| &parameter.ty))
+            {
+                if ty
+                    .handle_kind(&classes)
+                    .is_some_and(subscript_compiler::types::HandleKind::needs_lifetime_trap)
+                {
+                    *expected
+                        .entry(trap_key(&default.pos, "DevOnlyLifetime".to_string()))
+                        .or_default() += 1;
+                }
+            }
+            // A default body is lowered once; its calls do not expand callee defaults.
+            if seen_defaults.insert(default as *const hir::Expr as usize) {
+                collect_trap_expression(default, hir, expected, findings, seen_defaults);
+            }
         }
     }
 }
@@ -972,7 +1032,7 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
         }
     }
 
-    walk_module_expressions(hir, &mut |expr| {
+    walk_call_expressions(hir, &mut |expr| {
         let expected = match expected_call_operands(hir, expr) {
             Ok(Some(expected)) => expected,
             Ok(None) => return,
@@ -990,6 +1050,67 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
             ));
         }
     });
+}
+
+/// Defaults execute at omitted-argument call sites, not at declarations.
+fn walk_call_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnMut(&'a hir::Expr)) {
+    let defaults: std::collections::BTreeSet<_> = all_declared_functions(hir)
+        .flat_map(|function| &function.params)
+        .filter_map(|parameter| parameter.default.as_ref())
+        .map(|expression| expression as *const hir::Expr)
+        .collect();
+    let mut roots = Vec::new();
+    for owner in hir.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expression)
+                if !defaults.contains(&(expression as *const hir::Expr)) =>
+            {
+                roots.push(expression)
+            }
+            hir::ExpressionOwner::Expr(_) => {}
+            hir::ExpressionOwner::Body { statements, .. } => {
+                walk_statement_expression_roots(hir, statements, &mut |expression| {
+                    roots.push(expression)
+                });
+            }
+        }
+    }
+    let mut seen_defaults = std::collections::BTreeSet::new();
+    while let Some(root) = roots.pop() {
+        walk_expr(hir, root, &mut |expression| {
+            visit(expression);
+            let parameters = match &expression.kind {
+                hir::ExprKind::Call { callee, args } => {
+                    declared_callee_parameters(hir, callee, &expression.pos)
+                        .ok()
+                        .flatten()
+                        .map(|parameters| (parameters, args.len()))
+                }
+                hir::ExprKind::New { class, args } => hir.classes[class.0]
+                    .ctor
+                    .as_ref()
+                    .map(|constructor| (constructor.params.as_slice(), args.len())),
+                hir::ExprKind::AsyncCall { callee, args }
+                | hir::ExprKind::AsyncHandleCreate { callee, args, .. } => {
+                    declared_async_callee_parameters(hir, callee, &expression.pos)
+                        .ok()
+                        .map(|parameters| (parameters, args.len()))
+                }
+                _ => None,
+            };
+            if let Some((parameters, supplied)) = parameters {
+                for default in parameters
+                    .iter()
+                    .skip(supplied)
+                    .filter_map(|parameter| parameter.default.as_ref())
+                {
+                    if seen_defaults.insert(default as *const hir::Expr) {
+                        roots.push(default);
+                    }
+                }
+            }
+        });
+    }
 }
 
 fn suspend_position(terminator: &l::Terminator) -> Option<&Pos> {

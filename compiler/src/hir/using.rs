@@ -48,6 +48,7 @@ impl UsingBinding {
     pub fn hook(&self) -> Stmt {
         let pos = &self.pos;
         let local = |name: &str, ty: Type| Expr {
+            pending_work: None,
             kind: ExprKind::Local(
                 name.to_string(),
                 if name == self.name {
@@ -64,6 +65,7 @@ impl UsingBinding {
             other => other.clone(),
         };
         let mut hook = Stmt::Expr(Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Method {
                     recv: Box::new(local(&self.name, receiver_type)),
@@ -77,10 +79,12 @@ impl UsingBinding {
         if self.nullable() {
             hook = Stmt::If {
                 cond: Expr {
+                    pending_work: None,
                     kind: ExprKind::Binary {
                         op: BinOp::Ne,
                         left: Box::new(local(&self.name, self.ty.clone())),
                         right: Box::new(Expr {
+                            pending_work: None,
                             kind: ExprKind::Null,
                             ty: Type::Null,
                             pos: pos.clone(),

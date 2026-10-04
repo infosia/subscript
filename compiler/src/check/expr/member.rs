@@ -65,6 +65,7 @@ impl<'p> Checker<'p> {
                 if let ast::MemberProp::Ident(name) = &m.prop {
                     if initializer.earlier.contains(name.sym.as_ref()) {
                         let object = hir::Expr {
+                            pending_work: None,
                             kind: ExprKind::This,
                             ty: initializer.class_type.clone(),
                             pos: self.pos(m.obj.span()),
@@ -193,6 +194,7 @@ impl<'p> Checker<'p> {
                     "the index",
                 );
                 return hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Method {
                             recv: Box::new(obj),
@@ -249,6 +251,7 @@ impl<'p> Checker<'p> {
             }
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Index {
                 obj: Box::new(obj),
                 index: Box::new(index),
@@ -329,8 +332,10 @@ impl<'p> Checker<'p> {
                     .iter()
                     .find(|f| f.name == name)
                     .map(|f| f.ty.clone());
-                if let Some(ty) = field {
+                if field.is_some() {
+                    let ty = self.decide_field(id, name, prop_pos.clone());
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Field {
                             obj: Box::new(obj),
                             name: name.to_string(),
@@ -350,6 +355,7 @@ impl<'p> Checker<'p> {
                     };
                     let call_pos = obj.pos.clone();
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Method {
                                 recv: Box::new(obj),
@@ -415,6 +421,7 @@ impl<'p> Checker<'p> {
             Type::Array(_) | Type::FixedArray(..) => {
                 if name == "length" && !for_write {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Length(Box::new(obj)),
                         ty: Type::I32,
                         pos: prop_pos,
@@ -472,6 +479,7 @@ impl<'p> Checker<'p> {
             Type::Map(_, _) => {
                 if name == "size" && !for_write {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Map(MapFn::Size),
                             args: vec![obj],
@@ -504,6 +512,7 @@ impl<'p> Checker<'p> {
             Type::Set(_) => {
                 if name == "size" && !for_write {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Set(SetFn::Size),
                             args: vec![obj],
@@ -536,6 +545,7 @@ impl<'p> Checker<'p> {
             Type::Str => {
                 if name == "length" && !for_write {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Length(Box::new(obj)),
                         ty: Type::I32,
                         pos: prop_pos,
@@ -570,6 +580,7 @@ impl<'p> Checker<'p> {
                 };
                 if let Some((function, ty)) = accessor.filter(|_| !for_write) {
                     return hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Regex(function),
                             args: vec![obj],
@@ -609,6 +620,7 @@ impl<'p> Checker<'p> {
                 }
                 match name {
                     "done" => hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Field {
                             obj: Box::new(obj),
                             name: name.to_string(),
@@ -617,6 +629,7 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     },
                     "value" => hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Field {
                             obj: Box::new(obj),
                             name: name.to_string(),

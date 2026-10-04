@@ -58,7 +58,22 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         if let (Some(params), Some(mut pending)) = (params, pending) {
             let receiver = PreparedBase::Value(allocated.clone());
-            self.lower_argument_defaults(&params, args, Some(&receiver), false, &mut pending)?;
+            let constructor = class
+                .ctor
+                .as_ref()
+                .ok_or_else(|| self.error(&expr.pos, "constructor body is missing"))?;
+            let record =
+                self.lowering
+                    .method_record(class_id.0, &constructor.symbol, &constructor.pos)?;
+            let owner = record.method.map(defaults::DefaultOwner::Method);
+            self.lower_argument_defaults(
+                owner,
+                &params,
+                args,
+                Some(&receiver),
+                false,
+                &mut pending,
+            )?;
             constructor_args = self.finish_call_arguments(pending)?;
         }
         if class.is_boundary {

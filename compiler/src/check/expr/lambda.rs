@@ -46,58 +46,128 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        if a.is_async {
-            self.reject_subset(RejectionSite::AsyncArrowFunction, "async arrow functions are not in the decided surface; use an async function declaration", pos.clone());
-            return self.err_expr(pos);
-        }
-        if a.is_generator {
-            self.reject_subset(
-                RejectionSite::GeneratorArrowFunction,
-                "generator arrows are not in the decided surface",
-                pos.clone(),
-            );
-            return self.err_expr(pos);
-        }
-        let mut params = Vec::new();
-        for (i, pat) in a.params.iter().enumerate() {
-            // An un-annotated lambda parameter takes its type from the
-            // contextual function type (tsc-style contextual typing);
-            // only a parameter with neither annotation nor context is an
-            // error. This is how a boundary callback (e.g. a `void*`
-            // `object | null` userdata slot) is typed without the program
-            // spelling the boundary type itself.
-            let unannotated_ident = match pat {
-                ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
-                _ => None,
-            };
-            let sig =
-                if let (0, Some(resolved), ast::Pat::Ident(binding)) = (i, resolved_first, pat) {
+        let generic_context = self.generic_callback_context;
+        let async_message =
+            "async arrow functions are not in the decided surface; use an async function declaration";
+        let value = self.with_expression_work(|checker| {
+            if a.is_async {
+                checker.reject_subset(
+                    RejectionSite::AsyncArrowFunction,
+                    async_message,
+                    pos.clone(),
+                );
+                return checker.err_expr(pos);
+            }
+            if a.is_generator {
+                checker.reject_subset(
+                    RejectionSite::GeneratorArrowFunction,
+                    "generator arrows are not in the decided surface",
+                    pos.clone(),
+                );
+                return checker.err_expr(pos);
+            }
+            let mut params = Vec::new();
+            for (i, pat) in a.params.iter().enumerate() {
+                // An un-annotated lambda parameter takes its type from the
+                // contextual function type (tsc-style contextual typing);
+                // only a parameter with neither annotation nor context is an
+                // error. This is how a boundary callback (e.g. a `void*`
+                // `object | null` userdata slot) is typed without the program
+                // spelling the boundary type itself.
+                let unannotated_ident = match pat {
+                    ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
+                    _ => None,
+                };
+                let sig = if let (0, Some(resolved), ast::Pat::Ident(binding)) =
+                    (i, resolved_first, pat)
+                {
                     ParamSig {
                         name: binding.id.sym.to_string(),
-                        ty: resolved.clone(),
+                        state: crate::check::initializer::TypeState::decided(resolved.clone()),
+                        initializer: None,
                         has_default: false,
                     }
                 } else if let Some(b) = unannotated_ident {
                     if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
                         ParamSig {
                             name: b.id.sym.to_string(),
-                            ty: t.clone(),
+                            state: crate::check::initializer::TypeState::decided(t.clone()),
+                            initializer: None,
                             has_default: false,
                         }
                     } else {
-                        self.resolve_param_pat(pat)
+                        checker.resolve_param_pat(pat)
                     }
                 } else {
-                    self.resolve_param_pat(pat)
+                    checker.resolve_param_pat(pat)
                 };
-            params.push(sig);
-        }
-        let mut ret = a
-            .return_type
-            .as_ref()
-            .map(|ann| self.resolve_result_type(&ann.type_ann))
-            .or_else(|| ret_ctx.cloned());
+                params.push(sig);
+            }
+            let mut ret = a
+                .return_type
+                .as_ref()
+                .map(|ann| checker.resolve_result_type(&ann.type_ann))
+                .or_else(|| ret_ctx.cloned());
 
+            if ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_)) {
+                checker.reject_subset(
+                    RejectionSite::BlockLambdaReturnAnnotationMissing,
+                    "a lambda with a block body requires a return type annotation",
+                    pos.clone(),
+                );
+                ret = Some(Type::Error);
+            }
+            checker.generic_callback_context = false;
+            checker.decide_lambda_parameters(&mut params, fx);
+            if checker.deciding_type
+                && a.return_type.is_some()
+                && ret.as_ref().is_some_and(|t| *t != Type::Error)
+            {
+                let result = ret.clone().unwrap_or(Type::Error);
+                let ty = Type::func(
+                    params.iter().map(|p| p.ty().clone()).collect(),
+                    result.clone(),
+                );
+                checker.defer_work(
+                    crate::check::initializer::DeferredWork::Lambda {
+                        source: a.clone(),
+                        params,
+                        result: result.clone(),
+                    },
+                    fx,
+                );
+                let id = hir::LambdaId(checker.next_lambda_id);
+                checker.next_lambda_id += 1;
+                return hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::Lambda {
+                        id,
+                        params: Vec::new(),
+                        ret: result,
+                        body: Vec::new(),
+                        captures: Vec::new(),
+                        can_raise: false,
+                    },
+                    ty,
+                    pos,
+                };
+            }
+            checker.check_lambda_body(a, params, ret, fx, pos)
+        });
+        self.generic_callback_context = generic_context;
+        value
+    }
+
+    pub(in crate::check) fn check_lambda_body(
+        &mut self,
+        a: &ast::ArrowExpr,
+        params: Vec<ParamSig>,
+        mut ret: Option<Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let id = hir::LambdaId(self.next_lambda_id);
+        self.next_lambda_id += 1;
         let saved_flow = fx.nonnull_flow_snapshot();
         for scope in &mut fx.scopes {
             scope.nonnull_flow.clear();
@@ -110,6 +180,7 @@ impl<'p> Checker<'p> {
             yield_annotated: false,
             is_lambda: true,
             contextual_void: a.return_type.is_none() && ret == Some(Type::Void),
+            lambda_id: Some(id),
             captures: Vec::new(),
             this_ty: None,
             missing_this_site: None,
@@ -125,9 +196,19 @@ impl<'p> Checker<'p> {
         let saved_narrowed = std::mem::take(&mut fx.narrowed);
         let mut hir_params = Vec::new();
         for (p, pattern) in params.iter().zip(&a.params) {
-            let default = if let ast::Pat::Assign(assign) = pattern {
-                let value = self.check_expr(&assign.right, Some(&p.ty), fx);
-                self.require_expr_assignable(&value, &p.ty, fx, "the default value");
+            if let Some(frame) = fx.frames.last_mut() {
+                for capture in Self::initializer_captures(&p.initializer) {
+                    if !frame.captures.iter().any(|c| c.name == capture.name) {
+                        frame.captures.push(capture.clone());
+                    }
+                }
+            }
+            let mut initializer = p.initializer.clone();
+            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
+                Some(value)
+            } else if let ast::Pat::Assign(assign) = pattern {
+                let value = self.check_expr(&assign.right, Some(p.ty()), fx);
+                self.require_expr_assignable(&value, p.ty(), fx, "the default value");
                 Some(value)
             } else {
                 None
@@ -136,7 +217,7 @@ impl<'p> Checker<'p> {
             self.declare_local(
                 &p.name,
                 Local {
-                    ty: p.ty.clone(),
+                    ty: p.ty().clone(),
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
@@ -146,8 +227,9 @@ impl<'p> Checker<'p> {
             );
             hir_params.push(hir::Param {
                 escapes: false,
+                default_can_raise: false,
                 name: p.name.clone(),
-                ty: p.ty.clone(),
+                ty: p.ty().clone(),
                 default,
                 foreign_provenance: None,
                 pos: pos.clone(),
@@ -185,17 +267,6 @@ impl<'p> Checker<'p> {
                 }
                 ast::BlockStmtOrExpr::BlockStmt(block) => {
                     self.reserve_block_declarations(&block.stmts, fx);
-                    if ret.is_none() {
-                        self.reject_subset(
-                            RejectionSite::BlockLambdaReturnAnnotationMissing,
-                            "a lambda with a block body requires a return type annotation",
-                            pos.clone(),
-                        );
-                        ret = Some(Type::Error);
-                    }
-                    if let Some(frame) = fx.frames.last_mut() {
-                        frame.ret = ret.clone().unwrap_or(Type::Error);
-                    }
                     let mut out = Vec::new();
                     for s in &block.stmts {
                         self.check_stmt(s, fx, &mut out);
@@ -234,10 +305,9 @@ impl<'p> Checker<'p> {
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);
-        let ty = Type::func(params.iter().map(|p| p.ty.clone()).collect(), ret.clone());
-        let id = hir::LambdaId(self.next_lambda_id);
-        self.next_lambda_id += 1;
+        let ty = Type::func(params.iter().map(|p| p.ty().clone()).collect(), ret.clone());
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Lambda {
                 id,
                 params: hir_params,

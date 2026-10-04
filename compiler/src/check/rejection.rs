@@ -442,10 +442,6 @@ impl RejectionSite {
             Self::StaticFieldOptional => {
                 (RuleCode::S012, Diverges(Divergence::StaticFieldOptional))
             }
-            Self::StaticFieldAnnotationMissing => (
-                RuleCode::S100,
-                Diverges(Divergence::StaticFieldAnnotationMissingForm),
-            ),
             Self::ContextAffineStaticField => (
                 RuleCode::S100,
                 Diverges(Divergence::ContextAffineStaticField),
@@ -466,10 +462,6 @@ impl RejectionSite {
             Self::InstanceFieldOptional => {
                 (RuleCode::S012, Diverges(Divergence::InstanceFieldOptional))
             }
-            Self::InstanceFieldAnnotationMissing => (
-                RuleCode::S100,
-                Diverges(Divergence::InstanceFieldAnnotationMissingForm),
-            ),
             Self::WireAliasNestedField => {
                 (RuleCode::S100, Diverges(Divergence::WireAliasNestedField))
             }
@@ -763,10 +755,6 @@ impl RejectionSite {
             ),
             Self::DefaultImport => (RuleCode::S100, Diverges(Divergence::DefaultImport)),
             Self::NamedImportMemberMissing => (RuleCode::S016, TscRejects),
-            Self::ModuleVariableAnnotationMissing => (
-                RuleCode::S100,
-                Diverges(Divergence::ModuleVariableAnnotationMissingForm),
-            ),
             Self::WorkerEndpointModuleGlobal => {
                 (RuleCode::S100, Diverges(Divergence::WorkerContextAffinity))
             }
@@ -782,14 +770,12 @@ impl RejectionSite {
                 Diverges(Divergence::FunctionReturnAnnotationMissingForm),
             ),
             Self::OptionalParameter => (RuleCode::S012, Diverges(Divergence::OptionalParameter)),
-            Self::NamedParameterAnnotationMissing => (
+            Self::GenericCallbackParameterAnnotationMissing => (
                 RuleCode::S100,
-                Diverges(Divergence::NamedParameterAnnotationMissingForm),
+                Diverges(Divergence::GenericCallbackParameterAnnotationNeeded),
             ),
-            Self::PatternParameterAnnotationMissing => (
-                RuleCode::S100,
-                Diverges(Divergence::PatternParameterAnnotationMissingForm),
-            ),
+            Self::NamedParameterAnnotationMissing => (RuleCode::S100, TscRejects),
+            Self::PatternParameterAnnotationMissing => (RuleCode::S100, TscRejects),
             Self::AsyncReturnNonReference => (
                 RuleCode::S100,
                 Diverges(Divergence::AsyncReturnNonReference),
@@ -1167,10 +1153,25 @@ impl RejectionSite {
             }
             Self::AsyncArrowFunction => (RuleCode::S100, Diverges(Divergence::AsyncFunctionShape)),
             Self::GeneratorArrowFunction => (RuleCode::S100, TscRejects),
+            Self::FieldTypeWithoutInitializer => (
+                RuleCode::S100,
+                Diverges(Divergence::FieldTypeWithoutInitializer),
+            ),
+            Self::UnassignedFieldTypeWithoutInitializer => (RuleCode::S100, TscRejects),
+            Self::StaticFieldTypeWithoutInitializer => (RuleCode::S100, TscRejects),
+            Self::FunctionValueParameterAnnotationNeeded => (
+                RuleCode::S100,
+                Diverges(Divergence::FunctionValueParameterAnnotationNeeded),
+            ),
             Self::BlockLambdaReturnAnnotationMissing => (
                 RuleCode::S100,
                 Diverges(Divergence::BlockLambdaReturnAnnotationMissingForm),
             ),
+            Self::GenericClassDefaultParameterAnnotationNeeded => (
+                RuleCode::S100,
+                Diverges(Divergence::GenericClassDefaultParameterAnnotationNeeded),
+            ),
+            Self::InitializerTypeCycle => (RuleCode::S100, TscRejects),
             Self::LambdaReturnCoverage => (
                 RuleCode::S100,
                 Diverges(Divergence::LambdaReturnFlowCoverage),

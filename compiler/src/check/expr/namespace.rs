@@ -168,8 +168,9 @@ impl<'p> Checker<'p> {
                         );
                     }
                     let mut field = hir::Expr {
-                        kind: ExprKind::Global(hir::Symbol::from_full_text(symbol)),
-                        ty: signature.ty,
+                        pending_work: None,
+                        kind: ExprKind::Global(hir::Symbol::from_full_text(symbol.clone())),
+                        ty: self.decide_global(&symbol, prop_pos.clone()),
                         pos: prop_pos,
                     };
                     if !for_write {
@@ -188,6 +189,7 @@ impl<'p> Checker<'p> {
                         return Some(self.err_expr(prop_pos));
                     };
                     return Some(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Call {
                             callee: Callee::Func(hir::Symbol::from_full_text(
                                 static_member_symbol(id, &class_name, prop),
@@ -245,6 +247,7 @@ impl<'p> Checker<'p> {
                     .cloned();
                 match member {
                     Some((member, value)) => Some(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::EnumMember { id, member, value },
                         ty: Type::Enum(id),
                         pos: prop_pos,
@@ -344,6 +347,7 @@ impl<'p> Checker<'p> {
         }
         if let Some(value) = crate::ambient::math_const(prop) {
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Float(value),
                 ty: Type::F64,
                 pos: prop_pos,
@@ -425,6 +429,7 @@ impl<'p> Checker<'p> {
             &format!("Math.{}", f.name()),
         );
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Math(f),
                 args,
@@ -457,6 +462,7 @@ impl<'p> Checker<'p> {
         }
         if let Some(value) = crate::ambient::number_const(prop) {
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Float(value),
                 ty: Type::F64,
                 pos: prop_pos,
@@ -508,6 +514,7 @@ impl<'p> Checker<'p> {
             &format!("Number.{}", f.name()),
         );
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Num(f),
                 args,
@@ -570,6 +577,7 @@ impl<'p> Checker<'p> {
             call_name,
         );
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Num(f),
                 args,
@@ -749,12 +757,12 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let (input, output) = match (
-            &self.apparent_type(&sig.params[0].ty),
-            &self.apparent_type(&sig.params[1].ty),
+            &self.apparent_type(sig.params[0].ty()),
+            &self.apparent_type(sig.params[1].ty()),
         ) {
             (Type::Inbox(input), Type::Outbox(output)) => ((**input).clone(), (**output).clone()),
             _ => {
-                self.reject_subset(if matches!((&self.apparent_type(&sig.params[0].ty), &self.apparent_type(&sig.params[1].ty)), (Type::Class(_), Type::Class(_))) { RejectionSite::WorkerEntryStructuralEndpoints } else { RejectionSite::WorkerEntryEndpointMismatch }, "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`", self.pos(ident.span));
+                self.reject_subset(if matches!((&self.apparent_type(sig.params[0].ty()), &self.apparent_type(sig.params[1].ty())), (Type::Class(_), Type::Class(_))) { RejectionSite::WorkerEntryStructuralEndpoints } else { RejectionSite::WorkerEntryEndpointMismatch }, "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`", self.pos(ident.span));
                 return self.err_expr(pos);
             }
         };
@@ -803,6 +811,7 @@ impl<'p> Checker<'p> {
                 index
             });
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Worker(WorkerFn::Spawn(entry_index)),
                 args: Vec::new(),
@@ -828,12 +837,14 @@ impl<'p> Checker<'p> {
         let params = [
             ParamSig {
                 name: "pattern".to_string(),
-                ty: Type::Str,
+                state: crate::check::initializer::TypeState::decided(Type::Str),
+                initializer: None,
                 has_default: false,
             },
             ParamSig {
                 name: "flags".to_string(),
-                ty: Type::Str,
+                state: crate::check::initializer::TypeState::decided(Type::Str),
+                initializer: None,
                 has_default: true,
             },
         ];
@@ -849,12 +860,14 @@ impl<'p> Checker<'p> {
         );
         if args.len() == 1 {
             args.push(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Str(String::new()),
                 ty: Type::Str,
                 pos: pos.clone(),
             });
         }
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Regex(RegexFn::New),
                 args,
@@ -885,6 +898,7 @@ impl<'p> Checker<'p> {
             let mut args = vec![recv];
             args.extend(checked);
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Regex(RegexFn::ToString),
                     args,
@@ -931,6 +945,7 @@ impl<'p> Checker<'p> {
         args.push(recv);
         args.extend(checked);
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Regex(function),
                 args,
@@ -1024,6 +1039,7 @@ impl<'p> Checker<'p> {
         }
         if name == "split" && checked.len() == 1 {
             checked.push(hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Int(-1),
                 ty: Type::I32,
                 pos: pos.clone(),
@@ -1055,6 +1071,7 @@ impl<'p> Checker<'p> {
                 Type::Str
             };
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Regex(function),
                     args,
@@ -1088,6 +1105,7 @@ impl<'p> Checker<'p> {
             Type::Str
         };
         hir::Expr {
+            pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Str(function),
                 args,
@@ -1152,7 +1170,8 @@ impl<'p> Checker<'p> {
                 let params: Vec<ParamSig> = (0..7)
                     .map(|i| ParamSig {
                         name: String::new(),
-                        ty: Type::I32,
+                        state: crate::check::initializer::TypeState::decided(Type::I32),
+                        initializer: None,
                         has_default: i >= 1,
                     })
                     .collect();
@@ -1169,12 +1188,14 @@ impl<'p> Checker<'p> {
                 while args.len() < 7 {
                     let default = if args.len() == 2 { 1 } else { 0 };
                     args.push(hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Int(default),
                         ty: Type::I32,
                         pos: pos.clone(),
                     });
                 }
                 Some(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Date(DateFn::Utc),
                         args,
@@ -1193,6 +1214,7 @@ impl<'p> Checker<'p> {
                     "Date.now",
                 );
                 Some(hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Date(DateFn::Now),
                         args,
@@ -1237,6 +1259,7 @@ impl<'p> Checker<'p> {
                 }
                 let args = vec![value];
                 hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Date(DateFn::New),
                         args,
@@ -1286,6 +1309,7 @@ impl<'p> Checker<'p> {
                 name,
             );
             return hir::Expr {
+                pending_work: None,
                 kind: recv.kind,
                 ty: Type::I64,
                 pos,
@@ -1309,6 +1333,7 @@ impl<'p> Checker<'p> {
                 Type::I32
             };
             return hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: Callee::Date(method.operation()),
                     args: vec![recv],

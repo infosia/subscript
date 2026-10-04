@@ -137,7 +137,7 @@ fn contains_break(stmts: &[hir::Stmt]) -> bool {
     })
 }
 
-fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::Stmt]) {
+pub(super) fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::Stmt]) {
     for statement in statements {
         match statement {
             hir::Stmt::Continue(pos) => {
@@ -433,17 +433,7 @@ impl<'p> Checker<'p> {
                     self.require_expr_assignable(&init, &ann, fx, "the initializer");
                     ann
                 }
-                None => match &self.apparent_type(&init.ty) {
-                    Type::Null => {
-                        self.reject_subset(
-                            RejectionSite::NullInitializerInference,
-                            "cannot infer a type from `null`; annotate the declaration",
-                            pos.clone(),
-                        );
-                        Type::Error
-                    }
-                    _ => init.ty.clone(),
-                },
+                None => self.inferred_initializer_type(&init, pos.clone()),
             };
             if dispose && !matches!(&self.apparent_type(&ty), Type::Error) {
                 let shape = self.apparent_type(&ty);
@@ -482,6 +472,7 @@ impl<'p> Checker<'p> {
             }
             if pattern.is_destructuring() {
                 let source = hir::Expr {
+                    pending_work: None,
                     kind: init.kind,
                     ty,
                     pos: init.pos,
@@ -535,7 +526,10 @@ impl<'p> Checker<'p> {
             .last()
             .map(|f| (f.ret.clone(), f.is_generator))
             .unwrap_or((Type::Error, false));
+        let poisoned_result = self.apparent_type(&ret) == Type::Error
+            && fx.frames.last().is_some_and(|frame| frame.is_lambda);
         let value = match &r.arg {
+            Some(arg) if poisoned_result => Some(self.err_expr(self.pos(arg.span()))),
             Some(arg) => {
                 if is_generator {
                     self.reject_subset(
@@ -844,6 +838,7 @@ impl<'p> Checker<'p> {
         insert_for_step_before_continues(&mut body, &step_statements);
         body.extend(step_statements);
         let cond = cond.unwrap_or_else(|| hir::Expr {
+            pending_work: None,
             kind: hir::ExprKind::Bool(true),
             ty: Type::Bool,
             pos: pos.clone(),
@@ -860,6 +855,7 @@ impl<'p> Checker<'p> {
             });
             (
                 hir::Expr {
+                    pending_work: None,
                     kind: hir::ExprKind::Bool(true),
                     ty: Type::Bool,
                     pos: pos.clone(),
@@ -938,6 +934,7 @@ impl<'p> Checker<'p> {
         let mut prologue = Vec::new();
         if pattern.is_destructuring() {
             let element = hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Local(name.clone(), elem_ty.clone()),
                 ty: elem_ty.clone(),
                 pos: binding_pos.clone(),
@@ -977,6 +974,7 @@ impl<'p> Checker<'p> {
         let subject_name = format!("[[for.of#{id}.subject]]");
         let subject_ty = subject.ty.clone();
         let subject_local = hir::Expr {
+            pending_work: None,
             kind: ExprKind::Local(subject_name.clone(), subject_ty.clone()),
             ty: subject_ty.clone(),
             pos: subject.pos.clone(),
@@ -994,6 +992,7 @@ impl<'p> Checker<'p> {
             let step_name = format!("[[for.of#{id}.step]]");
             let step_ty = Type::iter_result(elem_ty.clone());
             let next = hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Call {
                     callee: hir::Callee::Method {
                         recv: Box::new(subject_local),
@@ -1005,6 +1004,7 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             };
             let step_local = || hir::Expr {
+                pending_work: None,
                 kind: ExprKind::Local(step_name.clone(), step_ty.clone()),
                 ty: step_ty.clone(),
                 pos: pos.clone(),
@@ -1020,6 +1020,7 @@ impl<'p> Checker<'p> {
                 },
                 hir::Stmt::If {
                     cond: hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Field {
                             obj: Box::new(step_local()),
                             name: "done".to_string(),
@@ -1037,6 +1038,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     dispose: false,
                     init: hir::Expr {
+                        pending_work: None,
                         kind: ExprKind::Field {
                             obj: Box::new(step_local()),
                             name: "value".to_string(),
@@ -1050,6 +1052,7 @@ impl<'p> Checker<'p> {
             driven_body.push(hir::Stmt::Block(body));
             hir::Stmt::While {
                 cond: hir::Expr {
+                    pending_work: None,
                     kind: ExprKind::Bool(true),
                     ty: Type::Bool,
                     pos: pos.clone(),
@@ -1522,6 +1525,7 @@ mod tests {
 
     fn expr(kind: ExprKind, ty: Type) -> hir::Expr {
         hir::Expr {
+            pending_work: None,
             kind,
             ty,
             pos: Pos::new("t.ts", 1, 1),

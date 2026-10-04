@@ -262,7 +262,7 @@ fn each_mirror_scope_kind_yields_to_the_module_scope() {
             "interface K {}",
             "function read(value: K): K { return value; }",
             RuleCode::S016,
-            38,
+            38, // §156 reports the parameter position before the result position.
         ),
         (
             "declare class K { value: i32; }",

@@ -174,6 +174,7 @@ impl<'p> Checker<'p> {
             let value = match &binding.source {
                 pattern::BindingSource::Element(index) => {
                     let index = hir::Expr {
+                        pending_work: None,
                         kind: hir::ExprKind::Int(i64::from(*index)),
                         ty: Type::I32,
                         pos: pos.clone(),
@@ -228,6 +229,7 @@ impl<'p> Checker<'p> {
         let ty = source.ty.clone();
         let pos = source.pos.clone();
         let place = hir::Expr {
+            pending_work: None,
             kind: hir::ExprKind::Local(name.clone(), ty.clone()),
             ty: ty.clone(),
             pos: pos.clone(),

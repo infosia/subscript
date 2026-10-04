@@ -12,12 +12,30 @@ pub struct Param {
     pub ty: Type,
     /// Checked default value, when declared (`a11`).
     pub default: Option<Expr>,
+    /// Whether the caller-evaluated default can raise an exception (§156).
+    pub default_can_raise: bool,
     /// C spelling absorbed at this foreign boundary parameter.
     pub foreign_provenance: Option<ForeignTypeProvenance>,
     /// Whether this parameter reaches an escape boundary (compiler.md §118).
     pub escapes: bool,
     /// Position of the parameter.
     pub pos: Pos,
+}
+
+impl Param {
+    /// Creates a required parameter with its declared type and source position.
+    #[must_use]
+    pub fn new(name: impl Into<String>, ty: Type, pos: Pos) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            pos,
+            default: None,
+            default_can_raise: false,
+            foreign_provenance: None,
+            escapes: false,
+        }
+    }
 }
 
 impl super::Module {

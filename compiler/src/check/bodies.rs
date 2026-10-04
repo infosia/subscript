@@ -53,6 +53,14 @@ impl<'p> Checker<'p> {
     }
 
     pub(super) fn check_descriptor_defaults(&mut self, id: ClassId, class: &ast::Class) {
+        let fields: Vec<_> = self.classes[id.0]
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), f.pos.clone()))
+            .collect();
+        for (name, pos) in fields {
+            self.decide_field(id, &name, pos);
+        }
         for member in &class.body {
             let ast::ClassMember::ClassProp(prop) = member else {
                 continue;
@@ -74,8 +82,15 @@ impl<'p> Checker<'p> {
             let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
             fx.lexical_class = Some(id);
             fx.descriptor_default = Some(Type::Class(id));
-            let checked = fx
-                .with_synthetic_owner(
+            let mut initializer = self.class_sigs[id.0]
+                .fields
+                .get(key.sym.as_ref())
+                .and_then(|sig| sig.initializer.clone());
+            let cached = self.finish_initializer(&mut initializer);
+            let checked = if let Some(value) = cached {
+                value
+            } else {
+                fx.with_synthetic_owner(
                     SyntheticOwnerKind::Initializer(self.pos(value.span())),
                     |fx| {
                         let checked = self.check_expr(value, Some(&field_ty), fx);
@@ -88,7 +103,8 @@ impl<'p> Checker<'p> {
                         checked
                     },
                 )
-                .0;
+                .0
+            };
             if let Some(field) = self.classes[id.0]
                 .fields
                 .iter_mut()
@@ -134,45 +150,51 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     let name = self.declaration_symbol(self.cur_file, binding.id.sym.as_ref());
-                    let Some(sig) = self.global_sigs.get(&name).cloned() else {
+                    let Some(mut sig) = self.global_sigs.get(&name).cloned() else {
                         continue;
                     };
                     let pos = self.pos(binding.id.span);
                     let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
-                    let init = match &d.init {
-                        Some(init) => {
-                            fx.with_synthetic_owner(
-                                SyntheticOwnerKind::Initializer(self.pos(init.span())),
-                                |fx| {
-                                    let e = self.check_expr(init, Some(&sig.ty), fx);
-                                    self.require_assignable(
-                                        &e.ty.clone(),
-                                        &sig.ty,
-                                        e.pos.clone(),
-                                        "the initializer",
-                                    );
-                                    e
-                                },
-                            )
-                            .0
-                        }
-                        None => {
-                            self.reject_subset(
-                                RejectionSite::ModuleInitializerMissing,
-                                "module-level variables require an initializer",
-                                pos.clone(),
-                            );
-                            hir::Expr {
-                                kind: hir::ExprKind::Null,
-                                ty: Type::Error,
-                                pos: pos.clone(),
+                    let cached = self.finish_initializer(&mut sig.initializer);
+                    let init = if let Some(value) = cached {
+                        value
+                    } else {
+                        match &d.init {
+                            Some(init) => {
+                                fx.with_synthetic_owner(
+                                    SyntheticOwnerKind::Initializer(self.pos(init.span())),
+                                    |fx| {
+                                        let e = self.check_expr(init, Some(sig.ty()), fx);
+                                        self.require_assignable(
+                                            &e.ty.clone(),
+                                            sig.ty(),
+                                            e.pos.clone(),
+                                            "the initializer",
+                                        );
+                                        e
+                                    },
+                                )
+                                .0
+                            }
+                            None => {
+                                self.reject_subset(
+                                    RejectionSite::ModuleInitializerMissing,
+                                    "module-level variables require an initializer",
+                                    pos.clone(),
+                                );
+                                hir::Expr {
+                                    pending_work: None,
+                                    kind: hir::ExprKind::Null,
+                                    ty: Type::Error,
+                                    pos: pos.clone(),
+                                }
                             }
                         }
                     };
                     self.globals.push(hir::Global {
                         symbol: hir::Symbol::from_full_text(name.clone()),
                         name: source_name(&name),
-                        ty: sig.ty,
+                        ty: sig.ty().clone(),
                         mutable: sig.mutable,
                         init,
                         initializer_index: self.top_level.len(),
@@ -333,31 +355,36 @@ impl<'p> Checker<'p> {
         for (i, p) in f.params.iter().enumerate() {
             let Some(ps) = sig.params.get(i) else { break };
             let pos = self.pos(p.span);
-            let default = match &p.pat {
-                ast::Pat::Assign(a) => Some(
-                    fx.with_synthetic_owner(
-                        SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                        |fx| {
-                            let e = self.check_expr(&a.right, Some(&ps.ty), fx);
-                            self.require_assignable(
-                                &e.ty.clone(),
-                                &ps.ty,
-                                e.pos.clone(),
-                                "the default value",
-                            );
-                            e
-                        },
-                    )
-                    .0,
-                ),
-                _ => None,
+            let mut initializer = ps.initializer.clone();
+            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
+                Some(value)
+            } else {
+                match &p.pat {
+                    ast::Pat::Assign(a) => Some(
+                        fx.with_synthetic_owner(
+                            SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
+                            |fx| {
+                                let e = self.check_expr(&a.right, Some(ps.ty()), fx);
+                                self.require_assignable(
+                                    &e.ty.clone(),
+                                    ps.ty(),
+                                    e.pos.clone(),
+                                    "the default value",
+                                );
+                                e
+                            },
+                        )
+                        .0,
+                    ),
+                    _ => None,
+                }
             };
             self.declare_local(
                 &ps.name,
                 Local {
-                    ty: ps.ty.clone(),
+                    ty: ps.ty().clone(),
                     mutable: true,
-                    async_origins: if self.apparent_type(&ps.ty).carries_async_handle() {
+                    async_origins: if self.apparent_type(ps.ty()).carries_async_handle() {
                         HashSet::from([fx.register_async_origin(pos.clone())])
                     } else {
                         HashSet::new()
@@ -369,8 +396,9 @@ impl<'p> Checker<'p> {
             );
             out.push(hir::Param {
                 escapes: false,
+                default_can_raise: false,
                 name: ps.name.clone(),
-                ty: ps.ty.clone(),
+                ty: ps.ty().clone(),
                 default,
                 foreign_provenance: None,
                 pos,
@@ -385,6 +413,15 @@ impl<'p> Checker<'p> {
     pub(crate) fn check_class_body(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
         if self.classes[id.0].is_descriptor {
             return;
+        }
+        self.decide_class_parameters(id);
+        let fields: Vec<_> = self.classes[id.0]
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), f.pos.clone()))
+            .collect();
+        for (name, pos) in fields {
+            self.decide_field(id, &name, pos);
         }
         let this_ty = Type::Class(id);
         let definite_uninitialized: HashSet<String> = class
@@ -412,7 +449,7 @@ impl<'p> Checker<'p> {
                     };
                     if prop.is_static {
                         let name = key.sym.to_string();
-                        let Some(signature) =
+                        let Some(mut signature) =
                             self.class_sigs[id.0].static_fields.get(&name).cloned()
                         else {
                             continue;
@@ -421,34 +458,40 @@ impl<'p> Checker<'p> {
                         let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                         fx.lexical_class = Some(id);
                         fx.frames[0].missing_this_site = Some(RejectionSite::ThisStaticField);
-                        let init = match &prop.value {
-                            Some(value) => {
-                                fx.with_synthetic_owner(
-                                    SyntheticOwnerKind::Initializer(self.pos(value.span())),
-                                    |fx| {
-                                        let expression =
-                                            self.check_expr(value, Some(&signature.ty), fx);
-                                        self.require_assignable(
-                                            &expression.ty.clone(),
-                                            &signature.ty,
-                                            expression.pos.clone(),
-                                            "the static field initializer",
-                                        );
-                                        expression
-                                    },
-                                )
-                                .0
-                            }
-                            None => {
-                                self.reject_subset(
-                                    RejectionSite::StaticFieldInitializerMissing,
-                                    "static fields require an initializer",
-                                    pos.clone(),
-                                );
-                                hir::Expr {
-                                    kind: hir::ExprKind::Null,
-                                    ty: Type::Error,
-                                    pos: pos.clone(),
+                        let cached = self.finish_initializer(&mut signature.initializer);
+                        let init = if let Some(value) = cached {
+                            value
+                        } else {
+                            match &prop.value {
+                                Some(value) => {
+                                    fx.with_synthetic_owner(
+                                        SyntheticOwnerKind::Initializer(self.pos(value.span())),
+                                        |fx| {
+                                            let expression =
+                                                self.check_expr(value, Some(signature.ty()), fx);
+                                            self.require_assignable(
+                                                &expression.ty.clone(),
+                                                signature.ty(),
+                                                expression.pos.clone(),
+                                                "the static field initializer",
+                                            );
+                                            expression
+                                        },
+                                    )
+                                    .0
+                                }
+                                None => {
+                                    self.reject_subset(
+                                        RejectionSite::StaticFieldInitializerMissing,
+                                        "static fields require an initializer",
+                                        pos.clone(),
+                                    );
+                                    hir::Expr {
+                                        pending_work: None,
+                                        kind: hir::ExprKind::Null,
+                                        ty: Type::Error,
+                                        pos: pos.clone(),
+                                    }
                                 }
                             }
                         };
@@ -459,7 +502,7 @@ impl<'p> Checker<'p> {
                                 &name,
                             )),
                             name: format!("{}.{}", self.classes[id.0].name, source_name(&name)),
-                            ty: signature.ty,
+                            ty: signature.ty().clone(),
                             mutable: signature.mutable,
                             init,
                             initializer_index: self.top_level.len(),
@@ -482,8 +525,15 @@ impl<'p> Checker<'p> {
                         definite_uninitialized: definite_uninitialized.clone(),
                         write: false,
                     });
-                    let e = fx
-                        .with_synthetic_owner(
+                    let mut initializer = self.class_sigs[id.0]
+                        .fields
+                        .get(key.sym.as_ref())
+                        .and_then(|sig| sig.initializer.clone());
+                    let cached = self.finish_initializer(&mut initializer);
+                    let e = if let Some(value) = cached {
+                        value
+                    } else {
+                        fx.with_synthetic_owner(
                             SyntheticOwnerKind::Initializer(self.pos(value.span())),
                             |fx| {
                                 let e = self.check_expr(value, Some(&field_ty), fx);
@@ -496,7 +546,8 @@ impl<'p> Checker<'p> {
                                 e
                             },
                         )
-                        .0;
+                        .0
+                    };
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
@@ -512,6 +563,7 @@ impl<'p> Checker<'p> {
                     };
                     let pos = self.pos(ctor.span);
                     let sig = FnSig {
+                        generic: false,
                         params,
                         ret: Type::Void,
                         is_generator: false,
@@ -548,21 +600,27 @@ impl<'p> Checker<'p> {
                         .enumerate()
                     {
                         let Some(ps) = sig.params.get(i) else { break };
-                        let default = match &param.pat {
-                            ast::Pat::Assign(a) => Some(
-                                fx.with_synthetic_owner(
-                                    SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                                    |fx| self.check_expr(&a.right, Some(&ps.ty), fx),
-                                )
-                                .0,
-                            ),
-                            _ => None,
+                        let mut initializer = ps.initializer.clone();
+                        let default = if let Some(value) = self.finish_initializer(&mut initializer)
+                        {
+                            Some(value)
+                        } else {
+                            match &param.pat {
+                                ast::Pat::Assign(a) => Some(
+                                    fx.with_synthetic_owner(
+                                        SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
+                                        |fx| self.check_expr(&a.right, Some(ps.ty()), fx),
+                                    )
+                                    .0,
+                                ),
+                                _ => None,
+                            }
                         };
                         let param_pos = self.pos(param.span);
                         self.declare_local(
                             &ps.name,
                             Local {
-                                ty: ps.ty.clone(),
+                                ty: ps.ty().clone(),
                                 mutable: true,
                                 async_origins: HashSet::new(),
                                 caught: false,
@@ -572,8 +630,9 @@ impl<'p> Checker<'p> {
                         );
                         hir_params.push(hir::Param {
                             escapes: false,
+                            default_can_raise: false,
                             name: ps.name.clone(),
-                            ty: ps.ty.clone(),
+                            ty: ps.ty().clone(),
                             default,
                             foreign_provenance: None,
                             pos: param_pos,

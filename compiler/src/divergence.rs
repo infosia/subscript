@@ -247,8 +247,6 @@ pub enum Divergence {
     BigIntLiteral,
     /// Enum, integer, and string switches need a default to prove complete return flow.
     LambdaReturnFlowCoverage,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    BlockLambdaReturnAnnotationMissingForm,
     /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
     GeneratorResultValueWriteForm,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
@@ -295,14 +293,16 @@ pub enum Divergence {
     ArrayTypeArgument,
     /// An annotation names a declared or builtin type; types are nominal.
     QualifiedSourceTypeNameForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    PatternParameterAnnotationMissingForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    NamedParameterAnnotationMissingForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
+    /// A function result annotation states the contract that the host binds.
     FunctionReturnAnnotationMissingForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    ModuleVariableAnnotationMissingForm,
+    /// A block lambda needs a result annotation.
+    BlockLambdaReturnAnnotationMissingForm,
+    /// A generic-class default needs an annotated parameter type.
+    GenericClassDefaultParameterAnnotationNeeded,
+    /// A recursive function value needs an annotated parameter signature.
+    FunctionValueParameterAnnotationNeeded,
+    /// A generic callback needs an annotated parameter until contextual inference supports it.
+    GenericCallbackParameterAnnotationNeeded,
     /// The program is its files; node cannot load an absent module.
     NamedImportModuleMissingForm,
     /// The program is its files; node cannot load an absent module.
@@ -319,10 +319,8 @@ pub enum Divergence {
     EnumStringMemberNameForm,
     /// No lowering is decided for string-literal enum member names or constructor parameter properties.
     ConstructorParameterPropertyForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    InstanceFieldAnnotationMissingForm,
-    /// No inference is decided at signature positions; the checker infers locals and expression-lambda results only.
-    StaticFieldAnnotationMissingForm,
+    /// Initializer inference does not infer a field type from constructor assignments.
+    FieldTypeWithoutInitializer,
     /// Field names must be identifiers.
     IdentifierFieldName,
     /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
@@ -1108,7 +1106,6 @@ impl Divergence {
         Divergence::TemplateInterpolationKindForm,
         Divergence::BigIntLiteral,
         Divergence::LambdaReturnFlowCoverage,
-        Divergence::BlockLambdaReturnAnnotationMissingForm,
         Divergence::GeneratorResultValueWriteForm,
         Divergence::GeneratorResultDoneWriteForm,
         Divergence::StringMethodValueForm,
@@ -1132,10 +1129,11 @@ impl Divergence {
         Divergence::GeneratorYieldTypeMissingForm,
         Divergence::ArrayTypeArgument,
         Divergence::QualifiedSourceTypeNameForm,
-        Divergence::PatternParameterAnnotationMissingForm,
-        Divergence::NamedParameterAnnotationMissingForm,
         Divergence::FunctionReturnAnnotationMissingForm,
-        Divergence::ModuleVariableAnnotationMissingForm,
+        Divergence::BlockLambdaReturnAnnotationMissingForm,
+        Divergence::GenericClassDefaultParameterAnnotationNeeded,
+        Divergence::FunctionValueParameterAnnotationNeeded,
+        Divergence::GenericCallbackParameterAnnotationNeeded,
         Divergence::NamedImportModuleMissingForm,
         Divergence::NamespaceImportTargetMissingForm,
         Divergence::MirrorModuleDeclarationForm,
@@ -1144,8 +1142,7 @@ impl Divergence {
         Divergence::GenericSourceAliasForm,
         Divergence::EnumStringMemberNameForm,
         Divergence::ConstructorParameterPropertyForm,
-        Divergence::InstanceFieldAnnotationMissingForm,
-        Divergence::StaticFieldAnnotationMissingForm,
+        Divergence::FieldTypeWithoutInitializer,
         Divergence::IdentifierFieldName,
         Divergence::GeneratorMethodForm,
         Divergence::SwitchDiscriminantKindForm,

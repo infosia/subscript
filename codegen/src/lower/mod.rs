@@ -1340,10 +1340,10 @@ fn lower_lir_module_with<M: Module>(
             }
             lir::FunctionKind::Lambda | lir::FunctionKind::ModuleInitializer => continue,
         };
-        let has_receiver = matches!(
-            function.kind,
-            lir::FunctionKind::Constructor { .. } | lir::FunctionKind::Method { .. }
-        );
+        let has_receiver = function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.kind == lir::ParameterKind::Receiver);
         let return_type = if function.is_generator || function.is_async {
             Type::Generator(Box::new(Type::Void))
         } else {

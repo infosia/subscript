@@ -668,6 +668,7 @@ fn c_truth(structs: &[(&'static str, Vec<&'static str>)]) -> BTreeMap<String, CL
          typedef struct Mat3x3f { Vec3f c0; Vec3f c1; Vec3f c2; } Mat3x3f;\n\
          typedef struct Vec2f { _Alignas(8) float x; float y; } Vec2f;\n",
     );
+    body.push_str("typedef struct S156Fields { int32_t integer; double fraction; } S156Fields;\n");
     body.push_str("int main(void) {\n");
     for (name, fields) in structs {
         // Line: NAME|size|align|field=offset|field=offset...
@@ -760,7 +761,39 @@ fn language_layout_matches_c_offsetof_for_every_mirrored_struct() {
         .collect();
 
     // C side: the platform compiler's offsetof/sizeof/_Alignof truth.
-    let c = c_truth(&structs);
+    let mut c_structs = structs.clone();
+    c_structs.push(("S156Fields", vec!["integer", "fraction"]));
+    let c = c_truth(&c_structs);
+    let module = check_program(&[SourceFile::new(
+        "fields.ts",
+        r#"
+        @ValueType class Inferred { integer = 1; fraction = 1.5; }
+        @ValueType class Annotated { integer: i32 = 1; fraction: f64 = 1.5; }
+        export function main(): void {}
+    "#,
+    )])
+    .expect("both declarations must check");
+    let layouts = value_class_layouts(&module).expect("field layouts");
+    let inferred = layouts
+        .iter()
+        .find(|layout| layout.name == "Inferred")
+        .unwrap();
+    let annotated = layouts
+        .iter()
+        .find(|layout| layout.name == "Annotated")
+        .unwrap();
+    let actual = &c["S156Fields"];
+    for layout in [inferred, annotated] {
+        assert_eq!((layout.size, layout.align), (actual.size, actual.align));
+        assert_eq!(
+            layout
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), field.offset))
+                .collect::<Vec<_>>(),
+            actual.field_offsets
+        );
+    }
 
     let downstream_target = c
         .get("SGPUProbeUnmarkedColorTargetState")

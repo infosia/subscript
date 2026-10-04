@@ -38,35 +38,44 @@ use crate::types::Type;
 /// method of `module`, to the least fixed point of the rule.
 pub(crate) fn decide_can_raise(module: &mut Module) {
     loop {
-        let mut raising = Vec::new();
-        for (index, function) in module.functions.iter().enumerate() {
-            if !function.can_raise
+        let mut updates = Vec::new();
+        let mut scan = |owner, function: &Function| {
+            let body = !function.can_raise
                 && !is_boundary(function)
-                && module.function_body_can_raise(function)
-            {
-                raising.push(Owner::Free(index));
+                && module.function_body_can_raise(function);
+            let defaults: Vec<_> = function
+                .params
+                .iter()
+                .enumerate()
+                .filter(|(_, parameter)| !parameter.default_can_raise)
+                .filter(|(_, parameter)| {
+                    parameter
+                        .default
+                        .as_ref()
+                        .is_some_and(|default| module.expression_can_raise(default))
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if body || !defaults.is_empty() {
+                updates.push((owner, body, defaults));
             }
+        };
+        for (index, function) in module.functions.iter().enumerate() {
+            scan(Owner::Free(index), function);
         }
         for (class_index, class) in module.classes.iter().enumerate() {
             if let Some(constructor) = &class.ctor {
-                if !constructor.can_raise && module.function_body_can_raise(constructor) {
-                    raising.push(Owner::Constructor(class_index));
-                }
+                scan(Owner::Constructor(class_index), constructor);
             }
             for (method_index, method) in class.methods.iter().enumerate() {
-                if !method.can_raise
-                    && !is_boundary(method)
-                    && module.function_body_can_raise(method)
-                {
-                    raising.push(Owner::Method(class_index, method_index));
-                }
+                scan(Owner::Method(class_index, method_index), method);
             }
         }
-        if raising.is_empty() {
+        if updates.is_empty() {
             decide_lambdas_and_initializer(module);
             return;
         }
-        for owner in raising {
+        for (owner, body, defaults) in updates {
             let function = match owner {
                 Owner::Free(index) => module.functions.get_mut(index),
                 Owner::Constructor(class) => module
@@ -79,7 +88,10 @@ pub(crate) fn decide_can_raise(module: &mut Module) {
                     .and_then(|class| class.methods.get_mut(method)),
             };
             if let Some(function) = function {
-                function.can_raise = true;
+                function.can_raise |= body;
+                for index in defaults {
+                    function.params[index].default_can_raise = true;
+                }
             }
         }
     }
@@ -119,9 +131,20 @@ fn decide_lambdas_and_initializer(module: &mut Module) {
 }
 
 /// The fact of each lambda below `expression`, in pre-order.
-fn lambda_facts(module: &Module, expression: &Expr, facts: &mut Vec<bool>) {
-    if let ExprKind::Lambda { body, .. } = &expression.kind {
-        facts.push(module.statements_can_raise(body));
+fn lambda_facts(module: &Module, expression: &Expr, facts: &mut Vec<(bool, Vec<bool>)>) {
+    if let ExprKind::Lambda { body, params, .. } = &expression.kind {
+        facts.push((
+            module.statements_can_raise(body),
+            params
+                .iter()
+                .map(|parameter| {
+                    parameter
+                        .default
+                        .as_ref()
+                        .is_some_and(|default| module.expression_can_raise(default))
+                })
+                .collect(),
+        ));
     }
     for child in expression.children() {
         match child {
@@ -131,7 +154,11 @@ fn lambda_facts(module: &Module, expression: &Expr, facts: &mut Vec<bool>) {
     }
 }
 
-fn lambda_facts_in_statement(module: &Module, statement: &Stmt, facts: &mut Vec<bool>) {
+fn lambda_facts_in_statement(
+    module: &Module,
+    statement: &Stmt,
+    facts: &mut Vec<(bool, Vec<bool>)>,
+) {
     for child in statement.children() {
         match child {
             HirChild::Expr(child) => lambda_facts(module, child, facts),
@@ -141,9 +168,16 @@ fn lambda_facts_in_statement(module: &Module, statement: &Stmt, facts: &mut Vec<
 }
 
 /// Writes the facts of [`lambda_facts`] back, in the same pre-order.
-fn set_lambda_facts(expression: &mut Expr, facts: &mut impl Iterator<Item = bool>) {
-    if let ExprKind::Lambda { can_raise, .. } = &mut expression.kind {
-        *can_raise = facts.next().unwrap_or(true);
+fn set_lambda_facts(expression: &mut Expr, facts: &mut impl Iterator<Item = (bool, Vec<bool>)>) {
+    if let ExprKind::Lambda {
+        can_raise, params, ..
+    } = &mut expression.kind
+    {
+        let (body, defaults) = facts.next().unwrap_or((true, vec![true; params.len()]));
+        *can_raise = body;
+        for (parameter, default) in params.iter_mut().zip(defaults) {
+            parameter.default_can_raise = default;
+        }
     }
     for child in expression.children_mut() {
         match child {
@@ -153,7 +187,10 @@ fn set_lambda_facts(expression: &mut Expr, facts: &mut impl Iterator<Item = bool
     }
 }
 
-fn set_lambda_facts_in_statement(statement: &mut Stmt, facts: &mut impl Iterator<Item = bool>) {
+fn set_lambda_facts_in_statement(
+    statement: &mut Stmt,
+    facts: &mut impl Iterator<Item = (bool, Vec<bool>)>,
+) {
     for child in statement.children_mut() {
         match child {
             HirChildMut::Expr(child) => set_lambda_facts(child, facts),
@@ -195,13 +232,20 @@ impl Module {
     pub fn expression_can_raise(&self, expression: &Expr) -> bool {
         let own = match &expression.kind {
             ExprKind::Call { callee, args } => {
-                call_can_raise(self, callee, args) || self.call_defaults_can_raise(callee)
+                call_can_raise(self, callee, args)
+                    || self.call_defaults_can_raise(callee, args.len())
             }
-            ExprKind::New { class, .. } => self
+            ExprKind::New { class, args } => self
                 .classes
                 .get(class.0)
-                .is_some_and(|class| self.construction_can_raise(class)),
-            ExprKind::AsyncCall { callee, .. } => async_callee_can_raise(self, callee),
+                .is_some_and(|class| self.construction_can_raise(class, args.len())),
+            ExprKind::AsyncCall { callee, args } => {
+                async_callee_can_raise(self, callee)
+                    || self.async_defaults_can_raise(callee, args.len())
+            }
+            ExprKind::AsyncHandleCreate { callee, args, .. } => {
+                self.async_defaults_can_raise(callee, args.len())
+            }
             ExprKind::AsyncHandleAwait(_) => true,
             ExprKind::Lambda { .. } => return false,
             _ => false,
@@ -249,7 +293,7 @@ impl Module {
 
     /// A construction runs the field initializers, the defaults of the
     /// absent arguments, and the constructor (`compiler.md` §57.1).
-    fn construction_can_raise(&self, class: &ClassDef) -> bool {
+    fn construction_can_raise(&self, class: &ClassDef, supplied: usize) -> bool {
         class
             .fields
             .iter()
@@ -260,13 +304,13 @@ impl Module {
                     || constructor
                         .params
                         .iter()
-                        .filter_map(|parameter| parameter.default.as_ref())
-                        .any(|default| self.expression_can_raise(default))
+                        .skip(supplied)
+                        .any(|parameter| parameter.default_can_raise)
             })
     }
 
     /// The caller evaluates the defaults of the absent arguments.
-    fn call_defaults_can_raise(&self, callee: &Callee) -> bool {
+    fn call_defaults_can_raise(&self, callee: &Callee, supplied: usize) -> bool {
         let function = match callee {
             Callee::Func(name) => self
                 .functions
@@ -279,8 +323,22 @@ impl Module {
             function
                 .params
                 .iter()
-                .filter_map(|parameter| parameter.default.as_ref())
-                .any(|default| self.expression_can_raise(default))
+                .skip(supplied)
+                .any(|parameter| parameter.default_can_raise)
+        })
+    }
+
+    fn async_defaults_can_raise(&self, callee: &AsyncCallee, supplied: usize) -> bool {
+        let function = match callee {
+            AsyncCallee::Function(name) => self.functions.iter().find(|f| f.symbol == *name),
+            AsyncCallee::Method { class, name, .. } => self.method(&Type::Class(*class), name),
+        };
+        function.is_some_and(|function| {
+            function
+                .params
+                .iter()
+                .skip(supplied)
+                .any(|parameter| parameter.default_can_raise)
         })
     }
 

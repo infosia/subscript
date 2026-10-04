@@ -9,6 +9,7 @@ enum ModuleFunction {
     Constructor(ClassId),
     Method(ClassId, hir::Symbol),
     Lambda(hir::LambdaId),
+    Default(Box<ModuleFunction>, usize),
 }
 
 #[derive(Clone, Default)]
@@ -23,6 +24,7 @@ struct ModuleEffects {
 struct ModuleEffectScanner<'a> {
     classes: &'a [hir::ClassDef],
     generators: Option<&'a HashSet<ModuleFunction>>,
+    defaults: HashMap<ModuleFunction, Vec<(usize, String)>>,
     effects: ModuleEffects,
 }
 
@@ -31,6 +33,7 @@ impl<'a> ModuleEffectScanner<'a> {
         Self {
             classes,
             generators: None,
+            defaults: HashMap::new(),
             effects: ModuleEffects::default(),
         }
     }
@@ -41,11 +44,6 @@ impl<'a> ModuleEffectScanner<'a> {
     }
 
     fn function(mut self, function: &hir::Function) -> ModuleEffects {
-        for parameter in &function.params {
-            if let Some(default) = &parameter.default {
-                self.expr(default);
-            }
-        }
         self.stmts(&function.body);
         self.effects
     }
@@ -57,14 +55,25 @@ impl<'a> ModuleEffectScanner<'a> {
             }
         }
         if let Some(constructor) = &class.ctor {
-            for parameter in &constructor.params {
-                if let Some(default) = &parameter.default {
-                    self.expr(default);
-                }
-            }
             self.stmts(&constructor.body);
         }
         self.effects
+    }
+
+    fn with_defaults(mut self, defaults: &HashMap<ModuleFunction, Vec<(usize, String)>>) -> Self {
+        self.defaults = defaults.clone();
+        self
+    }
+
+    fn call_defaults(&mut self, unit: ModuleFunction, supplied: usize) {
+        for (index, label) in self.defaults.get(&unit).cloned().unwrap_or_default() {
+            if index >= supplied {
+                self.record_call(
+                    ModuleFunction::Default(Box::new(unit.clone()), index),
+                    label,
+                );
+            }
+        }
     }
 
     fn record_access(&mut self, name: &str) {
@@ -503,17 +512,11 @@ impl<'a> ModuleEffectScanner<'a> {
         use hir::ExprKind as K;
 
         match &expression.kind {
-            K::Lambda {
-                id, params, body, ..
-            } => {
+            K::Lambda { id, body, .. } => {
                 let unit = ModuleFunction::Lambda(*id);
                 let mut scanner = Self::new(self.classes);
                 scanner.generators = self.generators;
-                for parameter in params {
-                    if let Some(default) = &parameter.default {
-                        scanner.expr(default);
-                    }
-                }
+                scanner.defaults = self.defaults.clone();
                 scanner.stmts(body);
                 self.effects
                     .lambdas
@@ -544,8 +547,21 @@ impl<'a> ModuleEffectScanner<'a> {
             }
             K::Global(name) => self.record_access(name.full_text()),
             K::FuncRef(name) => self.effects.made.push(ModuleFunction::Free(name.clone())),
-            K::Call { callee, args } => self.callee(callee, args),
-            K::New { class, .. } => {
+            K::Call { callee, args } => {
+                let unit = match callee {
+                    hir::Callee::Func(name) => Some(ModuleFunction::Free(name.clone())),
+                    hir::Callee::Method { recv, name } => {
+                        Self::class_of(&recv.ty).map(|id| ModuleFunction::Method(id, name.clone()))
+                    }
+                    _ => None,
+                };
+                if let Some(unit) = unit {
+                    self.call_defaults(unit, args.len());
+                }
+                self.callee(callee, args);
+            }
+            K::New { class, args } => {
+                self.call_defaults(ModuleFunction::Constructor(*class), args.len());
                 let label = self.classes.get(class.0).map_or_else(
                     || "constructor".to_string(),
                     |definition| {
@@ -554,7 +570,14 @@ impl<'a> ModuleEffectScanner<'a> {
                 );
                 self.record_call(ModuleFunction::Constructor(*class), label);
             }
-            K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
+                let unit = match callee {
+                    hir::AsyncCallee::Function(name) => ModuleFunction::Free(name.clone()),
+                    hir::AsyncCallee::Method { class, name, .. } => {
+                        ModuleFunction::Method(*class, name.clone())
+                    }
+                };
+                self.call_defaults(unit, args.len());
                 self.async_callee(callee)
             }
             K::Int(_)
@@ -835,10 +858,70 @@ pub(super) fn module_initializer_diagnostics(
         )
         .collect();
     let mut summaries = HashMap::new();
+    let mut defaults = HashMap::new();
+    let mut sources = Vec::new();
+    for function in &checker.functions {
+        sources.push((
+            ModuleFunction::Free(function.symbol.clone()),
+            &function.params,
+        ));
+    }
+    for (index, class) in checker.classes.iter().enumerate() {
+        if let Some(ctor) = &class.ctor {
+            sources.push((ModuleFunction::Constructor(ClassId(index)), &ctor.params));
+        }
+        for method in &class.methods {
+            sources.push((
+                ModuleFunction::Method(ClassId(index), method.symbol.clone()),
+                &method.params,
+            ));
+        }
+    }
+    for (unit, params) in &sources {
+        defaults.insert(
+            unit.clone(),
+            params
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    p.default.as_ref().map(|_| {
+                        let owner = match unit {
+                            ModuleFunction::Free(name) => name.full_text().to_string(),
+                            ModuleFunction::Method(id, name) => {
+                                format!("{}.{}", checker.classes[id.0].name, name.full_text())
+                            }
+                            ModuleFunction::Constructor(id) => {
+                                format!("{}.constructor", checker.classes[id.0].name)
+                            }
+                            ModuleFunction::Lambda(_) => "[lambda]".to_string(),
+                            ModuleFunction::Default(_, _) => "[default]".to_string(),
+                        };
+                        (i, format!("{owner} (default of {})", p.name))
+                    })
+                })
+                .collect(),
+        );
+    }
+    for (unit, params) in sources {
+        for (index, param) in params.iter().enumerate() {
+            if let Some(value) = &param.default {
+                let mut scanner = ModuleEffectScanner::new(&checker.classes)
+                    .with_generators(&generators)
+                    .with_defaults(&defaults);
+                scanner.expr(value);
+                insert_module_summary(
+                    ModuleFunction::Default(Box::new(unit.clone()), index),
+                    scanner.effects,
+                    &mut summaries,
+                );
+            }
+        }
+    }
 
     for function in &checker.functions {
         let direct = ModuleEffectScanner::new(&checker.classes)
             .with_generators(&generators)
+            .with_defaults(&defaults)
             .function(function);
         insert_module_summary(
             ModuleFunction::Free(function.symbol.clone()),
@@ -850,6 +933,7 @@ pub(super) fn module_initializer_diagnostics(
         let class_id = ClassId(index);
         let constructor = ModuleEffectScanner::new(&checker.classes)
             .with_generators(&generators)
+            .with_defaults(&defaults)
             .constructor(class);
         insert_module_summary(
             ModuleFunction::Constructor(class_id),
@@ -859,6 +943,7 @@ pub(super) fn module_initializer_diagnostics(
         for method in &class.methods {
             let direct = ModuleEffectScanner::new(&checker.classes)
                 .with_generators(&generators)
+                .with_defaults(&defaults)
                 .function(method);
             insert_module_summary(
                 ModuleFunction::Method(class_id, method.symbol.clone()),
@@ -936,8 +1021,9 @@ pub(super) fn module_initializer_diagnostics(
                 }
                 {
                     let init = &global.init;
-                    let mut scanner =
-                        ModuleEffectScanner::new(&checker.classes).with_generators(&generators);
+                    let mut scanner = ModuleEffectScanner::new(&checker.classes)
+                        .with_generators(&generators)
+                        .with_defaults(&defaults);
                     scanner.expr(init);
                     check_effect(
                         scanner,
@@ -950,8 +1036,9 @@ pub(super) fn module_initializer_diagnostics(
             }
             if statement_index < segment.top_level.end {
                 let statement = &checker.top_level[statement_index];
-                let mut scanner =
-                    ModuleEffectScanner::new(&checker.classes).with_generators(&generators);
+                let mut scanner = ModuleEffectScanner::new(&checker.classes)
+                    .with_generators(&generators)
+                    .with_defaults(&defaults);
                 scanner.stmt(statement);
                 let pos = init_order::statement_pos(statement)
                     .cloned()
@@ -989,6 +1076,7 @@ mod tests {
             (Type::Class(ClassId(0)), &classes[..]),
         ] {
             let receiver = hir::Expr {
+                pending_work: None,
                 kind: hir::ExprKind::Local("receiver".to_string(), ty.clone()),
                 ty,
                 pos: Pos::new("main.ts", 1, 1),
@@ -1013,6 +1101,7 @@ mod tests {
             (Type::Generator(Box::new(Type::I32)), "next"),
         ] {
             let receiver = hir::Expr {
+                pending_work: None,
                 kind: hir::ExprKind::Local("receiver".to_string(), ty.clone()),
                 ty,
                 pos: Pos::new("main.ts", 1, 1),
@@ -1077,6 +1166,7 @@ mod tests {
     fn a_missing_descriptor_class_is_an_indirect_call() {
         let mut scanner = ModuleEffectScanner::new(&[]);
         scanner.expr(&hir::Expr {
+            pending_work: None,
             kind: hir::ExprKind::DescriptorLit {
                 class: ClassId(99),
                 fields: Vec::new(),

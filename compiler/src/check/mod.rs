@@ -34,6 +34,7 @@ mod capture;
 mod class_shape;
 mod container_argument;
 mod declarations;
+mod deferred_body;
 pub(crate) mod exception;
 mod exports;
 mod expr;
@@ -41,6 +42,9 @@ pub(crate) mod fallthrough;
 mod field_initializer;
 mod generics;
 mod inference;
+mod initializer;
+mod initializer_finish;
+use initializer::{DeferredExpression, Initializer, TypeState};
 mod instance_chain;
 use instance_chain::InstanceArguments;
 mod json;
@@ -238,15 +242,20 @@ fn mirror_const_value(v: &ast::VarDecl, d: &ast::VarDeclarator) -> Option<i64> {
 #[derive(Debug, Clone)]
 pub(crate) struct ParamSig {
     pub name: String,
-    pub ty: Type,
+    pub state: TypeState,
+    pub initializer: Option<Initializer>,
     pub has_default: bool,
 }
 
 impl ParamSig {
+    pub(crate) fn ty(&self) -> &Type {
+        self.state.ty()
+    }
     fn positional(ty: Type) -> Self {
         Self {
             name: String::new(),
-            ty,
+            state: TypeState::decided(ty),
+            initializer: None,
             has_default: false,
         }
     }
@@ -255,6 +264,8 @@ impl ParamSig {
 /// A resolved function signature.
 #[derive(Debug, Clone)]
 pub(crate) struct FnSig {
+    /// True when the source signature declares type parameters.
+    pub generic: bool,
     pub params: Vec<ParamSig>,
     /// Return type; `Generator<Y>` for generators once the yield type is
     /// inferred from the body.
@@ -278,6 +289,7 @@ pub(crate) struct ClassSig {
     pub methods: HashMap<String, FnSig>,
     pub static_methods: HashMap<String, FnSig>,
     pub static_fields: HashMap<String, GlobalSig>,
+    pub fields: HashMap<String, GlobalSig>,
     /// Generic instance methods, by declared name (§82.4). A template
     /// never reaches the HIR; each call instantiates one method.
     pub generic_methods: HashMap<String, GenericMethod>,
@@ -366,8 +378,15 @@ fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
 /// A module-level variable's declared shape.
 #[derive(Debug, Clone)]
 pub(crate) struct GlobalSig {
-    pub ty: Type,
+    pub state: TypeState,
+    pub initializer: Option<Initializer>,
     pub mutable: bool,
+}
+
+impl GlobalSig {
+    pub(crate) fn ty(&self) -> &Type {
+        self.state.ty()
+    }
 }
 
 /// A generic function template awaiting monomorphization.
@@ -470,7 +489,7 @@ pub(crate) struct Local {
 
 /// One lexical scope. `fn_boundary` marks the start of a lambda body:
 /// lookups that cross it are captures.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
     pub vars: HashMap<String, Local>,
     pub shared_narrowing_paths: HashMap<String, bool>,
@@ -732,7 +751,7 @@ fn field_list(first: &str, rest: &[String]) -> NamedFields {
 }
 
 /// One function (or lambda) frame.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Frame {
     pub ret: Type,
     pub is_generator: bool,
@@ -742,6 +761,7 @@ pub(crate) struct Frame {
     pub is_lambda: bool,
     /// A lambda obtains void from its contextual signature, without an annotation.
     pub contextual_void: bool,
+    pub lambda_id: Option<hir::LambdaId>,
     pub captures: Vec<hir::Capture>,
     pub this_ty: Option<Type>,
     pub missing_this_site: Option<RejectionSite>,
@@ -751,10 +771,11 @@ pub(crate) struct Frame {
 
 /// Per-body checking state: scope stack, frames, and the narrowing set of
 /// path keys known non-null or present (C7, §43).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
     pub lexical_class: Option<ClassId>,
+    parameter_decisions: HashSet<(usize, String)>,
     pub constructor_body: bool,
     field_initializer: Option<field_initializer::FieldInitializer>,
     descriptor_default: Option<Type>,
@@ -769,6 +790,7 @@ pub(crate) struct FnCtx {
     pub async_origins: Vec<(Pos, bool)>,
     /// Owner-scoped local declarations required by rewritten expressions.
     synthetic_owners: Vec<SyntheticPrefix>,
+    synthetic_owner_kinds: Vec<SyntheticOwnerKind>,
     diagnostics: DiagnosticSink,
 }
 
@@ -799,7 +821,7 @@ impl DiagnosticSink {
 }
 
 /// The source construct that owns a synthetic prefix and its diagnostic position.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum SyntheticOwnerKind {
     Statement(Pos),
     Declarator(Pos),
@@ -827,7 +849,7 @@ impl SyntheticOwnerKind {
 }
 
 /// Synthetic declarations awaiting placement in their owner's statement list.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 #[must_use]
 struct SyntheticPrefix(Vec<hir::Stmt>);
 
@@ -893,6 +915,7 @@ impl FnCtx {
     ) -> Self {
         FnCtx {
             lexical_class: None,
+            parameter_decisions: HashSet::new(),
             constructor_body: false,
             field_initializer: None,
             descriptor_default: None,
@@ -905,6 +928,7 @@ impl FnCtx {
                 yield_annotated: false,
                 is_lambda: false,
                 contextual_void: false,
+                lambda_id: None,
                 captures: Vec::new(),
                 this_ty,
                 missing_this_site: None,
@@ -919,6 +943,7 @@ impl FnCtx {
             switch_break_facts: Vec::new(),
             async_origins: Vec::new(),
             synthetic_owners: Vec::new(),
+            synthetic_owner_kinds: Vec::new(),
             diagnostics,
         }
     }
@@ -935,6 +960,7 @@ impl FnCtx {
         body: impl FnOnce(&mut Self) -> R,
     ) -> (R, SyntheticPrefix) {
         self.synthetic_owners.push(SyntheticPrefix::default());
+        self.synthetic_owner_kinds.push(kind.clone());
         let mut result = body(self);
         let pos = result
             .expression_mut()
@@ -945,6 +971,7 @@ impl FnCtx {
             SyntheticOwnerKind::Initializer(_) | SyntheticOwnerKind::SwitchCase(_)
         );
         let mut prefix = self.synthetic_owners.pop().unwrap_or_default();
+        self.synthetic_owner_kinds.pop();
         if rejects_prefix && !prefix.is_empty() {
             let diagnostic = diagnostic(
                 RejectionSite::InitializerNonPlaceOptionalReceiver,
@@ -1041,6 +1068,18 @@ impl FnCtx {
 
 /// The checker.
 pub(crate) struct Checker<'p> {
+    deciding_type: bool,
+    generic_callback_context: bool,
+    initializer_call: Option<swc_common::Span>,
+    active_call: Option<swc_common::Span>,
+    function_value_decision: bool,
+    initializer_root: Option<swc_common::Span>,
+    static_method_owners: HashMap<String, (ClassId, String)>,
+    next_deferred_id: usize,
+    expression_work: Vec<Option<usize>>,
+    deferred_expressions: Vec<DeferredExpression>,
+    deferred_captures: HashMap<hir::LambdaId, Vec<hir::Capture>>,
+    pending_function_bodies: Vec<deferred_body::PendingFunctionBody>,
     narrowing_analysis: Option<narrowing::Analysis>,
     pub prog: &'p ParsedProgram,
     pub diags: DiagnosticSink,
@@ -1207,6 +1246,7 @@ mod tests {
             mutable: false,
             dispose: false,
             init: hir::Expr {
+                pending_work: None,
                 kind: hir::ExprKind::Bool(true),
                 ty: Type::Bool,
                 pos: pos.clone(),

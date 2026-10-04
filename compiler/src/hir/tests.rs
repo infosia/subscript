@@ -5,6 +5,7 @@ use crate::diag::Pos;
 
 fn child_expr(value: i64) -> Expr {
     Expr {
+        pending_work: None,
         kind: ExprKind::Int(value),
         ty: Type::I32,
         pos: Pos::new("children.ts", 1, 1),
@@ -35,14 +36,17 @@ fn child_values(children: Vec<HirChild<'_>>) -> Vec<i64> {
 #[test]
 fn flow_leaves_follow_only_value_positions() {
     let expression = Expr {
+        pending_work: None,
         kind: ExprKind::Cond {
             cond: Box::new(child_expr(0)),
             then: Box::new(Expr {
+                pending_work: None,
                 kind: ExprKind::Cast(Box::new(child_expr(1))),
                 ty: Type::I32,
                 pos: Pos::new("flow.ts", 1, 1),
             }),
             els: Box::new(Expr {
+                pending_work: None,
                 kind: ExprKind::ArrayLit(vec![child_expr(2), child_expr(3)]),
                 ty: Type::Array(Box::new(Type::I32)),
                 pos: Pos::new("flow.ts", 1, 1),
@@ -63,6 +67,7 @@ fn flow_leaves_follow_only_value_positions() {
 
 fn test_expr(kind: ExprKind) -> Expr {
     Expr {
+        pending_work: None,
         kind,
         ty: Type::I32,
         pos: Pos::new("children.ts", 1, 1),
@@ -89,6 +94,7 @@ fn fresh_async_owner_expression_table_keeps_fresh_conditionals() {
 #[test]
 fn expr_carries_type_and_pos() {
     let e = Expr {
+        pending_work: None,
         kind: ExprKind::Int(3),
         ty: Type::I32,
         pos: Pos::new("t.ts", 1, 1),
@@ -409,6 +415,7 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
         is_async: false,
         params: vec![Param {
             escapes: false,
+            default_can_raise: false,
             name: "mode".to_string(),
             ty: Type::StringAlias(crate::types::StringAliasId(0)),
             default: None,

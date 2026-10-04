@@ -2641,16 +2641,16 @@ function f(x?:i32):void {}
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	named-parameter-annotation-missing			0
+PROGRAM	named-parameter-annotation-missing	TS7006		0
 FILE	E	target/s154/forms/named-parameter-annotation-missing/main.ts
-function f(x=1):void {}
+function f(x):void {}
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	pattern-parameter-annotation-missing			0
-FILE	E	target/s154/forms/pattern-parameter-annotation-missing/main.ts
-function f([x]=[1]):void {}
-export function main(): void {  }
+PROGRAM	pattern-parameter-annotation-missing	TS7031		0
+FILE	E	main.ts
+function f([x]):void {}
+export function main(): void {}
 END FILE
 END PROGRAM
 PROGRAM	wire-alias-nested-foreign-return			0
@@ -8819,5 +8819,45 @@ END PROGRAM
 PROGRAM	s155-optional-initialized-field-control			0
 FILE	E	target/s155/s155-optional-initialized-field-control/main.ts
 class A { g: (a: i32, b: i32) => void = (a: i32, b: i32): void => {}; } export function main(): void { const a: A = new A(); a.g(1, 2); }
+END FILE
+END PROGRAM
+PROGRAM	s156-cycle	TS7023		0
+FILE	E	main.ts
+const f = (n: i32) => n === 0 ? 0 : f(n - 1);
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-constructor-field-type			0
+FILE	E	main.ts
+class C { x; constructor() { this.x = 1; } }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-unassigned-field-type	TS7008		0
+FILE	E	main.ts
+class C { x; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-static-field-type	TS7008		0
+FILE	E	main.ts
+class C { static x; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-function-value-parameter			0
+FILE	E	target/s154/forms/s156-function-value-parameter/main.ts
+function f(n: i32, k = f): void {} export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-generic-callback			0
+FILE	E	target/s154/forms/s156-generic-callback/main.ts
+function each<T>(xs: T[], f: (x: T) => void): void {} each([1, 2], (x) => {}); export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s156-generic-class-default			0
+FILE	E	main.ts
+class Cell<T> { v: T; constructor(v: T) { this.v = v; } pair(other = this.v): string { return `${other}`; } }
+export function main(): void {}
 END FILE
 END PROGRAM

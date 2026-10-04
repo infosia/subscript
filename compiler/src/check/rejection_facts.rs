@@ -716,8 +716,8 @@ impl super::Checker<'_> {
                                 source.params.len() == target.params.len()
                                     && source.params.iter().zip(&target.params).all(|(x, y)| {
                                         self.ts_erased_assignable_inner(
-                                            &y.ty,
-                                            &x.ty,
+                                            y.ty(),
+                                            x.ty(),
                                             seen,
                                             structural_classes,
                                         )

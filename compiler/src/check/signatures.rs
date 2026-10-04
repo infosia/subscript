@@ -42,8 +42,8 @@ impl<'p> Checker<'p> {
                     let sig = self.resolve_fn_sig(&f.function, pos.clone());
                     self.allow_wire_alias_boundary = false;
                     for parameter in &sig.params {
-                        if Self::contains_string_alias(&parameter.ty)
-                            && !Self::supported_wire_alias_boundary_type(&parameter.ty)
+                        if Self::contains_string_alias(parameter.ty())
+                            && !Self::supported_wire_alias_boundary_type(parameter.ty())
                         {
                             self.reject_subset(RejectionSite::WireAliasNestedForeignParameter, format!(
                                     "wire-mapped aliases are supported only as direct foreign-function parameters or array-descriptor elements; `{}` nests one inside another boundary type",
@@ -65,10 +65,10 @@ impl<'p> Checker<'p> {
                             file,
                             &name,
                             &parameter.name,
-                            &parameter.ty,
+                            parameter.ty(),
                             parameter_pos.clone(),
                         );
-                        if matches!(parameter.ty, Type::Func(_)) {
+                        if matches!(parameter.ty(), Type::Func(_)) {
                             self.reject_subset(
                                 RejectionSite::ForeignDirectCallback,
                                 format!(
@@ -82,8 +82,9 @@ impl<'p> Checker<'p> {
                         }
                         params.push(hir::Param {
                             escapes: false,
+                            default_can_raise: false,
                             name: parameter.name.clone(),
-                            ty: parameter.ty.clone(),
+                            ty: parameter.ty().clone(),
                             default: None,
                             foreign_provenance,
                             pos: parameter_pos,
@@ -147,7 +148,9 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             symbol,
                             GlobalSig {
-                                ty: Type::U64,
+                                state: crate::check::initializer::TypeState::decided(Type::U64),
+
+                                initializer: None,
                                 mutable: false,
                             },
                         );
@@ -381,18 +384,11 @@ impl<'p> Checker<'p> {
                             continue;
                         };
                         let name = binding.id.sym.to_string();
-                        let ty = match &binding.type_ann {
-                            Some(ann) => self.resolve_type(&ann.type_ann),
-                            None => {
-                                let pos = self.pos(binding.id.span);
-                                self.reject_subset(
-                                    RejectionSite::ModuleVariableAnnotationMissing,
-                                    "module-level variables require a type annotation",
-                                    pos,
-                                );
-                                Type::Error
-                            }
+                        let state = match &binding.type_ann {
+                            Some(ann) => TypeState::decided(self.resolve_type(&ann.type_ann)),
+                            None => TypeState::Undecided,
                         };
+                        let ty = state.ty().clone();
                         if self.is_context_affine_type(&ty) {
                             self.reject_subset(
                                 RejectionSite::WorkerEndpointModuleGlobal,
@@ -403,7 +399,8 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             self.declaration_symbol(file, &name),
                             GlobalSig {
-                                ty,
+                                state,
+                                initializer: d.init.as_ref().map(|e| self.initializer(e, None)),
                                 mutable: v.kind == ast::VarDeclKind::Let,
                             },
                         );
@@ -418,6 +415,13 @@ impl<'p> Checker<'p> {
     /// `Promise<T>` view for async declarations.
     pub(crate) fn resolve_fn_sig(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
         let params = self.resolve_params(&f.params);
+        let mut sig = self.resolve_fn_result(f, pos);
+        sig.params = params;
+        sig
+    }
+
+    fn resolve_fn_result(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+        let params = Vec::new();
         if f.is_async {
             if f.is_generator {
                 self.reject_subset(
@@ -426,6 +430,7 @@ impl<'p> Checker<'p> {
                     pos,
                 );
                 return FnSig {
+                    generic: f.type_params.is_some(),
                     params,
                     ret: Type::Error,
                     is_generator: false,
@@ -445,6 +450,7 @@ impl<'p> Checker<'p> {
                 }
             };
             return FnSig {
+                generic: f.type_params.is_some(),
                 params,
                 ret,
                 is_generator: false,
@@ -476,6 +482,7 @@ impl<'p> Checker<'p> {
             }
             let known = yield_ty.is_some();
             return FnSig {
+                generic: f.type_params.is_some(),
                 params,
                 // An unknown yield type is a placeholder that `yield_known`
                 // marks, not a poisoned component, so the generator form
@@ -498,6 +505,7 @@ impl<'p> Checker<'p> {
             }
         };
         FnSig {
+            generic: f.type_params.is_some(),
             params,
             ret,
             is_generator: false,
@@ -511,6 +519,12 @@ impl<'p> Checker<'p> {
             .iter()
             .map(|p| self.resolve_param_pat(&p.pat))
             .collect()
+    }
+
+    fn inferred_pattern_parameter_name(&mut self) -> String {
+        let id = self.next_pattern_id;
+        self.next_pattern_id += 1;
+        format!("[[pattern#{id}.parameter]]")
     }
 
     pub(crate) fn resolve_param_pat(&mut self, pat: &ast::Pat) -> ParamSig {
@@ -531,7 +545,11 @@ impl<'p> Checker<'p> {
                     None => {
                         let pos = self.pos(binding.id.span);
                         self.reject_subset(
-                            RejectionSite::NamedParameterAnnotationMissing,
+                            if self.generic_callback_context {
+                                RejectionSite::GenericCallbackParameterAnnotationMissing
+                            } else {
+                                RejectionSite::NamedParameterAnnotationMissing
+                            },
                             "parameters require a type annotation",
                             pos,
                         );
@@ -540,12 +558,35 @@ impl<'p> Checker<'p> {
                 };
                 ParamSig {
                     name: binding.id.sym.to_string(),
-                    ty,
+                    state: crate::check::initializer::TypeState::decided(ty),
+                    initializer: None,
                     has_default: false,
                 }
             }
             ast::Pat::Assign(assign) => {
-                let mut inner = self.resolve_param_pat(&assign.left);
+                let infer_name = match &*assign.left {
+                    ast::Pat::Ident(binding) if binding.type_ann.is_none() => {
+                        Some(binding.id.sym.to_string())
+                    }
+                    ast::Pat::Array(array) if array.type_ann.is_none() && !self.in_boundary => {
+                        Some(self.inferred_pattern_parameter_name())
+                    }
+                    ast::Pat::Object(object) if object.type_ann.is_none() && !self.in_boundary => {
+                        Some(self.inferred_pattern_parameter_name())
+                    }
+                    _ => None,
+                };
+                let mut inner = if let Some(name) = infer_name {
+                    ParamSig {
+                        name,
+                        state: TypeState::Undecided,
+                        initializer: None,
+                        has_default: true,
+                    }
+                } else {
+                    self.resolve_param_pat(&assign.left)
+                };
+                inner.initializer = Some(self.initializer(&assign.right, None));
                 inner.has_default = true;
                 inner
             }
@@ -564,7 +605,11 @@ impl<'p> Checker<'p> {
                     None => {
                         let pos = self.pos(pat.span());
                         self.reject_subset(
-                            RejectionSite::PatternParameterAnnotationMissing,
+                            if self.generic_callback_context {
+                                RejectionSite::GenericCallbackParameterAnnotationMissing
+                            } else {
+                                RejectionSite::PatternParameterAnnotationMissing
+                            },
                             "parameters require a type annotation",
                             pos,
                         );
@@ -575,7 +620,8 @@ impl<'p> Checker<'p> {
                 self.next_pattern_id += 1;
                 ParamSig {
                     name: format!("[[pattern#{id}.parameter]]"),
-                    ty,
+                    state: TypeState::decided(ty),
+                    initializer: None,
                     has_default: false,
                 }
             }
@@ -594,7 +640,8 @@ impl<'p> Checker<'p> {
                 );
                 ParamSig {
                     name: String::new(),
-                    ty: Type::Error,
+                    state: TypeState::Rejected,
+                    initializer: None,
                     has_default: false,
                 }
             }
@@ -619,8 +666,9 @@ impl<'p> Checker<'p> {
                 pattern::Pattern::Rejected(rejection) => self.reject_pattern(rejection, fx),
                 _ if pattern.is_destructuring() => {
                     let source = hir::Expr {
-                        kind: hir::ExprKind::Local(signature.name.clone(), signature.ty.clone()),
-                        ty: signature.ty.clone(),
+                        pending_work: None,
+                        kind: hir::ExprKind::Local(signature.name.clone(), signature.ty().clone()),
+                        ty: signature.ty().clone(),
                         pos: self.pos(pattern.span()),
                     };
                     self.bind_pattern_from(&pattern, &source, true, fx, &mut prologue);

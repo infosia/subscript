@@ -147,7 +147,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
         );
         let explicit_offset = operands.len();
-        operands.extend(self.lower_call_arguments(&params, args, None, false)?);
+        let receiver = operands.first().cloned().map(PreparedBase::Value);
+        operands.extend(self.lower_call_arguments(
+            defaults::DefaultOwner::from_target(&kind),
+            &params,
+            args,
+            receiver.as_ref(),
+            false,
+        )?);
         let target = l::CallTarget {
             kind,
             parameter_types,
