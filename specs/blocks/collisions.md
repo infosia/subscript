@@ -162,9 +162,10 @@ to general declarations:
 
 Parameters with defaults (`a11`) are legal — the default fills the value;
 no `undefined` is observable. In-language `Ref | null` lowers to a
-nullable pointer; narrowing is required before member access. `tsc` also narrows a
-local by its non-null initializer or assignment; this checker does
-not (C24).
+nullable pointer; narrowing is required before member access. A null
+check, a non-null initializer, and a non-null assignment narrow a
+location; C17 ends the narrowing of a shared location (`compiler.md`
+§159).
 
 **Q33 exception (owner, 2026-07-31): defaulted optional members on
 descriptor classes.** Inside a `@Descriptor` class (Q33) — and only
@@ -695,7 +696,7 @@ it as a candidate to accept.
 | 23 | An empty array literal with no context | The language has no `any[]` and no evolving array type (C4, S001). | `const xs: i32[] = [];` |
 | 24 | A `switch` on `boolean`; `for await` over values that are not handles; a `for…of` head that assigns an existing binding | A `switch` dispatches on integer, enum, string, or alias constants (§41). `for await` reads async iteration (§26.1). No lowering is decided for an assigning head. | `if`; `await` in the body; a `const` head |
 | 25 | Instances or function types with other type arguments or parameter types | Types match only when their arguments are identical: no implicit conversion (C3), no structural substitution (C1), and no variance. | the identical type |
-| 26 | A member of a nullable local that its non-null initializer or assignment proves non-null | No narrowing by assignment is decided (C7). | an explicit null check |
+| 26 | (removed by `compiler.md` §159: an assignment narrows a nullable location) | | |
 | 27 | A call of an unannotated generator before the checker reads its body | The yield type comes from the body. | a `Generator<T>` result annotation |
 | 28 | A type-parameter default (`<T = i32>`) | No lowering is decided. | an explicit type argument |
 | 29 | `do…while`, a labeled statement, `debugger`, `for…in` | No lowering is decided, except: `for…in` reads dynamic properties (C10). | `while`; a flag |

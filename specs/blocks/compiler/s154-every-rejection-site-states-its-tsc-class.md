@@ -155,7 +155,7 @@ None is decided.
    not read `this` (row 15). `this` in a lambda in a reference-class method is
    closed by §157.
 9. Nullable-parameter contravariance of function types (row 25).
-10. Narrowing by a non-null initializer or assignment (row 26).
+10. Narrowing by a non-null initializer or assignment (row 26). Closed by §159.
 11. Order-independent yield-type inference (row 27).
 12. Type-parameter defaults (row 28).
 13. A `string` index, a quoted descriptor key, a descriptor spread, an
