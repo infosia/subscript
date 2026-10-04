@@ -843,7 +843,7 @@ impl<'p> Checker<'p> {
                  of the constructor"
             );
             let assigned_on_exit = self.classes[id.0].ctor.as_ref().is_some_and(|ctor| {
-                super::rejection_facts::field_on_normal_exit(self, &ctor.body, &name)
+                super::assignment_flow::field_on_normal_exit(self, &ctor.body, &name)
             });
             if spelling.definite {
                 self.reject_subset(
@@ -988,9 +988,12 @@ impl<'p> Checker<'p> {
         let assigned_reads: Vec<bool> = collected
             .iter()
             .map(|violation| match &violation.kind {
-                PrefixThis::Read(name) => {
-                    super::rejection_facts::field_held_before_read(&ctor.body, name, &violation.pos)
-                }
+                PrefixThis::Read(name) => super::assignment_flow::field_held_before_read(
+                    self,
+                    &ctor.body,
+                    name,
+                    &violation.pos,
+                ),
                 _ => false,
             })
             .collect();

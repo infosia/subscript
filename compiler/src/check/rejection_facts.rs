@@ -1,121 +1,30 @@
 //! Facts that separate ordinary mistakes from subset restrictions.
 
-use super::{hir, this_field_assignment};
-
-/// Every reachable constructor exit holds the field, or no normal exit exists.
-pub(super) fn field_on_normal_exit(
-    checker: &super::Checker<'_>,
-    body: &[hir::Stmt],
-    field: &str,
-) -> bool {
-    #[derive(Clone, Copy)]
-    enum Exit {
-        Next(bool),
-        Break(bool),
-        Return(bool),
-    }
-    fn walk(
-        checker: &super::Checker<'_>,
-        body: &[hir::Stmt],
-        field: &str,
-        held: bool,
-    ) -> Vec<Exit> {
-        let mut paths = vec![Exit::Next(held)];
-        for statement in body {
-            let mut next = Vec::new();
-            for path in paths {
-                let Exit::Next(mut held) = path else {
-                    next.push(path);
-                    continue;
-                };
-                if this_field_assignment(statement) == Some(field)
-                    || matches!(statement, hir::Stmt::Expr(expression) if hir_assignment_holds(expression, field))
-                {
-                    held = true;
-                }
-                match statement {
-                    hir::Stmt::Throw { .. } => {}
-                    hir::Stmt::Return { .. } => next.push(Exit::Return(held)),
-                    hir::Stmt::Break(_) => next.push(Exit::Break(held)),
-                    hir::Stmt::Block(body) => next.extend(walk(checker, body, field, held)),
-                    hir::Stmt::If {
-                        cond, then, els, ..
-                    } => {
-                        if !matches!(cond.kind, hir::ExprKind::Bool(false)) {
-                            next.extend(walk(checker, then, field, held));
-                        }
-                        if !matches!(cond.kind, hir::ExprKind::Bool(true)) {
-                            next.extend(walk(checker, els.as_deref().unwrap_or(&[]), field, held));
-                        }
-                    }
-                    hir::Stmt::Switch { disc, cases, .. } => {
-                        if !cases.iter().any(|case| case.test.is_none())
-                            && !checker.source_enum_switch_exhaustive(disc, cases)
-                        {
-                            next.push(Exit::Next(held));
-                        }
-                        // Each label has a dispatch edge. Normal edges continue into later cases.
-                        for start in 0..cases.len() {
-                            let mut fallthrough = vec![held];
-                            for case in &cases[start..] {
-                                let mut live = Vec::new();
-                                for entry in fallthrough {
-                                    for exit in walk(checker, &case.body, field, entry) {
-                                        match exit {
-                                            Exit::Next(value) => live.push(value),
-                                            Exit::Break(value) => next.push(Exit::Next(value)),
-                                            Exit::Return(value) => next.push(Exit::Return(value)),
-                                        }
-                                    }
-                                }
-                                live.sort_unstable();
-                                live.dedup();
-                                fallthrough = live;
-                            }
-                            next.extend(fallthrough.into_iter().map(Exit::Next));
-                        }
-                    }
-                    hir::Stmt::Try { body, handler, .. } => {
-                        next.extend(walk(checker, body, field, held));
-                        next.extend(walk(checker, handler, field, held));
-                    }
-                    hir::Stmt::While { body, .. }
-                    | hir::Stmt::For { body, .. }
-                    | hir::Stmt::ForOf { body, .. } => {
-                        next.push(Exit::Next(held));
-                        next.extend(
-                            walk(checker, body, field, held)
-                                .into_iter()
-                                .filter(|exit| matches!(exit, Exit::Return(_))),
-                        );
-                    }
-                    _ => next.push(Exit::Next(held)),
-                }
-            }
-            // Only two field states exist for each exit kind.
-            next.sort_by_key(|exit| match exit {
-                Exit::Next(v) => *v as u8,
-                Exit::Break(v) => 2 + *v as u8,
-                Exit::Return(v) => 4 + *v as u8,
-            });
-            next.dedup_by_key(|exit| match exit {
-                Exit::Next(v) => *v as u8,
-                Exit::Break(v) => 2 + *v as u8,
-                Exit::Return(v) => 4 + *v as u8,
-            });
-            paths = next;
-        }
-        paths
-    }
-    walk(checker, body, field, false)
-        .into_iter()
-        .all(|exit| match exit {
-            Exit::Next(held) | Exit::Break(held) | Exit::Return(held) => held,
-        })
-}
+use super::hir;
 
 impl super::Checker<'_> {
-    fn source_enum_switch_exhaustive(&self, disc: &hir::Expr, cases: &[hir::SwitchCase]) -> bool {
+    pub(super) fn string_alias_switch_exhaustive(
+        &self,
+        disc: &hir::Expr,
+        cases: &[hir::SwitchCase],
+    ) -> bool {
+        let crate::types::Type::StringAlias(id) = self.apparent_type(&disc.ty) else {
+            return false;
+        };
+        self.string_aliases[id.0].members.iter().enumerate().all(|(index, _)| {
+            cases.iter().any(|case| {
+                case.test.as_ref().is_some_and(
+                    |test| matches!(test.kind, hir::ExprKind::Int(actual) if actual == index as i64),
+                )
+            })
+        })
+    }
+
+    pub(super) fn source_enum_switch_exhaustive(
+        &self,
+        disc: &hir::Expr,
+        cases: &[hir::SwitchCase],
+    ) -> bool {
         let crate::types::Type::Enum(id) = self.apparent_type(&disc.ty) else {
             return false;
         };
@@ -410,130 +319,6 @@ impl super::Checker<'_> {
             _ => false,
         }
     }
-}
-
-fn hir_assignment_holds(expression: &hir::Expr, field: &str) -> bool {
-    match &expression.kind {
-        hir::ExprKind::Assign {
-            op: None,
-            target,
-            value,
-            ..
-        } => {
-            matches!(&target.kind, hir::ExprKind::Field { obj, name } if matches!(obj.kind, hir::ExprKind::This) && name == field)
-                || hir_assignment_holds(value, field)
-        }
-        _ => false,
-    }
-}
-
-/// TypeScript assignment order inside nested statements, separate from the strict prefix.
-pub(super) fn field_held_before_read(
-    body: &[hir::Stmt],
-    field: &str,
-    pos: &crate::diag::Pos,
-) -> bool {
-    fn expr(
-        value: &hir::Expr,
-        field: &str,
-        pos: &crate::diag::Pos,
-        held: &mut bool,
-        found: &mut bool,
-    ) {
-        if matches!(&value.kind, hir::ExprKind::Field { obj, name } if matches!(obj.kind, hir::ExprKind::This) && name == field && obj.pos == *pos)
-        {
-            *found |= *held;
-        }
-        match &value.kind {
-            hir::ExprKind::Assign {
-                op: None,
-                target,
-                value,
-                ..
-            } => {
-                expr(value, field, pos, held, found);
-                if matches!(&target.kind, hir::ExprKind::Field { obj, name } if matches!(obj.kind, hir::ExprKind::This) && name == field)
-                {
-                    *held = true;
-                } else {
-                    expr(target, field, pos, held, found);
-                }
-            }
-            hir::ExprKind::Binary {
-                op: hir::BinOp::And | hir::BinOp::Or,
-                left: lhs,
-                right: rhs,
-            } => {
-                expr(lhs, field, pos, held, found);
-                let mut conditional = *held;
-                expr(rhs, field, pos, &mut conditional, found);
-                // The right operand is conditional: do not establish a later assignment.
-            }
-            hir::ExprKind::Cond { cond, then, els } => {
-                expr(cond, field, pos, held, found);
-                let (mut yes, mut no) = (*held, *held);
-                expr(then, field, pos, &mut yes, found);
-                expr(els, field, pos, &mut no, found);
-                *held = yes && no;
-            }
-            _ => {
-                for child in value.children() {
-                    if let hir::HirChild::Expr(child) = child {
-                        expr(child, field, pos, held, found);
-                    }
-                }
-            }
-        }
-    }
-    fn walk(
-        body: &[hir::Stmt],
-        field: &str,
-        pos: &crate::diag::Pos,
-        mut held: bool,
-        found: &mut bool,
-    ) -> Option<bool> {
-        for statement in body {
-            match statement {
-                hir::Stmt::Block(body) => held = walk(body, field, pos, held, found)?,
-                hir::Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    expr(cond, field, pos, &mut held, found);
-                    let yes = walk(then, field, pos, held, found);
-                    let no = walk(els.as_deref().unwrap_or(&[]), field, pos, held, found);
-                    held = match (yes, no) {
-                        (Some(a), Some(b)) => a && b,
-                        (Some(a), None) | (None, Some(a)) => a,
-                        (None, None) => return None,
-                    };
-                }
-                hir::Stmt::While { cond, body, .. } => {
-                    expr(cond, field, pos, &mut held, found);
-                    walk(body, field, pos, held, found);
-                }
-                hir::Stmt::For { body, .. } | hir::Stmt::ForOf { body, .. } => {
-                    walk(body, field, pos, held, found);
-                }
-                _ => {
-                    for child in statement.children() {
-                        if let hir::HirChild::Expr(child) = child {
-                            expr(child, field, pos, &mut held, found);
-                        }
-                    }
-                    if matches!(
-                        statement,
-                        hir::Stmt::Throw { .. } | hir::Stmt::Return { .. }
-                    ) {
-                        return None;
-                    }
-                }
-            }
-        }
-        Some(held)
-    }
-    let mut found = false;
-    walk(body, field, pos, false, &mut found);
-    found
 }
 
 /// Descriptor shape checking precedes HIR; the same normal-exit assignment fact in AST.

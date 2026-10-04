@@ -703,7 +703,8 @@ it as a candidate to accept.
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
-(row 15, a `@ValueType` receiver, §157).
+(row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
+with no initializer, §158).
 
 ## 2. Q-register resolutions not covered above
 

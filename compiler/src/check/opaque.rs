@@ -386,6 +386,9 @@ impl<'p> Checker<'p> {
             self.opaque_root = false;
             checks.push(start..self.diags.len());
         }
+        let local_start = self.diags.len();
+        self.check_local_assignments();
+        checks.push(local_start..self.diags.len());
         self.opaque_params.clear();
         self.opaque_instances.clear();
         if self.narrowing_analysis.is_none() {

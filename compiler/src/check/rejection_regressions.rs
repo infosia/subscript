@@ -77,7 +77,7 @@ fn rejected_local_declarations_bind_poisoned_names() {
         "type Fn = (x:i32)=>i32; const f:Fn=(x)=>x*2;",
         "function f(): void { type Map = i32; const x: Map = 1; }",
         "function f(): void { var x: i32 = 1; x; }",
-        "function f(): void { let x: i32; x = 1; print(`${x}`); }",
+        "function f(): void { let x; x = 1; print(`${x}`); }",
     ] {
         let files = [SourceFile::entry("main.ts", source)];
         let diagnostics = check_program(&files).expect_err("the local declaration is rejected");
@@ -215,7 +215,6 @@ fn first_diagnostics_and_switch_facts() {
             "instance-member-in-static-method",
             "reference-class-inheritance-witness-2",
             "dynamic-import-call",
-            "local-initializer-missing-witness-2",
             "field-assignment-nested-every-normal-exit-witness-2",
             "field-assignment-nested-unassigned-exit-witness-2",
             "nullable-member",
@@ -241,7 +240,6 @@ fn first_diagnostics_and_switch_facts() {
             "instance-member-in-static-method-witness-2",
             "reference-class-inheritance-witness-3",
             "dynamic-import-call-witness-2",
-            "local-initializer-missing-witness-3",
             "field-assignment-nested-every-normal-exit-witness-3",
             "field-assignment-nested-unassigned-exit-witness-3",
             "nullable-member-witness-2",
@@ -267,7 +265,6 @@ fn first_diagnostics_and_switch_facts() {
             "instance-member-in-static-method-witness-3",
             "reference-class-inheritance-witness-4",
             "dynamic-import-call-witness-3",
-            "local-initializer-missing-witness-4",
             "field-assignment-nested-every-normal-exit-witness-4",
             "field-assignment-nested-unassigned-exit-witness-4",
             "nullable-member-witness-3",
@@ -293,7 +290,6 @@ fn first_diagnostics_and_switch_facts() {
             "instance-member-in-static-method-witness-4",
             "reference-class-inheritance-witness-5",
             "dynamic-import-call-witness-4",
-            "local-initializer-missing-witness-5",
             "field-assignment-nested-every-normal-exit-witness-5",
             "field-assignment-nested-unassigned-exit-witness-5",
             "nullable-member-witness-4",
@@ -331,20 +327,20 @@ fn first_diagnostics_and_switch_facts() {
             "instance-member-in-static-method-witness-7",
             "this-static-method-member-witness-8",
             "instance-member-in-static-method-witness-8",
-            "local-initializer-missing-witness-6",
+            "local-read-unassigned-print",
             "assignment-type-mismatch",
-            "local-initializer-missing-witness-7",
+            "local-read-unassigned-initializer",
             "assignment-type-mismatch-witness-2",
-            "local-initializer-missing-witness-8",
+            "local-read-unassigned-assignment-rhs",
             "assignment-type-mismatch-witness-3",
-            "local-initializer-missing-witness-9",
+            "local-read-unassigned-return",
             "assignment-type-mismatch-witness-4",
         ]
         .contains(&p.key.as_str())
     }) {
         let diagnostics = rejection_programs::check(program);
         assert!(!diagnostics.is_empty(), "{}", program.key);
-        if program.codes.is_empty() || program.key.starts_with("local-initializer-missing") {
+        if program.codes.is_empty() {
             assert!(
                 diagnostics[0].divergence.is_some(),
                 "{}: {diagnostics:?}",

@@ -409,28 +409,46 @@ impl<'p> Checker<'p> {
                 .replace(RejectionSite::AggregateAnnotationLimit);
             let ann = pattern_type_ann(&d.name).map(|ann| self.resolve_type(&ann.type_ann));
             self.aggregate_type_site = saved_divergence;
-            let Some(init_ast) = &d.init else {
+            if d.init.is_none()
+                && ann
+                    .as_ref()
+                    .is_some_and(|ty| self.apparent_type(ty) == Type::Error)
+            {
+                self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                continue;
+            }
+            let init = if let Some(init_ast) = &d.init {
+                if declarations.len() > 1 {
+                    let (init, prefix) = fx.with_synthetic_owner(
+                        super::SyntheticOwnerKind::Declarator(self.pos(d.span)),
+                        |fx| self.check_expr(init_ast, ann.as_ref(), fx),
+                    );
+                    out.extend(prefix);
+                    init
+                } else {
+                    self.check_expr(init_ast, ann.as_ref(), fx)
+                }
+            } else if mutable && ann.is_some() && !pattern.is_destructuring() {
+                hir::Expr {
+                    pending_work: None,
+                    kind: hir::ExprKind::Unassigned,
+                    ty: ann.clone().unwrap_or(Type::Error),
+                    pos: pos.clone(),
+                }
+            } else {
                 self.reject_subset(
-                    RejectionSite::LocalInitializerMissing,
-                    "local declarations require an initializer",
+                    RejectionSite::LocalTypeWithoutInitializer,
+                    "a local without an initializer requires a type annotation",
                     pos.clone(),
                 );
                 self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
                 continue;
             };
-            let init = if declarations.len() > 1 {
-                let (init, prefix) = fx.with_synthetic_owner(
-                    super::SyntheticOwnerKind::Declarator(self.pos(d.span)),
-                    |fx| self.check_expr(init_ast, ann.as_ref(), fx),
-                );
-                out.extend(prefix);
-                init
-            } else {
-                self.check_expr(init_ast, ann.as_ref(), fx)
-            };
             let ty = match ann {
                 Some(ann) => {
-                    self.require_expr_assignable(&init, &ann, fx, "the initializer");
+                    if !matches!(init.kind, hir::ExprKind::Unassigned) {
+                        self.require_expr_assignable(&init, &ann, fx, "the initializer");
+                    }
                     ann
                 }
                 None => self.inferred_initializer_type(&init, pos.clone()),
@@ -492,10 +510,12 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
-            if !matches!(
-                self.apparent_type(&init.ty),
-                Type::Nullable(_) | Type::Null | Type::Error
-            ) {
+            if !matches!(init.kind, hir::ExprKind::Unassigned)
+                && !matches!(
+                    self.apparent_type(&init.ty),
+                    Type::Nullable(_) | Type::Null | Type::Error
+                )
+            {
                 if let Some(scope) = fx.scopes.last_mut() {
                     scope
                         .nonnull_flow

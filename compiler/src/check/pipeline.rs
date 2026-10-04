@@ -413,6 +413,11 @@ fn run_with_effects(
         ck.check_pending_instance_bodies();
         ck.check_pending_function_bodies();
     }
+    let local_start = ck.diags.len();
+    ck.check_local_assignments();
+    // The opaque merge removes repeated generic reads from concrete bodies (§135 rule 3).
+    ck.instance_diagnostic_ranges
+        .push(local_start..ck.diags.len());
     ck.merge_generic_body_diagnostics(opaque_diagnostics);
     let opaque_loops = std::mem::take(&mut ck.opaque_loop_effects);
     let regex_symbols: HashSet<_> = ck.regex_literals.values().map(String::as_str).collect();

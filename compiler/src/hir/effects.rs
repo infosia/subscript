@@ -91,6 +91,7 @@ impl Expr {
             | ExprKind::Assign { .. }
             | ExprKind::Cast(_)
             | ExprKind::Zero
+            | ExprKind::Unassigned
             | ExprKind::RawNew { .. }
             | ExprKind::Field { .. }
             | ExprKind::Length(_)

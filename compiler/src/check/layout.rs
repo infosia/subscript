@@ -618,7 +618,12 @@ impl<'a> Validator<'a> {
             && !(destination && self.expression_builds_into_destination(expr))
             && matches!(
                 &expr.kind,
-                K::Zero | K::Call { .. } | K::New { .. } | K::ArrayLit(_) | K::ArraySpreadLit(_)
+                K::Zero
+                    | K::Unassigned
+                    | K::Call { .. }
+                    | K::New { .. }
+                    | K::ArrayLit(_)
+                    | K::ArraySpreadLit(_)
             );
         if result_needs_slot {
             self.add_type_slot(frame, &expr.ty, "aggregate expression storage", &expr.pos);

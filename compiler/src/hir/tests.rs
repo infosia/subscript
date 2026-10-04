@@ -121,6 +121,7 @@ fn expr_children_yield_every_child() {
             value: 0,
         },
         ExprKind::Zero,
+        ExprKind::Unassigned,
         ExprKind::RawNew { class: ClassId(0) },
         ExprKind::Yield(None),
         ExprKind::AsyncSuspend,

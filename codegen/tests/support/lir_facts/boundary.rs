@@ -282,6 +282,7 @@ pub(super) fn compare_boundary_boxes(
             | hir::ExprKind::Cast(_)
             | hir::ExprKind::DescriptorLit { .. }
             | hir::ExprKind::Zero
+            | hir::ExprKind::Unassigned
             | hir::ExprKind::RawNew { .. }
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Length(_)
@@ -448,6 +449,7 @@ fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
         | K::New { .. }
         | K::DescriptorLit { .. }
         | K::Zero
+        | K::Unassigned
         | K::RawNew { .. }
         | K::Field { .. }
         | K::Length(_)

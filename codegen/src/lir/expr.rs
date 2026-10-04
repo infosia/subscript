@@ -272,7 +272,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::DescriptorLit { class, fields } => {
                 Some(self.lower_descriptor(*class, fields, expr)?)
             }
-            K::Zero => self.emit(
+            K::Zero | K::Unassigned => self.emit(
                 l::InstructionKind::Zero,
                 Vec::new(),
                 Some(l::ValueType::Data(expr.ty.clone())),

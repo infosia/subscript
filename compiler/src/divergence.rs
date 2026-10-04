@@ -341,8 +341,8 @@ pub enum Divergence {
     StatementNonBooleanConditionForm,
     /// A finished generator result holds the zero value, so a return value has no slot.
     GeneratorReturnValue,
-    /// A binding needs an initializer because the language has no undefined value.
-    LocalInitializerMissingForm,
+    /// A local without an initializer needs an annotation to define its storage.
+    LocalTypeWithoutInitializerForm,
     /// The language has no undefined value for the function-wide var binding.
     LocalVarDeclarationForm,
     /// Enum, integer, and string switches need a default to prove complete return flow.
@@ -1155,7 +1155,7 @@ impl Divergence {
         Divergence::AsyncForOfForm,
         Divergence::StatementNonBooleanConditionForm,
         Divergence::GeneratorReturnValue,
-        Divergence::LocalInitializerMissingForm,
+        Divergence::LocalTypeWithoutInitializerForm,
         Divergence::LocalVarDeclarationForm,
         Divergence::ReturnFlowCoverage,
         Divergence::ModuleInitializerMissingForm,

@@ -1832,7 +1832,7 @@ fn a_shared_code_does_not_excuse_another_restriction() {
     };
     for source in [
         "function g(x: i32): i32 { return x ?? 1; }",
-        "function g(): void { let value: i32; }",
+        "function g(): void { let value; }",
     ] {
         let cell = build_cell(CellInput {
             name: "wrong-shared-code",

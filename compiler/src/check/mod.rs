@@ -8,6 +8,7 @@
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
 use crate::check::rejection::{diagnostic, RejectionSite};
+mod assignment_flow;
 mod host_entries;
 mod identity;
 mod init_effects;

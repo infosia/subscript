@@ -170,6 +170,7 @@ impl Expr {
             | K::FuncRef(_)
             | K::EnumMember { .. }
             | K::Zero
+            | K::Unassigned
             | K::RawNew { .. }
             | K::Yield(None)
             | K::AsyncSuspend => Vec::new(),
@@ -261,6 +262,7 @@ impl Expr {
             | K::FuncRef(_)
             | K::EnumMember { .. }
             | K::Zero
+            | K::Unassigned
             | K::RawNew { .. }
             | K::Yield(None)
             | K::AsyncSuspend => Vec::new(),

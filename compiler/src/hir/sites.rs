@@ -117,6 +117,7 @@ impl Expr {
             | K::New { .. }
             | K::DescriptorLit { .. }
             | K::Zero
+            | K::Unassigned
             | K::RawNew { .. }
             | K::Length(_)
             | K::Index { .. }
@@ -523,6 +524,7 @@ impl Expr {
             | K::FuncRef(_)
             | K::EnumMember { .. }
             | K::Zero
+            | K::Unassigned
             | K::Unary { .. }
             | K::Binary { .. }
             | K::AbsenceTest { .. }

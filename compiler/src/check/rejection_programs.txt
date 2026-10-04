@@ -2779,12 +2779,6 @@ async function f():Promise<void> { await using x = { [Symbol.asyncDispose]():Pro
 export function main(): void { const unused:i32=1; }
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing			0
-FILE	E	target/s154/forms/local-initializer-missing/main.ts
-
-export function main(): void { let x:i32; }
-END FILE
-END PROGRAM
 PROGRAM	null-initializer-inference			0
 FILE	E	target/s154/forms/null-initializer-inference/main.ts
 
@@ -7597,12 +7591,6 @@ FILE	N	target/s154/forms/dynamic-import-call/other.ts
 export const v:i32=0;
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-2			0
-FILE	E	target/s154/forms/local-initializer-missing-witness-2/main.ts
-export {};
-function f():void { let x:i32; x=0; print(`${x}`); }
-END FILE
-END PROGRAM
 PROGRAM	field-assignment-nested-every-normal-exit-witness-2			0
 FILE	E	target/s154/forms/field-assignment-nested-every-normal-exit-witness-2/main.ts
 export {};
@@ -7760,12 +7748,6 @@ import("./other");
 END FILE
 FILE	N	target/s154/forms/dynamic-import-call-witness-2/other.ts
 export const v:i32=1;
-END FILE
-END PROGRAM
-PROGRAM	local-initializer-missing-witness-3			0
-FILE	E	target/s154/forms/local-initializer-missing-witness-3/main.ts
-export {};
-function f():void { let x:i32; x=1; print(`${x}`); }
 END FILE
 END PROGRAM
 PROGRAM	field-assignment-nested-every-normal-exit-witness-3			0
@@ -7927,12 +7909,6 @@ FILE	N	target/s154/forms/dynamic-import-call-witness-3/other.ts
 export const v:i32=2;
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-4			0
-FILE	E	target/s154/forms/local-initializer-missing-witness-4/main.ts
-export {};
-function f():void { let x:i32; x=2; print(`${x}`); }
-END FILE
-END PROGRAM
 PROGRAM	field-assignment-nested-every-normal-exit-witness-4			0
 FILE	E	target/s154/forms/field-assignment-nested-every-normal-exit-witness-4/main.ts
 export {};
@@ -8090,12 +8066,6 @@ import("./other");
 END FILE
 FILE	N	target/s154/forms/dynamic-import-call-witness-4/other.ts
 export const v:i32=3;
-END FILE
-END PROGRAM
-PROGRAM	local-initializer-missing-witness-5			0
-FILE	E	target/s154/forms/local-initializer-missing-witness-5/main.ts
-export {};
-function f():void { let x:i32; x=3; print(`${x}`); }
 END FILE
 END PROGRAM
 PROGRAM	field-assignment-nested-every-normal-exit-witness-5			0
@@ -8326,8 +8296,8 @@ export {};
 class C {count:i32=1; static f():i32 {return this["count"];}}
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-6	TS2454		0
-FILE	E	target/s154/forms/local-initializer-missing-witness-6/main.ts
+PROGRAM	local-read-unassigned-print	TS2454		0
+FILE	E	target/s154/forms/local-read-unassigned-print/main.ts
 export {};
 function f():void {let x:i32; print(`${x}`);}
 END FILE
@@ -8338,8 +8308,8 @@ export {};
 class A {x:i32=1;} class B {y:i32=1;} const xs:A[]=[new A()]; const ys:B[]=xs;
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-7	TS2454		0
-FILE	E	target/s154/forms/local-initializer-missing-witness-7/main.ts
+PROGRAM	local-read-unassigned-initializer	TS2454		0
+FILE	E	target/s154/forms/local-read-unassigned-initializer/main.ts
 export {};
 function f():void {let x:i32; const y:i32=x;}
 END FILE
@@ -8350,8 +8320,8 @@ export {};
 class A {x:i32=1;} class B {y:i32=1;} const xs:A[]=[new A()]; function f():B[] {return xs;}
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-8	TS2454		0
-FILE	E	target/s154/forms/local-initializer-missing-witness-8/main.ts
+PROGRAM	local-read-unassigned-assignment-rhs	TS2454		0
+FILE	E	target/s154/forms/local-read-unassigned-assignment-rhs/main.ts
 export {};
 function f():void {let x:i32; x=x+1;}
 END FILE
@@ -8362,8 +8332,8 @@ export {};
 class A {x:i32=1;} class B {y:i32=1;} const xs:A[]=[new A()]; function f(ys:B[]):void {} f(xs);
 END FILE
 END PROGRAM
-PROGRAM	local-initializer-missing-witness-9	TS2454		0
-FILE	E	target/s154/forms/local-initializer-missing-witness-9/main.ts
+PROGRAM	local-read-unassigned-return	TS2454		0
+FILE	E	target/s154/forms/local-read-unassigned-return/main.ts
 export {};
 function f():i32 {let x:i32; return x;}
 END FILE
@@ -8875,5 +8845,15 @@ END PROGRAM
 PROGRAM	this-default-annotated			0
 FILE	E	target/s154/forms/this-default-annotated/main.ts
 class C { n:i32=1; m(f:()=>i32 = ():i32=>this.n):i32 { return f(); } } export function main():void {}
+END FILE
+END PROGRAM
+PROGRAM	local-type-without-initializer			0
+FILE	E	target/s154/forms/local-type-without-initializer/main.ts
+export function main(): void { let x; }
+END FILE
+END PROGRAM
+PROGRAM	const-initializer-missing	TS1155		0
+FILE	E	target/s154/forms/const-initializer-missing/main.ts
+export function main(): void { const x:i32; }
 END FILE
 END PROGRAM

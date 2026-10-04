@@ -1725,6 +1725,8 @@ pub enum ExprKind {
         /// Explicit values or omitted-default markers, one per field.
         fields: Vec<Option<Expr>>,
     },
+    /// Zero storage for a local without a source initializer (§158).
+    Unassigned,
     /// Checker-internal zero value used by typed JSON.parse construction.
     Zero,
     /// Checker-internal raw allocation of a reference class, bypassing

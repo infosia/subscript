@@ -63,7 +63,6 @@ ConstructorThisBeforeFieldValues	constructor-this-before-field-values	S100	the c
 LambdaUsingDeclaration	lambda-using-declaration	S100	nested declarations are not in the decided surface
 LocalVarDeclaration	local-var-declaration	S100	`var` is not in the language; use `let` or `const`
 AwaitUsingDeclaration	await-using-declaration	S100	`await using` is not in the decided surface
-LocalInitializerMissing	local-initializer-missing	S100	local declarations require an initializer
 NullInitializerInference	null-initializer-inference	S100	cannot infer a type from `null`; annotate the declaration
 UsingBindingNotDisposable	using-binding-not-disposable	S100	the class of a `using` binding must declare `[Symbol.dispose](): void`
 UsingBindingResourceType	using-binding-resource-type	S100	a `using` binding must be a reference class with a disposal hook, or that class or null
@@ -1206,7 +1205,6 @@ InstanceMemberInStaticMethod	instance-member-in-static-method	S100	the member is
 ReferenceClassInheritance	reference-class-inheritance-witness-2	S100	class inheritance is not in the decided surface
 SuperConstructorCall	reference-class-inheritance-witness-2	S100	call form outside the decided surface
 DynamicImportCall	dynamic-import-call	S100	call form outside the decided surface
-LocalInitializerMissing	local-initializer-missing-witness-2	S100	local declarations require an initializer
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member	S011	`C | null` may be null here; narrow with a null check first
@@ -1234,7 +1232,6 @@ InstanceMemberInStaticMethod	instance-member-in-static-method-witness-2	S100	the
 ReferenceClassInheritance	reference-class-inheritance-witness-3	S100	class inheritance is not in the decided surface
 SuperConstructorCall	reference-class-inheritance-witness-3	S100	call form outside the decided surface
 DynamicImportCall	dynamic-import-call-witness-2	S100	call form outside the decided surface
-LocalInitializerMissing	local-initializer-missing-witness-3	S100	local declarations require an initializer
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-2	S011	`C | null` may be null here; narrow with a null check first
@@ -1262,7 +1259,6 @@ InstanceMemberInStaticMethod	instance-member-in-static-method-witness-3	S100	the
 ReferenceClassInheritance	reference-class-inheritance-witness-4	S100	class inheritance is not in the decided surface
 SuperConstructorCall	reference-class-inheritance-witness-4	S100	call form outside the decided surface
 DynamicImportCall	dynamic-import-call-witness-3	S100	call form outside the decided surface
-LocalInitializerMissing	local-initializer-missing-witness-4	S100	local declarations require an initializer
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-3	S011	`C | null` may be null here; narrow with a null check first
@@ -1290,7 +1286,6 @@ InstanceMemberInStaticMethod	instance-member-in-static-method-witness-4	S100	the
 ReferenceClassInheritance	reference-class-inheritance-witness-5	S100	class inheritance is not in the decided surface
 SuperConstructorCall	reference-class-inheritance-witness-5	S100	call form outside the decided surface
 DynamicImportCall	dynamic-import-call-witness-4	S100	call form outside the decided surface
-LocalInitializerMissing	local-initializer-missing-witness-5	S100	local declarations require an initializer
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-4	S011	`C | null` may be null here; narrow with a null check first
@@ -1329,13 +1324,13 @@ ThisStaticMethodMember	this-static-method-member-witness-7	S100	a static method 
 InstanceMemberInStaticMethod	instance-member-in-static-method-witness-7	S100	the member is not declared on the static class receiver
 ThisStaticMethodMember	this-static-method-member-witness-8	S100	a static method must name its class instead of `this`
 InstanceMemberInStaticMethod	instance-member-in-static-method-witness-8	S100	the member is not declared on the static class receiver
-LocalInitializerMissing	local-initializer-missing-witness-6	S100	local declarations require an initializer
+LocalReadUnassigned	local-read-unassigned-print	S100	local `x` is read before assignment; assign `x` on every path before this read, or give it an initializer
 AssignmentTypeMismatch	assignment-type-mismatch	S100	type mismatch: the initializer expects `B[]`, got `A[]`
-LocalInitializerMissing	local-initializer-missing-witness-7	S100	local declarations require an initializer
+LocalReadUnassigned	local-read-unassigned-initializer	S100	local `x` is read before assignment; assign `x` on every path before this read, or give it an initializer
 AssignmentTypeMismatch	assignment-type-mismatch-witness-2	S100	type mismatch: the return value expects `B[]`, got `A[]`
-LocalInitializerMissing	local-initializer-missing-witness-8	S100	local declarations require an initializer
+LocalReadUnassigned	local-read-unassigned-assignment-rhs	S100	local `x` is read before assignment; assign `x` on every path before this read, or give it an initializer
 AssignmentTypeMismatch	assignment-type-mismatch-witness-3	S100	type mismatch: the argument expects `B[]`, got `A[]`
-LocalInitializerMissing	local-initializer-missing-witness-9	S100	local declarations require an initializer
+LocalReadUnassigned	local-read-unassigned-return	S100	local `x` is read before assignment; assign `x` on every path before this read, or give it an initializer
 AssignmentTypeMismatch	assignment-type-mismatch-witness-4	S100	type mismatch: the assignment expects `B[]`, got `A[]`
 StatementAlwaysTruthyCondition	truth-async-statement	S100	condition must be boolean, got `Promise<boolean>`
 StatementAlwaysTruthyCondition	truth-function-statement	S100	condition must be boolean, got `() => boolean`
@@ -1415,3 +1410,4 @@ GenericClassDefaultParameterAnnotationNeeded	s156-generic-class-default	S100	a g
 ThisInStaticMethodArrow	this-static-arrow	S100	`this` is only available in constructors and methods
 ThisInParameterDefaultArrow	this-default-inferred	S009	a lambda in a parameter default cannot capture `this`
 ThisInParameterDefaultArrow	this-default-annotated	S009	a lambda in a parameter default cannot capture `this`
+LocalTypeWithoutInitializer	local-type-without-initializer	S100	a local without an initializer requires a type annotation

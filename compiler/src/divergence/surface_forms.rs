@@ -53,8 +53,8 @@ pub(super) const MODULEVARDECLARATIONFORM: DivergenceEntry = DivergenceEntry {
 
 pub(super) const MODULEINITIALIZERMISSINGFORM: DivergenceEntry = DivergenceEntry {
     ts: "let x:i32;\nexport function main(): void {  }",
-    subscript: "no equivalent; supply an initializer",
-    why: "A binding needs an initializer because the language has no undefined value.",
+    subscript: "let x:i32 = 0;\nexport function main(): void {  }",
+    why: "A function can read a module variable before any assignment runs; the language has no undefined value.",
     collision: "C24", // row 3,
 };
 
@@ -72,10 +72,11 @@ pub(super) const LOCALVARDECLARATIONFORM: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 2,
 };
 
-pub(super) const LOCALINITIALIZERMISSINGFORM: DivergenceEntry = DivergenceEntry {
-    ts: "export function main(): void { let x:i32; }",
-    subscript: "no equivalent; supply an initializer",
-    why: "A binding needs an initializer because the language has no undefined value.",
+pub(super) const LOCALTYPEWITHOUTINITIALIZERFORM: DivergenceEntry = DivergenceEntry {
+    ts: "export function main(): void { let x; }",
+    subscript: "export function main(): void { let x:i32; }",
+    why:
+        "A local takes its type from its annotation or its initializer, not from later assignments.",
     collision: "C24", // row 3,
 };
 

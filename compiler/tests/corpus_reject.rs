@@ -489,6 +489,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r356-this-capture-constructor.ts", RuleCode::S100, 8),
     ("r357-this-capture-default-inferred.ts", RuleCode::S009, 8),
     ("r358-this-capture-default-annotated.ts", RuleCode::S009, 8),
+    ("r359-local-one-branch.ts", RuleCode::S100, 9),
+    ("r360-local-for-body.ts", RuleCode::S100, 9),
+    ("r361-local-for-of-body.ts", RuleCode::S100, 9),
+    ("r362-module-without-initializer.ts", RuleCode::S100, 9),
     ("r334-bare-yield-nonvoid.ts", RuleCode::S100, 7),
     ("r335-annotated-void-binding.ts", RuleCode::S100, 9),
     ("r336-void-parameter.ts", RuleCode::S100, 8),
@@ -898,16 +902,16 @@ fn namespace_and_class_names_are_owned_across_switch_cases() {
 }
 
 #[test]
-fn declaration_without_initializer_clears_its_reservation() {
+fn unassigned_inner_local_does_not_read_the_outer_binding() {
     let diagnostics = check_program(&[SourceFile::new(
         "missing-initializer.ts",
         "export function main(): void {\n  const value: i32 = 1;\n  {\n    let value: i32;\n    print(`${value}`);\n  }\n}\n",
     )])
-    .expect_err("the declaration without an initializer must fail");
+    .expect_err("the read of the unassigned inner local must fail");
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].message,
-        "local declarations require an initializer"
+        "local `value` is read before assignment; assign `value` on every path before this read, or give it an initializer"
     );
 }
 

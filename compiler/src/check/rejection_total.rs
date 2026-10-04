@@ -627,8 +627,12 @@ fn every_code_has_one_site_map() {
             if path.is_dir() {
                 visit(&path, failures);
             } else if path.extension().is_some_and(|extension| extension == "rs")
-                && !["rejection.rs", "rejection_total.rs"]
-                    .contains(&path.file_name().unwrap().to_str().unwrap())
+                && ![
+                    "rejection.rs",
+                    "rejection_surface_classes.rs",
+                    "rejection_total.rs",
+                ]
+                .contains(&path.file_name().unwrap().to_str().unwrap())
                 && outside_site_map(&fs::read_to_string(&path).unwrap())
             {
                 failures.push(path.display().to_string());
@@ -652,7 +656,7 @@ fn every_code_has_one_site_map() {
     }
     assert!(
         failures.is_empty(),
-        "code literals outside rejection.rs: {failures:?}"
+        "code literals outside the rejection class table: {failures:?}"
     );
     let body = include_str!("rejection_sites.rs")
         .split("pub(crate) enum RejectionSite {")

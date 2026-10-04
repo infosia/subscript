@@ -594,6 +594,7 @@ impl<'a> ModuleEffectScanner<'a> {
             | K::Assign { .. }
             | K::Cast(_)
             | K::Zero
+            | K::Unassigned
             | K::RawNew { .. }
             | K::Field { .. }
             | K::Length(_)

@@ -220,7 +220,9 @@ impl Divergence {
                 surface_forms::STATEMENTNONBOOLEANCONDITIONFORM
             }
             Divergence::GeneratorReturnValue => surface_forms::GENERATORRETURNVALUE,
-            Divergence::LocalInitializerMissingForm => surface_forms::LOCALINITIALIZERMISSINGFORM,
+            Divergence::LocalTypeWithoutInitializerForm => {
+                surface_forms::LOCALTYPEWITHOUTINITIALIZERFORM
+            }
             Divergence::LocalVarDeclarationForm => surface_forms::LOCALVARDECLARATIONFORM,
             Divergence::ReturnFlowCoverage => surface_forms::RETURNFLOWCOVERAGE,
             Divergence::ModuleInitializerMissingForm => surface_forms::MODULEINITIALIZERMISSINGFORM,

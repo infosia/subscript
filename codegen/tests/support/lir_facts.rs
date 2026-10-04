@@ -680,6 +680,7 @@ fn collect_trap_expression(
             | hir::ExprKind::Assign { .. }
             | hir::ExprKind::Cast(_)
             | hir::ExprKind::Zero
+            | hir::ExprKind::Unassigned
             | hir::ExprKind::RawNew { .. }
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Length(_)
@@ -1202,6 +1203,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::Cast(_)
         | hir::ExprKind::DescriptorLit { .. }
         | hir::ExprKind::Zero
+        | hir::ExprKind::Unassigned
         | hir::ExprKind::RawNew { .. }
         | hir::ExprKind::Field { .. }
         | hir::ExprKind::Length(_)
