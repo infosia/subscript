@@ -199,3 +199,4 @@ Every section, with its status:
 | §155 | Member modifiers are enforced as tsc enforces them | active | [`s155-member-modifiers-are-enforced-as-tsc-enforces-them.md`](compiler/s155-member-modifiers-are-enforced-as-tsc-enforces-them.md) |
 | §156 | An initializer types an unannotated declaration | active | [`s156-an-initializer-types-an-unannotated-declaration.md`](compiler/s156-an-initializer-types-an-unannotated-declaration.md) |
 | §157 | A lambda captures `this` in a reference-class method | active | [`s157-a-lambda-captures-this-in-a-reference-class-method.md`](compiler/s157-a-lambda-captures-this-in-a-reference-class-method.md) |
+| §158 | A local is assigned before it is read | active | [`s158-a-local-is-assigned-before-it-is-read.md`](compiler/s158-a-local-is-assigned-before-it-is-read.md) |

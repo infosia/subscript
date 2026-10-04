@@ -143,7 +143,7 @@ None is decided.
 2. Inference of a literal-initialized module variable, field, or
    defaulted parameter, and of a block-lambda result (row 4). Closed by §156.
 3. Definite assignment for a local with no initializer (row 3), as
-   §108 does for fields.
+   §108 does for fields. Closed by §158.
 4. A static method and a generator function as values (row 13).
 5. `yield*` over a stdlib §14.1 source, and an instance generator
    method (rows 11, 16).
