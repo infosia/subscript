@@ -141,7 +141,7 @@ None is decided.
 1. Truth tests on non-`boolean` values (row 1). Decided 2026-10-04: the
    form stays rejected; row 1 states the reason.
 2. Inference of a literal-initialized module variable, field, or
-   defaulted parameter, and of a block-lambda result (row 4).
+   defaulted parameter, and of a block-lambda result (row 4). Closed by §156.
 3. Definite assignment for a local with no initializer (row 3), as
    §108 does for fields.
 4. A static method and a generator function as values (row 13).

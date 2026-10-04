@@ -197,3 +197,4 @@ Every section, with its status:
 | §153 | Every subset rejection carries its divergence | active | [`s153-every-subset-rejection-carries-its-divergence.md`](compiler/s153-every-subset-rejection-carries-its-divergence.md) |
 | §154 | Every rejection site states its tsc class | active | [`s154-every-rejection-site-states-its-tsc-class.md`](compiler/s154-every-rejection-site-states-its-tsc-class.md) |
 | §155 | Member modifiers are enforced as tsc enforces them | active | [`s155-member-modifiers-are-enforced-as-tsc-enforces-them.md`](compiler/s155-member-modifiers-are-enforced-as-tsc-enforces-them.md) |
+| §156 | An initializer types an unannotated declaration | active | [`s156-an-initializer-types-an-unannotated-declaration.md`](compiler/s156-an-initializer-types-an-unannotated-declaration.md) |
