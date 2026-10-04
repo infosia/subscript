@@ -107,51 +107,6 @@ fn rejected_mirror_modules_poison_imported_exports() {
 }
 
 #[test]
-fn nullable_initializer_facts_do_not_cross_writes_or_shadowed_bindings() {
-    use crate::divergence::Divergence;
-    let programs = rejection_programs::programs();
-    for (key, site, variant) in [
-        (
-            "c-nullable-initialized",
-            RejectionSite::NullableMemberNonNullFlow,
-            Some(Divergence::NullableMemberNonNullFlow),
-        ),
-        (
-            "nullable-call-initialized",
-            RejectionSite::NullableCallNonNullFlow,
-            Some(Divergence::NullableCallNonNullFlow),
-        ),
-        (
-            "nullable-assignment",
-            RejectionSite::NullableNominalAssignmentNonNullFlow,
-            Some(Divergence::NullableNominalAssignmentNonNullFlow),
-        ),
-        ("member-parameter", RejectionSite::NullableMember, None),
-        ("member-assigned-null", RejectionSite::NullableMember, None),
-        ("member-shadow", RejectionSite::NullableMember, None),
-        ("call-parameter", RejectionSite::NullableCall, None),
-        (
-            "assignment-parameter",
-            RejectionSite::NullableNominalAssignment,
-            None,
-        ),
-    ] {
-        let program = programs.iter().find(|p| p.key == key).unwrap();
-        rejection_total::clear_reached();
-        let diagnostics = rejection_programs::check(program);
-        let reached = rejection_total::take_reached();
-        assert_eq!(diagnostics.len(), 1, "{key}: {diagnostics:?}");
-        assert_eq!(diagnostics[0].divergence, variant, "{key}");
-        assert!(
-            reached.iter().any(|(actual, message, pos)| *actual == site
-                && *message == diagnostics[0].message
-                && *pos == diagnostics[0].pos),
-            "{key}: {reached:?}"
-        );
-    }
-}
-
-#[test]
 fn nullable_flow_does_not_cross_a_conditional_write_or_function_boundary() {
     let prefix = "class A { x:i32=1; } ";
     for body in [
@@ -185,13 +140,8 @@ fn return_and_throw_guards_keep_the_existing_narrowing() {
 #[test]
 fn a_shadowed_write_keeps_the_outer_nonnull_fact() {
     let source = "class A{x:i32=1;} function f():void{const a:A|null=new A(); {let a:A|null=null; a=null;} a.x;}";
-    let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
-        .expect_err("initializer narrowing is rejected");
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(
-        diagnostics[0].divergence,
-        Some(crate::divergence::Divergence::NullableMemberNonNullFlow)
-    );
+    check_program(&[SourceFile::entry("main.ts", source)])
+        .expect("outer initializer fact survives");
 }
 
 #[test]
@@ -218,7 +168,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-every-normal-exit-witness-2",
             "field-assignment-nested-unassigned-exit-witness-2",
             "nullable-member",
-            "nullable-member-non-null-flow",
             "enum-string-value",
             "constructor-parameter-property-witness-2",
             "optional-parameter-witness-2",
@@ -243,7 +192,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-every-normal-exit-witness-3",
             "field-assignment-nested-unassigned-exit-witness-3",
             "nullable-member-witness-2",
-            "nullable-member-non-null-flow-witness-2",
             "enum-string-value-witness-2",
             "constructor-parameter-property-witness-3",
             "optional-parameter-witness-3",
@@ -268,7 +216,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-every-normal-exit-witness-4",
             "field-assignment-nested-unassigned-exit-witness-4",
             "nullable-member-witness-3",
-            "nullable-member-non-null-flow-witness-3",
             "enum-string-value-witness-3",
             "constructor-parameter-property-witness-4",
             "optional-parameter-witness-4",
@@ -293,7 +240,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-every-normal-exit-witness-5",
             "field-assignment-nested-unassigned-exit-witness-5",
             "nullable-member-witness-4",
-            "nullable-member-non-null-flow-witness-4",
             "enum-string-value-witness-4",
             "constructor-parameter-property-witness-5",
             "optional-parameter-witness-5",

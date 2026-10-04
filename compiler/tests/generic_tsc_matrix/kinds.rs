@@ -312,17 +312,6 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             token: "class field, array element, or lambda capture rejects",
         });
     }
-    if ["plain", "generic-class", "nullable-class"]
-        .iter()
-        .any(|kind| name.starts_with(&format!("product-{kind}-nullable-")))
-    {
-        records.push(Divergence {
-            code: RuleCode::S005,
-            record: "C24",
-            message: "nominal types are not interchangeable",
-            token: "No narrowing by assignment is decided",
-        });
-    }
     if name.starts_with("product-null-") {
         records.push(Divergence {
             code: RuleCode::S100,

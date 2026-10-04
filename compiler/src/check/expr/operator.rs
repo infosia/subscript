@@ -1,6 +1,7 @@
 //! Checks the operator expressions, the conditional expression, `yield`, and `as`.
 
 use crate::check::rejection::RejectionSite;
+use std::collections::HashSet;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
@@ -517,7 +518,7 @@ impl<'p> Checker<'p> {
             _ => {
                 let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
-                let (left, right);
+                let (mut left, mut right);
                 if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
                     let c = self.literal_context(&r.ty).or(outer);
@@ -532,9 +533,39 @@ impl<'p> Checker<'p> {
                     };
                     right = self.check_expr(&b.right, c.as_ref(), fx);
                 }
+                if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
+                    if self.apparent_type(&right.ty) == Type::Null {
+                        self.restore_nullable_storage(&mut left);
+                    }
+                    if self.apparent_type(&left.ty) == Type::Null {
+                        self.restore_nullable_storage(&mut right);
+                    }
+                }
                 self.bin_result(b.op, left, right, pos, BinUse::Expression)
                     .expr
             }
+        }
+    }
+
+    fn restore_nullable_storage(&self, expression: &mut hir::Expr) {
+        let target = match &expression.kind {
+            ExprKind::Assign {
+                op: None, target, ..
+            } => target.as_ref(),
+            _ => expression,
+        };
+        let storage = if let ExprKind::Global(name) = &target.kind {
+            self.globals
+                .iter()
+                .find(|global| global.symbol == *name)
+                .map(|global| &global.ty)
+        } else {
+            Some(target.storage_type(&self.classes))
+        };
+        if let Some(storage) =
+            storage.filter(|ty| matches!(self.apparent_type(ty), Type::Nullable(_)))
+        {
+            expression.ty = storage.clone();
         }
     }
 
@@ -617,6 +648,7 @@ impl<'p> Checker<'p> {
                         };
                     }
                     if *tested {
+                        self.restore_nullable_storage(&mut current);
                         let Some(inner) = self.require_nullable_operand(
                             &current,
                             "the tested receiver",
@@ -748,7 +780,15 @@ impl<'p> Checker<'p> {
             return self.finish_nullish_plan(plan, &binary.right, fx, pos);
         }
 
-        let left = self.check_expr(&binary.left, None, fx);
+        let mut left = self.check_expr(&binary.left, None, fx);
+        self.restore_nullable_storage(&mut left);
+        if matches!(left_ast, ast::Expr::Bin(binary) if binary.op == ast::BinaryOp::NullishCoalescing)
+            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+            && self.allows_nullable(&left.ty)
+        {
+            // A preceding fallback can have a narrowed result type.
+            left.ty = Type::nullable(left.ty);
+        }
         if self.apparent_type(&(left.ty)) == Type::Error {
             return self.err_expr(pos);
         }
@@ -1437,9 +1477,10 @@ impl<'p> Checker<'p> {
                 cond.pos.clone(),
             );
         }
-        let note_paths = fx.narrowing_note_paths();
+        let mut note_paths = fx.narrowing_note_paths();
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
-        let mut base = fx.narrowed.clone();
+        let base = fx.narrowed.clone();
+        let initial_notes = fx.ended_shared_narrowing.clone();
 
         // Check the nonliteral arm first so either literal arm can take its context.
         let reverse = ctx.is_none() && literalish(&c.cons) && !literalish(&c.alt);
@@ -1448,25 +1489,44 @@ impl<'p> Checker<'p> {
         } else {
             (&c.cons, &c.alt, then_extra, else_extra)
         };
-        fx.narrowed = base.iter().cloned().chain(first_extra).collect();
+        fx.narrowed = base
+            .iter()
+            .filter(|key| !second_extra.contains(key))
+            .cloned()
+            .chain(first_extra.clone())
+            .collect();
         let first = self.check_expr(first_ast, ctx, fx);
-        // Keep kills: facts removed inside the arm stay removed.
-        base.retain(|key| fx.narrowed.contains(key));
+        let first_facts = fx.narrowed.clone();
+        let first_notes = fx.ended_shared_narrowing.clone();
 
         let literal_ctx = if ctx.is_none() && literalish(second_ast) {
             self.literal_context(&first.ty)
         } else {
             None
         };
-        fx.narrowed = base.iter().cloned().chain(second_extra).collect();
+        fx.ended_shared_narrowing = initial_notes;
+        fx.narrowed = base
+            .iter()
+            .filter(|key| !first_extra.contains(key))
+            .cloned()
+            .chain(second_extra)
+            .collect();
         let second = self.check_expr(second_ast, ctx.or(literal_ctx.as_ref()), fx);
-        base.retain(|key| fx.narrowed.contains(key));
+        let first_possible: HashSet<_> = first_facts.union(&first_notes).cloned().collect();
+        let second_possible: HashSet<_> = fx
+            .narrowed
+            .union(&fx.ended_shared_narrowing)
+            .cloned()
+            .collect();
+        note_paths.extend(first_possible.intersection(&second_possible).cloned());
+        let joined = first_facts.intersection(&fx.narrowed).cloned().collect();
         let (then, els) = if reverse {
             (second, first)
         } else {
             (first, second)
         };
-        fx.narrowed = base;
+        fx.narrowed = joined;
+        fx.ended_shared_narrowing.extend(first_notes);
         fx.finish_narrowing_join(&note_paths);
 
         let ty = if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty)
@@ -1480,7 +1540,8 @@ impl<'p> Checker<'p> {
                 "the then branch",
             );
             self.require_assignable(&els.ty.clone(), context, els.pos.clone(), "the else branch");
-            context.clone()
+            self.conditional_join(&then.ty, &els.ty)
+                .unwrap_or_else(|| context.clone())
         } else {
             match self.conditional_join(&then.ty, &els.ty) {
                 Some(ty) => ty,

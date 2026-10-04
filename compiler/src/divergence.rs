@@ -43,8 +43,6 @@ pub enum Divergence {
     ConstAssertionExpression,
     /// The only type qualifier is a namespace import; an annotation names a declared or builtin type.
     ImportAnnotation,
-    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
-    NullableNominalAssignmentNonNullFlow,
     /// String concat takes exactly one string argument.
     StringConcatArgumentCount,
     /// Array concat takes exactly one array argument.
@@ -353,10 +351,6 @@ pub enum Divergence {
     ModuleVarDeclarationForm,
     /// The deterministic lib subset excludes this constructor.
     LibConstructorName,
-    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
-    NullableMemberNonNullFlow,
-    /// No nullable narrowing from initializer, assignment, or terminal-call facts is decided.
-    NullableCallNonNullFlow,
     /// No first-class value is decided for a direct call target.
     GeneratorFunctionValueForm,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
@@ -1006,7 +1000,6 @@ impl Divergence {
         Divergence::StringEnumMemberValue,
         Divergence::ImportAnnotation,
         Divergence::ConstAssertionExpression,
-        Divergence::NullableNominalAssignmentNonNullFlow,
         Divergence::StringConcatArgumentCount,
         Divergence::ArrayConcatArgumentCount,
         Divergence::GeneratorNextArgumentCount,
@@ -1161,8 +1154,6 @@ impl Divergence {
         Divergence::ModuleInitializerMissingForm,
         Divergence::ModuleVarDeclarationForm,
         Divergence::LibConstructorName,
-        Divergence::NullableMemberNonNullFlow,
-        Divergence::NullableCallNonNullFlow,
         Divergence::GeneratorFunctionValueForm,
         Divergence::GenericSynchronousMethodValueForm,
         Divergence::SynchronousMethodValueForm,

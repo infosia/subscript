@@ -333,7 +333,7 @@ impl<'p> Checker<'p> {
             }
             result.expr.ty
         } else {
-            target_ty.clone()
+            value.ty.clone()
         };
         if op.is_none() {
             self.require_expr_assignable(&value, &target_ty, fx, "the assignment");

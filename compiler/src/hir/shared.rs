@@ -49,7 +49,8 @@ impl Expr {
         }
     }
 
-    fn storage_type<'a>(&'a self, classes: &'a [ClassDef]) -> &'a Type {
+    /// Returns the declared storage type of a local or field.
+    pub(crate) fn storage_type<'a>(&'a self, classes: &'a [ClassDef]) -> &'a Type {
         use ExprKind as K;
         match &self.kind {
             K::Local(_, declared) => declared,

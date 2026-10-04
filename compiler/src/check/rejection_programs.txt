@@ -8857,3 +8857,17 @@ FILE	E	target/s154/forms/const-initializer-missing/main.ts
 export function main(): void { const x:i32; }
 END FILE
 END PROGRAM
+PROGRAM	assignment-shared-parameter			0
+FILE	E	main.ts
+class A { x:i32=1; } class H { a:A|null=null; }
+function touch():void{} function take(a:A):void{}
+export function main():void{ const h=new H(); h.a=new A(); touch(); take(h.a); }
+END FILE
+END PROGRAM
+PROGRAM	assignment-shared-function-parameter			0
+FILE	E	main.ts
+class H { f:(()=>void)|null=null; }
+function touch():void{} function take(f:()=>void):void{}
+export function main():void{ const h=new H(); h.f=touch; touch(); take(h.f); }
+END FILE
+END PROGRAM

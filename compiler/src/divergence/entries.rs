@@ -20,9 +20,6 @@ impl Divergence {
             Divergence::NonNullableNullEquality => super::type_flow::NONNULLABLENULLEQUALITY,
             Divergence::ImportAnnotation => expression_forms::IMPORTANNOTATION,
             Divergence::ConstAssertionExpression => surface_forms::CONSTASSERTIONEXPRESSION,
-            Divergence::NullableNominalAssignmentNonNullFlow => {
-                surface_forms::NULLABLENOMINALASSIGNMENTNONNULLFLOW
-            }
             Divergence::StringConcatArgumentCount => surface_forms::STRINGCONCATARGUMENTCOUNT,
             Divergence::ArrayConcatArgumentCount => surface_forms::ARRAYCONCATARGUMENTCOUNT,
             Divergence::GeneratorNextArgumentCount => surface_forms::GENERATORNEXTARGUMENTCOUNT,
@@ -228,8 +225,6 @@ impl Divergence {
             Divergence::ModuleInitializerMissingForm => surface_forms::MODULEINITIALIZERMISSINGFORM,
             Divergence::ModuleVarDeclarationForm => surface_forms::MODULEVARDECLARATIONFORM,
             Divergence::LibConstructorName => surface_forms::LIBCONSTRUCTORNAME,
-            Divergence::NullableMemberNonNullFlow => surface_forms::NULLABLEMEMBERNONNULLFLOW,
-            Divergence::NullableCallNonNullFlow => surface_forms::NULLABLECALLNONNULLFLOW,
             Divergence::GeneratorFunctionValueForm => surface_forms::GENERATORFUNCTIONVALUEFORM,
             Divergence::GenericSynchronousMethodValueForm => {
                 surface_forms::GENERICSYNCHRONOUSMETHODVALUEFORM

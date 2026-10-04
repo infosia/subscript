@@ -655,6 +655,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 None
             };
+            let mut assigned_value = None;
             let result = if let Some(op) = op {
                 let value = self.require_expr(value_expr)?;
                 self.emit(
@@ -667,14 +668,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 )?
                 .expect("compound result")
             } else {
-                self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
+                let (value, stored) = self.lower_assignment_value(target_expr, value_expr)?;
+                assigned_value = Some(value);
+                stored
             };
             self.write_binding(binding, result.clone(), &target_expr.pos, Vec::new())?;
-            return Ok(if update == Some(hir::UpdateKind::Postfix) {
-                old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))?
+            return if update == Some(hir::UpdateKind::Postfix) {
+                old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))
             } else {
-                result
-            });
+                Ok(assigned_value.unwrap_or(result))
+            };
         }
         let mut place = self.prepare_place(target_expr)?;
         let direct_index = matches!(place.kind, PreparedPlaceKind::Index { .. });
@@ -692,6 +695,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             None
         };
+        let mut assigned_value = None;
         let result = if let Some(op) = op {
             let value = self.require_expr(value_expr)?;
             self.emit(
@@ -704,14 +708,42 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             )?
             .expect("compound result")
         } else {
-            self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
+            let (value, stored) = self.lower_assignment_value(target_expr, value_expr)?;
+            assigned_value = Some(value);
+            stored
         };
         self.store_place(&place, result.clone(), &target_expr.pos)?;
-        Ok(if update == Some(hir::UpdateKind::Postfix) {
-            old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))?
+        if update == Some(hir::UpdateKind::Postfix) {
+            old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))
         } else {
-            result
-        })
+            Ok(assigned_value.unwrap_or(result))
+        }
+    }
+
+    /// Retains the value operand separately from its storage representation.
+    fn lower_assignment_value(
+        &mut self,
+        target: &hir::Expr,
+        value: &hir::Expr,
+    ) -> Result<(l::Operand, l::Operand), LowerError> {
+        if self.embedded_header_extension(&target.ty, value).is_some() {
+            let stored = self.lower_stored_expr_at(&target.ty, value, &target.pos)?;
+            let result = self.coerce_read(
+                stored.clone(),
+                &value.ty,
+                l::NarrowOrigin::Local,
+                Vec::new(),
+                &value.pos,
+            )?;
+            return Ok((result, stored));
+        }
+        let result = self.require_expr(value)?;
+        let stored = self.coerce_operand(
+            result.clone(),
+            l::ValueType::Data(target.ty.clone()),
+            &target.pos,
+        )?;
+        Ok((result, stored))
     }
 }
 

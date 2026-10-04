@@ -23,20 +23,6 @@ pub(super) const GENERATORFUNCTIONVALUEFORM: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 13,
 };
 
-pub(super) const NULLABLECALLNONNULLFLOW: DivergenceEntry = DivergenceEntry {
-    ts: "function g(x: i32): i32 { return x; } function f(): void { const cb: ((x: i32)=>i32)|null = g; cb(1); }",
-    subscript: "no equivalent; write an explicit null check",
-    why: "No nullable narrowing from initializer, assignment, or terminal-call facts is decided.",
-    collision: "C24", // row 26,
-};
-
-pub(super) const NULLABLEMEMBERNONNULLFLOW: DivergenceEntry = DivergenceEntry {
-    ts: "class C{x:i32=1;} export function main():void {const c:C|null=new C(); print(`${c.x}`);}",
-    subscript: "no equivalent; write an explicit null check",
-    why: "No nullable narrowing from initializer, assignment, or terminal-call facts is decided.",
-    collision: "C24", // row 26,
-};
-
 pub(super) const LIBCONSTRUCTORNAME: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { new Object(); }",
     subscript: "no equivalent; use an admitted constructor",
@@ -583,13 +569,6 @@ pub(super) const STRINGCONCATARGUMENTCOUNT: DivergenceEntry = DivergenceEntry {
     subscript: "no equivalent; call concat once per string",
     why: "String concat takes exactly one string argument.",
     collision: "stdlib.md §8",
-};
-
-pub(super) const NULLABLENOMINALASSIGNMENTNONNULLFLOW: DivergenceEntry = DivergenceEntry {
-    ts: "class C {} function use(c: C): void {} function f(): void { const c: C|null = new C(); use(c); }",
-    subscript: "no equivalent; write an explicit null check",
-    why: "No nullable narrowing from initializer, assignment, or terminal-call facts is decided.",
-    collision: "C24", // row 26
 };
 
 /// C24 row 18 excludes const assertions.

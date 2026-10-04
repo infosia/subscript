@@ -253,10 +253,10 @@ impl<'p> Checker<'p> {
         if self.assignable(from, to) {
             return;
         }
-        self.report_not_assignable(from, to, pos, what, false);
+        self.report_not_assignable(from, to, pos, what);
     }
 
-    /// Keeps the declaration-initializer fact at an assignment rejection.
+    /// Keeps the C17 classification at an assignment rejection.
     pub(super) fn require_expr_assignable(
         &mut self,
         from: &hir::Expr,
@@ -265,24 +265,40 @@ impl<'p> Checker<'p> {
         what: &str,
     ) {
         if !self.assignable(&from.ty, to) {
-            self.report_not_assignable(
-                &from.ty,
-                to,
-                from.pos.clone(),
-                what,
-                fx.has_nonnull_flow(from),
-            );
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner) if *inner == self.apparent_type(to))
+                && super::expr::path_key(from)
+                    .is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
+            {
+                let nominal = matches!(
+                    self.apparent_type(to),
+                    Type::Class(_) | Type::Map(..) | Type::Set(_)
+                );
+                let (site, reason) = if nominal {
+                    (
+                        RejectionSite::NullableNominalAssignmentShared,
+                        "nominal types are not interchangeable",
+                    )
+                } else {
+                    (RejectionSite::NullableAssignmentShared, "type mismatch")
+                };
+                self.reject_subset(
+                    site,
+                    format!(
+                        "{}: {} expects `{}`, got `{}`",
+                        reason,
+                        what,
+                        self.type_name(to),
+                        self.type_name(&from.ty)
+                    ),
+                    from.pos.clone(),
+                );
+                return;
+            }
+            self.report_not_assignable(&from.ty, to, from.pos.clone(), what);
         }
     }
 
-    fn report_not_assignable(
-        &mut self,
-        from: &Type,
-        to: &Type,
-        pos: Pos,
-        what: &str,
-        nonnull_initializer: bool,
-    ) {
+    fn report_not_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
         let from_n = self.type_name(from);
         let to_n = self.type_name(to);
         let class_like = |t: &Type| match t {
@@ -307,15 +323,7 @@ impl<'p> Checker<'p> {
             );
             if matches!(&self.apparent_type(from), Type::Nullable(inner) if **inner == self.apparent_type(to))
             {
-                self.reject_subset(
-                    if nonnull_initializer {
-                        RejectionSite::NullableNominalAssignmentNonNullFlow
-                    } else {
-                        RejectionSite::NullableNominalAssignment
-                    },
-                    message,
-                    pos,
-                );
+                self.reject_subset(RejectionSite::NullableNominalAssignment, message, pos);
             } else if !self.ts_nominal_assignable(from, to) {
                 self.reject_subset(RejectionSite::IncompatibleNominalAssignment, message, pos);
             } else if matches!((from_nominal, to_nominal), (Type::Class(a), Type::Class(b)) if self.instance_arguments.get(a).zip(self.instance_arguments.get(b)).is_some_and(|((a, _), (b, _))| a == b))

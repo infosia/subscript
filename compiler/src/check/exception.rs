@@ -396,13 +396,14 @@ impl Checker<'_> {
         let Some(handler) = &t.handler else {
             return false;
         };
-        let note_paths = fx.narrowing_note_paths();
+        let mut note_paths = fx.narrowing_note_paths();
         let base = fx.narrowed.clone();
-        let flow_base = fx.nonnull_flow_snapshot();
+        let initial_notes = fx.ended_shared_narrowing.clone();
         let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
-        let body_flow = fx.nonnull_flow_snapshot();
-        fx.restore_nonnull_flow(&flow_base);
-        let mut effects = self.body_narrowing_effects(&body);
+        let body_facts = fx.narrowed.clone();
+        let mut body_notes = fx.ended_shared_narrowing.clone();
+        let effects = self.body_narrowing_effects(&body);
+        fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         self.apply_narrowing_effects(&effects, fx);
         let binding = self.catch_binding(handler);
@@ -422,27 +423,35 @@ impl Checker<'_> {
             );
         }
         let (handler_body, handler_terminates) = self.check_block(&handler.body.stmts, fx);
-        fx.scopes.pop();
-        let handler_flow = fx.nonnull_flow_snapshot();
-        effects.merge(self.body_narrowing_effects(&handler_body));
-        fx.narrowed = base;
-        self.apply_narrowing_effects(&effects, fx);
-        let body_terminal = super::stmt::always_returns(&body);
-        let handler_terminal = super::stmt::always_returns(&handler_body);
-        let joined_flow: Vec<_> = body_flow
-            .iter()
-            .zip(&handler_flow)
-            .map(|(yes, no)| {
-                if body_terminal {
-                    no.clone()
-                } else if handler_terminal {
-                    yes.clone()
-                } else {
-                    yes.intersection(no).cloned().collect()
-                }
-            })
+        fx.pop_scope();
+        let handler_facts = fx.narrowed.clone();
+        let body_terminates = body_terminates || super::stmt::always_returns(&body);
+        let handler_terminates = handler_terminates || super::stmt::always_returns(&handler_body);
+        let body_possible: HashSet<_> = body_facts.union(&body_notes).cloned().collect();
+        let handler_possible: HashSet<_> = handler_facts
+            .union(&fx.ended_shared_narrowing)
+            .cloned()
             .collect();
-        fx.restore_nonnull_flow(&joined_flow);
+        if body_terminates {
+            note_paths.extend(handler_possible);
+        } else if handler_terminates {
+            note_paths.extend(body_possible);
+        } else {
+            note_paths.extend(body_possible.intersection(&handler_possible).cloned());
+        }
+        if !handler_terminates {
+            // A nullable store can reach the handler before a later restoration or call.
+            body_notes
+                .retain(|key| handler_facts.contains(key) || !effects.nullable_store_ends(key));
+        }
+        fx.narrowed = if body_terminates {
+            handler_facts
+        } else if handler_terminates {
+            body_facts
+        } else {
+            body_facts.intersection(&handler_facts).cloned().collect()
+        };
+        fx.ended_shared_narrowing.extend(body_notes);
         fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::Try {
             body,
@@ -463,7 +472,7 @@ impl Checker<'_> {
             terminates |= self.check_stmt(statement, fx, &mut body);
         }
         self.end_scope_narrowing(&body, fx);
-        fx.scopes.pop();
+        fx.pop_scope();
         (body, terminates)
     }
 

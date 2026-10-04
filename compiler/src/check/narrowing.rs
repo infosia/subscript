@@ -57,7 +57,10 @@ impl Checker<'_> {
             ..
         } = &expression.kind
         {
-            if !matches!(
+            if matches!(
+                self.apparent_type(&target.ty),
+                crate::types::Type::Nullable(_)
+            ) && !matches!(
                 self.apparent_type(&value.ty),
                 crate::types::Type::Null
                     | crate::types::Type::Nullable(_)
@@ -65,7 +68,8 @@ impl Checker<'_> {
             ) {
                 register_shared_paths(target, self.narrowing_classes(), fx);
                 if let Some(key) = path_key(target) {
-                    fx.note_nonnull_flow(key);
+                    fx.narrowed.insert(key.clone());
+                    fx.ended_shared_narrowing.remove(&key);
                 }
             }
         }
@@ -85,18 +89,7 @@ impl Checker<'_> {
         {
             self.reject_subset(sites.1, message, pos);
         } else {
-            let site = if fx.has_nonnull_flow(expression)
-                && (sites.0 != RejectionSite::NullableCall || nullable_function)
-            {
-                match sites.0 {
-                    RejectionSite::NullableMember => RejectionSite::NullableMemberNonNullFlow,
-                    RejectionSite::NullableCall => RejectionSite::NullableCallNonNullFlow,
-                    other => other,
-                }
-            } else {
-                sites.0
-            };
-            self.reject_subset(site, message, pos);
+            self.reject_subset(sites.0, message, pos);
         }
     }
 }
@@ -240,23 +233,23 @@ impl Checker<'_> {
     }
 
     pub(super) fn apply_narrowing_effects(&self, effects: &hir::NarrowingEffects, fx: &mut FnCtx) {
-        for name in &effects.locals {
-            if let Some(scope) = fx
-                .scopes
-                .iter_mut()
-                .rev()
-                .find(|scope| scope.vars.contains_key(super::stmt::root_of(name)))
-            {
-                scope
-                    .nonnull_flow
-                    .retain(|key| key != name && !key.starts_with(&format!("{name}.")));
-            }
-        }
         let shared_paths = fx.shared_narrowing_paths();
+        fx.ended_shared_narrowing
+            .retain(|key| !path_kills(key, effects, &shared_paths).1);
         for scope in &mut fx.scopes {
-            scope.nonnull_flow.retain(|key| {
-                let (shared, _) = path_kills(key, effects, &shared_paths);
-                !shared
+            let shared = scope
+                .shadowed_narrowing
+                .iter()
+                .filter_map(|(key, shared)| shared.then_some(key.clone()))
+                .collect();
+            scope.shadowed_narrowing.retain(|key, _| {
+                // A shadowed path belongs to another binding, even with the same spelling.
+                if path_kills(key, effects, &shared).0 {
+                    scope.shadowed_ended_shared.insert(key.clone());
+                    false
+                } else {
+                    true
+                }
             });
         }
         fx.narrowed.retain(|key| {
@@ -304,44 +297,6 @@ impl Checker<'_> {
 }
 
 impl FnCtx {
-    pub(super) fn has_nonnull_flow(&self, expression: &hir::Expr) -> bool {
-        let Some(key) = path_key(expression) else {
-            return false;
-        };
-        let root = super::stmt::root_of(&key);
-        self.scopes
-            .iter()
-            .rev()
-            .find(|scope| scope.vars.contains_key(root) || scope.fn_boundary)
-            .or_else(|| self.scopes.first())
-            .is_some_and(|scope| scope.nonnull_flow.contains(&key))
-    }
-
-    pub(super) fn note_nonnull_flow(&mut self, key: String) {
-        let root = super::stmt::root_of(&key);
-        let index = self
-            .scopes
-            .iter()
-            .rposition(|scope| scope.vars.contains_key(root) || scope.fn_boundary)
-            .unwrap_or(0);
-        if let Some(scope) = self.scopes.get_mut(index) {
-            scope.nonnull_flow.insert(key);
-        }
-    }
-
-    pub(super) fn nonnull_flow_snapshot(&self) -> Vec<std::collections::HashSet<String>> {
-        self.scopes
-            .iter()
-            .map(|scope| scope.nonnull_flow.clone())
-            .collect()
-    }
-
-    pub(super) fn restore_nonnull_flow(&mut self, facts: &[std::collections::HashSet<String>]) {
-        for (scope, facts) in self.scopes.iter_mut().zip(facts) {
-            scope.nonnull_flow = facts.clone();
-        }
-    }
-
     fn shared_narrowing_paths(&self) -> std::collections::HashSet<String> {
         let mut paths = std::collections::HashMap::new();
         for scope in &self.scopes {
@@ -389,11 +344,9 @@ fn path_kills(
             let stored = format!("[[global]]{}", name.full_text());
             key == stored || key.starts_with(&format!("{stored}."))
         });
-    let local_kill = !global
-        && effects
-            .locals
-            .iter()
-            .any(|stored| key == stored || key.starts_with(&format!("{stored}.")));
+    let same_path = |stored: &String| key == stored || key.starts_with(&format!("{stored}."));
+    let local_kill =
+        effects.nullable_store_ends(key) || !global && effects.locals.iter().any(same_path);
     (shared_kill, local_kill)
 }
 

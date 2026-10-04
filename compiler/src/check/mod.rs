@@ -9,6 +9,8 @@
 
 use crate::check::rejection::{diagnostic, RejectionSite};
 mod assignment_flow;
+#[cfg(test)]
+mod assignment_narrowing;
 mod host_entries;
 mod identity;
 mod init_effects;
@@ -497,8 +499,10 @@ pub(crate) struct Local {
 pub(crate) struct Scope {
     pub vars: HashMap<String, Local>,
     pub shared_narrowing_paths: HashMap<String, bool>,
-    /// Non-null initializer, assignment, or terminal-guard facts for diagnostic classification.
-    pub nonnull_flow: HashSet<String>,
+    /// Outer facts hidden by declarations in this scope.
+    pub shadowed_narrowing: HashMap<String, bool>,
+    /// C17 facts hidden by declarations in this scope.
+    pub shadowed_ended_shared: HashSet<String>,
     /// Names that declarations later in this scope own.
     pub pending: HashSet<String>,
     /// The first case that declares each name in a switch body.
@@ -1067,6 +1071,12 @@ impl FnCtx {
 
     /// Declares a local. Returns false if the current scope already contains the name.
     pub(crate) fn declare(&mut self, name: &str, local: Local) -> bool {
+        let shared = self
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.shared_narrowing_paths)
+            .map(|(key, value)| (key.clone(), *value))
+            .collect::<HashMap<_, _>>();
         if let Some(scope) = self.scopes.last_mut() {
             if scope.vars.contains_key(name) {
                 return false;
@@ -1074,12 +1084,35 @@ impl FnCtx {
             scope.pending.remove(name);
             scope.vars.insert(name.to_string(), local);
             let prefix = format!("{name}.");
+            scope.shadowed_narrowing.extend(
+                self.narrowed
+                    .iter()
+                    .filter(|key| *key == name || key.starts_with(&prefix))
+                    .map(|key| (key.clone(), shared.get(key).copied().unwrap_or(false))),
+            );
             self.narrowed
                 .retain(|key| key != name && !key.starts_with(&prefix));
+            scope.shadowed_ended_shared.extend(
+                self.ended_shared_narrowing
+                    .iter()
+                    .filter(|key| *key == name || key.starts_with(&prefix))
+                    .cloned(),
+            );
             self.ended_shared_narrowing
                 .retain(|key| key != name && !key.starts_with(&prefix));
         }
         true
+    }
+
+    /// Exits a scope and restores the facts hidden by its declarations.
+    pub(crate) fn pop_scope(&mut self) {
+        if let Some(scope) = self.scopes.pop() {
+            self.narrowed
+                .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
+            self.narrowed.extend(scope.shadowed_narrowing.into_keys());
+            self.ended_shared_narrowing
+                .extend(scope.shadowed_ended_shared);
+        }
     }
 
     /// Removes a declaration reservation after the declaration fails.

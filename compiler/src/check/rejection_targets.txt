@@ -635,7 +635,6 @@ LocalAggregateFrameLimit	c-corpus-r67-frame-local-boundary-too-large	S100	local 
 NullableCall	a-s236	S100	type `((i32) => i32) | null` is not callable
 NullableCall	c-corpus-r249-unnarrowed-nullable-field-call	S100	type `((i32) => i32) | null` is not callable
 NullableCallShared	new-shared-nullable-call	S100	type `(() => void) | null` is not callable
-NullableMemberNonNullFlow	c-nullable-initialized	S011	`C | null` may be null here; narrow with a null check first
 NullableMember	c-nullable-shared-rejected	S011	`C | null` may be null here; narrow with a null check first
 NullableMemberShared	c-corpus-r260-narrowing-try-join	S011	`Cell | null` may be null here; narrow with a null check first
 UnknownNamespaceConstructor	a-s074	S100	unknown class `Object`
@@ -1034,14 +1033,12 @@ AsyncReturnAlias	async-mirror-alias	S100	async functions must return an explicit
 NullableCall	old-r249-unnarrowed-nullable-field-call	S100	type `((i32) => i32) | null` is not callable
 NullableNominalAssignment	c-corpus-r120-narrowing-escapes-conditional	S005	nominal types are not interchangeable: the argument expects `EscapingValue`, got `EscapingValue | null`
 NullableNominalAssignment	c-nominal-null-rejected	S005	nominal types are not interchangeable: the initializer expects `C`, got `C | null`
-NullableNominalAssignmentNonNullFlow	nullable-assignment	S005	nominal types are not interchangeable: the argument expects `C`, got `C | null`
 NullableNominalAssignment	old-r120-narrowing-escapes-conditional	S005	nominal types are not interchangeable: the argument expects `EscapingValue`, got `EscapingValue | null`
 AsyncReturnArgumentCount	async-builtin-arity	S100	`Promise` requires exactly one fulfilled-value type argument
 UnboundTypeName	constructor-error-type-count	S016	unknown type name `Missing`
 ClassUndeclaredMemberRead	shadow-fixed-member	S018	`FixedArray<i32, i32>` has no member `length`
 UnknownNamespaceConstructor	lib-constructor	S100	unknown class `WeakMap`
 ValueConstructorArgumentCount	constructor-error-type-count	S100	`C` expects 1 argument(s) (1 required), got 2
-NullableCallNonNullFlow	nullable-call-initialized	S100	type `((i32) => i32) | null` is not callable
 LambdaReturnPathMissing	lambda-missing-return	S100	not all paths return a value
 ConstructorFieldReadAfterNestedAssignment	field-read-nested-assigned	S100	`this.x` reads field `x` of `C` before the constructor assigns it at its top level; move the read after `this.x = …`, or give `x` an initializer
 DescriptorRequiredFieldUnassigned	descriptor-empty-constructor	S100	required descriptor members must be spelled `name!: T`
@@ -1055,26 +1052,14 @@ DescriptorRequiredFieldUnassigned	descriptor-alias-field	S100	required descripto
 DescriptorRequiredFieldUnassigned	descriptor-nested-field	S100	required descriptor members must be spelled `name!: T`
 DescriptorRequiredWithoutDefinite	descriptor-switch-assigned	S100	required descriptor members must be spelled `name!: T`
 DescriptorRequiredWithoutDefinite	descriptor-switch-unassigned	S100	required descriptor members must be spelled `name!: T`
-NullableMemberNonNullFlow	flow-member-0	S011	`A | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	flow-member-1	S011	`A | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	flow-member-2	S011	`A | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	flow-member-3	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	flow-member-null-0	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	flow-member-null-1	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	flow-member-null-2	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	flow-member-null-3	S011	`A | null` may be null here; narrow with a null check first
-NullableNominalAssignmentNonNullFlow	flow-nominal-0	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
-NullableNominalAssignmentNonNullFlow	flow-nominal-1	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
-NullableNominalAssignmentNonNullFlow	flow-nominal-2	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
-NullableNominalAssignmentNonNullFlow	flow-nominal-3	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableNominalAssignment	flow-nominal-null-0	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableNominalAssignment	flow-nominal-null-1	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableNominalAssignment	flow-nominal-null-2	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableNominalAssignment	flow-nominal-null-3	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
-NullableCallNonNullFlow	flow-call-0	S100	type `(() => void) | null` is not callable
-NullableCallNonNullFlow	flow-call-1	S100	type `(() => void) | null` is not callable
-NullableCallNonNullFlow	flow-call-2	S100	type `(() => void) | null` is not callable
-NullableCallNonNullFlow	flow-call-3	S100	type `(() => void) | null` is not callable
 NullableCall	flow-call-null-0	S100	type `(() => void) | null` is not callable
 NullableCall	flow-call-null-1	S100	type `(() => void) | null` is not callable
 NullableCall	flow-call-null-2	S100	type `(() => void) | null` is not callable
@@ -1155,7 +1140,6 @@ NullableCall	noncallable-0	S100	type `i32` is not callable
 NullableCall	noncallable-1	S100	type `string` is not callable
 NullableCall	noncallable-2	S100	type `boolean` is not callable
 NullableCall	noncallable-3	S100	type `i32[]` is not callable
-NullableNominalAssignmentNonNullFlow	flow-cache-return	S005	nominal types are not interchangeable: the return value expects `N`, got `N | null`
 LocalFunctionDeclaration	hoisted-local-call	S100	nested declarations are not in the decided surface
 SourceAliasNotLiteralUnion	poisoned-alias-lambda	S100	type aliases are limited to a union of two or more string literals
 ErasedAssignableEquality	erased-equality-array	S100	operator `===` not defined for `i32[]` and `f64[]`
@@ -1187,7 +1171,6 @@ NullableMember	probe-nullable-conditional-write-0	S011	`A | null` may be null he
 NullableMember	probe-nullable-conditional-write-1	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-2	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-3	S011	`A | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	probe-nullable-try-both	S011	`A | null` may be null here; narrow with a null check first
 DistinctNominalClassAssignment	distinct-nominal-class-assignment	S005	nominal types are not interchangeable: the initializer expects `A`, got `B`
 IncompatibleNominalAssignment	incompatible-nominal-assignment	S005	nominal types are not interchangeable: the initializer expects `A`, got `B`
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-2	S005	nominal types are not interchangeable: the initializer expects `A | null`, got `B`
@@ -1208,7 +1191,6 @@ DynamicImportCall	dynamic-import-call	S100	call form outside the decided surface
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member	S011	`C | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	nullable-member-non-null-flow	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value	S100	enum members must have integer literal values
 ConstructorParameterProperty	constructor-parameter-property-witness-2	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-2	S012	optional parameters imply `undefined`; use a default value or `T | null`
@@ -1235,7 +1217,6 @@ DynamicImportCall	dynamic-import-call-witness-2	S100	call form outside the decid
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-2	S011	`C | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-2	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-2	S100	enum members must have integer literal values
 ConstructorParameterProperty	constructor-parameter-property-witness-3	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-3	S012	optional parameters imply `undefined`; use a default value or `T | null`
@@ -1262,7 +1243,6 @@ DynamicImportCall	dynamic-import-call-witness-3	S100	call form outside the decid
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-3	S011	`C | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-3	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-3	S100	enum members must have integer literal values
 ConstructorParameterProperty	constructor-parameter-property-witness-4	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-4	S012	optional parameters imply `undefined`; use a default value or `T | null`
@@ -1289,7 +1269,6 @@ DynamicImportCall	dynamic-import-call-witness-4	S100	call form outside the decid
 FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-4	S011	`C | null` may be null here; narrow with a null check first
-NullableMemberNonNullFlow	nullable-member-non-null-flow-witness-4	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-4	S100	enum members must have integer literal values
 ConstructorParameterProperty	constructor-parameter-property-witness-5	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-5	S012	optional parameters imply `undefined`; use a default value or `T | null`
@@ -1411,3 +1390,5 @@ ThisInStaticMethodArrow	this-static-arrow	S100	`this` is only available in const
 ThisInParameterDefaultArrow	this-default-inferred	S009	a lambda in a parameter default cannot capture `this`
 ThisInParameterDefaultArrow	this-default-annotated	S009	a lambda in a parameter default cannot capture `this`
 LocalTypeWithoutInitializer	local-type-without-initializer	S100	a local without an initializer requires a type annotation
+NullableNominalAssignmentShared	assignment-shared-parameter	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableAssignmentShared	assignment-shared-function-parameter	S100	type mismatch: the argument expects `() => void`, got `(() => void) | null`

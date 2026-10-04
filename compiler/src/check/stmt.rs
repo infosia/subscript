@@ -55,7 +55,13 @@ pub(crate) fn narrow_paths(
                     (None, left)
                 };
                 if null_side.is_some() && matches!(apparent_type(&other.ty), Type::Nullable(_)) {
-                    if let Some(key) = path_key(other) {
+                    let target = match &other.kind {
+                        ExprKind::Assign {
+                            op: None, target, ..
+                        } => target.as_ref(),
+                        _ => other,
+                    };
+                    if let Some(key) = path_key(target) {
                         return match op {
                             // `p === null` → p is non-null when false.
                             BinOp::Eq => (Vec::new(), vec![key]),
@@ -191,11 +197,6 @@ impl<'p> Checker<'p> {
             .filter(|(_, local)| self.apparent_type(&local.ty) == Type::Error)
             .map(|(name, _)| name.clone())
             .collect();
-        let loop_flow = matches!(
-            s,
-            ast::Stmt::While(_) | ast::Stmt::For(_) | ast::Stmt::ForOf(_)
-        )
-        .then(|| fx.nonnull_flow_snapshot());
         let start = out.len();
         let (terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),
@@ -317,7 +318,7 @@ impl<'p> Checker<'p> {
                         terminates |= self.check_stmt(s, fx, &mut inner);
                     }
                     self.end_scope_narrowing(&inner, fx);
-                    fx.scopes.pop();
+                    fx.pop_scope();
                     out.push(hir::Stmt::Block(inner));
                     terminates
                 }
@@ -346,11 +347,6 @@ impl<'p> Checker<'p> {
                 }
             },
         );
-        if let Some(before) = loop_flow {
-            for (scope, facts) in fx.scopes.iter_mut().zip(before) {
-                scope.nonnull_flow.retain(|key| facts.contains(key));
-            }
-        }
         self.rejected_local_names = saved_rejected_names;
         out.splice(start..start, prefix);
         terminates
@@ -511,23 +507,14 @@ impl<'p> Checker<'p> {
                 fx,
             );
             if !matches!(init.kind, hir::ExprKind::Unassigned)
+                && matches!(self.apparent_type(&ty), Type::Nullable(_))
                 && !matches!(
                     self.apparent_type(&init.ty),
                     Type::Nullable(_) | Type::Null | Type::Error
                 )
             {
-                if let Some(scope) = fx.scopes.last_mut() {
-                    scope
-                        .nonnull_flow
-                        .retain(|key| key != &name && !key.starts_with(&format!("{name}.")));
-                    scope.nonnull_flow.insert(name.clone());
-                }
+                fx.narrowed.insert(name.clone());
             }
-            // A fresh binding invalidates stale narrowing facts rooted
-            // at a shadowed name.
-            let prefix = format!("{}.", name);
-            fx.narrowed
-                .retain(|k| k != &name && !k.starts_with(&prefix));
             out.push(hir::Stmt::Let {
                 name,
                 ty,
@@ -642,7 +629,7 @@ impl<'p> Checker<'p> {
             single => self.check_stmt(single, fx, &mut out),
         };
         self.end_scope_narrowing(&out, fx);
-        fx.scopes.pop();
+        fx.pop_scope();
         (out, terminates)
     }
 
@@ -652,89 +639,50 @@ impl<'p> Checker<'p> {
         self.require_bool(&cond);
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
 
-        let mut base = fx.narrowed.clone();
-        let note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
+        let base = fx.narrowed.clone();
+        let mut note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
 
-        let flow_base = fx.nonnull_flow_snapshot();
-        for key in &then_extra {
-            fx.note_nonnull_flow(key.clone());
-        }
-        fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
+        let initial_notes = fx.ended_shared_narrowing.clone();
+        fx.narrowed.retain(|key| !else_extra.contains(key));
+        fx.narrowed.extend(then_extra.clone());
         let (then_stmts, then_term) = self.check_branch(&i.cons, fx);
-        // compiler.md §124: a branch cannot restore a fact that a call ended.
-        let then_flow = fx.nonnull_flow_snapshot();
-        fx.restore_nonnull_flow(&flow_base);
-        for key in &else_extra {
-            fx.note_nonnull_flow(key.clone());
-        }
+        let then_term = then_term || always_returns(&then_stmts);
+        let then_notes = fx.ended_shared_narrowing.clone();
         let then_facts = fx.narrowed.clone();
-        base.retain(|k| fx.narrowed.contains(k));
-
-        let mut else_facts = base
-            .iter()
-            .cloned()
-            .chain(else_extra.clone())
-            .collect::<HashSet<_>>();
+        fx.ended_shared_narrowing = initial_notes;
+        fx.narrowed = base.clone();
+        fx.narrowed.retain(|key| !then_extra.contains(key));
+        fx.narrowed.extend(else_extra);
         let (els_stmts, else_term) = match &i.alt {
             Some(alt) => {
-                fx.narrowed = base.iter().cloned().chain(else_extra.clone()).collect();
                 let (stmts, term) = self.check_branch(alt, fx);
-                else_facts = fx.narrowed.clone();
-                base.retain(|k| fx.narrowed.contains(k));
                 (Some(stmts), term)
             }
             None => (None, false),
         };
-
-        let else_flow = fx.nonnull_flow_snapshot();
-        let then_terminal = always_returns(&then_stmts);
-        let else_terminal = els_stmts.as_ref().is_some_and(|body| always_returns(body));
-        let joined_flow: Vec<_> = then_flow
-            .iter()
-            .zip(&else_flow)
-            .map(|(yes, no)| {
-                if then_terminal {
-                    no.clone()
-                } else if else_terminal {
-                    yes.clone()
-                } else {
-                    yes.intersection(no).cloned().collect()
-                }
-            })
+        let else_term = else_term || els_stmts.as_ref().is_some_and(|body| always_returns(body));
+        let else_facts = fx.narrowed.clone();
+        let then_possible: HashSet<_> = then_facts.union(&then_notes).cloned().collect();
+        let else_possible: HashSet<_> = else_facts
+            .union(&fx.ended_shared_narrowing)
+            .cloned()
             .collect();
-        fx.restore_nonnull_flow(&joined_flow);
-        fx.narrowed = base;
-        // A terminating branch propagates the other side's facts.
-        match &i.alt {
-            Some(_) => {
-                if then_term {
-                    fx.narrowed.extend(
-                        else_extra
-                            .into_iter()
-                            .filter(|key| else_facts.contains(key)),
-                    );
-                }
-                if else_term {
-                    fx.narrowed.extend(
-                        then_extra
-                            .into_iter()
-                            .filter(|key| then_facts.contains(key)),
-                    );
-                }
-            }
-            None => {
-                if then_term {
-                    fx.narrowed.extend(
-                        else_extra
-                            .into_iter()
-                            .filter(|key| else_facts.contains(key)),
-                    );
-                }
-            }
+        if then_term {
+            note_paths.extend(else_possible);
+        } else if else_term {
+            note_paths.extend(then_possible);
+        } else {
+            note_paths.extend(then_possible.intersection(&else_possible).cloned());
         }
-
-        fx.ended_shared_narrowing
-            .retain(|key| note_paths.contains(key) && !fx.narrowed.contains(key));
+        fx.narrowed = if then_term {
+            else_facts
+        } else if else_term {
+            then_facts
+        } else {
+            then_facts.intersection(&else_facts).cloned().collect()
+        };
+        fx.ended_shared_narrowing.extend(then_notes);
+        fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::If {
             cond,
             then: then_stmts,
@@ -834,7 +782,7 @@ impl<'p> Checker<'p> {
         fx.loop_depth -= 1;
         base.retain(|k| fx.narrowed.contains(k));
         fx.narrowed = base;
-        fx.scopes.pop();
+        fx.pop_scope();
 
         fx.finish_narrowing_join(&note_paths);
         let step = step_statements.as_deref().and_then(|statements| {
@@ -912,7 +860,7 @@ impl<'p> Checker<'p> {
             // The names bind inside the loop, which this rejection skips.
             fx.scopes.push(Default::default());
             self.reject_pattern(rejection, fx);
-            fx.scopes.pop();
+            fx.pop_scope();
             return;
         }
         if matches!(self.apparent_type(&subject.ty), Type::Error)
@@ -979,7 +927,7 @@ impl<'p> Checker<'p> {
         fx.loop_depth += 1;
         let (body, _) = self.check_branch(&f.body, fx);
         fx.loop_depth -= 1;
-        fx.scopes.pop();
+        fx.pop_scope();
         fx.narrowed.retain(|key| base.contains(key));
         fx.finish_narrowing_join(&note_paths);
         let body = if prologue.is_empty() {
@@ -1447,16 +1395,7 @@ impl<'p> Checker<'p> {
         let mut fallthrough: Option<HashSet<String>> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let mut cases = Vec::new();
-        let dispatch_flow = fx.nonnull_flow_snapshot();
-        let mut fallthrough_flow: Option<Vec<HashSet<String>>> = None;
         for (case_index, case) in sw.cases.iter().enumerate() {
-            let mut entry_flow = dispatch_flow.clone();
-            if let Some(previous) = &fallthrough_flow {
-                for (entry, previous) in entry_flow.iter_mut().zip(previous) {
-                    entry.retain(|key| previous.contains(key));
-                }
-            }
-            fx.restore_nonnull_flow(&entry_flow);
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.switch_case = Some(case_index);
             }
@@ -1493,7 +1432,6 @@ impl<'p> Checker<'p> {
             self.end_scope_narrowing(&body, fx);
             exit_notes.extend(fx.ended_shared_narrowing.iter().cloned());
             fallthrough = (!terminates).then(|| fx.narrowed.clone());
-            fallthrough_flow = (!terminates).then(|| fx.nonnull_flow_snapshot());
             cases.push(hir::SwitchCase {
                 test,
                 body,
@@ -1512,13 +1450,9 @@ impl<'p> Checker<'p> {
         for edge in exits {
             fx.narrowed.retain(|key| edge.contains(key));
         }
-        fx.restore_nonnull_flow(&dispatch_flow);
-        for case in &cases {
-            self.apply_narrowing_effects(&self.body_narrowing_effects(&case.body), fx);
-        }
         fx.ended_shared_narrowing.extend(exit_notes);
         fx.finish_narrowing_join(&note_paths);
-        fx.scopes.pop();
+        fx.pop_scope();
         fx.switch_depth -= 1;
         if let Some((alias_name, members)) = &alias_switch {
             if !has_default && alias_labels_valid && alias_members_seen.len() != members.len() {

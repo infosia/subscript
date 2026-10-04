@@ -874,7 +874,7 @@ fn tsc_rejects_follow_on_witness_fires() {
         &[],
     ));
     assert!(!tsc_rejects_target_is_follow_on(
-        RejectionClass::Diverges(Divergence::NullableMemberNonNullFlow),
+        RejectionClass::Diverges(Divergence::SharedLocationNarrowing),
         &diagnostics,
         &later,
         &[],

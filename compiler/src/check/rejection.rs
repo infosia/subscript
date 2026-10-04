@@ -154,19 +154,11 @@ rejection_classes! {
     Self::GenericConstraintMismatch => (RuleCode::S100, TscRejects),
     Self::NamespaceMemberMissing => (RuleCode::S016, TscRejects),
     Self::NullableCall => (RuleCode::S100, TscRejects),
-    Self::NullableCallNonNullFlow => (
-        RuleCode::S100,
-        Diverges(Divergence::NullableCallNonNullFlow),
-    ),
     Self::NullableCallShared => (
         RuleCode::S100,
         Diverges(Divergence::SharedLocationNarrowing),
     ),
     Self::NullableMember => (RuleCode::S011, TscRejects),
-    Self::NullableMemberNonNullFlow => (
-        RuleCode::S011,
-        Diverges(Divergence::NullableMemberNonNullFlow),
-    ),
     Self::NullableMemberShared => (
         RuleCode::S011,
         Diverges(Divergence::SharedLocationNarrowing),
@@ -947,11 +939,9 @@ rejection_classes! {
     Self::DistinctNominalClassAssignment => {
         (RuleCode::S005, Diverges(Divergence::NominalClassIdentity))
     }
+    Self::NullableAssignmentShared => (RuleCode::S100, Diverges(Divergence::SharedLocationNarrowing)),
     Self::NullableNominalAssignment => (RuleCode::S005, TscRejects),
-    Self::NullableNominalAssignmentNonNullFlow => (
-        RuleCode::S005,
-        Diverges(Divergence::NullableNominalAssignmentNonNullFlow),
-    ),
+    Self::NullableNominalAssignmentShared => (RuleCode::S005, Diverges(Divergence::SharedLocationNarrowing)),
     Self::DistinctNominalContainerAssignment => (
         RuleCode::S005,
         Diverges(Divergence::DistinctNominalContainerAssignmentForm),

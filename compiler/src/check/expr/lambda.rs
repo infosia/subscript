@@ -168,10 +168,6 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
-        let saved_flow = fx.nonnull_flow_snapshot();
-        for scope in &mut fx.scopes {
-            scope.nonnull_flow.clear();
-        }
         fx.frames.push(Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             is_generator: false,
@@ -303,7 +299,6 @@ impl<'p> Checker<'p> {
         };
         fx.narrowed = saved_narrowed;
         fx.scopes.pop();
-        fx.restore_nonnull_flow(&saved_flow);
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);
