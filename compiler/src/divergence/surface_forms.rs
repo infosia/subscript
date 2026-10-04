@@ -88,8 +88,8 @@ pub(super) const GENERATORRETURNVALUE: DivergenceEntry = DivergenceEntry {
 
 pub(super) const STATEMENTNONBOOLEANCONDITIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const n:i32=3; if(n){} }",
-    subscript: "no equivalent; write an explicit boolean comparison",
-    why: "The language has no implicit conversion in a truth test.",
+    subscript: "export function main(): void { const n:i32=3; if (n !== 0) {} }",
+    why: "The language has no implicit conversion in a truth test. A comparison states which value is false: 0, NaN, the empty string, or null.",
     collision: "C24", // row 1,
 };
 
@@ -292,22 +292,22 @@ pub(super) const DISTINCTNOMINALCONTAINERASSIGNMENTFORM: DivergenceEntry = Diver
 
 pub(super) const LOGICALNOTNONBOOLEANFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const n: i32 = 3; const x = !n; }",
-    subscript: "no equivalent; write an explicit boolean comparison",
-    why: "The language has no implicit conversion in a truth test.",
+    subscript: "export function main(): void { const n: i32 = 3; const x = n === 0; }",
+    why: "The language has no implicit conversion in a truth test. A comparison states which value is false: 0, NaN, the empty string, or null.",
     collision: "C24", // row 1,
 };
 
 pub(super) const LOGICALNONBOOLEANOPERANDFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const x = 1 && 2; }",
-    subscript: "no equivalent; write an explicit boolean comparison",
-    why: "The language has no implicit conversion in a truth test.",
+    subscript: "export function main(): void { const x = 1 !== 0 && 2 !== 0; }",
+    why: "The language has no implicit conversion in a truth test. A comparison states which value is false: 0, NaN, the empty string, or null.",
     collision: "C24", // row 1,
 };
 
 pub(super) const CONDITIONALNONBOOLEANCONDITIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const n: i32 = 3; const x = n ? 1 : 2; }",
-    subscript: "no equivalent; write an explicit boolean comparison",
-    why: "The language has no implicit conversion in a truth test.",
+    subscript: "export function main(): void { const n: i32 = 3; const x = n !== 0 ? 1 : 2; }",
+    why: "The language has no implicit conversion in a truth test. A comparison states which value is false: 0, NaN, the empty string, or null.",
     collision: "C24", // row 1,
 };
 
