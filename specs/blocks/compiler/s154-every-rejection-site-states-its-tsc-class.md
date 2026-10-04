@@ -138,8 +138,8 @@ reason. Each is a candidate to accept, because its lowering looks
 mechanical. The evidence is in `specs/tracking/s154-undecided-sites.md`.
 None is decided.
 
-1. Truth tests on non-`boolean` values (row 1), with ECMAScript
-   ToBoolean per kind. §143.3 item 3 names the same gap.
+1. Truth tests on non-`boolean` values (row 1). Decided 2026-10-04: the
+   form stays rejected; row 1 states the reason.
 2. Inference of a literal-initialized module variable, field, or
    defaulted parameter, and of a block-lambda result (row 4).
 3. Definite assignment for a local with no initializer (row 3), as

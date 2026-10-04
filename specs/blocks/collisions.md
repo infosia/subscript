@@ -669,7 +669,7 @@ it as a candidate to accept.
 
 | # | Form | Rule | Write instead |
 |---|---|---|---|
-| 1 | A truth test (`if`, `while`, `for`, `?:`, `!`, `&&`, `\|\|`) on a value that is not `boolean` | The language has no implicit conversion (C3). | `n !== 0`, `x !== null` |
+| 1 | A truth test (`if`, `while`, `for`, `?:`, `!`, `&&`, `\|\|`) on a value that is not `boolean` | The language has no implicit conversion (C3). A truth test hides which value is false: `0`, `NaN`, `""`, or `null`. A comparison states it. A nullable reference is not an exception: `x !== null` is the one null test (C7). | `n !== 0`, `s !== ""`, `x !== null` |
 | 2 | `var` | `var` binds its name for the whole function, with the value `undefined` before its declaration. The language has no `undefined` (C7), and C14 rejects where scope diverges. | `let`, `const` |
 | 3 | A module variable or a local with no initializer | The binding holds `undefined` until its first assignment (C7). | an initializer |
 | 4 | A module variable, a field, a static field, a parameter, a function result, or a block-lambda result with no type annotation | No inference is decided at these positions. The checker infers locals and expression-lambda results only. | an annotation |

@@ -136,4 +136,5 @@ These items are MINOR under CLAUDE.md invariant 6. They do not block
 3. A condition must be `boolean`: `const n: i32 = 3; if (n) {}` gives
    S100 "condition must be boolean", and `tsc` accepts it. No collision
    record states this rule. The matrix cites §68, which states an IR
-   fact, not the source rule.
+   fact, not the source rule. Closed: `collisions.md` C24 row 1 states the rule
+   and its reason.
