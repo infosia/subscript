@@ -201,3 +201,4 @@ Every section, with its status:
 | §157 | A lambda captures `this` in a reference-class method | active | [`s157-a-lambda-captures-this-in-a-reference-class-method.md`](compiler/s157-a-lambda-captures-this-in-a-reference-class-method.md) |
 | §158 | A local is assigned before it is read | active | [`s158-a-local-is-assigned-before-it-is-read.md`](compiler/s158-a-local-is-assigned-before-it-is-read.md) |
 | §159 | An assignment narrows a nullable location | active | [`s159-an-assignment-narrows-a-nullable-location.md`](compiler/s159-an-assignment-narrows-a-nullable-location.md) |
+| §160 | Checker cost does not grow with inference | active | [`s160-checker-cost-does-not-grow-with-inference.md`](compiler/s160-checker-cost-does-not-grow-with-inference.md) |

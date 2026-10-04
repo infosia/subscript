@@ -228,7 +228,7 @@ gives TS2554.
 
 Check time is 30–50 % above `5fbada8c` on generated programs (4,500
 module declarations: 11.05 s against 7.42 s, debug build). The scaling is
-quadratic at the pin; §156 adds a constant factor.
+quadratic at the pin; §156 adds a constant factor. §160 measures the cost again and closes it.
 
 Present before §156 in the annotated form; the inferred forms now reach
 them. Each is realistic.
