@@ -146,6 +146,9 @@ impl<'p> Checker<'p> {
                 Some(self.err_expr(prop_pos))
             }
             Some(ScopeItem::Class(id)) => {
+                if self.reject_member_access(id, prop, true, for_write, fx, prop_pos.clone()) {
+                    return Some(self.err_expr(prop_pos));
+                }
                 if prop == "prototype" {
                     self.reject_subset(
                         RejectionSite::NamespaceClassPrototypeRead,

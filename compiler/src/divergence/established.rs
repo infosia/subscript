@@ -437,7 +437,7 @@ pub(super) const ASYNCRETURNANNOTATIONMISSING: DivergenceEntry = DivergenceEntry
             };
 
 pub(super) const OPTIONALPARAMETER: DivergenceEntry = DivergenceEntry {
-    ts: "function f(x?:i32):void {}\nexport function main(): void {  }",
+    ts: "function f(x?:i32):void {}\nfunction apply(cb:(x?:i32)=>void):void { cb(); }\nexport function main(): void {  }",
     subscript: "no equivalent; use a default parameter or an explicitly nullable parameter",
     why: "An optional parameter implies undefined, which has no language value.",
     collision: "C7",

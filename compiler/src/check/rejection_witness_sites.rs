@@ -3,6 +3,12 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::RestrictedMemberOutsideClass,
+    RejectionSite::RestrictedConstructorOutsideClass,
+    RejectionSite::ValueTypeRestrictedConstructor,
+    RejectionSite::AbstractClassConstructed,
+    RejectionSite::ReadonlyFieldWriteOutsideConstructor,
+    RejectionSite::OptionalFunctionTypeParameter,
     RejectionSite::StatementAlwaysTruthyCondition,
     RejectionSite::ConditionalAlwaysTruthyCondition,
     RejectionSite::MethodValueTruthTest,

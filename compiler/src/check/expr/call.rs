@@ -690,6 +690,9 @@ impl<'p> Checker<'p> {
         let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos) else {
             return None;
         };
+        if self.reject_member_access(class, name, true, false, fx, member_pos.clone()) {
+            return Some(self.err_expr(pos));
+        }
         if self.class_sigs[class.0].has_static_accessor(name) {
             return None;
         }
@@ -911,6 +914,9 @@ impl<'p> Checker<'p> {
         // §82.4 rule 3: the call names the instance, not the template.
         if let Type::Class(class) = &self.apparent_type(&recv.ty) {
             let class = *class;
+            if self.reject_member_access(class, &name, false, false, fx, prop_pos.clone()) {
+                return self.err_expr(pos);
+            }
             if self.class_sigs[class.0].has_generic_method(&name, false) {
                 let Some(instance) =
                     self.instantiate_generic_method_call(class, &name, c, false, prop_pos.clone())
@@ -1227,9 +1233,11 @@ impl<'p> Checker<'p> {
             },
             Type::Class(id) => {
                 if self.classes[id.0].fields.iter().any(|field| {
-                    field.name == name && self.apparent_type(&field.ty).function_type().is_some()
+                    field.name == name
+                        && (self.apparent_type(&field.ty) == Type::Error
+                            || self.apparent_type(&field.ty).function_type().is_some())
                 }) {
-                    let mut field = self.member_on(recv, &name, prop_pos, false);
+                    let mut field = self.member_on(recv, &name, prop_pos, None, fx);
                     self.apply_narrowing(&mut field, fx);
                     return self.check_indirect_call(field, c, fx, pos);
                 }
@@ -1716,6 +1724,9 @@ impl<'p> Checker<'p> {
         let Some(class_id) = class_id else {
             return self.err_expr(pos);
         };
+        if self.reject_construction_modifier(class_id, fx, pos.clone()) {
+            return self.err_expr(pos);
+        }
         if self.handle_classes.contains(&class_id) {
             self.reject_subset(
                 RejectionSite::OpaqueHandleConstructed,

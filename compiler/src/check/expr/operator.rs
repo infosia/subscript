@@ -705,7 +705,8 @@ impl<'p> Checker<'p> {
                 receiver,
                 property.sym.as_ref(),
                 self.pos(property.span),
-                false,
+                None,
+                fx,
             ),
             ast::MemberProp::Computed(property) => {
                 let index_context = match &self.apparent_type(&receiver.ty) {

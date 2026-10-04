@@ -73,7 +73,8 @@ impl<'p> Checker<'p> {
                             object,
                             name.sym.as_ref(),
                             self.pos(name.span),
-                            false,
+                            None,
+                            fx,
                         );
                     }
                     let Type::Class(class) = self.apparent_type(&initializer.class_type) else {
@@ -143,7 +144,7 @@ impl<'p> Checker<'p> {
                     return handled;
                 }
                 let obj = self.check_receiver(&m.obj, fx);
-                let mut expr = self.member_on_context(obj, &name, prop_pos, false, truth_test);
+                let mut expr = self.member_on_context(obj, &name, prop_pos, None, truth_test, fx);
                 self.apply_narrowing(&mut expr, fx);
                 let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
                 if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
@@ -265,9 +266,11 @@ impl<'p> Checker<'p> {
         obj: hir::Expr,
         name: &str,
         prop_pos: Pos,
-        for_write: bool,
+        // None is a read. Some records whether a write uses direct `this`.
+        write: Option<bool>,
+        fx: &FnCtx,
     ) -> hir::Expr {
-        self.member_on_context(obj, name, prop_pos, for_write, false)
+        self.member_on_context(obj, name, prop_pos, write, false, fx)
     }
 
     fn member_on_context(
@@ -275,9 +278,11 @@ impl<'p> Checker<'p> {
         obj: hir::Expr,
         name: &str,
         prop_pos: Pos,
-        for_write: bool,
+        write: Option<bool>,
         truth_test: bool,
+        fx: &FnCtx,
     ) -> hir::Expr {
+        let for_write = write.is_some();
         // §143 rule 1a: a member read on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).
         if name != "prototype" && self.is_unconstrained_type_parameter(&obj.ty) {
@@ -303,7 +308,7 @@ impl<'p> Checker<'p> {
             for member in members.iter() {
                 let mut value = obj.clone();
                 value.ty = member.clone();
-                let checked = self.member_on(value, name, prop_pos.clone(), for_write);
+                let checked = self.member_on(value, name, prop_pos.clone(), write, fx);
                 if let Some(result) = &mut result {
                     result.ty = self.generic_union(&result.ty, &checked.ty);
                 } else {
@@ -316,6 +321,9 @@ impl<'p> Checker<'p> {
         match self.apparent_type(&obj.ty.clone()) {
             Type::Error => self.err_expr(prop_pos),
             Type::Class(id) => {
+                if self.reject_instance_modifier(id, name, write, fx, prop_pos.clone()) {
+                    return self.err_expr(prop_pos);
+                }
                 let field = self.classes[id.0]
                     .fields
                     .iter()

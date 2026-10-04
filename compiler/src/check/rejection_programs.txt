@@ -8457,3 +8457,367 @@ export {};
 function f(a:string,b:string):void{a & b;}
 END FILE
 END PROGRAM
+PROGRAM	s155-private-field	TS2341		0
+FILE	E	target/s155/s155-private-field/main.ts
+class A { private x: i32 = 1; } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-method	TS2341		0
+FILE	E	target/s155/s155-private-method/main.ts
+class A { private f(): i32 { return 1; } } export function main(): void { new A().f(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-static-field	TS2341		0
+FILE	E	target/s155/s155-private-static-field/main.ts
+class A { private static n: i32 = 1; } export function main(): void { A.n = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-static-method	TS2341		0
+FILE	E	target/s155/s155-private-static-method/main.ts
+class A { private static f(): i32 { return 1; } } export function main(): void { A.f(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-getter	TS2341		0
+FILE	E	target/s155/s155-private-getter/main.ts
+class A { private get x(): i32 { return 1; } } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-setter	TS2341		0
+FILE	E	target/s155/s155-private-setter/main.ts
+class A { private get x(): i32 { return 1; } private set x(v: i32) {} } export function main(): void { new A().x = 1; }
+END FILE
+END PROGRAM
+PROGRAM	s155-private-constructor	TS2673		0
+FILE	E	target/s155/s155-private-constructor/main.ts
+class A { private constructor() {} } export function main(): void { new A(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-field	TS2445		0
+FILE	E	target/s155/s155-protected-field/main.ts
+class A { protected x: i32 = 1; } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-method	TS2445		0
+FILE	E	target/s155/s155-protected-method/main.ts
+class A { protected f(): i32 { return 1; } } export function main(): void { new A().f(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-static-field	TS2445		0
+FILE	E	target/s155/s155-protected-static-field/main.ts
+class A { protected static n: i32 = 1; } export function main(): void { A.n = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-static-method	TS2445		0
+FILE	E	target/s155/s155-protected-static-method/main.ts
+class A { protected static f(): i32 { return 1; } } export function main(): void { A.f(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-getter	TS2445		0
+FILE	E	target/s155/s155-protected-getter/main.ts
+class A { protected get x(): i32 { return 1; } } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-setter	TS2445		0
+FILE	E	target/s155/s155-protected-setter/main.ts
+class A { protected get x(): i32 { return 1; } protected set x(v: i32) {} } export function main(): void { new A().x = 1; }
+END FILE
+END PROGRAM
+PROGRAM	s155-protected-constructor	TS2674		0
+FILE	E	target/s155/s155-protected-constructor/main.ts
+class A { protected constructor() {} } export function main(): void { new A(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-abstract-outside	TS2511		0
+FILE	E	target/s155/s155-abstract-outside/main.ts
+abstract class A { x: i32 = 1; } export function main(): void { new A(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-abstract-inside	TS2511		0
+FILE	E	target/s155/s155-abstract-inside/main.ts
+abstract class A { static make(): void { new A(); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-assign	TS2540		0
+FILE	E	target/s155/s155-readonly-assign/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); a.x = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-compound	TS2540		0
+FILE	E	target/s155/s155-readonly-compound/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); a.x += 1; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-increment	TS2540		0
+FILE	E	target/s155/s155-readonly-increment/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); a.x++; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-decrement	TS2540		0
+FILE	E	target/s155/s155-readonly-decrement/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); --a.x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-method	TS2540		0
+FILE	E	target/s155/s155-readonly-method/main.ts
+class A { readonly x: i32 = 1; method(): void { this.x = 3; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-constructor-arrow	TS2540		0
+FILE	E	target/s155/s155-readonly-constructor-arrow/main.ts
+class A { readonly x: i32 = 1; constructor() { const f: () => void = (): void => { this.x = 3; }; f(); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-constructor-other	TS2540		0
+FILE	E	target/s155/s155-readonly-constructor-other/main.ts
+class A { readonly x: i32 = 1; constructor(other: A) { other.x = 3; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-static-method	TS2540		0
+FILE	E	target/s155/s155-readonly-static-method/main.ts
+class A { readonly x: i32 = 1; static write(other: A): void { other.x = 3; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-one			0
+FILE	E	target/s155/s155-optional-one/main.ts
+function apply(f: (a: i32, b?: i32) => void): void { f(1); } export function main(): void { }
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-two			0
+FILE	E	target/s155/s155-optional-two/main.ts
+function apply(f: (a: i32, b?: i32) => void): void { f(1, 2); } export function main(): void { }
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-argument	TS2345		0
+FILE	E	target/s155/s155-optional-argument/main.ts
+function apply(f: (a: i32, b?: i32) => void): void {  } export function main(): void { apply((a: i32, b: i32): void => {}); }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-constructor-function	TS2540		0
+FILE	E	target/s155/s155-readonly-constructor-function/main.ts
+class A { readonly x: i32 = 1; constructor(other: A) { function write(): void { other.x = 3; } write(); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-accepted-controls			0
+FILE	E	target/s155/controls/main.ts
+// corpus: accept/a328-member-modifiers
+// purpose: Runs each accepted member modifier form.
+// exercises: private, protected, readonly, constructor, arrow
+// questions: compiler.md §155
+// js-comparable: yes
+
+class P {
+  private x: i32 = 2;
+  protected b: i32 = 3;
+  private static n: i32 = 4;
+  readonly value: i32 = 9;
+  readonly assigned: i32;
+  private constructor() {
+    this.assigned = 1;
+    this.assigned += 1;
+    this.assigned++;
+    this.value = 1;
+    this.value += 1;
+    this.value++;
+  }
+  private f(): i32 { return this.x; }
+  protected g(): i32 { return this.b; }
+  read(other: P): i32 { return other.x + other.b + other.f() + other.g(); }
+  arrow(other: P): i32 {
+    const receiver: P = other;
+    const read: () => i32 = (): i32 => receiver.x + receiver.b + receiver.f() + receiver.g();
+    return read();
+  }
+  static create(): P { return new P(); }
+  static read(other: P): i32 { P.n += 1; return other.x + other.b + other.f() + other.g() + P.n; }
+}
+class Q {
+  protected constructor() {}
+  static create(): Q { return new Q(); }
+  value(): i32 { return 7; }
+}
+abstract class S {
+  static value: i32 = 8;
+}
+function useAbstract(value: S): void {}
+export function main(): void {
+  const p: P = P.create();
+  const q: P = P.create();
+  print(`${p.read(q)}`);
+  print(`${p.arrow(q)}`);
+  print(`${P.read(q)}`);
+  print(`${p.assigned},${p.value}`);
+  print(`${Q.create().value()}`);
+  print(`${S.value}`);
+}
+END FILE
+END PROGRAM
+PROGRAM	s155-instance-private-setter-write-read-control			0
+FILE	E	target/s155/s155-instance-private-setter-write-read-control/main.ts
+class A { public get x(): i32 { return 1; } private set x(value: i32) {} } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-static-private-setter-write-read-control			0
+FILE	E	target/s155/s155-static-private-setter-write-read-control/main.ts
+class A { public static get x(): i32 { return 1; } private static set x(value: i32) {} } export function main(): void { A.x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-instance-protected-setter-write-read-control			0
+FILE	E	target/s155/s155-instance-protected-setter-write-read-control/main.ts
+class A { public get x(): i32 { return 1; } protected set x(value: i32) {} } export function main(): void { new A().x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-static-protected-setter-write-read-control			0
+FILE	E	target/s155/s155-static-protected-setter-write-read-control/main.ts
+class A { public static get x(): i32 { return 1; } protected static set x(value: i32) {} } export function main(): void { A.x; }
+END FILE
+END PROGRAM
+PROGRAM	s155-instance-private-setter-write	TS2341		0
+FILE	E	target/s155/s155-instance-private-setter-write/main.ts
+class A { public get x(): i32 { return 1; } private set x(value: i32) {} } export function main(): void { new A().x = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-static-private-setter-write	TS2341		0
+FILE	E	target/s155/s155-static-private-setter-write/main.ts
+class A { public static get x(): i32 { return 1; } private static set x(value: i32) {} } export function main(): void { A.x = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-instance-protected-setter-write	TS2445		0
+FILE	E	target/s155/s155-instance-protected-setter-write/main.ts
+class A { public get x(): i32 { return 1; } protected set x(value: i32) {} } export function main(): void { new A().x = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-static-protected-setter-write	TS2445		0
+FILE	E	target/s155/s155-static-protected-setter-write/main.ts
+class A { public static get x(): i32 { return 1; } protected static set x(value: i32) {} } export function main(): void { A.x = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s155-generic-lexical-control			0
+FILE	E	target/s155/generic-lexical-control/main.ts
+class A<T> { private x: i32 = 1; read(other: A<string>): i32 { return other.x; } } export function main(): void { new A<i32>().read(new A<string>()); }
+END FILE
+END PROGRAM
+PROGRAM	s155-nested-function-lexical-control			0
+FILE	E	target/s155/nested-function-lexical-control/main.ts
+class A { private x: i32 = 1; protected y: i32 = 2; read(other: A): void { function read(): void { print(`${other.x + other.y}`); } read(); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-constructor-default-control			0
+FILE	E	target/s155/constructor-default-control/main.ts
+class A { readonly x: i32 = 1; constructor(value: i32 = this.x = 2) {} } export function main(): void { new A(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-private-bare	TS1238,TS1270		0
+FILE	E	target/s155/s155-value-private-bare/main.ts
+@ValueType class V { x: i32 = 0; private constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-private-bare-control			0
+FILE	E	target/s155/s155-value-private-bare-control/main.ts
+@ValueType class V { x: i32 = 0; public constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-private-options	TS1238,TS1270		0
+FILE	E	target/s155/s155-value-private-options/main.ts
+@ValueType({ align: 8 }) class V { x: i32 = 0; private constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-private-options-control			0
+FILE	E	target/s155/s155-value-private-options-control/main.ts
+@ValueType({ align: 8 }) class V { x: i32 = 0; public constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-protected-bare	TS1238,TS1270		0
+FILE	E	target/s155/s155-value-protected-bare/main.ts
+@ValueType class V { x: i32 = 0; protected constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-protected-bare-control			0
+FILE	E	target/s155/s155-value-protected-bare-control/main.ts
+@ValueType class V { x: i32 = 0; public constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-protected-options	TS1238,TS1270		0
+FILE	E	target/s155/s155-value-protected-options/main.ts
+@ValueType({ align: 8 }) class V { x: i32 = 0; protected constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-value-protected-options-control			0
+FILE	E	target/s155/s155-value-protected-options-control/main.ts
+@ValueType({ align: 8 }) class V { x: i32 = 0; public constructor() {} static make(): V { return new V(); } } export function main(): void { V.make(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-paren-this	TS2540		0
+FILE	E	target/s155/s155-readonly-paren-this/main.ts
+class A { readonly x: i32 = 1; constructor() { (this).x = 2; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-paren-this-control			0
+FILE	E	target/s155/s155-readonly-paren-this-control/main.ts
+class A { x: i32 = 1; constructor() { (this).x = 2; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-static-this-readonly	TS2339		0
+FILE	E	target/s155/s155-static-this-readonly/main.ts
+class A { readonly x: i32 = 1; static write(): void { this.x = 2; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-pattern-array	TS2540		0
+FILE	E	target/s155/s155-readonly-pattern-array/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; [a.x, b] = [3, 4]; }
+END FILE
+END PROGRAM
+PROGRAM	s155-mutable-pattern-array			0
+FILE	E	target/s155/s155-mutable-pattern-array/main.ts
+class A { x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; [a.x, b] = [3, 4]; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-pattern-object	TS2540		0
+FILE	E	target/s155/s155-readonly-pattern-object/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; ({ x: a.x } = { x: 3 }); }
+END FILE
+END PROGRAM
+PROGRAM	s155-mutable-pattern-object			0
+FILE	E	target/s155/s155-mutable-pattern-object/main.ts
+class A { x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; ({ x: a.x } = { x: 3 }); }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-pattern-default	TS2540		0
+FILE	E	target/s155/s155-readonly-pattern-default/main.ts
+class A { readonly x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; [a.x = 2] = [3]; }
+END FILE
+END PROGRAM
+PROGRAM	s155-mutable-pattern-default			0
+FILE	E	target/s155/s155-mutable-pattern-default/main.ts
+class A { x: i32 = 1; } export function main(): void { const a: A = new A(); let b: i32 = 0; [a.x = 2] = [3]; }
+END FILE
+END PROGRAM
+PROGRAM	s155-readonly-nullish	TS2540		0
+FILE	E	target/s155/s155-readonly-nullish/main.ts
+class N {} class A { readonly s: N | null = null; } export function main(): void { const a: A = new A(); a.s ??= new N(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-mutable-nullish			0
+FILE	E	target/s155/s155-mutable-nullish/main.ts
+class N {} class A { s: N | null = null; } export function main(): void { const a: A = new A(); a.s ??= new N(); }
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-field			0
+FILE	E	target/s155/s155-optional-field/main.ts
+class A { cb: (a: i32, b?: i32) => void; constructor() { this.cb = (a: i32): void => {}; } run(): void { this.cb(1); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-field-control			0
+FILE	E	target/s155/s155-optional-field-control/main.ts
+class A { cb: (a: i32, b: i32) => void; constructor() { this.cb = (a: i32, b: i32): void => {}; } run(): void { this.cb(1, 2); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-initialized-field			0
+FILE	E	target/s155/s155-optional-initialized-field/main.ts
+class A { g: (a: i32, b?: i32) => void = (a: i32): void => {}; } export function main(): void { const a: A = new A(); a.g(1); }
+END FILE
+END PROGRAM
+PROGRAM	s155-optional-initialized-field-control			0
+FILE	E	target/s155/s155-optional-initialized-field-control/main.ts
+class A { g: (a: i32, b: i32) => void = (a: i32, b: i32): void => {}; } export function main(): void { const a: A = new A(); a.g(1, 2); }
+END FILE
+END PROGRAM

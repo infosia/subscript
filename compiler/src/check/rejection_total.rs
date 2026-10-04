@@ -318,7 +318,7 @@ fn class_controls() -> [Witness<'static>; 3] {
 }
 
 /// One tsc process measures all witnesses and every carried TypeScript fragment.
-/// Warm cargo test reports `finished in 1.54s`: tsc 0.573s and checker 0.459s.
+/// Warm cargo test reports `finished in 1.53s`: tsc 0.588s and checker 0.501s.
 /// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {

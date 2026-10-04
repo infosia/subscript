@@ -12,6 +12,14 @@ impl RejectionSite {
     pub(crate) fn class(self) -> (RuleCode, RejectionClass) {
         use RejectionClass::{Diverges, TscRejects};
         match self {
+            Self::RestrictedMemberOutsideClass
+            | Self::RestrictedConstructorOutsideClass
+            | Self::ValueTypeRestrictedConstructor
+            | Self::AbstractClassConstructed
+            | Self::ReadonlyFieldWriteOutsideConstructor => (RuleCode::S100, TscRejects),
+            Self::OptionalFunctionTypeParameter => {
+                (RuleCode::S012, Diverges(Divergence::OptionalParameter))
+            }
             Self::ErasedAssignableEquality => (
                 RuleCode::S100,
                 Diverges(Divergence::ErasedAssignableEquality),

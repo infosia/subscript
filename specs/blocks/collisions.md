@@ -203,7 +203,7 @@ operand of `??`, or a non-nullable tested receiver, fails with S100
 
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
-an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries).
+an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries), `r349` (an optional parameter in a function type, §155).
 
 ### C8. `async` / generators (Q11) — coroutines only
 

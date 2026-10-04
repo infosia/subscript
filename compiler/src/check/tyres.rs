@@ -769,6 +769,20 @@ impl<'p> Checker<'p> {
         };
         let mut params = Vec::new();
         for p in &fn_ty.params {
+            let optional = match p {
+                ast::TsFnParam::Ident(binding) => binding.id.optional,
+                ast::TsFnParam::Array(pattern) => pattern.optional,
+                ast::TsFnParam::Object(pattern) => pattern.optional,
+                ast::TsFnParam::Rest(_) => false,
+            };
+            if optional {
+                self.reject_subset(
+                    RejectionSite::OptionalFunctionTypeParameter,
+                    "optional parameters in function types are not supported (C7)",
+                    self.pos(p.span()),
+                );
+                return Type::Error;
+            }
             match p {
                 ast::TsFnParam::Ident(binding) => match &binding.type_ann {
                     Some(ann) => params.push(self.resolve_type(&ann.type_ann)),

@@ -181,7 +181,7 @@ impl<'p> Checker<'p> {
                     self.check_index(source.clone(), index, pos.clone())
                 }
                 pattern::BindingSource::Field(field) => {
-                    self.member_on(source.clone(), field, pos.clone(), false)
+                    self.member_on(source.clone(), field, pos.clone(), None, fx)
                 }
             };
             let name = binding.binding.id.sym.to_string();

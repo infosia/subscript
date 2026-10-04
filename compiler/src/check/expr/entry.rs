@@ -640,6 +640,9 @@ impl<'p> Checker<'p> {
                     }
                     return self.err_expr(pos);
                 };
+                if self.reject_member_access(class, &name, false, false, fx, method_pos.clone()) {
+                    return self.err_expr(pos);
+                }
                 let generic = self.class_sigs[class.0].has_generic_method(&name, false);
                 let name = if generic {
                     let Some(instance) = self.instantiate_generic_method_call(

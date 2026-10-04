@@ -1361,3 +1361,51 @@ Api(FormSpliceStartDeleteCountItems, VariadicArguments)	ArraySpliceArgumentCount
 Api(FormUnshiftValueValues, VariadicArguments)	ArrayUnshiftArgumentCount	S014	`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
 Api(MapScalarGet, MapScalarGet)	MapGetArgumentCount	S014	`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)
 Api(FormMaxMinHypotWithMoreThanTwoArguments, MathSubset)	MathMethodArgumentCount	S014	`max` is rejected: Variadic parameters are outside the language. (Q19)
+RestrictedMemberOutsideClass	s155-private-field	S100	member `x` is private in class `A`
+RestrictedMemberOutsideClass	s155-private-method	S100	member `f` is private in class `A`
+RestrictedMemberOutsideClass	s155-private-static-field	S100	member `n` is private in class `A`
+RestrictedMemberOutsideClass	s155-private-static-method	S100	member `f` is private in class `A`
+RestrictedMemberOutsideClass	s155-private-getter	S100	member `x` is private in class `A`
+RestrictedMemberOutsideClass	s155-private-setter	S100	member `x` is private in class `A`
+RestrictedConstructorOutsideClass	s155-private-constructor	S100	constructor is private in class `A`
+RestrictedMemberOutsideClass	s155-protected-field	S100	member `x` is protected in class `A`
+RestrictedMemberOutsideClass	s155-protected-method	S100	member `f` is protected in class `A`
+RestrictedMemberOutsideClass	s155-protected-static-field	S100	member `n` is protected in class `A`
+RestrictedMemberOutsideClass	s155-protected-static-method	S100	member `f` is protected in class `A`
+RestrictedMemberOutsideClass	s155-protected-getter	S100	member `x` is protected in class `A`
+RestrictedMemberOutsideClass	s155-protected-setter	S100	member `x` is protected in class `A`
+RestrictedConstructorOutsideClass	s155-protected-constructor	S100	constructor is protected in class `A`
+AbstractClassConstructed	s155-abstract-outside	S100	class `A` is abstract; a `new` of it is rejected
+AbstractClassConstructed	s155-abstract-inside	S100	class `A` is abstract; a `new` of it is rejected
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-assign	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-compound	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-increment	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-decrement	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-method	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-constructor-arrow	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-constructor-other	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-static-method	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+OptionalFunctionTypeParameter	s155-optional-one	S012	optional parameters in function types are not supported (C7)
+OptionalFunctionTypeParameter	s155-optional-two	S012	optional parameters in function types are not supported (C7)
+OptionalFunctionTypeParameter	s155-optional-argument	S012	optional parameters in function types are not supported (C7)
+LocalFunctionDeclaration	s155-readonly-constructor-function	S100	nested declarations are not in the decided surface
+RestrictedMemberOutsideClass	s155-instance-private-setter-write	S100	member `x` is private in class `A`
+RestrictedMemberOutsideClass	s155-static-private-setter-write	S100	member `x` is private in class `A`
+RestrictedMemberOutsideClass	s155-instance-protected-setter-write	S100	member `x` is protected in class `A`
+RestrictedMemberOutsideClass	s155-static-protected-setter-write	S100	member `x` is protected in class `A`
+ValueTypeRestrictedConstructor	s155-value-private-bare	S100	`@ValueType` rejects a private constructor in class `V`; the constructor must be public
+ValueTypeRestrictedConstructor	s155-value-private-options	S100	`@ValueType` rejects a private constructor in class `V`; the constructor must be public
+ValueTypeRestrictedConstructor	s155-value-protected-bare	S100	`@ValueType` rejects a protected constructor in class `V`; the constructor must be public
+ValueTypeRestrictedConstructor	s155-value-protected-options	S100	`@ValueType` rejects a protected constructor in class `V`; the constructor must be public
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-paren-this	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+InstanceMemberInStaticMethod	s155-static-this-readonly	S100	the member is not declared on the static class receiver
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-pattern-array	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+DestructuringAssignment	s155-mutable-pattern-array	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-pattern-object	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+DestructuringAssignment	s155-mutable-pattern-object	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-pattern-default	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
+DestructuringAssignment	s155-mutable-pattern-default	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
+ReadonlyFieldWriteOutsideConstructor	s155-readonly-nullish	S100	field `s` is readonly in class `A`; writes require `this` directly in its constructor body
+UnsignedShiftAssignment	s155-mutable-nullish	S100	assignment operator outside the decided surface
+OptionalFunctionTypeParameter	s155-optional-field	S012	optional parameters in function types are not supported (C7)
+OptionalFunctionTypeParameter	s155-optional-initialized-field	S012	optional parameters in function types are not supported (C7)

@@ -463,6 +463,8 @@ impl<'p> Checker<'p> {
     /// Resolves a class's fields and callable signatures (pass B), and
     /// enforces C2 (no inheritance for value classes; field whitelist).
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
+        self.class_sigs[id.0].modifiers =
+            super::member_modifiers::ClassModifiers::from_class(class);
         if declared {
             self.declared_classes.insert(id);
         }

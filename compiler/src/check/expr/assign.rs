@@ -30,6 +30,9 @@ impl<'p> Checker<'p> {
         } else if let Some((op, _)) = operation {
             Some(op)
         } else {
+            if self.reject_readonly_assignment_target(&a.left, fx) {
+                return self.err_expr(pos);
+            }
             if a.op == A::NullishAssign {
                 self.reject_subset(
                     RejectionSite::UnsignedShiftAssignment,
@@ -48,6 +51,9 @@ impl<'p> Checker<'p> {
         // §107.3: a pattern binds new names. A pattern that writes
         // existing targets carries its own reason.
         if let ast::AssignTarget::Pat(target) = &a.left {
+            if self.reject_readonly_assignment_target(&a.left, fx) {
+                return self.err_expr(pos);
+            }
             self.reject_subset(RejectionSite::DestructuringAssignment, "a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names", self.pos(target.span()));
             return self.err_expr(pos);
         }
@@ -487,6 +493,105 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn check_write_receiver(&mut self, member: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
+        // Resolve a readonly target through the enclosing method receiver.
+        // The modifier check retains the arrow frame and rejects the write.
+        let enclosing_this = if matches!(super::unparen_expr(&member.obj), ast::Expr::This(_))
+            && fx
+                .frames
+                .last()
+                .is_some_and(|frame| frame.is_lambda && frame.this_ty.is_none())
+        {
+            fx.frames.iter().rev().find_map(|frame| frame.this_ty.clone()).filter(|ty| {
+                matches!((self.apparent_type(ty), &member.prop), (Type::Class(class), ast::MemberProp::Ident(name))
+                    if self.is_readonly_field(class, name.sym.as_ref()))
+            })
+        } else {
+            None
+        };
+        if let Some(ty) = enclosing_this {
+            if let Some(frame) = fx.frames.last_mut() {
+                frame.this_ty = Some(ty);
+            }
+            let receiver = self.check_receiver(&member.obj, fx);
+            if let Some(frame) = fx.frames.last_mut() {
+                frame.this_ty = None;
+            }
+            receiver
+        } else {
+            self.check_receiver(&member.obj, fx)
+        }
+    }
+
+    fn reject_readonly_assignment_target(
+        &mut self,
+        target: &ast::AssignTarget,
+        fx: &mut FnCtx,
+    ) -> bool {
+        fn collect<'a>(pattern: &'a ast::Pat, members: &mut Vec<&'a ast::MemberExpr>) {
+            match pattern {
+                ast::Pat::Expr(expression) => {
+                    if let ast::Expr::Member(member) = super::unparen_expr(expression) {
+                        members.push(member);
+                    }
+                }
+                ast::Pat::Array(array) => {
+                    for element in array.elems.iter().flatten() {
+                        collect(element, members);
+                    }
+                }
+                ast::Pat::Object(object) => {
+                    for property in &object.props {
+                        match property {
+                            ast::ObjectPatProp::KeyValue(property) => {
+                                collect(&property.value, members)
+                            }
+                            ast::ObjectPatProp::Rest(rest) => collect(&rest.arg, members),
+                            ast::ObjectPatProp::Assign(_) => {}
+                        }
+                    }
+                }
+                ast::Pat::Assign(assignment) => collect(&assignment.left, members),
+                ast::Pat::Rest(rest) => collect(&rest.arg, members),
+                ast::Pat::Ident(_) | ast::Pat::Invalid(_) => {}
+            }
+        }
+        let pattern;
+        let mut members = Vec::new();
+        match target {
+            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
+                members.push(member)
+            }
+            ast::AssignTarget::Pat(target) => {
+                pattern = match target {
+                    ast::AssignTargetPat::Array(array) => ast::Pat::Array(array.clone()),
+                    ast::AssignTargetPat::Object(object) => ast::Pat::Object(object.clone()),
+                    ast::AssignTargetPat::Invalid(_) => return false,
+                };
+                collect(&pattern, &mut members);
+            }
+            _ => return false,
+        }
+        for member in members {
+            let ast::MemberProp::Ident(name) = &member.prop else {
+                continue;
+            };
+            let receiver = self.check_write_receiver(member, fx);
+            if let Type::Class(class) = self.apparent_type(&receiver.ty) {
+                if self.reject_readonly_field_write(
+                    class,
+                    name.sym.as_ref(),
+                    matches!(&*member.obj, ast::Expr::This(_)),
+                    fx,
+                    self.pos(name.span),
+                ) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn check_member_place(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> Place {
         let pos = self.pos(m.span);
         if self.reject_static_this_member(m, fx) {
@@ -494,7 +599,7 @@ impl<'p> Checker<'p> {
         }
         match &m.prop {
             ast::MemberProp::Computed(c) => {
-                let obj = self.check_receiver(&m.obj, fx);
+                let obj = self.check_write_receiver(m, fx);
                 let index_context = match &self.apparent_type(&obj.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
@@ -535,16 +640,26 @@ impl<'p> Checker<'p> {
                 {
                     return place;
                 }
-                let obj = self.check_receiver(&m.obj, fx);
+                let obj = self.check_write_receiver(m, fx);
                 if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if self.classes[id.0]
                         .fields
                         .iter()
                         .any(|field| field.name == name)
                     {
-                        return Place::Field(self.member_on(obj, &name, prop_pos, true));
+                        return Place::Field(self.member_on(
+                            obj,
+                            &name,
+                            prop_pos,
+                            Some(matches!(&*m.obj, ast::Expr::This(_))),
+                            fx,
+                        ));
                     }
                     if self.class_sigs[id.0].has_accessor(&name) {
+                        if self.reject_member_access(*id, &name, false, true, fx, prop_pos.clone())
+                        {
+                            return Place::Field(self.err_expr(prop_pos));
+                        }
                         let Some(signature) = self.class_sigs[id.0].methods.get(&name) else {
                             self.reject_subset(
                                 RejectionSite::WriteSetterOnlyAccessor,
@@ -570,7 +685,13 @@ impl<'p> Checker<'p> {
                         };
                     }
                 }
-                Place::Field(self.member_on(obj, &name, prop_pos, true))
+                Place::Field(self.member_on(
+                    obj,
+                    &name,
+                    prop_pos,
+                    Some(matches!(&*m.obj, ast::Expr::This(_))),
+                    fx,
+                ))
             }
             ast::MemberProp::PrivateName(_) => {
                 self.reject_subset(
@@ -603,6 +724,9 @@ impl<'p> Checker<'p> {
                 .check_namespace_member(obj, prop, prop_pos, fx, true)
                 .map(Place::StaticField);
         };
+        if self.reject_member_access(class, prop, true, true, fx, prop_pos.clone()) {
+            return Some(Place::StaticField(self.err_expr(prop_pos)));
+        }
         let class_name = self.classes[class.0].name.clone();
         if let Some(signature) = self.class_sigs[class.0].static_fields.get(prop).cloned() {
             let symbol = static_member_symbol(class, &class_name, prop);

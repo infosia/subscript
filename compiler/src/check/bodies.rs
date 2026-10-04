@@ -72,6 +72,7 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+            fx.lexical_class = Some(id);
             fx.descriptor_default = Some(Type::Class(id));
             let checked = fx
                 .with_synthetic_owner(
@@ -195,6 +196,10 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> Option<hir::Function> {
         let (mut this_ty, missing_this_site) = this;
+        let lexical_class = match this_ty.as_ref().map(|ty| self.apparent_type(ty)) {
+            Some(Type::Class(id)) => Some(id),
+            _ => None,
+        };
         let static_this_class = if missing_this_site == Some(RejectionSite::ThisStaticField) {
             let shape = self.apparent_type(this_ty.as_ref().unwrap_or(&Type::Error));
             this_ty = None;
@@ -211,6 +216,7 @@ impl<'p> Checker<'p> {
             this_ty,
             self.diags.clone(),
         );
+        fx.lexical_class = lexical_class;
         fx.frames[0].missing_this_site = missing_this_site;
         fx.frames[0].static_this_class = static_this_class;
         fx.frames[0].is_async = sig.is_async;
@@ -413,6 +419,7 @@ impl<'p> Checker<'p> {
                         };
                         let pos = self.pos(key.span);
                         let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+                        fx.lexical_class = Some(id);
                         fx.frames[0].missing_this_site = Some(RejectionSite::ThisStaticField);
                         let init = match &prop.value {
                             Some(value) => {
@@ -468,6 +475,7 @@ impl<'p> Checker<'p> {
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
                     let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+                    fx.lexical_class = Some(id);
                     fx.field_initializer = Some(super::field_initializer::FieldInitializer {
                         class_type: this_ty.clone(),
                         earlier: earlier_initialized_fields.clone(),
@@ -512,6 +520,8 @@ impl<'p> Checker<'p> {
                     };
                     let mut fx =
                         FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
+                    fx.lexical_class = Some(id);
+                    fx.constructor_body = true;
                     fx.frames[0].super_call_available = class.super_class.is_some();
                     let mut hir_params = Vec::new();
                     let mut patterns = Vec::new();

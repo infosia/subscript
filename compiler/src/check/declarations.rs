@@ -232,13 +232,18 @@ impl<'p> Checker<'p> {
     fn class_decorators(
         &mut self,
         class: &ast::Class,
+        name: &str,
     ) -> (bool, bool, Option<hir::AlignmentOverride>) {
         let mut is_value = false;
+        let mut value_decorator_pos = None;
         let mut is_descriptor = false;
         let mut alignment_override = None;
         for dec in &class.decorators {
             match &*dec.expr {
-                ast::Expr::Ident(id) if id.sym.as_ref() == "ValueType" => is_value = true,
+                ast::Expr::Ident(id) if id.sym.as_ref() == "ValueType" => {
+                    is_value = true;
+                    value_decorator_pos = Some(self.pos(dec.span));
+                }
                 ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor" => {
                     is_descriptor = true;
                 }
@@ -250,6 +255,7 @@ impl<'p> Checker<'p> {
                     ) =>
                 {
                     is_value = true;
+                    value_decorator_pos = Some(self.pos(dec.span));
                     match Self::value_type_alignment(
                         call,
                         self.source_function_declared("ValueType"),
@@ -289,6 +295,33 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+        if let Some(pos) = value_decorator_pos {
+            if let Some(accessibility) = class
+                .body
+                .iter()
+                .find_map(|member| match member {
+                    ast::ClassMember::Constructor(constructor) => constructor.accessibility,
+                    _ => None,
+                })
+                .filter(|accessibility| {
+                    matches!(
+                        accessibility,
+                        ast::Accessibility::Private | ast::Accessibility::Protected
+                    )
+                })
+            {
+                let modifier = if accessibility == ast::Accessibility::Private {
+                    "private"
+                } else {
+                    "protected"
+                };
+                self.reject_subset(
+                    RejectionSite::ValueTypeRestrictedConstructor,
+                    format!("`@ValueType` rejects a {modifier} constructor in class `{name}`; the constructor must be public"),
+                    pos,
+                );
+            }
+        }
         if is_value && is_descriptor {
             self.reject_subset(
                 RejectionSite::DescriptorValueType,
@@ -303,7 +336,7 @@ impl<'p> Checker<'p> {
         let name = c.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
-        let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
+        let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class, &name);
         if c.class
             .type_params
             .as_deref()

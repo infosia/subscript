@@ -12,6 +12,9 @@ mod host_entries;
 mod identity;
 mod init_effects;
 mod init_order;
+mod member_modifiers;
+#[cfg(test)]
+mod member_modifiers_tests;
 pub(crate) mod rejection;
 mod rejection_facts;
 #[cfg(test)]
@@ -271,6 +274,7 @@ pub(crate) struct FnSig {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClassSig {
     pub ctor: Option<Vec<ParamSig>>,
+    modifiers: member_modifiers::ClassModifiers,
     pub methods: HashMap<String, FnSig>,
     pub static_methods: HashMap<String, FnSig>,
     pub static_fields: HashMap<String, GlobalSig>,
@@ -750,6 +754,8 @@ pub(crate) struct Frame {
 #[derive(Debug)]
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
+    pub lexical_class: Option<ClassId>,
+    pub constructor_body: bool,
     field_initializer: Option<field_initializer::FieldInitializer>,
     descriptor_default: Option<Type>,
     descriptor_numeric_operand: bool,
@@ -886,6 +892,8 @@ impl FnCtx {
         diagnostics: DiagnosticSink,
     ) -> Self {
         FnCtx {
+            lexical_class: None,
+            constructor_body: false,
             field_initializer: None,
             descriptor_default: None,
             descriptor_numeric_operand: false,
