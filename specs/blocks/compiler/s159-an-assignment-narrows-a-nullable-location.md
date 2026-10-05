@@ -97,6 +97,9 @@ breaks invariant 5 and is MAJOR.
 
 ### 159.4 Open
 
+Items 2 to 4 move to §162 (negation, loops, lambdas) and §163 (an
+indexed path).
+
 1. `const b = (a = new A()); if (b !== null)` is rejected: `b` has the
    type `A` (rule 1), and a null comparison of a non-null type is
    rejected with the C7 block. `tsc` accepts it. Realistic, rare.

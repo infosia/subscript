@@ -165,7 +165,8 @@ no `undefined` is observable. In-language `Ref | null` lowers to a
 nullable pointer; narrowing is required before member access. A null
 check, a non-null initializer, and a non-null assignment narrow a
 location; C17 ends the narrowing of a shared location (`compiler.md`
-§159).
+§159). A negation, a loop head and exit, and a lambda follow the
+narrowing flow (`compiler.md` §162).
 
 **Q33 exception (owner, 2026-07-31): defaulted optional members on
 descriptor classes.** Inside a `@Descriptor` class (Q33) — and only
