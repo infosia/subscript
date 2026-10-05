@@ -27,6 +27,7 @@ enum OpaqueTemplate {
 /// The checker state that the opaque check restores after it runs.
 struct OpaqueSnapshot {
     functions: usize,
+    narrowing_helper_symbols: HashSet<hir::Symbol>,
     classes: usize,
     methods: Vec<usize>,
     class_sigs: Vec<ClassSig>,
@@ -576,6 +577,7 @@ impl<'p> Checker<'p> {
     fn opaque_snapshot(&self) -> OpaqueSnapshot {
         OpaqueSnapshot {
             functions: self.functions.len(),
+            narrowing_helper_symbols: self.narrowing_helper_symbols.clone(),
             classes: self.classes.len(),
             methods: self
                 .classes
@@ -602,6 +604,7 @@ impl<'p> Checker<'p> {
 
     fn restore_opaque_snapshot(&mut self, snapshot: OpaqueSnapshot) {
         self.functions.truncate(snapshot.functions);
+        self.narrowing_helper_symbols = snapshot.narrowing_helper_symbols;
         self.classes.truncate(snapshot.classes);
         for (class, methods) in self.classes.iter_mut().zip(snapshot.methods) {
             class.methods.truncate(methods);

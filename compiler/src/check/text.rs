@@ -142,7 +142,7 @@ impl Checker<'_> {
         pos: Pos,
     ) -> hir::Expr {
         let name = format!("[[{name}#{}]]", self.functions.len());
-        self.functions.push(hir::Function::new_synthesized_helper(
+        self.push_narrowing_helper(hir::Function::new_synthesized_helper(
             name.clone(),
             vec![hir::Param {
                 name: "value".into(),

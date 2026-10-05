@@ -371,7 +371,7 @@ impl<'p> Checker<'p> {
                     self.publish_parameter(owner, index, param);
                 }
             }
-            fx.declare(
+            self.declare_in_context(
                 &param.name,
                 Local {
                     ty: param.ty().clone(),
@@ -379,9 +379,15 @@ impl<'p> Checker<'p> {
                     async_origins: HashSet::new(),
                     caught: false,
                 },
+                fx,
             );
         }
         // A delayed default body reads the completed parameter scope.
+        let rejected_local_names = fx
+            .scopes
+            .get(scope_index)
+            .map(|scope| scope.rejected_local_names.clone())
+            .unwrap_or_default();
         let locals = fx
             .scopes
             .get(scope_index)
@@ -392,10 +398,14 @@ impl<'p> Checker<'p> {
                 for deferred in &mut source.pending {
                     deferred.frame.parameter_decisions.clear();
                     if let Some(scope) = deferred.frame.scopes.get_mut(scope_index) {
-                        for name in locals.keys() {
+                        for (name, local) in locals.iter() {
                             scope.pending.remove(name);
+                            scope.insert_local(
+                                name.clone(),
+                                local.clone(),
+                                rejected_local_names.contains(name),
+                            );
                         }
-                        scope.vars.extend(locals.clone());
                     }
                 }
             }

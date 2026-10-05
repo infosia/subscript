@@ -8,6 +8,7 @@
 //! the seven `lib.es5.d.ts` interfaces as one shape, so an assignment
 //! between two of them is `tsc`-clean in both directions.
 
+use super::FactSet;
 use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
@@ -51,9 +52,9 @@ impl ErrorKind {
     }
 }
 
-/// The path that an `instanceof` test narrows in its true branch, when
+/// The value that an `instanceof` test narrows in its true branch, when
 /// `condition` is one (§115.3 rule 5).
-pub(crate) fn instanceof_narrowed_path(condition: &hir::Expr) -> Option<String> {
+pub(crate) fn instanceof_narrowed_value(condition: &hir::Expr) -> Option<&hir::Expr> {
     let ExprKind::Binary {
         op: BinOp::Eq | BinOp::Lt,
         left,
@@ -68,7 +69,7 @@ pub(crate) fn instanceof_narrowed_path(condition: &hir::Expr) -> Option<String> 
     if name != ERROR_KIND_FIELD {
         return None;
     }
-    super::expr::path_key(obj)
+    Some(obj)
 }
 
 fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
@@ -402,10 +403,12 @@ impl Checker<'_> {
         let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
         let body_facts = fx.narrowed.clone();
         let mut body_notes = fx.ended_shared_narrowing.clone();
-        let effects = self.body_narrowing_effects(&body);
+        let effects = self.body_narrowing_effects(&body, fx, &base, &initial_notes);
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
-        self.apply_narrowing_effects(&effects, fx);
+        if let Some(effects) = &effects {
+            self.apply_narrowing_effects(effects, fx);
+        }
         let binding = self.catch_binding(handler);
         let class = self.error_class;
         fx.scopes.push(Default::default());
@@ -433,16 +436,20 @@ impl Checker<'_> {
             .cloned()
             .collect();
         if body_terminates {
-            note_paths.extend(handler_possible);
+            note_paths.extend_facts(handler_possible);
         } else if handler_terminates {
-            note_paths.extend(body_possible);
+            note_paths.extend_facts(body_possible);
         } else {
-            note_paths.extend(body_possible.intersection(&handler_possible).cloned());
+            note_paths.extend_facts(body_possible.intersection(&handler_possible).cloned());
         }
         if !handler_terminates {
             // A nullable store can reach the handler before a later restoration or call.
-            body_notes
-                .retain(|key| handler_facts.contains(key) || !effects.nullable_store_ends(key));
+            body_notes.retain(|key| {
+                handler_facts.contains(key)
+                    || effects
+                        .as_ref()
+                        .is_none_or(|effects| !effects.nullable_store_ends(key))
+            });
         }
         fx.narrowed = if body_terminates {
             handler_facts
@@ -451,7 +458,7 @@ impl Checker<'_> {
         } else {
             body_facts.intersection(&handler_facts).cloned().collect()
         };
-        fx.ended_shared_narrowing.extend(body_notes);
+        fx.ended_shared_narrowing.extend_facts(body_notes);
         fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::Try {
             body,
@@ -471,7 +478,7 @@ impl Checker<'_> {
         for statement in statements {
             terminates |= self.check_stmt(statement, fx, &mut body);
         }
-        self.end_scope_narrowing(&body, fx);
+        self.end_scope_narrowing(fx);
         fx.pop_scope();
         (body, terminates)
     }

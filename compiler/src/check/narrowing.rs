@@ -1,8 +1,10 @@
 //! Shared-location narrowing effects (compiler.md §124).
 
 use super::expr::path_key;
-use super::{Checker, FnCtx};
+use super::{Checker, FactSet, FnCtx, NarrowingFact};
 use crate::check::rejection::RejectionSite;
+use crate::hir::{BinOp, ExprKind};
+use crate::types::Type;
 use crate::{diag::Pos, hir};
 
 impl Checker<'_> {
@@ -10,8 +12,7 @@ impl Checker<'_> {
         &self,
         cond: &hir::Expr,
         fx: &mut FnCtx,
-    ) -> (Vec<String>, Vec<String>) {
-        register_shared_paths(cond, self.narrowing_classes(), fx);
+    ) -> (Vec<NarrowingFact>, Vec<NarrowingFact>) {
         if let hir::ExprKind::Binary {
             op: op @ (hir::BinOp::And | hir::BinOp::Or),
             left,
@@ -21,18 +22,25 @@ impl Checker<'_> {
             // `a && b` is true, and `a || b` is false, when both operands
             // are; a kill in `b` ends a fact of `a` (compiler.md §124).
             let and = matches!(op, hir::BinOp::And);
-            let pick = |facts: (Vec<String>, Vec<String>)| if and { facts.0 } else { facts.1 };
-            let mut first = pick(self.narrowing_paths(left, fx));
-            let effects =
-                right.narrowing_effects(self.narrowing_classes(), &self.narrowing_helpers());
-            let shared_paths = fx.shared_narrowing_paths();
-            first.retain(|key| {
-                let (shared, local) = path_kills(key, &effects, &shared_paths);
-                if shared && !local {
-                    fx.ended_shared_narrowing.insert(key.clone());
+            let pick = |facts: (Vec<NarrowingFact>, Vec<NarrowingFact>)| {
+                if and {
+                    facts.0
+                } else {
+                    facts.1
                 }
-                !shared && !local
-            });
+            };
+            let mut first = pick(self.narrowing_paths(left, fx));
+            if !first.is_empty() {
+                let effects =
+                    right.narrowing_effects(self.narrowing_classes(), self.narrowing_helpers());
+                first.retain(|key| {
+                    let (shared, local) = path_kills(key, &effects);
+                    if shared && !local {
+                        fx.ended_shared_narrowing.insert_fact(key.clone());
+                    }
+                    !shared && !local
+                });
+            }
             first.extend(pick(self.narrowing_paths(right, fx)));
             if and {
                 (first, Vec::new())
@@ -40,16 +48,20 @@ impl Checker<'_> {
                 (Vec::new(), first)
             }
         } else {
-            super::stmt::narrow_paths(cond, |ty| self.apparent_type(ty))
+            leaf_paths(cond, |ty| self.apparent_type(ty), self.narrowing_classes())
         }
     }
 
     pub(super) fn end_shared_narrowing(&self, expression: &hir::Expr, fx: &mut FnCtx) {
-        self.apply_narrowing_effects(
-            &expression
-                .operation_narrowing_effects(self.narrowing_classes(), &self.narrowing_helpers()),
-            fx,
-        );
+        if fx.has_narrowing_facts() {
+            self.apply_narrowing_effects(
+                &expression.operation_narrowing_effects(
+                    self.narrowing_classes(),
+                    self.narrowing_helpers(),
+                ),
+                fx,
+            );
+        }
         if let hir::ExprKind::Assign {
             op: None,
             target,
@@ -66,9 +78,11 @@ impl Checker<'_> {
                     | crate::types::Type::Nullable(_)
                     | crate::types::Type::Error
             ) {
-                register_shared_paths(target, self.narrowing_classes(), fx);
                 if let Some(key) = path_key(target) {
-                    fx.narrowed.insert(key.clone());
+                    fx.narrowed.replace_fact(NarrowingFact {
+                        key: key.clone(),
+                        shared: target.is_shared_location(self.narrowing_classes()),
+                    });
                     fx.ended_shared_narrowing.remove(&key);
                 }
             }
@@ -189,7 +203,7 @@ impl Checker<'_> {
         methods: &[usize],
     ) -> Analysis {
         let mut analysis = Analysis {
-            helpers: self.narrowing_helpers(),
+            helpers: self.narrowing_helpers().clone(),
             ..Default::default()
         };
         for function in self.functions.iter().skip(functions) {
@@ -213,17 +227,10 @@ impl Checker<'_> {
         analysis
     }
 
-    fn narrowing_helpers(&self) -> std::collections::HashSet<hir::Symbol> {
-        self.narrowing_analysis.as_ref().map_or_else(
-            || {
-                self.functions
-                    .iter()
-                    .filter(|function| function.synthesized_helper)
-                    .map(|function| function.symbol.clone())
-                    .collect()
-            },
-            |analysis| analysis.helpers.clone(),
-        )
+    fn narrowing_helpers(&self) -> &std::collections::HashSet<hir::Symbol> {
+        self.narrowing_analysis
+            .as_ref()
+            .map_or(&self.narrowing_helper_symbols, |analysis| &analysis.helpers)
     }
 
     fn narrowing_classes(&self) -> &[hir::ClassDef] {
@@ -233,19 +240,17 @@ impl Checker<'_> {
     }
 
     pub(super) fn apply_narrowing_effects(&self, effects: &hir::NarrowingEffects, fx: &mut FnCtx) {
-        let shared_paths = fx.shared_narrowing_paths();
+        if !fx.has_narrowing_facts() {
+            return;
+        }
         fx.ended_shared_narrowing
-            .retain(|key| !path_kills(key, effects, &shared_paths).1);
-        for scope in fx.scopes.iter_mut() {
-            let shared = scope
-                .shadowed_narrowing
-                .iter()
-                .filter_map(|(key, shared)| shared.then_some(key.clone()))
-                .collect();
-            scope.shadowed_narrowing.retain(|key, _| {
+            .retain(|key| !path_kills(key, effects).1);
+        for index in fx.shadowed_narrowing_scopes.iter() {
+            let scope = &mut fx.scopes[*index];
+            scope.shadowed_narrowing.retain(|key| {
                 // A shadowed path belongs to another binding, even with the same spelling.
-                if path_kills(key, effects, &shared).0 {
-                    scope.shadowed_ended_shared.insert(key.clone());
+                if path_kills(key, effects).0 {
+                    scope.shadowed_ended_shared.insert_fact(key.clone());
                     false
                 } else {
                     true
@@ -253,9 +258,9 @@ impl Checker<'_> {
             });
         }
         fx.narrowed.retain(|key| {
-            let (shared_kill, local_kill) = path_kills(key, effects, &shared_paths);
+            let (shared_kill, local_kill) = path_kills(key, effects);
             if shared_kill {
-                fx.ended_shared_narrowing.insert(key.clone());
+                fx.ended_shared_narrowing.insert_fact(key.clone());
             }
             if local_kill {
                 fx.ended_shared_narrowing.remove(key);
@@ -265,6 +270,9 @@ impl Checker<'_> {
     }
 
     pub(super) fn end_loop_narrowing(&self, pos: &Pos, fx: &mut FnCtx) {
+        if !fx.has_narrowing_facts() {
+            return;
+        }
         if let Some(effects) = self
             .narrowing_analysis
             .as_ref()
@@ -274,11 +282,11 @@ impl Checker<'_> {
         }
     }
 
-    pub(super) fn end_scope_narrowing(&self, body: &[hir::Stmt], fx: &mut FnCtx) {
-        if body
-            .iter()
-            .any(|statement| matches!(statement, hir::Stmt::Let { dispose: true, .. }))
-        {
+    pub(super) fn end_scope_narrowing(&self, fx: &mut FnCtx) {
+        if !fx.has_narrowing_facts() {
+            return;
+        }
+        if fx.scopes.last().is_some_and(|scope| scope.dispose_on_exit) {
             self.apply_narrowing_effects(
                 &hir::NarrowingEffects {
                     script: true,
@@ -291,49 +299,46 @@ impl Checker<'_> {
 }
 
 impl Checker<'_> {
-    pub(super) fn body_narrowing_effects(&self, body: &[hir::Stmt]) -> hir::NarrowingEffects {
-        hir::NarrowingEffects::body(body, self.narrowing_classes(), &self.narrowing_helpers())
+    pub(super) fn body_narrowing_effects(
+        &self,
+        body: &[hir::Stmt],
+        fx: &FnCtx,
+        incoming: &super::NarrowingFacts,
+        notes: &super::NarrowingFacts,
+    ) -> Option<hir::NarrowingEffects> {
+        (fx.has_narrowing_facts() || !incoming.is_empty() || !notes.is_empty()).then(|| {
+            hir::NarrowingEffects::body(body, self.narrowing_classes(), self.narrowing_helpers())
+        })
     }
 }
 
 impl FnCtx {
-    fn shared_narrowing_paths(&self) -> std::collections::HashSet<String> {
-        let mut paths = std::collections::HashMap::new();
-        for scope in &self.scopes {
-            paths.extend(
-                scope
-                    .shared_narrowing_paths
-                    .iter()
-                    .map(|(key, shared)| (key.clone(), *shared)),
-            );
-        }
-        paths
-            .into_iter()
-            .filter_map(|(key, shared)| shared.then_some(key))
-            .collect()
+    fn has_narrowing_facts(&self) -> bool {
+        !self.narrowed.is_empty()
+            || !self.ended_shared_narrowing.is_empty()
+            || !self.shadowed_narrowing_scopes.is_empty()
     }
 
-    pub(super) fn narrowing_note_paths(&self) -> std::collections::HashSet<String> {
+    pub(super) fn narrowing_note_paths(&self) -> std::collections::HashSet<NarrowingFact> {
         self.narrowed
             .union(&self.ended_shared_narrowing)
             .cloned()
             .collect()
     }
 
-    pub(super) fn finish_narrowing_join(&mut self, eligible: &std::collections::HashSet<String>) {
+    pub(super) fn finish_narrowing_join(
+        &mut self,
+        eligible: &std::collections::HashSet<NarrowingFact>,
+    ) {
         self.ended_shared_narrowing
             .retain(|key| eligible.contains(key) && !self.narrowed.contains(key));
     }
 }
 
-fn path_kills(
-    key: &str,
-    effects: &hir::NarrowingEffects,
-    shared_paths: &std::collections::HashSet<String>,
-) -> (bool, bool) {
+fn path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bool) {
     let root = super::stmt::root_of(key);
     let global = root.starts_with("[[global]]");
-    let shared = shared_paths.contains(key);
+    let shared = key.shared;
     let shared_kill = shared
         && (effects.script
             || key
@@ -342,31 +347,81 @@ fn path_kills(
                 .any(|field| effects.fields.contains(field)))
         || effects.globals.iter().any(|name| {
             let stored = format!("[[global]]{}", name.full_text());
-            key == stored || key.starts_with(&format!("{stored}."))
+            key.key == *stored || key.starts_with(&format!("{stored}."))
         });
-    let same_path = |stored: &String| key == stored || key.starts_with(&format!("{stored}."));
+    let same_path = |stored: &String| key.key == *stored || key.starts_with(&format!("{stored}."));
     let local_kill =
         effects.nullable_store_ends(key) || !global && effects.locals.iter().any(same_path);
     (shared_kill, local_kill)
 }
 
-fn register_shared_paths(expression: &hir::Expr, classes: &[hir::ClassDef], fx: &mut FnCtx) {
-    if let Some(key) = path_key(expression) {
-        let root = super::stmt::root_of(&key);
-        let index = fx
-            .scopes
-            .iter()
-            .rposition(|scope| scope.vars.contains_key(root))
-            .unwrap_or(0);
-        if let Some(scope) = fx.scopes.get_mut(index) {
-            scope
-                .shared_narrowing_paths
-                .insert(key, expression.is_shared_location(classes));
-        }
+/// Narrowing facts derived from a checked leaf condition: paths known
+/// non-null or known present when the condition is true / false.
+/// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
+/// of compiler.md §124 before it reaches a leaf.
+pub(super) fn leaf_paths(
+    cond: &hir::Expr,
+    apparent_type: impl Fn(&Type) -> Type,
+    classes: &[hir::ClassDef],
+) -> (Vec<NarrowingFact>, Vec<NarrowingFact>) {
+    let fact = |value: &hir::Expr| {
+        path_key(value).map(|key| NarrowingFact {
+            key,
+            shared: value.is_shared_location(classes),
+        })
+    };
+    if let Some(value) = super::exception::instanceof_narrowed_value(cond) {
+        return (fact(value).into_iter().collect(), Vec::new());
     }
-    for child in expression.children() {
-        if let hir::HirChild::Expr(child) = child {
-            register_shared_paths(child, classes, fx);
+    if let ExprKind::AbsenceTest { value, negated } = &cond.kind {
+        if let Some(key) = fact(value) {
+            return if *negated {
+                (vec![key], Vec::new())
+            } else {
+                (Vec::new(), vec![key])
+            };
         }
+        return (Vec::new(), Vec::new());
+    }
+    if let ExprKind::Binary { op, left, right } = &cond.kind {
+        match op {
+            BinOp::Eq | BinOp::Ne => {
+                let (null_side, other) = if matches!(left.kind, ExprKind::Null) {
+                    (Some(()), right)
+                } else if matches!(right.kind, ExprKind::Null) {
+                    (Some(()), left)
+                } else {
+                    (None, left)
+                };
+                if null_side.is_some() && matches!(apparent_type(&other.ty), Type::Nullable(_)) {
+                    let target = match &other.kind {
+                        ExprKind::Assign {
+                            op: None, target, ..
+                        } => target.as_ref(),
+                        _ => other,
+                    };
+                    if let Some(key) = fact(target) {
+                        return match op {
+                            // `p === null` → p is non-null when false.
+                            BinOp::Eq => (Vec::new(), vec![key]),
+                            // `p !== null` → p is non-null when true.
+                            _ => (vec![key], Vec::new()),
+                        };
+                    }
+                }
+                (Vec::new(), Vec::new())
+            }
+            _ => (Vec::new(), Vec::new()),
+        }
+    } else {
+        (Vec::new(), Vec::new())
+    }
+}
+
+impl Checker<'_> {
+    /// Records each synthesized helper once, when the checker creates it.
+    pub(super) fn push_narrowing_helper(&mut self, helper: hir::Function) {
+        self.narrowing_helper_symbols.insert(helper.symbol.clone());
+        self.functions.push(helper);
     }
 }

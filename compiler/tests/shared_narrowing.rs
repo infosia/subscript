@@ -473,3 +473,138 @@ fn generator_result_fields_survive_calls_and_alias_stores() {
         }
     }
 }
+
+#[test]
+fn s161_a_fact_alone_records_the_shared_path() {
+    for effect in ["tick();", "const alias = h; alias.c = null;"] {
+        let body = format!("if (VALUE !== null) {{ {effect} print(`${{VALUE.v}}`); }}");
+        checked_body(&body.replace("VALUE", "local")).expect("the local fact survives");
+        shared_error(&body.replace("VALUE", "h.c"));
+    }
+}
+
+#[test]
+fn s161_scope_exit_restores_the_hidden_fact_after_unrelated_conditions() {
+    let conditions: String = (0..128)
+        .map(|index| format!("const p{index} = h; if (p{index}.c === null) {{ }}"))
+        .collect();
+    for effect in ["", "tick();"] {
+        let body = format!(
+            "if (h.c !== null) {{ {{ const h = new Holder(); {conditions} {effect} }} print(`${{h.c.v}}`); }}"
+        );
+        if effect.is_empty() {
+            checked_body(&body).expect("scope exit restores the shared fact");
+        } else {
+            shared_error(&body);
+        }
+        let local_body = format!(
+            "if (local !== null) {{ {{ const local: Cell | null = null; {conditions} {effect} }} print(`${{local.v}}`); }}"
+        );
+        checked_body(&local_body).expect("scope exit restores the local fact");
+    }
+}
+
+#[test]
+fn s161_the_right_operand_ends_the_left_operand_fact() {
+    for operation in ["&&", "||"] {
+        let (test, branch) = if operation == "&&" {
+            ("!==", "print(`${h.c.v}`);")
+        } else {
+            ("===", "")
+        };
+        let tail = if operation == "||" {
+            "else { print(`${h.c.v}`); }"
+        } else {
+            ""
+        };
+        let source = |effect: &str| {
+            [SourceFile::new(
+                "test.ts",
+                format!(
+                    "class Cell {{ v: i32 = 7; }}
+                 class Holder {{ c: Cell | null = new Cell(); }}
+                 function clear(h: Holder): boolean {{ h.c = null; return true; }}
+                 function read(h: Holder): void {{
+                   if (h.c {test} null {operation} {effect}) {{ {branch} }} {tail}
+                 }}"
+                ),
+            )]
+        };
+        check_program(&source("true")).expect("the condition fact reaches the branch");
+        let errors =
+            check_program(&source("clear(h)")).expect_err("the right operand ends the shared fact");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code, RuleCode::S011);
+        assert_eq!(
+            errors[0].divergence,
+            Some(subscript_compiler::divergence::Divergence::SharedLocationNarrowing)
+        );
+    }
+}
+
+#[test]
+fn only_direct_disposal_ends_facts_at_scope_exit() {
+    let source = r#"class Resource {
+  label: string;
+  constructor(label: string) { this.label = label; }
+  [Symbol.dispose](): void { print(`dispose:${this.label}`); }
+}
+class Q { v: i32 = 3; }
+class H { q: Q | null = new Q(); a(): boolean { return true; } }
+export function main(): void {
+  const h = new H();
+  {
+    if (h.a()) {
+      using r = new Resource("inner");
+    }
+    if (h.q === null) { return; }
+    print(`${h.q.v}`);
+  }
+  print(`${h.q.v}`);
+}
+"#;
+    check_program(&[SourceFile::new("test.ts", source)])
+        .expect("nested disposal preserves the later fact at outer scope exit");
+    let direct = source.replace(
+        "    if (h.a()) {\n      using r = new Resource(\"inner\");\n    }",
+        "    if (h.a()) { }\n    using r = new Resource(\"inner\");",
+    );
+    let diagnostics = check_program(&[SourceFile::new("test.ts", direct)])
+        .expect_err("direct disposal ends the fact at outer scope exit");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S011);
+    assert_eq!(diagnostics[0].pos.line, 16);
+}
+
+#[test]
+fn generic_error_local_preserves_suppression_after_other_statements() {
+    for intervening in ["", "const next: T = a; touch(); if (true) { touch(); }"] {
+        let source = format!(
+            "class Cell {{ v: i32 = 1; }}
+             function touch(): void {{ }}
+             function ident<T>(a: T): T {{
+               const bad: Missing = a;
+               {intervening}
+               const later: bad = bad;
+               return a;
+             }}
+             export function main(): void {{ ident<Cell>(new Cell()); }}"
+        );
+        let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+            .expect_err("the unknown local type fails");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        let control = format!(
+            "class Cell {{ v: i32 = 1; }}
+             function touch(): void {{ }}
+             function ident<T>(a: T): T {{
+               const good: T = a;
+               {intervening}
+               const later: T = good;
+               return a;
+             }}
+             export function main(): void {{ ident<Cell>(new Cell()); }}"
+        );
+        check_program(&[SourceFile::new("test.ts", control)])
+            .expect("the type parameter local stays valid");
+    }
+}

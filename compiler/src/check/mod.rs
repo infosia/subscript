@@ -55,10 +55,13 @@ mod instance_chain;
 use instance_chain::InstanceArguments;
 mod json;
 mod layout;
+mod local_errors;
 mod lookup;
 mod mirror_provenance;
 mod namespace_import;
 mod narrowing;
+mod narrowing_fact;
+use narrowing_fact::{FactSet, NarrowingFact};
 mod opaque;
 mod pipeline;
 pub(crate) use pipeline::run;
@@ -500,11 +503,12 @@ pub(crate) struct Local {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
     pub vars: Shared<HashMap<String, Local>>,
-    pub shared_narrowing_paths: Shared<HashMap<String, bool>>,
+    /// Names whose apparent local types are the error type.
+    pub rejected_local_names: Shared<std::collections::BTreeSet<String>>,
     /// Outer facts hidden by declarations in this scope.
-    pub shadowed_narrowing: Shared<HashMap<String, bool>>,
+    pub shadowed_narrowing: NarrowingFacts,
     /// C17 facts hidden by declarations in this scope.
-    pub shadowed_ended_shared: Shared<HashSet<String>>,
+    pub shadowed_ended_shared: NarrowingFacts,
     /// Names that declarations later in this scope own.
     pub pending: Shared<HashSet<String>>,
     /// The first case that declares each name in a switch body.
@@ -516,6 +520,8 @@ pub(crate) struct Scope {
     /// True when this scope contains one switch body.
     pub is_switch: bool,
     pub fn_boundary: bool,
+    /// A direct declaration in the current statement list needs disposal.
+    pub dispose_on_exit: bool,
 }
 
 fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
@@ -780,7 +786,7 @@ pub(crate) struct Frame {
     pub super_call_available: bool,
 }
 
-type NarrowingFacts = Shared<HashSet<String>>;
+type NarrowingFacts = Shared<std::collections::BTreeSet<NarrowingFact>>;
 type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
 
 /// Per-body checking state: scope stack, frames, and the narrowing set of
@@ -798,6 +804,8 @@ pub(crate) struct FnCtx {
     descriptor_numeric_operand: bool,
     pub scopes: Shared<Vec<Scope>>,
     pub narrowed: NarrowingFacts,
+    /// Scope indices that contain hidden path facts.
+    pub shadowed_narrowing_scopes: Shared<std::collections::BTreeSet<usize>>,
     pub ended_shared_narrowing: NarrowingFacts,
     pub loop_depth: u32,
     pub switch_depth: u32,
@@ -953,26 +961,26 @@ impl FnCtx {
                 super_call_available: false,
             }]
             .into(),
-            scopes: vec![Scope {
-                vars: this_ty
-                    .map(|ty| {
-                        (
-                            "this".to_string(),
-                            Local {
-                                ty,
-                                mutable: false,
-                                async_origins: HashSet::new(),
-                                caught: false,
-                            },
-                        )
-                    })
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
+            scopes: vec![{
+                let mut scope = Scope::default();
+                if let Some(ty) = this_ty {
+                    scope.insert_local(
+                        "this".to_string(),
+                        Local {
+                            ty,
+                            mutable: false,
+                            async_origins: HashSet::new(),
+                            caught: false,
+                        },
+                        false,
+                    );
+                }
+                scope
             }]
             .into(),
-            narrowed: HashSet::new().into(),
-            ended_shared_narrowing: HashSet::new().into(),
+            narrowed: Default::default(),
+            shadowed_narrowing_scopes: Default::default(),
+            ended_shared_narrowing: Default::default(),
             loop_depth: 0,
             switch_depth: 0,
             switch_break_facts: Vec::new().into(),
@@ -1077,29 +1085,23 @@ impl FnCtx {
     }
 
     /// Declares a local. Returns false if the current scope already contains the name.
-    pub(crate) fn declare(&mut self, name: &str, local: Local) -> bool {
-        let shared = self
-            .scopes
-            .iter()
-            .flat_map(|scope| &scope.shared_narrowing_paths)
-            .map(|(key, value)| (key.clone(), *value))
-            .collect::<HashMap<_, _>>();
+    pub(crate) fn declare(&mut self, name: &str, local: Local, rejected: bool) -> bool {
         if let Some(scope) = self.scopes.last_mut() {
             if scope.vars.contains_key(name) {
                 return false;
             }
             scope.pending.remove(name);
-            scope.vars.insert(name.to_string(), local);
+            scope.insert_local(name.to_string(), local, rejected);
             let prefix = format!("{name}.");
-            scope.shadowed_narrowing.extend(
+            scope.shadowed_narrowing.extend_facts(
                 self.narrowed
                     .iter()
                     .filter(|key| *key == name || key.starts_with(&prefix))
-                    .map(|key| (key.clone(), shared.get(key).copied().unwrap_or(false))),
+                    .cloned(),
             );
             self.narrowed
                 .retain(|key| key != name && !key.starts_with(&prefix));
-            scope.shadowed_ended_shared.extend(
+            scope.shadowed_ended_shared.extend_facts(
                 self.ended_shared_narrowing
                     .iter()
                     .filter(|key| *key == name || key.starts_with(&prefix))
@@ -1107,6 +1109,9 @@ impl FnCtx {
             );
             self.ended_shared_narrowing
                 .retain(|key| key != name && !key.starts_with(&prefix));
+            if !scope.shadowed_narrowing.is_empty() || !scope.shadowed_ended_shared.is_empty() {
+                self.shadowed_narrowing_scopes.insert(self.scopes.len() - 1);
+            }
         }
         true
     }
@@ -1114,12 +1119,12 @@ impl FnCtx {
     /// Exits a scope and restores the facts hidden by its declarations.
     pub(crate) fn pop_scope(&mut self) {
         if let Some(scope) = self.scopes.pop() {
+            self.shadowed_narrowing_scopes.remove(&self.scopes.len());
             self.narrowed
                 .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
-            self.narrowed
-                .extend(scope.shadowed_narrowing.into_iter().map(|(key, _)| key));
+            self.narrowed.extend_facts(scope.shadowed_narrowing);
             self.ended_shared_narrowing
-                .extend(scope.shadowed_ended_shared);
+                .extend_facts(scope.shadowed_ended_shared);
         }
     }
 
@@ -1146,6 +1151,7 @@ pub(crate) struct Checker<'p> {
     deferred_captures: HashMap<hir::LambdaId, Vec<hir::Capture>>,
     pending_function_bodies: Vec<deferred_body::PendingFunctionBody>,
     narrowing_analysis: Option<narrowing::Analysis>,
+    narrowing_helper_symbols: HashSet<hir::Symbol>,
     pub prog: &'p ParsedProgram,
     pub diags: DiagnosticSink,
     /// Unchanged empty context for independent field initializer snapshots.
@@ -1172,7 +1178,7 @@ pub(crate) struct Checker<'p> {
     /// Use sites that already report a value use of a type-only import.
     pub type_only_value_uses: HashSet<(usize, u32, u32)>,
     /// Rejected local names in the active statement scope.
-    pub rejected_local_names: HashSet<String>,
+    pub rejected_local_names: Vec<Shared<std::collections::BTreeSet<String>>>,
     /// Rejected mirror module exports, keyed by normalized module name.
     pub rejected_module_exports: HashMap<String, HashSet<String>>,
     pub cur_file: usize,

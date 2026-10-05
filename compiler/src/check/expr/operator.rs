@@ -1,5 +1,7 @@
 //! Checks the operator expressions, the conditional expression, `yield`, and `as`.
 
+use crate::check::narrowing_fact::FactSet;
+
 use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 use swc_common::Spanned;
@@ -908,7 +910,7 @@ impl<'p> Checker<'p> {
         self.next_compound_local_id += 1;
         let name = format!("[[compound#{id}.nullish]]");
         let nullable = operand.ty.clone();
-        fx.declare(
+        self.declare_in_context(
             &name,
             crate::check::Local {
                 ty: nullable.clone(),
@@ -916,6 +918,7 @@ impl<'p> Checker<'p> {
                 async_origins: std::collections::HashSet::new(),
                 caught: false,
             },
+            fx,
         );
         fx.push_synthetic_prefix(hir::Stmt::Let {
             name: name.clone(),
@@ -1518,7 +1521,7 @@ impl<'p> Checker<'p> {
             .union(&fx.ended_shared_narrowing)
             .cloned()
             .collect();
-        note_paths.extend(first_possible.intersection(&second_possible).cloned());
+        note_paths.extend_facts(first_possible.intersection(&second_possible).cloned());
         let joined = first_facts.intersection(&fx.narrowed).cloned().collect();
         let (then, els) = if reverse {
             (second, first)
@@ -1526,7 +1529,7 @@ impl<'p> Checker<'p> {
             (first, second)
         };
         fx.narrowed = joined;
-        fx.ended_shared_narrowing.extend(first_notes);
+        fx.ended_shared_narrowing.extend_facts(first_notes);
         fx.finish_narrowing_join(&note_paths);
 
         let ty = if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty)

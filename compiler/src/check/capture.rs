@@ -4,7 +4,7 @@ use crate::hir::{self, ArrFn, Callee, Expr, ExprKind as E, HirChild, MapFn, SetF
 use crate::{Diagnostic, Type};
 use std::collections::{HashMap, HashSet};
 
-type Env = HashMap<String, usize>;
+type Env = super::Shared<HashMap<String, usize>>;
 struct Analysis<'a> {
     module: &'a hir::Module,
     facts: Vec<bool>,
@@ -479,11 +479,11 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
             .iter()
             .flat_map(|c| c.fields.iter().filter_map(|f| f.init.as_ref())),
     ) {
-        a.expr(e, &Env::new());
+        a.expr(e, &Env::default());
         a.escapes.push(("initializer".to_owned(), e));
     }
     for owner in module.expression_owners() {
-        let mut env = Env::new();
+        let mut env = Env::default();
         match owner {
             hir::ExpressionOwner::Expr(_) => {}
             hir::ExpressionOwner::Body {

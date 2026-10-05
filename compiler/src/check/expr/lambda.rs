@@ -300,6 +300,7 @@ impl<'p> Checker<'p> {
         };
         fx.narrowed = saved_narrowed;
         fx.scopes.pop();
+        fx.shadowed_narrowing_scopes.remove(&fx.scopes.len());
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);

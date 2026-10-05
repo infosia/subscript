@@ -458,7 +458,7 @@ impl Checker<'_> {
 
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_helper_body(ty, tracked, &types, &names, &pos)?;
-            self.functions.push(hir::Function::new_synthesized_helper(
+            self.push_narrowing_helper(hir::Function::new_synthesized_helper(
                 names[index].clone(),
                 vec![
                     json_param("builder", Type::U64, &pos),
@@ -508,7 +508,7 @@ impl Checker<'_> {
                 pos: pos.clone(),
             },
         ];
-        self.functions.push(hir::Function::new_synthesized_helper(
+        self.push_narrowing_helper(hir::Function::new_synthesized_helper(
             wrapper.clone(),
             vec![json_param("value", root.clone(), &pos)],
             Type::Str,
@@ -811,7 +811,7 @@ impl Checker<'_> {
 
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_validation_body(ty, &types, &validators, &pos)?;
-            self.functions.push(hir::Function::new_synthesized_helper(
+            self.push_narrowing_helper(hir::Function::new_synthesized_helper(
                 validators[index].clone(),
                 vec![
                     json_param("parser", Type::U64, &pos),
@@ -824,7 +824,7 @@ impl Checker<'_> {
         }
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_construction_body(ty, &types, &constructors, &pos)?;
-            self.functions.push(hir::Function::new_synthesized_helper(
+            self.push_narrowing_helper(hir::Function::new_synthesized_helper(
                 constructors[index].clone(),
                 vec![
                     json_param("parser", Type::U64, &pos),
@@ -949,7 +949,7 @@ impl Checker<'_> {
             },
         ];
         let wrapper = format!("[[json.parse#{call_id}.root]]");
-        self.functions.push(hir::Function::new_synthesized_helper(
+        self.push_narrowing_helper(hir::Function::new_synthesized_helper(
             wrapper.clone(),
             vec![json_param("text", Type::Str, &pos)],
             root.clone(),

@@ -9,7 +9,11 @@ impl<'p> Checker<'p> {
     /// declarations, §12.2). A type-only import binding reports S100 once
     /// per use site and resolves poisoned (compiler.md §134 rule 2).
     pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos) -> Option<ScopeItem> {
-        if self.rejected_local_names.contains(name) {
+        if self
+            .rejected_local_names
+            .iter()
+            .any(|names| names.contains(name))
+        {
             return Some(ScopeItem::Poisoned);
         }
         let type_only = self.scope_binding(name).is_some_and(|binding| {
@@ -62,7 +66,11 @@ impl<'p> Checker<'p> {
     /// Resolves a name in a type position. A type-only import binding
     /// resolves to its declaration (compiler.md §134 rule 3).
     pub(crate) fn type_scope_item(&self, name: &str) -> Option<ScopeItem> {
-        if self.rejected_local_names.contains(name) {
+        if self
+            .rejected_local_names
+            .iter()
+            .any(|names| names.contains(name))
+        {
             return Some(ScopeItem::Poisoned);
         }
         self.scope_binding(name)

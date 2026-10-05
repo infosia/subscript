@@ -12,7 +12,7 @@ impl<'p> Checker<'p> {
                 continue;
             };
             if let ast::Decl::Fn(function) = declaration {
-                scope.vars.insert(
+                scope.insert_local(
                     function.ident.sym.to_string(),
                     Local {
                         ty: Type::Error,
@@ -20,6 +20,7 @@ impl<'p> Checker<'p> {
                         async_origins: HashSet::new(),
                         caught: false,
                     },
+                    true,
                 );
                 continue;
             }
@@ -46,7 +47,7 @@ impl<'p> Checker<'p> {
     /// Declares one local and reports a duplicate in the current scope.
     pub(crate) fn declare_local(&mut self, name: &str, local: Local, pos: Pos, fx: &mut FnCtx) {
         let in_switch = fx.scopes.last().is_some_and(|scope| scope.is_switch);
-        if !fx.declare(name, local) {
+        if !self.declare_in_context(name, local, fx) {
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.duplicate_declarations.insert(name.to_string());
             }
@@ -78,7 +79,7 @@ impl<'p> Checker<'p> {
         for binding in names {
             let name = binding.id.sym.to_string();
             fx.discard_pending(&name);
-            fx.declare(
+            self.declare_in_context(
                 &name,
                 Local {
                     ty: Type::Error,
@@ -86,6 +87,7 @@ impl<'p> Checker<'p> {
                     async_origins: HashSet::new(),
                     caught: false,
                 },
+                fx,
             );
         }
     }

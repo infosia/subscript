@@ -1,16 +1,16 @@
 //! Statement checking: declarations, control flow, and the C7 flow
 //! narrowing that admits member access on `Ref | null` values.
 
+use super::FactSet;
 use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::hir::{self, BinOp, ExprKind};
+use crate::hir::{self, ExprKind};
 use crate::types::Type;
 
-use super::expr::path_key;
 use super::{Checker, FnCtx, Local};
 
 /// The type annotation a declaration writes on its whole pattern.
@@ -20,62 +20,6 @@ fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
         ast::Pat::Array(array) => array.type_ann.as_deref(),
         ast::Pat::Object(object) => object.type_ann.as_deref(),
         _ => None,
-    }
-}
-
-/// Narrowing facts derived from a checked leaf condition: paths known
-/// non-null or known present when the condition is true / false.
-/// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
-/// of compiler.md §124 before it reaches a leaf.
-pub(crate) fn narrow_paths(
-    cond: &hir::Expr,
-    apparent_type: impl Fn(&Type) -> Type,
-) -> (Vec<String>, Vec<String>) {
-    if let Some(key) = super::exception::instanceof_narrowed_path(cond) {
-        return (vec![key], Vec::new());
-    }
-    if let ExprKind::AbsenceTest { value, negated } = &cond.kind {
-        if let Some(key) = path_key(value) {
-            return if *negated {
-                (vec![key], Vec::new())
-            } else {
-                (Vec::new(), vec![key])
-            };
-        }
-        return (Vec::new(), Vec::new());
-    }
-    if let ExprKind::Binary { op, left, right } = &cond.kind {
-        match op {
-            BinOp::Eq | BinOp::Ne => {
-                let (null_side, other) = if matches!(left.kind, ExprKind::Null) {
-                    (Some(()), right)
-                } else if matches!(right.kind, ExprKind::Null) {
-                    (Some(()), left)
-                } else {
-                    (None, left)
-                };
-                if null_side.is_some() && matches!(apparent_type(&other.ty), Type::Nullable(_)) {
-                    let target = match &other.kind {
-                        ExprKind::Assign {
-                            op: None, target, ..
-                        } => target.as_ref(),
-                        _ => other,
-                    };
-                    if let Some(key) = path_key(target) {
-                        return match op {
-                            // `p === null` → p is non-null when false.
-                            BinOp::Eq => (Vec::new(), vec![key]),
-                            // `p !== null` → p is non-null when true.
-                            _ => (vec![key], Vec::new()),
-                        };
-                    }
-                }
-                (Vec::new(), Vec::new())
-            }
-            _ => (Vec::new(), Vec::new()),
-        }
-    } else {
-        (Vec::new(), Vec::new())
     }
 }
 
@@ -193,9 +137,7 @@ impl<'p> Checker<'p> {
         self.rejected_local_names = fx
             .scopes
             .iter()
-            .flat_map(|scope| &scope.vars)
-            .filter(|(_, local)| self.apparent_type(&local.ty) == Type::Error)
-            .map(|(name, _)| name.clone())
+            .map(|scope| scope.rejected_local_names.clone())
             .collect();
         let start = out.len();
         let (terminates, prefix) = fx.with_synthetic_owner(
@@ -220,7 +162,7 @@ impl<'p> Checker<'p> {
                 ast::Stmt::Decl(other) => {
                     let pos = self.pos(other.span());
                     for name in super::exports::declaration_names(other) {
-                        fx.declare(
+                        self.declare_in_context(
                             name.sym.as_ref(),
                             Local {
                                 ty: Type::Error,
@@ -228,6 +170,7 @@ impl<'p> Checker<'p> {
                                 async_origins: HashSet::new(),
                                 caught: false,
                             },
+                            fx,
                         );
                     }
                     self.reject_subset(
@@ -317,7 +260,7 @@ impl<'p> Checker<'p> {
                     for s in &b.stmts {
                         terminates |= self.check_stmt(s, fx, &mut inner);
                     }
-                    self.end_scope_narrowing(&inner, fx);
+                    self.end_scope_narrowing(fx);
                     fx.pop_scope();
                     out.push(hir::Stmt::Block(inner));
                     terminates
@@ -349,6 +292,14 @@ impl<'p> Checker<'p> {
         );
         self.rejected_local_names = saved_rejected_names;
         out.splice(start..start, prefix);
+        if out[start..]
+            .iter()
+            .any(|statement| matches!(statement, hir::Stmt::Let { dispose: true, .. }))
+        {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.dispose_on_exit = true;
+            }
+        }
         terminates
     }
 
@@ -513,7 +464,10 @@ impl<'p> Checker<'p> {
                     Type::Nullable(_) | Type::Null | Type::Error
                 )
             {
-                fx.narrowed.insert(name.clone());
+                fx.narrowed.insert_fact(super::NarrowingFact {
+                    key: name.clone(),
+                    shared: false,
+                });
             }
             out.push(hir::Stmt::Let {
                 name,
@@ -628,7 +582,7 @@ impl<'p> Checker<'p> {
             }
             single => self.check_stmt(single, fx, &mut out),
         };
-        self.end_scope_narrowing(&out, fx);
+        self.end_scope_narrowing(fx);
         fx.pop_scope();
         (out, terminates)
     }
@@ -644,7 +598,7 @@ impl<'p> Checker<'p> {
 
         let initial_notes = fx.ended_shared_narrowing.clone();
         fx.narrowed.retain(|key| !else_extra.contains(key));
-        fx.narrowed.extend(then_extra.clone());
+        fx.narrowed.extend_facts(then_extra.clone());
         let (then_stmts, then_term) = self.check_branch(&i.cons, fx);
         let then_term = then_term || always_returns(&then_stmts);
         let then_notes = fx.ended_shared_narrowing.clone();
@@ -652,7 +606,7 @@ impl<'p> Checker<'p> {
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         fx.narrowed.retain(|key| !then_extra.contains(key));
-        fx.narrowed.extend(else_extra);
+        fx.narrowed.extend_facts(else_extra);
         let (els_stmts, else_term) = match &i.alt {
             Some(alt) => {
                 let (stmts, term) = self.check_branch(alt, fx);
@@ -668,11 +622,11 @@ impl<'p> Checker<'p> {
             .cloned()
             .collect();
         if then_term {
-            note_paths.extend(else_possible);
+            note_paths.extend_facts(else_possible);
         } else if else_term {
-            note_paths.extend(then_possible);
+            note_paths.extend_facts(then_possible);
         } else {
-            note_paths.extend(then_possible.intersection(&else_possible).cloned());
+            note_paths.extend_facts(then_possible.intersection(&else_possible).cloned());
         }
         fx.narrowed = if then_term {
             else_facts
@@ -681,7 +635,7 @@ impl<'p> Checker<'p> {
         } else {
             then_facts.intersection(&else_facts).cloned().collect()
         };
-        fx.ended_shared_narrowing.extend(then_notes);
+        fx.ended_shared_narrowing.extend_facts(then_notes);
         fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::If {
             cond,
@@ -702,7 +656,7 @@ impl<'p> Checker<'p> {
         let (then_extra, _) = self.narrowing_paths(&cond, fx);
 
         let mut base = fx.narrowed.clone();
-        fx.narrowed.extend(then_extra.clone());
+        fx.narrowed.extend_facts(then_extra.clone());
         fx.loop_depth += 1;
         let (body, _) = self.check_branch(&w.body, fx);
         fx.loop_depth -= 1;
@@ -767,7 +721,7 @@ impl<'p> Checker<'p> {
             .unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
-        fx.narrowed.extend(then_extra.clone());
+        fx.narrowed.extend_facts(then_extra.clone());
         fx.loop_depth += 1;
         let (mut body, _) = self.check_branch(&f.body, fx);
         let step_statements = f.update.as_ref().map(|update| {
@@ -1392,12 +1346,13 @@ impl<'p> Checker<'p> {
         let dispatch_notes = fx.ended_shared_narrowing.clone();
         let mut exit_notes = dispatch_notes.clone();
         let mut dispatch = fx.narrowed.clone();
-        let mut fallthrough: Option<super::Shared<HashSet<String>>> = None;
+        let mut fallthrough: Option<super::NarrowingFacts> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let mut cases = Vec::new();
         for (case_index, case) in sw.cases.iter().enumerate() {
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.switch_case = Some(case_index);
+                scope.dispose_on_exit = false;
             }
             fx.narrowed = dispatch.clone();
             let case_pos = self.pos(case.span);
@@ -1429,8 +1384,8 @@ impl<'p> Checker<'p> {
             for s in &case.cons {
                 terminates |= self.check_stmt(s, fx, &mut body);
             }
-            self.end_scope_narrowing(&body, fx);
-            exit_notes.extend(fx.ended_shared_narrowing.iter().cloned());
+            self.end_scope_narrowing(fx);
+            exit_notes.extend_facts(fx.ended_shared_narrowing.iter().cloned());
             fallthrough = (!terminates).then(|| fx.narrowed.clone());
             cases.push(hir::SwitchCase {
                 test,
@@ -1450,7 +1405,7 @@ impl<'p> Checker<'p> {
         for edge in exits {
             fx.narrowed.retain(|key| edge.contains(key));
         }
-        fx.ended_shared_narrowing.extend(exit_notes);
+        fx.ended_shared_narrowing.extend_facts(exit_notes);
         fx.finish_narrowing_join(&note_paths);
         fx.pop_scope();
         fx.switch_depth -= 1;
@@ -1476,6 +1431,18 @@ impl<'p> Checker<'p> {
 mod tests {
     use super::*;
     use crate::diag::Pos;
+    use crate::hir::BinOp;
+
+    fn narrow_paths(
+        cond: &hir::Expr,
+        apparent: impl Fn(&Type) -> Type,
+    ) -> (Vec<String>, Vec<String>) {
+        let (yes, no) = super::super::narrowing::leaf_paths(cond, apparent, &[]);
+        (
+            yes.into_iter().map(|fact| fact.key).collect(),
+            no.into_iter().map(|fact| fact.key).collect(),
+        )
+    }
 
     fn expr(kind: ExprKind, ty: Type) -> hir::Expr {
         hir::Expr {
