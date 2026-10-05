@@ -82,6 +82,10 @@ impl<'p> Checker<'p> {
                     (i, resolved_first, pat)
                 {
                     ParamSig {
+                        annotated: binding
+                            .type_ann
+                            .as_ref()
+                            .is_some_and(|ann| checker.written_type(&ann.type_ann)),
                         name: binding.id.sym.to_string(),
                         state: crate::check::initializer::TypeState::decided(resolved.clone()),
                         initializer: None,
@@ -90,6 +94,7 @@ impl<'p> Checker<'p> {
                 } else if let Some(b) = unannotated_ident {
                     if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
                         ParamSig {
+                            annotated: false,
                             name: b.id.sym.to_string(),
                             state: crate::check::initializer::TypeState::decided(t.clone()),
                             initializer: None,
@@ -188,9 +193,27 @@ impl<'p> Checker<'p> {
             fn_boundary: true,
             ..Default::default()
         });
-        // Lambda bodies start without the enclosing narrowing facts
-        // (conservative: the lambda may run later).
         let saved_narrowed = std::mem::take(&mut fx.narrowed);
+        fx.narrowed = saved_narrowed
+            .iter()
+            .filter(|fact| {
+                !fact.contains('.')
+                    && !fact.starts_with("[[global]]")
+                    && fx
+                        .scopes
+                        .iter()
+                        .rev()
+                        .find_map(|scope| scope.vars.get(&fact.key))
+                        .is_some_and(|local| !local.mutable)
+            })
+            .cloned()
+            .collect();
+        let saved_notes = std::mem::take(&mut fx.ended_shared_narrowing);
+        let saved_loops = std::mem::take(&mut fx.loop_break_facts);
+        let saved_switches = std::mem::take(&mut fx.switch_break_facts);
+        let saved_depth = std::mem::replace(&mut fx.loop_depth, 0);
+        let saved_switch_depth = std::mem::replace(&mut fx.switch_depth, 0);
+        let saved_reachable = std::mem::replace(&mut fx.flow_reachable, true);
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut hir_params = Vec::new();
         for (p, pattern) in params.iter().zip(&a.params) {
@@ -215,6 +238,7 @@ impl<'p> Checker<'p> {
             self.declare_local(
                 &p.name,
                 Local {
+                    annotated: p.annotated,
                     ty: p.ty().clone(),
                     mutable: true,
                     async_origins: HashSet::new(),
@@ -299,6 +323,12 @@ impl<'p> Checker<'p> {
             body
         };
         fx.narrowed = saved_narrowed;
+        fx.ended_shared_narrowing = saved_notes;
+        fx.loop_break_facts = saved_loops;
+        fx.switch_break_facts = saved_switches;
+        fx.loop_depth = saved_depth;
+        fx.switch_depth = saved_switch_depth;
+        fx.flow_reachable = saved_reachable;
         fx.scopes.pop();
         fx.shadowed_narrowing_scopes.remove(&fx.scopes.len());
         let frame = fx.frames.pop();

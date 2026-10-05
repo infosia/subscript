@@ -1034,6 +1034,7 @@ impl<'p> Checker<'p> {
                     "post" => (
                         WorkerFn::Post,
                         vec![ParamSig {
+                            annotated: false,
                             name: "message".to_string(),
                             state: crate::check::initializer::TypeState::decided((*input).clone()),
                             initializer: None,
@@ -1129,6 +1130,7 @@ impl<'p> Checker<'p> {
                     return checker.err_expr(pos);
                 }
                 let params = [ParamSig {
+                    annotated: false,
                     name: "message".to_string(),
                     state: crate::check::initializer::TypeState::decided((*message).clone()),
                     initializer: None,

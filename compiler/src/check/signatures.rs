@@ -557,6 +557,10 @@ impl<'p> Checker<'p> {
                     }
                 };
                 ParamSig {
+                    annotated: binding
+                        .type_ann
+                        .as_ref()
+                        .is_some_and(|ann| self.written_type(&ann.type_ann)),
                     name: binding.id.sym.to_string(),
                     state: crate::check::initializer::TypeState::decided(ty),
                     initializer: None,
@@ -578,6 +582,7 @@ impl<'p> Checker<'p> {
                 };
                 let mut inner = if let Some(name) = infer_name {
                     ParamSig {
+                        annotated: false,
                         name,
                         state: TypeState::Undecided,
                         initializer: None,
@@ -619,6 +624,7 @@ impl<'p> Checker<'p> {
                 let id = self.next_pattern_id;
                 self.next_pattern_id += 1;
                 ParamSig {
+                    annotated: annotation.is_some_and(|ann| self.written_type(&ann.type_ann)),
                     name: format!("[[pattern#{id}.parameter]]"),
                     state: TypeState::decided(ty),
                     initializer: None,
@@ -639,6 +645,7 @@ impl<'p> Checker<'p> {
                     pos,
                 );
                 ParamSig {
+                    annotated: false,
                     name: String::new(),
                     state: TypeState::Rejected,
                     initializer: None,
@@ -667,11 +674,22 @@ impl<'p> Checker<'p> {
                 _ if pattern.is_destructuring() => {
                     let source = hir::Expr {
                         pending_work: None,
-                        kind: hir::ExprKind::Local(signature.name.clone(), signature.ty().clone()),
+                        kind: hir::ExprKind::Local(
+                            signature.name.clone(),
+                            signature.ty().clone(),
+                            signature.annotated,
+                        ),
                         ty: signature.ty().clone(),
                         pos: self.pos(pattern.span()),
                     };
-                    self.bind_pattern_from(&pattern, &source, true, fx, &mut prologue);
+                    self.bind_pattern_from(
+                        &pattern,
+                        &source,
+                        true,
+                        signature.annotated,
+                        fx,
+                        &mut prologue,
+                    );
                 }
                 _ => {}
             }
@@ -688,4 +706,42 @@ pub(super) fn type_only_import(
     named: &ast::ImportNamedSpecifier,
 ) -> bool {
     import.type_only || named.is_type_only
+}
+
+impl Checker<'_> {
+    /// A written annotation names no parameter of the enclosing generic source.
+    pub(crate) fn written_type(&self, ty: &ast::TsType) -> bool {
+        match ty {
+            ast::TsType::TsKeywordType(_) => true,
+            ast::TsType::TsTypeRef(reference) => {
+                let name_ok = match &reference.type_name {
+                    ast::TsEntityName::Ident(name) => !self.subst.contains_key(name.sym.as_ref()),
+                    ast::TsEntityName::TsQualifiedName(_) => true,
+                };
+                name_ok
+                    && reference
+                        .type_params
+                        .as_ref()
+                        .is_none_or(|args| args.params.iter().all(|arg| self.written_type(arg)))
+            }
+            ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
+                function.type_params.is_none()
+                    && self.written_type(&function.type_ann.type_ann)
+                    && function.params.iter().all(|param| match param {
+                        ast::TsFnParam::Ident(binding) => binding
+                            .type_ann
+                            .as_ref()
+                            .is_some_and(|ann| self.written_type(&ann.type_ann)),
+                        _ => false,
+                    })
+            }
+            ast::TsType::TsArrayType(array) => self.written_type(&array.elem_type),
+            ast::TsType::TsParenthesizedType(paren) => self.written_type(&paren.type_ann),
+            ast::TsType::TsUnionOrIntersectionType(
+                ast::TsUnionOrIntersectionType::TsUnionType(union),
+            ) => union.types.iter().all(|ty| self.written_type(ty)),
+            // Unsupported forms provide no proof for a loop store.
+            _ => false,
+        }
+    }
 }

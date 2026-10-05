@@ -352,9 +352,9 @@ impl<'p> Checker<'p> {
         if op.is_none() && self.apparent_type(&target_ty).carries_async_handle() {
             let origins = self.expr_async_origins(&value, fx);
             match &target.kind {
-                ExprKind::Local(name, _) => fx.set_local_async_origins(name, origins),
+                ExprKind::Local(name, _, _) => fx.set_local_async_origins(name, origins),
                 ExprKind::Index { obj, .. } => {
-                    if let ExprKind::Local(name, _) = &obj.kind {
+                    if let ExprKind::Local(name, _, _) = &obj.kind {
                         let mut stored = fx.local_async_origins(name);
                         stored.extend(origins);
                         fx.set_local_async_origins(name, stored);
@@ -440,7 +440,7 @@ impl<'p> Checker<'p> {
                     }
                     return Place::Local(hir::Expr {
                         pending_work: None,
-                        kind: ExprKind::Local(name, local.ty.clone()),
+                        kind: ExprKind::Local(name, local.ty.clone(), local.annotated),
                         ty: local.ty,
                         pos: ident_pos,
                     });

@@ -374,6 +374,7 @@ impl<'p> Checker<'p> {
             self.declare_in_context(
                 &param.name,
                 Local {
+                    annotated: param.annotated,
                     ty: param.ty().clone(),
                     mutable: true,
                     async_origins: HashSet::new(),

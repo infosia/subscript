@@ -1177,7 +1177,7 @@ mod tests {
         ] {
             let receiver = hir::Expr {
                 pending_work: None,
-                kind: hir::ExprKind::Local("receiver".to_string(), ty.clone()),
+                kind: hir::ExprKind::Local("receiver".to_string(), ty.clone(), false),
                 ty,
                 pos: Pos::new("main.ts", 1, 1),
             };
@@ -1202,7 +1202,7 @@ mod tests {
         ] {
             let receiver = hir::Expr {
                 pending_work: None,
-                kind: hir::ExprKind::Local("receiver".to_string(), ty.clone()),
+                kind: hir::ExprKind::Local("receiver".to_string(), ty.clone(), false),
                 ty,
                 pos: Pos::new("main.ts", 1, 1),
             };

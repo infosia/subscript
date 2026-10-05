@@ -75,7 +75,7 @@ pub(crate) fn instanceof_narrowed_value(condition: &hir::Expr) -> Option<&hir::E
 fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
     hir::Expr {
         pending_work: None,
-        kind: ExprKind::Local(name.to_string(), ty.clone()),
+        kind: ExprKind::Local(name.to_string(), ty.clone(), false),
         ty,
         pos,
     }
@@ -122,6 +122,7 @@ impl Checker<'_> {
         let pos = &Pos::new("", 0, 0);
         let id = self.new_class("Error", false, false, None, pos.clone());
         let field = |name: &str, ty: Type| hir::Field {
+            written_non_null: false,
             name: name.to_string(),
             ty,
             is_defaulted: false,
@@ -416,6 +417,7 @@ impl Checker<'_> {
             self.declare_local(
                 name,
                 Local {
+                    annotated: false,
                     ty: Type::Class(class),
                     mutable: false,
                     async_origins: HashSet::new(),
@@ -471,6 +473,7 @@ impl Checker<'_> {
 
     /// Checks one block in its own scope.
     fn check_block(&mut self, statements: &[ast::Stmt], fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
+        let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         self.reserve_block_declarations(statements, fx);
         let mut body = Vec::new();
@@ -480,6 +483,7 @@ impl Checker<'_> {
         }
         self.end_scope_narrowing(fx);
         fx.pop_scope();
+        fx.flow_reachable = reachable;
         (body, terminates)
     }
 

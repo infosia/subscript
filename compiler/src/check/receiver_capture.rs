@@ -8,7 +8,7 @@ use std::collections::HashMap;
 /// Other captures carry this fact through local lambda bindings.
 pub(super) fn carries_receiver(expression: &hir::Expr, locals: &HashMap<String, bool>) -> bool {
     match &expression.kind {
-        hir::ExprKind::Local(name, _) => locals.get(name).copied().unwrap_or(false),
+        hir::ExprKind::Local(name, _, _) => locals.get(name).copied().unwrap_or(false),
         hir::ExprKind::Lambda { captures, .. } => captures.iter().any(|capture| {
             capture.name == "this" || locals.get(&capture.name).copied().unwrap_or(false)
         }),
@@ -226,7 +226,7 @@ fn walk(
                 out.push((expression.pos.clone(), PrefixThis::Call));
             }
             if let hir::ExprKind::Assign { target, value, .. } = &expression.kind {
-                if let hir::ExprKind::Local(name, _) = &target.kind {
+                if let hir::ExprKind::Local(name, _, _) = &target.kind {
                     locals.insert(name.clone(), carries_receiver(value, locals));
                 }
             }

@@ -15,6 +15,7 @@ impl<'p> Checker<'p> {
                 scope.insert_local(
                     function.ident.sym.to_string(),
                     Local {
+                        annotated: false,
                         ty: Type::Error,
                         mutable: false,
                         async_origins: HashSet::new(),
@@ -82,6 +83,7 @@ impl<'p> Checker<'p> {
             self.declare_in_context(
                 &name,
                 Local {
+                    annotated: false,
                     ty: Type::Error,
                     mutable: true,
                     async_origins: HashSet::new(),
@@ -157,6 +159,7 @@ impl<'p> Checker<'p> {
         pattern: &pattern::Pattern<'_>,
         source: &hir::Expr,
         mutable: bool,
+        annotated: bool,
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) {
@@ -193,6 +196,7 @@ impl<'p> Checker<'p> {
             self.declare_local(
                 &name,
                 Local {
+                    annotated,
                     ty: ty.clone(),
                     mutable,
                     async_origins,
@@ -222,6 +226,7 @@ impl<'p> Checker<'p> {
         pattern: &pattern::Pattern<'_>,
         source: hir::Expr,
         mutable: bool,
+        annotated: bool,
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) {
@@ -232,7 +237,7 @@ impl<'p> Checker<'p> {
         let pos = source.pos.clone();
         let place = hir::Expr {
             pending_work: None,
-            kind: hir::ExprKind::Local(name.clone(), ty.clone()),
+            kind: hir::ExprKind::Local(name.clone(), ty.clone(), false),
             ty: ty.clone(),
             pos: pos.clone(),
         };
@@ -244,7 +249,7 @@ impl<'p> Checker<'p> {
             init: source,
             pos,
         });
-        self.bind_pattern_from(pattern, &place, mutable, fx, out);
+        self.bind_pattern_from(pattern, &place, mutable, annotated, fx, out);
     }
 
     pub(super) fn resolution_error(

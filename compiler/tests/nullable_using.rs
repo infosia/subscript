@@ -100,7 +100,7 @@ fn nullable_using_has_null_guard_and_non_null_receiver() {
     let (left, _) = null_guard(&hook);
     assert_eq!(
         left.kind,
-        hir::ExprKind::Local("resource".into(), binding.ty.clone())
+        hir::ExprKind::Local("resource".into(), binding.ty.clone(), false)
     );
 }
 
@@ -121,7 +121,7 @@ fn non_nullable_using_keeps_bare_call() {
     assert!(matches!(recv.ty, Type::Class(_)));
     assert_eq!(
         recv.kind,
-        hir::ExprKind::Local("resource".into(), binding.ty.clone())
+        hir::ExprKind::Local("resource".into(), binding.ty.clone(), false)
     );
 }
 
@@ -133,7 +133,7 @@ fn check_storage_reads(statement: &hir::Stmt, active: &[String]) -> usize {
             return expression(value, active);
         }
         let mut reads = 0;
-        if let hir::ExprKind::Local(name, _) = &expr.kind {
+        if let hir::ExprKind::Local(name, _, _) = &expr.kind {
             if let Some(id) = name.strip_prefix("[[using.value#") {
                 assert!(active.contains(&format!("[[using.active#{id}")));
                 reads += 1;
@@ -151,7 +151,7 @@ fn check_storage_reads(statement: &hir::Stmt, active: &[String]) -> usize {
         cond, then, els, ..
     } = statement
     {
-        if let hir::ExprKind::Local(flag, _) = &cond.kind {
+        if let hir::ExprKind::Local(flag, _, _) = &cond.kind {
             if flag.starts_with("[[using.active#") {
                 assert_eq!(then.len(), 1);
                 null_guard(&then[0]);

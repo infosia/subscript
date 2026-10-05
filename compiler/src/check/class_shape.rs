@@ -326,6 +326,7 @@ impl<'p> Checker<'p> {
             let sig = FnSig {
                 generic: false,
                 params: vec![ParamSig {
+                    annotated: self.written_type(&annotation.type_ann),
                     name: binding.id.sym.to_string(),
                     state: crate::check::initializer::TypeState::decided(
                         self.resolve_type(&annotation.type_ann),
@@ -748,7 +749,16 @@ impl<'p> Checker<'p> {
                             },
                         );
                     }
+                    let written_non_null = prop
+                        .type_ann
+                        .as_ref()
+                        .is_some_and(|ann| self.written_type(&ann.type_ann))
+                        && !matches!(
+                            self.apparent_type(&ty),
+                            Type::Null | Type::Nullable(_) | Type::Error
+                        );
                     self.classes[id.0].fields.push(hir::Field {
+                        written_non_null,
                         name: key.sym.to_string(),
                         ty,
                         is_defaulted,

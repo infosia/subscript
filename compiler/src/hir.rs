@@ -355,6 +355,8 @@ pub struct IndexSignature {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Field {
+    /// Whether the source declaration proves non-null without type parameters (§162 rule 3a).
+    pub written_non_null: bool,
     /// Field name.
     pub name: String,
     /// Resolved field type.
@@ -1649,8 +1651,8 @@ pub enum ExprKind {
     Null,
     /// `this` inside a constructor or method.
     This,
-    /// Local name and declared storage type (compiler.md §124).
-    Local(String, Type),
+    /// Local name, storage type, and a written annotation without type parameters (§124, §162 rule 3a).
+    Local(String, Type, bool),
     /// Reference to a module-level variable by its declaration symbol.
     Global(Symbol),
     /// A function declaration symbol used as a value (non-capturing — C5).

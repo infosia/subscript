@@ -389,6 +389,7 @@ impl<'p> Checker<'p> {
             self.declare_local(
                 &ps.name,
                 Local {
+                    annotated: ps.annotated,
                     ty: ps.ty().clone(),
                     mutable: true,
                     async_origins: if self.apparent_type(ps.ty()).carries_async_handle() {
@@ -644,6 +645,7 @@ impl<'p> Checker<'p> {
                         self.declare_local(
                             &ps.name,
                             Local {
+                                annotated: ps.annotated,
                                 ty: ps.ty().clone(),
                                 mutable: true,
                                 async_origins: HashSet::new(),

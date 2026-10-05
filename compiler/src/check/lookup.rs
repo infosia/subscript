@@ -154,6 +154,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         return Some(Local {
+                            annotated: false,
                             ty: Type::Error,
                             mutable: true,
                             async_origins: HashSet::new(),
@@ -190,6 +191,7 @@ impl<'p> Checker<'p> {
                     );
                 }
                 return Some(Local {
+                    annotated: false,
                     ty: Type::Error,
                     mutable: true,
                     async_origins: HashSet::new(),
@@ -211,6 +213,7 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return Some(Local {
+                    annotated: false,
                     ty: Type::Error,
                     mutable: true,
                     async_origins: HashSet::new(),

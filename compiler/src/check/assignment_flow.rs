@@ -37,7 +37,7 @@ impl Flow<'_, '_> {
             (Binding::Field(field), hir::ExprKind::Field { obj, name }) => {
                 name == field && matches!(obj.kind, hir::ExprKind::This)
             }
-            (Binding::Local(binding, _), hir::ExprKind::Local(name, _)) => {
+            (Binding::Local(binding, _), hir::ExprKind::Local(name, _, _)) => {
                 state.active && name == binding
             }
             _ => false,
@@ -366,7 +366,7 @@ impl<'a> LocalStatements<'a> {
     fn new(body: &'a [hir::Stmt]) -> Self {
         fn expression<'a>(value: &'a hir::Expr, names: &mut HashSet<&'a str>) {
             match &value.kind {
-                hir::ExprKind::Local(name, _) => {
+                hir::ExprKind::Local(name, _, _) => {
                     names.insert(name);
                 }
                 hir::ExprKind::Lambda { .. } => return,

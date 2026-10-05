@@ -56,6 +56,7 @@ impl UsingBinding {
                 } else {
                     ty.clone()
                 },
+                false,
             ),
             ty,
             pos: pos.clone(),
@@ -141,7 +142,7 @@ mod tests {
         let receiver = call_receiver(&hook);
         assert_eq!(
             receiver.kind,
-            ExprKind::Local("r".to_string(), binding.ty.clone())
+            ExprKind::Local("r".to_string(), binding.ty.clone(), false)
         );
         assert_eq!(receiver.ty, Type::Class(ClassId(1)));
     }
@@ -166,7 +167,10 @@ mod tests {
         else {
             panic!("the active-flag guard");
         };
-        assert_eq!(flag.kind, ExprKind::Local("active".to_string(), Type::Bool));
+        assert_eq!(
+            flag.kind,
+            ExprKind::Local("active".to_string(), Type::Bool, false)
+        );
         let [Stmt::If {
             cond: null_test,
             then: call,

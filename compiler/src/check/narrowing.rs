@@ -13,6 +13,14 @@ impl Checker<'_> {
         cond: &hir::Expr,
         fx: &mut FnCtx,
     ) -> (Vec<NarrowingFact>, Vec<NarrowingFact>) {
+        if let hir::ExprKind::Unary {
+            op: hir::UnOp::Not,
+            operand,
+        } = &cond.kind
+        {
+            let (yes, no) = self.narrowing_paths(operand, fx);
+            return (no, yes);
+        }
         if let hir::ExprKind::Binary {
             op: op @ (hir::BinOp::And | hir::BinOp::Or),
             left,
@@ -31,8 +39,11 @@ impl Checker<'_> {
             };
             let mut first = pick(self.narrowing_paths(left, fx));
             if !first.is_empty() {
-                let effects =
-                    right.narrowing_effects(self.narrowing_classes(), self.narrowing_helpers());
+                let effects = right.narrowing_effects(
+                    self.narrowing_classes(),
+                    self.narrowing_helpers(),
+                    self.narrowing_globals(),
+                );
                 first.retain(|key| {
                     let (shared, local) = path_kills(key, &effects);
                     if shared && !local {
@@ -58,6 +69,7 @@ impl Checker<'_> {
                 &expression.operation_narrowing_effects(
                     self.narrowing_classes(),
                     self.narrowing_helpers(),
+                    None,
                 ),
                 fx,
             );
@@ -112,6 +124,7 @@ impl Checker<'_> {
 #[derive(Default)]
 pub(super) struct Analysis {
     classes: Vec<hir::ClassDef>,
+    globals: std::collections::HashMap<hir::Symbol, Type>,
     helpers: std::collections::HashSet<hir::Symbol>,
     loops: std::collections::HashMap<(String, u32, u32), hir::NarrowingEffects>,
 }
@@ -125,6 +138,11 @@ impl Analysis {
         let classes = module.classes.clone();
         let mut analysis = Self {
             helpers: module.synthesized_helpers.clone(),
+            globals: module
+                .globals
+                .iter()
+                .map(|global| (global.symbol.clone(), global.ty.clone()))
+                .collect(),
             ..Default::default()
         };
         for owner in module.expression_owners_mut() {
@@ -177,7 +195,7 @@ impl Analysis {
             self.loops
                 .entry(position_key(pos))
                 .or_default()
-                .merge(statement.narrowing_effects(classes, &self.helpers));
+                .merge(statement.narrowing_effects(classes, &self.helpers, Some(&self.globals)));
         }
         for child in statement.children() {
             self.child(child, classes);
@@ -204,6 +222,11 @@ impl Checker<'_> {
     ) -> Analysis {
         let mut analysis = Analysis {
             helpers: self.narrowing_helpers().clone(),
+            globals: self
+                .globals
+                .iter()
+                .map(|global| (global.symbol.clone(), global.ty.clone()))
+                .collect(),
             ..Default::default()
         };
         for function in self.functions.iter().skip(functions) {
@@ -227,6 +250,12 @@ impl Checker<'_> {
         analysis
     }
 
+    fn narrowing_globals(&self) -> Option<&std::collections::HashMap<hir::Symbol, Type>> {
+        self.narrowing_analysis
+            .as_ref()
+            .map(|analysis| &analysis.globals)
+    }
+
     fn narrowing_helpers(&self) -> &std::collections::HashSet<hir::Symbol> {
         self.narrowing_analysis
             .as_ref()
@@ -240,16 +269,26 @@ impl Checker<'_> {
     }
 
     pub(super) fn apply_narrowing_effects(&self, effects: &hir::NarrowingEffects, fx: &mut FnCtx) {
+        self.apply_flow_effects(effects, fx, false);
+    }
+
+    fn apply_flow_effects(&self, effects: &hir::NarrowingEffects, fx: &mut FnCtx, loop_head: bool) {
+        let kills = |key: &NarrowingFact| {
+            if loop_head {
+                loop_path_kills(key, effects)
+            } else {
+                path_kills(key, effects)
+            }
+        };
         if !fx.has_narrowing_facts() {
             return;
         }
-        fx.ended_shared_narrowing
-            .retain(|key| !path_kills(key, effects).1);
+        fx.ended_shared_narrowing.retain(|key| !kills(key).1);
         for index in fx.shadowed_narrowing_scopes.iter() {
             let scope = &mut fx.scopes[*index];
             scope.shadowed_narrowing.retain(|key| {
                 // A shadowed path belongs to another binding, even with the same spelling.
-                if path_kills(key, effects).0 {
+                if kills(key).0 {
                     scope.shadowed_ended_shared.insert_fact(key.clone());
                     false
                 } else {
@@ -258,7 +297,7 @@ impl Checker<'_> {
             });
         }
         fx.narrowed.retain(|key| {
-            let (shared_kill, local_kill) = path_kills(key, effects);
+            let (shared_kill, local_kill) = kills(key);
             if shared_kill {
                 fx.ended_shared_narrowing.insert_fact(key.clone());
             }
@@ -278,7 +317,7 @@ impl Checker<'_> {
             .as_ref()
             .and_then(|analysis| analysis.loops.get(&position_key(pos)))
         {
-            self.apply_narrowing_effects(effects, fx);
+            self.apply_flow_effects(effects, fx, true);
         }
     }
 
@@ -307,13 +346,18 @@ impl Checker<'_> {
         notes: &super::NarrowingFacts,
     ) -> Option<hir::NarrowingEffects> {
         (fx.has_narrowing_facts() || !incoming.is_empty() || !notes.is_empty()).then(|| {
-            hir::NarrowingEffects::body(body, self.narrowing_classes(), self.narrowing_helpers())
+            hir::NarrowingEffects::body(
+                body,
+                self.narrowing_classes(),
+                self.narrowing_helpers(),
+                self.narrowing_globals(),
+            )
         })
     }
 }
 
 impl FnCtx {
-    fn has_narrowing_facts(&self) -> bool {
+    pub(super) fn has_narrowing_facts(&self) -> bool {
         !self.narrowed.is_empty()
             || !self.ended_shared_narrowing.is_empty()
             || !self.shadowed_narrowing_scopes.is_empty()
@@ -352,6 +396,17 @@ fn path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bo
     let same_path = |stored: &String| key.key == *stored || key.starts_with(&format!("{stored}."));
     let local_kill =
         effects.nullable_store_ends(key) || !global && effects.locals.iter().any(same_path);
+    (shared_kill, local_kill)
+}
+
+/// compiler.md §162 rule 3 keeps a whole-local fact through a non-null store.
+fn loop_path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bool) {
+    let shared_kill = path_kills(key, effects).0;
+    let local_kill = effects.nullable_store_ends(key)
+        || !super::stmt::root_of(key).starts_with("[[global]]")
+            && effects.locals.iter().any(|stored| {
+                key.starts_with(&format!("{stored}.")) || stored.contains('.') && key.key == *stored
+            });
     (shared_kill, local_kill)
 }
 
@@ -423,5 +478,120 @@ impl Checker<'_> {
     pub(super) fn push_narrowing_helper(&mut self, helper: hir::Function) {
         self.narrowing_helper_symbols.insert(helper.symbol.clone());
         self.functions.push(helper);
+    }
+}
+
+impl Checker<'_> {
+    /// Compares retained entry facts with stores from the final checked body (§162 rule 3b).
+    pub(super) fn check_loop_stores<'a>(
+        &mut self,
+        body: &[hir::Stmt],
+        expressions: impl Iterator<Item = &'a hir::Expr>,
+        kept: &super::NarrowingFacts,
+    ) {
+        if self.narrowing_analysis.is_none() || kept.is_empty() {
+            return;
+        }
+        let mut effects =
+            hir::NarrowingEffects::body(body, &self.classes, self.narrowing_helpers(), None);
+        for expression in expressions {
+            effects.merge(expression.narrowing_effects(
+                &self.classes,
+                self.narrowing_helpers(),
+                None,
+            ));
+        }
+        for diagnostic in checked_loop_store_diagnostics(effects, kept) {
+            self.reject_subset(
+                RejectionSite::NullableMember,
+                diagnostic.message,
+                diagnostic.pos,
+            );
+        }
+    }
+}
+
+/// The checked store type and the retained entry fact have separate derivations.
+fn checked_loop_store_diagnostics(
+    effects: hir::NarrowingEffects,
+    kept: &super::NarrowingFacts,
+) -> Vec<crate::diag::Diagnostic> {
+    effects.nullable_store_sites.into_iter().filter_map(|(path, pos)| {
+        kept.iter().any(|fact| fact.key == path || fact.starts_with(&format!("{path}."))).then(|| {
+            let path = hir::source_name(path.strip_prefix("[[global]]").unwrap_or(&path));
+            super::rejection::diagnostic(
+                RejectionSite::NullableMember,
+                format!("`{path}` may be null at the loop head: this store can set it to null\nnote: the loop keeps the null check of `{path}` made before the loop"),
+                pos,
+            )
+        })
+    }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn final_checked_body_must_preserve_the_retained_loop_fact() {
+        for path in ["a", "[[global]][[identity:module:00]]a"] {
+            let kept = super::super::NarrowingFacts::from(std::collections::BTreeSet::from([
+                NarrowingFact {
+                    key: path.into(),
+                    shared: false,
+                },
+            ]));
+            for (ty, rejected) in [
+                (Type::Null, true),
+                (Type::Class(crate::types::ClassId(0)), false),
+            ] {
+                let pos = Pos::new("test.ts", 3, 5);
+                let value = hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::Local("p".into(), ty.clone(), false),
+                    ty,
+                    pos: pos.clone(),
+                };
+                let target = hir::Expr {
+                    pending_work: None,
+                    kind: if let Some(symbol) = path.strip_prefix("[[global]]") {
+                        ExprKind::Global(hir::Symbol::from_full_text(symbol))
+                    } else {
+                        ExprKind::Local(
+                            path.into(),
+                            Type::Nullable(Box::new(Type::Class(crate::types::ClassId(0)))),
+                            true,
+                        )
+                    },
+                    ty: Type::Nullable(Box::new(Type::Class(crate::types::ClassId(0)))),
+                    pos: pos.clone(),
+                };
+                let store = hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::Assign {
+                        update: None,
+                        op: None,
+                        target: Box::new(target),
+                        value: Box::new(value),
+                    },
+                    ty: Type::Class(crate::types::ClassId(0)),
+                    pos: pos.clone(),
+                };
+                // Build the violating body. Do not alter a summary record after its derivation.
+                let body = [hir::Stmt::Expr(store)];
+                let effects = hir::NarrowingEffects::body(&body, &[], &Default::default(), None);
+                let errors = checked_loop_store_diagnostics(effects, &kept);
+                assert_eq!(!errors.is_empty(), rejected);
+                if rejected {
+                    assert_eq!(errors[0].code, crate::diag::RuleCode::S011);
+                    assert_eq!(errors[0].divergence, None);
+                    assert_eq!(errors[0].pos, pos);
+                    assert_eq!(
+                        errors[0].message,
+                        "`a` may be null at the loop head: this store can set it to null\nnote: the loop keeps the null check of `a` made before the loop"
+                    );
+                }
+            }
+        }
     }
 }

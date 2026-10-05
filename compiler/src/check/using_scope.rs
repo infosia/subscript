@@ -190,7 +190,7 @@ fn switch(disc: Expr, cases: Vec<SwitchCase>, pos: Pos, ids: &mut usize) -> Vec<
             body.push(assign(
                 &storage,
                 ty.clone(),
-                ExprKind::Local(name, ty.clone()),
+                ExprKind::Local(name, ty.clone(), false),
                 ty,
                 &binding_pos,
             ));
@@ -253,7 +253,7 @@ fn assign(name: &str, ty: Type, value: ExprKind, value_ty: Type, pos: &Pos) -> S
             op: None,
             target: Box::new(Expr {
                 pending_work: None,
-                kind: ExprKind::Local(name.to_string(), ty.clone()),
+                kind: ExprKind::Local(name.to_string(), ty.clone(), false),
                 ty: ty.clone(),
                 pos: pos.clone(),
             }),

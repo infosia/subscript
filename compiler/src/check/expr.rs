@@ -174,7 +174,7 @@ impl Place {
 /// Dotted path key for narrowing (`node`, `node.next`, `this.x`).
 pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     match &e.kind {
-        ExprKind::Local(n, _) => Some(n.clone()),
+        ExprKind::Local(n, _, _) => Some(n.clone()),
         ExprKind::Global(n) => Some(format!("[[global]]{}", n.full_text())),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => path_key(obj).map(|p| format!("{}.{}", p, name)),

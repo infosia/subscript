@@ -44,7 +44,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
         });
         let kind = match &expr.kind {
-            hir::ExprKind::Local(name, _) => {
+            hir::ExprKind::Local(name, _, _) => {
                 let binding = self.lookup_binding(name, &expr.pos)?;
                 let ty = match &self.bindings[binding.0].ty {
                     l::ValueType::Data(ty) => ty.clone(),

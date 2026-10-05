@@ -106,6 +106,7 @@ impl<'p> Checker<'p> {
         }
 
         let params = [ParamSig {
+            annotated: false,
             name: String::new(),
             state: crate::check::initializer::TypeState::decided(Type::I32),
             initializer: None,
@@ -181,6 +182,7 @@ impl<'p> Checker<'p> {
             .iter()
             .enumerate()
             .map(|(i, p)| ParamSig {
+                annotated: false,
                 name: String::new(),
                 state: crate::check::initializer::TypeState::decided(match p {
                     hir::StrParam::Str => Type::Str,
@@ -369,6 +371,7 @@ impl<'p> Checker<'p> {
                 let params = [
                     ParamSig::positional(elem.clone()),
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
@@ -420,6 +423,7 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let params = [ParamSig {
+                    annotated: false,
                     name: String::new(),
                     state: crate::check::initializer::TypeState::decided(Type::Str),
                     initializer: None,
@@ -448,12 +452,14 @@ impl<'p> Checker<'p> {
             A::Slice => {
                 let params = [
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
                         has_default: true,
                     },
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
@@ -482,12 +488,14 @@ impl<'p> Checker<'p> {
                 let params = [
                     ParamSig::positional(elem.clone()),
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
                         has_default: true,
                     },
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
@@ -562,6 +570,7 @@ impl<'p> Checker<'p> {
                 let params = [
                     ParamSig::positional(Type::I32),
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,
@@ -641,6 +650,7 @@ impl<'p> Checker<'p> {
                     ParamSig::positional(Type::I32),
                     ParamSig::positional(Type::I32),
                     ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,

@@ -112,7 +112,7 @@ fn expr_children_yield_every_child() {
         ExprKind::Str(String::new()),
         ExprKind::Null,
         ExprKind::This,
-        ExprKind::Local(String::new(), Type::I32),
+        ExprKind::Local(String::new(), Type::I32, false),
         ExprKind::Global(Symbol::from_full_text("")),
         ExprKind::FuncRef(Symbol::from_full_text("")),
         ExprKind::EnumMember {

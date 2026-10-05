@@ -836,12 +836,14 @@ impl<'p> Checker<'p> {
         }
         let params = [
             ParamSig {
+                annotated: false,
                 name: "pattern".to_string(),
                 state: crate::check::initializer::TypeState::decided(Type::Str),
                 initializer: None,
                 has_default: false,
             },
             ParamSig {
+                annotated: false,
                 name: "flags".to_string(),
                 state: crate::check::initializer::TypeState::decided(Type::Str),
                 initializer: None,
@@ -1169,6 +1171,7 @@ impl<'p> Checker<'p> {
                 // components to 0 (stdlib.md §3.1).
                 let params: Vec<ParamSig> = (0..7)
                     .map(|i| ParamSig {
+                        annotated: false,
                         name: String::new(),
                         state: crate::check::initializer::TypeState::decided(Type::I32),
                         initializer: None,

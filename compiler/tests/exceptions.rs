@@ -121,14 +121,14 @@ fn the_catch_binding_has_two_legal_uses_before_narrowing() {
 }
 
 #[test]
-fn narrowing_does_not_reach_a_lambda_or_the_code_after_the_test() {
-    let lambda = first_error(&in_main(
+fn const_catch_narrowing_reaches_a_lambda_but_ends_after_the_test() {
+    let lambda = check(&in_main(
         "  try {\n    print(\"x\");\n  } catch (e) {\n\
          \x20   if (e instanceof Error) {\n\
          \x20     const show = (): void => { print(e.message); };\n\
          \x20     show();\n    }\n  }",
     ));
-    assert_eq!(lambda.code, RuleCode::S010);
+    lambda.expect("a lambda keeps the whole const catch fact");
 
     let after = first_error(&in_main(
         "  try {\n    print(\"x\");\n  } catch (e) {\n\

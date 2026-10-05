@@ -1,6 +1,6 @@
 //! Script execution and store effects (compiler.md §124).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::*;
 
@@ -13,6 +13,8 @@ pub(crate) struct NarrowingEffects {
     pub(crate) locals: HashSet<String>,
     /// Same-path nullable stores end facts without a C17 diagnostic (§159 rule 5).
     pub(crate) nullable_stores: HashSet<String>,
+    /// Checked nullable stores, independently derived for the final loop check.
+    pub(crate) nullable_store_sites: Vec<(String, Pos)>,
 }
 
 impl NarrowingEffects {
@@ -22,6 +24,7 @@ impl NarrowingEffects {
         self.globals.extend(other.globals);
         self.locals.extend(other.locals);
         self.nullable_stores.extend(other.nullable_stores);
+        self.nullable_store_sites.extend(other.nullable_store_sites);
     }
 
     /// Whether a nullable store ends this path without a C17 note (§159 rule 5).
@@ -31,10 +34,15 @@ impl NarrowingEffects {
             .any(|stored| path == stored || path.starts_with(&format!("{stored}.")))
     }
 
-    pub(crate) fn body(body: &[Stmt], classes: &[ClassDef], helpers: &HashSet<Symbol>) -> Self {
+    pub(crate) fn body(
+        body: &[Stmt],
+        classes: &[ClassDef],
+        helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
+    ) -> Self {
         let mut effects = Self::default();
         for statement in body {
-            effects.merge(statement.narrowing_effects(classes, helpers));
+            effects.merge(statement.narrowing_effects(classes, helpers, declared_globals));
         }
         for statement in body {
             if let Stmt::Let { name, .. } = statement {
@@ -45,6 +53,8 @@ impl NarrowingEffects {
     }
 
     fn hide_binding(&mut self, name: &str) {
+        self.nullable_store_sites
+            .retain(|(path, _)| path != name && !path.starts_with(&format!("{name}.")));
         self.nullable_stores
             .retain(|path| path != name && !path.starts_with(&format!("{name}.")));
     }
@@ -142,19 +152,64 @@ impl Expr {
             })
     }
 
+    /// Rule 3a uses declared path types without provisional narrowing facts.
+    fn non_null_without_facts(
+        &self,
+        classes: &[ClassDef],
+        globals: &HashMap<Symbol, Type>,
+    ) -> bool {
+        let non_null = |ty: &Type| {
+            !matches!(
+                ty,
+                Type::Null
+                    | Type::Nullable(_)
+                    | Type::TypeParameter(_)
+                    | Type::GenericNumber
+                    | Type::Error
+            )
+        };
+        match &self.kind {
+            ExprKind::Global(symbol) => globals.get(symbol).is_some_and(non_null),
+            ExprKind::Local(_, declared, annotated) => *annotated && non_null(declared),
+            ExprKind::Field { obj, name } => match &obj.ty {
+                Type::Class(id) => classes
+                    .get(id.0)
+                    .and_then(|class| class.fields.iter().find(|field| field.name == *name))
+                    .is_some_and(|field| field.written_non_null),
+                _ => false,
+            },
+            ExprKind::Cond { then, els, .. } => {
+                then.non_null_without_facts(classes, globals)
+                    && els.non_null_without_facts(classes, globals)
+            }
+            ExprKind::Assign {
+                op: None, value, ..
+            } => value.non_null_without_facts(classes, globals),
+            ExprKind::New { .. }
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Str(_)
+            | ExprKind::EnumMember { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Effects owned by this operation, excluding its already evaluated operands.
     pub(crate) fn operation_narrowing_effects(
         &self,
         classes: &[ClassDef],
         helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
     ) -> NarrowingEffects {
-        self.own_effects(classes, helpers, &mut HashSet::new())
+        self.own_effects(classes, helpers, declared_globals, &mut HashSet::new())
     }
 
     fn own_effects(
         &self,
         classes: &[ClassDef],
         helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
         visiting: &mut HashSet<ClassId>,
     ) -> NarrowingEffects {
         let mut effects = NarrowingEffects {
@@ -168,8 +223,16 @@ impl Expr {
             ..
         } = &self.kind
         {
-            if matches!(value.ty, Type::Null | Type::Nullable(_)) {
+            if declared_globals.map_or_else(
+                || matches!(value.ty, Type::Null | Type::Nullable(_)),
+                |globals| !value.non_null_without_facts(classes, globals),
+            ) {
                 if let Some(path) = store_path(target) {
+                    if declared_globals.is_none() {
+                        effects
+                            .nullable_store_sites
+                            .push((path.clone(), self.pos.clone()));
+                    }
                     effects.nullable_stores.insert(path);
                 }
             }
@@ -187,7 +250,7 @@ impl Expr {
                 ExprKind::Global(name) => {
                     effects.globals.insert(name.clone());
                 }
-                ExprKind::Local(name, _) => {
+                ExprKind::Local(name, _, _) => {
                     effects.locals.insert(name.clone());
                 }
                 _ => {}
@@ -202,7 +265,12 @@ impl Expr {
                             continue;
                         }
                         if let Some(init) = &field.init {
-                            effects.merge(init.effects_with_visiting(classes, helpers, visiting));
+                            effects.merge(init.effects_with_visiting(
+                                classes,
+                                helpers,
+                                declared_globals,
+                                visiting,
+                            ));
                         }
                     }
                 }
@@ -217,21 +285,28 @@ impl Expr {
         &self,
         classes: &[ClassDef],
         helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
     ) -> NarrowingEffects {
-        self.effects_with_visiting(classes, helpers, &mut HashSet::new())
+        self.effects_with_visiting(classes, helpers, declared_globals, &mut HashSet::new())
     }
 
     fn effects_with_visiting(
         &self,
         classes: &[ClassDef],
         helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
         visiting: &mut HashSet<ClassId>,
     ) -> NarrowingEffects {
-        let mut effects = self.own_effects(classes, helpers, visiting);
+        let mut effects = self.own_effects(classes, helpers, declared_globals, visiting);
         if !matches!(self.kind, ExprKind::Lambda { .. }) {
             for child in self.children() {
                 if let HirChild::Expr(expression) = child {
-                    effects.merge(expression.effects_with_visiting(classes, helpers, visiting));
+                    effects.merge(expression.effects_with_visiting(
+                        classes,
+                        helpers,
+                        declared_globals,
+                        visiting,
+                    ));
                 }
             }
         }
@@ -245,6 +320,7 @@ impl Stmt {
         &self,
         classes: &[ClassDef],
         helpers: &HashSet<Symbol>,
+        declared_globals: Option<&HashMap<Symbol, Type>>,
     ) -> NarrowingEffects {
         let script = match self {
             Stmt::Using { .. } => true,
@@ -268,11 +344,12 @@ impl Stmt {
         };
         for child in self.children() {
             if let HirChild::Expr(expression) = child {
-                effects.merge(expression.narrowing_effects(classes, helpers));
+                effects.merge(expression.narrowing_effects(classes, helpers, declared_globals));
             }
         }
         // A body-local receiver is another binding, even when it has an outer name.
-        let body_effects = |body: &[Stmt]| NarrowingEffects::body(body, classes, helpers);
+        let body_effects =
+            |body: &[Stmt]| NarrowingEffects::body(body, classes, helpers, declared_globals);
         match self {
             Stmt::If { then, els, .. } => {
                 effects.merge(body_effects(then));
@@ -284,7 +361,7 @@ impl Stmt {
             Stmt::For { init, body, .. } => {
                 effects.merge(body_effects(body));
                 if let Some(init) = init {
-                    effects.merge(init.narrowing_effects(classes, helpers));
+                    effects.merge(init.narrowing_effects(classes, helpers, declared_globals));
                     if let Stmt::Let { name, .. } = init.as_ref() {
                         effects.hide_binding(name);
                     }
@@ -414,7 +491,7 @@ impl Callee {
 
 fn local_store_path(expression: &Expr) -> Option<String> {
     match &expression.kind {
-        ExprKind::Local(name, _) => Some(name.clone()),
+        ExprKind::Local(name, _, _) => Some(name.clone()),
         ExprKind::Field { obj, name } => local_store_path(obj).map(|root| format!("{root}.{name}")),
         _ => None,
     }
@@ -423,9 +500,29 @@ fn local_store_path(expression: &Expr) -> Option<String> {
 fn store_path(expression: &Expr) -> Option<String> {
     match &expression.kind {
         ExprKind::Global(name) => Some(format!("[[global]]{}", name.full_text())),
-        ExprKind::Local(name, _) => Some(name.clone()),
+        ExprKind::Local(name, _, _) => Some(name.clone()),
         ExprKind::This => Some("this".into()),
         ExprKind::Field { obj, name } => store_path(obj).map(|root| format!("{root}.{name}")),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_global_store_value_requires_its_declared_type() {
+        use super::*;
+        let symbol = Symbol::from_full_text("[[test]]global");
+        let value = Expr {
+            pending_work: None,
+            kind: ExprKind::Global(symbol.clone()),
+            ty: Type::I32,
+            pos: crate::diag::Pos::new("test.ts", 1, 1),
+        };
+        assert!(!value.non_null_without_facts(&[], &HashMap::new()));
+        let globals = HashMap::from([(symbol.clone(), Type::Nullable(Box::new(Type::I32)))]);
+        assert!(!value.non_null_without_facts(&[], &globals));
+        let globals = HashMap::from([(symbol, Type::I32)]);
+        assert!(value.non_null_without_facts(&[], &globals));
     }
 }

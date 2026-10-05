@@ -97,7 +97,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .clone()
                     .ok_or_else(|| self.error(&expr.pos, "`this` has no receiver parameter"))?,
             ),
-            K::Local(name, _) => {
+            K::Local(name, _, _) => {
                 if let Some(value) = self.lookup_substitution(name) {
                     Some(self.coerce_read(
                         value,
@@ -648,7 +648,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        if let hir::ExprKind::Local(name, _) = &target_expr.kind {
+        if let hir::ExprKind::Local(name, _, _) = &target_expr.kind {
             let binding = self.lookup_binding(name, &target_expr.pos)?;
             let old = if op.is_some() {
                 Some(self.read_binding(binding, &target_expr.pos)?)

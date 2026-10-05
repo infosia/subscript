@@ -162,7 +162,7 @@ fn default_locals(value: &hir::Expr, out: &mut Vec<(String, Type)>) {
         );
         return;
     }
-    if let hir::ExprKind::Local(name, ty) = &value.kind {
+    if let hir::ExprKind::Local(name, ty, _) = &value.kind {
         if !out.iter().any(|(local, _)| local == name) {
             out.push((name.clone(), ty.clone()));
         }

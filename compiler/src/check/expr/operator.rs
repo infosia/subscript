@@ -183,7 +183,7 @@ impl<'p> Checker<'p> {
         });
         hir::Expr {
             pending_work: None,
-            kind: ExprKind::Local(name, ty.clone()),
+            kind: ExprKind::Local(name, ty.clone(), false),
             ty,
             pos,
         }
@@ -913,6 +913,7 @@ impl<'p> Checker<'p> {
         self.declare_in_context(
             &name,
             crate::check::Local {
+                annotated: false,
                 ty: nullable.clone(),
                 mutable: true,
                 async_origins: std::collections::HashSet::new(),
@@ -935,7 +936,7 @@ impl<'p> Checker<'p> {
         });
         let target = hir::Expr {
             pending_work: None,
-            kind: ExprKind::Local(name.clone(), nullable.clone()),
+            kind: ExprKind::Local(name.clone(), nullable.clone(), false),
             ty: nullable.clone(),
             pos: pos.clone(),
         };
@@ -952,7 +953,7 @@ impl<'p> Checker<'p> {
         };
         let value = hir::Expr {
             pending_work: None,
-            kind: ExprKind::Local(name, nullable),
+            kind: ExprKind::Local(name, nullable, false),
             ty: inner,
             pos: pos.clone(),
         };

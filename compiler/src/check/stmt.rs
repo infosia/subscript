@@ -165,6 +165,7 @@ impl<'p> Checker<'p> {
                         self.declare_in_context(
                             name.sym.as_ref(),
                             Local {
+                                annotated: false,
                                 ty: Type::Error,
                                 mutable: false,
                                 async_origins: HashSet::new(),
@@ -230,6 +231,13 @@ impl<'p> Checker<'p> {
                             edges.push(fx.narrowed.clone());
                         }
                     }
+                    let switch_exit = fx
+                        .switch_break_facts
+                        .last()
+                        .is_some_and(|(depth, _)| *depth == fx.loop_depth);
+                    if !switch_exit {
+                        self.record_loop_edge(fx, false);
+                    }
                     out.push(hir::Stmt::Break(pos));
                     true
                 }
@@ -249,6 +257,7 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
+                    self.record_loop_edge(fx, true);
                     out.push(hir::Stmt::Continue(pos));
                     true
                 }
@@ -300,6 +309,7 @@ impl<'p> Checker<'p> {
                 scope.dispose_on_exit = true;
             }
         }
+        fx.flow_reachable &= !terminates;
         terminates
     }
 
@@ -391,6 +401,8 @@ impl<'p> Checker<'p> {
                 self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
                 continue;
             };
+            let annotated =
+                pattern_type_ann(&d.name).is_some_and(|ann| self.written_type(&ann.type_ann));
             let ty = match ann {
                 Some(ann) => {
                     if !matches!(init.kind, hir::ExprKind::Unassigned) {
@@ -442,13 +454,14 @@ impl<'p> Checker<'p> {
                     ty,
                     pos: init.pos,
                 };
-                self.bind_pattern(&pattern, source, mutable, fx, out);
+                self.bind_pattern(&pattern, source, mutable, annotated, fx, out);
                 continue;
             }
             let async_origins = self.expr_async_origins(&init, fx);
             self.declare_local(
                 &name,
                 Local {
+                    annotated,
                     ty: ty.clone(),
                     mutable,
                     async_origins,
@@ -569,6 +582,7 @@ impl<'p> Checker<'p> {
     /// Checks a branch body (a block or a single statement) in its own
     /// scope. Returns the statements and whether the branch terminates.
     fn check_branch(&mut self, s: &ast::Stmt, fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
+        let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         let mut out = Vec::new();
         let terminates = match s {
@@ -584,6 +598,7 @@ impl<'p> Checker<'p> {
         };
         self.end_scope_narrowing(fx);
         fx.pop_scope();
+        fx.flow_reachable = reachable;
         (out, terminates)
     }
 
@@ -646,24 +661,145 @@ impl<'p> Checker<'p> {
         then_term && i.alt.is_some() && else_term
     }
 
+    fn record_loop_edge(&self, fx: &mut FnCtx, is_continue: bool) {
+        if !fx.flow_reachable {
+            return;
+        }
+        if !fx.has_narrowing_facts() {
+            if let Some((_, breaks, continues)) = fx.loop_break_facts.last_mut() {
+                let edge = super::LoopEdge {
+                    facts: Default::default(),
+                    notes: Default::default(),
+                };
+                if is_continue {
+                    continues.push(edge);
+                } else {
+                    breaks.push(edge);
+                }
+            }
+            return;
+        }
+        if let Some((scope_depth, _, _)) = fx.loop_break_facts.last() {
+            let mut edge = super::LoopEdge {
+                facts: fx.narrowed.clone(),
+                notes: fx.ended_shared_narrowing.clone(),
+            };
+            let mut disposed = false;
+            for scope in fx.scopes[*scope_depth..].iter().rev() {
+                disposed |= scope.dispose_on_exit;
+                if scope.dispose_on_exit && edge.facts.iter().any(|key| key.shared) {
+                    edge.facts.retain(|key| {
+                        if key.shared {
+                            edge.notes.insert_fact(key.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+                if !scope.vars.is_empty()
+                    && edge
+                        .facts
+                        .iter()
+                        .any(|key| scope.vars.contains_key(root_of(key)))
+                {
+                    edge.facts
+                        .retain(|key| !scope.vars.contains_key(root_of(key)));
+                }
+                if !scope.shadowed_narrowing.is_empty() {
+                    let mut facts = scope.shadowed_narrowing.clone();
+                    if disposed && facts.iter().any(|key| key.shared) {
+                        facts.retain(|key| {
+                            if key.shared {
+                                edge.notes.insert_fact(key.clone());
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                    edge.facts.extend_facts(facts);
+                }
+                if !scope.shadowed_ended_shared.is_empty() {
+                    edge.notes.extend_facts(scope.shadowed_ended_shared.clone());
+                }
+            }
+            if let Some((_, breaks, continues)) = fx.loop_break_facts.last_mut() {
+                if is_continue {
+                    continues.push(edge);
+                } else {
+                    breaks.push(edge);
+                }
+            }
+        }
+    }
+
+    fn join_loop_exits(fx: &mut FnCtx, false_exit: Option<super::LoopEdge>) {
+        let mut exits = fx
+            .loop_break_facts
+            .pop()
+            .map_or_else(Vec::new, |(_, edges, _)| edges);
+        exits.extend(false_exit);
+        Self::join_flow_edges(fx, exits);
+    }
+
+    fn join_flow_edges(fx: &mut FnCtx, mut edges: Vec<super::LoopEdge>) {
+        if edges.iter().all(|edge| edge.notes.is_empty()) {
+            fx.narrowed = edges.pop().map_or_else(Default::default, |edge| edge.facts);
+            fx.ended_shared_narrowing = Default::default();
+            for edge in edges {
+                if !std::ptr::eq(&*fx.narrowed, &*edge.facts) && *fx.narrowed != *edge.facts {
+                    fx.narrowed.retain(|key| edge.facts.contains(key));
+                }
+            }
+            return;
+        }
+        let first = edges.pop();
+        let mut eligible: HashSet<_> = first.as_ref().map_or_else(HashSet::new, |edge| {
+            edge.facts.union(&edge.notes).cloned().collect()
+        });
+        fx.narrowed = first
+            .as_ref()
+            .map_or_else(Default::default, |edge| edge.facts.clone());
+        fx.ended_shared_narrowing = first.map_or_else(Default::default, |edge| edge.notes);
+        for edge in edges {
+            eligible.retain(|key| edge.facts.contains(key) || edge.notes.contains(key));
+            fx.narrowed.retain(|key| edge.facts.contains(key));
+            fx.ended_shared_narrowing.extend_facts(edge.notes);
+        }
+        fx.finish_narrowing_join(&eligible);
+    }
+
     fn check_while(&mut self, w: &ast::WhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(w.span);
-        let note_paths = fx.narrowing_note_paths();
         self.end_loop_narrowing(&pos, fx);
+        let kept = fx.narrowed.clone();
 
         let cond = self.check_truth_expr(&w.test, fx);
         self.require_bool(&cond);
-        let (then_extra, _) = self.narrowing_paths(&cond, fx);
-
-        let mut base = fx.narrowed.clone();
-        fx.narrowed.extend_facts(then_extra.clone());
+        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
+        let mut false_exit = fx.narrowed.clone();
+        if !then_extra.is_empty() {
+            false_exit.retain(|key| !then_extra.contains(key));
+        }
+        if !else_extra.is_empty() {
+            false_exit.extend_facts(else_extra);
+        }
+        let false_exit = (!is_true_literal(&cond)).then_some(super::LoopEdge {
+            facts: false_exit,
+            notes: fx.ended_shared_narrowing.clone(),
+        });
+        if !then_extra.is_empty() {
+            fx.narrowed.extend_facts(then_extra.clone());
+        }
         fx.loop_depth += 1;
+        fx.loop_break_facts
+            .push((fx.scopes.len(), Vec::new(), Vec::new()));
         let (body, _) = self.check_branch(&w.body, fx);
+        self.check_loop_stores(&body, std::iter::once(&cond), &kept);
         fx.loop_depth -= 1;
-        base.retain(|k| fx.narrowed.contains(k));
-        fx.narrowed = base;
+        Self::join_loop_exits(fx, false_exit);
 
-        fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::While { cond, body, pos });
     }
 
@@ -698,8 +834,8 @@ impl<'p> Checker<'p> {
             None => None,
         };
 
-        let note_paths = fx.narrowing_note_paths();
         self.end_loop_narrowing(&pos, fx);
+        let kept = fx.narrowed.clone();
 
         let (cond, cond_prefix) = match &f.test {
             Some(test) => {
@@ -715,15 +851,42 @@ impl<'p> Checker<'p> {
             }
             None => (None, super::SyntheticPrefix::default()),
         };
-        let then_extra = cond
+        let (then_extra, else_extra) = cond
             .as_ref()
-            .map(|c| self.narrowing_paths(c, fx).0)
+            .map(|c| self.narrowing_paths(c, fx))
             .unwrap_or_default();
-
-        let mut base = fx.narrowed.clone();
-        fx.narrowed.extend_facts(then_extra.clone());
+        let mut false_exit = fx.narrowed.clone();
+        if !then_extra.is_empty() {
+            false_exit.retain(|key| !then_extra.contains(key));
+        }
+        if !else_extra.is_empty() {
+            false_exit.extend_facts(else_extra);
+        }
+        let false_exit = cond
+            .as_ref()
+            .is_some_and(|c| !is_true_literal(c))
+            .then_some(super::LoopEdge {
+                facts: false_exit,
+                notes: fx.ended_shared_narrowing.clone(),
+            });
+        if !then_extra.is_empty() {
+            fx.narrowed.extend_facts(then_extra);
+        }
         fx.loop_depth += 1;
-        let (mut body, _) = self.check_branch(&f.body, fx);
+        fx.loop_break_facts
+            .push((fx.scopes.len(), Vec::new(), Vec::new()));
+        let (mut body, terminates) = self.check_branch(&f.body, fx);
+        let mut update_edges = fx
+            .loop_break_facts
+            .last()
+            .map_or_else(Vec::new, |(_, _, edges)| edges.clone());
+        if !terminates {
+            update_edges.push(super::LoopEdge {
+                facts: fx.narrowed.clone(),
+                notes: fx.ended_shared_narrowing.clone(),
+            });
+        }
+        Self::join_flow_edges(fx, update_edges);
         let step_statements = f.update.as_ref().map(|update| {
             let (statements, prefix) = fx.with_synthetic_owner(
                 super::SyntheticOwnerKind::ForUpdate(self.pos(update.span())),
@@ -733,12 +896,17 @@ impl<'p> Checker<'p> {
             step.extend(statements);
             step
         });
+        self.check_loop_stores(&body, cond.iter(), &kept);
+        if !cond_prefix.is_empty() {
+            self.check_loop_stores(&cond_prefix.0, std::iter::empty(), &kept);
+        }
+        if let Some(step) = &step_statements {
+            self.check_loop_stores(step, std::iter::empty(), &kept);
+        }
         fx.loop_depth -= 1;
-        base.retain(|k| fx.narrowed.contains(k));
-        fx.narrowed = base;
+        Self::join_loop_exits(fx, false_exit);
         fx.pop_scope();
 
-        fx.finish_narrowing_join(&note_paths);
         let step = step_statements.as_deref().and_then(|statements| {
             let [hir::Stmt::Expr(expression)] = statements else {
                 return None;
@@ -837,10 +1005,12 @@ impl<'p> Checker<'p> {
             );
         }
 
-        let note_paths = fx.narrowing_note_paths();
         self.end_loop_narrowing(&pos, fx);
 
-        let base = fx.narrowed.clone();
+        let base = super::LoopEdge {
+            facts: fx.narrowed.clone(),
+            notes: fx.ended_shared_narrowing.clone(),
+        };
         let binding_async_origins = self.expr_async_origins(&subject, fx);
         fx.scopes.push(Default::default());
         // A pattern binds the element into checker-generated storage and
@@ -857,15 +1027,16 @@ impl<'p> Checker<'p> {
         if pattern.is_destructuring() {
             let element = hir::Expr {
                 pending_work: None,
-                kind: ExprKind::Local(name.clone(), elem_ty.clone()),
+                kind: ExprKind::Local(name.clone(), elem_ty.clone(), false),
                 ty: elem_ty.clone(),
                 pos: binding_pos.clone(),
             };
-            self.bind_pattern_from(&pattern, &element, mutable, fx, &mut prologue);
+            self.bind_pattern_from(&pattern, &element, mutable, false, fx, &mut prologue);
         } else {
             self.declare_local(
                 &name,
                 Local {
+                    annotated: false,
                     ty: elem_ty.clone(),
                     mutable,
                     async_origins: binding_async_origins,
@@ -878,12 +1049,15 @@ impl<'p> Checker<'p> {
         let prefix = format!("{name}.");
         fx.narrowed
             .retain(|key| key != &name && !key.starts_with(&prefix));
+        let kept = fx.narrowed.clone();
         fx.loop_depth += 1;
+        fx.loop_break_facts
+            .push((fx.scopes.len() - 1, Vec::new(), Vec::new()));
         let (body, _) = self.check_branch(&f.body, fx);
+        self.check_loop_stores(&body, std::iter::empty(), &kept);
         fx.loop_depth -= 1;
         fx.pop_scope();
-        fx.narrowed.retain(|key| base.contains(key));
-        fx.finish_narrowing_join(&note_paths);
+        Self::join_loop_exits(fx, Some(base));
         let body = if prologue.is_empty() {
             body
         } else {
@@ -897,7 +1071,7 @@ impl<'p> Checker<'p> {
         let subject_ty = subject.ty.clone();
         let subject_local = hir::Expr {
             pending_work: None,
-            kind: ExprKind::Local(subject_name.clone(), subject_ty.clone()),
+            kind: ExprKind::Local(subject_name.clone(), subject_ty.clone(), false),
             ty: subject_ty.clone(),
             pos: subject.pos.clone(),
         };
@@ -927,7 +1101,7 @@ impl<'p> Checker<'p> {
             };
             let step_local = || hir::Expr {
                 pending_work: None,
-                kind: ExprKind::Local(step_name.clone(), step_ty.clone()),
+                kind: ExprKind::Local(step_name.clone(), step_ty.clone(), false),
                 ty: step_ty.clone(),
                 pos: pos.clone(),
             };
@@ -1348,12 +1522,14 @@ impl<'p> Checker<'p> {
         let mut dispatch = fx.narrowed.clone();
         let mut fallthrough: Option<super::NarrowingFacts> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
+        let reachable = fx.flow_reachable;
         let mut cases = Vec::new();
         for (case_index, case) in sw.cases.iter().enumerate() {
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.switch_case = Some(case_index);
                 scope.dispose_on_exit = false;
             }
+            fx.flow_reachable = reachable;
             fx.narrowed = dispatch.clone();
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
@@ -1393,6 +1569,7 @@ impl<'p> Checker<'p> {
                 pos: case_pos,
             });
         }
+        fx.flow_reachable = reachable;
         let mut exits = fx
             .switch_break_facts
             .pop()
@@ -1460,7 +1637,7 @@ mod tests {
             ExprKind::Binary {
                 op: BinOp::Ne,
                 left: Box::new(expr(
-                    ExprKind::Local("p".into(), nullable.clone()),
+                    ExprKind::Local("p".into(), nullable.clone(), false),
                     nullable.clone(),
                 )),
                 right: Box::new(expr(ExprKind::Null, Type::Null)),
@@ -1475,7 +1652,7 @@ mod tests {
             ExprKind::Binary {
                 op: BinOp::Eq,
                 left: Box::new(expr(
-                    ExprKind::Local("p".into(), nullable.clone()),
+                    ExprKind::Local("p".into(), nullable.clone(), false),
                     nullable,
                 )),
                 right: Box::new(expr(ExprKind::Null, Type::Null)),
@@ -1494,7 +1671,11 @@ mod tests {
             expr(
                 ExprKind::Field {
                     obj: Box::new(expr(
-                        ExprKind::Local("sampler".into(), Type::Class(crate::types::ClassId(0))),
+                        ExprKind::Local(
+                            "sampler".into(),
+                            Type::Class(crate::types::ClassId(0)),
+                            false,
+                        ),
                         Type::Class(crate::types::ClassId(0)),
                     )),
                     name: "compare".into(),

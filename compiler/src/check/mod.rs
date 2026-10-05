@@ -252,6 +252,8 @@ fn mirror_const_value(v: &ast::VarDecl, d: &ast::VarDeclarator) -> Option<i64> {
 /// One declared parameter in a signature.
 #[derive(Debug, Clone)]
 pub(crate) struct ParamSig {
+    /// True when a source annotation names no type parameter.
+    pub annotated: bool,
     pub name: String,
     pub state: TypeState,
     pub initializer: Option<Initializer>,
@@ -264,6 +266,7 @@ impl ParamSig {
     }
     fn positional(ty: Type) -> Self {
         Self {
+            annotated: false,
             name: String::new(),
             state: TypeState::decided(ty),
             initializer: None,
@@ -488,6 +491,8 @@ pub(crate) struct ScopeBinding {
 /// A local binding inside a function body.
 #[derive(Debug, Clone)]
 pub(crate) struct Local {
+    /// True when a source annotation names no type parameter.
+    pub annotated: bool,
     pub ty: Type,
     pub mutable: bool,
     /// Async-handle creation obligations reachable through this value.
@@ -787,6 +792,13 @@ pub(crate) struct Frame {
 }
 
 type NarrowingFacts = Shared<std::collections::BTreeSet<NarrowingFact>>;
+type LoopBreakFacts = Vec<(usize, Vec<LoopEdge>, Vec<LoopEdge>)>;
+
+#[derive(Clone, Debug)]
+pub(crate) struct LoopEdge {
+    facts: NarrowingFacts,
+    notes: NarrowingFacts,
+}
 type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
 
 /// Per-body checking state: scope stack, frames, and the narrowing set of
@@ -810,6 +822,8 @@ pub(crate) struct FnCtx {
     pub loop_depth: u32,
     pub switch_depth: u32,
     pub switch_break_facts: Shared<SwitchBreakFacts>,
+    pub loop_break_facts: Shared<LoopBreakFacts>,
+    pub flow_reachable: bool,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Shared<Vec<(Pos, bool)>>,
     /// Owner-scoped local declarations required by rewritten expressions.
@@ -967,6 +981,7 @@ impl FnCtx {
                     scope.insert_local(
                         "this".to_string(),
                         Local {
+                            annotated: false,
                             ty,
                             mutable: false,
                             async_origins: HashSet::new(),
@@ -984,6 +999,8 @@ impl FnCtx {
             loop_depth: 0,
             switch_depth: 0,
             switch_break_facts: Vec::new().into(),
+            loop_break_facts: Vec::new().into(),
+            flow_reachable: true,
             async_origins: Vec::new().into(),
             synthetic_owners: Vec::new().into(),
             synthetic_owner_kinds: Vec::new().into(),
@@ -1120,11 +1137,17 @@ impl FnCtx {
     pub(crate) fn pop_scope(&mut self) {
         if let Some(scope) = self.scopes.pop() {
             self.shadowed_narrowing_scopes.remove(&self.scopes.len());
-            self.narrowed
-                .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
-            self.narrowed.extend_facts(scope.shadowed_narrowing);
-            self.ended_shared_narrowing
-                .extend_facts(scope.shadowed_ended_shared);
+            if !scope.vars.is_empty() {
+                self.narrowed
+                    .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
+            }
+            if !scope.shadowed_narrowing.is_empty() {
+                self.narrowed.extend_facts(scope.shadowed_narrowing);
+            }
+            if !scope.shadowed_ended_shared.is_empty() {
+                self.ended_shared_narrowing
+                    .extend_facts(scope.shadowed_ended_shared);
+            }
         }
     }
 

@@ -602,7 +602,7 @@ impl WarningChecker<'_> {
     /// children all take the default walk needs no arm.
     fn warn_w002_expr_uses(&mut self, expr: &Expr, freed: &HashSet<String>) {
         match &expr.kind {
-            ExprKind::Local(name, _) if freed.contains(name) => self.push(Warning::new(
+            ExprKind::Local(name, _, _) if freed.contains(name) => self.push(Warning::new(
                 WarnCode::W002,
                 format!(
                     "`{name}` is used after `Context.free({name})` without an intervening reassignment"
@@ -861,7 +861,7 @@ fn is_pattern_storage(name: &str, suffix: &str) -> bool {
 /// The local a field or index chain roots in, when it roots in one.
 fn place_root_local(expr: &Expr) -> Option<&str> {
     match &expr.kind {
-        ExprKind::Local(name, _) => Some(name),
+        ExprKind::Local(name, _, _) => Some(name),
         ExprKind::Field { obj, .. } | ExprKind::Index { obj, .. } => place_root_local(obj),
         _ => None,
     }
@@ -1003,7 +1003,7 @@ fn generator_for_of_subject_source(
     if name != "value" {
         return None;
     }
-    let ExprKind::Local(step_name, _) = &obj.kind else {
+    let ExprKind::Local(step_name, _, _) = &obj.kind else {
         return None;
     };
     let subject_name = step_name.strip_suffix(".step]]")?;
@@ -1067,7 +1067,7 @@ fn render_local(name: &str, origins: &HashMap<String, String>) -> String {
 
 fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
-        ExprKind::Local(name, _) => Some(render_local(name, origins)),
+        ExprKind::Local(name, _, _) => Some(render_local(name, origins)),
         ExprKind::Global(name) => Some(name.source_name()),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => {
@@ -1084,7 +1084,7 @@ fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<S
 
 fn render_index_expr(expr: &Expr, origins: &HashMap<String, String>) -> String {
     match &expr.kind {
-        ExprKind::Local(name, _) => render_local(name, origins),
+        ExprKind::Local(name, _, _) => render_local(name, origins),
         ExprKind::Global(name) => name.source_name(),
         ExprKind::This => "this".to_string(),
         ExprKind::Field { .. } | ExprKind::Index { .. } => {
@@ -1135,7 +1135,7 @@ fn scan_w004_stmts(stmts: &[Stmt], bindings: &mut [CopyBinding]) {
 
 fn scan_w004_expr(expr: &Expr, bindings: &mut [CopyBinding]) {
     match &expr.kind {
-        ExprKind::Local(name, _) => {
+        ExprKind::Local(name, _, _) => {
             mark_w004_read(bindings, name);
             return;
         }
@@ -1183,7 +1183,7 @@ fn scan_w004_assignment_target(target: &Expr, pos: &Pos, bindings: &mut [CopyBin
     for index in indices {
         scan_w004_expr(index, bindings);
     }
-    if let ExprKind::Local(name, _) = &root.kind {
+    if let ExprKind::Local(name, _, _) = &root.kind {
         for binding in bindings.iter_mut().filter(|binding| binding.name == *name) {
             if has_field_or_index {
                 binding.field_writes.push(pos.clone());
@@ -1213,7 +1213,7 @@ fn w004_assignment_root<'a>(
 
 fn w004_assignment_local_root(target: &Expr) -> Option<&str> {
     match &target.kind {
-        ExprKind::Local(name, _) => Some(name),
+        ExprKind::Local(name, _, _) => Some(name),
         ExprKind::Field { obj, .. } | ExprKind::Index { obj, .. } => {
             w004_assignment_local_root(obj)
         }
@@ -1320,7 +1320,7 @@ fn is_fresh_userdata_argument(module: &hir::Module, expr: &Expr, fresh: &HashSet
     // Conditional userdata is a recorded W003 candidate, not a decided case.
     match &expr.kind {
         ExprKind::Cast(inner) => is_fresh_userdata_argument(module, inner, fresh),
-        ExprKind::Local(name, _) => fresh.contains(name),
+        ExprKind::Local(name, _, _) => fresh.contains(name),
         _ => is_reference_new_allocation(module, expr),
     }
 }
@@ -1456,7 +1456,7 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
             {
                 state.escaped = true;
             }
-            if matches!(&target.kind, ExprKind::Local(target_name, _) if target_name == name) {
+            if matches!(&target.kind, ExprKind::Local(target_name, _, _) if target_name == name) {
                 state.escaped = true;
             }
         }
@@ -1502,7 +1502,7 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
 
 fn value_is_candidate(expr: &Expr, name: &str) -> bool {
     expr.flow_leaves()
-        .any(|leaf| matches!(&leaf.kind, ExprKind::Local(local, _) if local == name))
+        .any(|leaf| matches!(&leaf.kind, ExprKind::Local(local, _, _) if local == name))
 }
 
 fn directly_reassigned_local(stmt: &Stmt) -> Option<&str> {
@@ -1515,7 +1515,7 @@ fn directly_reassigned_local(stmt: &Stmt) -> Option<&str> {
     else {
         return None;
     };
-    let ExprKind::Local(name, _) = &target.kind else {
+    let ExprKind::Local(name, _, _) = &target.kind else {
         return None;
     };
     Some(name)
@@ -1533,7 +1533,7 @@ fn direct_free_local(stmt: &Stmt) -> Option<&str> {
     else {
         return None;
     };
-    let ExprKind::Local(name, _) = &args.first()?.kind else {
+    let ExprKind::Local(name, _, _) = &args.first()?.kind else {
         return None;
     };
     Some(name)

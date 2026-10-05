@@ -329,7 +329,7 @@ impl<'p> Checker<'p> {
             }
             let mut expr = hir::Expr {
                 pending_work: None,
-                kind: ExprKind::Local(name, local.ty.clone()),
+                kind: ExprKind::Local(name, local.ty.clone(), local.annotated),
                 ty: local.ty,
                 pos,
             };

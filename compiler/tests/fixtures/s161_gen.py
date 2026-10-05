@@ -15,6 +15,14 @@ def generate(form, n):
         out.append("return a; }")
         call = "ident<P>(new P()).a"
         out.append(f"export function main(): void {{ print(`${{{call}}}`); }}")
+    elif form == "loop_edges":
+        out.append("export function main(): void { let s: i32 = 0;")
+        for i in range(n):
+            out.append(f"const o{i}: P | null = new P();")
+        for i in range(n):
+            out.extend([f"for (let k: i32 = 0; k < 2; k++) {{ s = s + o{i}.a;",
+                        "if (s > 100) { break; } if (s > 0) { continue; } }"])
+        out.append("print(`${s}`); }")
     elif form == "blocks":
         for i in range(n):
             out.append(f"function block{i}(root: P): i32 {{ let s: i32 = 0;")
@@ -53,7 +61,7 @@ def main():
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
     for n in args.sizes:
-        for form in ("distinct", "narrowed", "blocks", "same", "generic", "generic_i32"):
+        for form in ("distinct", "narrowed", "blocks", "same", "generic", "generic_i32", "loop_edges"):
             (args.directory / f"{form}{n}.ts").write_text(generate(form, n), encoding="utf-8")
 
 

@@ -61,7 +61,7 @@ impl<'p> Checker<'p> {
         match &expr.kind {
             K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
             K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
-            K::Local(name, _) => fx.local_async_origins(name),
+            K::Local(name, _, _) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
                 .iter()
                 .flat_map(|element| self.expr_async_origins(element, fx))
@@ -272,7 +272,11 @@ impl<'p> Checker<'p> {
                         if let Some(local) = self.lookup_local("this", &pos, fx) {
                             return hir::Expr {
                                 pending_work: None,
-                                kind: ExprKind::Local("this".to_string(), local.ty.clone()),
+                                kind: ExprKind::Local(
+                                    "this".to_string(),
+                                    local.ty.clone(),
+                                    local.annotated,
+                                ),
                                 ty: local.ty,
                                 pos,
                             };

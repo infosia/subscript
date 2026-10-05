@@ -97,7 +97,7 @@ fn nested_using_shadow_does_not_reuse_switch_storage() {
                     ..
                 }) if matches!(
                     &target.kind,
-                    hir::ExprKind::Local(name, _) if name.starts_with("[[using.value#")
+                    hir::ExprKind::Local(name, _, _) if name.starts_with("[[using.value#")
                 ) =>
                 {
                     1

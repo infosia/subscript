@@ -245,7 +245,7 @@ impl AddressTaken<'_> {
 
     fn place(&mut self, expr: &hir::Expr) {
         match &expr.kind {
-            hir::ExprKind::Local(name, _) => self.mark(name),
+            hir::ExprKind::Local(name, _, _) => self.mark(name),
             hir::ExprKind::Field { obj, .. } => {
                 if is_stored_aggregate(self.module, &obj.ty) && is_place_expr(obj) {
                     self.place(obj);

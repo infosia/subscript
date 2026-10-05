@@ -53,7 +53,7 @@ impl Expr {
     pub(crate) fn storage_type<'a>(&'a self, classes: &'a [ClassDef]) -> &'a Type {
         use ExprKind as K;
         match &self.kind {
-            K::Local(_, declared) => declared,
+            K::Local(_, declared, _) => declared,
             K::Field { obj, name } => {
                 super::sites::declared_field_type(&obj.ty, name, classes).unwrap_or(&self.ty)
             }
@@ -181,7 +181,7 @@ mod tests {
             )
         };
         for ty in [class_type("Value"), Type::IterResult(Box::new(Type::I32))] {
-            let local = expr(ExprKind::Local("r".into(), ty.clone()), ty.clone());
+            let local = expr(ExprKind::Local("r".into(), ty.clone(), false), ty.clone());
             assert!(!field(local).is_shared_location(&module.classes));
             let global = expr(ExprKind::Global(Symbol::from_full_text("r")), ty.clone());
             assert!(field(global).is_shared_location(&module.classes));
@@ -189,7 +189,7 @@ mod tests {
             assert!(field(this).is_shared_location(&module.classes));
         }
         let local_ref = expr(
-            ExprKind::Local("r".into(), class_type("Ref")),
+            ExprKind::Local("r".into(), class_type("Ref"), false),
             class_type("Ref"),
         );
         assert!(!local_ref.is_shared_location(&module.classes));
@@ -233,7 +233,7 @@ mod tests {
                     kind: ExprKind::Field {
                         obj: Box::new(Expr {
                             pending_work: None,
-                            kind: ExprKind::Local("t".into(), storage.clone()),
+                            kind: ExprKind::Local("t".into(), storage.clone(), false),
                             ty: receiver,
                             pos: crate::Pos::new("test.ts", 1, 1),
                         }),
