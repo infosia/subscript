@@ -1,4 +1,4 @@
-//! Statement exit analysis for scope-exit disposal (compiler.md §101).
+//! One statement-exit predicate for return checks, scope exits, and site facts (§164 rule 1).
 
 use crate::hir::{AmbientFn, Callee, ExprKind, Stmt};
 
@@ -100,8 +100,10 @@ fn exits(statement: &Stmt) -> Exits {
             .as_deref()
             .map_or(Exits::NEXT, exits)
             .followed_by(loop_exits(cond.as_ref(), body)),
-        Stmt::Switch { cases, .. } => {
-            let mut result = if cases.iter().any(|case| case.test.is_none()) {
+        Stmt::Switch { disc, cases, .. } => {
+            let mut result = if cases.iter().any(|case| case.test.is_none())
+                || matches!(disc.ty, crate::types::Type::StringAlias(_))
+            {
                 Exits::STOP
             } else {
                 Exits::NEXT

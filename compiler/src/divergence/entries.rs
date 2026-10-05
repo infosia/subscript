@@ -9,6 +9,9 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::FunctionValueOptionalArguments => {
+                super::type_flow::FUNCTION_VALUE_OPTIONAL_ARGUMENTS
+            }
             Divergence::IndexedReadNullCheck => expression_forms::INDEXEDREADNULLCHECK,
             Divergence::DynamicImportCall => super::type_flow::DYNAMICIMPORTCALL,
             Divergence::AbstractMethodBodyMissing => super::type_flow::ABSTRACTMETHODBODYMISSING,

@@ -244,6 +244,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
+                    function_value_required: None,
                 },
                 param_pos,
                 fx,
@@ -297,7 +298,7 @@ impl<'p> Checker<'p> {
                     }
                     if let Some(ret) = &ret {
                         if !matches!(&self.apparent_type(ret), Type::Void | Type::Error)
-                            && !crate::check::stmt::always_returns(&out)
+                            && crate::check::fallthrough::sequence_can_fall_through(&out)
                         {
                             self.reject_subset(
                                 if self.ts_return_coverage(&out) {

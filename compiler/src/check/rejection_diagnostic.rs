@@ -34,5 +34,12 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
     let (code, class) = site.class();
     let mut diagnostic = Diagnostic::new(code, message, pos);
     diagnostic.divergence = class.divergence();
+    if matches!(
+        site,
+        RejectionSite::FunctionValueArgumentCount
+            | RejectionSite::FunctionValueOptionalArgumentCount
+    ) {
+        diagnostic.note = Some("A function type has no optional parameter (C7); pass every argument, or call a declaration with a default directly.");
+    }
     diagnostic
 }

@@ -918,6 +918,7 @@ impl<'p> Checker<'p> {
                 mutable: true,
                 async_origins: std::collections::HashSet::new(),
                 caught: false,
+                function_value_required: None,
             },
             fx,
         );

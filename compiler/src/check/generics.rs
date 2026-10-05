@@ -663,7 +663,7 @@ impl<'p> Checker<'p> {
                 if let ast::ParamOrTsParamProp::Param(parameter) = parameter {
                     total += 1;
                     if !matches!(parameter.pat, ast::Pat::Assign(_)) {
-                        required += 1;
+                        required = total;
                     }
                 }
             }

@@ -8911,3 +8911,10 @@ FILE	E	main.ts
 class A { x: i32 = 1; } export function f(xs: (A | null)[], j: i32): void { switch(j) { case 0: { const xs: (A | null)[] = []; if(xs[0] === null) { return; } break; } default: if(xs[0] === null) { return; } } print(`${xs[0].x}`); }
 END FILE
 END PROGRAM
+PROGRAM	s164-function-value-default			0
+FILE	E	target/s154/forms/s164-function-value-default/main.ts
+export {};
+const h = (a: i32, b: i32 = 5): i32 => a + b;
+h(1);
+END FILE
+END PROGRAM

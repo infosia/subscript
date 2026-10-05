@@ -189,6 +189,8 @@ pub struct Diagnostic {
     pub divergence: Option<Divergence>,
     /// True when import or export resolution owns this failure.
     pub resolution: bool,
+    /// A form-specific instruction that accompanies the diagnostic.
+    pub note: Option<&'static str>,
 }
 
 impl Diagnostic {
@@ -201,6 +203,7 @@ impl Diagnostic {
             pos,
             divergence: None,
             resolution: false,
+            note: None,
         }
     }
 }

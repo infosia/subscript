@@ -83,9 +83,50 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(builder)
     }
 
+    /// Reachability follows normal edges and instruction handler edges.
+    pub(super) fn block_reachable(&self, target: l::BlockId) -> bool {
+        let mut pending = vec![self.entry];
+        let mut seen = HashSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            if id == target {
+                return true;
+            }
+            let block = &self.blocks[id.0 as usize];
+            pending.extend(
+                block
+                    .instructions
+                    .iter()
+                    .filter_map(l::Instruction::handler),
+            );
+            if let Some(terminator) = &block.terminator {
+                pending.extend(terminator.successors());
+            }
+        }
+        false
+    }
+
     pub(super) fn finish(mut self) -> Result<l::Function, LowerError> {
         if !self.usings_closed() {
             return Err(self.error(&self.function.pos, "a `using` node is still open"));
+        }
+        let cfg_fallthrough = self
+            .current
+            .is_some_and(|block| self.block_reachable(block));
+        let body_fallthrough = subscript_compiler::sequence_can_fall_through(&self.function.body);
+        if cfg_fallthrough && !body_fallthrough {
+            return Err(self.error(
+                &self.function.pos,
+                format!(
+                    "function `{}` exit facts differ: CFG fallthrough = {}, body fallthrough = {}",
+                    self.function.name, cfg_fallthrough, body_fallthrough,
+                ),
+            ));
+        }
+        if !cfg_fallthrough {
+            self.current = None;
         }
         if let Some(block) = self.current {
             if self.blocks[block.0 as usize].terminator.is_none() {
@@ -755,5 +796,45 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         self.current = Some(block);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+    use subscript_compiler::{check_program, SourceFile};
+
+    #[test]
+    fn a_reachable_cfg_end_cannot_contradict_the_body_predicate() {
+        let module = check_program(&[SourceFile::new(
+            "exit.ts",
+            "function probe():void { while(true) { return; } }",
+        )])
+        .unwrap();
+        for violate in [false, true] {
+            let mut lowering = Lowering::new(&module, false).unwrap();
+            let input = FunctionInput::from(module.functions[0].clone());
+            let mut builder = FunctionBuilder::new(
+                &mut lowering,
+                l::FunctionId(0),
+                input,
+                l::FunctionKind::Free,
+                None,
+                Vec::new(),
+            )
+            .unwrap();
+            // The violating builder leaves its entry open; the checked body remains intact.
+            if !violate {
+                builder
+                    .lower_statements(&builder.function.body.clone())
+                    .unwrap();
+            }
+            let result = builder.finish();
+            if violate {
+                assert_eq!(result.unwrap_err().message, "function `probe` exit facts differ: CFG fallthrough = true, body fallthrough = false");
+            } else {
+                result.unwrap();
+            }
+        }
     }
 }

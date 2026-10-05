@@ -159,6 +159,7 @@ impl<'p> Checker<'p> {
                             mutable: true,
                             async_origins: HashSet::new(),
                             caught: false,
+                            function_value_required: None,
                         });
                     }
                 }
@@ -196,6 +197,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
+                    function_value_required: None,
                 });
             }
             if let Some(local) = scope.vars.get(name) {
@@ -218,6 +220,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
+                    function_value_required: None,
                 });
             }
             if scope.fn_boundary {

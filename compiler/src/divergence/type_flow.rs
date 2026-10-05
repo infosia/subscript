@@ -59,3 +59,10 @@ pub(super) const RESTPARAMETER: DivergenceEntry = DivergenceEntry {
     why: "The language has no variadic parameters; each function declares a fixed parameter count.",
     collision: "stdlib.md §14.4",
 };
+
+pub(super) const FUNCTION_VALUE_OPTIONAL_ARGUMENTS: DivergenceEntry = DivergenceEntry {
+    ts: "const h = (a: i32, b: i32 = 5): i32 => a + b; h(1);",
+    subscript: "const h = (a: i32, b: i32 = 5): i32 => a + b; h(1, 5);",
+    why: "A function type has no optional parameter (C7).",
+    collision: "C24",
+};

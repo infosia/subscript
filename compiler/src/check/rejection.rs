@@ -1336,6 +1336,7 @@ rejection_classes! {
     Self::OutboxPostArgumentCount => (RuleCode::S100, TscRejects),
     Self::InboxWaitArgumentCount => (RuleCode::S100, TscRejects),
     Self::ScalarToStringArgumentCount => (RuleCode::S100, TscRejects),
+    Self::FunctionValueOptionalArgumentCount => (RuleCode::S100, Diverges(Divergence::FunctionValueOptionalArguments)),
     Self::FunctionValueArgumentCount => (RuleCode::S100, TscRejects),
     Self::AmbientFunctionArgumentCount => (RuleCode::S100, TscRejects),
     Self::ContextMethodArgumentCount => (RuleCode::S100, TscRejects),

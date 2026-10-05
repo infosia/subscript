@@ -795,7 +795,7 @@ MapSetArgumentCount	MapSetArgumentCount	S100	`Map.set` expects 2 argument(s) (2 
 LiteralAliasMember	LiteralAliasMember	S100	`A` has no member `length`
 FunctionTypeObjectPattern	FunctionTypeObjectPattern	S100	function type parameter form outside the decided surface
 AsyncHandleUnawaited	AsyncMethodArgumentCount	S013	an async handle is dropped without any await of its completion
-FunctionValueArgumentCount	FunctionValueArgumentCount	S100	`the function value` expects 1 argument(s) (1 required), got 2
+FunctionValueArgumentCount	FunctionValueArgumentCount	S100	`g` expects 1 argument(s), got 2: a call through a function value passes every parameter
 FixedArrayByteLimit	c-fixed-layout-pattern	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
 ArrayJoinArgumentCount	ArrayJoinArgumentCount	S100	`join` expects 1 argument(s) (0 required), got 2
 SetAddOrHasArgumentCount	SetAddOrHasArgumentCount	S100	`Set.add` expects 1 argument(s) (1 required), got 2
@@ -1400,3 +1400,4 @@ IndexedAssignmentChecked	s163-IndexedAssignmentChecked	S005	`A | null` may be nu
 IndexedAssignmentUnchecked	s163-IndexedAssignmentUnchecked	S005	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
 IndexedMemberChecked	s163-switch-receiver-checked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
 IndexedMemberUnchecked	s163-switch-receiver-unchecked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+FunctionValueOptionalArgumentCount	s164-function-value-default	S100	`h` expects 2 argument(s), got 1: a call through a function value passes every parameter

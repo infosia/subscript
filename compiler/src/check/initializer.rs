@@ -195,7 +195,17 @@ impl<'p> Checker<'p> {
         } else {
             Type::Error
         };
+        let function_value_required = source.as_ref().and_then(|source| {
+            source.checked.as_ref().and_then(|value| {
+                self.inferred_function_required(
+                    &source.expression,
+                    value,
+                    &FnCtx::new(Type::Void, false, None, self.diags.clone()),
+                )
+            })
+        });
         if let Some(sig) = self.global_sigs.get_mut(name) {
+            sig.function_value_required = function_value_required;
             sig.state = TypeState::decided(ty.clone());
             sig.initializer = source;
         }
@@ -379,6 +389,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
+                    function_value_required: None,
                 },
                 fx,
             );

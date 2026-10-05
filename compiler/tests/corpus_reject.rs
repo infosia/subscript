@@ -503,6 +503,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r370-narrowed-loop-store.ts", RuleCode::S011, 12),
     ("r371-inferred-loop-store.ts", RuleCode::S011, 12),
     ("r372-contextual-lambda-loop-store.ts", RuleCode::S011, 16),
+    ("r375-default-before-required.ts", RuleCode::S100, 10),
+    ("r376-function-value-default.ts", RuleCode::S100, 10),
     ("r373-indexed-read-after-null-check.ts", RuleCode::S011, 11),
     (
         "r374-indexed-read-without-null-check.ts",

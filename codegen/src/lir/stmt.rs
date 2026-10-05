@@ -131,6 +131,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         els: &[hir::Stmt],
         pos: &Pos,
     ) -> Result<(), LowerError> {
+        if let hir::ExprKind::Bool(value) = cond.kind {
+            let taken = self.new_block(
+                Vec::new(),
+                Some(if value { "if.then" } else { "if.else" }.to_string()),
+            );
+            self.terminate(branch(taken), pos)?;
+            self.current = Some(taken);
+            return self.lower_scoped(if value { then } else { els });
+        }
         let condition = self.require_expr(cond)?;
         let branch_state = self.binding_snapshot();
         let then_block = self.new_block(Vec::new(), Some("if.then".to_string()));
@@ -183,22 +192,34 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let condition = self.require_expr(cond)?;
         let exit_target = self.block_target(exit, Vec::new())?;
         self.terminate(
-            l::Terminator::ConditionalBranch {
-                condition,
-                then_target: target(body_block, Vec::new()),
-                else_target: exit_target,
+            match cond.kind {
+                hir::ExprKind::Bool(true) => branch(body_block),
+                hir::ExprKind::Bool(false) => l::Terminator::Branch(exit_target),
+                _ => l::Terminator::ConditionalBranch {
+                    condition,
+                    then_target: target(body_block, Vec::new()),
+                    else_target: exit_target,
+                },
             },
             pos,
         )?;
         self.controls.push(self.control(exit, Some(header)));
-        self.current = Some(body_block);
-        self.lower_scoped(body)?;
-        if self.current.is_some() {
-            let edge = self.block_target(header, Vec::new())?;
-            self.terminate(l::Terminator::Branch(edge), pos)?;
+        if self.block_reachable(body_block) {
+            self.current = Some(body_block);
+            self.lower_scoped(body)?;
+            if self.current.is_some() {
+                let edge = self.block_target(header, Vec::new())?;
+                self.terminate(l::Terminator::Branch(edge), pos)?;
+            }
+        } else {
+            self.current = None;
         }
         self.controls.pop();
-        self.enter_block(exit)?;
+        if self.block_reachable(exit) {
+            self.enter_block(exit)?;
+        } else {
+            self.current = None;
+        }
         Ok(())
     }
 
@@ -225,10 +246,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             let condition = self.require_expr(cond)?;
             let exit_target = self.block_target(exit, Vec::new())?;
             self.terminate(
-                l::Terminator::ConditionalBranch {
-                    condition,
-                    then_target: target(body_block, Vec::new()),
-                    else_target: exit_target,
+                match cond.kind {
+                    hir::ExprKind::Bool(true) => branch(body_block),
+                    hir::ExprKind::Bool(false) => l::Terminator::Branch(exit_target),
+                    _ => l::Terminator::ConditionalBranch {
+                        condition,
+                        then_target: target(body_block, Vec::new()),
+                        else_target: exit_target,
+                    },
                 },
                 pos,
             )?;
@@ -236,18 +261,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.terminate(branch(body_block), pos)?;
         }
         self.controls.push(self.control(exit, Some(step_block)));
-        self.current = Some(body_block);
-        self.lower_scoped(body)?;
-        if self.current.is_some() {
-            let edge = self.block_target(step_block, Vec::new())?;
-            self.terminate(l::Terminator::Branch(edge), pos)?;
+        if self.block_reachable(body_block) {
+            self.current = Some(body_block);
+            self.lower_scoped(body)?;
+            if self.current.is_some() {
+                let edge = self.block_target(step_block, Vec::new())?;
+                self.terminate(l::Terminator::Branch(edge), pos)?;
+            }
+        } else {
+            self.current = None;
         }
-        let step_reachable = self.blocks.iter().any(|block| {
-            block
-                .terminator
-                .as_ref()
-                .is_some_and(|terminator| terminator.successors().contains(&step_block))
-        });
+        let step_reachable = self.block_reachable(step_block);
         if step_reachable {
             self.enter_block(step_block)?;
             if let Some(step) = step {
@@ -261,14 +285,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.current = None;
         }
         self.controls.pop();
-        // A `for` with no condition and no `break` has no exit edge, so
-        // control does not continue after it (compiler.md §101 rule 2).
-        let exit_reachable = self.blocks.iter().any(|block| {
-            block
-                .terminator
-                .as_ref()
-                .is_some_and(|terminator| terminator.successors().contains(&exit))
-        });
+        // A `for` with no condition or literal `true`, and no reachable
+        // `break`, has no exit edge (compiler.md §164 rule 3).
+        let exit_reachable = self.block_reachable(exit);
         if exit_reachable {
             self.enter_block(exit)?;
             self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
@@ -392,12 +411,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             let edge = self.block_target(step_block, Vec::new())?;
             self.terminate(l::Terminator::Branch(edge), pos)?;
         }
-        let step_reachable = self.blocks.iter().any(|block| {
-            block
-                .terminator
-                .as_ref()
-                .is_some_and(|terminator| terminator.successors().contains(&step_block))
-        });
+        let step_reachable = self.block_reachable(step_block);
         if step_reachable {
             self.enter_block(step_block)?;
             let cursor = self.read_binding(cursor_binding, pos)?;
@@ -1377,12 +1391,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
         }
         self.controls.pop();
-        let exit_reachable = self.blocks.iter().any(|block| {
-            block
-                .terminator
-                .as_ref()
-                .is_some_and(|terminator| terminator.successors().contains(&exit))
-        });
+        let exit_reachable = self.block_reachable(exit);
         if exit_reachable {
             self.enter_block(exit)?;
         } else {

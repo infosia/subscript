@@ -20,6 +20,7 @@ impl<'p> Checker<'p> {
                         mutable: false,
                         async_origins: HashSet::new(),
                         caught: false,
+                        function_value_required: None,
                     },
                     true,
                 );
@@ -95,6 +96,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     async_origins: HashSet::new(),
                     caught: false,
+                    function_value_required: None,
                 },
                 fx,
             );
@@ -208,6 +210,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     async_origins,
                     caught: false,
+                    function_value_required: None,
                 },
                 pos.clone(),
                 fx,

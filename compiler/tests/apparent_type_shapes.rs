@@ -625,7 +625,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("pipeline.rs", "normalize_operation_parameter_types", 0x3a8927e5a46cd33f),
     ] },
     AllowGroup { name: "closed-alias", reason: "The switch checker admits exhaustive aliases only from a declared StringAlias, never T.", sites: &[
-        ("stmt.rs", "stmt_returns", 0x877d2a688f764b51),
+        ("fallthrough.rs", "exits", 0x236c857a745d8fa1),
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
         ("type_rules.rs", "assignable_through_constraints", 0xbb1305f0120713de),

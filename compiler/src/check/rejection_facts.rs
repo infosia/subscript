@@ -41,7 +41,7 @@ impl super::Checker<'_> {
     /// TypeScript closes a source-enum switch over all declared member values.
     pub(super) fn ts_return_coverage(&self, body: &[hir::Stmt]) -> bool {
         use crate::types::Type;
-        super::stmt::always_returns(body)
+        !super::fallthrough::sequence_can_fall_through(body)
             || body.iter().any(|statement| match statement {
                 hir::Stmt::Block(body) => self.ts_return_coverage(body),
                 hir::Stmt::If {

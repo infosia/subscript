@@ -336,6 +336,7 @@ impl<'p> Checker<'p> {
             value.ty.clone()
         };
         if op.is_none() {
+            self.check_function_binding_assignment(&target, &a.right, &value, fx);
             self.require_expr_assignable(&value, &target_ty, fx, "the assignment");
         } else {
             self.require_assignable(

@@ -650,6 +650,7 @@ mod tests {
                     mutable: false,
                     async_origins: Default::default(),
                     caught: false,
+                    function_value_required: None,
                 },
             );
             fx.scopes.push(scope);

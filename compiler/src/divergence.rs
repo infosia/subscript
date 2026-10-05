@@ -21,6 +21,8 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// An inferred function value has optional parameters only in TypeScript.
+    FunctionValueOptionalArguments,
     /// A null check of an element changes no type (§163).
     IndexedReadNullCheck,
     /// The language has no variadic parameters.
@@ -991,6 +993,7 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::FunctionValueOptionalArguments,
         Divergence::IndexedReadNullCheck,
         Divergence::RestParameter,
         Divergence::ErasedAssignableEquality,

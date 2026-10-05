@@ -148,6 +148,7 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             symbol,
                             GlobalSig {
+                                function_value_required: None,
                                 state: crate::check::initializer::TypeState::decided(Type::U64),
 
                                 initializer: None,
@@ -399,6 +400,7 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             self.declaration_symbol(file, &name),
                             GlobalSig {
+                                function_value_required: None,
                                 state,
                                 initializer: d.init.as_ref().map(|e| self.initializer(e, None)),
                                 mutable: v.kind == ast::VarDeclKind::Let,

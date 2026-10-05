@@ -43,6 +43,7 @@ mod exports;
 mod expr;
 pub(crate) mod fallthrough;
 mod field_initializer;
+mod function_value;
 mod generics;
 mod inference;
 mod initializer;
@@ -392,6 +393,7 @@ fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
 /// A module-level variable's declared shape.
 #[derive(Debug, Clone)]
 pub(crate) struct GlobalSig {
+    pub function_value_required: Option<usize>,
     pub state: TypeState,
     pub initializer: Option<Initializer>,
     pub mutable: bool,
@@ -491,6 +493,8 @@ pub(crate) struct ScopeBinding {
 /// A local binding inside a function body.
 #[derive(Debug, Clone)]
 pub(crate) struct Local {
+    /// Required arguments in the inferred TypeScript function type (§164).
+    pub function_value_required: Option<usize>,
     /// True when a source annotation names no type parameter.
     pub annotated: bool,
     pub ty: Type,
@@ -988,6 +992,7 @@ impl FnCtx {
                             mutable: false,
                             async_origins: HashSet::new(),
                             caught: false,
+                            function_value_required: None,
                         },
                         false,
                     );

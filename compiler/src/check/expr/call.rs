@@ -660,13 +660,27 @@ impl<'p> Checker<'p> {
                         .iter()
                         .map(|t| ParamSig::positional(t.clone()))
                         .collect();
+                    let name = match &callee.kind {
+                        ExprKind::Local(name, ..) => name.clone(),
+                        ExprKind::Global(symbol) => symbol.source_name(),
+                        _ => "the function value".to_string(),
+                    };
+                    let count_site = if c.args.len() < params.len()
+                        && checker
+                            .function_value_required(&callee, fx)
+                            .is_some_and(|required| c.args.len() >= required)
+                    {
+                        RejectionSite::FunctionValueOptionalArgumentCount
+                    } else {
+                        RejectionSite::FunctionValueArgumentCount
+                    };
                     let args = checker.check_args_with_arguments(
-                        RejectionSite::FunctionValueArgumentCount,
+                        count_site,
                         &params,
                         &c.args,
                         fx,
                         &pos,
-                        "the function value",
+                        &name,
                         checked_arguments,
                         false,
                     );
@@ -1418,6 +1432,14 @@ impl<'p> Checker<'p> {
     ) {
         let has_spread = args.iter().any(|arg| arg.spread.is_some());
         if !has_spread && (args.len() < required || args.len() > total) {
+            if matches!(
+                site,
+                RejectionSite::FunctionValueArgumentCount
+                    | RejectionSite::FunctionValueOptionalArgumentCount
+            ) {
+                self.reject_subset(site, format!("`{what}` expects {total} argument(s), got {}: a call through a function value passes every parameter", args.len()), pos.clone());
+                return;
+            }
             self.reject_subset(
                 site,
                 format!(
@@ -1487,7 +1509,10 @@ impl<'p> Checker<'p> {
             return slots;
         }
         let mut checked = checked.unwrap_or_default().into_iter();
-        let required = params.iter().filter(|p| !p.has_default).count();
+        let required = params
+            .iter()
+            .rposition(|p| !p.has_default)
+            .map_or(0, |i| i + 1);
         if params
             .iter()
             .all(|parameter| self.apparent_type(parameter.ty()) != Type::Error)

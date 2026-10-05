@@ -406,7 +406,7 @@ impl Checker<'_> {
         let mut note_paths = fx.narrowing_note_paths();
         let base = fx.narrowed.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
-        let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
+        let (body, _) = self.check_block(&t.block.stmts, fx);
         let body_facts = fx.narrowed.clone();
         let mut body_notes = fx.ended_shared_narrowing.clone();
         let effects = self.body_narrowing_effects(&body, fx, &base, &initial_notes);
@@ -427,16 +427,17 @@ impl Checker<'_> {
                     mutable: false,
                     async_origins: HashSet::new(),
                     caught: true,
+                    function_value_required: None,
                 },
                 binding_pos.clone(),
                 fx,
             );
         }
-        let (handler_body, handler_terminates) = self.check_block(&handler.body.stmts, fx);
+        let (handler_body, _) = self.check_block(&handler.body.stmts, fx);
         fx.pop_scope();
         let handler_facts = fx.narrowed.clone();
-        let body_terminates = body_terminates || super::stmt::always_returns(&body);
-        let handler_terminates = handler_terminates || super::stmt::always_returns(&handler_body);
+        let body_terminates = !super::fallthrough::sequence_can_fall_through(&body);
+        let handler_terminates = !super::fallthrough::sequence_can_fall_through(&handler_body);
         let body_possible: HashSet<_> = body_facts.union(&body_notes).cloned().collect();
         let handler_possible: HashSet<_> = handler_facts
             .union(&fx.ended_shared_narrowing)
@@ -473,7 +474,7 @@ impl Checker<'_> {
             handler: handler_body,
             pos,
         });
-        body_terminates && handler_terminates
+        !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..])
     }
 
     /// Checks one block in its own scope.
@@ -482,10 +483,10 @@ impl Checker<'_> {
         fx.scopes.push(Default::default());
         self.reserve_block_declarations(statements, fx);
         let mut body = Vec::new();
-        let mut terminates = false;
         for statement in statements {
-            terminates |= self.check_stmt(statement, fx, &mut body);
+            self.check_stmt(statement, fx, &mut body);
         }
+        let terminates = !super::fallthrough::sequence_can_fall_through(&body);
         self.end_scope_narrowing(fx);
         fx.pop_scope();
         fx.flow_reachable = reachable;

@@ -318,7 +318,7 @@ impl<'p> Checker<'p> {
         } else {
             if f.body.is_some()
                 && !matches!(self.apparent_type(&sig.ret), Type::Void | Type::Error)
-                && !stmt::always_returns(&body)
+                && super::fallthrough::sequence_can_fall_through(&body)
             {
                 self.reject_subset(
                     if self.ts_return_coverage(&body) {
@@ -398,6 +398,7 @@ impl<'p> Checker<'p> {
                         HashSet::new()
                     },
                     caught: false,
+                    function_value_required: None,
                 },
                 pos.clone(),
                 fx,
@@ -650,6 +651,7 @@ impl<'p> Checker<'p> {
                                 mutable: true,
                                 async_origins: HashSet::new(),
                                 caught: false,
+                                function_value_required: None,
                             },
                             param_pos.clone(),
                             &mut fx,

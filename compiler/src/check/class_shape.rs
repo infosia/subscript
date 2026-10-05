@@ -577,6 +577,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         let signature = GlobalSig {
+                            function_value_required: None,
                             state,
                             initializer: prop.value.as_ref().map(|e| self.initializer(e, Some(id))),
                             mutable: !prop.readonly,
@@ -739,6 +740,7 @@ impl<'p> Checker<'p> {
                         self.class_sigs[id.0].fields.insert(
                             name.clone(),
                             GlobalSig {
+                                function_value_required: None,
                                 state: if prop.value.is_some() {
                                     TypeState::Undecided
                                 } else {

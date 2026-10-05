@@ -27,66 +27,6 @@ pub(super) fn root_of(key: &str) -> &str {
     key.split('.').next().unwrap_or(key)
 }
 
-/// Conservative divergence analysis over checked bodies: true when every
-/// control path returns or reaches another diverging statement. Used for
-/// functions with a non-void declared return type (generators are exempt).
-pub(crate) fn always_returns(stmts: &[hir::Stmt]) -> bool {
-    stmts.iter().any(stmt_returns)
-}
-
-fn stmt_returns(s: &hir::Stmt) -> bool {
-    match s {
-        hir::Stmt::Return { .. } | hir::Stmt::Throw { .. } => true,
-        hir::Stmt::Try { body, handler, .. } => always_returns(body) && always_returns(handler),
-        hir::Stmt::Expr(hir::Expr {
-            kind:
-                ExprKind::Call {
-                    callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
-                    ..
-                },
-            ..
-        }) => true,
-        hir::Stmt::Block(b) | hir::Stmt::Using { body: b, .. } => always_returns(b),
-        hir::Stmt::If {
-            then,
-            els: Some(els),
-            ..
-        } => always_returns(then) && always_returns(els),
-        hir::Stmt::Switch { disc, cases, .. } => {
-            // Every case must diverge before fallthrough or break. A default
-            // still proves general switches cover the discriminant; Q32's
-            // checker-proven closed alias set proves a default-less switch.
-            let covers_discriminant = cases.iter().any(|c| c.test.is_none())
-                || (matches!(disc.ty, Type::StringAlias(_))
-                    && cases.iter().all(|c| c.test.is_some()));
-            covers_discriminant && cases.iter().all(|c| always_returns(&c.body))
-        }
-        hir::Stmt::While { cond, body, .. } => is_true_literal(cond) && !contains_break(body),
-        hir::Stmt::For { cond, body, .. } => {
-            cond.as_ref().is_none_or(is_true_literal) && !contains_break(body)
-        }
-        _ => false,
-    }
-}
-
-fn is_true_literal(e: &hir::Expr) -> bool {
-    matches!(e.kind, ExprKind::Bool(true))
-}
-
-/// True when the statements contain a `break` binding to the enclosing
-/// loop (nested loops and switches consume their own breaks).
-fn contains_break(stmts: &[hir::Stmt]) -> bool {
-    stmts.iter().any(|s| match s {
-        hir::Stmt::Break(_) => true,
-        hir::Stmt::Block(b) | hir::Stmt::Using { body: b, .. } => contains_break(b),
-        hir::Stmt::If { then, els, .. } => {
-            contains_break(then) || els.as_ref().is_some_and(|e| contains_break(e))
-        }
-        hir::Stmt::Try { body, handler, .. } => contains_break(body) || contains_break(handler),
-        _ => false,
-    })
-}
-
 pub(super) fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::Stmt]) {
     for statement in statements {
         match statement {
@@ -140,7 +80,7 @@ impl<'p> Checker<'p> {
             .map(|scope| scope.rejected_local_names.clone())
             .collect();
         let start = out.len();
-        let (terminates, prefix) = fx.with_synthetic_owner(
+        let (_terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),
             |fx| match s {
                 ast::Stmt::Decl(ast::Decl::Var(v)) => {
@@ -170,6 +110,7 @@ impl<'p> Checker<'p> {
                                 mutable: false,
                                 async_origins: HashSet::new(),
                                 caught: false,
+                                function_value_required: None,
                             },
                             fx,
                         );
@@ -282,10 +223,10 @@ impl<'p> Checker<'p> {
                     fx.scopes.push(Default::default());
                     self.reserve_block_declarations(&b.stmts, fx);
                     let mut inner = Vec::new();
-                    let mut terminates = false;
                     for s in &b.stmts {
-                        terminates |= self.check_stmt(s, fx, &mut inner);
+                        self.check_stmt(s, fx, &mut inner);
                     }
+                    let terminates = !super::fallthrough::sequence_can_fall_through(&inner);
                     self.end_scope_narrowing(fx);
                     fx.pop_scope();
                     out.push(hir::Stmt::Block(inner));
@@ -326,6 +267,7 @@ impl<'p> Checker<'p> {
                 scope.dispose_on_exit = true;
             }
         }
+        let terminates = !super::fallthrough::sequence_can_fall_through(&out[start..]);
         fx.flow_reachable &= !terminates;
         terminates
     }
@@ -495,6 +437,13 @@ impl<'p> Checker<'p> {
                 None
             };
             let async_origins = self.expr_async_origins(&init, fx);
+            let function_value_required = if pattern_type_ann(&d.name).is_some() {
+                None
+            } else {
+                d.init
+                    .as_deref()
+                    .and_then(|source| self.inferred_function_required(source, &init, fx))
+            };
             self.declare_local(
                 &name,
                 Local {
@@ -503,6 +452,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     async_origins,
                     caught: false,
+                    function_value_required,
                 },
                 pos.clone(),
                 fx,
@@ -628,20 +578,20 @@ impl<'p> Checker<'p> {
         let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         let mut out = Vec::new();
-        let terminates = match s {
+        let _terminates = match s {
             ast::Stmt::Block(b) => {
                 self.reserve_block_declarations(&b.stmts, fx);
-                let mut t = false;
                 for s in &b.stmts {
-                    t |= self.check_stmt(s, fx, &mut out);
+                    self.check_stmt(s, fx, &mut out);
                 }
-                t
+                !super::fallthrough::sequence_can_fall_through(&out)
             }
             single => self.check_stmt(single, fx, &mut out),
         };
         self.end_scope_narrowing(fx);
         fx.pop_scope();
         fx.flow_reachable = reachable;
+        let terminates = !super::fallthrough::sequence_can_fall_through(&out);
         (out, terminates)
     }
 
@@ -657,22 +607,24 @@ impl<'p> Checker<'p> {
         let initial_notes = fx.ended_shared_narrowing.clone();
         fx.narrowed.retain(|key| !else_extra.contains(key));
         fx.narrowed.extend_facts(then_extra.clone());
-        let (then_stmts, then_term) = self.check_branch(&i.cons, fx);
-        let then_term = then_term || always_returns(&then_stmts);
+        let (then_stmts, _) = self.check_branch(&i.cons, fx);
+        let then_term = !super::fallthrough::sequence_can_fall_through(&then_stmts);
         let then_notes = fx.ended_shared_narrowing.clone();
         let then_facts = fx.narrowed.clone();
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         fx.narrowed.retain(|key| !then_extra.contains(key));
         fx.narrowed.extend_facts(else_extra);
-        let (els_stmts, else_term) = match &i.alt {
+        let (els_stmts, _) = match &i.alt {
             Some(alt) => {
                 let (stmts, term) = self.check_branch(alt, fx);
                 (Some(stmts), term)
             }
             None => (None, false),
         };
-        let else_term = else_term || els_stmts.as_ref().is_some_and(|body| always_returns(body));
+        let else_term = els_stmts
+            .as_ref()
+            .is_some_and(|body| !super::fallthrough::sequence_can_fall_through(body));
         let else_facts = fx.narrowed.clone();
         let then_possible: HashSet<_> = then_facts.union(&then_notes).cloned().collect();
         let else_possible: HashSet<_> = else_facts
@@ -701,7 +653,7 @@ impl<'p> Checker<'p> {
             els: els_stmts,
             pos,
         });
-        then_term && i.alt.is_some() && else_term
+        !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..])
     }
 
     fn record_loop_edge(&self, fx: &mut FnCtx, is_continue: bool) {
@@ -835,7 +787,7 @@ impl<'p> Checker<'p> {
         if !else_extra.is_empty() {
             false_exit.extend_facts(else_extra);
         }
-        let false_exit = (!is_true_literal(&cond)).then_some(super::LoopEdge {
+        let false_exit = (!matches!(cond.kind, ExprKind::Bool(true))).then_some(super::LoopEdge {
             facts: false_exit,
             notes: fx.ended_shared_narrowing.clone(),
         });
@@ -914,7 +866,7 @@ impl<'p> Checker<'p> {
         }
         let false_exit = cond
             .as_ref()
-            .is_some_and(|c| !is_true_literal(c))
+            .is_some_and(|c| !matches!(c.kind, ExprKind::Bool(true)))
             .then_some(super::LoopEdge {
                 facts: false_exit,
                 notes: fx.ended_shared_narrowing.clone(),
@@ -1091,6 +1043,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     async_origins: binding_async_origins,
                     caught: false,
+                    function_value_required: None,
                 },
                 binding_pos.clone(),
                 fx,
@@ -1606,10 +1559,10 @@ impl<'p> Checker<'p> {
                 fx.narrowed.retain(|key| previous.contains(key));
             }
             let mut body = Vec::new();
-            let mut terminates = false;
             for s in &case.cons {
-                terminates |= self.check_stmt(s, fx, &mut body);
+                self.check_stmt(s, fx, &mut body);
             }
+            let terminates = !super::fallthrough::sequence_can_fall_through(&body);
             self.end_scope_narrowing(fx);
             exit_notes.extend_facts(fx.ended_shared_narrowing.iter().cloned());
             fallthrough = (!terminates).then(|| fx.narrowed.clone());

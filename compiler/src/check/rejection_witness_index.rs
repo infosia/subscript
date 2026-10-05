@@ -652,6 +652,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::OutboxPostArgumentCount => WitnessEntry::General { files: &["OutboxPostArgumentCount"], variant: None, reason: "" },
         RejectionSite::InboxWaitArgumentCount => WitnessEntry::General { files: &["InboxWaitArgumentCount"], variant: None, reason: "" },
         RejectionSite::ScalarToStringArgumentCount => WitnessEntry::General { files: &["ScalarToStringArgumentCount"], variant: None, reason: "" },
+        RejectionSite::FunctionValueOptionalArgumentCount => WitnessEntry::General { files: &["s164-function-value-default"], variant: Some(Divergence::FunctionValueOptionalArguments), reason: "" },
         RejectionSite::FunctionValueArgumentCount => WitnessEntry::General { files: &["FunctionValueArgumentCount"], variant: None, reason: "" },
         RejectionSite::AmbientFunctionArgumentCount => WitnessEntry::General { files: &["AmbientFunctionArgumentCount"], variant: None, reason: "" },
         RejectionSite::ContextMethodArgumentCount => WitnessEntry::General { files: &["foreign-count"], variant: None, reason: "" },

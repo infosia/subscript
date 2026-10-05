@@ -134,9 +134,25 @@ impl<'p> Checker<'p> {
             let has_null = values.contains(&Type::Null);
             let mut values = values.into_iter().filter(|value| *value != Type::Null);
             let Some(mut inferred) = values.next() else {
-                self.reject_subset(if call.args.len() < template.function.params.iter().take_while(|p| !matches!(p.pat, ast::Pat::Assign(_))).count() { RejectionSite::GenericInferenceRequiredArgumentMissing } else { RejectionSite::GenericInferenceNoCandidate }, format!(
-                    "cannot infer type parameter `{parameter}` of `{}`: no candidate; use explicit type arguments",
-                    source_name(key)), pos.clone());
+                let required = template
+                    .function
+                    .params
+                    .iter()
+                    .rposition(|p| !matches!(p.pat, ast::Pat::Assign(_)))
+                    .map_or(0, |i| i + 1);
+                let site = if call.args.len() < required {
+                    RejectionSite::GenericInferenceRequiredArgumentMissing
+                } else {
+                    RejectionSite::GenericInferenceNoCandidate
+                };
+                self.reject_subset(
+                    site,
+                    format!(
+                        "cannot infer type parameter `{parameter}` of `{}`: no candidate; use explicit type arguments",
+                        source_name(key)
+                    ),
+                    pos.clone(),
+                );
                 return None;
             };
             for candidate in values {

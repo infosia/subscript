@@ -1508,12 +1508,23 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
             }
         }
         hir::Stmt::Block(body) => sequence_exits(hir, body),
-        hir::Stmt::If { then, els, .. } => sequence_exits(hir, then).union(
-            els.as_deref()
-                .map_or(SequenceExits::NEXT, |els| sequence_exits(hir, els)),
-        ),
-        hir::Stmt::Switch { cases, .. } => {
-            let mut exits = if cases.iter().any(|case| case.test.is_none()) {
+        hir::Stmt::If {
+            cond, then, els, ..
+        } => {
+            let then = sequence_exits(hir, then);
+            let els = els
+                .as_deref()
+                .map_or(SequenceExits::NEXT, |els| sequence_exits(hir, els));
+            match cond.kind {
+                hir::ExprKind::Bool(true) => then,
+                hir::ExprKind::Bool(false) => els,
+                _ => then.union(els),
+            }
+        }
+        hir::Stmt::Switch { disc, cases, .. } => {
+            let mut exits = if cases.iter().any(|case| case.test.is_none())
+                || matches!(disc.ty, subscript_compiler::Type::StringAlias(_))
+            {
                 SequenceExits::STOP
             } else {
                 SequenceExits::NEXT
@@ -1528,24 +1539,27 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
                 breaks: false,
             }
         }
-        // LIR keeps the exit of a loop with a condition, including a
-        // constant-true condition. A `for` with no condition has an exit
-        // only when a `break` reaches it.
         hir::Stmt::For {
             init, cond, body, ..
         } => {
             let init = init
                 .as_deref()
                 .map_or(SequenceExits::NEXT, |init| statement_exits(hir, init));
-            if cond.is_some() || sequence_exits(hir, body).breaks {
-                init.then(SequenceExits::NEXT)
-            } else {
-                init.then(SequenceExits::STOP)
-            }
+            let next = cond
+                .as_ref()
+                .is_some_and(|cond| !matches!(cond.kind, hir::ExprKind::Bool(true)))
+                || sequence_exits(hir, body).breaks;
+            init.then(SequenceExits {
+                next,
+                breaks: false,
+            })
         }
-        hir::Stmt::Let { .. } | hir::Stmt::While { .. } | hir::Stmt::ForOf { .. } => {
-            SequenceExits::NEXT
-        }
+        hir::Stmt::While { cond, body, .. } => SequenceExits {
+            next: !matches!(cond.kind, hir::ExprKind::Bool(true))
+                || sequence_exits(hir, body).breaks,
+            breaks: false,
+        },
+        hir::Stmt::Let { .. } | hir::Stmt::ForOf { .. } => SequenceExits::NEXT,
     }
 }
 
@@ -1837,8 +1851,13 @@ mod sequence_tests {
     }
 
     #[test]
-    fn loops_retain_trailing_execution_facts() {
-        for body in ["while (true) { return; }", "for (; true;) { return; }"] {
+    fn loop_conditions_select_trailing_execution_facts() {
+        for (body, stops) in [
+            ("while (true) { return; }", true),
+            ("for (; true;) { return; }", true),
+            ("while (a.length > 0) { return; }", false),
+            ("for (; a.length > 0;) { return; }", false),
+        ] {
             let source = format!(
                 "function run(a: i32[]): i32 {{ {body} return a[0]; }}
                  export function main(): void {{}}"
@@ -1847,7 +1866,11 @@ mod sequence_tests {
             let (hir, mut lir) = checked(&source);
             assert!(dropped_facts(&hir, &lir).is_empty(), "{body}");
             let function = hir.functions.iter().find(|f| f.name == "run").unwrap();
-            assert!(!stops_statement_sequence(&hir, &function.body[0]), "{body}");
+            assert_eq!(
+                stops_statement_sequence(&hir, &function.body[0]),
+                stops,
+                "{body}"
+            );
             let mut removed = 0;
             for block in lir.functions.iter_mut().flat_map(|f| &mut f.blocks) {
                 block.instructions.retain(|instruction| {
@@ -1861,8 +1884,8 @@ mod sequence_tests {
                     keep
                 });
             }
-            assert!(removed > 0, "LIR retains the trailing array read: {body}");
-            assert!(!dropped_facts(&hir, &lir).is_empty(), "{body}");
+            assert_eq!(removed > 0, !stops, "{body}");
+            assert_eq!(dropped_facts(&hir, &lir).is_empty(), stops, "{body}");
         }
     }
 

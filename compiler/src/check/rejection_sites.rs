@@ -624,6 +624,7 @@ pub(crate) enum RejectionSite {
     InboxWaitArgumentCount,
     ScalarToStringArgumentCount,
     FunctionValueArgumentCount,
+    FunctionValueOptionalArgumentCount,
     AmbientFunctionArgumentCount,
     ContextMethodArgumentCount,
     ForeignFunctionArgumentCount,
