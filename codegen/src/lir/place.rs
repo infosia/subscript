@@ -100,6 +100,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 obj,
                 index,
                 checked,
+                ..
             } => {
                 let base = if matches!(obj.ty, Type::FixedArray(..)) && is_place_expr(obj) {
                     PreparedBase::Place(Box::new(self.prepare_place(obj)?))

@@ -197,6 +197,7 @@ fn expr_children_yield_every_child() {
         (ExprKind::Length(Box::new(child_expr(1))), vec![1]),
         (
             ExprKind::Index {
+                element_key: None,
                 obj: Box::new(child_expr(1)),
                 index: Box::new(child_expr(2)),
                 checked: true,

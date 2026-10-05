@@ -1,4 +1,4 @@
-//! A path fact carries its shared-location class (compiler.md §161).
+//! A path fact carries its kind and shared-location class (compiler.md §161, §163).
 
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
@@ -9,6 +9,37 @@ use std::ops::Deref;
 pub(crate) struct NarrowingFact {
     pub key: String,
     pub shared: bool,
+    pub kind: FactKind,
+}
+
+/// Element checks select a diagnostic; only narrowing facts change types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FactKind {
+    Narrowing,
+    ElementCheck {
+        receiver: String,
+        key: String,
+        const_bindings: Vec<(String, String)>,
+    },
+}
+
+impl NarrowingFact {
+    /// A fact of an inaccessible const key has no later consumer.
+    pub(super) fn leaves_const_scope(
+        &self,
+        bindings: &std::collections::HashMap<String, String>,
+    ) -> bool {
+        match &self.kind {
+            FactKind::ElementCheck { const_bindings, .. } => const_bindings
+                .iter()
+                .any(|(name, identity)| bindings.get(name) == Some(identity)),
+            FactKind::Narrowing => false,
+        }
+    }
+
+    pub(super) fn narrows_type(&self) -> bool {
+        self.kind == FactKind::Narrowing
+    }
 }
 
 impl Deref for NarrowingFact {
@@ -71,6 +102,7 @@ pub(super) trait FactSet {
     fn assert_class(&self, fact: &NarrowingFact) {
         if let Some(existing) = self.fact(&fact.key) {
             debug_assert_eq!(existing.shared, fact.shared, "fact class: {}", fact.key);
+            debug_assert_eq!(existing.kind, fact.kind, "fact kind: {}", fact.key);
         }
     }
 

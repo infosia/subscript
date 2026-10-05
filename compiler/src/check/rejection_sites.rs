@@ -78,6 +78,12 @@ pub(crate) enum RejectionSite {
 
     NullableCall,
     NullableCallShared,
+    IndexedMemberChecked,
+    IndexedMemberUnchecked,
+    IndexedCallChecked,
+    IndexedCallUnchecked,
+    IndexedAssignmentChecked,
+    IndexedAssignmentUnchecked,
     NullableMember,
     NullableMemberShared,
     UnknownNamespaceConstructor,

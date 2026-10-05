@@ -134,7 +134,7 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;
                 }
-                self.check_index(obj, index, pos)
+                self.check_index(obj, index, pos, fx)
             }
             ast::MemberProp::Ident(prop) => {
                 let name = prop.sym.to_string();
@@ -147,7 +147,11 @@ impl<'p> Checker<'p> {
                 let obj = self.check_receiver(&m.obj, fx);
                 let mut expr = self.member_on_context(obj, &name, prop_pos, None, truth_test, fx);
                 self.apply_narrowing(&mut expr, fx);
-                let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
+                let narrowed = path_key(&expr).is_some_and(|key| {
+                    fx.narrowed
+                        .get(&key)
+                        .is_some_and(|fact| fact.narrows_type())
+                });
                 if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
                     self.reject_subset(RejectionSite::DescriptorAbsentMemberRead, "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`", expr.pos.clone());
                     expr.ty = Type::Error;
@@ -183,7 +187,19 @@ impl<'p> Checker<'p> {
         obj: hir::Expr,
         index: hir::Expr,
         pos: Pos,
+        fx: &FnCtx,
     ) -> hir::Expr {
+        let element_key = match &index.kind {
+            ExprKind::Int(value) => Some(format!("int:{value}")),
+            ExprKind::Local(name, _, _) => fx
+                .scopes
+                .iter()
+                .rev()
+                .find(|scope| scope.vars.contains_key(name))
+                .and_then(|scope| scope.const_keys.get(name))
+                .cloned(),
+            _ => None,
+        };
         let obj = self.apparent_expr(obj);
         if let Type::Class(id) = &self.apparent_type(&obj.ty) {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
@@ -255,6 +271,7 @@ impl<'p> Checker<'p> {
             kind: ExprKind::Index {
                 obj: Box::new(obj),
                 index: Box::new(index),
+                element_key,
                 checked: true,
             },
             ty: elem,

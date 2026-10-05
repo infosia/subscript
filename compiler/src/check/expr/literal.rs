@@ -606,7 +606,11 @@ impl<'p> Checker<'p> {
     pub(super) fn apply_narrowing(&self, e: &mut hir::Expr, fx: &FnCtx) {
         if matches!(self.apparent_type(&e.ty), Type::Nullable(_)) {
             if let Some(key) = path_key(e) {
-                if fx.narrowed.contains(&key) {
+                if fx
+                    .narrowed
+                    .get(&key)
+                    .is_some_and(|fact| fact.narrows_type())
+                {
                     e.ty = self.non_null_type(&e.ty);
                 }
             }

@@ -266,6 +266,20 @@ impl<'p> Checker<'p> {
     ) {
         if !self.assignable(&from.ty, to) {
             if matches!(self.apparent_type(&from.ty), Type::Nullable(inner) if *inner == self.apparent_type(to))
+                && self.indexed_nullable_error(
+                    from,
+                    fx,
+                    if matches!(self.apparent_type(to), Type::Func(_)) {
+                        RejectionSite::NullableCall
+                    } else {
+                        RejectionSite::NullableNominalAssignment
+                    },
+                    from.pos.clone(),
+                )
+            {
+                return;
+            }
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner) if *inner == self.apparent_type(to))
                 && super::expr::path_key(from)
                     .is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
             {

@@ -411,3 +411,11 @@ pub(super) const FUNCTIONPARAMETERIDENTITY: DivergenceEntry = DivergenceEntry {
 pub(super) const IMPORTANNOTATION: DivergenceEntry = DivergenceEntry {
  ts: "// file: main.ts\nexport function f(x: import(\"./other\").C): void {}\n// file: other.ts\nexport class C { x: i32 = 1; }\n", subscript: "no equivalent; use a namespace import to qualify the type", why: "The only type qualifier is a namespace import; an annotation names a declared or builtin type.", collision: "C24", // row 17
 };
+
+/// C24 row 32 uses a const copy for every index key.
+pub(super) const INDEXEDREADNULLCHECK: DivergenceEntry = DivergenceEntry {
+    ts: "class A { x: i32 = 1; } function f(xs: (A | null)[]): i32 { if (xs[0] !== null) { return xs[0].x; } return 0; }",
+    subscript: "class A { x: i32 = 1; } function f(xs: (A | null)[]): i32 { const v = xs[0]; if (v !== null) { return v.x; } return 0; }",
+    why: "An element is a shared location. A const copy reads it once and keeps its narrowing across calls for every key.",
+    collision: "C24", // row 32
+};

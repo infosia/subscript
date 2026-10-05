@@ -8871,3 +8871,43 @@ function touch():void{} function take(f:()=>void):void{}
 export function main():void{ const h=new H(); h.f=touch; touch(); take(h.f); }
 END FILE
 END PROGRAM
+PROGRAM	s163-IndexedMemberChecked			0
+FILE	E	main.ts
+class A { x: i32 = 1; } function take(a: A): void {} export function f(xs: (A | null)[]): void { if (xs[0] !== null) { print(`${xs[0].x}`); } }
+END FILE
+END PROGRAM
+PROGRAM	s163-IndexedMemberUnchecked	TS2531		0
+FILE	E	main.ts
+class A { x: i32 = 1; } function take(a: A): void {} export function f(xs: (A | null)[]): void { print(`${xs[0].x}`); }
+END FILE
+END PROGRAM
+PROGRAM	s163-IndexedCallChecked			0
+FILE	E	main.ts
+export function f(xs: (((x: i32) => i32) | null)[]): i32 { if (xs[0] !== null) { return xs[0](1); } return 0; }
+END FILE
+END PROGRAM
+PROGRAM	s163-IndexedCallUnchecked	TS2721		0
+FILE	E	main.ts
+export function f(xs: (((x: i32) => i32) | null)[]): i32 { return xs[0](1); }
+END FILE
+END PROGRAM
+PROGRAM	s163-IndexedAssignmentChecked			0
+FILE	E	main.ts
+class A { x: i32 = 1; } function take(a: A): void {} export function f(xs: (A | null)[]): void { if (xs[0] !== null) { take(xs[0]); } }
+END FILE
+END PROGRAM
+PROGRAM	s163-IndexedAssignmentUnchecked	TS2345		0
+FILE	E	main.ts
+class A { x: i32 = 1; } function take(a: A): void {} export function f(xs: (A | null)[]): void { take(xs[0]); }
+END FILE
+END PROGRAM
+PROGRAM	s163-switch-receiver-checked			0
+FILE	E	main.ts
+class A { x: i32 = 1; } export function f(xs: (A | null)[], j: i32): void { switch(j) { case 0: { const other: (A | null)[] = []; if(xs[0] === null) { return; } break; } default: if(xs[0] === null) { return; } } print(`${xs[0].x}`); }
+END FILE
+END PROGRAM
+PROGRAM	s163-switch-receiver-unchecked	TS2531		0
+FILE	E	main.ts
+class A { x: i32 = 1; } export function f(xs: (A | null)[], j: i32): void { switch(j) { case 0: { const xs: (A | null)[] = []; if(xs[0] === null) { return; } break; } default: if(xs[0] === null) { return; } } print(`${xs[0].x}`); }
+END FILE
+END PROGRAM

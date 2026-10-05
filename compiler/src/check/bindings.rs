@@ -47,6 +47,13 @@ impl<'p> Checker<'p> {
 
     /// Declares one local and reports a duplicate in the current scope.
     pub(crate) fn declare_local(&mut self, name: &str, local: Local, pos: Pos, fx: &mut FnCtx) {
+        if !local.mutable {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.const_keys.entry(name.to_owned()).or_insert_with(|| {
+                    format!("const:{}:{}:{}:{name}", pos.file, pos.line, pos.col)
+                });
+            }
+        }
         let in_switch = fx.scopes.last().is_some_and(|scope| scope.is_switch);
         if !self.declare_in_context(name, local, fx) {
             if let Some(scope) = fx.scopes.last_mut() {
@@ -184,7 +191,7 @@ impl<'p> Checker<'p> {
                         ty: Type::I32,
                         pos: pos.clone(),
                     };
-                    self.check_index(source.clone(), index, pos.clone())
+                    self.check_index(source.clone(), index, pos.clone(), fx)
                 }
                 pattern::BindingSource::Field(field) => {
                     self.member_on(source.clone(), field, pos.clone(), None, fx)

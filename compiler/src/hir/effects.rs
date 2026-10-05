@@ -11,6 +11,10 @@ pub(crate) struct NarrowingEffects {
     pub(crate) fields: HashSet<String>,
     pub(crate) globals: HashSet<Symbol>,
     pub(crate) locals: HashSet<String>,
+    /// Exact receiver stores end element-check facts (§163).
+    pub(crate) stores: HashSet<String>,
+    /// Indexed stores keep the receiver and the key, including unknown keys.
+    pub(crate) indexed_stores: HashSet<(String, Option<String>)>,
     /// Same-path nullable stores end facts without a C17 diagnostic (§159 rule 5).
     pub(crate) nullable_stores: HashSet<String>,
     /// Checked nullable stores, independently derived for the final loop check.
@@ -23,6 +27,8 @@ impl NarrowingEffects {
         self.fields.extend(other.fields);
         self.globals.extend(other.globals);
         self.locals.extend(other.locals);
+        self.stores.extend(other.stores);
+        self.indexed_stores.extend(other.indexed_stores);
         self.nullable_stores.extend(other.nullable_stores);
         self.nullable_store_sites.extend(other.nullable_store_sites);
     }
@@ -53,6 +59,10 @@ impl NarrowingEffects {
     }
 
     fn hide_binding(&mut self, name: &str) {
+        self.stores
+            .retain(|path| path != name && !path.starts_with(&format!("{name}.")));
+        self.indexed_stores
+            .retain(|(path, _)| path != name && !path.starts_with(&format!("{name}.")));
         self.nullable_store_sites
             .retain(|(path, _)| path != name && !path.starts_with(&format!("{name}.")));
         self.nullable_stores
@@ -216,6 +226,21 @@ impl Expr {
             script: self.ends_shared_narrowing(classes, helpers),
             ..Default::default()
         };
+        if let ExprKind::Assign { target, .. } = &self.kind {
+            if let Some(path) = store_path(target) {
+                effects.stores.insert(path);
+            }
+            if let ExprKind::Index {
+                obj, element_key, ..
+            } = &target.kind
+            {
+                if let Some(receiver) = store_path(obj) {
+                    effects
+                        .indexed_stores
+                        .insert((receiver, element_key.clone()));
+                }
+            }
+        }
         if let ExprKind::Assign {
             op: None,
             target,
@@ -503,6 +528,11 @@ fn store_path(expression: &Expr) -> Option<String> {
         ExprKind::Local(name, _, _) => Some(name.clone()),
         ExprKind::This => Some("this".into()),
         ExprKind::Field { obj, name } => store_path(obj).map(|root| format!("{root}.{name}")),
+        ExprKind::Index {
+            obj,
+            element_key: Some(key),
+            ..
+        } => store_path(obj).map(|root| format!("{root}.[[element:{key}]]")),
         _ => None,
     }
 }

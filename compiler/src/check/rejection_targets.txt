@@ -1392,3 +1392,11 @@ ThisInParameterDefaultArrow	this-default-annotated	S009	a lambda in a parameter 
 LocalTypeWithoutInitializer	local-type-without-initializer	S100	a local without an initializer requires a type annotation
 NullableNominalAssignmentShared	assignment-shared-parameter	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableAssignmentShared	assignment-shared-function-parameter	S100	type mismatch: the argument expects `() => void`, got `(() => void) | null`
+IndexedMemberChecked	s163-IndexedMemberChecked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedMemberUnchecked	s163-IndexedMemberUnchecked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedCallChecked	s163-IndexedCallChecked	S100	`((i32) => i32) | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedCallUnchecked	s163-IndexedCallUnchecked	S100	`((i32) => i32) | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedAssignmentChecked	s163-IndexedAssignmentChecked	S005	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedAssignmentUnchecked	s163-IndexedAssignmentUnchecked	S005	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedMemberChecked	s163-switch-receiver-checked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
+IndexedMemberUnchecked	s163-switch-receiver-unchecked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }

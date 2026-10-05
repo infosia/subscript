@@ -190,6 +190,7 @@ impl Analyzer {
             obj,
             index,
             checked,
+            ..
         } = &mut expr.kind
         {
             *checked = match &obj.ty {

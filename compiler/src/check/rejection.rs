@@ -158,6 +158,12 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::SharedLocationNarrowing),
     ),
+    Self::IndexedMemberChecked => (RuleCode::S011, Diverges(Divergence::IndexedReadNullCheck)),
+    Self::IndexedMemberUnchecked => (RuleCode::S011, TscRejects),
+    Self::IndexedCallChecked => (RuleCode::S100, Diverges(Divergence::IndexedReadNullCheck)),
+    Self::IndexedCallUnchecked => (RuleCode::S100, TscRejects),
+    Self::IndexedAssignmentChecked => (RuleCode::S005, Diverges(Divergence::IndexedReadNullCheck)),
+    Self::IndexedAssignmentUnchecked => (RuleCode::S005, TscRejects),
     Self::NullableMember => (RuleCode::S011, TscRejects),
     Self::NullableMemberShared => (
         RuleCode::S011,

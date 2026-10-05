@@ -761,7 +761,7 @@ impl<'p> Checker<'p> {
                     _ => Type::I32,
                 };
                 let index = self.check_expr(&property.expr, Some(&index_context), fx);
-                self.check_index(receiver, index, self.pos(member.span))
+                self.check_index(receiver, index, self.pos(member.span), fx)
             }
             ast::MemberProp::PrivateName(_) => {
                 let pos = self.pos(member.span);

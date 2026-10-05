@@ -508,6 +508,8 @@ pub(crate) struct Local {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
     pub vars: Shared<HashMap<String, Local>>,
+    /// Source declaration identities for const index keys (§163).
+    pub const_keys: Shared<HashMap<String, String>>,
     /// Names whose apparent local types are the error type.
     pub rejected_local_names: Shared<std::collections::BTreeSet<String>>,
     /// Outer facts hidden by declarations in this scope.
@@ -1138,8 +1140,10 @@ impl FnCtx {
         if let Some(scope) = self.scopes.pop() {
             self.shadowed_narrowing_scopes.remove(&self.scopes.len());
             if !scope.vars.is_empty() {
-                self.narrowed
-                    .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
+                self.narrowed.retain(|key| {
+                    !scope.vars.contains_key(stmt::root_of(key))
+                        && !key.leaves_const_scope(&scope.const_keys)
+                });
             }
             if !scope.shadowed_narrowing.is_empty() {
                 self.narrowed.extend_facts(scope.shadowed_narrowing);

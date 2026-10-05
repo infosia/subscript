@@ -333,7 +333,12 @@ impl Checker<'_> {
         pos: &Pos,
         fx: &FnCtx,
     ) -> bool {
-        if !local.caught || fx.narrowed.contains(name) {
+        if !local.caught
+            || fx
+                .narrowed
+                .get(name)
+                .is_some_and(|fact| fact.narrows_type())
+        {
             return false;
         }
         self.reject_subset(

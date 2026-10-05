@@ -90,8 +90,11 @@ impl Checker<'_> {
                     | crate::types::Type::Nullable(_)
                     | crate::types::Type::Error
             ) {
-                if let Some(key) = path_key(target) {
+                if let Some(key) =
+                    path_key(target).filter(|_| !matches!(target.kind, ExprKind::Index { .. }))
+                {
                     fx.narrowed.replace_fact(NarrowingFact {
+                        kind: crate::check::narrowing_fact::FactKind::Narrowing,
                         key: key.clone(),
                         shared: target.is_shared_location(self.narrowing_classes()),
                     });
@@ -99,6 +102,37 @@ impl Checker<'_> {
                 }
             }
         }
+    }
+
+    /// An element check selects C24 row 32 without changing the value type.
+    pub(super) fn indexed_nullable_error(
+        &mut self,
+        expression: &hir::Expr,
+        fx: &FnCtx,
+        use_site: RejectionSite,
+        pos: Pos,
+    ) -> bool {
+        if !matches!(expression.kind, ExprKind::Index { .. }) {
+            return false;
+        }
+        let checked = path_key(expression).is_some_and(|key| {
+            fx.narrowed
+                .get(&key)
+                .is_some_and(|fact| !fact.narrows_type())
+        });
+        let site = match (use_site, checked) {
+            (RejectionSite::NullableMember, true) => RejectionSite::IndexedMemberChecked,
+            (RejectionSite::NullableMember, false) => RejectionSite::IndexedMemberUnchecked,
+            (RejectionSite::NullableCall, true) => RejectionSite::IndexedCallChecked,
+            (RejectionSite::NullableCall, false) => RejectionSite::IndexedCallUnchecked,
+            (_, true) => RejectionSite::IndexedAssignmentChecked,
+            (_, false) => RejectionSite::IndexedAssignmentUnchecked,
+        };
+        self.reject_subset(site, format!(
+            "`{}` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) {{ v.x }}",
+            self.type_name(&expression.ty),
+        ), pos);
+        true
     }
 
     pub(super) fn nullable_use_error(
@@ -110,6 +144,11 @@ impl Checker<'_> {
         pos: Pos,
     ) {
         let nullable_function = matches!(self.apparent_type(&expression.ty), crate::types::Type::Nullable(inner) if matches!(self.apparent_type(&inner), crate::types::Type::Func(_)));
+        if (sites.0 != RejectionSite::NullableCall || nullable_function)
+            && self.indexed_nullable_error(expression, fx, sites.0, pos.clone())
+        {
+            return;
+        }
         if (sites.0 != RejectionSite::NullableCall || nullable_function)
             && path_key(expression).is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
         {
@@ -380,6 +419,21 @@ impl FnCtx {
 }
 
 fn path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bool) {
+    if let crate::check::narrowing_fact::FactKind::ElementCheck {
+        receiver,
+        key: element,
+        ..
+    } = &key.kind
+    {
+        let killed = effects
+            .stores
+            .iter()
+            .any(|stored| receiver == stored || receiver.starts_with(&format!("{stored}.")))
+            || effects
+                .indexed_stores
+                .contains(&(receiver.clone(), Some(element.clone())));
+        return (false, killed);
+    }
     let root = super::stmt::root_of(key);
     let global = root.starts_with("[[global]]");
     let shared = key.shared;
@@ -401,6 +455,9 @@ fn path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bo
 
 /// compiler.md §162 rule 3 keeps a whole-local fact through a non-null store.
 fn loop_path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bool) {
+    if !key.narrows_type() {
+        return path_kills(key, effects);
+    }
     let shared_kill = path_kills(key, effects).0;
     let local_kill = effects.nullable_store_ends(key)
         || !super::stmt::root_of(key).starts_with("[[global]]")
@@ -419,9 +476,49 @@ pub(super) fn leaf_paths(
     apparent_type: impl Fn(&Type) -> Type,
     classes: &[hir::ClassDef],
 ) -> (Vec<NarrowingFact>, Vec<NarrowingFact>) {
+    fn const_bindings(value: &hir::Expr) -> Vec<(String, String)> {
+        let mut bindings = Vec::new();
+        let mut receiver = value;
+        loop {
+            match &receiver.kind {
+                ExprKind::Index {
+                    obj,
+                    index,
+                    element_key,
+                    ..
+                } => {
+                    if let (ExprKind::Local(name, _, _), Some(identity)) =
+                        (&index.kind, element_key)
+                    {
+                        if identity.starts_with("const:") {
+                            bindings.push((name.clone(), identity.clone()));
+                        }
+                    }
+                    receiver = obj;
+                }
+                ExprKind::Field { obj, .. } => receiver = obj,
+                _ => break,
+            }
+        }
+        bindings
+    }
     let fact = |value: &hir::Expr| {
-        path_key(value).map(|key| NarrowingFact {
+        let key = path_key(value)?;
+        let kind = match &value.kind {
+            ExprKind::Index {
+                obj,
+                element_key: Some(element),
+                ..
+            } => crate::check::narrowing_fact::FactKind::ElementCheck {
+                receiver: path_key(obj)?,
+                key: element.clone(),
+                const_bindings: const_bindings(value),
+            },
+            _ => crate::check::narrowing_fact::FactKind::Narrowing,
+        };
+        Some(NarrowingFact {
             key,
+            kind,
             shared: value.is_shared_location(classes),
         })
     };
@@ -448,13 +545,19 @@ pub(super) fn leaf_paths(
                 } else {
                     (None, left)
                 };
-                if null_side.is_some() && matches!(apparent_type(&other.ty), Type::Nullable(_)) {
-                    let target = match &other.kind {
-                        ExprKind::Assign {
-                            op: None, target, ..
-                        } => target.as_ref(),
-                        _ => other,
-                    };
+                let target = match &other.kind {
+                    ExprKind::Assign {
+                        op: None, target, ..
+                    } => target.as_ref(),
+                    _ => other,
+                };
+                let compared_type = if matches!(target.kind, ExprKind::Index { .. }) {
+                    &target.ty
+                } else {
+                    &other.ty
+                };
+                if null_side.is_some() && matches!(apparent_type(compared_type), Type::Nullable(_))
+                {
                     if let Some(key) = fact(target) {
                         return match op {
                             // `p === null` → p is non-null when false.
@@ -517,7 +620,7 @@ fn checked_loop_store_diagnostics(
     kept: &super::NarrowingFacts,
 ) -> Vec<crate::diag::Diagnostic> {
     effects.nullable_store_sites.into_iter().filter_map(|(path, pos)| {
-        kept.iter().any(|fact| fact.key == path || fact.starts_with(&format!("{path}."))).then(|| {
+        kept.iter().any(|fact| fact.narrows_type() && (fact.key == path || fact.starts_with(&format!("{path}.")))).then(|| {
             let path = hir::source_name(path.strip_prefix("[[global]]").unwrap_or(&path));
             super::rejection::diagnostic(
                 RejectionSite::NullableMember,
@@ -533,10 +636,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scope_exit_discards_only_facts_that_need_its_const_binding() {
+        use crate::check::narrowing_fact::FactKind;
+        for nested in [false, true] {
+            let mut fx = FnCtx::new(Type::Void, false, None, Default::default());
+            let mut scope = super::super::Scope::default();
+            scope.const_keys.insert("i".into(), "inner-i".into());
+            scope.vars.insert(
+                "i".into(),
+                super::super::Local {
+                    annotated: false,
+                    ty: Type::I32,
+                    mutable: false,
+                    async_origins: Default::default(),
+                    caught: false,
+                },
+            );
+            fx.scopes.push(scope);
+            let mut keys = Vec::new();
+            for identity in ["inner-i", "outer-i"] {
+                let receiver = if nested {
+                    format!("xs.[[element:{identity}]]")
+                } else {
+                    "xs".into()
+                };
+                let element = if nested { "int:0" } else { identity };
+                let key = format!("{receiver}.[[element:{element}]]");
+                keys.push(key.clone());
+                fx.narrowed.insert_fact(NarrowingFact {
+                    key,
+                    shared: false,
+                    kind: FactKind::ElementCheck {
+                        receiver,
+                        key: if nested {
+                            "int:0".into()
+                        } else {
+                            identity.into()
+                        },
+                        const_bindings: vec![("i".into(), identity.into())],
+                    },
+                });
+            }
+            fx.pop_scope();
+            assert!(!fx.narrowed.contains(&keys[0]));
+            assert!(fx.narrowed.contains(&keys[1]));
+        }
+    }
+
+    #[test]
     fn final_checked_body_must_preserve_the_retained_loop_fact() {
         for path in ["a", "[[global]][[identity:module:00]]a"] {
             let kept = super::super::NarrowingFacts::from(std::collections::BTreeSet::from([
                 NarrowingFact {
+                    kind: crate::check::narrowing_fact::FactKind::Narrowing,
                     key: path.into(),
                     shared: false,
                 },

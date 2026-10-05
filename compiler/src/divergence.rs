@@ -21,6 +21,8 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// A null check of an element changes no type (§163).
+    IndexedReadNullCheck,
     /// The language has no variadic parameters.
     RestParameter,
     /// A string-valued enum member has no integer enum representation.
@@ -989,6 +991,7 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::IndexedReadNullCheck,
         Divergence::RestParameter,
         Divergence::ErasedAssignableEquality,
         Divergence::DeclaredFieldWithoutValue,

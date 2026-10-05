@@ -715,7 +715,12 @@ fn general_checker_failures(programs: &[rejection_programs::Program]) -> Vec<Str
         .lines()
         .map(|line| {
             let fields: Vec<_> = line.splitn(4, '\t').collect();
-            (fields[0], fields[1], fields[2], fields[3])
+            (
+                fields[0],
+                fields[1],
+                fields[2],
+                fields[3].replace("\\n", "\n"),
+            )
         })
         .collect();
     let mut failures = target_site_failures(targets.iter().map(|row| row.0));

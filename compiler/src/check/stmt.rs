@@ -226,15 +226,32 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
-                    if let Some((depth, edges)) = fx.switch_break_facts.last_mut() {
-                        if *depth == fx.loop_depth {
-                            edges.push(fx.narrowed.clone());
-                        }
-                    }
                     let switch_exit = fx
                         .switch_break_facts
                         .last()
                         .is_some_and(|(depth, _)| *depth == fx.loop_depth);
+                    if switch_exit {
+                        let mut facts = fx.narrowed.clone();
+                        if let Some(depth) = fx.scopes.iter().rposition(|scope| scope.is_switch) {
+                            for scope in fx.scopes[depth + 1..].iter().rev() {
+                                facts.retain(|fact| {
+                                    fact.narrows_type()
+                                        || !scope.vars.contains_key(root_of(fact))
+                                            && !fact.leaves_const_scope(&scope.const_keys)
+                                });
+                                facts.extend_facts(
+                                    scope
+                                        .shadowed_narrowing
+                                        .iter()
+                                        .filter(|fact| !fact.narrows_type())
+                                        .cloned(),
+                                );
+                            }
+                        }
+                        if let Some((_, edges)) = fx.switch_break_facts.last_mut() {
+                            edges.push(facts);
+                        }
+                    }
                     if !switch_exit {
                         self.record_loop_edge(fx, false);
                     }
@@ -457,6 +474,26 @@ impl<'p> Checker<'p> {
                 self.bind_pattern(&pattern, source, mutable, annotated, fx, out);
                 continue;
             }
+            // Only direct integer literals and their const aliases share a value identity.
+            let integer_key = if !mutable {
+                match d.init.as_deref() {
+                    Some(ast::Expr::Lit(ast::Lit::Num(_))) => match &init.kind {
+                        hir::ExprKind::Int(value) => Some(format!("int:{value}")),
+                        _ => None,
+                    },
+                    Some(ast::Expr::Ident(ident)) => fx
+                        .scopes
+                        .iter()
+                        .rev()
+                        .find(|scope| scope.vars.contains_key(ident.sym.as_ref()))
+                        .and_then(|scope| scope.const_keys.get(ident.sym.as_ref()))
+                        .filter(|identity| identity.starts_with("int:"))
+                        .cloned(),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let async_origins = self.expr_async_origins(&init, fx);
             self.declare_local(
                 &name,
@@ -470,6 +507,11 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
+            if let Some(identity) = integer_key {
+                if let Some(scope) = fx.scopes.last_mut() {
+                    scope.const_keys.insert(name.clone(), identity);
+                }
+            }
             if !matches!(init.kind, hir::ExprKind::Unassigned)
                 && matches!(self.apparent_type(&ty), Type::Nullable(_))
                 && !matches!(
@@ -478,6 +520,7 @@ impl<'p> Checker<'p> {
                 )
             {
                 fx.narrowed.insert_fact(super::NarrowingFact {
+                    kind: crate::check::narrowing_fact::FactKind::Narrowing,
                     key: name.clone(),
                     shared: false,
                 });
@@ -687,9 +730,14 @@ impl<'p> Checker<'p> {
             let mut disposed = false;
             for scope in fx.scopes[*scope_depth..].iter().rev() {
                 disposed |= scope.dispose_on_exit;
-                if scope.dispose_on_exit && edge.facts.iter().any(|key| key.shared) {
+                if scope.dispose_on_exit
+                    && edge
+                        .facts
+                        .iter()
+                        .any(|key| key.shared && key.narrows_type())
+                {
                     edge.facts.retain(|key| {
-                        if key.shared {
+                        if key.shared && key.narrows_type() {
                             edge.notes.insert_fact(key.clone());
                             false
                         } else {
@@ -698,19 +746,21 @@ impl<'p> Checker<'p> {
                     });
                 }
                 if !scope.vars.is_empty()
-                    && edge
-                        .facts
-                        .iter()
-                        .any(|key| scope.vars.contains_key(root_of(key)))
+                    && edge.facts.iter().any(|key| {
+                        scope.vars.contains_key(root_of(key))
+                            || key.leaves_const_scope(&scope.const_keys)
+                    })
                 {
-                    edge.facts
-                        .retain(|key| !scope.vars.contains_key(root_of(key)));
+                    edge.facts.retain(|key| {
+                        !scope.vars.contains_key(root_of(key))
+                            && !key.leaves_const_scope(&scope.const_keys)
+                    });
                 }
                 if !scope.shadowed_narrowing.is_empty() {
                     let mut facts = scope.shadowed_narrowing.clone();
-                    if disposed && facts.iter().any(|key| key.shared) {
+                    if disposed && facts.iter().any(|key| key.shared && key.narrows_type()) {
                         facts.retain(|key| {
-                            if key.shared {
+                            if key.shared && key.narrows_type() {
                                 edge.notes.insert_fact(key.clone());
                                 false
                             } else {

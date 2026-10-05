@@ -1752,6 +1752,8 @@ pub enum ExprKind {
         obj: Box<Expr>,
         /// Index expression (`i32`).
         index: Box<Expr>,
+        /// Integer literal or const-binding identity for diagnostic facts (§163).
+        element_key: Option<String>,
         /// Whether HIR's shared interval pass retained the bounds check.
         ///
         /// Dynamic arrays always retain it. A `FixedArray` access may set

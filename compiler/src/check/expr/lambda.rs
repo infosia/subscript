@@ -197,7 +197,8 @@ impl<'p> Checker<'p> {
         fx.narrowed = saved_narrowed
             .iter()
             .filter(|fact| {
-                !fact.contains('.')
+                fact.narrows_type()
+                    && !fact.contains('.')
                     && !fact.starts_with("[[global]]")
                     && fx
                         .scopes

@@ -503,6 +503,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r370-narrowed-loop-store.ts", RuleCode::S011, 12),
     ("r371-inferred-loop-store.ts", RuleCode::S011, 12),
     ("r372-contextual-lambda-loop-store.ts", RuleCode::S011, 16),
+    ("r373-indexed-read-after-null-check.ts", RuleCode::S011, 11),
+    (
+        "r374-indexed-read-without-null-check.ts",
+        RuleCode::S011,
+        11,
+    ),
     ("r334-bare-yield-nonvoid.ts", RuleCode::S100, 7),
     ("r335-annotated-void-binding.ts", RuleCode::S100, 9),
     ("r336-void-parameter.ts", RuleCode::S100, 8),

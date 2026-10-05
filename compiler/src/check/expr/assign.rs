@@ -638,7 +638,7 @@ impl<'p> Checker<'p> {
                         };
                     }
                 }
-                Place::Index(self.check_index(obj, index, pos))
+                Place::Index(self.check_index(obj, index, pos, fx))
             }
             ast::MemberProp::Ident(prop) => {
                 let name = prop.sym.to_string();
