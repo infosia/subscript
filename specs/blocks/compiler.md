@@ -206,3 +206,4 @@ Every section, with its status:
 | §162 | The narrowing flow follows negation, loops, and lambdas | active | [`s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md`](compiler/s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md) |
 | §163 | An indexed read is not narrowed | active | [`s163-an-indexed-read-is-not-narrowed.md`](compiler/s163-an-indexed-read-is-not-narrowed.md) |
 | §164 | One exit predicate, and the required arguments | active | [`s164-one-exit-predicate-and-the-required-arguments.md`](compiler/s164-one-exit-predicate-and-the-required-arguments.md) |
+| §165 | The async documentation states the contract | active | [`s165-the-async-documentation-states-the-contract.md`](compiler/s165-the-async-documentation-states-the-contract.md) |
