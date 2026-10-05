@@ -1392,7 +1392,7 @@ impl<'p> Checker<'p> {
         let dispatch_notes = fx.ended_shared_narrowing.clone();
         let mut exit_notes = dispatch_notes.clone();
         let mut dispatch = fx.narrowed.clone();
-        let mut fallthrough: Option<HashSet<String>> = None;
+        let mut fallthrough: Option<super::Shared<HashSet<String>>> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let mut cases = Vec::new();
         for (case_index, case) in sw.cases.iter().enumerate() {

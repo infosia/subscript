@@ -56,6 +56,12 @@ impl<'p> Checker<'p> {
         let fields: Vec<_> = self.classes[id.0]
             .fields
             .iter()
+            .filter(|field| {
+                self.class_sigs[id.0]
+                    .fields
+                    .get(&field.name)
+                    .is_some_and(|sig| matches!(sig.state, TypeState::Undecided))
+            })
             .map(|f| (f.name.clone(), f.pos.clone()))
             .collect();
         for (name, pos) in fields {
@@ -420,6 +426,12 @@ impl<'p> Checker<'p> {
         let fields: Vec<_> = self.classes[id.0]
             .fields
             .iter()
+            .filter(|field| {
+                self.class_sigs[id.0]
+                    .fields
+                    .get(&field.name)
+                    .is_some_and(|sig| matches!(sig.state, TypeState::Undecided))
+            })
             .map(|f| (f.name.clone(), f.pos.clone()))
             .collect();
         for (name, pos) in fields {
@@ -519,22 +531,31 @@ impl<'p> Checker<'p> {
                         .find(|f| f.name == key.sym.as_ref())
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
-                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
-                    fx.lexical_class = Some(id);
-                    fx.field_initializer = Some(super::field_initializer::FieldInitializer {
-                        class_type: this_ty.clone(),
-                        earlier: earlier_initialized_fields.clone(),
-                        definite_uninitialized: definite_uninitialized.clone(),
-                        write: false,
-                    });
-                    let mut initializer = self.class_sigs[id.0]
-                        .fields
-                        .get(key.sym.as_ref())
-                        .and_then(|sig| sig.initializer.clone());
-                    let cached = self.finish_initializer(&mut initializer);
+                    let cached = if prop.type_ann.is_none() {
+                        let mut initializer = self.class_sigs[id.0]
+                            .fields
+                            .get(key.sym.as_ref())
+                            .and_then(|sig| sig.initializer.clone());
+                        self.finish_initializer(&mut initializer)
+                    } else {
+                        None
+                    };
                     let e = if let Some(value) = cached {
                         value
                     } else {
+                        let mut fx = self
+                            .initializer_context
+                            .get_or_insert_with(|| {
+                                FnCtx::new(Type::Void, false, None, self.diags.clone())
+                            })
+                            .clone();
+                        fx.lexical_class = Some(id);
+                        fx.field_initializer = Some(super::field_initializer::FieldInitializer {
+                            class_type: this_ty.clone(),
+                            earlier: earlier_initialized_fields.clone().into(),
+                            definite_uninitialized: definite_uninitialized.clone().into(),
+                            write: false,
+                        });
                         fx.with_synthetic_owner(
                             SyntheticOwnerKind::Initializer(self.pos(value.span())),
                             |fx| {

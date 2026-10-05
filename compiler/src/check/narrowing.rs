@@ -236,7 +236,7 @@ impl Checker<'_> {
         let shared_paths = fx.shared_narrowing_paths();
         fx.ended_shared_narrowing
             .retain(|key| !path_kills(key, effects, &shared_paths).1);
-        for scope in &mut fx.scopes {
+        for scope in fx.scopes.iter_mut() {
             let shared = scope
                 .shadowed_narrowing
                 .iter()

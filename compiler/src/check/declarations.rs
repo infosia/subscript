@@ -32,11 +32,6 @@ impl<'p> Checker<'p> {
     ) {
         // Mirror (`.d.ts`) declarations populate the global ambient scope;
         // program declarations populate the per-file scope.
-        let unimplemented_overload = matches!(binding.item, ScopeItem::Func(_))
-            && super::rejection_facts::unimplemented_function_group(
-                &self.prog.files[file].module,
-                name,
-            );
         let scope = if self.prog.files[file].dts {
             &mut self.ambient_scope
         } else {
@@ -48,7 +43,12 @@ impl<'p> Checker<'p> {
                 (ScopeItem::Class(_), ScopeItem::Class(_))
             ) {
                 RejectionSite::DuplicateTopLevelClass
-            } else if unimplemented_overload {
+            } else if matches!(binding.item, ScopeItem::Func(_))
+                && super::rejection_facts::unimplemented_function_group(
+                    &self.prog.files[file].module,
+                    name,
+                )
+            {
                 RejectionSite::TopLevelOverloadImplementationMissing
             } else {
                 RejectionSite::TopLevelNameClash

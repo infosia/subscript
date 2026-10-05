@@ -371,3 +371,23 @@ fn generic_local_reads_report_once_with_instances() {
         check_program(&[SourceFile::entry("main.ts", control)]).unwrap();
     }
 }
+
+#[test]
+fn indexed_local_flow_keeps_exits_and_shadowed_bindings() {
+    for path in [
+        "if (flag) { return; } else { x = 1; }",
+        "if (flag) { throw new Error(\"stop\"); } else { x = 1; }",
+        "if (flag) { unreachable(); } else { x = 1; }",
+        "if (flag) { while (true) {} } else { x = 1; }",
+        "if (flag) { for (;;) {} } else { x = 1; }",
+    ] {
+        let source = format!("function f(flag: boolean): void {{ let x: i32; let y: i32; y = 1; {path} print(`${{x}}`); }}");
+        check_program(&[SourceFile::entry("main.ts", source)]).unwrap();
+    }
+    let source = "function f(flag: boolean): void { let x: i32; let y: i32; { let x: i32 = 1; print(`${x}`); } if (flag) { y = 1; } else { y = 2; } print(`${x}`); print(`${y}`); }";
+    let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert!(diagnostics[0]
+        .message
+        .starts_with("local `x` is read before assignment"));
+}

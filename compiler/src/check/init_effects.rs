@@ -24,7 +24,8 @@ struct ModuleEffects {
 struct ModuleEffectScanner<'a> {
     classes: &'a [hir::ClassDef],
     generators: Option<&'a HashSet<ModuleFunction>>,
-    defaults: HashMap<ModuleFunction, Vec<(usize, String)>>,
+    defaults: Option<&'a HashMap<ModuleFunction, Vec<(usize, String)>>>,
+    ambiguous_class_names: Option<&'a HashSet<&'a str>>,
     effects: ModuleEffects,
 }
 
@@ -33,7 +34,8 @@ impl<'a> ModuleEffectScanner<'a> {
         Self {
             classes,
             generators: None,
-            defaults: HashMap::new(),
+            defaults: None,
+            ambiguous_class_names: None,
             effects: ModuleEffects::default(),
         }
     }
@@ -60,17 +62,37 @@ impl<'a> ModuleEffectScanner<'a> {
         self.effects
     }
 
-    fn with_defaults(mut self, defaults: &HashMap<ModuleFunction, Vec<(usize, String)>>) -> Self {
-        self.defaults = defaults.clone();
+    fn with_defaults(
+        mut self,
+        defaults: &'a HashMap<ModuleFunction, Vec<(usize, String)>>,
+    ) -> Self {
+        self.defaults = Some(defaults);
         self
     }
 
+    fn with_class_labels(mut self, names: &'a HashSet<&'a str>) -> Self {
+        self.ambiguous_class_names = Some(names);
+        self
+    }
+
+    fn class_member_label(&self, class: &hir::ClassDef, member: &str) -> String {
+        let Some(names) = self.ambiguous_class_names else {
+            return identity::class_member_label(self.classes, class, member);
+        };
+        hir::declaration_label(
+            &format!("{}.{}", class.name, source_name(member)),
+            &class.pos,
+            names.contains(class.name.as_str()),
+        )
+    }
+
     fn call_defaults(&mut self, unit: ModuleFunction, supplied: usize) {
-        for (index, label) in self.defaults.get(&unit).cloned().unwrap_or_default() {
-            if index >= supplied {
+        let defaults = self.defaults.and_then(|defaults| defaults.get(&unit));
+        for (index, label) in defaults.into_iter().flatten() {
+            if *index >= supplied {
                 self.record_call(
-                    ModuleFunction::Default(Box::new(unit.clone()), index),
-                    label,
+                    ModuleFunction::Default(Box::new(unit.clone()), *index),
+                    label.clone(),
                 );
             }
         }
@@ -129,7 +151,7 @@ impl<'a> ModuleEffectScanner<'a> {
         if class.methods.iter().any(|method| method.symbol == *name) {
             self.record_call(
                 ModuleFunction::Method(class_id, name.clone()),
-                identity::class_member_label(self.classes, class, name.full_text()),
+                self.class_member_label(class, name.full_text()),
             );
         } else {
             self.record_indirect_call();
@@ -151,9 +173,7 @@ impl<'a> ModuleEffectScanner<'a> {
             } => {
                 let label = self.classes.get(class.0).map_or_else(
                     || name.full_text().to_owned(),
-                    |definition| {
-                        identity::class_member_label(self.classes, definition, name.full_text())
-                    },
+                    |definition| self.class_member_label(definition, name.full_text()),
                 );
                 self.record_call(ModuleFunction::Method(*class, name.clone()), label);
             }
@@ -516,7 +536,8 @@ impl<'a> ModuleEffectScanner<'a> {
                 let unit = ModuleFunction::Lambda(*id);
                 let mut scanner = Self::new(self.classes);
                 scanner.generators = self.generators;
-                scanner.defaults = self.defaults.clone();
+                scanner.defaults = self.defaults;
+                scanner.ambiguous_class_names = self.ambiguous_class_names;
                 scanner.stmts(body);
                 self.effects
                     .lambdas
@@ -564,9 +585,7 @@ impl<'a> ModuleEffectScanner<'a> {
                 self.call_defaults(ModuleFunction::Constructor(*class), args.len());
                 let label = self.classes.get(class.0).map_or_else(
                     || "constructor".to_string(),
-                    |definition| {
-                        identity::class_member_label(self.classes, definition, "constructor")
-                    },
+                    |definition| self.class_member_label(definition, "constructor"),
                 );
                 self.record_call(ModuleFunction::Constructor(*class), label);
             }
@@ -836,7 +855,20 @@ pub(super) fn module_initializer_diagnostics(
                 ),
         )
     };
-    let bindings = module_data_bindings(checker, file_order, file_segments);
+    let mut bindings = HashMap::new();
+    for (index, name) in module_data_bindings(checker, file_order, file_segments)
+        .into_iter()
+        .enumerate()
+    {
+        bindings.entry(name).or_insert(index);
+    }
+    let mut class_names = HashSet::new();
+    let mut ambiguous_class_names = HashSet::new();
+    for class in &checker.classes {
+        if !class_names.insert(class.name.as_str()) {
+            ambiguous_class_names.insert(class.name.as_str());
+        }
+    }
     let generators: HashSet<_> = checker
         .functions
         .iter()
@@ -860,6 +892,33 @@ pub(super) fn module_initializer_diagnostics(
         .collect();
     let mut summaries = HashMap::new();
     let mut defaults = HashMap::new();
+    let mut declaration_names = HashSet::new();
+    let mut ambiguous_declaration_names = HashSet::new();
+    for name in checker
+        .globals
+        .iter()
+        .map(|g| g.name.as_str())
+        .chain(checker.functions.iter().map(|f| f.name.as_str()))
+    {
+        if !declaration_names.insert(name) {
+            ambiguous_declaration_names.insert(name);
+        }
+    }
+    let default_function_labels: HashMap<_, _> = checker
+        .functions
+        .iter()
+        .filter(|function| function.params.iter().any(|p| p.default.is_some()))
+        .map(|function| {
+            (
+                &function.symbol,
+                hir::declaration_label(
+                    &function.name,
+                    &function.pos,
+                    ambiguous_declaration_names.contains(function.name.as_str()),
+                ),
+            )
+        })
+        .collect();
     let mut sources = Vec::new();
     for function in &checker.functions {
         sources.push((
@@ -887,12 +946,25 @@ pub(super) fn module_initializer_diagnostics(
                 .filter_map(|(i, p)| {
                     p.default.as_ref().map(|_| {
                         let owner = match unit {
-                            ModuleFunction::Free(name) => name.full_text().to_string(),
+                            ModuleFunction::Free(name) => default_function_labels
+                                .get(name)
+                                .cloned()
+                                .unwrap_or_else(|| source_name(name.full_text())),
                             ModuleFunction::Method(id, name) => {
-                                format!("{}.{}", checker.classes[id.0].name, name.full_text())
+                                let class = &checker.classes[id.0];
+                                hir::declaration_label(
+                                    &format!("{}.{}", class.name, source_name(name.full_text())),
+                                    &class.pos,
+                                    ambiguous_class_names.contains(class.name.as_str()),
+                                )
                             }
                             ModuleFunction::Constructor(id) => {
-                                format!("{}.constructor", checker.classes[id.0].name)
+                                let class = &checker.classes[id.0];
+                                hir::declaration_label(
+                                    &format!("{}.constructor", class.name),
+                                    &class.pos,
+                                    ambiguous_class_names.contains(class.name.as_str()),
+                                )
                             }
                             ModuleFunction::Lambda(_) => "[lambda]".to_string(),
                             ModuleFunction::Default(_, _) => "[default]".to_string(),
@@ -908,7 +980,8 @@ pub(super) fn module_initializer_diagnostics(
             if let Some(value) = &param.default {
                 let mut scanner = ModuleEffectScanner::new(&checker.classes)
                     .with_generators(&generators)
-                    .with_defaults(&defaults);
+                    .with_defaults(&defaults)
+                    .with_class_labels(&ambiguous_class_names);
                 scanner.expr(value);
                 insert_module_summary(
                     ModuleFunction::Default(Box::new(unit.clone()), index),
@@ -923,6 +996,7 @@ pub(super) fn module_initializer_diagnostics(
         let direct = ModuleEffectScanner::new(&checker.classes)
             .with_generators(&generators)
             .with_defaults(&defaults)
+            .with_class_labels(&ambiguous_class_names)
             .function(function);
         insert_module_summary(
             ModuleFunction::Free(function.symbol.clone()),
@@ -935,6 +1009,7 @@ pub(super) fn module_initializer_diagnostics(
         let constructor = ModuleEffectScanner::new(&checker.classes)
             .with_generators(&generators)
             .with_defaults(&defaults)
+            .with_class_labels(&ambiguous_class_names)
             .constructor(class);
         insert_module_summary(
             ModuleFunction::Constructor(class_id),
@@ -945,6 +1020,7 @@ pub(super) fn module_initializer_diagnostics(
             let direct = ModuleEffectScanner::new(&checker.classes)
                 .with_generators(&generators)
                 .with_defaults(&defaults)
+                .with_class_labels(&ambiguous_class_names)
                 .function(method);
             insert_module_summary(
                 ModuleFunction::Method(class_id, method.symbol.clone()),
@@ -969,11 +1045,15 @@ pub(super) fn module_initializer_diagnostics(
                 return;
             }
         };
-        let violation = bindings
+        let violation = reads
+            .accesses
             .iter()
-            .filter(|binding| !initialized.contains(*binding))
-            .find_map(|binding| reads.accesses.get(binding).map(|&route| (binding, route)));
-        let Some((binding, route_index)) = violation else {
+            .filter(|(binding, _)| !initialized.contains(*binding))
+            .filter_map(|(binding, &route)| {
+                bindings.get(binding).map(|&index| (index, binding, route))
+            })
+            .min_by_key(|&(index, _, _)| index);
+        let Some((_, binding, route_index)) = violation else {
             return;
         };
         let path = reads.route(route_index);
@@ -1024,7 +1104,8 @@ pub(super) fn module_initializer_diagnostics(
                     let init = &global.init;
                     let mut scanner = ModuleEffectScanner::new(&checker.classes)
                         .with_generators(&generators)
-                        .with_defaults(&defaults);
+                        .with_defaults(&defaults)
+                        .with_class_labels(&ambiguous_class_names);
                     scanner.expr(init);
                     check_effect(
                         scanner,
@@ -1039,7 +1120,8 @@ pub(super) fn module_initializer_diagnostics(
                 let statement = &checker.top_level[statement_index];
                 let mut scanner = ModuleEffectScanner::new(&checker.classes)
                     .with_generators(&generators)
-                    .with_defaults(&defaults);
+                    .with_defaults(&defaults)
+                    .with_class_labels(&ambiguous_class_names);
                 scanner.stmt(statement);
                 let pos = init_order::statement_pos(statement)
                     .cloned()
@@ -1059,6 +1141,23 @@ pub(super) fn module_initializer_diagnostics(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_bindings_keep_the_first_declaration_order() {
+        let diagnostics = crate::check_program(&[crate::SourceFile::entry(
+            "main.ts",
+            "const first: i32 = second + third;\n\
+             const third: i32 = 1;\n\
+             const second: i32 = 2;\n\
+             const third: i32 = 3;\n\
+             export function main(): void {}",
+        )])
+        .expect_err("duplicate declarations must fail");
+        assert_eq!(
+            diagnostics[0].message,
+            "`third (main.ts)` is accessed before its declaration, directly from this initializer"
+        );
+    }
 
     #[test]
     fn unresolved_method_routes_follow_only_made_values() {

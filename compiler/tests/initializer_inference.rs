@@ -792,3 +792,36 @@ fn recorded_expression_lambda_cycles_retain_the_rule_three_site() {
         assert!(diagnostics[0].divergence.is_none());
     }
 }
+
+#[test]
+fn default_routes_qualify_same_named_classes() {
+    for call in ["new A().go()", "A.go()", "new A().value"] {
+        let member = match call {
+            "A.go()" => "static go(k: i32 = later): i32 { return k; }",
+            "new A().value" => "value: i32; constructor(k: i32 = later) { this.value = k; }",
+            _ => "go(k: i32 = later): i32 { return k; }",
+        };
+        let diagnostics = check_program(&[
+            SourceFile::entry(
+                "main.ts",
+                "import { result } from './b'; class A { static go(k: i32 = 1): i32 { return k; } }",
+            ),
+            SourceFile::new(
+                "b.ts",
+                format!("export class A {{ {member} }} export const result: i32 = {call}; const later: i32 = 1;"),
+            ),
+        ])
+        .unwrap_err();
+        let owner = if call == "new A().value" {
+            "A.constructor"
+        } else {
+            "A.go"
+        };
+        assert!(
+            diagnostics.iter().any(|d| d
+                .message
+                .contains(&format!("{owner} (b.ts) (default of k)"))),
+            "{diagnostics:?}"
+        );
+    }
+}

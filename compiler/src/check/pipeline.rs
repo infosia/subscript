@@ -171,21 +171,21 @@ pub(crate) fn run(
         )
         .map(|(module, _)| module)
     })();
-    let declaration_starts = initializer_files
-        .iter()
-        .map(|&file| {
-            prog.files[file]
-                .module
-                .body
-                .iter()
-                .map(|item| {
-                    let pos = prog.pos(item.span());
-                    (pos.line, pos.col)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
     result.map_err(|mut diagnostics| {
+        let declaration_starts = initializer_files
+            .iter()
+            .map(|&file| {
+                prog.files[file]
+                    .module
+                    .body
+                    .iter()
+                    .map(|item| {
+                        let pos = prog.pos(item.span());
+                        (pos.line, pos.col)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // §156 rule 12: keep emission order within each top-level declaration.
         // Deferred expressions retain the source position of their declaration slot.
         diagnostics.sort_by_key(|d| {
@@ -234,6 +234,7 @@ fn run_with_effects(
         narrowing_analysis,
         prog,
         diags: DiagnosticSink::default(),
+        initializer_context: None,
         classes: Vec::new(),
         class_sigs: Vec::new(),
         class_ids: HashMap::new(),

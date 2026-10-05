@@ -1,5 +1,7 @@
 //! Shared field and local assignment flow (§108 and §158).
 
+use std::collections::{HashMap, HashSet};
+
 use super::{hir, Checker};
 use crate::diag::Pos;
 
@@ -97,6 +99,14 @@ impl Flow<'_, '_> {
     }
 
     fn body(&mut self, body: &[hir::Stmt], entry: State) -> Vec<Exit> {
+        self.statements(body.iter(), entry)
+    }
+
+    fn statements<'s>(
+        &mut self,
+        body: impl IntoIterator<Item = &'s hir::Stmt>,
+        entry: State,
+    ) -> Vec<Exit> {
         let mut paths = vec![Exit::Next(entry)];
         for statement in body {
             let mut next = Vec::new();
@@ -337,6 +347,130 @@ impl Flow<'_, '_> {
     }
 }
 
+/// Index root statements that can change a local's state or produce a read.
+/// Keep exits and loops for every local, because they can remove a path.
+#[derive(Default)]
+struct LocalStatements<'a> {
+    names: HashMap<&'a str, Vec<usize>>,
+    exits: Vec<usize>,
+}
+
+#[derive(Default)]
+struct Exits {
+    stops: bool,
+    breaks: bool,
+    continues: bool,
+}
+
+impl<'a> LocalStatements<'a> {
+    fn new(body: &'a [hir::Stmt]) -> Self {
+        fn expression<'a>(value: &'a hir::Expr, names: &mut HashSet<&'a str>) {
+            match &value.kind {
+                hir::ExprKind::Local(name, _) => {
+                    names.insert(name);
+                }
+                hir::ExprKind::Lambda { .. } => return,
+                _ => {}
+            }
+            for child in value.children() {
+                if let hir::HirChild::Expr(child) = child {
+                    expression(child, names);
+                }
+            }
+        }
+        fn statement<'a>(value: &'a hir::Stmt, names: &mut HashSet<&'a str>) -> Exits {
+            let mut exits = Exits::default();
+            match value {
+                hir::Stmt::Let { name, .. } | hir::Stmt::ForOf { name, .. } => {
+                    names.insert(name);
+                }
+                hir::Stmt::Try {
+                    binding: Some((name, _)),
+                    ..
+                } => {
+                    names.insert(name);
+                }
+                hir::Stmt::Return { .. }
+                | hir::Stmt::Throw { .. }
+                | hir::Stmt::While { .. }
+                | hir::Stmt::For { .. } => exits.stops = true,
+                hir::Stmt::Break(_) => exits.breaks = true,
+                hir::Stmt::Continue(_) => exits.continues = true,
+                hir::Stmt::Expr(value)
+                    if matches!(
+                        value.kind,
+                        hir::ExprKind::Call {
+                            callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
+                            ..
+                        }
+                    ) =>
+                {
+                    exits.stops = true
+                }
+                _ => {}
+            }
+            for child in value.children() {
+                match child {
+                    hir::HirChild::Expr(child) => expression(child, names),
+                    hir::HirChild::Stmt(child) => {
+                        let child = statement(child, names);
+                        exits.stops |= child.stops;
+                        exits.breaks |= child.breaks;
+                        exits.continues |= child.continues;
+                    }
+                }
+            }
+            match value {
+                hir::Stmt::Switch { cases, .. } => {
+                    exits.breaks = false;
+                    // An empty exhaustive switch can remove every path.
+                    exits.stops |= cases.is_empty();
+                }
+                hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {
+                    exits.breaks = false;
+                    exits.continues = false;
+                }
+                _ => {}
+            }
+            exits
+        }
+        let mut index = Self::default();
+        for (i, value) in body.iter().enumerate() {
+            let mut names = HashSet::new();
+            let exits = statement(value, &mut names);
+            if exits.stops || exits.breaks || exits.continues {
+                index.exits.push(i);
+            } else {
+                for name in names {
+                    index.names.entry(name).or_default().push(i);
+                }
+            }
+        }
+        index
+    }
+
+    fn for_local(&self, name: &str) -> Vec<usize> {
+        let mut own = self
+            .names
+            .get(name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .peekable();
+        let mut exits = self.exits.iter().copied().peekable();
+        let mut selected = Vec::new();
+        loop {
+            match (own.peek(), exits.peek()) {
+                (Some(a), Some(b)) if a < b => selected.extend(own.next()),
+                (_, Some(_)) => selected.extend(exits.next()),
+                (Some(_), None) => selected.extend(own.next()),
+                (None, None) => break,
+            }
+        }
+        selected
+    }
+}
+
 fn initial(binding: Binding<'_>) -> State {
     State {
         held: false,
@@ -422,6 +556,7 @@ pub(super) fn local_diagnostics(checker: &Checker<'_>) -> Vec<(String, Pos)> {
     fn function(checker: &Checker<'_>, body: &[hir::Stmt], out: &mut Vec<(String, Pos)>) {
         let mut locals = Vec::new();
         declarations(body, &mut locals);
+        let index = (!locals.is_empty()).then(|| LocalStatements::new(body));
         for (name, pos) in locals {
             let binding = Binding::Local(name, pos);
             let mut flow = Flow {
@@ -429,7 +564,10 @@ pub(super) fn local_diagnostics(checker: &Checker<'_>) -> Vec<(String, Pos)> {
                 binding,
                 reads: Vec::new(),
             };
-            flow.body(body, initial(binding));
+            if let Some(index) = &index {
+                let selected = index.for_local(name);
+                flow.statements(selected.iter().map(|&i| &body[i]), initial(binding));
+            }
             for (pos, held) in flow.reads {
                 if !held
                     && !out

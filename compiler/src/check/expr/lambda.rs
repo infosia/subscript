@@ -168,7 +168,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
-        fx.frames.push(Frame {
+        let frame = Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             is_generator: false,
             is_async: false,
@@ -177,12 +177,13 @@ impl<'p> Checker<'p> {
             is_lambda: true,
             contextual_void: a.return_type.is_none() && ret == Some(Type::Void),
             lambda_id: Some(id),
-            captures: Vec::new(),
+            captures: Vec::new().into(),
             this_ty: None,
             missing_this_site: fx.frames.last().and_then(|frame| frame.missing_this_site),
             static_this_class: fx.frames.last().and_then(|frame| frame.static_this_class),
             super_call_available: false,
-        });
+        };
+        fx.frames.push(frame);
         fx.scopes.push(Scope {
             fn_boundary: true,
             ..Default::default()
@@ -300,7 +301,7 @@ impl<'p> Checker<'p> {
         fx.narrowed = saved_narrowed;
         fx.scopes.pop();
         let frame = fx.frames.pop();
-        let captures = frame.map(|f| f.captures).unwrap_or_default();
+        let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);
         let ty = Type::func(params.iter().map(|p| p.ty().clone()).collect(), ret.clone());
         hir::Expr {

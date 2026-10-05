@@ -160,7 +160,7 @@ impl<'p> Checker<'p> {
         source.captures = fx
             .frames
             .last()
-            .map(|frame| frame.captures.clone())
+            .map(|frame| frame.captures.to_vec())
             .unwrap_or_default();
         self.initializer_root = initializer_root;
         self.function_value_decision = function_value;
@@ -203,23 +203,23 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn decide_field(&mut self, id: ClassId, name: &str, pos: Pos) -> Type {
-        let Some(sig) = self.class_sigs[id.0].fields.get(name).cloned() else {
+        let Some(sig) = self.class_sigs[id.0].fields.get(name) else {
             return self.classes[id.0]
                 .fields
                 .iter()
                 .find(|f| f.name == name)
                 .map_or(Type::Error, |f| f.ty.clone());
         };
-        match sig.state {
-            TypeState::Decided(ty) => return ty,
+        match &sig.state {
+            TypeState::Decided(ty) => return ty.clone(),
             TypeState::Rejected => return Type::Error,
             TypeState::InProgress => return self.cycle(pos),
             TypeState::Undecided => {}
         }
+        let mut source = sig.initializer.clone();
         if let Some(sig) = self.class_sigs[id.0].fields.get_mut(name) {
             sig.state = TypeState::InProgress;
         }
-        let mut source = sig.initializer;
         let ty = if let Some(source) = &mut source {
             let mut fx = FnCtx::new(Type::Void, false, Some(Type::Class(id)), self.diags.clone());
             fx.lexical_class = Some(id);
@@ -254,7 +254,10 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn decide_lambda_parameters(&mut self, params: &mut [ParamSig], fx: &FnCtx) {
-        if params.iter().all(|param| param.initializer.is_none()) {
+        if params
+            .iter()
+            .all(|param| !matches!(param.state, TypeState::Undecided | TypeState::InProgress))
+        {
             return;
         }
         let mut context = fx.clone();
@@ -266,7 +269,7 @@ impl<'p> Checker<'p> {
         frame.is_lambda = true;
         frame.lambda_id = None;
         frame.this_ty = None;
-        frame.captures.clear();
+        frame.captures = Default::default();
         context.frames.push(frame);
         context.scopes.push(Scope {
             fn_boundary: true,
@@ -474,6 +477,12 @@ impl<'p> Checker<'p> {
             let fields: Vec<_> = self.classes[index]
                 .fields
                 .iter()
+                .filter(|field| {
+                    self.class_sigs[index]
+                        .fields
+                        .get(&field.name)
+                        .is_some_and(|sig| matches!(sig.state, TypeState::Undecided))
+                })
                 .map(|f| (f.name.clone(), f.pos.clone()))
                 .collect();
             for (name, pos) in fields {
@@ -635,8 +644,8 @@ impl<'p> Checker<'p> {
         }
         source.field_context = Some(field_initializer::FieldInitializer {
             class_type: Type::Class(id),
-            earlier,
-            definite_uninitialized,
+            earlier: earlier.into(),
+            definite_uninitialized: definite_uninitialized.into(),
             write: false,
         });
         source

@@ -730,24 +730,24 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
-                    let initializer = prop
-                        .value
-                        .as_ref()
-                        .map(|e| self.field_source(e, id, class, prop));
-                    self.class_sigs[id.0].fields.insert(
-                        name.clone(),
-                        GlobalSig {
-                            state: if prop.type_ann.is_some() {
-                                TypeState::decided(ty.clone())
-                            } else if prop.value.is_some() {
-                                TypeState::Undecided
-                            } else {
-                                TypeState::Rejected
+                    if prop.type_ann.is_none() {
+                        let initializer = prop
+                            .value
+                            .as_ref()
+                            .map(|e| self.field_source(e, id, class, prop));
+                        self.class_sigs[id.0].fields.insert(
+                            name.clone(),
+                            GlobalSig {
+                                state: if prop.value.is_some() {
+                                    TypeState::Undecided
+                                } else {
+                                    TypeState::Rejected
+                                },
+                                initializer,
+                                mutable: !prop.readonly,
                             },
-                            initializer,
-                            mutable: !prop.readonly,
-                        },
-                    );
+                        );
+                    }
                     self.classes[id.0].fields.push(hir::Field {
                         name: key.sym.to_string(),
                         ty,

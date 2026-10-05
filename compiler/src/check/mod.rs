@@ -64,6 +64,8 @@ mod pipeline;
 pub(crate) use pipeline::run;
 pub(crate) mod pattern;
 mod signatures;
+mod snapshot;
+use snapshot::Shared;
 mod stmt;
 mod type_rules;
 mod tyres;
@@ -497,18 +499,18 @@ pub(crate) struct Local {
 /// lookups that cross it are captures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
-    pub vars: HashMap<String, Local>,
-    pub shared_narrowing_paths: HashMap<String, bool>,
+    pub vars: Shared<HashMap<String, Local>>,
+    pub shared_narrowing_paths: Shared<HashMap<String, bool>>,
     /// Outer facts hidden by declarations in this scope.
-    pub shadowed_narrowing: HashMap<String, bool>,
+    pub shadowed_narrowing: Shared<HashMap<String, bool>>,
     /// C17 facts hidden by declarations in this scope.
-    pub shadowed_ended_shared: HashSet<String>,
+    pub shadowed_ended_shared: Shared<HashSet<String>>,
     /// Names that declarations later in this scope own.
-    pub pending: HashSet<String>,
+    pub pending: Shared<HashSet<String>>,
     /// The first case that declares each name in a switch body.
-    pub switch_declarations: HashMap<String, usize>,
+    pub switch_declarations: Shared<HashMap<String, usize>>,
     /// Names that already have a duplicate-declaration diagnostic.
-    pub duplicate_declarations: HashSet<String>,
+    pub duplicate_declarations: Shared<HashSet<String>>,
     /// The case that the checker currently checks.
     pub switch_case: Option<usize>,
     /// True when this scope contains one switch body.
@@ -771,37 +773,40 @@ pub(crate) struct Frame {
     /// A lambda obtains void from its contextual signature, without an annotation.
     pub contextual_void: bool,
     pub lambda_id: Option<hir::LambdaId>,
-    pub captures: Vec<hir::Capture>,
+    pub captures: Shared<Vec<hir::Capture>>,
     pub this_ty: Option<Type>,
     pub missing_this_site: Option<RejectionSite>,
     pub static_this_class: Option<ClassId>,
     pub super_call_available: bool,
 }
 
+type NarrowingFacts = Shared<HashSet<String>>;
+type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
+
 /// Per-body checking state: scope stack, frames, and the narrowing set of
 /// path keys known non-null or present (C7, §43).
 #[derive(Debug, Clone)]
 pub(crate) struct FnCtx {
-    pub frames: Vec<Frame>,
+    pub frames: Shared<Vec<Frame>>,
     pub lexical_class: Option<ClassId>,
-    parameter_decisions: HashSet<(usize, String)>,
+    parameter_decisions: Shared<HashSet<(usize, String)>>,
     /// Defaults execute in the caller, outside the receiver's method frame.
     parameter_default: bool,
     pub constructor_body: bool,
     field_initializer: Option<field_initializer::FieldInitializer>,
     descriptor_default: Option<Type>,
     descriptor_numeric_operand: bool,
-    pub scopes: Vec<Scope>,
-    pub narrowed: HashSet<String>,
-    pub ended_shared_narrowing: HashSet<String>,
+    pub scopes: Shared<Vec<Scope>>,
+    pub narrowed: NarrowingFacts,
+    pub ended_shared_narrowing: NarrowingFacts,
     pub loop_depth: u32,
     pub switch_depth: u32,
-    pub switch_break_facts: Vec<(u32, Vec<HashSet<String>>)>,
+    pub switch_break_facts: Shared<SwitchBreakFacts>,
     /// Each async handle creation or async-handle parameter in this body.
-    pub async_origins: Vec<(Pos, bool)>,
+    pub async_origins: Shared<Vec<(Pos, bool)>>,
     /// Owner-scoped local declarations required by rewritten expressions.
-    synthetic_owners: Vec<SyntheticPrefix>,
-    synthetic_owner_kinds: Vec<SyntheticOwnerKind>,
+    synthetic_owners: Shared<Vec<SyntheticPrefix>>,
+    synthetic_owner_kinds: Shared<Vec<SyntheticOwnerKind>>,
     diagnostics: DiagnosticSink,
 }
 
@@ -862,7 +867,7 @@ impl SyntheticOwnerKind {
 /// Synthetic declarations awaiting placement in their owner's statement list.
 #[derive(Debug, Clone, Default)]
 #[must_use]
-struct SyntheticPrefix(Vec<hir::Stmt>);
+struct SyntheticPrefix(Shared<Vec<hir::Stmt>>);
 
 impl SyntheticPrefix {
     fn is_empty(&self) -> bool {
@@ -874,7 +879,7 @@ impl SyntheticPrefix {
     }
 
     fn into_statements(self) -> Vec<hir::Stmt> {
-        self.0
+        self.0.into_inner()
     }
 }
 
@@ -926,7 +931,7 @@ impl FnCtx {
     ) -> Self {
         FnCtx {
             lexical_class: None,
-            parameter_decisions: HashSet::new(),
+            parameter_decisions: HashSet::new().into(),
             parameter_default: false,
             constructor_body: false,
             field_initializer: None,
@@ -941,12 +946,13 @@ impl FnCtx {
                 is_lambda: false,
                 contextual_void: false,
                 lambda_id: None,
-                captures: Vec::new(),
+                captures: Vec::new().into(),
                 this_ty: this_ty.clone(),
                 missing_this_site: None,
                 static_this_class: None,
                 super_call_available: false,
-            }],
+            }]
+            .into(),
             scopes: vec![Scope {
                 vars: this_ty
                     .map(|ty| {
@@ -963,15 +969,16 @@ impl FnCtx {
                     .into_iter()
                     .collect(),
                 ..Default::default()
-            }],
-            narrowed: HashSet::new(),
-            ended_shared_narrowing: HashSet::new(),
+            }]
+            .into(),
+            narrowed: HashSet::new().into(),
+            ended_shared_narrowing: HashSet::new().into(),
             loop_depth: 0,
             switch_depth: 0,
-            switch_break_facts: Vec::new(),
-            async_origins: Vec::new(),
-            synthetic_owners: Vec::new(),
-            synthetic_owner_kinds: Vec::new(),
+            switch_break_facts: Vec::new().into(),
+            async_origins: Vec::new().into(),
+            synthetic_owners: Vec::new().into(),
+            synthetic_owner_kinds: Vec::new().into(),
             diagnostics,
         }
     }
@@ -1109,7 +1116,8 @@ impl FnCtx {
         if let Some(scope) = self.scopes.pop() {
             self.narrowed
                 .retain(|key| !scope.vars.contains_key(stmt::root_of(key)));
-            self.narrowed.extend(scope.shadowed_narrowing.into_keys());
+            self.narrowed
+                .extend(scope.shadowed_narrowing.into_iter().map(|(key, _)| key));
             self.ended_shared_narrowing
                 .extend(scope.shadowed_ended_shared);
         }
@@ -1140,6 +1148,8 @@ pub(crate) struct Checker<'p> {
     narrowing_analysis: Option<narrowing::Analysis>,
     pub prog: &'p ParsedProgram,
     pub diags: DiagnosticSink,
+    /// Unchanged empty context for independent field initializer snapshots.
+    initializer_context: Option<FnCtx>,
     pub classes: Vec<hir::ClassDef>,
     pub class_sigs: Vec<ClassSig>,
     pub class_ids: HashMap<String, ClassId>,
@@ -1325,14 +1335,14 @@ mod tests {
                     },
                 );
                 assert_eq!(result, Err(()));
-                assert_eq!(prefix.0, vec![statement.clone()]);
+                assert_eq!(*prefix.0, vec![statement.clone()]);
                 assert_eq!(fx.synthetic_owners.len(), inner_depth);
                 result?;
                 Ok(())
             },
         );
         assert_eq!(outer_result, Err(()));
-        assert_eq!(outer_prefix.0, vec![statement]);
+        assert_eq!(*outer_prefix.0, vec![statement]);
         assert_eq!(fx.synthetic_owners.len(), entry_depth);
         assert!(diagnostics.is_empty());
     }
