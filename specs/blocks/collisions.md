@@ -703,6 +703,7 @@ it as a candidate to accept.
 | 29 | `do…while`, a labeled statement, `debugger`, `for…in` | No lowering is decided, except: `for…in` reads dynamic properties (C10). | `while`; a flag |
 | 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
+| 32 | A null check of an indexed read (`xs[0] !== null`), then a read of the same element | An element is a shared location: another name can hold the array and change the element (C17). `tsc` narrows an element only for a literal or unchanged key, not for a loop key. A `const` copy narrows for every key (`compiler.md` §163). | `const v = xs[i]; if (v !== null) { v.x }` |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable

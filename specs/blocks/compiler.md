@@ -204,3 +204,4 @@ Every section, with its status:
 | §160 | Checker cost does not grow with inference | active | [`s160-checker-cost-does-not-grow-with-inference.md`](compiler/s160-checker-cost-does-not-grow-with-inference.md) |
 | §161 | Narrowing cost follows the live facts | active | [`s161-narrowing-cost-follows-the-live-facts.md`](compiler/s161-narrowing-cost-follows-the-live-facts.md) |
 | §162 | The narrowing flow follows negation, loops, and lambdas | active | [`s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md`](compiler/s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md) |
+| §163 | An indexed read is not narrowed | active | [`s163-an-indexed-read-is-not-narrowed.md`](compiler/s163-an-indexed-read-is-not-narrowed.md) |
