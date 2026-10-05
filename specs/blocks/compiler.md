@@ -205,3 +205,4 @@ Every section, with its status:
 | §161 | Narrowing cost follows the live facts | active | [`s161-narrowing-cost-follows-the-live-facts.md`](compiler/s161-narrowing-cost-follows-the-live-facts.md) |
 | §162 | The narrowing flow follows negation, loops, and lambdas | active | [`s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md`](compiler/s162-the-narrowing-flow-follows-negation-loops-and-lambdas.md) |
 | §163 | An indexed read is not narrowed | active | [`s163-an-indexed-read-is-not-narrowed.md`](compiler/s163-an-indexed-read-is-not-narrowed.md) |
+| §164 | One exit predicate, and the required arguments | active | [`s164-one-exit-predicate-and-the-required-arguments.md`](compiler/s164-one-exit-predicate-and-the-required-arguments.md) |

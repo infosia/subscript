@@ -225,6 +225,7 @@ Present before §156 in the annotated form: a defaulted parameter before a
 required one (`function f(a = 1, b: i32)` with `f(2)`) passes the checker
 and fails at lowering ("missing argument `b` with no default"); `tsc`
 gives TS2554.
+This item and items 1 and 2 below move to §164.
 
 Check time is 30–50 % above `5fbada8c` on generated programs (4,500
 module declarations: 11.05 s against 7.42 s, debug build). The scaling is

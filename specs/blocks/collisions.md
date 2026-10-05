@@ -704,6 +704,7 @@ it as a candidate to accept.
 | 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 | 32 | A null check of an indexed read (`xs[0] !== null`), then a read of the same element | An element is a shared location: another name can hold the array and change the element (C17). `tsc` narrows an element only for a literal or unchanged key, not for a loop key. A `const` copy narrows for every key (`compiler.md` §163). | `const v = xs[i]; if (v !== null) { v.x }` |
+| 33 | A call through a function value with fewer arguments than parameters, where `tsc` gives the value optional parameters (`const h = (a: i32, b: i32 = 5): i32 => a + b; h(1)`) | A function type has no optional parameter (C7), so a call through a function value passes every parameter. A default belongs to a declaration (`compiler.md` §164). | every argument; a direct call of the declaration |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
