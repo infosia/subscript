@@ -202,3 +202,4 @@ Every section, with its status:
 | §158 | A local is assigned before it is read | active | [`s158-a-local-is-assigned-before-it-is-read.md`](compiler/s158-a-local-is-assigned-before-it-is-read.md) |
 | §159 | An assignment narrows a nullable location | active | [`s159-an-assignment-narrows-a-nullable-location.md`](compiler/s159-an-assignment-narrows-a-nullable-location.md) |
 | §160 | Checker cost does not grow with inference | active | [`s160-checker-cost-does-not-grow-with-inference.md`](compiler/s160-checker-cost-does-not-grow-with-inference.md) |
+| §161 | Narrowing cost follows the live facts | active | [`s161-narrowing-cost-follows-the-live-facts.md`](compiler/s161-narrowing-cost-follows-the-live-facts.md) |
