@@ -287,20 +287,20 @@ export function main(): void {
 
 Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected.
 
-Pinned corpus: [`corpus/reject/r16-math-variadic-max.ts`](../corpus/reject/r16-math-variadic-max.ts), line 8.
+Pinned corpus: [`corpus/reject/r387-nested-counted-array-methods.ts`](../corpus/reject/r387-nested-counted-array-methods.ts), line 13.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: Math.max takes exactly two arguments
 ```
 
 ```ts
-// expected-error: Math.max takes exactly two arguments
-export function main(): void {
-  print(`${Math.max(1, 2, 3)}`);
-}
+  const jobs: Promise<void>[][] = [[work()]];
+  await jobs[0][0];
+  jobs.find((row: Promise<void>[]): boolean => row.length > 0);
+  jobs.sort((a: Promise<void>[], b: Promise<void>[]): i32 => a.length - b.length);
+  jobs.includes(jobs[0]);
 ```
 
 ### S016

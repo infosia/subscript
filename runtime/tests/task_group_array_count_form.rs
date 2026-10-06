@@ -1,5 +1,4 @@
-//! Mutable array aliases lose the counts of removed handle elements.
-//! This test passes with the current defect and releases the orphan explicitly.
+//! Mutable array aliases share one element owner (§171).
 
 use subscript_runtime::{
     context::CLASS_GENERATOR,
@@ -8,7 +7,7 @@ use subscript_runtime::{
 };
 
 #[test]
-fn empty_array_aliases_cannot_release_the_count_of_a_removed_element() {
+fn array_aliases_release_the_transferred_element_and_the_last_holder() {
     for alias in [false, true] {
         let mut ctx = Context::new();
         let payload = ctx.alloc(16, CLASS_GENERATOR, 0);
@@ -26,10 +25,7 @@ fn empty_array_aliases_cannot_release_the_count_of_a_removed_element() {
             // SAFETY: the synchronous parameter copies a live array of registered handles.
             unsafe { subscript_rt_async_retain_array(&mut *ctx, array) };
         }
-        assert_eq!(
-            unsafe { ctx.async_count(payload) },
-            if alias { 2 } else { 1 }
-        );
+        assert_eq!(unsafe { ctx.async_count(payload) }, 1);
         let mut popped = std::ptr::null_mut::<u8>();
         // SAFETY: the nonempty array stores one pointer, and the output has that size.
         unsafe {
@@ -42,13 +38,7 @@ fn empty_array_aliases_cannot_release_the_count_of_a_removed_element() {
                 subscript_rt_async_release_array(&mut *ctx, array, 0);
             }
         }
-        assert_eq!(unsafe { ctx.array_len(array) }, 0);
-        assert_eq!(ctx.is_live(payload as usize), alias);
-        if alias {
-            assert_eq!(unsafe { ctx.async_count(payload) }, 1);
-            // SAFETY: the test releases the measured orphan count.
-            unsafe { ctx.async_release(payload, 0) };
-        }
+        assert!(!ctx.is_live(array as usize));
         assert!(!ctx.is_live(payload as usize));
         assert!(!ctx.trapped());
     }

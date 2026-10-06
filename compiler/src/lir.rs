@@ -511,6 +511,8 @@ pub struct Instruction {
     pub result: Option<ValueId>,
     /// Closed operation code.
     pub kind: InstructionKind,
+    /// Internal count action for a bulk operation or completion read (§171).
+    pub count_action: Option<CountAction>,
     /// Flat operands in evaluation order.
     pub operands: Vec<Operand>,
     /// Dynamic-array values whose storage can move after the operands are
@@ -520,6 +522,41 @@ pub struct Instruction {
     pub traps: Vec<Trap>,
     /// Source position of the operation.
     pub pos: Pos,
+}
+
+/// The release description that an operation uses for its count actions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CountAction {
+    /// The operation has no counted elements or result.
+    Uncounted,
+    /// The operation acquires or releases values with this recursive shape.
+    Counted(crate::types::CountedType),
+}
+
+impl CountAction {
+    /// Derives the action for an element or completion result type.
+    pub fn for_type(ty: &Type) -> Self {
+        ty.counted_type().map_or(Self::Uncounted, Self::Counted)
+    }
+
+    /// Returns the storage type of the release description.
+    /// A handle's fulfilled type does not affect its storage or count action.
+    pub fn release_type(&self) -> Option<Type> {
+        fn storage(shape: &crate::types::CountedType) -> Type {
+            use crate::types::CountedType as C;
+            match shape {
+                C::Handle => Type::AsyncHandle(Box::new(Type::Void)),
+                C::Array(child) => Type::Array(Box::new(storage(child))),
+                C::FixedArray(child, count) => Type::FixedArray(Box::new(storage(child)), *count),
+                C::IterResult(child) => Type::IterResult(Box::new(storage(child))),
+            }
+        }
+        match self {
+            Self::Uncounted => None,
+            Self::Counted(shape) => Some(storage(shape)),
+        }
+    }
 }
 
 /// Source of a nullable-to-value conversion (compiler.md §124).
@@ -617,14 +654,16 @@ pub enum InstructionKind {
     /// Runtime group operation; release marks the lexical exit (§170).
     TaskGroup(crate::hir::TaskGroupOperation),
     /// Increment one async frame's non-atomic owner count.
+    /// An optional result carries the acquired fresh owner.
     AsyncHandleRetain,
     /// Decrement one async frame's owner count and free it at zero. Its
     /// `Call` trap stops at a frame that holds an unobserved exception
     /// (§116.1 rule 4).
     AsyncHandleRelease,
-    /// Retain each async handle stored in one dynamic array.
+    /// Acquire one counted array or inline aggregate owner (§171).
+    /// An optional result carries the acquired fresh owner.
     AsyncHandleArrayRetain,
-    /// Release each async handle stored in one dynamic array. Its `Call`
+    /// Release one counted array or inline aggregate owner. Its `Call`
     /// trap stops as `AsyncHandleRelease` stops (§116.1 rule 4).
     AsyncHandleArrayRelease,
     /// Create a fused iteration cursor with its source-selected bound.
@@ -663,7 +702,8 @@ pub enum InstructionKind {
     /// `AsyncHandle` suspension. For a handle that completed with an
     /// exception, the resume made that exception pending, and the
     /// instruction's `Raise` trap names its handler edge. It has no
-    /// operand and no result.
+    /// operand and no result. It also carries the completion count action.
+    /// A completion that cannot raise has no trap sites.
     AwaitRaise,
 }
 
@@ -679,6 +719,8 @@ impl InstructionKind {
                 | Self::TaskGroup(crate::hir::TaskGroupOperation::Join)
                 | Self::AsyncAll
                 | Self::AsyncHandleCreate(_)
+                | Self::AsyncHandleRetain
+                | Self::AsyncHandleArrayRetain
         )
     }
 }
@@ -1445,6 +1487,8 @@ mod tests {
 
     #[test]
     fn fresh_async_owner_instruction_table_names_allocations_and_calls() {
+        assert!(InstructionKind::AsyncHandleRetain.produces_fresh_async_owner());
+        assert!(InstructionKind::AsyncHandleArrayRetain.produces_fresh_async_owner());
         assert!(InstructionKind::ArrayLiteral.produces_fresh_async_owner());
         assert!(InstructionKind::ArrayWithCapacity.produces_fresh_async_owner());
         assert!(InstructionKind::ArraySpreadLiteral(Vec::new()).produces_fresh_async_owner());
@@ -1619,6 +1663,7 @@ mod tests {
 
     fn raise_site(edge: Option<RaiseEdge>) -> Instruction {
         Instruction {
+            count_action: None,
             result: None,
             kind: InstructionKind::Call(async_target()),
             operands: Vec::new(),

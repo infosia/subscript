@@ -774,6 +774,7 @@ mod tests {
         operands: Vec<l::Operand>,
     ) -> l::Instruction {
         l::Instruction {
+            count_action: None,
             result: result.map(l::ValueId),
             kind,
             operands,

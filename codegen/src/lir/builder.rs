@@ -400,9 +400,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));
-        if kind.produces_fresh_async_owner()
-            && result_type.as_ref().is_some_and(is_async_owner_type)
-        {
+        let fresh = if matches!(
+            &kind,
+            l::InstructionKind::Call(l::CallTarget {
+                kind: l::CallTargetKind::Intrinsic(l::Intrinsic {
+                    family: l::IntrinsicFamily::Array,
+                    ..
+                }),
+                ..
+            })
+        ) {
+            array_ownership::produces_fresh_owner(&intrinsic_operations(), &kind)
+        } else {
+            kind.produces_fresh_async_owner()
+        };
+        if fresh && result_type.as_ref().is_some_and(is_async_owner_type) {
             if let Some(value) = result {
                 self.values[value.0 as usize].fresh_owner = true;
             }
@@ -412,11 +424,47 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             Vec::new()
         };
+        let action_type = match &kind {
+            l::InstructionKind::ArraySpreadLiteral(_) => match result_type.as_ref() {
+                Some(l::ValueType::Data(Type::Array(element))) => Some((**element).clone()),
+                _ => None,
+            },
+            l::InstructionKind::Call(target)
+                if matches!(
+                    array_ownership::array_operation_name(&intrinsic_operations(), &target.kind),
+                    Some("Fill" | "CopyWithin" | "Slice" | "Concat")
+                ) =>
+            {
+                operands
+                    .first()
+                    .map(|operand| self.operand_type(operand, &pos))
+                    .transpose()?
+                    .and_then(|ty| match ty {
+                        l::ValueType::Data(Type::Array(element) | Type::FixedArray(element, _)) => {
+                            Some(*element)
+                        }
+                        _ => None,
+                    })
+            }
+            _ => None,
+        };
+        let count_action = action_type.as_ref().map(l::CountAction::for_type);
+        if count_action
+            .as_ref()
+            .is_some_and(|action| action.release_type().is_some())
+            && !traps.iter().any(|trap| trap.kind == l::TrapKind::Call)
+        {
+            traps.push(l::Trap {
+                kind: l::TrapKind::Call,
+                pos: pos.clone(),
+            });
+        }
         self.blocks[block.0 as usize]
             .instructions
             .push(l::Instruction {
                 result,
                 kind,
+                count_action,
                 operands,
                 invalidates,
                 traps,
@@ -547,9 +595,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let kind = match ty {
             l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRetain,
-            l::ValueType::Data(Type::Array(element))
-                if matches!(&**element, Type::AsyncHandle(_)) =>
-            {
+            l::ValueType::Data(ty) if ty.counted_type().is_some() => {
                 l::InstructionKind::AsyncHandleArrayRetain
             }
             _ => return Ok(()),
@@ -573,9 +619,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     ) -> Result<(), LowerError> {
         let kind = match ty {
             l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRelease,
-            l::ValueType::Data(Type::Array(element))
-                if matches!(&**element, Type::AsyncHandle(_)) =>
-            {
+            l::ValueType::Data(ty) if ty.counted_type().is_some() => {
                 l::InstructionKind::AsyncHandleArrayRelease
             }
             _ => return Ok(()),

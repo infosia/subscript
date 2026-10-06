@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+mod counted;
+pub use counted::CountedType;
+
 /// Maximum supported byte size of one aggregate layout.
 ///
 /// Cranelift memory operations use signed 32-bit direct displacements

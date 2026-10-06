@@ -342,6 +342,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
                 parameters: Vec::new(),
                 instructions: vec![
                     lir::Instruction {
+                        count_action: None,
                         result: Some(lir::ValueId(1)),
                         kind: lir::InstructionKind::LoadLocal(lir::LocalId(0)),
                         operands: Vec::new(),
@@ -350,6 +351,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
                         pos: pos.clone(),
                     },
                     lir::Instruction {
+                        count_action: None,
                         result: None,
                         kind: lir::InstructionKind::StoreLocal(lir::LocalId(1)),
                         operands: vec![lir::Operand::Value(lir::ValueId(1))],
@@ -385,7 +387,7 @@ fn counted_store_corpus_matches_the_interpreter() {
     for id in ["a161-counted-handle-stores", "a162-async-copy-sites"] {
         let expected_live_bytes = match id {
             "a161-counted-handle-stores" => 24,
-            "a162-async-copy-sites" => 256,
+            "a162-async-copy-sites" => 0,
             _ => unreachable!(),
         };
         let module = lower_entry(&accept, id);
@@ -417,7 +419,8 @@ fn a163_accounts_for_nullable_boundary_boxes() {
         run_jit_with_memory_accounting_and_native_libraries(&sources, &[fixture.library()], false)
             .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
     assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
-    assert_eq!(accounting.live_bytes, 2977, "{id}");
+    // Six uncounted array headers each add eight payload bytes (§171).
+    assert_eq!(accounting.live_bytes, 3025, "{id}");
     eprintln!(
         "{id}: live_bytes={} reserved_bytes={}",
         accounting.live_bytes, accounting.reserved_bytes
@@ -830,6 +833,12 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    ("t87-discarded-counted-shift", "counted removal releases a failed element", "uncaught-exception", 10, 40),
+    ("t88-parameter-counted-pop", "counted parameter removal releases a failed element", "uncaught-exception", 10, 40),
+    ("t89-counted-array-completion", "completion release frees the failed element", "uncaught-exception", 10, 40),
+    ("t90-nested-counted-array", "nested holder release frees the failed element", "uncaught-exception", 10, 40),
+    ("t91-fixed-counted-array", "inline holder release frees the failed element", "uncaught-exception", 10, 40),
+    ("t92-counted-generator-holder", "result holder release frees the failed element", "uncaught-exception", 10, 40),
     ("t80-generator-done-wire-alias", "compiler.md §145 wire zero excludes zero", "generator-done-value", 21, 18),
     ("t81-generator-done-fixed-wire-alias", "compiler.md §145 inline wire zero", "generator-done-value", 15, 15),
     ("t77-generator-done-fixed-reference", "compiler.md §145 inline reference", "generator-done-value", 15, 15),

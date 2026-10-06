@@ -81,6 +81,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.blocks[landing.0 as usize]
                     .instructions
                     .push(l::Instruction {
+                        count_action: None,
                         result: None,
                         kind: l::InstructionKind::ExceptionResume,
                         operands: Vec::new(),

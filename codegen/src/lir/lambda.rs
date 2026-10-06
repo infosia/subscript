@@ -227,7 +227,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &expr.pos,
         )?;
         self.current = Some(successor);
-        self.emit_await_raise(raise, &expr.pos)?;
+        self.emit_await_raise(raise, &expr.ty, &expr.pos)?;
+        if let Some(value) = resume_value {
+            if expr.ty.counted_type().is_some() {
+                self.values[value.0 as usize].fresh_owner = true;
+            }
+        }
         Ok(resume_value.map(l::Operand::Value))
     }
 
@@ -288,16 +293,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &expr.pos,
         )?;
         self.current = Some(successor);
-        self.emit_await_raise(raise, &expr.pos)?;
+        self.emit_await_raise(raise, &expr.ty, &expr.pos)?;
+        if let Some(value) = resume_value {
+            if expr.ty.counted_type().is_some() {
+                self.values[value.0 as usize].fresh_owner = true;
+            }
+        }
         Ok(resume_value.map(l::Operand::Value))
     }
 
     /// Starts the resume successor of an `await` with its raise site
     /// (`compiler.md` §116.1 rule 2), when the `await` is one.
-    fn emit_await_raise(&mut self, raise: Vec<l::Trap>, pos: &Pos) -> Result<(), LowerError> {
-        if raise.is_empty() {
-            return Ok(());
-        }
+    fn emit_await_raise(
+        &mut self,
+        raise: Vec<l::Trap>,
+        ty: &Type,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
         self.emit(
             l::InstructionKind::AwaitRaise,
             Vec::new(),
@@ -306,6 +318,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             raise,
             pos.clone(),
         )?;
+        let block = self
+            .current
+            .ok_or_else(|| self.error(pos, "await has no successor"))?;
+        if let Some(instruction) = self.blocks[block.0 as usize].instructions.last_mut() {
+            instruction.count_action = Some(l::CountAction::for_type(ty));
+            if ty.counted_type().is_some() {
+                instruction.traps.push(l::Trap {
+                    kind: l::TrapKind::Call,
+                    pos: pos.clone(),
+                });
+            }
+        }
         Ok(())
     }
 }

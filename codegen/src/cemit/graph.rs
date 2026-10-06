@@ -117,6 +117,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             // compiler.md §116.2 rule 3: the resume made the exception of
             // an exception completion pending; the raise site checks it.
             l::InstructionKind::AwaitRaise => {
+                self.consumed_traps.extend(
+                    instruction
+                        .traps
+                        .iter()
+                        .filter(|trap| trap.kind == l::TrapKind::Call)
+                        .cloned(),
+                );
                 self.emit_pending_check(out);
                 Ok(())
             }
@@ -450,32 +457,79 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let _ = writeln!(out, "    if ({done}) {complete};");
                 Ok(())
             }
-            l::InstructionKind::AsyncHandleRetain => self.emit_async_count(out, &operands[0], None),
+            l::InstructionKind::AsyncHandleRetain => {
+                self.emit_async_count(out, &operands[0], None)?;
+                self.assign(out, result, &operands[0])
+            }
             l::InstructionKind::AsyncHandleRelease => {
                 let pos = self.emitter.pos_id(&instruction.pos);
                 self.emit_async_count(out, &operands[0], Some((pos, &instruction.traps)))
             }
-            l::InstructionKind::AsyncHandleArrayRetain => {
-                let call = self.emitter.runtime_call(
-                    "void",
-                    "subscript_rt_async_retain_array",
-                    &["void*".into(), "const void*".into()],
-                    &["ctx".into(), operands[0].clone()],
+            l::InstructionKind::AsyncHandleArrayRetain
+            | l::InstructionKind::AsyncHandleArrayRelease => {
+                let ty = match &operand_types[0] {
+                    l::ValueType::Data(ty) => ty,
+                    _ => return Err(internal("counted owner has no data type")),
+                };
+                let release = matches!(
+                    instruction.kind,
+                    l::InstructionKind::AsyncHandleArrayRelease
                 );
-                let _ = writeln!(out, "    {call};");
-                Ok(())
-            }
-            l::InstructionKind::AsyncHandleArrayRelease => {
+                if matches!(ty, Type::Array(_)) && !release
+                    || matches!(ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)))
+                {
+                    let mut types = vec!["void*".into(), "const void*".into()];
+                    let mut arguments = vec!["ctx".into(), operands[0].clone()];
+                    let symbol = if release {
+                        types.push("uint32_t".into());
+                        arguments.push(format!("{}u", self.emitter.pos_id(&instruction.pos)));
+                        "subscript_rt_async_release_array"
+                    } else {
+                        "subscript_rt_async_retain_array"
+                    };
+                    let call = self
+                        .emitter
+                        .runtime_call("void", symbol, &types, &arguments);
+                    let _ = writeln!(out, "    {call};");
+                    if release {
+                        self.consume_runtime_traps(out, &instruction.traps, true, false)?;
+                    }
+                    return self.assign(out, result, &operands[0]);
+                }
+                let bytes = crate::counted::description(&self.emitter.layouts, ty)?;
+                let description = bytes
+                    .chunks_exact(8)
+                    .map(|word| {
+                        let mut bytes = [0u8; 8];
+                        bytes.copy_from_slice(word);
+                        format!("{}ULL", u64::from_ne_bytes(bytes))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 let pos = self.emitter.pos_id(&instruction.pos);
                 let call = self.emitter.runtime_call(
                     "void",
-                    "subscript_rt_async_release_array",
-                    &["void*".into(), "const void*".into(), "uint32_t".into()],
-                    &["ctx".into(), operands[0].clone(), format!("{pos}u")],
+                    "subscript_rt_counted_value",
+                    &[
+                        "void*".into(),
+                        "const void*".into(),
+                        "const void*".into(),
+                        "uint32_t".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        format!("&({})", operands[0]),
+                        format!("(const uint64_t[]){{{description}}}"),
+                        format!("{}u", u32::from(release)),
+                        format!("{pos}u"),
+                    ],
                 );
                 let _ = writeln!(out, "    {call};");
-                // compiler.md §116.1 rule 4: the release can trap.
-                self.consume_runtime_traps(out, &instruction.traps, true, false)
+                if release {
+                    self.consume_runtime_traps(out, &instruction.traps, true, false)?;
+                }
+                self.assign(out, result, &operands[0])
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let iterator_type = instruction

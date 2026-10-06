@@ -10,6 +10,8 @@ mod names;
 pub use names::{declaration_label, source_name, Symbol};
 
 mod collections;
+mod counted_arrays;
+pub use counted_arrays::CountedArrayMethod;
 mod definitions;
 mod host_entry;
 pub use host_entry::{HostEntry, HostSignature};

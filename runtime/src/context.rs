@@ -383,13 +383,15 @@ impl ArenaStats {
 }
 
 /// Payload layout of a dynamic array (Q4): length, capacity, element
-/// size, and a pointer to a separate `CLASS_ARRAY_DATA` allocation.
+/// size, a pointer to a separate `CLASS_ARRAY_DATA` allocation, and the
+/// counted-array holder count at offset 32.
 #[repr(C)]
 struct ArrayHeader {
     len: u64,
     cap: u64,
     elem_size: u64,
     data: *mut u8,
+    holders: u32,
 }
 
 struct Allocation {
@@ -812,3 +814,5 @@ mod memory;
 #[cfg(test)]
 #[path = "context/async_all_tests.rs"]
 mod async_all_tests;
+
+mod counted;

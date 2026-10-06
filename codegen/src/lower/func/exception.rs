@@ -9,6 +9,15 @@ impl<M: Module> Body<'_, '_, '_, '_, M> {
     /// exception, and the instruction must emit at least one check.
     pub(super) fn emit_raise_site(&mut self, instruction: &l::Instruction) -> Result<(), String> {
         let Some(edge) = instruction.raise_edge().copied() else {
+            // An uncounted quiet completion needs no pending check.
+            if matches!(instruction.kind, l::InstructionKind::AwaitRaise)
+                && !instruction
+                    .traps
+                    .iter()
+                    .any(|trap| trap.kind == l::TrapKind::Call)
+            {
+                return Ok(());
+            }
             return self.emit_instruction(instruction);
         };
         let (raise, other): (Vec<l::Trap>, Vec<l::Trap>) = instruction

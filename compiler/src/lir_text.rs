@@ -208,6 +208,9 @@ pub fn print_module(module: &lir::Module) -> String {
                 }
                 write!(&mut out, "{:?}", instruction.kind).unwrap();
                 write_operands(&mut out, &instruction.operands);
+                if let Some(action) = &instruction.count_action {
+                    write!(&mut out, " count={action:?}").unwrap();
+                }
                 if !instruction.invalidates.is_empty() {
                     write!(&mut out, " invalidates={:?}", instruction.invalidates).unwrap();
                 }

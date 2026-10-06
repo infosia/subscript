@@ -1491,3 +1491,11 @@ export function main(): void {
     print(`${value}`);
   }
 }
+===
+s171-nested-counted-element.ts	expr/method.rs check_array_method		S014		§171
+`includes` cannot carry a counted element type (§171)
+export function main(): void { const jobs: Promise<i32>[][] = []; jobs.includes([]); }
+===
+s171-counted-callback-result.ts	expr/method.rs expect_callback_shape		S014		§171
+`map` cannot carry a counted callback result (§171)
+export function main(): void { const values: i32[] = [1]; values.map((value: i32): Promise<i32>[] => []); }

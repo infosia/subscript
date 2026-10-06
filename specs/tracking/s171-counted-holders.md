@@ -1,35 +1,116 @@
 # §171 — An array owns its counted elements
 
-Pin: `96f46f35`. Host: macOS, AArch64. Rust: `1.95.0`.
-
-## Measurement round
-
+Contract pin: `96f46f35`. Host: macOS, AArch64. Rust: `1.95.0`.
+The amended contract pins have the same production code as this pin.
 `J/C/I` means dev JIT, C AOT, and interpreter, in that order.
-Each number counts registered tasks after the roots finish and the ready queue becomes empty.
+
+## Result and form
+
+The three tiers implement recursive counted holders for handles, arrays, FixedArray values, and IterResult values.
+An array alias owns the array, rather than a count for each current element.
+The last holder releases the elements and frees the array storage.
+An element copy acquires its own count. A fresh element transfers its count.
+Replacement releases the previous element. Removal transfers the element count to its result; discard releases that result.
+Completion caches own counted payloads. Each completion read acquires a separate result owner before frame release.
+Generator yield copies the counted value into an IterResult holder that survives normal generator completion.
+
+HIR types carry recursive counted shapes. LIR carries explicit count actions, operand roles, and immediate trap sites.
+The verifier derives each obligation from the opcode and static types, then compares it with the emitted action.
+Hand-built forms omit required actions or trap sites and fail verification.
+The native emitters and interpreter consume the same count facts.
+Bulk mutations, counted completion reads, and explicit releases carry an immediate `Call` trap check.
+Quiet uncounted completion reads emit no Context pending-word check.
+
+Counted callback and equality/join positions receive S014 under rule 5a, at every nesting depth.
+The checker covers receiver elements, callback parameters, callback results, accumulators, and method results.
+A counted lambda capture cannot outlive its source binding.
+Reference-class fields and Map values retain their separate §172 lifetimes.
+A dropped suspended generator retains its frame; exhaustion releases its holders.
+
+## Operation holds
+
+A lexical binding holds each counted loop subject until normal exit, break, return, or exception cleanup.
+Expression bindings hold receivers and earlier operands across later user code.
+This includes calls, array elements and spreads, indexed reads, and indexed stores.
+An immutable local already owns its input through the expression.
+`Promise.all` acquires its input elements before it returns and retains no array reference while child tasks run.
+Generator `next()` retains a generator reference, rather than an array subject.
+
+`a340` resets its module-global subject, then allocates another two-element array in each loop body.
+The replacement tasks use local awaited handles to satisfy S013.
+The golden remains `11\n22\n`.
+The test compares output in all three tiers and independently checks the LIR subject retain before `IteratorCreate`.
+The no-hold probe suppresses acquisition and release for both subject bindings at the loop position.
+Those bindings are the HIR synthetic subject and the LIR lexical subject.
+The probe prints `11`, `44` in the interpreter and JIT; C AOT prints `11`, then exits with SIGSEGV.
+The output assertion fails before the LIR-shape assertion. The probe command exits 101.
+`target/s171-15-loop-red.log` records that failure; `target/s171-15-loop-green.log` records the restored hold.
+The production builder and loop lowering match their pre-probe source bytes.
+
+## Corpus evidence
+
+Every §171 corpus header names `96f46f35` and the result for each tier in the same format.
+The pin accepts the revised `a340` and prints its golden because it does not free the last array holder.
+A release test built from the pin's production code confirms all three outputs.
+`target/s171-15-loop-pin.log` records that execution.
+That pin result does not establish the loop hold.
+The other accept and trap entries expose pin failures, as the evidence tables show.
+`r387` requires S014; its pin LIR failure does not satisfy that checker requirement.
+Stock `tsc` 5.9.2 accepts the §171 sources, including all six rejected-method calls.
+Node matches the accept-entry goldens.
+The trap goldens require an unobserved-exception trap and exact stdout.
+For `t92`, stdout includes `yielded` and `completed` before the trap.
+
+| Probe | Contract pin | Implementation |
+|---|---|---|
+| `a340`, reset followed by replacement-array allocation | All tiers print `11`, `22`; no last-holder storage free | All tiers print `11`, `22`; the subject has a lexical holder |
+| `t93`, counted `fill` over an unobserved failure | Interpreter and C AOT print `after`; JIT prints `after`, then reports use-after-delete | All tiers report the unobserved exception with empty stdout and an immediate `Call` site |
+| Counted `copyWithin(0, 1)` over `[fail(), a]` | Same output and faults as `fill` | Same immediate exception trap as `fill` |
+| Two-element fresh receiver, `pop` | JIT retains one completed task; the named-array control retains none | All tiers retain zero tasks for both forms |
+| Two-element fresh receiver, `push` | JIT retains one completed task; the named-array control retains none | All tiers retain zero tasks for both forms |
+
+The earlier loop source contained only the reset and printed `11`, `22` with or without its hold.
+The replacement-array allocation makes the output assertion fail when the subject has no hold.
+The named `nextBatch().pop()` probe receives S013; the accepted fresh receiver uses `[h, h].pop()`.
+The bulk instruction-site assertion fails when the action omits its immediate trap site, even if stdout still agrees.
+
+## JIT reservation evidence
+
+The reload module `a338-counted-array-holders` sets the floor; its measured source contains 3,897 bytes.
+The previous reservation was 174,235 bytes. The resume function requested 152,044 bytes after earlier definitions and data allocations.
+Page rounding requires 196,608 bytes. The reload test now fits and leaves zero retained tasks.
+`codegen/src/jit/memory.rs` contains the single slope derivation for the same 989-module measurement set.
+The floor is 196,608 bytes, the slope is 3, and the margin is 1.5.
+
+## Measurement method
+
+Each task number counts registered tasks after roots finish and the ready queue becomes empty.
 The JIT reads `ReloadSession::async_tasks`. C uses a non-null `subscript_rt_ctx_visit_async_tasks` visitor.
-The interpreter reads its async registry and excludes entries whose owner count is zero.
-A trap stops execution. A trap row counts the registry at that stop, before Context destruction.
-`—` means that the checker rejects the program, or that the C compiler cannot build it.
-A zero task count does not imply zero Context allocations.
-
-All successful measurement programs use this task and root shape, unless a row states another shape:
-
-```ts
-async function work(): Promise<void> { return; }
-export async function main(): Promise<void> { await use(); }
-async function use(): Promise<void> { /* probe body */ }
-```
-
-A failed task replaces `return` with `throw new Error("inner")`.
-An `if (false)` await satisfies the current must-await approximation without an observation.
+The interpreter excludes async registry entries whose owner count is zero.
+A trap row counts the registry at the stop, before Context destruction.
+`—` means checker rejection or a C build failure. Zero tasks does not imply zero Context allocations.
 No measurement invokes an implicit collector.
 
-## 1. Holder positions
+Successful probes use `work(): Promise<void>` and `main` that awaits `use`.
+A failed task throws `Error("inner")`. An `if (false)` await satisfies must-await without observation.
+Alias probes await their initial elements before mutation.
+Global aliases reset to `[]`; field aliases free their objects.
+Numeric alias-matrix cells give the same count in J/C/I, with no trap.
+`S` means a same-element index store. `D` means a distinct-element index store.
+Completion probes read the cached result zero, one, or two times.
+Their synchronous controls use the same result shape; observed-failure controls catch the inner exception.
 
-The checker admits arbitrary dynamic-array nesting. Depths two, three, and four give the same result.
-The count protocol recognizes only a direct handle and a dynamic array whose immediate element is a handle.
-`is_async_owner_type`, `acquire_owner`, `release_owner`, and `discard_owner` use this shallow definition.
-A nested array can acquire an inner array's element counts at its element store, without an outer-scope release.
+## Baseline measurements
+
+The tables below describe the pin or the explicitly named pre-implementation probe revision.
+They retain the measured failures and zero controls; they do not describe the final implementation.
+The layout prototype adds a u32 holder field at offset 32, with four alignment bytes.
+The array payload grows from 32 to 40 bytes. Both ship requests use the same 64-byte block.
+Metadata offsets describe this Rust build and do not promise a portable ABI.
+Form A uses array holder counts. Form B restricts the array to a unique owner.
+Operation counts describe these candidate forms; they are not execution-time ratios.
+
+### Holder positions
 
 | Position or operation | Accepted form | Tasks J/C/I | Trap | Zero control J/C/I |
 |---|---|---|---|---|
@@ -64,32 +145,6 @@ A nested array can acquire an inner array's element counts at its element store,
 | Map value removal | Store a handle, then `m.delete(1)` or `m.clear()` | 1/1/1 | None | Omit the store: 0/0/0 |
 | Fulfilled async value | Return a handle, handle array, or nested handle array | 1/1/1 | None | See item 3 |
 
-The generator probe transfers an element to a global array and immediately pops that element before its yield.
-This transfer satisfies the generator parameter's must-await check without a persistent global holder:
-
-```ts
-let stored: Promise<void>[] = [];
-function consume(h: Promise<void>): void { stored.push(h); }
-function* gen(g: Promise<void>): Generator<i32> {
-  const local = g;
-  consume(local);
-  stored.pop();
-  yield 1;
-}
-```
-
-The array version takes `g:Promise<void>[]` and passes `local[0]` to `consume`.
-The caller first awaits `h`, creates the iterator, and calls `next` once or twice.
-A suspended generator still holds its locals. Its dropped iterator gives no lexical exit.
-An exhausted generator releases those locals.
-
-A direct global handle has no lexical exit during the measured program.
-The checker rejects `Promise<void>|null`, an uninitialized module variable, and `Context.free(g)` for a handle.
-Thus no legal direct-global zero control exists before Context destruction.
-The global array control supplies a removable global counted holder and reaches zero.
-The fixed-array zero control preserves the accepted type position but executes no element store.
-`FixedArray<Promise<void>,0>=[]` gives zero in JIT and interpreter; C rejects the emitted empty initializer.
-An inhabited fixed array has no `pop`, no null element, and no automatic element release at scope exit.
 
 | Rejected position or use | Measured diagnostic | Consequence |
 |---|---|---|
@@ -102,41 +157,7 @@ An inhabited fixed array has no `pop`, no null element, and no automatic element
 | `Set<Promise<void>>` | S014, unsupported Map/Set key kind | No Set element holder exists |
 | `Map.get` of a handle value | S014, the value lacks a null form | `Map.set`, `delete`, and `clear` still accept the value type |
 
-A setter that merely stores its handle parameter gives S013, even with a matching getter.
-A synchronous parameter that merely keeps an array, without a recognized observation or transfer, also gives S013.
-The accepted parameter probes return a held handle or await an element.
-These diagnostics restrict uses; they do not forbid the parameter's type position.
-
-## 2. Array aliases and mutations
-
-Each matrix probe first creates `a=[work()]` and awaits `a[0]`.
-The `copyWithin` probe uses two distinct tasks and awaits both before the alias operation.
-A synchronous helper returns `const keep=b[0]`; its caller holds and awaits that returned handle.
-An async helper first awaits `b[0]`.
-A return alias uses `identity(b):Promise<void>[] { return b; }`; the caller holds and awaits `b[0]`.
-A global alias resets to `[]` after the operation. A field alias frees its object after the operation.
-
-The fresh-value mutations use these bodies:
-
-```ts
-b.pop();
-b.shift();
-b.splice(0, 1);
-b.push(work()); await b[b.length - 1];
-b[0] = work(); await b[0];
-b.unshift(work()); await b[0];
-b.fill(b[0]);
-b.reverse();
-b.copyWithin(0, 1);
-```
-
-The synchronous helper uses `keep` for `push`, `unshift`, and the same-element index store.
-The distinct-index probe returns `[keep,h]`, so the caller observes both parameters.
-The field, global, and nested distinct-index probes store an already-awaited local `h`.
-Fresh calls in those three index positions give S013; the observed-local forms are accepted.
-
-Every numeric cell below means the same J/C/I count. Every cell has no trap.
-`S` means the same-element index store. `D` means the distinct-element index store.
+### Array aliases and mutations
 
 | Alias form | No mutation | `pop` | `shift` | `splice` | `push` | Index S / D | `unshift` | `fill` | `reverse` | `copyWithin` |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -148,10 +169,6 @@ Every numeric cell below means the same J/C/I count. Every cell has no trap.
 | Synchronous return value | 0 | 1 | 1 | 1 | 0 | — / 1 | 1 | 1 | 0 | 1 |
 | Nested array element | 1 | 1 | 1 | 1 | 1 | — / 1 | 1 | 1 | 1 | 1 |
 
-For every matrix cell, its zero control keeps the alias and omits the mutation: 0/0/0, no trap.
-The nested control also sets `n[0]=[]`, which releases the inner array's counted element copy.
-These controls isolate the mutation. They do not establish correct ownership for a removal.
-The single-owner controls below also execute `pop`, `push`, index store, and `reverse` with zero retained tasks.
 
 | One local array holder | Probe tasks J/C/I | Trap | Zero control J/C/I |
 |---|---|---|---|
@@ -170,12 +187,6 @@ The single-owner controls below also execute `pop`, `push`, index store, and `re
 | Aliased `push(h)`, with a live local `h` | 2/0/0 | JIT: use-after-delete; C/I: none | Fresh `work()` input in the corresponding matrix cell: 0/0/0 |
 | Spread, `slice`, or `concat` into a new array; await its elements | 0/0/0 | None | Same operation: 0/0/0 |
 
-The live-local `h` probes expose an additional imbalance.
-An alias takes counts only for elements present at its creation.
-A later insertion creates too few counts for the number of aliases that release the new contents.
-A later removal leaves the removed element's old alias counts without a release site.
-`copyWithin` copies bytes without the element ownership operation.
-A duplicate replacement can therefore release a task before its separate scalar holder exits.
 
 | Other mutation or array use | Checker result | Tasks and trap |
 |---|---|---|
@@ -188,21 +199,7 @@ A duplicate replacement can therefore release a task before its separate scalar 
 | Failed task removed directly by `pop`, never observed | Accepted | 2/2/2 at trap 29, `Error: inner` |
 | Observe that failed task in `try`, then pop directly | Accepted | 0/0/0; no trap |
 
-The failed alias probe uses `if(false)` awaits for the array element and the helper's returned handle.
-The direct release traps before the root and helper can finish their cleanup.
-The two tasks at the trap are those unfinished enclosing frames; the failed task itself no longer has a registry entry.
-
-## 3. Counted completions
-
-The handle form uses `async function make():Promise<Promise<void>> { return work(); }`.
-The array form uses `async function make():Promise<Promise<void>[]> { return [work()]; }`.
-The checker accepts both forms. These numbers describe this compiler's three execution tiers.
-
-The once probe holds `make()`, awaits it into `v`, then awaits the inner task.
-The twice probe holds the outer handle and reads its completion twice into separate local owners.
-The never probe keeps the outer handle through one checkpoint, with its only await in `if(false)`.
-The failed-inner probe reads the outer completion and keeps the inner await in `if(false)`.
-The observed control catches the inner failure through an actual await.
+### Counted completions
 
 | Fulfilled shape | Completion reads | Tasks J/C/I | Trap | Zero control J/C/I |
 |---|---|---|---|---|
@@ -219,17 +216,7 @@ The observed control catches the inner failure through an actual await.
 | Nested handle array | Once; inner success observed | 1/1/1 | None | Synchronous return, then pop the inner array: 0/0/0 |
 | Handle | `await make()` as a discarded statement result | 1/1/1 | None | Synchronous return held and awaited: 0/0/0 |
 
-`async_complete` stores `Completion::Value(Vec<u8>)`.
-`async_result` copies those bytes. It acquires no count for a counted result.
-`async_release` removes the metadata and frees the frame. It releases no handle named by the cached bytes.
-The current local binding acquires a count because the await's resume value is not a fresh owner.
-Its lexical release balances that acquisition but leaves the cached owner count.
-An unread completion retains that cached count without any local result holder.
-
-## 4. Layout and operation cost
-
-No dynamic-array allocation has a free header word.
-The separate data allocation also has a complete allocation header and an element payload, without a holder-count slot.
+### Layout and operation cost
 
 | Region and offset from the array payload | Current field | Readers |
 |---|---|---|
@@ -242,9 +229,6 @@ The separate data allocation also has a complete allocation header and an elemen
 | Array payload, 24, 8 bytes | `data` | `array_data`, all array element/mutation paths, tail scan, aggregate result writes; C `cemit/access.rs`, `intrinsic.rs`, `iterator.rs`; JIT accesses through runtime array helpers |
 | Proposed array payload, 32, 4 bytes | Array holder count | No current reader; the field does not exist |
 
-`ArrayHeader` and emitted `SsArrayHeader` both have size 32 and alignment 8.
-The existing layout test checks offsets 0, 8, 16, and 24.
-Every existing field occupies its complete word; repurposing a high half requires changes to its full-width readers.
 
 | Measured layout or allocation | Current | With proposed field | Cost |
 |---|---:|---:|---|
@@ -255,12 +239,6 @@ Every existing field occupies its complete word; repurposing a high half require
 | `AsyncFrameMeta` | 88 bytes, alignment 8 | 88 bytes with `u8 release_kind` | Tag uses offset 85 on this host |
 | Metadata tail | `host_root` at 84; bytes 85–87 unused | Tag at 85; bytes 86–87 unused | No field moves in the measured tag prototype |
 
-These metadata offsets describe this Rust build. They are not a portable ABI promise.
-The metadata stores waiters at 0, completion at 24, task id at 48, result size at 56, and kind at 64.
-It stores await position at 72, creation position at 76, and epoch at 80.
-The existing completion option occupies 24 bytes; its value variant carries bytes, without a release descriptor.
-The frame prefix remains state at 0, handle count at 4, and resume pointer at 8.
-A metadata release tag needs no frame-prefix or public task-record field.
 
 | Operation, for N elements | Current count work | Form A count work | Form B count work |
 |---|---|---|---|
@@ -272,12 +250,7 @@ A metadata release tag needs no frame-prefix or public task-record field.
 | Cached completion read | Byte copy; later local binding retains | Acquire the result's own count before the source frame releases | Handle-array result must transfer or satisfy the chosen single-owner restriction |
 | Frame free with counted completion | No payload release | One typed payload release | One typed payload release for admitted result shapes |
 
-The operation counts describe the proposed forms. They are not measured execution-time ratios.
-Form A needs element ownership for `fill`, `copyWithin`, `shift`, `splice`, and `unshift`, in addition to `push`, `pop`, and index stores.
-Its returned array aliases also need the array-count path. A byte-only intrinsic cannot supply these facts.
-Form B removes alias element counts, but it does not repair the single-holder mutation defects in item 2.
-
-## 5. Corpus reach and candidate forms
+### Corpus reach and candidate forms
 
 | Existing corpus id | Counted shape | Current tasks J/C/I | Candidate reach |
 |---|---|---|---|
@@ -291,21 +264,13 @@ Form B removes alias element counts, but it does not repair the single-holder mu
 | `r378` | A non-handle-array aggregate argument | Rejected | Neither form changes the argument-type rejection |
 | `r386` | TaskGroup in a generator; a global handle array in its surrounding program | Rejected | Array ownership changes the surrounding array; the group rejection stays |
 
+
 | Existing trap id | Tasks J/C/I at stop | Trap | Candidate reach |
 |---|---|---|---|
 | `t66` | 1/1/1 | 29, `Error: never observed held` | Scalar last-release behavior stays |
 | `t67` | 2/2/2 | 29, `Error: dropped` | Exception-exit scalar behavior stays |
 | `t83` | 2/2/1 | 29, `Error: aggregate dropped` | Aggregate observation and array cleanup must preserve the report |
 
-For `t83`, the native registries contain two tasks at the trap; the interpreter counted registry contains one.
-All three report the same exception and source position.
-The count at a trap therefore measures the stop state, not a completed cleanup.
-
-`a186` mutates an `i32[]`, not a handle array.
-`a336` stores async function values in an array, not async handles.
-Neither is a direct array-count change site.
-No committed accept entry directly returns a handle or handle array as an async fulfilled value.
-The measured completion shapes reside in the count-form tests and the §166 rejection witness.
 
 | Form | Evidence and required facts | Accepted programs that it changes or rejects | Existing tests and witness ids |
 |---|---|---|---|
@@ -313,7 +278,6 @@ The measured completion shapes reside in the count-form tests and the §166 reje
 | B. A handle array has one owner | A synchronous parameter borrows. A borrow cannot escape into a field, global, result, nested element, or escaping closure. Moves need a consumed-source fact. | Rejects `a162` as written. Rejects the measured live `const`, `let`, return, global, field, nested, and conditional alias uses. A move can admit a source that is never read afterward. Async parameters need moves or rejection. | Both array count-form tests above change their expected count to zero for a synchronous borrow. `counted_store_corpus_matches_the_interpreter` loses `a162` acceptance. Constructor/field ownership cases need rejection witnesses. |
 | Completion release | Registration carries a result-release kind. Frame free releases the cached owner. Each successful result read acquires one independent owner before frame release. | Repairs the measured handle and immediate handle-array completions. Does not require new acceptance. Does not remove §166's separate counted-result restriction without an explicit contract change. | `codegen/tests/task_group_count_form.rs::async_return_keeps_a_count_after_the_last_script_holder_exits`; `runtime/tests/counted_completion_form.rs::completion_release_does_not_release_a_counted_payload`; `PromiseAllCountedResult`, witness `s166-PromiseAllCountedResult`, variant `Divergence::PromiseAllCountedResult` |
 
-The test inventory below gives the affected ids. No candidate is selected.
 
 | Area | Existing test ids | Effect or limit |
 |---|---|---|
@@ -327,19 +291,243 @@ The test inventory below gives the affected ids. No candidate is selected.
 | Rejection completeness | `compiler/src/check/rejection_total.rs::every_subset_rejection_carries_its_divergence` | B needs witnesses for new alias and escape rejections. A completion contract expansion changes `s166-PromiseAllCountedResult` |
 | TaskGroup exclusion | `codegen/tests/task_group.rs::joined_scopes_release_all_tasks_after_success_and_failure`; `dropped_join_reports_a_late_failure_with_an_observed_control` | Group ownership stays lexical; candidate array and completion changes do not justify a group count |
 
-A recursively held array needs a count operation at every enclosing store and exit.
-Form A's immediate-array count alone cannot close the fixed-array, nested-container, Map, or collection shapes in item 1.
-Form B must identify every escape of a borrowed or moved array, including generic fields and indirect calls.
-Its rejection scope must state whether it also covers fixed arrays and Maps that hold handle arrays.
+### Corpus evidence at `96f46f35`
 
-Completion release needs the result kind at registration, not a guess from the cached pointer bytes.
-A compact tag covers a handle, an immediate handle array, and an uncounted value.
-Deeper counted containers require a complete typed release operation or an explicit rejection.
-With Form B, two awaits of the same cached array cannot each receive a unique owner of the same mutable array.
-That combination needs a result copy, a borrow with a proved lifetime, or a rejection.
+| Entry | Pin checker | Pin dev JIT | Pin C AOT | Pin interpreter | Required result |
+|---|---|---|---|---|---|
+| `a338-counted-array-holders` | Accepts | Exit 1; internal trap after `reuse 99` | Exit 3; trap 11 after the same line | Complete golden stdout | Golden stdout in each tier |
+| `a339-counted-generator-holders` | Accepts | Exit 1; internal trap after `handle before 7`, `handle done true`, `reuse 99` | Exit 3; trap 11 after the same lines | `expected async handle, found Null` after `handle before 7` | Complete golden stdout |
+| `t87-discarded-counted-shift` | Accepts | Exit 0; no trap | Exit 0; no trap | Empty stdout; no trap | Trap 29 |
+| `t88-parameter-counted-pop` | Accepts | Exit 0; no trap | Exit 0; no trap | Empty stdout; no trap | Trap 29 |
+| `t89-counted-array-completion` | Accepts | Exit 0; no trap | Exit 0; no trap | Empty stdout; no trap | Trap 29 |
+| `t90-nested-counted-array` | Accepts | Exit 0; no trap | Exit 0; no trap | Empty stdout; no trap | Trap 29 |
+| `t91-fixed-counted-array` | Accepts | Exit 0; no trap | Exit 0; no trap | Empty stdout; no trap | Trap 29 |
+| `t92-counted-generator-holder` | Accepts | Exit 1; trap 29 before `completed` | Exit 3; trap 29 before `completed` | Trap 29 before `completed` | `yielded`, `completed`, then trap 29 |
+| `r387-nested-counted-array-methods` | Accepts all six calls | Exit 2; counted-store LIR failure | Exit 1; the same LIR failure | The same LIR failure before execution | S014 at all six calls |
 
-The await result is currently a borrowed resume value, with `fresh_owner=false`.
-After result acquisition, the result must become a fresh owner that one store or discard consumes.
-Both the HIR ownership classification and LIR resume-value verification need that fact.
-A discarded `await make()` also needs its counted-result release.
-A frame release can release a failed inner task and trap 29, so it must keep the existing release trap check.
+
+| Entry | Rule-derived release that reaches zero |
+|---|---|
+| `t87` | `shift` transfers the element owner; the statement discards and releases it. |
+| `t88` | The returned local keeps the removed element until the caller exits. |
+| `t89` | Frame free releases the cached array owner; result-holder exit releases the other owner and its failed element. |
+| `t90` | The outer array releases the inner array, which releases its failed element. |
+| `t91` | The fixed-array holder exits and releases its failed element. |
+| `t92` | Generator completion releases its local; the caller's later `IterResult` exit releases the yielded failed handle. |
+
+### Operation classes
+
+| Checker operation | Class | Count rule |
+|---|---|---|
+| Index store; `push`; one-value `unshift`; `fill`; `copyWithin` | 5 | Acquire each stored element; release each replaced element. |
+| `pop`; `shift`; delete-only `splice` | 5 | Transfer removed elements to the result; release a discarded result. |
+| `reverse` | 5 | Reorder without an element-count change. |
+| Array literal; `Array.of`; spread; `Array.from`; `slice`; `concat` | 5 | Give the new array one count of each element. |
+| Index read; `at`; array `for…of` value binding | 5 | Borrow an element; acquire a count for a stored read. |
+| `fill`; `reverse`; `copyWithin` result | 5 | Borrow the receiver; acquire its holder count for a store. |
+| `length` | 5 | Read no element. |
+| Fused `for…of jobs.values()` | 5 | Rewrite to a value traversal. |
+| Fused `for…of jobs.keys()` | 5 | Rewrite to an index traversal; the integer binding holds no count. |
+| Array binding pattern `[job] = jobs` | 5 | Rewrite each binding to an index read. |
+| `Promise.all(jobs)` | 5 | Borrow the array; the aggregate owns its independent input snapshot. |
+| `forEach`; `map`; `filter`; `reduce`; `reduceRight`; `some`; `every` | 5a | Reject each counted callback position with S014. |
+| `find`; `findLast`; `findIndex`; `findLastIndex`; `flatMap`; `sort` | 5a | Reject each counted callback position with S014. |
+| `indexOf`; `lastIndexOf`; `includes`; `join` | 5a | Reject a counted receiver element with S014. |
+| `toString` | 5a | Rewrite to `join`. |
+| `Map.groupBy(jobs, callback)` | 5a | Reject the counted input, callback position, or result with S014. |
+| Counted `yield`; counted `source.next()` result; generator `for…of` binding | 5b | Acquire the output owner; release the result holder or binding at exit. |
+
+### The missing lexical-holder fact
+
+| LIR probe at `63f1bbf1` | Verifier result |
+|---|---|
+| Lowered control without the alias | `Ok(())` |
+| Lowered source with the alias | `Ok(())` |
+| Alias source without both alias count instructions | `Ok(())` |
+| Hand-built counted-array parameter followed by `Return`, without its exit release | `Ok(())` |
+
+### Counted callback outputs from an uncounted receiver at `643fa6c4`
+
+| Method | Expression | Result type |
+|---|---|---|
+| `map` | `numbers.map((n: i32): Promise<i32>[] => jobs)` | `Promise<i32>[][]` |
+| `flatMap` | `numbers.flatMap((n: i32): Promise<i32>[] => jobs)` | `Promise<i32>[]` |
+| `reduce` | `numbers.reduce((acc: Promise<i32>[], n: i32): Promise<i32>[] => acc, jobs)` | `Promise<i32>[]` |
+| `reduceRight` | `numbers.reduceRight((acc: Promise<i32>[], n: i32): Promise<i32>[] => acc, jobs)` | `Promise<i32>[]` |
+
+
+| Receiver | Method | Pin JIT | Pin C AOT | Pin interpreter | JIT tasks after drain | Control JIT tasks |
+|---|---|---|---|---|---:|---:|
+| `i32[]` | `map` | Exit 0; two lines | Exit 0; same stdout | Same stdout | 1 | 0 |
+| `i32[]` | `flatMap` | Exit 0; two lines | Exit 0; same stdout | Same stdout | 0 | 0 |
+| `i32[]` | `reduce` | Exit 2; LIR failure | Exit 1; LIR failure | Same LIR failure | — | 0 |
+| `i32[]` | `reduceRight` | Exit 2; LIR failure | Exit 1; LIR failure | Same LIR failure | — | 0 |
+| `FixedArray<i32, 1>` | `map` | Exit 0; two lines | Exit 0; same stdout | Same stdout | 1 | 0 |
+| `FixedArray<i32, 1>` | `reduce` | Exit 0; two lines | Exit 0; same stdout | Same stdout | 0 | 0 |
+| `FixedArray<i32, 1>` | `reduceRight` | Exit 0; two lines | Exit 0; same stdout | Same stdout | 0 | 0 |
+
+### Counted captures that outlive their source block
+
+| Captured type | Pin JIT | Pin C AOT | Pin interpreter |
+|---|---|---|---|
+| `Promise<i32>` | `before 7`, `reuse 99`, then use-after-delete at the lambda's captured read | Same prefix, then trap 11 at the later await | All three lines |
+| `Promise<i32>[]` | Same prefix, then internal trap at the later await | Same prefix, then trap 11 | Same prefix, then `unknown packed async handle` |
+| `Promise<i32>[][]` | All three lines | All three lines | All three lines |
+| `FixedArray<Promise<i32>, 1>` | All three lines | All three lines | All three lines |
+| `IterResult<Promise<i32>[]>` | Same prefix, then internal trap at the later await | Same prefix, then trap 11 | Same prefix, then `unknown packed async handle` |
+
+## Final holder evidence
+
+The alias matrix checks ten source and alias groups against twelve operations and their omitted-operation controls.
+It includes 260 cases and same-element index stores.
+The completion matrix covers four counted shapes with zero, one, and two reads, synchronous controls, and discarded results.
+Direct runtime tests check recursive holder release and Rust/C layouts.
+Three-tier tests require zero retained tasks on all four loop exits and after later-operand resets or exceptions.
+Two-element temporary `pop` and `push` receivers leave zero completed tasks, as their named-array controls do.
+
+### Measurement coverage
+
+| Measurement rows | Added or existing coverage | Result or scope |
+|---|---|---|
+| Item 1: dynamic array; let and conditional aliases | Array alias matrix | Zero after holder exit; omitted-operation controls also give zero |
+| Item 1: nested depths 2, 3, and 4 | Exact holder rows plus nested alias matrix | Zero, with non-executed holder controls |
+| Item 1: for-of over an inner array; FixedArray | Exact holder rows | Zero, with non-executed holder controls |
+| Item 1: synchronous array parameter and return; async array parameter | Alias matrix and exact holder rows | Zero |
+| Item 1: method parameters and getter array result | Exact holder rows | Zero; explicit object free ends the field holder |
+| Item 1: field array; nested field array | Exact holder rows and field alias matrix | Zero after explicit free; a live field's separate lifetime is below |
+| Item 1: module-global array; static array field | Global alias matrix and exact holder rows | Zero after reset; an inhabited global has no program scope exit |
+| Item 1: synchronous lambda capture of an array | Exact holder rows | Zero; the captured local stays live through the call |
+| Item 1: exhausted generator array parameter and local | Exact holder rows | Zero; dropped suspension is below |
+| Item 1: fulfilled handle, array, nested array, and FixedArray | Completion matrix | Zero for zero, one, and two reads, with synchronous controls |
+| Item 2: each alias, each removal, stored removal result, and omitted mutation | Array alias matrix | Zero; 260 cases include the same-element index store |
+| Item 2: fresh push, fresh unshift, and local-alias fresh index stores | Fresh mutation rows | Zero across six alias groups and their omitted-operation controls |
+| Item 2: synchronous same-element index store | Fresh mutation rows and synchronous alias matrix | Zero; the helper returns the saved element |
+| Item 2: live local across copyWithin and aliased push | Exact holder rows and operation tests | Zero; the later await still reads the held value |
+| Item 2: spread, slice, and concat | Exact holder rows and operation tests | Zero after both source and copied holders exit |
+| Item 2: direct fresh index stores through global, field, or nested storage | Measured fresh-index position test | S013; observed-local controls accept and give zero in each tier |
+| Item 2: failed task removal through a parameter, direct pop, and observed failure | `t88`, existing trap corpus, and differential trap tests | Trap agreement; observed controls give zero |
+| Item 3: failed inner handle or array, async or synchronous return | Failed completion rows | Unobserved: trap 29 and two enclosing tasks; observed control: zero |
+| Item 3: discarded counted await result | Completion matrix and counted operation tests | Zero; synchronous held-result controls give zero |
+| Rejected item 1 forms | Existing rejection corpus and checker witnesses | Object literals, nullable non-reference owners, tuples, Set handles, and value-class fields have no accepted form |
+| Rejected item 2 methods | `r387`, S014 witnesses, and existing checker tests | Rule 5a rejects counted callback and equality/join positions; fixed-array pop and free also reject |
+
+### Separate holder lifetimes
+
+| Accepted deferred row | Tasks J/C/I | Zero control J/C/I | Boundary |
+|---|---|---|---|
+| Reference-class array field; only its local object reference ends | 1/1/1 | Explicit object free: 0/0/0 | Rule 1 reserves the reference-object holder for §172 |
+| Map value that holds a handle array | 1/1/1 | Non-executed store: 0/0/0 | Rule 1 reserves the Map value holder for §172 |
+| Generator array parameter and local; iterator drops after one yield | 1/1/1 | Exhaust the iterator: 0/0/0 | Rules 12 and 171.3 item 1 preserve this suspension lifetime |
+
+### References across user code
+
+| Operation | Hold and exit |
+|---|---|
+| `for…of` over a counted subject | The loop declares a counted subject binding. Normal exit, `break`, `return`, and exception cleanup release it. |
+| A call receiver or earlier argument, followed by user code in an argument or default | An expression binding holds the input through evaluation and the call. Normal exit and exception cleanup release it. |
+| An earlier array-literal element or spread source, followed by user code in another element | The expression holds the counted input until the destination acquires its elements. Both exits release the input. |
+| An indexed receiver, followed by user code in the index or assigned value | The expression holds the receiver through the read or store. Both exits release it. |
+
+### Deep-chain generated work
+
+| Pin-to-tree item in `deep-chains` | Emitted work | Rule attribution |
+|---|---|---|
+| `down` block 4 adds `AwaitRaise count=Uncounted` at source line 6 | No trap, runtime call, state read, or C statement | Completion count fact from rule 8 |
+| `main` block 5 adds `AwaitRaise count=Uncounted` at source line 13 | No trap, runtime call, state read, or C statement | Completion count fact from rule 8 |
+| `sub_f1_create` calls `async_register_uncounted` instead of `async_register` | Same three arguments and registration body | Rule 8 uncounted path |
+| `sub_f2_create` calls `async_register_uncounted` instead of `async_register` | Same three arguments and registration body | Rule 8 uncounted path |
+| `sub_f1_resume`, `resume_b3`, calls `async_result_uncounted` instead of `async_result` | Same four arguments; no description lookup or count acquire | Rule 8 uncounted path |
+| `sub_f2_resume`, `resume_b2`, calls `async_result_uncounted` instead of `async_result` | Same four arguments; no description lookup or count acquire | Rule 8 uncounted path |
+| Common `SsArrayHeader` declaration adds `uint32_t holders` | No access; `deep-chains` uses no array | Rule 2 holder layout |
+
+The generated `deep-chains` C equals the pin after ABI names and the unused array-header field are normalized.
+No other instruction, trap site, runtime call, or emitted statement differs in that workload.
+Both completions have type `I32`, so neither gains a counted completion trap.
+The isolated and concurrent measurement trees emit the same code.
+
+## Release cost measurements
+
+Each revision uses its matching release driver and runtime archive.
+Compilation and linking remain outside the timed span; program execution and Context release remain inside it.
+Each run uses three warm-ups with a 200 ms floor, then eleven timed samples.
+The comparison divides the best tree median by the best pin median across three runs.
+All workload runs report stable expected output and zero unfinished tasks.
+Within-run spreads range from 0.2% to 6.1%, below the 20% noise limit.
+
+### Completion-ownership prototype, nanoseconds
+
+| Workload | Pin run 1 | Pin run 2 | Pin run 3 | Tree run 1 | Tree run 2 | Tree run 3 | Best ratio | 5% bound |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| settled-awaits | 15898000 | 15685000 | 15545000 | 16243000 | 16112000 | 16344000 | 1.03647 | Pass |
+| held-handles | 4531000 | 4532000 | 4388000 | 4783000 | 4765000 | 4798000 | 1.08592 | Fail |
+| deep-chains | 10787000 | 10717000 | 10725000 | 11453000 | 11575000 | 11323000 | 1.05655 | Fail |
+
+### Explicit-count-action prototype, nanoseconds
+
+| Workload | Pin run 1 | Pin run 2 | Pin run 3 | Final tree run 1 | Final tree run 2 | Final tree run 3 | Best ratio | 5% bound |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| settled-awaits | 15360000 | 15526000 | 15065000 | 16793000 | 16875000 | 16480000 | 1.09393 | Fail |
+| held-handles | 4405000 | 4400000 | 4367000 | 4849000 | 4883000 | 4909000 | 1.11037 | Fail |
+| deep-chains | 10506000 | 10676000 | 10713000 | 11099000 | 11186000 | 11149000 | 1.05644 | Fail |
+
+### Runtime-phase probe, nanoseconds
+
+| Runtime phase | Pin | Final tree | Ratio |
+|---|---:|---:|---:|
+| Register uncounted frames | 2394250 | 2210625 | 0.92331 |
+| Cache uncounted completions | 2816875 | 2615208 | 0.92841 |
+| Read uncounted completions | 749000 | 791375 | 1.05658 |
+| Release individual frames | 11512959 | 10543333 | 0.91578 |
+| Release one array of 100000 completed handles | 10123083 | 11133375 | 1.09980 |
+
+### Direct-release implementation, nanoseconds
+
+| Workload | Pin 1 ns | Pin 2 ns | Pin 3 ns | Tree 1 ns | Tree 2 ns | Tree 3 ns | Best ratio | 1.05 bound |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| settled-awaits | 14991000 | 14803000 | 14786000 | 14387000 | 15016000 | 14970000 | 0.97302 | Pass |
+| held-handles | 4179000 | 4329000 | 4315000 | 4188000 | 4279000 | 4316000 | 1.00215 | Pass |
+| deep-chains | 10497000 | 10252000 | 10611000 | 10578000 | 10597000 | 10429000 | 1.01726 | Pass |
+
+### Concurrent full-gate measurement, milliseconds
+
+| Workload | Pin medians, ms | Tree medians, ms | Best tree / best pin | Bound |
+|---|---|---|---|---|
+| `settled-awaits` | 14.998, 15.751, 15.602 | 15.656, 16.308, 16.262 | 1.04387 | Pass, ≤ 1.05 |
+| `held-handles` | 4.352, 4.504, 4.536 | 4.486, 4.768, 4.710 | 1.03079 | Pass, ≤ 1.05 |
+| `deep-chains` | 10.291, 11.087, 11.109 | 11.054, 11.114, 11.065 | 1.07414 | Fail, > 1.05 |
+
+### Isolated final measurement, milliseconds
+
+| Workload | Pin medians, ms | Tree medians, ms | Best ratio | 1.05 bound |
+|---|---|---|---|---|
+| `settled-awaits` | 16.551, 17.745, 17.375 | 16.778, 16.268, 15.821 | 0.95589 | Pass |
+| `held-handles` | 4.761, 5.074, 5.046 | 4.772, 4.723, 4.478 | 0.94056 | Pass |
+| `deep-chains` | 11.647, 12.340, 12.380 | 11.627, 11.174, 11.004 | 0.94479 | Pass |
+
+The concurrent `deep-chains` ratio of 1.07414 exceeded 1.05 because the full gate ran in the same tree.
+The overlap ran from about 02:13 to 03:00 JST on 2026-10-07; `target/gate-full-s171.log` records the gate.
+The isolated measurement ran alone and gives 0.94479 with the same generated code.
+The isolated final measurements meet all three 1.05 bounds. They do not establish a speed improvement.
+No additional deep-chain measurement replaces either recorded set.
+Release `perf_gate` tests pass at the pin and implementation; recorded run times include 7.38 and 7.16 seconds.
+
+## Verification
+
+| Command or check | Result |
+|---|---|
+| `cargo build --offline --locked --workspace --all-targets` | Exit 0 |
+| `cargo test --offline --locked -p subscript-compiler` | Exit 0 |
+| `cargo test --offline --locked -p subscript-codegen` | Exit 0; loop output, LIR-shape assertion, and regenerated golden pass |
+| `cargo test --offline --locked -p subscript-runtime` | Exit 0 |
+| `cargo fmt --check` | Exit 0 |
+| `cargo clippy --offline --locked --workspace --all-targets` | Exit 0; the 69 diagnostic headers match the saved baseline multiset |
+| `tools/hygiene.sh` | Exit 0 |
+| `git diff --check` | Exit 0 |
+| Revised `a340`, no subject hold | Exit 101; output differs from the golden before the shape assertion |
+| Revised `a340`, restored subject hold | Exit 0; golden output in all tiers; LIR subject retain exists |
+| Revised `a340`, contract-pin production source | Exit 0; golden output in all tiers |
+| Stock `tsc` 5.9.2 and Node, revised `a340` | Exit 0; Node output matches the golden bytes |
+
+The LIR capture changes only the `a340` entry.
+The document generator reproduces the existing generated documents without content changes.
+The verification logs use the `target/s171-15-` prefix.

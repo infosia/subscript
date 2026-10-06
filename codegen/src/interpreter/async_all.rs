@@ -207,9 +207,9 @@ impl<'m> Interpreter<'m> {
             };
             self.async_ready.extend(waiters);
         }
-        self.release_coroutine(&input)?;
+        self.release_coroutine(&input, &pos)?;
         if handle.borrow().owners == 0 {
-            self.release_coroutine(handle)?;
+            self.release_coroutine(handle, &pos)?;
         }
         Ok(())
     }

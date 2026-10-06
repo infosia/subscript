@@ -156,6 +156,13 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
             (TrapKind::TaskGroup, 11, 16)
         }
         "t86-add-to-closed-task-group" => (TrapKind::TaskGroup, 15, 3),
+        "t87-discarded-counted-shift"
+        | "t88-parameter-counted-pop"
+        | "t89-counted-array-completion"
+        | "t90-nested-counted-array"
+        | "t91-fixed-counted-array"
+        | "t92-counted-generator-holder"
+        | "t93-counted-fill-release" => (TrapKind::UncaughtException, 10, 40),
         "t83-unobserved-aggregate-exception" => (TrapKind::UncaughtException, 10, 40),
         "t82-worker-trap-site" => (TrapKind::WorkerTrapped, 16, 14),
         other => panic!("{other}: trap corpus entry has no exact expectation"),

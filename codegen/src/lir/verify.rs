@@ -12,14 +12,19 @@ pub(super) fn verify_function(
     errors: &mut Vec<VerifyError>,
 ) {
     verify_structure_and_types(module, function, errors);
-    verify_counted_stores(function, errors);
+    verify_counted_stores(module, function, errors);
+    super::verify_counted_operations::verify(module, function, errors);
     verify_raise_edges(module, function, errors);
     verify_dominance(function, errors);
     super::verify_narrowing::verify_narrowing(function, errors);
     verify_address_invalidation(function, errors);
 }
 
-fn verify_counted_stores(function: &l::Function, errors: &mut Vec<VerifyError>) {
+fn verify_counted_stores(
+    module: &l::Module,
+    function: &l::Function,
+    errors: &mut Vec<VerifyError>,
+) {
     let use_counts = value_use_counts(function);
     let fresh = function
         .values
@@ -30,15 +35,20 @@ fn verify_counted_stores(function: &l::Function, errors: &mut Vec<VerifyError>) 
     for block in &function.blocks {
         let mut retains = HashMap::<l::ValueId, usize>::new();
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            if matches!(
-                instruction.kind,
-                l::InstructionKind::AsyncHandleRetain | l::InstructionKind::AsyncHandleArrayRetain
-            ) {
+            if instruction.result.is_none()
+                && matches!(
+                    instruction.kind,
+                    l::InstructionKind::AsyncHandleRetain
+                        | l::InstructionKind::AsyncHandleArrayRetain
+                )
+            {
                 if let Some(l::Operand::Value(value)) = instruction.operands.first() {
                     *retains.entry(*value).or_default() += 1;
                 }
             }
-            for (operand_index, operand) in counted_instruction_stores(function, instruction) {
+            for (operand_index, operand) in
+                counted_instruction_stores(module, function, instruction)
+            {
                 verify_counted_store_operand(
                     function,
                     block.id,
@@ -112,7 +122,8 @@ fn verify_counted_store_operand(
     ));
 }
 
-fn counted_instruction_stores<'i>(
+pub(super) fn counted_instruction_stores<'i>(
+    module: &l::Module,
     function: &l::Function,
     instruction: &'i l::Instruction,
 ) -> Vec<(usize, &'i l::Operand)> {
@@ -121,7 +132,19 @@ fn counted_instruction_stores<'i>(
         l::InstructionKind::StoreAddress
         | l::InstructionKind::TaskGroup(hir::TaskGroupOperation::Add) => Some(1),
         l::InstructionKind::ArrayLiteral | l::InstructionKind::ArraySpreadLiteral(_) => Some(0),
-        l::InstructionKind::Call(target) => counted_operand_start(&target.kind),
+        l::InstructionKind::Call(target) => {
+            if let Some(name) =
+                array_ownership::array_operation_name(&module.intrinsic_operations, &target.kind)
+            {
+                if name == "Unshift" {
+                    Some(1)
+                } else {
+                    None
+                }
+            } else {
+                counted_operand_start(&target.kind)
+            }
+        }
         l::InstructionKind::AsyncHandleCreate(target) => match target.kind {
             l::CallTargetKind::Function(_) => Some(0),
             l::CallTargetKind::Method(_) => Some(1),
@@ -132,7 +155,12 @@ fn counted_instruction_stores<'i>(
     start
         .into_iter()
         .flat_map(|start| instruction.operands.iter().enumerate().skip(start))
-        .filter(|(_, operand)| {
+        .filter(|(index, operand)| {
+            if matches!(&instruction.kind, l::InstructionKind::ArraySpreadLiteral(spreads)
+                if spreads.get(*index) == Some(&Some(l::SpreadKind::Array)))
+            {
+                return false;
+            }
             operand_type(function, operand)
                 .as_ref()
                 .is_some_and(is_async_owner_type)
@@ -140,7 +168,7 @@ fn counted_instruction_stores<'i>(
         .collect()
 }
 
-fn counted_terminator_stores(
+pub(super) fn counted_terminator_stores(
     function: &l::Function,
     terminator: &l::Terminator,
 ) -> Vec<(usize, l::Operand)> {
@@ -153,6 +181,12 @@ fn counted_terminator_stores(
             .cloned()
             .map(|operand| (0, operand))
             .collect(),
+        l::Terminator::Suspend {
+            kind: l::SuspendKind::Yield(Some(value)),
+            ..
+        } if value_type(function, *value).is_some_and(is_async_owner_type) => {
+            vec![(0, l::Operand::Value(*value))]
+        }
         l::Terminator::Suspend {
             kind: l::SuspendKind::AsyncCall { target, operands },
             ..
@@ -169,6 +203,8 @@ fn counted_terminator_stores(
     }
 }
 
+// These indices describe stores. Borrowed receivers are not stores.
+// The consumption check visits every fresh owner, including operand zero.
 fn counted_operand_start(kind: &l::CallTargetKind) -> Option<usize> {
     match kind {
         l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),

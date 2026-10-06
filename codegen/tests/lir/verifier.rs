@@ -54,6 +54,7 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![lir::Instruction {
+                    count_action: None,
                     result: Some(lir::ValueId(0)),
                     kind: InstructionKind::Zero,
                     operands: Vec::new(),
@@ -76,6 +77,7 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
                 source_name: Some("resume".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![lir::Instruction {
+                    count_action: None,
                     result: Some(lir::ValueId(1)),
                     kind: InstructionKind::Copy,
                     operands: vec![Operand::Value(lir::ValueId(0))],
@@ -159,6 +161,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                     parameters: Vec::new(),
                     instructions: vec![
                         lir::Instruction {
+                            count_action: None,
                             result: Some(lir::ValueId(0)),
                             kind: InstructionKind::Zero,
                             operands: Vec::new(),
@@ -167,6 +170,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                             pos: pos.clone(),
                         },
                         lir::Instruction {
+                            count_action: None,
                             result: None,
                             kind: InstructionKind::StoreLocal(lir::LocalId(0)),
                             operands: vec![Operand::Value(lir::ValueId(0))],
@@ -190,6 +194,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                     source_name: Some("resume".to_string()),
                     parameters: Vec::new(),
                     instructions: vec![lir::Instruction {
+                        count_action: None,
                         result: Some(lir::ValueId(1)),
                         kind: read,
                         operands: Vec::new(),
@@ -332,6 +337,7 @@ fn intrinsic_call_is_checked_against_the_module_signature_table() {
             source_name: Some("entry".to_string()),
             parameters: Vec::new(),
             instructions: vec![lir::Instruction {
+                count_action: None,
                 result: Some(lir::ValueId(3)),
                 kind: InstructionKind::Call(lir::CallTarget {
                     kind: lir::CallTargetKind::Intrinsic(lir::Intrinsic {

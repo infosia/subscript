@@ -131,6 +131,26 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     .runtime_call(&return_ctype, symbol, &types, &args)
             }
             "Fill" => {
+                if instruction
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+                {
+                    let pointer = self.materialize(out, &argument(1)?, element)?;
+                    self.emit_counted_array_operation(
+                        out,
+                        &receiver,
+                        1,
+                        &pointer,
+                        "0",
+                        &argument(2)?,
+                        &argument(3)?,
+                        instruction,
+                    )?;
+                    self.assign(out, result, &receiver)?;
+                    return self.consume_runtime_traps(out, &instruction.traps, true, true);
+                }
                 let pointer = self.materialize(out, &argument(1)?, element)?;
                 let call = self.emitter.runtime_call(
                     "void",
@@ -182,6 +202,25 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "CopyWithin" => {
+                if instruction
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+                {
+                    self.emit_counted_array_operation(
+                        out,
+                        &receiver,
+                        2,
+                        "NULL",
+                        &argument(1)?,
+                        &argument(2)?,
+                        &argument(3)?,
+                        instruction,
+                    )?;
+                    self.assign(out, result, &receiver)?;
+                    return self.consume_runtime_traps(out, &instruction.traps, true, true);
+                }
                 let call = self.emitter.runtime_call(
                     "void",
                     symbol,
@@ -350,6 +389,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         if let Some(result) = result {
             let _ = writeln!(out, "    {result} = {call};");
+            if matches!(name, "Slice" | "Concat")
+                && instruction
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+            {
+                self.emit_counted_array_operation(
+                    out,
+                    &result,
+                    0,
+                    "NULL",
+                    "0",
+                    "0",
+                    "0",
+                    instruction,
+                )?;
+            }
         } else {
             let _ = writeln!(out, "    {call};");
         }

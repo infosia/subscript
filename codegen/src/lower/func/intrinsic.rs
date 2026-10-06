@@ -430,6 +430,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         checked,
                     )?
                     .ok_or_else(|| internal("Array.Slice has no result"))?;
+                self.acquire_copied_array_elements(result, pos)?;
                 Ok(RV::Scalar(result))
             }
             "Fill" => {
@@ -439,7 +440,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let value = self.materialize(value, &element)?;
                 let start = scalar(self, 2)?;
                 let end = scalar(self, 3)?;
-                self.call_runtime(function, &[self.ctx, receiver, value, start, end], checked)?;
+                if self
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+                {
+                    let target = self.iconst(types::I32, 0);
+                    self.counted_array_operation(receiver, 1, value, target, start, end, pos)?;
+                } else {
+                    self.call_runtime(function, &[self.ctx, receiver, value, start, end], checked)?;
+                }
                 Ok(RV::Scalar(receiver))
             }
             "Reverse" => {
@@ -453,6 +464,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let result = self
                     .call_runtime(function, &[self.ctx, receiver, other, position], checked)?
                     .ok_or_else(|| internal("Array.Concat has no result"))?;
+                self.acquire_copied_array_elements(result, pos)?;
                 Ok(RV::Scalar(result))
             }
             "Splice" => {
@@ -499,7 +511,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let target = scalar(self, 1)?;
                 let start = scalar(self, 2)?;
                 let end = scalar(self, 3)?;
-                self.call_runtime(function, &[self.ctx, receiver, target, start, end], checked)?;
+                if self
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+                {
+                    let value = self.iconst(types::I64, 0);
+                    self.counted_array_operation(receiver, 2, value, target, start, end, pos)?;
+                } else {
+                    self.call_runtime(
+                        function,
+                        &[self.ctx, receiver, target, start, end],
+                        checked,
+                    )?;
+                }
                 Ok(RV::Scalar(receiver))
             }
             "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" | "Find" | "FindLast"

@@ -57,8 +57,27 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 )?;
             }
             hir::Stmt::Expr(expr) => {
-                let result = self.lower_expr(expr)?;
-                if expr.kind.produces_fresh_async_owner()
+                let result = if let hir::ExprKind::Call { callee, args } = &expr.kind {
+                    self.lower_call(callee, args, expr, false)?
+                } else if let hir::ExprKind::Assign {
+                    op,
+                    target,
+                    value,
+                    update,
+                } = &expr.kind
+                {
+                    Some(self.lower_assignment(*op, *update, target, value, expr, false)?)
+                } else if matches!(
+                    expr.kind,
+                    hir::ExprKind::Field { .. }
+                        | hir::ExprKind::Index { .. }
+                        | hir::ExprKind::Length(_)
+                ) {
+                    self.lower_read_expr(expr, false)?
+                } else {
+                    self.lower_expr(expr)?
+                };
+                if matches!(&result, Some(l::Operand::Value(id)) if self.values.get(id.0 as usize).is_some_and(|value| value.fresh_owner) && !self.moved_async_owners.contains(id))
                     && is_async_owner_type(&l::ValueType::Data(expr.ty.clone()))
                 {
                     if let Some(value) = result {
@@ -308,6 +327,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         pos: &Pos,
     ) -> Result<(), LowerError> {
         let subject_value = self.require_expr(subject)?;
+        self.scopes.push(HashMap::new());
+        if is_async_owner_type(&l::ValueType::Data(subject.ty.clone())) {
+            self.declare_binding(
+                "<for-of owner>".to_string(),
+                l::ValueType::Data(subject.ty.clone()),
+                false,
+                subject_value.clone(),
+                pos.clone(),
+                Some(hir::AsyncCopySite::Binding),
+            )?;
+        }
         let kind = convert_for_of(kind);
         let iterator_type = l::ValueType::Iterator(l::IteratorType {
             kind,
@@ -340,7 +370,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             ty: Type::I32,
             kind: l::ConstantKind::Integer(0),
         });
-        self.scopes.push(HashMap::new());
         let cursor_binding =
             self.declare_hidden_binding("<for-of cursor>", iterator_type.clone(), iterator);
         let index_binding =

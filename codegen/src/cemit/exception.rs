@@ -13,6 +13,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         instruction: &l::Instruction,
     ) -> Result<(), String> {
         let Some(edge) = instruction.raise_edge().copied() else {
+            // An uncounted quiet completion needs no pending check.
+            if matches!(instruction.kind, l::InstructionKind::AwaitRaise)
+                && !instruction
+                    .traps
+                    .iter()
+                    .any(|trap| trap.kind == l::TrapKind::Call)
+            {
+                return Ok(());
+            }
             return self.emit_instruction(out, instruction);
         };
         let (raise, other): (Vec<l::Trap>, Vec<l::Trap>) = instruction

@@ -9,6 +9,7 @@ impl Interpreter<'_> {
         operands: Vec<Value>,
         parameter_types: &[l::ValueType],
         result_ty: Option<&l::ValueType>,
+        pos: &Pos,
     ) -> Result<Value, InterpretError> {
         let receiver_ty = match parameter_types.first() {
             Some(l::ValueType::Data(ty @ (Type::Array(_) | Type::FixedArray(_, _)))) => ty,
@@ -79,6 +80,30 @@ impl Interpreter<'_> {
                 })?,
             )
         };
+        let count_type = self
+            .count_action
+            .as_ref()
+            .and_then(l::CountAction::release_type);
+        if let Some(count_type) = count_type
+            .as_ref()
+            .filter(|_| matches!(operation, "Fill" | "CopyWithin"))
+        {
+            let (fill, target, start, end) = if operation == "Fill" {
+                (operands.get(1).cloned(), 0, integer(2)?, integer(3)?)
+            } else {
+                (None, integer(1)?, integer(2)?, integer(3)?)
+            };
+            self.replace_counted_array_range(
+                array,
+                count_type,
+                fill.as_ref(),
+                target,
+                start,
+                end,
+                pos,
+            )?;
+            return Ok(Value::Handle(array));
+        }
         let kind = array_elem_kind(element_ty, self.module);
         let value = match operation {
             "IndexOf" => {
@@ -190,7 +215,7 @@ impl Interpreter<'_> {
                         ffi::subscript_rt_arr_shift(context, array, bytes.as_mut_ptr(), 0);
                     }
                 };
-                self.check_runtime(&Pos::new("<array>", 1, 1))?;
+                self.check_runtime(pos)?;
                 self.unpack(element_ty, &bytes)?
             }
             "Unshift" => {
@@ -216,7 +241,13 @@ impl Interpreter<'_> {
             }
             _ => return Err(self.invalid(None, format!("unknown Array intrinsic {operation}"))),
         };
-        self.check_runtime(&Pos::new("<array>", 1, 1))?;
+        self.check_runtime(pos)?;
+        if let Some(count_type) = count_type
+            .as_ref()
+            .filter(|_| matches!(operation, "Slice" | "Concat"))
+        {
+            self.counted_array_elements(value.as_handle()?, count_type, false, pos)?;
+        }
         if let Value::Handle(handle) = value {
             if handle != array || matches!(operation, "Slice" | "Concat" | "Splice") {
                 self.root_handle(handle);

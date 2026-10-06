@@ -468,7 +468,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             None => None,
         };
-        self.read_completion(child, output.as_ref(), &pos)?;
+        self.read_completion(child, output.as_ref(), successor, &pos)?;
         let frame = self
             .frame
             .ok_or_else(|| internal("async parent has no frame"))?;
@@ -537,7 +537,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         } else {
             None
         };
-        self.read_completion(handle, output.as_ref(), &pos)?;
+        self.read_completion(handle, output.as_ref(), successor, &pos)?;
         let frame = self
             .frame
             .ok_or_else(|| internal("held await parent has no frame"))?;
@@ -579,6 +579,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         handle: Value,
         output: Option<&(Value, Type, u32)>,
+        successor: l::BlockId,
         pos: &Pos,
     ) -> Result<(), String> {
         let output_pointer =
@@ -587,12 +588,23 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             types::I64,
             i64::from(output.map_or(0, |(_, _, size)| *size)),
         );
+        let action = self.function.blocks[successor.0 as usize]
+            .instructions
+            .first()
+            .and_then(|instruction| instruction.count_action.as_ref())
+            .ok_or_else(|| internal("completion read has no count action"))?;
+        let mut arguments = vec![self.ctx, handle, output_pointer, output_size];
+        let function = if let Some(ty) = action.release_type() {
+            let bytes = crate::counted::description(&self.ml.layouts, &ty)?;
+            let data = self.ml.literal_data(&bytes)?;
+            let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+            arguments.push(self.builder.ins().symbol_value(types::I64, global));
+            self.ml.rt.async_result_counted
+        } else {
+            self.ml.rt.async_result
+        };
         let cached = self
-            .call_runtime(
-                self.ml.rt.async_result,
-                &[self.ctx, handle, output_pointer, output_size],
-                false,
-            )?
+            .call_runtime(function, &arguments, false)?
             .ok_or_else(|| internal("await resume has no cached-result check"))?;
         let completed = self.builder.create_block();
         let missing = self.builder.create_block();

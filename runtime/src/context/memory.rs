@@ -1075,6 +1075,7 @@ impl Context {
                 cap: 0,
                 elem_size: elem_size as u64,
                 data: std::ptr::null_mut(),
+                holders: 1,
             });
         }
         p

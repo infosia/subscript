@@ -39,6 +39,7 @@ mod boundary;
 mod builtin;
 mod call;
 mod coroutine;
+mod counted_array;
 mod exception;
 mod expr;
 mod instruction;
@@ -457,6 +458,7 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     closure_environments: HashMap<l::ValueId, u32>,
     closure_environment_layout: Option<(u32, u32)>,
     consumed_traps: Vec<l::Trap>,
+    count_action: Option<l::CountAction>,
     /// The handler landing block of the instruction that lowers now, when
     /// it is a raise site in a `try` block (compiler.md §115.6 rule 2).
     raise_target: Option<Block>,
@@ -967,6 +969,7 @@ pub(crate) fn define_function<M: Module>(
         let closure_environment_layout = closure_environment_layout(ml.lir, &ml.layouts)?;
         let root_storage = root_storage::plan(function, &ml.layouts)?;
         let mut body = Body {
+            count_action: None,
             ml,
             builder,
             function,
@@ -1135,6 +1138,7 @@ pub(crate) fn define_coroutine<M: Module>(
             let ctx = abi[0];
             let root_storage = root_storage::plan(function, &ml.layouts)?;
             let mut body = Body {
+                count_action: None,
                 ml,
                 builder,
                 function,
@@ -1189,11 +1193,18 @@ pub(crate) fn define_coroutine<M: Module>(
                     body.ml.layouts.size_align(&function.return_type)?.0
                 };
                 let result_size = body.iconst(types::I64, i64::from(result_size));
-                body.call_runtime(
-                    body.ml.rt.async_register,
-                    &[body.ctx, frame, result_size],
-                    false,
-                )?;
+                let mut arguments = vec![body.ctx, frame, result_size];
+                let register = if function.return_type.counted_type().is_some() {
+                    let bytes =
+                        crate::counted::description(&body.ml.layouts, &function.return_type)?;
+                    let data = body.ml.literal_data(&bytes)?;
+                    let global = body.ml.module.declare_data_in_func(data, body.builder.func);
+                    arguments.push(body.builder.ins().symbol_value(types::I64, global));
+                    body.ml.rt.async_register_counted
+                } else {
+                    body.ml.rt.async_register
+                };
+                body.call_runtime(register, &arguments, false)?;
             } else if body.ml.opts.reload {
                 let offset = ctx_off(rtc::Context::reload_epoch_offset())?;
                 let epoch = body
@@ -1278,6 +1289,7 @@ pub(crate) fn define_coroutine<M: Module>(
             }
             let root_storage = root_storage::plan(function, &ml.layouts)?;
             let mut body = Body {
+                count_action: None,
                 ml,
                 builder,
                 function,

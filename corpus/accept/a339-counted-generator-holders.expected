@@ -1,0 +1,17 @@
+handle before 7
+handle done true
+reuse 99
+handle after 7
+array before 8
+array done true
+reuse 99
+array after 8
+nested before 9
+nested done true
+reuse 99
+nested after 9
+fixed before 10
+fixed done true
+reuse 99
+fixed after 10
+for of 7

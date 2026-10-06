@@ -443,6 +443,13 @@ impl Interpreter<'_> {
                     };
                 }
                 Some(l::SpreadKind::Array) => {
+                    if let Some(count_type) = self
+                        .count_action
+                        .as_ref()
+                        .and_then(l::CountAction::release_type)
+                    {
+                        self.counted_array_elements(operand.as_handle()?, &count_type, false, pos)?;
+                    }
                     // SAFETY: verified identical-element array handles.
                     unsafe {
                         ffi::subscript_rt_array_spread_array(
@@ -1014,7 +1021,9 @@ impl Interpreter<'_> {
         let total = align_up(offset + layout.size, layout.align);
         let mut bytes = vec![0; total];
         bytes[0] = u8::from(done);
-        self.pack_into(value_ty, &value, &mut bytes[offset..])?;
+        if !done {
+            self.pack_into(value_ty, &value, &mut bytes[offset..])?;
+        }
         Ok(Value::Blob(bytes))
     }
 }

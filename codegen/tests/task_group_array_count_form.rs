@@ -1,12 +1,10 @@
-//! A copied mutable array retains elements but records no array holder count.
-//! This test passes when synchronous removal leaves one orphan async count.
-//! TaskGroup rules 2 and 15 exclude array holders from the group form.
+//! Array aliases share element owners and release the last holder (§171).
 
 use subscript_codegen::ReloadSession;
 use subscript_compiler::SourceFile;
 
 #[test]
-fn synchronous_array_parameter_pop_keeps_an_orphan_count() {
+fn synchronous_array_parameter_pop_leaves_no_task_owner() {
     for parameter in [false, true] {
         let source = format!(
             r#"async function work(): Promise<void> {{ return; }}
@@ -38,11 +36,6 @@ export async function main(): Promise<void> {{
             "array parameter={parameter}: retained tasks={}",
             tasks.len()
         );
-        assert_eq!(tasks.len(), usize::from(parameter));
-        if parameter {
-            assert_eq!(tasks[0].state, 5);
-            assert_eq!(tasks[0].kind, 1);
-            assert_eq!(tasks[0].function_pos.line, 1);
-        }
+        assert!(tasks.is_empty());
     }
 }

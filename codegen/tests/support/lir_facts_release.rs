@@ -71,8 +71,7 @@ pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<Str
 }
 
 fn owned(ty: &Type) -> bool {
-    matches!(ty, Type::AsyncHandle(_))
-        || matches!(ty, Type::Array(t) if matches!(**t, Type::AsyncHandle(_)))
+    ty.counted_type().is_some()
 }
 
 fn releases(
@@ -274,6 +273,7 @@ impl Walk<'_> {
                 self.expression(subject);
                 let owners = self.owners;
                 self.owners += usize::from(owned(ty));
+                self.owners += usize::from(owned(&subject.ty));
                 self.controls.push((self.hooks.len(), true));
                 self.sequence(body);
                 self.controls.pop();

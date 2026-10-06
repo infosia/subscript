@@ -70,6 +70,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r384-async-task-group-result.ts", RuleCode::S009, 9),
     ("r385-task-group-field.ts", RuleCode::S009, 10),
     ("r386-task-group-generator-body.ts", RuleCode::S009, 13),
+    ("r387-nested-counted-array-methods.ts", RuleCode::S014, 13),
     ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
     ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),
@@ -623,6 +624,31 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
         }
     }
     assert!(violations.is_empty(), "{}", violations.join("\n"));
+}
+
+#[test]
+fn counted_array_methods_reject_each_r387_call() {
+    let file = "r387-nested-counted-array-methods.ts";
+    let diagnostics = check_entry(&reject_sources(&corpus_dir().join("reject"), file));
+    let mut missing = Vec::new();
+    for (method, first, last) in [
+        ("find", 13, 13),
+        ("sort", 14, 14),
+        ("includes", 15, 15),
+        ("Map.groupBy", 16, 17),
+        ("map", 19, 20),
+        ("reduce", 21, 22),
+    ] {
+        if !diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == RuleCode::S014 && (first..=last).contains(&diagnostic.pos.line)
+        }) {
+            missing.push(method);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "{file}: missing S014 for {missing:?}; diagnostics: {diagnostics:?}"
+    );
 }
 
 #[test]

@@ -139,6 +139,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     pub(super) fn emit_instruction(&mut self, instruction: &l::Instruction) -> Result<(), String> {
+        self.count_action = instruction.count_action.clone();
         let operands = self.instruction_operands(instruction)?;
         let traps = self.consume_lifetimes(&instruction.traps, &operands)?;
         let remaining;
@@ -667,7 +668,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("async retain has no handle"))?,
                 )?;
                 self.async_count(frame, None)?;
-                None
+                instruction.result.map(|_| RV::Scalar(frame))
             }
             l::InstructionKind::AsyncHandleRelease => {
                 let frame = self.expect_scalar(
@@ -678,33 +679,85 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.async_count(frame, Some((&instruction.pos, &instruction.traps)))?;
                 None
             }
-            l::InstructionKind::AsyncHandleArrayRetain => {
-                let array = self.expect_scalar(
-                    *operands
-                        .first()
-                        .ok_or_else(|| internal("async array retain has no array"))?,
-                )?;
-                self.call_runtime(self.ml.rt.async_retain_array, &[self.ctx, array], false)?;
-                None
-            }
-            l::InstructionKind::AsyncHandleArrayRelease => {
-                let array = self.expect_scalar(
-                    *operands
-                        .first()
-                        .ok_or_else(|| internal("async array release has no array"))?,
-                )?;
+            l::InstructionKind::AsyncHandleArrayRetain
+            | l::InstructionKind::AsyncHandleArrayRelease => {
+                let ty = operand_types
+                    .first()
+                    .and_then(|ty| match ty {
+                        l::ValueType::Data(ty) => Some(ty),
+                        _ => None,
+                    })
+                    .ok_or_else(|| internal("counted owner has no data type"))?;
+                let release = matches!(
+                    instruction.kind,
+                    l::InstructionKind::AsyncHandleArrayRelease
+                );
+                // An array acquire needs no element description. The handle-array
+                // release wrapper supplies its static leaf description.
+                let array_wrapper = matches!(ty, Type::Array(_)) && !release
+                    || matches!(ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)));
+                if array_wrapper {
+                    let array = self.expect_scalar(
+                        *operands
+                            .first()
+                            .ok_or_else(|| internal("counted owner has no operand"))?,
+                    )?;
+                    if release {
+                        let pos = self.position_id(&instruction.pos);
+                        let pos = self.iconst(types::I32, pos);
+                        self.call_runtime(
+                            self.ml.rt.async_release_array,
+                            &[self.ctx, array, pos],
+                            false,
+                        )?;
+                        for trap in &instruction.traps {
+                            self.emit_trap(trap, TrapOperand::Pending)?;
+                        }
+                    } else {
+                        self.call_runtime(
+                            self.ml.rt.async_retain_array,
+                            &[self.ctx, array],
+                            false,
+                        )?;
+                    }
+                    if let Some(result) = instruction.result {
+                        self.set_value(result, RV::Scalar(array))?;
+                    }
+                    return Ok(());
+                }
+                let description = crate::counted::description(&self.ml.layouts, ty)?;
+                let data = self.ml.literal_data(&description)?;
+                let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+                let description = self.builder.ins().symbol_value(types::I64, global);
+                let value = match operands
+                    .first()
+                    .copied()
+                    .ok_or_else(|| internal("counted owner has no operand"))?
+                {
+                    RV::Aggregate(address) => address,
+                    RV::Scalar(value) => {
+                        let address = self.stack_slot(8, 8);
+                        self.builder
+                            .ins()
+                            .store(MemFlags::trusted(), value, address, 0);
+                        address
+                    }
+                    _ => return Err(internal("counted owner has no representation")),
+                };
+                let operation = self.iconst(types::I32, i64::from(release));
                 let pos = self.position_id(&instruction.pos);
                 let pos = self.iconst(types::I32, pos);
                 self.call_runtime(
-                    self.ml.rt.async_release_array,
-                    &[self.ctx, array, pos],
+                    self.ml.rt.counted_value,
+                    &[self.ctx, value, description, operation, pos],
                     false,
                 )?;
-                // compiler.md §116.1 rule 4: the release can trap.
-                for trap in &instruction.traps {
-                    self.emit_trap(trap, TrapOperand::Pending)?;
+                if release {
+                    for trap in &instruction.traps {
+                        self.emit_trap(trap, TrapOperand::Pending)?;
+                    }
                 }
-                None
+                instruction.result.and_then(|_| operands.first().copied())
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let iterator_ty = match result_ty.as_ref() {
@@ -831,6 +884,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             // compiler.md §116.2 rule 3: the resume made the exception of an
             // exception completion pending; the raise site checks it.
             l::InstructionKind::AwaitRaise => {
+                self.consumed_traps.extend(
+                    instruction
+                        .traps
+                        .iter()
+                        .filter(|trap| trap.kind == l::TrapKind::Call)
+                        .cloned(),
+                );
                 self.trap_check();
                 None
             }

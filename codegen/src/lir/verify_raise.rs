@@ -31,7 +31,7 @@ pub(super) fn verify_raise_edges(
                     format!("{site} carries {edges} raise edges"),
                 ));
             }
-            if edges == 0 && is_raise_site(module, function, instruction) {
+            if edges == 0 && is_raise_site(module, function, block.id, instruction) {
                 errors.push(finding(
                     function,
                     format!(
@@ -119,6 +119,7 @@ pub(super) fn verify_raise_edges(
 /// call to a target that carries `can_raise`.
 fn verify_await_raises(module: &l::Module, function: &l::Function, errors: &mut Vec<VerifyError>) {
     let mut required = HashSet::new();
+    let mut reads = HashSet::new();
     for block in &function.blocks {
         let l::Terminator::Suspend {
             kind, successor, ..
@@ -131,6 +132,12 @@ fn verify_await_raises(module: &l::Module, function: &l::Function, errors: &mut 
             l::SuspendKind::AsyncCall { target, .. } => target_can_raise(module, target),
             l::SuspendKind::Yield(_) | l::SuspendKind::Async => false,
         };
+        if matches!(
+            kind,
+            l::SuspendKind::AsyncHandle { .. } | l::SuspendKind::AsyncCall { .. }
+        ) {
+            reads.insert(*successor);
+        }
         if raises {
             required.insert(*successor);
         }
@@ -140,7 +147,12 @@ fn verify_await_raises(module: &l::Module, function: &l::Function, errors: &mut 
             if !matches!(instruction.kind, l::InstructionKind::AwaitRaise) {
                 continue;
             }
-            if index != 0 || !required.contains(&block.id) {
+            let quiet_read = reads.contains(&block.id)
+                && instruction
+                    .traps
+                    .iter()
+                    .all(|trap| trap.kind == l::TrapKind::Call);
+            if index != 0 || (!required.contains(&block.id) && !quiet_read) {
                 errors.push(finding(
                     function,
                     format!(
@@ -283,13 +295,29 @@ fn verify_handler(
 /// Whether `instruction` can leave an exception pending.
 fn is_raise_site(
     module: &l::Module,
-    _function: &l::Function,
+    function: &l::Function,
+    block: l::BlockId,
     instruction: &l::Instruction,
 ) -> bool {
     let target = match &instruction.kind {
-        l::InstructionKind::Throw
-        | l::InstructionKind::ExceptionResume
-        | l::InstructionKind::AwaitRaise => return true,
+        l::InstructionKind::Throw | l::InstructionKind::ExceptionResume => return true,
+        l::InstructionKind::AwaitRaise => {
+            return function
+                .blocks
+                .iter()
+                .any(|source| match &source.terminator {
+                    l::Terminator::Suspend {
+                        successor, kind, ..
+                    } if *successor == block => match kind {
+                        l::SuspendKind::AsyncHandle { .. } => true,
+                        l::SuspendKind::AsyncCall { target, .. } => {
+                            target_can_raise(module, target)
+                        }
+                        _ => false,
+                    },
+                    _ => false,
+                })
+        }
         l::InstructionKind::Call(target) => target,
         _ => return false,
     };
@@ -619,7 +647,7 @@ mod tests {
     }
 
     /// The resume successors of main's three awaits, in block order, with
-    /// whether each starts with an `AwaitRaise`.
+    /// whether each starts with an `AwaitRaise` that has a raise edge.
     fn await_successors(function: &l::Function) -> Vec<(l::BlockId, bool)> {
         function
             .blocks
@@ -636,7 +664,10 @@ mod tests {
                 let starts = function.blocks[successor.0 as usize]
                     .instructions
                     .first()
-                    .is_some_and(|first| matches!(first.kind, l::InstructionKind::AwaitRaise));
+                    .is_some_and(|first| {
+                        matches!(first.kind, l::InstructionKind::AwaitRaise)
+                            && first.raise_edge().is_some()
+                    });
                 (successor, starts)
             })
             .collect()
@@ -704,6 +735,7 @@ mod tests {
             .insert(
                 0,
                 l::Instruction {
+                    count_action: None,
                     result: None,
                     kind: l::InstructionKind::AwaitRaise,
                     operands: Vec::new(),

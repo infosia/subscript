@@ -10,7 +10,9 @@ impl Interpreter<'_> {
         instruction: &l::Instruction,
     ) -> Result<(), InterpretError> {
         let enclosing_traps = std::mem::replace(&mut self.active_traps, instruction.traps.clone());
+        let action = std::mem::replace(&mut self.count_action, instruction.count_action.clone());
         let outcome = self.execute_instruction_effect(frame, function, instruction);
+        self.count_action = action;
         self.active_traps = enclosing_traps;
         outcome
     }
@@ -506,14 +508,14 @@ impl Interpreter<'_> {
                 };
                 let mut handle = handle.borrow_mut();
                 handle.owners = handle.owners.saturating_add(1);
-                None
+                instruction.result.and_then(|_| operands.first().cloned())
             }
             l::InstructionKind::AsyncHandleRelease => {
                 let value = operands
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?;
                 match value {
-                    Value::Coroutine(handle) => self.release_coroutine(handle)?,
+                    Value::Coroutine(handle) => self.release_coroutine(handle, &instruction.pos)?,
                     Value::Null => {}
                     _ => {
                         return Err(self.invalid(
@@ -524,41 +526,30 @@ impl Interpreter<'_> {
                 }
                 None
             }
-            l::InstructionKind::AsyncHandleArrayRetain => {
-                let array = operands
-                    .first()
-                    .ok_or_else(|| self.missing_operand(instruction, 0))?
-                    .as_handle()?;
-                let len = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) }.max(0)
-                    as usize;
-                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
-                for index in 0..len {
-                    let key = unsafe { (data.add(index * 8) as *const usize).read_unaligned() };
-                    if let Some(handle) = self.async_handles.borrow().get(&key).cloned() {
-                        let mut handle = handle.borrow_mut();
-                        handle.owners = handle.owners.saturating_add(1);
+            l::InstructionKind::AsyncHandleArrayRetain
+            | l::InstructionKind::AsyncHandleArrayRelease => {
+                let ty = match operand_types.first() {
+                    Some(l::ValueType::Data(ty)) => ty,
+                    _ => {
+                        return Err(self.invalid(
+                            Some(instruction.pos.clone()),
+                            "counted owner has no data type",
+                        ))
                     }
-                }
-                None
-            }
-            l::InstructionKind::AsyncHandleArrayRelease => {
-                let array = operands
+                };
+                let value = operands
                     .first()
-                    .ok_or_else(|| self.missing_operand(instruction, 0))?
-                    .as_handle()?;
-                // SAFETY: verified LIR restricts this instruction to a live
-                // dynamic array of pointer-sized async handles.
-                let len = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) }.max(0)
-                    as usize;
-                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
-                for index in 0..len {
-                    let key = unsafe { (data.add(index * 8) as *const usize).read_unaligned() };
-                    let handle = self.async_handles.borrow().get(&key).cloned();
-                    if let Some(handle) = handle {
-                        self.release_coroutine(&handle)?;
-                    }
-                }
-                None
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?;
+                self.counted_owner(
+                    ty,
+                    value,
+                    matches!(
+                        instruction.kind,
+                        l::InstructionKind::AsyncHandleArrayRelease
+                    ),
+                    &instruction.pos,
+                )?;
+                instruction.result.map(|_| value.clone())
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let subject_ty = self

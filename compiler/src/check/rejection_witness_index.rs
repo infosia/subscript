@@ -1363,7 +1363,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             variant: Divergence::NumberCoercionAndArguments,
         },
         RejectionSite::ArrayElementDomain => WitnessEntry::Reachable {
-            files: &["s027.ts", "s027-b.ts"],
+            files: &["s027.ts", "s027-b.ts", "s171-nested-counted-element.ts"],
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::ArrayJoinDomain => WitnessEntry::Reachable {
@@ -1379,7 +1379,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::ArrayMapResult => WitnessEntry::Reachable {
-            files: &["s031.ts", "s031-b.ts"],
+            files: &["s031.ts", "s031-b.ts", "s171-counted-callback-result.ts"],
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::MapGroupByKey => WitnessEntry::Reachable {

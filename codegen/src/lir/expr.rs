@@ -62,6 +62,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         &mut self,
         expr: &hir::Expr,
     ) -> Result<Option<l::Operand>, LowerError> {
+        self.scopes.push(HashMap::new());
+        let result = self.lower_expr_with_holds(expr)?;
+        self.finish_input_holds(result, &expr.ty, &expr.pos, true)
+    }
+
+    fn lower_expr_with_holds(
+        &mut self,
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
         use hir::ExprKind as K;
         let result = match &expr.kind {
             K::Int(value) => Some(l::Operand::Constant(l::Constant {
@@ -243,7 +252,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 target,
                 value,
                 update,
-            } => Some(self.lower_assignment(*op, *update, target, value, expr)?),
+            } => Some(self.lower_assignment(*op, *update, target, value, expr, true)?),
             K::Cast(value) => {
                 let value = self.require_expr(value)?;
                 let kind = if matches!(self.operand_type(&value, &expr.pos)?,
@@ -267,7 +276,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     expr.pos.clone(),
                 )?
             }
-            K::Call { callee, args } => self.lower_call(callee, args, expr)?,
+            K::Call { callee, args } => self.lower_call(callee, args, expr, true)?,
             K::New { class, args } => Some(self.lower_new(*class, args, expr)?),
             K::DescriptorLit { class, fields } => {
                 Some(self.lower_descriptor(*class, fields, expr)?)
@@ -288,47 +297,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             )?,
-            K::Field { obj, name } => {
-                let object = self.require_expr(obj)?;
-                let field = self.resolve_field(&obj.ty, name, &expr.pos)?;
-                let stored_type = self.resolved_field_type(field, &obj.ty, &expr.pos)?;
-                let value = self
-                    .emit(
-                        l::InstructionKind::LoadField(field),
-                        vec![object],
-                        Some(l::ValueType::Data(stored_type)),
-                        false,
-                        convert_traps(
-                            &expr
-                                .trap_sites_for_reload(self.lowering.hir, self.lowering.reload)
-                                .into_iter()
-                                .filter(|site| !matches!(site, hir::TrapSite::NullNarrowing { .. }))
-                                .collect::<Vec<_>>(),
-                        ),
-                        expr.pos.clone(),
-                    )?
-                    .expect("field load");
-                let value = self.coerce_shared_read(value, expr)?;
-                Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
-            }
-            K::Length(value) => {
-                let value = self.require_expr(value)?;
-                self.emit(
-                    l::InstructionKind::Length,
-                    vec![value],
-                    Some(l::ValueType::Data(expr.ty.clone())),
-                    false,
-                    convert_traps(
-                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
-                    ),
-                    expr.pos.clone(),
-                )?
-            }
-            K::Index { .. } => {
-                let place = self.prepare_place(expr)?;
-                let value = self.load_place(&place, &expr.pos)?;
-                Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
-            }
+            K::Field { .. } | K::Length(_) | K::Index { .. } => self.lower_read_expr(expr, true)?,
             K::ArrayLit(elements) => {
                 let element_type = match &expr.ty {
                     Type::Array(element) | Type::FixedArray(element, _) => (**element).clone(),
@@ -340,7 +309,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 };
                 let operands = elements
                     .iter()
-                    .map(|element| self.lower_stored_expr(&element_type, element))
+                    .enumerate()
+                    .map(|(index, element)| {
+                        let value = self.lower_stored_expr(&element_type, element)?;
+                        if self.input_needs_hold(element)
+                            && elements[index + 1..]
+                                .iter()
+                                .any(array_ownership::runs_user_code)
+                        {
+                            self.hold_input(&value, &expr.pos)?;
+                        }
+                        Ok(value)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let stored = elements
                     .iter()
@@ -371,12 +351,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 };
                 let operands = elements
                     .iter()
-                    .map(|element| {
-                        if element.spread.is_none() {
-                            self.lower_stored_expr(element_type, &element.expr)
+                    .enumerate()
+                    .map(|(index, element)| {
+                        let value = if element.spread.is_none() {
+                            self.lower_stored_expr(element_type, &element.expr)?
                         } else {
-                            self.require_expr(&element.expr)
+                            self.require_expr(&element.expr)?
+                        };
+                        if self.input_needs_hold(&element.expr)
+                            && elements[index + 1..]
+                                .iter()
+                                .any(|later| array_ownership::runs_user_code(&later.expr))
+                        {
+                            self.hold_input(&value, &expr.pos)?;
                         }
+                        Ok(value)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let spreads = elements
@@ -386,6 +375,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let stored = elements
                     .iter()
                     .enumerate()
+                    .filter(|(_, element)| element.spread != Some(hir::SpreadKind::Array))
                     .map(|(index, element)| StoredOperand {
                         index,
                         ty: l::ValueType::Data(if element.spread.is_none() {
@@ -397,7 +387,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         pos: element.expr.pos.clone(),
                     })
                     .collect();
-                self.emit_store_instruction(
+                let temporary_sources = elements.iter().zip(&operands).filter_map(|(element, operand)| {
+                    if element.spread == Some(hir::SpreadKind::Array)
+                        && matches!(operand, l::Operand::Value(value)
+                            if self.values.get(value.0 as usize).is_some_and(|definition| definition.fresh_owner)
+                                && !self.moved_async_owners.contains(value)) {
+                        Some((operand.clone(), element.expr.ty.clone(), element.expr.pos.clone()))
+                    } else { None }
+                }).collect::<Vec<_>>();
+                let result = self.emit_store_instruction(
                     l::InstructionKind::ArraySpreadLiteral(spreads),
                     operands,
                     stored,
@@ -406,7 +404,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
                     ),
                     expr.pos.clone(),
-                )?
+                )?;
+                for (value, ty, pos) in temporary_sources {
+                    self.release_owner(value.clone(), &l::ValueType::Data(ty), &pos)?;
+                    if let l::Operand::Value(value) = value {
+                        self.moved_async_owners.insert(value);
+                    }
+                }
+                result
             }
             K::Template(parts) => {
                 let mut operands = Vec::new();
@@ -475,7 +480,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::Yield(value) => {
                 let value = value
                     .as_deref()
-                    .map(|value| self.require_expr(value))
+                    .map(|value| {
+                        let operand = self.require_expr(value)?;
+                        self.acquire_owner(
+                            hir::AsyncCopySite::Return,
+                            &operand,
+                            &l::ValueType::Data(value.ty.clone()),
+                            &expr.pos,
+                        )?;
+                        Ok(operand)
+                    })
                     .transpose()?
                     .map(|value| self.terminator_value(value, &expr.pos))
                     .transpose()?;
@@ -643,6 +657,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         )?;
         self.current = Some(then_block);
         let then_value = self.lower_stored_expr(&expr.ty, then)?;
+        let then_value = self.own_conditional_branch(then_value, &expr.ty, &then.pos)?;
         let result_type = l::ValueType::Data(expr.ty.clone());
         let then_is_fresh = matches!(&then_value, l::Operand::Value(value)
             if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner));
@@ -651,6 +666,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.restore_bindings(&branch_state);
         self.current = Some(else_block);
         let else_value = self.lower_stored_expr(&expr.ty, els)?;
+        let else_value = self.own_conditional_branch(else_value, &expr.ty, &els.pos)?;
         let else_is_fresh = matches!(&else_value, l::Operand::Value(value)
             if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner));
         let edge = self.block_target(merge, vec![else_value])?;
@@ -676,13 +692,66 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(l::Operand::Value(result))
     }
 
-    fn lower_assignment(
+    pub(super) fn own_conditional_branch(
+        &mut self,
+        value: l::Operand,
+        ty: &Type,
+        pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
+        if ty.counted_type().is_none()
+            || matches!(&value, l::Operand::Value(id)
+            if self.values.get(id.0 as usize).is_some_and(|value| value.fresh_owner)
+                && !self.moved_async_owners.contains(id))
+        {
+            return Ok(value);
+        }
+        let kind = if matches!(ty, Type::AsyncHandle(_)) {
+            l::InstructionKind::AsyncHandleRetain
+        } else {
+            l::InstructionKind::AsyncHandleArrayRetain
+        };
+        let ty = l::ValueType::Data(ty.clone());
+        self.emit(
+            kind,
+            vec![value],
+            Some(ty.clone()),
+            false,
+            self.read_lifetime(&ty, pos),
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "conditional owner copy has no result"))
+    }
+
+    pub(super) fn lower_assignment(
         &mut self,
         op: Option<hir::BinOp>,
         update: Option<hir::UpdateKind>,
         target_expr: &hir::Expr,
         value_expr: &hir::Expr,
         whole: &hir::Expr,
+        result_used: bool,
+    ) -> Result<l::Operand, LowerError> {
+        self.scopes.push(HashMap::new());
+        let result = self.lower_assignment_with_holds(
+            op,
+            update,
+            target_expr,
+            value_expr,
+            whole,
+            result_used,
+        )?;
+        self.finish_input_holds(Some(result), &whole.ty, &whole.pos, result_used)?
+            .ok_or_else(|| self.error(&whole.pos, "assignment has no result"))
+    }
+
+    fn lower_assignment_with_holds(
+        &mut self,
+        op: Option<hir::BinOp>,
+        update: Option<hir::UpdateKind>,
+        target_expr: &hir::Expr,
+        value_expr: &hir::Expr,
+        whole: &hir::Expr,
+        result_used: bool,
     ) -> Result<l::Operand, LowerError> {
         let traps =
             convert_traps(&whole.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
@@ -730,6 +799,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             };
         }
         let mut place = self.prepare_place(target_expr)?;
+        if array_ownership::runs_user_code(value_expr) {
+            if let PreparedPlaceKind::Index {
+                base: PreparedBase::Value(value),
+                ..
+            } = &place.kind
+            {
+                if matches!(&target_expr.kind, hir::ExprKind::Index { obj, .. } if self.input_needs_hold(obj))
+                {
+                    self.hold_input(value, &whole.pos)?;
+                }
+            }
+        }
         let direct_index = matches!(place.kind, PreparedPlaceKind::Index { .. });
         let old = if op.is_some() {
             let old = self.load_place(&place, &target_expr.pos)?;
@@ -763,6 +844,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             stored
         };
         self.store_place(&place, result.clone(), &target_expr.pos)?;
+        let result = if let PreparedPlaceKind::Index {
+            base: PreparedBase::Value(receiver),
+            ..
+        } = &place.kind
+        {
+            let value = assigned_value.take().unwrap_or(result);
+            self.finish_temporary_read(value, receiver, &whole.ty, &whole.pos, result_used)?
+        } else {
+            assigned_value.take().unwrap_or(result)
+        };
         if update == Some(hir::UpdateKind::Postfix) {
             old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))
         } else {

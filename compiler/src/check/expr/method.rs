@@ -291,6 +291,9 @@ impl<'p> Checker<'p> {
     /// The [`hir::ArrElemKind`] of an array element type under this
     /// program's class table (value classes excluded, stdlib.md §9).
     fn arr_elem_kind(&self, ty: &Type) -> Option<hir::ArrElemKind> {
+        if self.apparent_type(ty).counted_type().is_some() {
+            return None;
+        }
         let classes = &self.classes;
         hir::ArrElemKind::of(ty, &|id| classes.get(id.0).is_some_and(|c| c.is_value))
     }
@@ -311,6 +314,21 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         use ArrFn as A;
         let arr_ty = Type::array(elem.clone());
+        if matches!(
+            f.counted_class(),
+            hir::CountedArrayMethod::Callback | hir::CountedArrayMethod::Search
+        ) && !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::ArrayElementKind,
+            &elem,
+        ) && self.apparent_type(&elem).counted_type().is_some()
+        {
+            self.reject_subset(
+                RejectionSite::ArrayElementDomain,
+                format!("`{}` cannot carry a counted element type (§171)", f.name()),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let mk = |args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             pending_work: None,
             kind: ExprKind::Call {
@@ -961,6 +979,18 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::ArrayElementKind,
+            &elem,
+        ) && self.apparent_type(&elem).counted_type().is_some()
+        {
+            self.reject_subset(
+                RejectionSite::ArrayElementDomain,
+                "`Map.groupBy` cannot carry a counted element type (§171)",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let callback = self.check_arr_callback(
             &c.args[1],
             vec![elem.clone()],
@@ -1693,6 +1723,40 @@ impl<'p> Checker<'p> {
             allow_index,
             ..
         } = spec;
+        let counted_callback = method == "Map.groupBy"
+            || ArrFn::ALL.iter().any(|operation| {
+                operation.name() == method
+                    && operation.counted_class() == hir::CountedArrayMethod::Callback
+            });
+        if counted_callback {
+            if let Type::Func(function) = self.apparent_type(&checked.ty) {
+                if !self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::ArrayElementKind,
+                    &function.ret,
+                ) && self.apparent_type(&function.ret).counted_type().is_some()
+                {
+                    self.reject_subset(
+                        RejectionSite::ArrayMapResult,
+                        format!("`{method}` cannot carry a counted callback result (§171)"),
+                        checked.pos.clone(),
+                    );
+                    return self.err_expr(checked.pos);
+                }
+                if function.params.iter().any(|parameter| {
+                    !self.instance_restriction(
+                        crate::check::opaque::InstanceRestriction::ArrayElementKind,
+                        parameter,
+                    ) && self.apparent_type(parameter).counted_type().is_some()
+                }) {
+                    self.reject_subset(
+                        RejectionSite::ArrayElementDomain,
+                        format!("`{method}` cannot carry a counted callback parameter (§171)"),
+                        checked.pos.clone(),
+                    );
+                    return self.err_expr(checked.pos);
+                }
+            }
+        }
         let ok = match &self.apparent_type(&checked.ty) {
             Type::Error => true,
             Type::Func(ft) => {

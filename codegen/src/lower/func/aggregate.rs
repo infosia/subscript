@@ -240,6 +240,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 Some(l::SpreadKind::Array) => {
                     let source = self.expect_scalar(*value)?;
+                    self.acquire_copied_array_elements(source, pos)?;
                     self.call_runtime(
                         self.ml.rt.array_spread_array,
                         &[self.ctx, handle, source, position],
@@ -278,6 +279,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             if let Some(trap) = trap {
                 self.emit_trap(trap, TrapOperand::Pending)?;
             }
+        }
+        for trap in traps.iter().filter(|trap| trap.kind == l::TrapKind::Call) {
+            self.emit_trap(trap, TrapOperand::Pending)?;
         }
         Ok(RV::Scalar(handle))
     }

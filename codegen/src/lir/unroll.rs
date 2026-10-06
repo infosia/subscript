@@ -584,6 +584,7 @@ fn append_instructions(
             None
         };
         output.push(l::Instruction {
+            count_action: template.count_action.clone(),
             result,
             kind: template.kind.clone(),
             operands,

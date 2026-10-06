@@ -376,27 +376,43 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         output: &str,
         size: &str,
     ) -> Result<(), String> {
-        let l::Terminator::Suspend { pos, .. } = &block.terminator else {
+        let l::Terminator::Suspend { pos, successor, .. } = &block.terminator else {
             return Err(internal("completion read on a non-suspend block"));
         };
         let pos = self.emitter.pos_id(pos);
         let handle = format!("frame->b{}_child", block.id.0);
-        let cached = self.emitter.runtime_call(
-            "uint8_t",
-            "subscript_rt_async_result",
-            &[
-                "void*".into(),
-                "const void*".into(),
-                "void*".into(),
-                "uint64_t".into(),
-            ],
-            &[
-                "ctx".into(),
-                handle.clone(),
-                output.to_string(),
-                size.to_string(),
-            ],
-        );
+        let action = self.function.blocks[successor.0 as usize]
+            .instructions
+            .first()
+            .and_then(|instruction| instruction.count_action.as_ref())
+            .ok_or_else(|| internal("completion read has no count action"))?;
+        let mut types = vec![
+            "void*".into(),
+            "const void*".into(),
+            "void*".into(),
+            "uint64_t".into(),
+        ];
+        let mut arguments = vec!["ctx".into(), handle.clone(), output.into(), size.into()];
+        let symbol = if let Some(ty) = action.release_type() {
+            let bytes = crate::counted::description(&self.emitter.layouts, &ty)?;
+            let words = bytes
+                .chunks_exact(8)
+                .map(|word| {
+                    let mut bytes = [0; 8];
+                    bytes.copy_from_slice(word);
+                    format!("{}ULL", u64::from_ne_bytes(bytes))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            types.push("const void*".into());
+            arguments.push(format!("(const uint64_t[]){{{words}}}"));
+            "subscript_rt_async_result_counted"
+        } else {
+            "subscript_rt_async_result_uncounted"
+        };
+        let cached = self
+            .emitter
+            .runtime_call("uint8_t", symbol, &types, &arguments);
         let done = self.fresh();
         let _ = writeln!(out, "    uint8_t {done} = {cached};");
         let missing = self.emitter.runtime_call(

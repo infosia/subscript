@@ -29,8 +29,26 @@ pub unsafe extern "C" fn subscript_rt_async_register(
     ctx: *mut Context,
     frame: *mut u8,
     result_size: u64,
+    description: *const u8,
 ) {
-    unsafe { &mut *ctx }.async_register(frame, result_size as usize);
+    let ctx = unsafe { &mut *ctx };
+    unsafe { ctx.async_register(frame, result_size as usize) };
+    if !description.is_null() {
+        ctx.async_set_result_description(frame, description);
+    }
+}
+
+/// Registers an uncounted frame with no completion release description (§171).
+///
+/// # Safety
+/// The frame is a fresh live generated async frame owned by the Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_register_uncounted(
+    ctx: *mut Context,
+    frame: *mut u8,
+    result_size: u64,
+) {
+    unsafe { (&mut *ctx).async_register(frame, result_size as usize) };
 }
 
 /// Parks a frame suspended at `Context.suspend()` (`compiler.md` §94.1
@@ -113,49 +131,91 @@ pub unsafe extern "C" fn subscript_rt_async_release(
     unsafe { &mut *ctx }.async_release(frame, pos_id);
 }
 
-/// Releases every held async handle stored in a dynamic array.
+/// Acquires or releases an owner from its generated static description.
 ///
 /// # Safety
+/// `value` and `description` match and remain readable through the call.
+/// The description uses three native-endian u64 words per node (§171).
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_counted_value(
+    ctx: *mut Context,
+    value: *const u8,
+    description: *const u8,
+    release: u32,
+    pos_id: u32,
+) {
+    unsafe { (&mut *ctx).counted_value(value, description, release != 0, pos_id) };
+}
+
+/// Acquires copied elements or replaces a counted array range.
+/// Operation 0 acquires all elements, 1 fills, and 2 copies within the array.
 ///
-/// Shared contract; `array` is null or a live dynamic array of registered
-/// async-frame pointers owned by `ctx`.
+/// # Safety
+/// The array is live. The description matches its element type.
+/// For operation 1, `value` contains one readable element.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn subscript_rt_counted_array_operation(
+    ctx: *mut Context,
+    array: *mut u8,
+    description: *const u8,
+    operation: u32,
+    value: *const u8,
+    target: i32,
+    start: i32,
+    end: i32,
+    pos_id: u32,
+) {
+    unsafe {
+        (&mut *ctx).counted_array_operation(
+            array,
+            description,
+            operation,
+            value,
+            target,
+            start,
+            end,
+            pos_id,
+        )
+    };
+}
+
+/// Changes an array holder count or frees its exhausted storage.
+/// Operation 0 acquires, 1 releases, and 2 frees after element release.
+/// Returns one when operation 1 removes the last holder.
+///
+/// # Safety
+/// `array` is null or live. Operation 2 requires a zero holder count.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_holder(
+    ctx: *mut Context,
+    array: *mut u8,
+    operation: u32,
+    pos_id: u32,
+) -> u8 {
+    u8::from(unsafe { (&mut *ctx).array_holder(array, operation, pos_id) })
+}
+
+/// Releases one dynamic array holder and its handle elements at zero.
+///
+/// # Safety
+/// `array` is null or a live handle array with one owned holder.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_async_release_array(
     ctx: *mut Context,
     array: *const u8,
     pos_id: u32,
 ) {
-    if array.is_null() {
-        return;
-    }
-    let runtime = unsafe { &mut *ctx };
-    let len = unsafe { runtime.array_len(array) }.max(0) as usize;
-    let data = unsafe { runtime.array_data(array) };
-    for index in 0..len {
-        // Async handles are pointer-sized scalar array elements.
-        let frame = unsafe { (data.add(index * 8) as *const *mut u8).read_unaligned() };
-        unsafe { runtime.async_release(frame, pos_id) };
-    }
+    unsafe { (&mut *ctx).release_handle_array(array.cast_mut(), pos_id) };
 }
 
-/// Retains every held async handle stored in a dynamic array.
+/// Acquires one holder of a dynamic array of handles.
 ///
 /// # Safety
-///
-/// Shared contract; `array` is null or a live dynamic array of registered
-/// async-frame pointers owned by `ctx`.
+/// `array` is null or a live handle array.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_async_retain_array(ctx: *mut Context, array: *const u8) {
-    if array.is_null() {
-        return;
-    }
-    let runtime = unsafe { &mut *ctx };
-    let len = unsafe { runtime.array_len(array) }.max(0) as usize;
-    let data = unsafe { runtime.array_data(array) };
-    for index in 0..len {
-        let frame = unsafe { (data.add(index * 8) as *const *mut u8).read_unaligned() };
-        unsafe { runtime.async_retain(frame) };
-    }
+    unsafe { (&mut *ctx).array_holder(array.cast_mut(), 0, 0) };
 }
 
 /// Returns one when a reload-mode frame predates the current Context epoch.
@@ -184,7 +244,7 @@ pub unsafe extern "C" fn subscript_rt_async_complete(
     unsafe { &mut *ctx }.async_complete(frame, value, size as usize);
 }
 
-/// Copies the cached fulfilled representation for a later held await.
+/// Copies the cached fulfilled representation without acquiring a counted owner.
 /// An exception completion becomes the pending exception instead
 /// (`compiler.md` §116.1 rule 2).
 ///
@@ -200,6 +260,40 @@ pub unsafe extern "C" fn subscript_rt_async_result(
     size: u64,
 ) -> u8 {
     u8::from(unsafe { &mut *ctx }.async_result(frame, out, size as usize))
+}
+
+/// Reads an uncounted completion without a release-description lookup.
+///
+/// # Safety
+/// The frame is registered. The output holds `size` writable bytes, or is null for zero size.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_result_uncounted(
+    ctx: *mut Context,
+    frame: *const u8,
+    out: *mut u8,
+    size: u64,
+) -> u8 {
+    u8::from(unsafe { (&mut *ctx).async_result_uncounted(frame, out, size as usize) })
+}
+
+/// Reads a counted completion with the LIR instruction's release description.
+///
+/// # Safety
+/// The frame is registered. The output and description match its fulfilled type and remain live.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_result_counted(
+    ctx: *mut Context,
+    frame: *const u8,
+    out: *mut u8,
+    size: u64,
+    description: *const u8,
+) -> u8 {
+    let ctx = unsafe { &mut *ctx };
+    let completed = unsafe { ctx.async_result_uncounted(frame, out, size as usize) };
+    if completed && size != 0 && !ctx.exception_pending() {
+        unsafe { ctx.counted_value(out, description, false, 0) };
+    }
+    u8::from(completed)
 }
 
 /// Creates an aggregate handle from an array snapshot (§166).

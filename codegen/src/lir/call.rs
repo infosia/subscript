@@ -8,6 +8,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         callee: &hir::Callee,
         args: &[hir::Expr],
         expr: &hir::Expr,
+        result_used: bool,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        self.scopes.push(HashMap::new());
+        let result = self.lower_call_with_holds(callee, args, expr, result_used)?;
+        self.finish_input_holds(result, &expr.ty, &expr.pos, result_used)
+    }
+
+    fn lower_call_with_holds(
+        &mut self,
+        callee: &hir::Callee,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+        result_used: bool,
     ) -> Result<Option<l::Operand>, LowerError> {
         if let hir::Callee::Arr(operation) = callee {
             let static_operation = matches!(
@@ -98,6 +111,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let foreign = matches!(kind, l::CallTargetKind::Foreign(_));
         let explicit_offset = operands.len();
+        if args.iter().any(array_ownership::runs_user_code)
+            || params
+                .iter()
+                .filter_map(|parameter| parameter.default.as_ref())
+                .any(array_ownership::runs_user_code)
+        {
+            let stable_receiver =
+                matches!(callee, hir::Callee::Method { recv, .. } if !self.input_needs_hold(recv));
+            if !stable_receiver {
+                for operand in &operands {
+                    self.hold_input(operand, &expr.pos)?;
+                }
+            }
+        }
         let explicit = self.lower_call_arguments(
             defaults::DefaultOwner::from_target(&kind),
             &params,
@@ -139,12 +166,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             },
             return_type: return_type.clone(),
         };
-        let stored = if foreign {
+        let stored: Vec<StoredOperand> = if foreign {
             Vec::new()
         } else {
             params
                 .iter()
                 .enumerate()
+                .filter(|(index, _)| match callee {
+                    hir::Callee::Arr(hir::ArrFn::Unshift) => *index == 1,
+                    hir::Callee::Arr(_) => false,
+                    _ => true,
+                })
                 .map(|(index, parameter)| StoredOperand {
                     index: explicit_offset + index,
                     ty: l::ValueType::Data(parameter.ty.clone()),
@@ -176,7 +208,27 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .into_iter()
             .filter(|trap| trap.kind != l::TrapKind::Allocation)
             .collect();
-        let result = self.emit_store_instruction(
+        let temporaries = operands
+            .iter()
+            .enumerate()
+            .filter_map(|(index, operand)| {
+                let l::Operand::Value(value) = operand else {
+                    return None;
+                };
+                if !self
+                    .values
+                    .get(value.0 as usize)
+                    .is_some_and(|definition| definition.fresh_owner)
+                    || self.moved_async_owners.contains(value)
+                    || stored.iter().any(|store| store.index == index)
+                {
+                    return None;
+                }
+                let ty = self.values[value.0 as usize].ty.clone();
+                is_async_owner_type(&ty).then(|| (operand.clone(), ty))
+            })
+            .collect::<Vec<_>>();
+        let mut result = self.emit_store_instruction(
             l::InstructionKind::Call(target),
             operands,
             stored,
@@ -184,6 +236,30 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             call_traps,
             expr.pos.clone(),
         )?;
+        if result_used && !temporaries.is_empty() {
+            if let Some(l::Operand::Value(value)) = &result {
+                let definition = self.values[value.0 as usize].clone();
+                if is_async_owner_type(&definition.ty) && !definition.fresh_owner {
+                    let kind = if matches!(definition.ty, l::ValueType::Data(Type::AsyncHandle(_)))
+                    {
+                        l::InstructionKind::AsyncHandleRetain
+                    } else {
+                        l::InstructionKind::AsyncHandleArrayRetain
+                    };
+                    result = self.emit(
+                        kind,
+                        vec![l::Operand::Value(*value)],
+                        Some(definition.ty.clone()),
+                        false,
+                        self.read_lifetime(&definition.ty, &expr.pos),
+                        expr.pos.clone(),
+                    )?;
+                }
+            }
+        }
+        for (value, ty) in temporaries {
+            self.discard_owner(hir::AsyncCopySite::DiscardedResult, value, &ty, &expr.pos)?;
+        }
         for (owner, ty, pos) in deleted_field_owners {
             self.release_owner(owner, &ty, &pos)?;
         }
@@ -733,6 +809,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 self.lower_argument_value(&parameter.ty, argument)?
             };
+            let later_user_code = args[index + 1..]
+                .iter()
+                .any(array_ownership::runs_user_code)
+                || params
+                    .iter()
+                    .skip(args.len())
+                    .filter_map(|parameter| parameter.default.as_ref())
+                    .any(array_ownership::runs_user_code);
+            if later_user_code && self.input_needs_hold(argument) {
+                self.hold_input(&value, &argument.pos)?;
+            }
             self.record_argument(
                 index,
                 parameter,
@@ -780,6 +867,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             })?;
             let value =
                 self.lower_default_function(owner, params, index, default, receiver, pending)?;
+            if params[index + 1..]
+                .iter()
+                .filter_map(|parameter| parameter.default.as_ref())
+                .any(array_ownership::runs_user_code)
+            {
+                self.hold_input(&value, &parameter.pos)?;
+            }
             self.record_argument(index, parameter, None, value, foreign, pending)?;
         }
         Ok(())

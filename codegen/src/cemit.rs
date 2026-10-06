@@ -32,6 +32,7 @@ mod async_count;
 mod body;
 mod call;
 mod collection;
+mod counted_array;
 mod emitter;
 mod exception;
 mod graph;
@@ -666,7 +667,7 @@ extern double subscript_rt_fmod(void* ctx, double left, double right);
 
 typedef uint8_t (*SubAsyncResume)(void*, void*, void*);
 typedef struct { const unsigned char* data; uint64_t len; } SubStringAliasMember;
-typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; } SsArrayHeader;
+typedef struct { uint64_t len; uint64_t cap; uint64_t elem_size; unsigned char* data; uint32_t holders; } SsArrayHeader;
 typedef struct { int32_t state; uint32_t reserved; SubAsyncResume resume; } SubCoroutinePrefix;
 
 static int8_t subscript_f2i8(double v) { if (v != v) return 0; if (v <= -128.0) return -128; if (v >= 127.0) return 127; return (int8_t)v; }
@@ -694,6 +695,7 @@ mod tests {
         let pos = Pos::new("emission-index.ts", 1, 1);
         let operand = |value| l::Operand::Value(l::ValueId(value));
         let instruction = |result: Option<u32>, kind, operands| l::Instruction {
+            count_action: None,
             result: result.map(l::ValueId),
             kind,
             operands,
@@ -929,6 +931,7 @@ mod tests {
             })
             .collect();
         let instruction = |result, kind, operands| l::Instruction {
+            count_action: None,
             result: Some(l::ValueId(result)),
             kind,
             operands,

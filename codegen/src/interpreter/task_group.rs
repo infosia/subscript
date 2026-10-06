@@ -4,6 +4,7 @@ use super::*;
 use subscript_compiler::hir::TaskGroupOperation as G;
 
 pub(super) struct Group {
+    pos: Pos,
     closed: bool,
     pub(super) inputs: Vec<Option<Rc<RefCell<Coroutine>>>>,
     finished: usize,
@@ -27,6 +28,7 @@ impl Interpreter<'_> {
             self.task_groups.insert(
                 id,
                 Rc::new(RefCell::new(Group {
+                    pos: pos.clone(),
                     closed: false,
                     inputs: Vec::new(),
                     finished: 0,
@@ -53,7 +55,7 @@ impl Interpreter<'_> {
                 };
                 if group.borrow().closed {
                     // The closed-group fault owns this operation, including argument release.
-                    let _ = self.release_coroutine(input);
+                    let _ = self.release_coroutine(input, pos);
                     return Err(group_trap(pos, "add to a closed task group".into()));
                 }
                 let index = group.borrow().inputs.len();
@@ -157,12 +159,14 @@ impl Interpreter<'_> {
                 }
             }
         }
-        self.release_coroutine(&input)?;
+        let pos = group.borrow().pos.clone();
+        self.release_coroutine(&input, &pos)?;
         self.task_group_settle(group)
     }
 
     fn task_group_settle(&mut self, group: &Rc<RefCell<Group>>) -> Result<(), InterpretError> {
         let state = group.borrow();
+        let pos = state.pos.clone();
         if state.finished != state.inputs.len() {
             return Ok(());
         }
@@ -187,7 +191,7 @@ impl Interpreter<'_> {
         let dropped = state.owners == 0;
         drop(state);
         if dropped {
-            self.release_coroutine(&handle)?;
+            self.release_coroutine(&handle, &pos)?;
         }
         Ok(())
     }

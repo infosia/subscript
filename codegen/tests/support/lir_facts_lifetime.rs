@@ -19,6 +19,24 @@ pub(super) fn expression(
     expected: &mut BTreeMap<TrapKey, usize>,
 ) {
     use hir::{Callee, ExprKind as K};
+    let counted_action = match &expr.kind {
+        K::Call {
+            callee: Callee::Arr(hir::ArrFn::Fill | hir::ArrFn::CopyWithin),
+            args,
+        } => args
+            .first()
+            .is_some_and(|receiver| receiver.ty.counted_type().is_some()),
+        K::ArraySpreadLit(_) | K::AsyncCall { .. } | K::AsyncHandleAwait(_) => {
+            expr.ty.counted_type().is_some()
+        }
+        _ => false,
+    };
+    if counted_action {
+        let site = hir::TrapSite::Call {
+            pos: expr.pos.clone(),
+        };
+        *expected.entry(hir_trap_key(&site)).or_default() += 1;
+    }
     match &expr.kind {
         K::Assign {
             op: Some(_),
@@ -51,8 +69,11 @@ pub(super) fn expression(
         } => {
             if let Some(argument) = args.first() {
                 if let Type::Class(id) = argument.ty {
-                    let count = hir.classes[id.0].fields.iter().filter(|field|
-                        matches!(&field.ty, Type::AsyncHandle(_)) || matches!(&field.ty, Type::Array(inner) if matches!(**inner, Type::AsyncHandle(_)))) .count();
+                    let count = hir.classes[id.0]
+                        .fields
+                        .iter()
+                        .filter(|field| field.ty.counted_type().is_some())
+                        .count();
                     let site = hir::TrapSite::DevOnlyRelease {
                         operand: hir::LifetimeOperand::Argument(0),
                         pos: expr.pos.clone(),

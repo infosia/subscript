@@ -1,0 +1,32 @@
+literal 1 2
+synchronous parameter 2
+push 3
+shift 1
+unshift 4
+index 4
+fill 4 4
+before copy 5
+copyWithin 41 41
+reuse 99
+live after copy 41
+alias push 4 4
+reverse 4
+fill receiver 4
+copy receiver 4
+new arrays 4 4
+splice 4
+at 4
+length 3
+for of 4
+for of 4
+for of 4
+return 4
+global 4
+async parameter 60
+nested 61
+fixed 62 63
+completion handle 70
+completion handle again 70
+completion array 80
+completion array again 80
+end

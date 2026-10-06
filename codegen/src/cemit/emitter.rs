@@ -892,12 +892,35 @@ impl<'m> Emitter<'m> {
             } else {
                 format!("(uint64_t)sizeof({})", self.ctype(&function.return_type)?)
             };
-            let register = self.runtime_call(
-                "void",
-                "subscript_rt_async_register",
-                &["void*".into(), "void*".into(), "uint64_t".into()],
-                &["ctx".into(), "frame".into(), result_size],
-            );
+            let description = if function.return_type.counted_type().is_some() {
+                let bytes = crate::counted::description(&self.layouts, &function.return_type)?;
+                let words = bytes
+                    .chunks_exact(8)
+                    .map(|word| {
+                        let mut bytes = [0; 8];
+                        bytes.copy_from_slice(word);
+                        format!("{}ULL", u64::from_ne_bytes(bytes))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let _ = writeln!(
+                    out,
+                    "    static const uint64_t result_description[] = {{{words}}};"
+                );
+                "result_description".to_string()
+            } else {
+                "NULL".to_string()
+            };
+            let mut types = vec!["void*".into(), "void*".into(), "uint64_t".into()];
+            let mut arguments = vec!["ctx".into(), "frame".into(), result_size];
+            let symbol = if function.return_type.counted_type().is_some() {
+                types.push("const void*".into());
+                arguments.push(description);
+                "subscript_rt_async_register"
+            } else {
+                "subscript_rt_async_register_uncounted"
+            };
+            let register = self.runtime_call("void", symbol, &types, &arguments);
             let _ = writeln!(out, "    {register};");
         }
         for parameter in &function.parameters {

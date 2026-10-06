@@ -106,8 +106,9 @@ pub(super) fn verify_instruction_contract(
         }
     }
     if let Some(result) = instruction.result {
-        let expected_fresh = instruction.kind.produces_fresh_async_owner()
-            && result_type.as_ref().is_some_and(is_async_owner_type);
+        let expected_fresh =
+            array_ownership::produces_fresh_owner(&module.intrinsic_operations, &instruction.kind)
+                && result_type.as_ref().is_some_and(is_async_owner_type);
         if function
             .values
             .get(result.0 as usize)
@@ -509,7 +510,12 @@ pub(super) fn verify_instruction_contract(
                     operand_types.first(),
                     Some(l::ValueType::Data(Type::AsyncHandle(_)))
                 )
-                || instruction.result.is_some()
+                || (instruction.result.is_some()
+                    && (!matches!(
+                        instruction.kind,
+                        l::InstructionKind::AsyncHandleRetain
+                            | l::InstructionKind::AsyncHandleArrayRetain
+                    ) || result_type.as_ref() != operand_types.first()))
             {
                 bad("async handle ownership instruction is invalid", errors);
             }
@@ -520,9 +526,13 @@ pub(super) fn verify_instruction_contract(
         l::InstructionKind::AsyncHandleArrayRetain
         | l::InstructionKind::AsyncHandleArrayRelease => {
             if operand_types.len() != 1
-                || !matches!(operand_types.first(), Some(l::ValueType::Data(Type::Array(element)))
-                    if matches!(&**element, Type::AsyncHandle(_)))
-                || instruction.result.is_some()
+                || !matches!(operand_types.first(), Some(l::ValueType::Data(ty)) if ty.counted_type().is_some())
+                || (instruction.result.is_some()
+                    && (!matches!(
+                        instruction.kind,
+                        l::InstructionKind::AsyncHandleRetain
+                            | l::InstructionKind::AsyncHandleArrayRetain
+                    ) || result_type.as_ref() != operand_types.first()))
             {
                 bad("async handle array release signature is invalid", errors);
             }

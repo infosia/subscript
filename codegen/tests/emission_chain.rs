@@ -46,6 +46,7 @@ fn chain_module(n: u32) -> l::Module {
                 vec![l::ValueId(n + id - 1)]
             },
             instructions: vec![l::Instruction {
+                count_action: None,
                 result: Some(l::ValueId(id)),
                 kind: l::InstructionKind::Copy,
                 operands: vec![l::Operand::Constant(l::Constant {

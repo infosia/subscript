@@ -880,3 +880,46 @@ fn language_layout_matches_c_offsetof_for_every_mirrored_struct() {
         failures.join("\n")
     );
 }
+
+#[test]
+fn emitted_array_header_matches_the_40_byte_payload() {
+    let module = check_program(&[SourceFile::new(
+        "array-layout.ts",
+        "export function main(): void { const values: i32[] = [1]; print(`${values.length}`); }",
+    )])
+    .expect("array layout source checks");
+    let program = subscript_codegen::emit_c(&module).expect("emit the actual header");
+    let header = program
+        .source
+        .lines()
+        .find(|line| line.ends_with("} SsArrayHeader;"))
+        .expect("emitted array header");
+    let mut source = format!("#include <stdint.h>\n#include <stddef.h>\n{header}\n");
+    for (field, offset) in [
+        ("len", 0),
+        ("cap", 8),
+        ("elem_size", 16),
+        ("data", 24),
+        ("holders", 32),
+    ] {
+        source.push_str(&format!(
+            "_Static_assert(offsetof(SsArrayHeader, {field}) == {offset}, \"{field}\");\n"
+        ));
+    }
+    source.push_str("_Static_assert(sizeof(SsArrayHeader) == 40, \"payload size\");\n");
+    let dir = TempDir::new();
+    let path = dir.path.join("array-layout.c");
+    std::fs::write(&path, source).expect("write the layout assertions");
+    let result = host_c_compiler()
+        .expect("resolve the C compiler")
+        .command()
+        .args(["-std=c11", "-fsyntax-only"])
+        .arg(path)
+        .output()
+        .expect("compile the layout assertions");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}

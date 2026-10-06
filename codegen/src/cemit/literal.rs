@@ -159,7 +159,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         let element = (**element).clone();
         let destination = result.ok_or_else(|| internal("spread result is missing"))?;
-        let mut traps = instruction.traps.iter();
+        let mut traps = instruction
+            .traps
+            .iter()
+            .filter(|trap| trap.kind != l::TrapKind::Call);
         let initial = traps
             .next()
             .ok_or_else(|| internal("spread literal has no allocation trap"))?;
@@ -183,6 +186,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .ok_or_else(|| internal("spread part has no allocation trap"))?;
             self.consume(trap);
             let pos = self.emitter.pos_id(&trap.pos);
+            if *spread == Some(l::SpreadKind::Array)
+                && instruction
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                    .is_some()
+            {
+                self.emit_counted_array_operation(
+                    out,
+                    operand,
+                    0,
+                    "NULL",
+                    "0",
+                    "0",
+                    "0",
+                    instruction,
+                )?;
+            }
             let call = match spread {
                 None => {
                     let pointer = self.materialize(out, operand, &element)?;
@@ -280,6 +301,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         if traps.next().is_some() {
             return Err(internal("spread literal has unused traps"));
+        }
+        for trap in instruction
+            .traps
+            .iter()
+            .filter(|trap| trap.kind == l::TrapKind::Call)
+        {
+            self.consume(trap);
         }
         Ok(())
     }

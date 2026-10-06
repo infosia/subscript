@@ -107,6 +107,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 } else {
                     PreparedBase::Value(self.require_expr(obj)?)
                 };
+                if self.input_needs_hold(obj) && array_ownership::runs_user_code(index) {
+                    if let PreparedBase::Value(value) = &base {
+                        self.hold_input(value, &expr.pos)?;
+                    }
+                }
                 let index = self.require_expr(index)?;
                 PreparedPlaceKind::Index {
                     base,

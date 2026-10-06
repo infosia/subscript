@@ -488,6 +488,7 @@ fn a_lifetime_site_on_a_scalar_operand_is_rejected() {
             .find(|instruction| matches!(instruction.kind, l::InstructionKind::Binary(_)))
             .unwrap();
         *instruction = l::Instruction {
+            count_action: None,
             kind: l::InstructionKind::Copy,
             operands: vec![instruction.operands[0].clone()],
             traps: vec![l::Trap {

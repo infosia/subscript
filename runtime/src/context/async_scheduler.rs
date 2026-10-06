@@ -88,6 +88,7 @@ pub(super) enum AsyncKind {
 pub(super) enum RuntimeTask {
     Aggregate(Aggregate),
     GroupJoin(usize),
+    CountedInvocation(usize),
 }
 impl AsyncKind {
     pub(super) fn aggregate(&self) -> Option<&Aggregate> {
@@ -108,21 +109,13 @@ impl AsyncKind {
             _ => None,
         }
     }
-    pub(super) fn join_group(&self) -> Option<usize> {
-        match self {
-            Self::Runtime(task) => match task.as_ref() {
-                RuntimeTask::GroupJoin(group) => Some(*group),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
     pub(super) fn task_kind(&self) -> u32 {
         match self {
             Self::Invocation => 1,
             Self::Runtime(task) => match task.as_ref() {
                 RuntimeTask::Aggregate(_) => 2,
                 RuntimeTask::GroupJoin(_) => 3,
+                RuntimeTask::CountedInvocation(_) => 1,
             },
         }
     }
@@ -170,6 +163,14 @@ impl Context {
                 kind: AsyncKind::Invocation,
             },
         );
+    }
+
+    pub(crate) fn async_set_result_description(&mut self, frame: *mut u8, description: *const u8) {
+        if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
+            meta.kind = AsyncKind::Runtime(Box::new(RuntimeTask::CountedInvocation(
+                description as usize,
+            )));
+        }
     }
 
     /// Parks a frame that suspended at `Context.suspend()`
@@ -266,7 +267,7 @@ impl Context {
     pub fn async_unfinished(&self) -> usize {
         self.async_frames
             .values()
-            .filter(|meta| meta.completion.is_none() && matches!(meta.kind, AsyncKind::Invocation))
+            .filter(|meta| meta.completion.is_none() && meta.kind.task_kind() == 1)
             .count()
     }
 
@@ -308,30 +309,13 @@ impl Context {
         }
         *slot -= 1;
         if *slot == 0 {
-            let group = meta.kind.join_group();
-            let keep = meta
-                .kind
-                .aggregate()
-                .is_some_and(|state| state.remaining != 0)
-                || group.is_some_and(|group| {
-                    self.task_groups
-                        .get(&group)
-                        .is_some_and(|state| state.remaining != 0)
-                });
-            let unobserved = if keep {
-                match meta.completion.as_ref() {
-                    Some(crate::exception::Completion::Exception(payload)) if !payload.observed => {
-                        Some(payload.exception.clone())
-                    }
-                    _ => None,
+            let unobserved = match &meta.kind {
+                AsyncKind::Invocation => {
+                    let meta = self.async_frames.remove(&(frame as usize));
+                    self.delete(frame as usize, pos_id);
+                    meta.and_then(|meta| meta.completion?.unobserved())
                 }
-            } else {
-                let meta = self.async_frames.remove(&(frame as usize));
-                self.delete(frame as usize, pos_id);
-                if let Some(group) = group {
-                    self.task_group_join_released(group);
-                }
-                meta.and_then(|meta| meta.completion?.unobserved())
+                AsyncKind::Runtime(_) => unsafe { self.async_release_runtime(frame, pos_id) },
             };
             if let Some(unobserved) = unobserved {
                 if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
@@ -346,6 +330,51 @@ impl Context {
                 );
             }
         }
+    }
+
+    unsafe fn async_release_runtime(
+        &mut self,
+        frame: *mut u8,
+        pos_id: u32,
+    ) -> Option<crate::exception::PendingException> {
+        let meta = self.async_frames.get(&(frame as usize))?;
+        let AsyncKind::Runtime(task) = &meta.kind else {
+            return None;
+        };
+        let (group, keep) = match task.as_ref() {
+            RuntimeTask::Aggregate(state) => (None, state.remaining != 0),
+            RuntimeTask::GroupJoin(group) => (
+                Some(*group),
+                self.task_groups
+                    .get(group)
+                    .is_some_and(|state| state.remaining != 0),
+            ),
+            RuntimeTask::CountedInvocation(_) => (None, false),
+        };
+        if keep {
+            return match meta.completion.as_ref() {
+                Some(crate::exception::Completion::Exception(payload)) if !payload.observed => {
+                    Some(payload.exception.clone())
+                }
+                _ => None,
+            };
+        }
+        let meta = self.async_frames.remove(&(frame as usize))?;
+        self.delete(frame as usize, pos_id);
+        if let Some(group) = group {
+            self.task_group_join_released(group);
+        }
+        if let AsyncKind::Runtime(task) = &meta.kind {
+            if let RuntimeTask::CountedInvocation(description) = task.as_ref() {
+                if let Some(crate::exception::Completion::Value(bytes)) = &meta.completion {
+                    unsafe {
+                        self.counted_value(bytes.as_ptr(), *description as *const u8, true, pos_id);
+                    }
+                }
+            }
+        }
+        meta.completion
+            .and_then(|completion| completion.unobserved())
     }
 
     /// Reads a held handle's count for the emitted-layout conformance test.
@@ -399,7 +428,9 @@ impl Context {
         self.async_ready.extend(waiters);
     }
 
-    /// Copies a cached fulfilled representation into `out`, returning
+    /// Copies a cached fulfilled representation without acquiring an owner.
+    /// The caller must acquire a counted result through the counted FFI entry point.
+    /// Returns
     /// `true` when the handle had already completed.
     ///
     /// For an exception completion, the call leaves `out` unchanged, makes
@@ -412,11 +443,20 @@ impl Context {
     /// `out` is null when `size == 0`, otherwise it points to `size`
     /// writable bytes.
     pub unsafe fn async_result(&mut self, frame: *const u8, out: *mut u8, size: usize) -> bool {
-        let Some(completion) = self
-            .async_frames
-            .get_mut(&(frame as usize))
-            .and_then(|meta| meta.completion.as_mut())
-        else {
+        unsafe { self.async_result_uncounted(frame, out, size) }
+    }
+
+    // Native uncounted reads need no description lookup or acquire test.
+    pub(crate) unsafe fn async_result_uncounted(
+        &mut self,
+        frame: *const u8,
+        out: *mut u8,
+        size: usize,
+    ) -> bool {
+        let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
+            return false;
+        };
+        let Some(completion) = meta.completion.as_mut() else {
             return false;
         };
         let bytes = match completion {

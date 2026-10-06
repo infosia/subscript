@@ -1073,7 +1073,7 @@ int main(void) {
     // semantic sites behind these local ids.
     assert_eq!(
         dev,
-        vec![(1, 2, 4), (0xFFFF_FF02, 3, 32), (0xFFFF_FF03, 6, 16),],
+        vec![(1, 2, 4), (0xFFFF_FF02, 3, 40), (0xFFFF_FF03, 6, 16),],
         "dev attribution triples changed"
     );
     assert_eq!(

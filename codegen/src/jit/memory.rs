@@ -18,20 +18,19 @@ use crate::lower::internal;
 /// The per-module cost that does not scale with the source, in bytes
 /// (§110 rule 3, `floor`).
 ///
-/// Measured over the 989 dev-JIT modules the debug workspace test run
-/// builds. 800 of them hold a source of 10,000 bytes or less, which is
-/// too small for the slope to reach. The worst span of those 800 is
-/// this number, from a module of 7,267 source bytes.
-const RESERVATION_FLOOR_BYTES: u64 = 104_466;
+/// The reload module `a338-counted-array-holders` sets the floor.
+/// Its measured source has 3,897 bytes; page rounding requires 196,608 bytes.
+const RESERVATION_FLOOR_BYTES: u64 = 196_608;
 
-/// Reservation bytes for each byte of module source (§110 rule 3,
-/// `slope`).
+/// Reservation bytes for each byte of module source (§110 rule 3, `slope`).
 ///
-/// Measured over the same 989 modules. The other 189 hold a source of
-/// more than 10,000 bytes, and the worst `(span - floor)` for each
-/// source byte over those is 2.999, from a module of 493,178 source
-/// bytes with a span of 1,583,180. This constant is the next whole
-/// byte.
+/// Derivation: use the same 989 modules from 21 debug test binaries
+/// (`specs/tracking/linux-portability.md`, §110 derivation).
+/// The 189 sources above 10,000 bytes determine the slope.
+/// Their old maximum `(span - 104_466) / source` is below 3.
+/// A larger floor decreases every ratio, so the new maximum stays below 3.
+/// `boundary_scratch_breadth` gives `(1_583_180 - 196_608) / 493_178`
+/// = 2.811504, above 2. Thus the ceiling of the new maximum is exactly 3.
 const RESERVATION_SLOPE: u64 = 3;
 
 /// The margin the reservation holds over the derived size, as a
@@ -185,7 +184,7 @@ mod tests {
     /// The derivation is the floor plus the slope, times the margin.
     #[test]
     fn the_reservation_is_the_floor_plus_the_slope_times_the_margin() {
-        assert_eq!(reservation_bytes(0), 156_699);
-        assert_eq!(reservation_bytes(131_072), 746_523);
+        assert_eq!(reservation_bytes(0), 294_912);
+        assert_eq!(reservation_bytes(131_072), 884_736);
     }
 }

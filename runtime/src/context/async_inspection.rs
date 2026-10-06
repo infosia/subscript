@@ -1,4 +1,3 @@
-use super::async_scheduler::AsyncKind;
 use super::*;
 
 /// One registered task (§169). The C layout has no padding.
@@ -47,7 +46,7 @@ impl Context {
         frames.sort_unstable_by_key(|(_, meta)| meta.task_id);
         let mut records = Vec::with_capacity(frames.len());
         for (&frame, meta) in &frames {
-            let aggregate = !matches!(meta.kind, AsyncKind::Invocation);
+            let aggregate = meta.kind.task_kind() != 1;
             let mut awaited_task_id = 0;
             let state = if meta.completion.is_some() {
                 5

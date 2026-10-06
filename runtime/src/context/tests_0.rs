@@ -186,7 +186,8 @@ fn array_header_offsets_match_the_abi_contract() {
     assert_eq!(core::mem::offset_of!(ArrayHeader, cap), 8);
     assert_eq!(core::mem::offset_of!(ArrayHeader, elem_size), 16);
     assert_eq!(core::mem::offset_of!(ArrayHeader, data), 24);
-    assert_eq!(core::mem::size_of::<ArrayHeader>(), 32);
+    assert_eq!(core::mem::offset_of!(ArrayHeader, holders), 32);
+    assert_eq!(core::mem::size_of::<ArrayHeader>(), 40);
 }
 
 #[test]

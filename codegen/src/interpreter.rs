@@ -412,6 +412,7 @@ struct Interpreter<'m> {
     // Keep the enclosing LIR sites here so that even those reports use the
     // checker-owned source position rather than the instruction's broad span.
     active_traps: Vec<l::Trap>,
+    count_action: Option<l::CountAction>,
     // The exception a handler edge carries to its catch entry or its park.
     caught: Option<(usize, String, Pos)>,
     // The exceptions that wait while the hooks of an exception exit run,
@@ -442,6 +443,7 @@ impl<'m> Interpreter<'m> {
             async_trapping: None,
             async_stopped: Vec::new(),
             active_traps: Vec::new(),
+            count_action: None,
             caught: None,
             parked: Vec::new(),
         };
@@ -743,7 +745,16 @@ impl<'m> Interpreter<'m> {
         }
         // The kick holds no scheduler reference: a suspended root registered
         // its own, and a completed root has no continuation work.
-        self.release_coroutine(coroutine)
+        let pos = {
+            let state = coroutine.borrow();
+            let frame = state
+                .kind
+                .frame()
+                .ok_or_else(|| self.invalid(None, "host root is not an invocation"))?;
+            let function = frame.borrow().function;
+            self.module.functions[function.0 as usize].pos.clone()
+        };
+        self.release_coroutine(coroutine, &pos)
     }
 
     // §94.2: the reference driver clears at a host entry boundary.
@@ -803,7 +814,25 @@ impl<'m> Interpreter<'m> {
                 .ok_or_else(|| self.invalid(None, "aggregate resumed as an invocation"))?;
             let mut frame = state.borrow_mut();
             let value = match completion {
-                Ok(value) => value,
+                Ok(value) => {
+                    let action = self
+                        .module
+                        .functions
+                        .get(frame.function.0 as usize)
+                        .and_then(|function| function.blocks.get(frame.block.0 as usize))
+                        .and_then(|block| block.instructions.first())
+                        .and_then(|instruction| instruction.count_action.as_ref())
+                        .ok_or_else(|| {
+                            self.invalid(
+                                Some(awaited.pos.clone()),
+                                "completion read has no count action",
+                            )
+                        })?;
+                    if let Some(ty) = action.release_type() {
+                        self.counted_owner(&ty, &value, false, &awaited.pos)?;
+                    }
+                    value
+                }
                 Err(exception) => {
                     let starts_with_raise = self
                         .module
@@ -843,7 +872,7 @@ impl<'m> Interpreter<'m> {
             };
             frame.resume = Some(value);
             drop(frame);
-            self.release_coroutine(&awaited.handle)?;
+            self.release_coroutine(&awaited.handle, &awaited.pos)?;
         }
         let flow = self.execute_coroutine(coroutine)?;
         self.apply_async_flow(coroutine, flow)
@@ -1018,64 +1047,6 @@ impl<'m> Interpreter<'m> {
                 .waiters
                 .push(AsyncJob::Invocation(Rc::clone(frame)));
         }
-    }
-
-    /// Ends one holder's ownership of a handle. The last release drops the
-    /// interpreter's handle table entry; the completion cache and the values
-    /// reachable from it live as long as some owner holds them (§94.2).
-    ///
-    /// The last release of a handle that holds an exception that no `await`
-    /// raised is the uncaught-exception trap (`compiler.md` §116.1 rule 4).
-    fn release_coroutine(&self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
-        let key = Rc::as_ptr(coroutine) as usize;
-        let mut state = coroutine.borrow_mut();
-        if state.owners != 0 {
-            state.owners -= 1;
-        }
-        if state.owners == 0 {
-            let mut unobserved = match &state.completion {
-                Some(Completion::Exception(payload)) if !payload.observed => {
-                    Some(payload.exception.clone())
-                }
-                _ => None,
-            };
-            if let CoroutineKind::Aggregate(aggregate) = &mut state.kind {
-                if aggregate.reported {
-                    unobserved = None;
-                }
-                if unobserved.is_some() {
-                    aggregate.reported = true;
-                }
-            }
-            let unread = match &state.kind {
-                CoroutineKind::Aggregate(a) => a.inputs.iter().any(Option::is_some),
-                CoroutineKind::GroupJoin(group) => {
-                    group.borrow().inputs.iter().any(Option::is_some)
-                }
-                _ => false,
-            };
-            if !unread {
-                if let CoroutineKind::GroupJoin(group) = &state.kind {
-                    group.borrow_mut().join = None;
-                }
-            }
-            if state.completed && !unread {
-                self.async_registry.borrow_mut().remove(&state.task_id);
-            }
-            drop(state);
-            if !unread {
-                self.async_handles.borrow_mut().remove(&key);
-            }
-            if let Some((object, message, pos)) = unobserved {
-                return Err(InterpretError::Exception {
-                    object,
-                    message,
-                    pos,
-                }
-                .settled());
-            }
-        }
-        Ok(())
     }
 
     fn resume_generator(
@@ -1592,9 +1563,13 @@ impl<'m> Interpreter<'m> {
             l::IntrinsicFamily::Regex => self.intrinsic_regex(operation, operands),
             l::IntrinsicFamily::Text => self.intrinsic_text(operation, operands),
             l::IntrinsicFamily::Json => self.intrinsic_json(operation, operands, result_ty),
-            l::IntrinsicFamily::Array => {
-                self.intrinsic_array(operation, operands, parameter_types, result_ty)
-            }
+            l::IntrinsicFamily::Array => self.intrinsic_array(
+                operation,
+                operands,
+                parameter_types,
+                result_ty,
+                pos.ok_or_else(|| self.invalid(None, "array call has no position"))?,
+            ),
             l::IntrinsicFamily::Map => self.intrinsic_map(
                 operation,
                 operands,
@@ -1971,10 +1946,13 @@ fn assoc_key_kind(ty: &Type, module: &l::Module) -> u32 {
 #[cfg(test)]
 #[path = "interpreter/completion_tests.rs"]
 mod completion_tests;
+#[cfg(test)]
+mod counted_measurement_tests;
 
 mod text;
 
 mod collections;
+mod counted;
 mod instruction;
 mod intrinsics;
 mod memory;

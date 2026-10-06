@@ -799,6 +799,7 @@ fn suspend_restores_resume_value_then_remaining_live_ins() {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![l::Instruction {
+                    count_action: None,
                     result: Some(l::ValueId(1)),
                     kind: l::InstructionKind::Copy,
                     operands: vec![l::Operand::Constant(l::Constant {
@@ -830,17 +831,29 @@ fn suspend_restores_resume_value_then_remaining_live_ins() {
                 id: l::BlockId(1),
                 source_name: Some("resume".to_string()),
                 parameters: vec![l::ValueId(0), l::ValueId(2)],
-                instructions: vec![l::Instruction {
-                    result: Some(l::ValueId(3)),
-                    kind: l::InstructionKind::Binary(l::BinaryOp::Add),
-                    operands: vec![
-                        l::Operand::Value(l::ValueId(0)),
-                        l::Operand::Value(l::ValueId(2)),
-                    ],
-                    invalidates: Vec::new(),
-                    traps: Vec::new(),
-                    pos: pos.clone(),
-                }],
+                instructions: vec![
+                    l::Instruction {
+                        count_action: Some(l::CountAction::Uncounted),
+                        result: None,
+                        kind: l::InstructionKind::AwaitRaise,
+                        operands: Vec::new(),
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                    l::Instruction {
+                        count_action: None,
+                        result: Some(l::ValueId(3)),
+                        kind: l::InstructionKind::Binary(l::BinaryOp::Add),
+                        operands: vec![
+                            l::Operand::Value(l::ValueId(0)),
+                            l::Operand::Value(l::ValueId(2)),
+                        ],
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                        pos: pos.clone(),
+                    },
+                ],
                 terminator: l::Terminator::Return {
                     value: Some(l::Operand::Value(l::ValueId(3))),
                     pos: pos.clone(),

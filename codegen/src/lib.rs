@@ -30,6 +30,7 @@
 //! called repeatedly and each call is timed on its own.
 
 mod cemit;
+mod counted;
 mod emit_files;
 pub mod interpreter;
 mod jit;

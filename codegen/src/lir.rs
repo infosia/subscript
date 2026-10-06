@@ -11,6 +11,7 @@ use subscript_compiler::{ClassId, Pos, Type};
 use crate::lir_types::boundary_box_class;
 
 mod address_taken;
+mod array_ownership;
 mod builder;
 mod call;
 mod construct;
@@ -25,6 +26,7 @@ mod stmt;
 mod unroll;
 mod using;
 mod verify;
+mod verify_counted_operations;
 mod verify_dominance;
 mod verify_instruction;
 mod verify_lifetime;
@@ -734,8 +736,7 @@ struct Binding {
 }
 
 fn is_async_owner_type(ty: &l::ValueType) -> bool {
-    matches!(ty, l::ValueType::Data(Type::AsyncHandle(_)))
-        || matches!(ty, l::ValueType::Data(Type::Array(element)) if matches!(&**element, Type::AsyncHandle(_)))
+    matches!(ty, l::ValueType::Data(ty) if ty.counted_type().is_some())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1159,6 +1160,7 @@ mod verifier_tests {
                 parameters: Vec::new(),
                 instructions: vec![
                     l::Instruction {
+                        count_action: None,
                         result: Some(l::ValueId(1)),
                         kind: l::InstructionKind::AddressOfIndex { checked: true },
                         operands: vec![
@@ -1182,6 +1184,7 @@ mod verifier_tests {
                         pos: pos(),
                     },
                     l::Instruction {
+                        count_action: None,
                         result: Some(l::ValueId(2)),
                         kind: l::InstructionKind::LoadAddress,
                         operands: vec![l::Operand::Value(l::ValueId(1))],
@@ -1288,6 +1291,7 @@ mod verifier_tests {
                 parameters: Vec::new(),
                 instructions: vec![
                     l::Instruction {
+                        count_action: None,
                         result: Some(l::ValueId(0)),
                         kind: l::InstructionKind::StringLiteral("wrong".to_string()),
                         operands: Vec::new(),
@@ -1296,6 +1300,7 @@ mod verifier_tests {
                         pos: pos(),
                     },
                     l::Instruction {
+                        count_action: None,
                         result: Some(l::ValueId(1)),
                         kind: l::InstructionKind::Call(l::CallTarget {
                             kind,
@@ -1426,6 +1431,7 @@ mod verifier_tests {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![l::Instruction {
+                    count_action: None,
                     result,
                     kind: l::InstructionKind::Call(l::CallTarget {
                         kind,
@@ -1524,6 +1530,7 @@ mod verifier_tests {
         function.blocks[0].instructions.insert(
             1,
             l::Instruction {
+                count_action: None,
                 result: Some(l::ValueId(3)),
                 kind: l::InstructionKind::Copy,
                 operands: vec![l::Operand::Value(l::ValueId(0))],
