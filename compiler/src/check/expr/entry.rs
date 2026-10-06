@@ -59,7 +59,9 @@ impl<'p> Checker<'p> {
     pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> HashSet<u32> {
         use hir::ExprKind as K;
         match &expr.kind {
-            K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
+            K::AsyncAll { origin, .. } | K::AsyncHandleCreate { origin, .. } => {
+                HashSet::from([*origin])
+            }
             K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
             K::Local(name, _, _) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
@@ -176,7 +178,14 @@ impl<'p> Checker<'p> {
         }
         let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
         fx.descriptor_numeric_operand = previous_numeric;
-        if self.apparent_type(&checked.ty) == Type::Void {
+        if self.apparent_type(&checked.ty) == Type::array(Type::Void) {
+            self.reject_subset(
+                RejectionSite::PromiseAllVoidValue,
+                "the language has no void[] value",
+                checked.pos.clone(),
+            );
+            self.err_expr(checked.pos)
+        } else if self.apparent_type(&checked.ty) == Type::Void {
             self.reject_subset(
                 RejectionSite::VoidExpressionValue,
                 "a `void` expression is only allowed as an expression statement",
@@ -551,6 +560,22 @@ impl<'p> Checker<'p> {
         }
 
         if let ast::Expr::Member(member) = callee {
+            if self.ambient_namespace(&member.obj, fx) == Some("Promise")
+                && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all")
+            {
+                let handle = self.check_expr(operand, None, fx);
+                let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {
+                    return self.err_expr(pos);
+                };
+                let origins = self.expr_async_origins(&handle, fx);
+                fx.handle_async_origins(&origins);
+                return hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
+                    ty: *value,
+                    pos,
+                };
+            }
             if self.is_context_namespace(&member.obj, fx)
                 && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "suspend")
             {

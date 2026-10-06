@@ -826,6 +826,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
+            if name == "all" {
+                return self.check_promise_all(c, fx, pos);
+            }
             self.reject_subset(
                 RejectionSite::PromiseStaticCall,
                 format!("Promise static `Promise.{name}(...)` is not in the language"),

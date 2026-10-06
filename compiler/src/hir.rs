@@ -1810,6 +1810,13 @@ pub enum ExprKind {
         /// Checker-local obligation joined through copies and storage.
         origin: u32,
     },
+    /// Creates an aggregate handle from an input-array snapshot (§166).
+    AsyncAll {
+        /// The input array, evaluated once at the call.
+        jobs: Box<Expr>,
+        /// Function-local must-await obligation identity.
+        origin: u32,
+    },
     /// Polls a previously created async handle and yields its cached result.
     AsyncHandleAwait(Box<Expr>),
     /// Transfers a held async handle through a synchronous call boundary,

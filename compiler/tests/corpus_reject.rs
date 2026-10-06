@@ -505,6 +505,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r372-contextual-lambda-loop-store.ts", RuleCode::S011, 16),
     ("r375-default-before-required.ts", RuleCode::S100, 10),
     ("r376-function-value-default.ts", RuleCode::S100, 10),
+    ("r377-promise-all-void-value.ts", RuleCode::S013, 11),
+    ("r378-promise-all-non-handle-array.ts", RuleCode::S013, 10),
     ("r373-indexed-read-after-null-check.ts", RuleCode::S011, 11),
     (
         "r374-indexed-read-without-null-check.ts",

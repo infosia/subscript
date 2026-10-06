@@ -8918,3 +8918,38 @@ const h = (a: i32, b: i32 = 5): i32 => a + b;
 h(1);
 END FILE
 END PROGRAM
+PROGRAM	s166-PromiseAllVoidValue			0
+FILE	E	target/s154/forms/s166-PromiseAllVoidValue/main.ts
+async function quiet(): Promise<void> {}
+export async function main(): Promise<void> { const jobs: Promise<void>[] = [quiet()]; const xs = await Promise.all(jobs); print(`${xs.length}`); }
+END FILE
+END PROGRAM
+PROGRAM	s166-PromiseAllTypeArguments			0
+FILE	E	target/s154/forms/s166-PromiseAllTypeArguments/main.ts
+async function value(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.all<i32>(jobs); }
+END FILE
+END PROGRAM
+PROGRAM	s166-PromiseAllInput			0
+FILE	E	target/s154/forms/s166-PromiseAllInput/main.ts
+export async function main(): Promise<void> { const xs: i32[] = [1]; await Promise.all(xs); }
+END FILE
+END PROGRAM
+PROGRAM	s166-PromiseAllCountedResult			0
+FILE	E	target/s154/forms/s166-PromiseAllCountedResult/main.ts
+async function value(): Promise<i32> { return 7; }
+async function result(): Promise<Promise<i32>[]> { const h: Promise<i32> = value(); const hs: Promise<i32>[] = [h]; await h; return hs; }
+export async function main(): Promise<void> { const jobs: Promise<Promise<i32>[]>[] = [result()]; await Promise.all(jobs); }
+END FILE
+END PROGRAM
+PROGRAM	s166-PromiseAllArguments	TS2554		0
+FILE	E	target/s154/forms/s166-PromiseAllArguments/main.ts
+export async function main(): Promise<void> { await Promise.all(); }
+END FILE
+END PROGRAM
+PROGRAM	s166-PromiseAllSpread			0
+FILE	E	target/s154/forms/s166-PromiseAllSpread/main.ts
+async function value(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.all(...[jobs]); }
+END FILE
+END PROGRAM

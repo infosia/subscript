@@ -599,6 +599,34 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 &instruction.traps,
                 &instruction.pos,
             )?),
+            l::InstructionKind::AsyncAll => {
+                let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
+                    return Err(internal("aggregate input type is missing"));
+                };
+                let Type::AsyncHandle(element) = &**input else {
+                    return Err(internal("aggregate element type is missing"));
+                };
+                let size = if **element == Type::Void {
+                    0
+                } else {
+                    self.ml.layouts.size_align(element)?.0
+                };
+                let size = self.builder.ins().iconst(types::I64, size as i64);
+                let jobs = self.expect_scalar(operands[0])?;
+                let position = self.position_id(&instruction.pos);
+                let position = self.iconst(types::I32, position);
+                let handle = self
+                    .call_runtime(
+                        self.ml.rt.async_all,
+                        &[self.ctx, jobs, size, position],
+                        true,
+                    )?
+                    .ok_or_else(|| internal("aggregate call has no result"))?;
+                for trap in &instruction.traps {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
+                Some(RV::Scalar(handle))
+            }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let handle =
                     self.create_async_child_from_values(target, &operands, &instruction.traps)?;

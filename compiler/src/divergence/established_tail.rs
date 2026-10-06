@@ -443,8 +443,7 @@ pub(super) const PROMISEOBJECT: DivergenceEntry = DivergenceEntry {
     ts: "const pending = Promise.resolve(1);",
     subscript: "async function leaf(): Promise<i32> { return 1; }
 async function probe(): Promise<void> { const value: i32 = await leaf(); }",
-    why: "No event loop and no `Promise` object exist; `await` polls the frame \
-                      that the Context owns.",
+    why: "Only async handles and Promise.all over handle arrays exist. Other Promise object operations have no runtime representation.",
     collision: "C8",
 };
 

@@ -225,7 +225,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.start_async_handle(target, child)?;
                 return self.await_async_child(block, child, &plan, traps, true);
             }
-            l::SuspendKind::AsyncHandle { handle } => {
+            l::SuspendKind::AsyncHandle { handle, owned } => {
                 let handle_value = self.value(*handle)?;
                 let handle = self.expect_scalar(handle_value)?;
                 let handle_offset = plan
@@ -234,7 +234,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.builder
                     .ins()
                     .store(flags(), handle, frame, handle_offset as i32);
-                return self.await_async_handle(block, handle, &plan, traps, true);
+                return self.await_async_handle(block, handle, &plan, traps, *owned);
             }
         }
         let state = self.iconst(types::I32, plan.state);
@@ -387,30 +387,29 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         handle: Value,
         plan: &SuspendPlan,
         traps: &[l::Trap],
-        consume_traps: bool,
+        owned: bool,
     ) -> Result<(), String> {
         let _ = block;
         if let Some(stale) = traps
             .iter()
             .find(|trap| trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine)
         {
-            if consume_traps {
-                self.emit_trap(stale, TrapOperand::Value(handle))?;
-            } else {
-                self.reload_epoch_check(handle, &stale.pos)?;
-            }
+            self.emit_trap(stale, TrapOperand::Value(handle))?;
         }
-        if consume_traps {
-            for trap in traps {
-                if trap.kind == l::TrapKind::Call {
-                    self.emit_trap(trap, TrapOperand::Pending)?;
-                }
+        for trap in traps {
+            if trap.kind == l::TrapKind::Call {
+                self.emit_trap(trap, TrapOperand::Pending)?;
             }
         }
         let frame = self
             .frame
             .ok_or_else(|| internal("held await parent has no frame"))?;
-        self.call_runtime(self.ml.rt.async_await, &[self.ctx, frame, handle], false)?;
+        let register = if owned {
+            self.ml.rt.async_await_owned
+        } else {
+            self.ml.rt.async_await
+        };
+        self.call_runtime(register, &[self.ctx, frame, handle], false)?;
         self.suspend_after_await(plan)
     }
 

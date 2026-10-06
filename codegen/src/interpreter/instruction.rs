@@ -448,6 +448,25 @@ impl Interpreter<'_> {
                 Some(&operand_types),
                 Some(&instruction.pos),
             )?),
+            l::InstructionKind::AsyncAll => {
+                let jobs = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "aggregate input type is missing",
+                    ));
+                };
+                let Type::AsyncHandle(element) = &**input else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "aggregate element type is missing",
+                    ));
+                };
+                Some(self.async_all(jobs, element, &instruction.pos)?)
+            }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let value = self.invoke_target(
                     target,

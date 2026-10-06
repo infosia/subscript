@@ -4,7 +4,8 @@ impl ExprKind {
     /// Reports whether this expression kind can produce a fresh async owner.
     pub fn produces_fresh_async_owner(&self) -> bool {
         match self {
-            Self::AsyncHandleCreate { .. }
+            Self::AsyncAll { .. }
+            | Self::AsyncHandleCreate { .. }
             | Self::AsyncHandleTransfer { .. }
             | Self::Call { .. }
             | Self::ArrayLit(_)
@@ -94,6 +95,7 @@ impl Expr {
             | K::Cast(operand)
             | K::Length(operand)
             | K::AsyncHandleAwait(operand)
+            | K::AsyncAll { jobs: operand, .. }
             | K::AsyncHandleTransfer { value: operand, .. } => {
                 vec![HirChild::Expr(operand)]
             }
@@ -186,6 +188,7 @@ impl Expr {
             | K::Cast(operand)
             | K::Length(operand)
             | K::AsyncHandleAwait(operand)
+            | K::AsyncAll { jobs: operand, .. }
             | K::AsyncHandleTransfer { value: operand, .. } => {
                 vec![HirChildMut::Expr(operand)]
             }

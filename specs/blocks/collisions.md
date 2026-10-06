@@ -228,7 +228,7 @@ for coroutines. The model, lifetimes, and the retired entry
 `retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected, except `Promise.all` over `Promise<T>[]` (`compiler.md` §166). Host
 async C APIs still surface as C-style callbacks plus poll functions
 (plan §4 pattern 4); `await` consumes them through script-level polling.
-Accept: `a20`, `a93`–`a95`, `a312`, `a313` (a finished generator's zero, §145). Reject: `r96`–`r100` (Q34 boundaries;
+Accept: `a20`, `a93`–`a95`, `a312`, `a313` (a finished generator's zero, §145), `a335` (`Promise.all`, §166). Reject: `r377`, `r378` (`Promise.all` boundaries, §166; trap `t83`), `r96`–`r100` (Q34 boundaries;
 `retired:r14-async` by Q34 — the construct it pinned is now legal).
 *Revised 2026-08-02 (R13):* async instance methods on plain,
 non-generic reference classes join the surface —
@@ -1636,7 +1636,8 @@ with no initializer, §158).
     rejected — stock `tsc` allows the floating promise, so that
     reject entry is a strictly-narrower pin.)* A handle is never
     combined: `new Promise`, `.then`/`.catch`/`.finally` calls,
-    and `Promise.all/race/resolve/reject` are rejected. The lib
+    and `Promise.race/resolve/reject` are rejected; `Promise.all`
+    over `Promise<T>[]` is admitted (`compiler.md` §166). The lib
     `Promise<T>` type is the `tsc` view only (C8 precedent).
     *(Revised 2026-08-02, R13: a direct async **method** call in
     await position — `await recv.m(...)` on a plain, non-generic
@@ -1671,7 +1672,7 @@ with no initializer, §158).
   Contract: `compiler.md` §26. Accept: `a93` (nested chain), `a94`
   (two interleaved roots), `a95` (foreign-poll await — absorbs the
   earlier Q1 corpus request). Reject: `r96` (`new Promise`), `r97`
-  (`.then` call), `r98` (`Promise.all`), `r99` (`await` outside
+  (`.then` call), `r98` (`Promise.resolve`), `r99` (`await` outside
   `async`), `r100` (a handle dropped without an await; `tsc`-clean;
   rewritten by §70 from the floating-call form). §70 adds accept
   `a154`–`a155` (a held handle, a handle array) and reject `r157`.

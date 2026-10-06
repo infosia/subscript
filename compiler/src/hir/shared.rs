@@ -44,6 +44,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => false,
         }
@@ -88,6 +89,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => &self.ty,
         }

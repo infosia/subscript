@@ -326,6 +326,38 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::Call(target) => {
                 self.emit_call(out, instruction, target, &operands, &operand_types, result)
             }
+            l::InstructionKind::AsyncAll => {
+                let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
+                    return Err(internal("aggregate input type is missing"));
+                };
+                let Type::AsyncHandle(element) = &**input else {
+                    return Err(internal("aggregate element type is missing"));
+                };
+                let size = if **element == Type::Void {
+                    "0u".to_string()
+                } else {
+                    format!("sizeof({})", self.emitter.ctype(element)?)
+                };
+                let position = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_async_all",
+                    &[
+                        "void*".into(),
+                        "const void*".into(),
+                        "uint64_t".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        operands[0].clone(),
+                        size,
+                        format!("{position}u"),
+                    ],
+                );
+                self.assign(out, result, &call)?;
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let function = match target.kind {
                     l::CallTargetKind::Function(function) => function,

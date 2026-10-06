@@ -222,7 +222,7 @@ pub(super) fn verify_terminator_types(
                         ));
                     }
                 }
-                l::SuspendKind::AsyncHandle { handle } => {
+                l::SuspendKind::AsyncHandle { handle, .. } => {
                     // §94.1: a held await resumes from the scheduler, so its
                     // stale-coroutine site must exist and must carry the
                     // suspension's own position. The resume reports there,

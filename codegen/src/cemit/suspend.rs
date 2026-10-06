@@ -53,7 +53,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emit_async_child_start(out, block, target)?;
                 self.emit_await_registration(out, block, state)?;
             }
-            l::SuspendKind::AsyncHandle { handle } => {
+            l::SuspendKind::AsyncHandle { handle, .. } => {
                 let _ = writeln!(
                     out,
                     "    frame->b{}_child = {};",
@@ -258,7 +258,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             if matches!(
                 block.terminator,
                 l::Terminator::Suspend {
-                    kind: l::SuspendKind::AsyncCall { .. },
+                    kind: l::SuspendKind::AsyncCall { .. }
+                        | l::SuspendKind::AsyncHandle { owned: true, .. },
                     ..
                 }
             ) {

@@ -107,6 +107,7 @@ impl Expr {
                 visiting.remove(class);
                 runs
             }
+            ExprKind::AsyncAll { .. } => false,
             ExprKind::AsyncHandleTransfer { value, .. } => {
                 value.runs_script(classes, helpers, visiting)
             }

@@ -458,6 +458,20 @@ pub(super) fn verify_instruction_contract(
                 bad("call target identity/signature is invalid", errors);
             }
         }
+        l::InstructionKind::AsyncAll => {
+            let valid = match (operand_types.as_slice(), result_type.as_ref()) {
+                (
+                    [l::ValueType::Data(Type::Array(input))],
+                    Some(l::ValueType::Data(Type::AsyncHandle(output))),
+                ) => {
+                    matches!((&**input, &**output), (Type::AsyncHandle(element), Type::Array(result)) if element == result && !element.carries_async_handle())
+                }
+                _ => false,
+            };
+            if !valid {
+                bad("aggregate signature is invalid", errors);
+            }
+        }
         l::InstructionKind::AsyncHandleCreate(target) => {
             let declared = match target.kind {
                 l::CallTargetKind::Function(id) => declared_function(module, id),

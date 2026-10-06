@@ -96,6 +96,7 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
         | K::CatchEntry
         | K::ExceptionPark
         | K::ExceptionResume
+        | K::AsyncAll
         | K::AwaitRaise => false,
     }
 }

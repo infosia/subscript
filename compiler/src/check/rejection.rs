@@ -1284,6 +1284,12 @@ rejection_classes! {
     }
     Self::NonGenericStaticMethodTypeArguments => (RuleCode::S100, TscRejects),
     Self::PromiseCombinatorCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
+    Self::PromiseAllVoidValue => (RuleCode::S013, Diverges(Divergence::PromiseAllVoidValue)),
+    Self::PromiseAllTypeArguments => (RuleCode::S013, Diverges(Divergence::PromiseAllTypeArguments)),
+    Self::PromiseAllInput => (RuleCode::S013, Diverges(Divergence::PromiseAllInput)),
+    Self::PromiseAllCountedResult => (RuleCode::S013, Diverges(Divergence::PromiseAllCountedResult)),
+    Self::PromiseAllArguments => (RuleCode::S013, TscRejects),
+    Self::PromiseAllSpread => (RuleCode::S013, Diverges(Divergence::ForOfSpreadCall)),
     Self::PromiseStaticCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
     Self::WorkerStaticObjectMethod => (
         RuleCode::S018,

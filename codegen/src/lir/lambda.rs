@@ -248,6 +248,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expr: &hir::Expr,
     ) -> Result<Option<l::Operand>, LowerError> {
         let handle = self.require_expr(handle)?;
+        let owned = matches!(&handle, l::Operand::Value(value)
+            if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner)
+                && !self.moved_async_owners.contains(value));
         let handle = self.terminator_value(handle, &expr.pos)?;
         let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
         let successor = self.new_block(
@@ -262,7 +265,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         ));
         self.terminate(
             l::Terminator::Suspend {
-                kind: l::SuspendKind::AsyncHandle { handle },
+                kind: l::SuspendKind::AsyncHandle { handle, owned },
                 pos: expr.pos.clone(),
                 successor,
                 resume_value,

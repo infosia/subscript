@@ -159,8 +159,8 @@ fn reachable_frames(interpreter: &Interpreter<'_>) -> Vec<Rc<RefCell<Coroutine>>
     let mut work: Vec<Rc<RefCell<Coroutine>>> = interpreter
         .async_ready
         .iter()
-        .chain(interpreter.async_parked.iter())
-        .cloned()
+        .map(AsyncJob::handle)
+        .chain(interpreter.async_parked.iter().cloned())
         .collect();
     work.extend(interpreter.async_handles.borrow().values().cloned());
     let mut seen: HashMap<usize, Rc<RefCell<Coroutine>>> = HashMap::new();
@@ -172,7 +172,7 @@ fn reachable_frames(interpreter: &Interpreter<'_>) -> Vec<Rc<RefCell<Coroutine>>
             continue;
         }
         let state = frame.borrow();
-        work.extend(state.waiters.iter().cloned());
+        work.extend(state.waiters.iter().map(AsyncJob::handle));
         if let Some(awaited) = state.awaiting.as_ref() {
             work.push(Rc::clone(&awaited.handle));
         }
@@ -526,7 +526,8 @@ const SELF_NAMING_GENERATOR: &str = "function* selfish(box: Generator<i32>[]): G
 fn frames_named_by(frame: &Rc<RefCell<Coroutine>>) -> Vec<Rc<RefCell<Coroutine>>> {
     let mut out = Vec::new();
     let state = frame.borrow();
-    let saved = state.state.borrow();
+    let frame = state.kind.frame().expect("invocation frame");
+    let saved = frame.borrow();
     for value in saved.values.iter().flatten() {
         collect_coroutines(value, &mut out);
     }

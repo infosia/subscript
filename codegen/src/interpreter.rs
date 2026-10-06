@@ -268,7 +268,7 @@ struct IteratorCursor {
 struct Coroutine {
     // Execution storage has its own allocation and borrow domain.
     // Handle ownership and waiter registration never borrow this cell.
-    state: Rc<RefCell<Frame>>,
+    kind: CoroutineKind,
     completed: bool,
     completion: Option<Completion>,
     owners: u32,
@@ -278,7 +278,7 @@ struct Coroutine {
     /// Continuations registered on this frame, in registration order
     /// (`compiler.md` §94.1 rule 5). Completion moves them to the ready
     /// queue's tail in that order.
-    waiters: Vec<Rc<RefCell<Coroutine>>>,
+    waiters: Vec<AsyncJob>,
     /// The awaited frame this suspension registered on, with the position
     /// that reports a resume without a completion. The registration owns one count.
     awaiting: Option<AwaitedHandle>,
@@ -310,7 +310,7 @@ enum AsyncRequest {
     /// `SuspendKind::AsyncCall`: create and start the child, then register.
     Call(l::CallTarget, Vec<Value>, Pos),
     /// `SuspendKind::AsyncHandle`: register on the named handle.
-    Handle(Rc<RefCell<Coroutine>>, Pos),
+    Handle(Rc<RefCell<Coroutine>>, Pos, bool),
 }
 
 struct Frame {
@@ -391,7 +391,7 @@ struct Interpreter<'m> {
     generator_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
     // §94 scheduler state: runnable continuations in FIFO order, and the
     // frames that wait for the next host checkpoint.
-    async_ready: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
+    async_ready: std::collections::VecDeque<AsyncJob>,
     async_parked: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
     async_trapping: Option<InterpretError>,
     async_stopped: Vec<Rc<RefCell<Coroutine>>>,
@@ -561,7 +561,7 @@ impl<'m> Interpreter<'m> {
                 }
             }
             let coroutine = Rc::new(RefCell::new(Coroutine {
-                state: Rc::new(RefCell::new(frame)),
+                kind: CoroutineKind::Invocation(Rc::new(RefCell::new(frame))),
                 completed: false,
                 completion: None,
                 owners: u32::from(function.is_async),
@@ -610,7 +610,8 @@ impl<'m> Interpreter<'m> {
     /// frame the handle table has already released. It runs no continuation
     /// and invokes no collector.
     fn release_scheduler_storage(&mut self) {
-        let mut work: Vec<Rc<RefCell<Coroutine>>> = self.async_ready.drain(..).collect();
+        let mut work: Vec<Rc<RefCell<Coroutine>>> =
+            self.async_ready.drain(..).map(|job| job.handle()).collect();
         work.extend(self.async_parked.drain(..));
         work.append(&mut self.async_stopped);
         work.extend(
@@ -635,7 +636,11 @@ impl<'m> Interpreter<'m> {
                 continue;
             }
             let mut state = frame.borrow_mut();
-            work.extend(std::mem::take(&mut state.waiters));
+            work.extend(
+                std::mem::take(&mut state.waiters)
+                    .into_iter()
+                    .map(|job| job.handle()),
+            );
             if let Some(awaited) = state.awaiting.take() {
                 work.push(awaited.handle);
             }
@@ -643,7 +648,14 @@ impl<'m> Interpreter<'m> {
             // gave it, and two frames that hold each other's handle form the
             // same ring. Teardown discards the work, so the saved state goes
             // with the registration.
-            let frame_cell = Rc::clone(&state.state);
+            let frame_cell = match &mut state.kind {
+                CoroutineKind::Invocation(frame) => Rc::clone(frame),
+                CoroutineKind::Aggregate(aggregate) => {
+                    work.extend(aggregate.inputs.iter_mut().filter_map(Option::take));
+                    state.completion = None;
+                    continue;
+                }
+            };
             let mut saved = frame_cell.borrow_mut();
             for value in saved.values.iter().flatten() {
                 collect_coroutines(value, &mut work);
@@ -689,7 +701,7 @@ impl<'m> Interpreter<'m> {
         if self.async_trapping.take().is_some() {
             // This witness has no reload adapter or staleness exception.
             if let Some(frame) = self.async_ready.pop_front() {
-                self.async_stopped.push(frame);
+                self.async_stopped.push(frame.handle());
             }
         }
         self.context.clear_trap();
@@ -707,9 +719,14 @@ impl<'m> Interpreter<'m> {
             return Ok(());
         }
         let parked = std::mem::take(&mut self.async_parked);
-        self.async_ready.extend(parked);
+        self.async_ready
+            .extend(parked.into_iter().map(AsyncJob::Invocation));
         while let Some(frame) = self.async_ready.pop_front() {
-            if let Err(error) = self.async_resume(&frame) {
+            let outcome = match &frame {
+                AsyncJob::Invocation(handle) => self.async_resume(handle),
+                AsyncJob::Aggregate { handle, index } => self.async_all_react(handle, *index),
+            };
+            if let Err(error) = outcome {
                 if matches!(error, InterpretError::Trap { .. }) {
                     self.async_trapping = Some(error.clone());
                     self.async_ready.push_front(frame);
@@ -758,7 +775,11 @@ impl<'m> Interpreter<'m> {
                     message: "async resume without completion".to_string(),
                 });
             };
-            let state = Rc::clone(&coroutine.borrow().state);
+            let state = coroutine
+                .borrow()
+                .kind
+                .frame()
+                .ok_or_else(|| self.invalid(None, "aggregate resumed as an invocation"))?;
             let mut frame = state.borrow_mut();
             let value = match completion {
                 Ok(value) => value,
@@ -821,7 +842,13 @@ impl<'m> Interpreter<'m> {
                     Some(Completion::Exception(_)) | None => Value::Void,
                 }));
             }
-            (Rc::clone(&state.state), state.host_root)
+            (
+                state
+                    .kind
+                    .frame()
+                    .ok_or_else(|| self.invalid(None, "aggregate executed as an invocation"))?,
+                state.host_root,
+            )
         };
         let mut frame = frame
             .try_borrow_mut()
@@ -909,10 +936,10 @@ impl<'m> Interpreter<'m> {
                 Ok(())
             }
             Flow::Suspended {
-                request: Some(AsyncRequest::Handle(handle, pos)),
+                request: Some(AsyncRequest::Handle(handle, pos, owned)),
                 ..
             } => {
-                self.register_continuation(coroutine, &handle, pos, false);
+                self.register_continuation(coroutine, &handle, pos, owned);
                 Ok(())
             }
             Flow::Suspended { request: None, .. } => {
@@ -941,9 +968,13 @@ impl<'m> Interpreter<'m> {
             pos,
         });
         if handle.borrow().completed {
-            self.async_ready.push_back(Rc::clone(frame));
+            self.async_ready
+                .push_back(AsyncJob::Invocation(Rc::clone(frame)));
         } else {
-            handle.borrow_mut().waiters.push(Rc::clone(frame));
+            handle
+                .borrow_mut()
+                .waiters
+                .push(AsyncJob::Invocation(Rc::clone(frame)));
         }
     }
 
@@ -960,12 +991,20 @@ impl<'m> Interpreter<'m> {
             state.owners -= 1;
         }
         if state.owners == 0 {
-            let unobserved = match &state.completion {
+            let mut unobserved = match &state.completion {
                 Some(Completion::Exception(payload)) if !payload.observed => {
                     Some(payload.exception.clone())
                 }
                 _ => None,
             };
+            if let CoroutineKind::Aggregate(aggregate) = &mut state.kind {
+                if aggregate.reported {
+                    unobserved = None;
+                }
+                if unobserved.is_some() {
+                    aggregate.reported = true;
+                }
+            }
             drop(state);
             self.async_handles.borrow_mut().remove(&key);
             if let Some((object, message, pos)) = unobserved {
@@ -1150,7 +1189,7 @@ impl<'m> Interpreter<'m> {
                                 Some(AsyncRequest::Call(target.clone(), arguments, pos.clone())),
                             )
                         }
-                        l::SuspendKind::AsyncHandle { handle } => {
+                        l::SuspendKind::AsyncHandle { handle, owned } => {
                             let Value::Coroutine(handle) =
                                 self.get_value(frame, *handle, &function.pos)?
                             else {
@@ -1159,7 +1198,10 @@ impl<'m> Interpreter<'m> {
                                     "held await operand is not an async handle",
                                 ));
                             };
-                            (None, Some(AsyncRequest::Handle(handle, pos.clone())))
+                            (
+                                None,
+                                Some(AsyncRequest::Handle(handle, pos.clone(), *owned)),
+                            )
                         }
                     };
                     let parameters = &destination.parameters[usize::from(resume_value.is_some())..];
@@ -1863,3 +1905,6 @@ mod instruction;
 mod intrinsics;
 mod memory;
 mod operations;
+
+mod async_all;
+use async_all::{AsyncJob, CoroutineKind};

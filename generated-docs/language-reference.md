@@ -263,7 +263,7 @@ export function main(): void {
 
 ### S013
 
-Promise constructors and combinators are not in the language; every async handle must have an awaited completion.
+Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.
 
 Pinned corpus: [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-promise.ts), line 8.
 

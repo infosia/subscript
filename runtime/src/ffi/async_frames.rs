@@ -199,3 +199,17 @@ pub unsafe extern "C" fn subscript_rt_async_result(
 ) -> u8 {
     u8::from(unsafe { &mut *ctx }.async_result(frame, out, size as usize))
 }
+
+/// Creates an aggregate handle from an array snapshot (§166).
+///
+/// # Safety
+/// Shared contract; `jobs` is a live handle array with non-counted results of `elem_size` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_all(
+    ctx: *mut Context,
+    jobs: *const u8,
+    elem_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    unsafe { (&mut *ctx).async_all(jobs, elem_size as usize, pos_id) }
+}

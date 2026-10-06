@@ -391,7 +391,7 @@ fn an_await_registration_holds_its_handle_until_the_completion_read() {
 
 #[test]
 fn async_completion_layout() {
-    assert_eq!(std::mem::size_of::<crate::context::AsyncFrameMeta>(), 64);
+    assert_eq!(std::mem::size_of::<crate::context::AsyncFrameMeta>(), 72);
     assert_eq!(std::mem::size_of::<Option<Completion>>(), 24);
 }
 

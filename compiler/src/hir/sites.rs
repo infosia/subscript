@@ -130,6 +130,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => None,
         };
@@ -363,6 +364,7 @@ impl Expr {
                 }
                 sites
             }
+            K::AsyncAll { .. } => vec![allocation(&self.pos), lifetime(&self.pos)],
             K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
                 let mut sites = Vec::new();
                 if let Some(receiver) = callee.receiver() {

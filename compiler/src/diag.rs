@@ -38,7 +38,7 @@ pub enum RuleCode {
     S011,
     /// `undefined` is banned; the single null story is `null` (C7).
     S012,
-    /// Promise object construction/combinators and un-awaited async calls
+    /// Promise object construction, unsupported combinators, and un-awaited async calls
     /// are rejected; Q34 exposes no Promise object surface (C8).
     S013,
     /// Out-of-subset standard-library use, or arithmetic on storage-only
@@ -125,7 +125,7 @@ impl RuleCode {
             }
             RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
             RuleCode::S013 => {
-                "Promise constructors and combinators are not in the language; every async handle must have an awaited completion."
+                "Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion."
             }
             RuleCode::S014 => {
                 "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."

@@ -8908,12 +8908,12 @@ fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 20, col: 32 } }] @ a154-held-async-handle.ts:20:32
     %4: Data(Str) = StringLiteral("main:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 21, col: 9 } }] @ a154-held-async-handle.ts:21:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a154-held-async-handle.ts:21:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }] }
   b1(%5: Data(I32), %9: Data(AsyncHandle(I32)), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }] @ a154-held-async-handle.ts:23:27
     %6: Data(Str) = Template([Text("main:first="), Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a154-held-async-handle.ts", line: 24, col: 9 } }] @ a154-held-async-handle.ts:24:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a154-held-async-handle.ts:24:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(10) }, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 }, successor: BlockId(3), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(10), owned: false }, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 }, successor: BlockId(3), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 25, col: 28 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a154-held-async-handle.ts:23:27
     AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a154-held-async-handle.ts", line: 23, col: 27 } }] @ a154-held-async-handle.ts:23:27
@@ -9229,7 +9229,7 @@ fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   b2 Some("for.body"):
     %14: Address(AddressType { pointee: AsyncHandle(I32), array_base: Some(ValueId(24)) }) = AddressOfIndex { checked: true }(%24, %7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 30 } }, Trap { kind: IndexRead, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 30 } }] @ a155-async-handle-array.ts:18:30
     %15: Data(AsyncHandle(I32)) = LoadAddress(%14) @ a155-async-handle-array.ts:18:30
-    -> Suspend { kind: AsyncHandle { handle: ValueId(15) }, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 }, successor: BlockId(5), resume_value: Some(ValueId(16)), arguments: [Value(ValueId(24)), Value(ValueId(6)), Value(ValueId(7))], invalidates: [ValueId(24)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(15), owned: false }, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 }, successor: BlockId(5), resume_value: Some(ValueId(16)), arguments: [Value(ValueId(24)), Value(ValueId(6)), Value(ValueId(7))], invalidates: [ValueId(24)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a155-async-handle-array.ts", line: 18, col: 24 } }] }
   b3(%8: Data(I32), %9: Data(I32)) Some("for.step"):
     %19: Data(I32) = Binary(Add)(%9, Integer(1):I32) @ a155-async-handle-array.ts:17:44
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(8)), Value(ValueId(19)), Value(ValueId(21))] })
@@ -11564,12 +11564,12 @@ fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(I32)) })() traps=[Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 23, col: 32 } }] @ a184-async-start-order.ts:23:32
     %1: Data(Str) = StringLiteral("after-create")() traps=[Trap { kind: Allocation, pos: Pos { file: "a184-async-start-order.ts", line: 24, col: 9 } }] @ a184-async-start-order.ts:24:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a184-async-start-order.ts:24:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 }, successor: BlockId(2), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 }, successor: BlockId(2), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }] }
   b2(%2: Data(I32), %6: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }] @ a184-async-start-order.ts:25:23
     %3: Data(Str) = Template([Text("result="), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a184-async-start-order.ts", line: 26, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a184-async-start-order.ts", line: 26, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a184-async-start-order.ts", line: 26, col: 9 } }] @ a184-async-start-order.ts:26:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a184-async-start-order.ts:26:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(6) }, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 }, successor: BlockId(4), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(6), owned: false }, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 }, successor: BlockId(4), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 27, col: 23 } }] }
   b3 Some("release.landing"):
     ExceptionPark() @ a184-async-start-order.ts:25:23
     AsyncHandleRelease(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a184-async-start-order.ts", line: 25, col: 23 } }] @ a184-async-start-order.ts:25:23
@@ -11875,10 +11875,10 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   b0 Some("entry"):
     %0: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: None })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 27, col: 32 } }] @ a185-async-settled-await-order.ts:27:32
     %1: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: None })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 28, col: 33 } }] @ a185-async-settled-await-order.ts:28:33
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }] }
   b1(%4: Data(AsyncHandle(Void)), %5: Data(AsyncHandle(Void))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }] @ a185-async-settled-await-order.ts:29:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(5) }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(4)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(5), owned: false }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(4)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a185-async-settled-await-order.ts:29:3
     AsyncHandleRelease(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 29, col: 3 } }] @ a185-async-settled-await-order.ts:29:3
@@ -11890,7 +11890,7 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %2: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 31, col: 31 } }] @ a185-async-settled-await-order.ts:31:31
     %3: Data(Str) = StringLiteral("main:mid")() traps=[Trap { kind: Allocation, pos: Pos { file: "a185-async-settled-await-order.ts", line: 32, col: 9 } }] @ a185-async-settled-await-order.ts:32:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a185-async-settled-await-order.ts:32:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2) }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(2))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: false }, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(2))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 33, col: 3 } }] }
   b4 Some("release.landing"):
     ExceptionPark() @ a185-async-settled-await-order.ts:30:3
     AsyncHandleRelease(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a185-async-settled-await-order.ts", line: 30, col: 3 } }] @ a185-async-settled-await-order.ts:30:3
@@ -12204,7 +12204,7 @@ fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %9: Data(I32) = LoadAddress(%8) @ a186-async-start-array-invalidation.ts:17:44
     %10: Data(Str) = Template([Text("a0="), Operand { index: 0, format: I32 }, Text(" len="), Operand { index: 1, format: I32 }, Text(" last="), Operand { index: 2, format: I32 }])(%4, %5, %9) traps=[Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 17, col: 9 } }] @ a186-async-start-array-invalidation.ts:17:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%10) invalidates=[ValueId(0)] @ a186-async-start-array-invalidation.ts:17:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2) }, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 }, successor: BlockId(1), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(2))], invalidates: [ValueId(0)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: false }, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 }, successor: BlockId(1), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(2))], invalidates: [ValueId(0)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 } }] }
   b1(%11: Data(I32), %13: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 18, col: 18 } }] @ a186-async-start-array-invalidation.ts:18:18
     %12: Data(Str) = Template([Text("v="), Operand { index: 0, format: I32 }])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 19, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a186-async-start-array-invalidation.ts", line: 19, col: 9 } }] @ a186-async-start-array-invalidation.ts:19:9
@@ -12566,7 +12566,7 @@ fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %9: Data(AsyncHandle(Class(ClassId(1)))) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(2))), Data(Class(ClassId(1))), Data(Str)], return_type: Some(Data(Class(ClassId(1)))) })(%17, %7, %8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a187-async-generic-method.ts", line: 35, col: 31 } }, Trap { kind: Call, pos: Pos { file: "a187-async-generic-method.ts", line: 35, col: 31 } }] @ a187-async-generic-method.ts:35:31
     %10: Data(Str) = StringLiteral("main:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a187-async-generic-method.ts", line: 36, col: 9 } }] @ a187-async-generic-method.ts:36:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%10) @ a187-async-generic-method.ts:36:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(9) }, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 }, successor: BlockId(2), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(17)), Value(ValueId(9))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(9), owned: false }, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 }, successor: BlockId(2), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(17)), Value(ValueId(9))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 } }] }
   b2(%11: Data(Class(ClassId(1))), %18: Data(Class(ClassId(2))), %19: Data(AsyncHandle(Class(ClassId(1))))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a187-async-generic-method.ts", line: 37, col: 24 } }] @ a187-async-generic-method.ts:37:24
     %12: Data(F32) = LoadField(Class(FieldId(3)))(%11) @ a187-async-generic-method.ts:38:26
@@ -12882,12 +12882,12 @@ fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 27, col: 27 } }] @ a188-async-nested-settled-chains.ts:27:27
     %4: Data(Str) = StringLiteral("main:mid")() traps=[Trap { kind: Allocation, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 28, col: 9 } }] @ a188-async-nested-settled-chains.ts:28:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a188-async-nested-settled-chains.ts:28:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }] }
   b1(%5: Data(I32), %9: Data(AsyncHandle(I32)), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }] @ a188-async-nested-settled-chains.ts:29:14
     %6: Data(Str) = Template([Text("a="), Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 9 } }] @ a188-async-nested-settled-chains.ts:29:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a188-async-nested-settled-chains.ts:29:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(10) }, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 }, successor: BlockId(3), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(10), owned: false }, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 }, successor: BlockId(3), resume_value: Some(ValueId(7)), arguments: [Value(ValueId(9)), Value(ValueId(10))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 30, col: 14 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a188-async-nested-settled-chains.ts:29:14
     AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a188-async-nested-settled-chains.ts", line: 29, col: 14 } }] @ a188-async-nested-settled-chains.ts:29:14
@@ -13190,7 +13190,7 @@ fn f4 "watcher" kind=Free exported=false generator=false async=true -> I32 entry
   b0 Some("entry"):
     %2: Data(Str) = Template([Operand { index: 0, format: Str }, Text(":before")])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 26, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 26, col: 9 } }] @ a189-async-shared-handle-awaits.ts:26:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a189-async-shared-handle-awaits.ts:26:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 } }] }
   b1(%3: Data(Class(ClassId(1))), %7: Data(Str), %8: Data(AsyncHandle(Class(ClassId(1))))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 27, col: 20 } }] @ a189-async-shared-handle-awaits.ts:27:20
     %4: Data(I32) = LoadField(Class(FieldId(3)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 28, col: 25 } }] @ a189-async-shared-handle-awaits.ts:28:29
@@ -13245,12 +13245,12 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %4: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str), Data(AsyncHandle(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%3, %0) traps=[Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 35, col: 28 } }] @ a189-async-shared-handle-awaits.ts:35:28
     %5: Data(Str) = StringLiteral("main:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 36, col: 9 } }] @ a189-async-shared-handle-awaits.ts:36:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a189-async-shared-handle-awaits.ts:36:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2) }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 }, successor: BlockId(1), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(0)), Value(ValueId(2)), Value(ValueId(4))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: false }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 }, successor: BlockId(1), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(0)), Value(ValueId(2)), Value(ValueId(4))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }] }
   b1(%6: Data(I32), %16: Data(AsyncHandle(Class(ClassId(1)))), %17: Data(AsyncHandle(I32)), %18: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }] @ a189-async-shared-handle-awaits.ts:37:15
     %7: Data(Str) = Template([Text("w1="), Operand { index: 0, format: I32 }])(%6) traps=[Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 9 } }] @ a189-async-shared-handle-awaits.ts:37:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a189-async-shared-handle-awaits.ts:37:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(18) }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 }, successor: BlockId(3), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(18), owned: false }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 }, successor: BlockId(3), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a189-async-shared-handle-awaits.ts:37:15
     AsyncHandleRelease(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 37, col: 15 } }] @ a189-async-shared-handle-awaits.ts:37:15
@@ -13262,7 +13262,7 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }] @ a189-async-shared-handle-awaits.ts:38:15
     %9: Data(Str) = Template([Text("w2="), Operand { index: 0, format: I32 }])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 9 } }] @ a189-async-shared-handle-awaits.ts:38:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a189-async-shared-handle-awaits.ts:38:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(19) }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 }, successor: BlockId(5), resume_value: Some(ValueId(10)), arguments: [Value(ValueId(19)), Value(ValueId(20)), Value(ValueId(21))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(19), owned: false }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 }, successor: BlockId(5), resume_value: Some(ValueId(10)), arguments: [Value(ValueId(19)), Value(ValueId(20)), Value(ValueId(21))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }] }
   b4 Some("release.landing"):
     ExceptionPark() @ a189-async-shared-handle-awaits.ts:38:15
     AsyncHandleRelease(%21) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 38, col: 15 } }] @ a189-async-shared-handle-awaits.ts:38:15
@@ -13275,7 +13275,7 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %11: Data(I32) = LoadField(Class(FieldId(3)))(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 40, col: 18 } }] @ a189-async-shared-handle-awaits.ts:40:24
     %12: Data(Str) = Template([Text("first="), Operand { index: 0, format: I32 }])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 40, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 40, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 40, col: 9 } }] @ a189-async-shared-handle-awaits.ts:40:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a189-async-shared-handle-awaits.ts:40:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(22) }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 }, successor: BlockId(7), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(22), owned: false }, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 }, successor: BlockId(7), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 41, col: 23 } }] }
   b6 Some("release.landing"):
     ExceptionPark() @ a189-async-shared-handle-awaits.ts:39:22
     AsyncHandleRelease(%24) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a189-async-shared-handle-awaits.ts", line: 39, col: 22 } }] @ a189-async-shared-handle-awaits.ts:39:22
@@ -13613,14 +13613,14 @@ fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   b1(%12: Data(AsyncHandle(Class(ClassId(1)))), %13: Data(AsyncHandle(Class(ClassId(1))))) Some("async.resume"):
     %3: Data(Str) = StringLiteral("before-await")() traps=[Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 31, col: 9 } }] @ a190-async-children-across-suspension.ts:31:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a190-async-children-across-suspension.ts:31:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(12) }, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(12)), Value(ValueId(13))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(12), owned: false }, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(12)), Value(ValueId(13))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }] }
   b2(%4: Data(Class(ClassId(1))), %14: Data(AsyncHandle(Class(ClassId(1)))), %15: Data(AsyncHandle(Class(ClassId(1))))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }] @ a190-async-children-across-suspension.ts:32:23
     %5: Data(I32) = LoadField(Class(FieldId(3)))(%4) @ a190-async-children-across-suspension.ts:33:20
     %6: Data(I32) = LoadField(Class(FieldId(4)))(%4) @ a190-async-children-across-suspension.ts:33:31
     %7: Data(Str) = Template([Text("a="), Operand { index: 0, format: I32 }, Text(","), Operand { index: 1, format: I32 }])(%5, %6) traps=[Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 33, col: 9 } }] @ a190-async-children-across-suspension.ts:33:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a190-async-children-across-suspension.ts:33:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(15) }, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 }, successor: BlockId(4), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(14)), Value(ValueId(15))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(15), owned: false }, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 }, successor: BlockId(4), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(14)), Value(ValueId(15))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 34, col: 24 } }] }
   b3 Some("release.landing"):
     ExceptionPark() @ a190-async-children-across-suspension.ts:32:23
     AsyncHandleRelease(%15) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a190-async-children-across-suspension.ts", line: 32, col: 23 } }] @ a190-async-children-across-suspension.ts:32:23
@@ -13918,12 +13918,12 @@ fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a191-async-children-immediate-await.ts:18:3
     %3: Data(Str) = StringLiteral("before-await")() traps=[Trap { kind: Allocation, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 19, col: 9 } }] @ a191-async-children-immediate-await.ts:19:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a191-async-children-immediate-await.ts:19:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }] }
   b1(%4: Data(I32), %8: Data(AsyncHandle(I32)), %9: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }] @ a191-async-children-immediate-await.ts:20:14
     %5: Data(Str) = Template([Text("a="), Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 9 } }] @ a191-async-children-immediate-await.ts:20:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a191-async-children-immediate-await.ts:20:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(9) }, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(8)), Value(ValueId(9))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(9), owned: false }, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(8)), Value(ValueId(9))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 21, col: 14 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a191-async-children-immediate-await.ts:20:14
     AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a191-async-children-immediate-await.ts", line: 20, col: 14 } }] @ a191-async-children-immediate-await.ts:20:14
@@ -14232,10 +14232,10 @@ fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 25, col: 31 } }] @ a192-async-mixed-queue-order.ts:25:31
     %4: Data(Str) = StringLiteral("A:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 26, col: 9 } }] @ a192-async-mixed-queue-order.ts:26:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a192-async-mixed-queue-order.ts:26:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }] }
   b1(%5: Data(I32), %9: Data(AsyncHandle(I32)), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }] @ a192-async-mixed-queue-order.ts:27:28
-    -> Suspend { kind: AsyncHandle { handle: ValueId(10) }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(10), owned: false }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 28, col: 27 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a192-async-mixed-queue-order.ts:27:28
     AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 27, col: 28 } }] @ a192-async-mixed-queue-order.ts:27:28
@@ -14280,10 +14280,10 @@ fn f5 "second" kind=Free exported=true generator=false async=true -> Void entry=
     %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 34, col: 32 } }] @ a192-async-mixed-queue-order.ts:34:32
     %4: Data(Str) = StringLiteral("B:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 35, col: 9 } }] @ a192-async-mixed-queue-order.ts:35:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a192-async-mixed-queue-order.ts:35:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(1)), Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }] }
   b1(%5: Data(I32), %9: Data(AsyncHandle(I32)), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }] @ a192-async-mixed-queue-order.ts:36:27
-    -> Suspend { kind: AsyncHandle { handle: ValueId(10) }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(10), owned: false }, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(5))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 37, col: 28 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a192-async-mixed-queue-order.ts:36:27
     AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a192-async-mixed-queue-order.ts", line: 36, col: 27 } }] @ a192-async-mixed-queue-order.ts:36:27
@@ -14700,7 +14700,7 @@ fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %6: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%5) traps=[Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 54, col: 30 } }] @ a193-async-await-paths.ts:54:30
     %7: Data(Str) = StringLiteral("held:created")() traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 55, col: 9 } }] @ a193-async-await-paths.ts:55:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a193-async-await-paths.ts:55:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(6) }, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 }, successor: BlockId(2), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(25)), Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(6), owned: false }, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 }, successor: BlockId(2), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(25)), Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }] }
   b2(%8: Data(I32), %26: Data(AsyncHandle(I32)), %27: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }] @ a193-async-await-paths.ts:56:17
     %9: Data(Str) = Template([Text("held="), Operand { index: 0, format: I32 }])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 9 } }] @ a193-async-await-paths.ts:56:9
@@ -14710,7 +14710,7 @@ fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %11: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1))), Data(I32)], return_type: Some(Data(I32)) })(%10, Integer(2):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 59, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 59, col: 32 } }] @ a193-async-await-paths.ts:59:32
     %12: Data(Str) = StringLiteral("method:created")() traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 60, col: 9 } }] @ a193-async-await-paths.ts:60:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a193-async-await-paths.ts:60:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(11) }, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 }, successor: BlockId(4), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(26)), Value(ValueId(27)), Value(ValueId(10)), Value(ValueId(11))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(11), owned: false }, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 }, successor: BlockId(4), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(26)), Value(ValueId(27)), Value(ValueId(10)), Value(ValueId(11))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }] }
   b3 Some("release.landing"):
     ExceptionPark() @ a193-async-await-paths.ts:56:17
     AsyncHandleRelease(%27) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 56, col: 17 } }] @ a193-async-await-paths.ts:56:17
@@ -14724,7 +14724,7 @@ fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %15: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 63, col: 33 } }] @ a193-async-await-paths.ts:63:33
     %16: Data(Str) = StringLiteral("generic-fn:created")() traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 64, col: 9 } }] @ a193-async-await-paths.ts:64:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) @ a193-async-await-paths.ts:64:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(15) }, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 }, successor: BlockId(6), resume_value: Some(ValueId(17)), arguments: [Value(ValueId(28)), Value(ValueId(29)), Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(15))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(15), owned: false }, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 }, successor: BlockId(6), resume_value: Some(ValueId(17)), arguments: [Value(ValueId(28)), Value(ValueId(29)), Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(15))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }] }
   b5 Some("release.landing"):
     ExceptionPark() @ a193-async-await-paths.ts:61:19
     AsyncHandleRelease(%31) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 61, col: 19 } }] @ a193-async-await-paths.ts:61:19
@@ -14739,7 +14739,7 @@ fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %19: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(1))), Data(I32)], return_type: Some(Data(I32)) })(%34, Integer(9):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 67, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 67, col: 32 } }] @ a193-async-await-paths.ts:67:32
     %20: Data(Str) = StringLiteral("generic-method:created")() traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 68, col: 9 } }] @ a193-async-await-paths.ts:68:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%20) @ a193-async-await-paths.ts:68:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(19) }, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 }, successor: BlockId(8), resume_value: Some(ValueId(21)), arguments: [Value(ValueId(32)), Value(ValueId(33)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(19))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(19), owned: false }, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 }, successor: BlockId(8), resume_value: Some(ValueId(21)), arguments: [Value(ValueId(32)), Value(ValueId(33)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(19))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }] }
   b7 Some("release.landing"):
     ExceptionPark() @ a193-async-await-paths.ts:65:23
     AsyncHandleRelease(%36) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 65, col: 23 } }] @ a193-async-await-paths.ts:65:23
@@ -14752,7 +14752,7 @@ fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(9))), pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }] @ a193-async-await-paths.ts:69:27
     %22: Data(Str) = Template([Text("generic-method="), Operand { index: 0, format: I32 }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 9 } }] @ a193-async-await-paths.ts:69:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a193-async-await-paths.ts:69:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(37) }, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 }, successor: BlockId(10), resume_value: Some(ValueId(23)), arguments: [Value(ValueId(37)), Value(ValueId(38)), Value(ValueId(39)), Value(ValueId(40)), Value(ValueId(41))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(37), owned: false }, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 }, successor: BlockId(10), resume_value: Some(ValueId(23)), arguments: [Value(ValueId(37)), Value(ValueId(38)), Value(ValueId(39)), Value(ValueId(40)), Value(ValueId(41))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 71, col: 18 } }] }
   b9 Some("release.landing"):
     ExceptionPark() @ a193-async-await-paths.ts:69:27
     AsyncHandleRelease(%41) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a193-async-await-paths.ts", line: 69, col: 27 } }] @ a193-async-await-paths.ts:69:27
@@ -15402,7 +15402,7 @@ fn f5 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a200-using-nullable-async.ts:24:3
     %2: Data(Str) = StringLiteral("collect:after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 25, col: 9 } }] @ a200-using-nullable-async.ts:25:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a200-using-nullable-async.ts:25:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }] }
   b1(%4: Data(AsyncHandle(Void))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }] @ a200-using-nullable-async.ts:26:3
     %3: Data(Str) = StringLiteral("main:after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 27, col: 9 } }] @ a200-using-nullable-async.ts:27:9
@@ -19083,7 +19083,7 @@ fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %6: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a256-try-in-async.ts", line: 43, col: 30 } }] @ a256-try-in-async.ts:43:30
     %7: Data(Str) = StringLiteral("main:held")() traps=[Trap { kind: Allocation, pos: Pos { file: "a256-try-in-async.ts", line: 44, col: 9 } }] @ a256-try-in-async.ts:44:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) @ a256-try-in-async.ts:44:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(6) }, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 }, successor: BlockId(3), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(6), owned: false }, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 }, successor: BlockId(3), resume_value: Some(ValueId(8)), arguments: [Value(ValueId(6))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }] }
   b3(%8: Data(I32), %10: Data(AsyncHandle(I32))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }] @ a256-try-in-async.ts:45:22
     %9: Data(Str) = Template([Text("main:held="), Operand { index: 0, format: I32 }])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a256-try-in-async.ts", line: 45, col: 9 } }] @ a256-try-in-async.ts:45:9
@@ -19692,7 +19692,7 @@ fn f9 "heldForms" kind=Free exported=false generator=false async=true -> Void en
     %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 94, col: 31 } }] @ a258-await-delivers-exception.ts:94:31
     %2: Data(Str) = StringLiteral("held:after call")() traps=[Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 95, col: 9 } }] @ a258-await-delivers-exception.ts:95:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a258-await-delivers-exception.ts:95:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(1) }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 97, col: 20 } }] }
   b1(%3: Data(Class(ClassId(0)))) Some("catch"):
     %7: Data(U32) = LoadField(Class(FieldId(0)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a258-await-delivers-exception.ts", line: 100, col: 9 } }] @ a258-await-delivers-exception.ts:100:9
     %8: Data(Bool) = Binary(Lt)(%7, Integer(7):U32) @ a258-await-delivers-exception.ts:100:9
@@ -19717,7 +19717,7 @@ fn f9 "heldForms" kind=Free exported=false generator=false async=true -> Void en
   b6 Some("if.join"):
     -> Branch(BlockTarget { block: BlockId(7), arguments: [] })
   b7 Some("try.join"):
-    -> Suspend { kind: AsyncHandle { handle: ValueId(36) }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 }, successor: BlockId(9), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(36))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(36), owned: false }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 }, successor: BlockId(9), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(36))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 106, col: 20 } }] }
   b8(%12: Data(Class(ClassId(0)))) Some("catch"):
     %16: Data(Nullable(Class(ClassId(0)))) = LoadGlobal(GlobalId(0))() @ a258-await-delivers-exception.ts:109:33
     %17: Data(U32) = LoadField(Class(FieldId(0)))(%12) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a258-await-delivers-exception.ts", line: 110, col: 9 } }] @ a258-await-delivers-exception.ts:110:9
@@ -19754,7 +19754,7 @@ fn f9 "heldForms" kind=Free exported=false generator=false async=true -> Void en
     %27: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str)], return_type: Some(Data(I32)) })(%26) traps=[Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 115, col: 30 } }] @ a258-await-delivers-exception.ts:115:30
     %28: Data(Str) = StringLiteral("held:late created")() traps=[Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 116, col: 9 } }] @ a258-await-delivers-exception.ts:116:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) @ a258-await-delivers-exception.ts:116:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(27) }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 }, successor: BlockId(18), resume_value: Some(ValueId(30)), arguments: [Value(ValueId(37)), Value(ValueId(27))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(27), owned: false }, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 }, successor: BlockId(18), resume_value: Some(ValueId(30)), arguments: [Value(ValueId(37)), Value(ValueId(27))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a258-await-delivers-exception.ts", line: 118, col: 5 } }] }
   b17(%29: Data(Class(ClassId(0)))) Some("catch"):
     %32: Data(U32) = LoadField(Class(FieldId(0)))(%29) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a258-await-delivers-exception.ts", line: 120, col: 9 } }] @ a258-await-delivers-exception.ts:120:9
     %33: Data(Bool) = Binary(Eq)(%32, Integer(2):U32) @ a258-await-delivers-exception.ts:120:9
@@ -20678,7 +20678,7 @@ fn f3 "waitOn" kind=Free exported=false generator=false async=true -> Void entry
   value %13: Data(Class(ClassId(1))) name=Some("holder")
   b0 Some("entry"):
     %3: Data(AsyncHandle(I32)) = LoadField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 27 } }] @ a260-awaited-handle-outlives-its-holder.ts:18:34
-    -> Suspend { kind: AsyncHandle { handle: ValueId(3) }, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: false }, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 18, col: 21 } }] }
   b1(%1: Data(Class(ClassId(0))), %2: Data(Class(ClassId(1)))) Some("catch"):
     %7: Data(U32) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 20, col: 9 } }] @ a260-awaited-handle-outlives-its-holder.ts:20:9
     %8: Data(Bool) = Binary(Lt)(%7, Integer(7):U32) @ a260-awaited-handle-outlives-its-holder.ts:20:9
@@ -20724,7 +20724,7 @@ fn f4 "run" kind=Free exported=false generator=false async=true -> Void entry=b0
     AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 7, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 7, col: 3 } }] @ a260-awaited-handle-outlives-its-holder.ts:7:3
     %5: Data(Str) = StringLiteral("freed holder")() traps=[Trap { kind: Allocation, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 27, col: 9 } }] @ a260-awaited-handle-outlives-its-holder.ts:27:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a260-awaited-handle-outlives-its-holder.ts:27:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(3) }, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: false }, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(3))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 } }] }
   b1(%7: Data(AsyncHandle(Void))) Some("async-handle.resume"):
     AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 28, col: 3 } }] @ a260-awaited-handle-outlives-its-holder.ts:28:3
     %6: Data(Str) = StringLiteral("end")() traps=[Trap { kind: Allocation, pos: Pos { file: "a260-awaited-handle-outlives-its-holder.ts", line: 29, col: 9 } }] @ a260-awaited-handle-outlives-its-holder.ts:29:9
@@ -21007,7 +21007,7 @@ fn f2 "plain" kind=Free exported=false generator=false async=true -> Void entry=
     %4: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 14, col: 12 } }, Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 14, col: 12 } }] @ a261-lambda-borrows-a-captured-handle.ts:14:12
     %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 14, col: 12 } }] @ a261-lambda-borrows-a-captured-handle.ts:14:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a261-lambda-borrows-a-captured-handle.ts:14:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 }, successor: BlockId(3), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 15, col: 16 } }] }
   b1 Some("release.landing"):
     ExceptionPark() @ a261-lambda-borrows-a-captured-handle.ts:13:12
     AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 13, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 13, col: 12 } }] @ a261-lambda-borrows-a-captured-handle.ts:13:12
@@ -21093,7 +21093,7 @@ fn f4 "exceptional" kind=Free exported=false generator=false async=true -> Void 
   b5 Some("if.join"):
     -> Branch(BlockTarget { block: BlockId(6), arguments: [] })
   b6 Some("try.join"):
-    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 }, successor: BlockId(8), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 } }] }
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 }, successor: BlockId(8), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 28 } }] }
   b7(%10: Data(Class(ClassId(0)))) Some("catch"):
     %14: Data(U32) = LoadField(Class(FieldId(0)))(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a261-lambda-borrows-a-captured-handle.ts", line: 27, col: 58 } }] @ a261-lambda-borrows-a-captured-handle.ts:27:58
     %15: Data(Bool) = Binary(Lt)(%14, Integer(7):U32) @ a261-lambda-borrows-a-captured-handle.ts:27:58
@@ -27172,6 +27172,829 @@ fn f15 "<lambda a330-this-capture.ts:42:21>" kind=Lambda exported=false generato
     StoreAddress(%4, %3) @ a330-this-capture.ts:42:39
     %5: Data(I32) = LoadField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a330-this-capture.ts", line: 42, col: 58 } }] @ a330-this-capture.ts:42:63
     -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a330-this-capture.ts", line: 42, col: 51 } }
+===== a335-promise-all =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "value" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a335-promise-all.ts:7:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 7, col: 16 } }]
+  param %0 "n": Data(I32) kind=Explicit storage=None @ a335-promise-all.ts:7:22
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a335-promise-all.ts", line: 7, col: 46 } }
+fn f2 "later" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a335-promise-all.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 8, col: 16 } }]
+  param %0 "n": Data(I32) kind=Explicit storage=None @ a335-promise-all.ts:8:22
+  param %1 "turns": Data(I32) kind=Explicit storage=None @ a335-promise-all.ts:8:30
+  value %0: Data(I32) name=Some("n")
+  value %1: Data(I32) name=Some("turns")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Lt)(%4, %3) @ a335-promise-all.ts:9:24
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    %12: Data(I32) = Copy(Integer(0):I32) @ a335-promise-all.ts:9:42
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(12)] }, pos: Pos { file: "a335-promise-all.ts", line: 9, col: 42 }, successor: BlockId(5), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 9, col: 42 } }] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %14: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a335-promise-all.ts:9:35
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(14))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    %15: Data(Str) = Template([Text("value "), Operand { index: 0, format: I32 }])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 10, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 10, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 10, col: 9 } }] @ a335-promise-all.ts:10:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) @ a335-promise-all.ts:10:3
+    -> Return { value: Some(Value(ValueId(8))), pos: Pos { file: "a335-promise-all.ts", line: 11, col: 3 } }
+  b5(%13: Data(I32), %16: Data(I32), %17: Data(I32), %18: Data(I32)) Some("async-call.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18))] })
+fn f3 "fails" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a335-promise-all.ts:13:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 13, col: 16 } }]
+  can-raise
+  param %0 "tag": Data(Str) kind=Explicit storage=None @ a335-promise-all.ts:13:22
+  param %1 "turns": Data(I32) kind=Explicit storage=None @ a335-promise-all.ts:13:35
+  value %0: Data(Str) name=Some("tag")
+  value %1: Data(I32) name=Some("turns")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Class(ClassId(0))) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%2: Data(Str), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Lt)(%4, %3) @ a335-promise-all.ts:14:24
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    %12: Data(I32) = Copy(Integer(0):I32) @ a335-promise-all.ts:14:42
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(12)] }, pos: Pos { file: "a335-promise-all.ts", line: 14, col: 42 }, successor: BlockId(5), resume_value: Some(ValueId(13)), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 14, col: 42 } }] }
+  b3(%5: Data(Str), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %14: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a335-promise-all.ts:14:35
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(14))] })
+  b4(%8: Data(Str), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    %15: Data(Str) = Template([Text("fail "), Operand { index: 0, format: Str }])(%8) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 15, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 15, col: 9 } }] @ a335-promise-all.ts:15:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) @ a335-promise-all.ts:15:3
+    %16: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 16, col: 9 } }] @ a335-promise-all.ts:16:9
+    %17: Data(Str) = StringLiteral("Error")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 16, col: 9 } }] @ a335-promise-all.ts:16:9
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%16, Integer(0):U32, %17, %8) traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 16, col: 9 } }] @ a335-promise-all.ts:16:9
+    %18: Data(Str) = LoadField(Class(FieldId(1)))(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 16, col: 9 } }] @ a335-promise-all.ts:16:3
+    %19: Data(Str) = LoadField(Class(FieldId(2)))(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 16, col: 9 } }] @ a335-promise-all.ts:16:3
+    Throw(%16, %18, %19) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 16, col: 3 } }] @ a335-promise-all.ts:16:3
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 16, col: 3 } }
+  b5(%13: Data(I32), %20: Data(Str), %21: Data(I32), %22: Data(I32)) Some("async-call.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(20)), Value(ValueId(21)), Value(ValueId(22))] })
+fn f4 "turns" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a335-promise-all.ts:18:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 18, col: 16 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%0: Data(I32)) Some("for.cond"):
+    %3: Data(Bool) = Binary(Lt)(%0, Integer(5):I32) @ a335-promise-all.ts:19:24
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0))] } }
+  b2 Some("for.body"):
+    %4: Data(Str) = Template([Text("turn "), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 20, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 20, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 20, col: 11 } }] @ a335-promise-all.ts:20:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a335-promise-all.ts:20:5
+    %5: Data(I32) = Copy(Integer(0):I32) @ a335-promise-all.ts:21:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(5)] }, pos: Pos { file: "a335-promise-all.ts", line: 21, col: 5 }, successor: BlockId(5), resume_value: Some(ValueId(6)), arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 21, col: 5 } }] }
+  b3(%1: Data(I32)) Some("for.step"):
+    %7: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ a335-promise-all.ts:19:31
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(7))] })
+  b4(%2: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a335-promise-all.ts", line: 18, col: 16 } }
+  b5(%6: Data(I32), %8: Data(I32)) Some("async-call.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(8))] })
+fn f5 "success" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a335-promise-all.ts:24:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 24, col: 16 } }]
+  can-raise
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  value %2: Data(Array(AsyncHandle(I32))) name=None
+  value %3: Data(AsyncHandle(Array(I32))) name=None
+  value %4: Data(Array(I32)) name=None
+  value %5: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) name=None
+  value %6: Data(I32) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Array(AsyncHandle(I32))) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(10):I32, Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 25, col: 33 } }] @ a335-promise-all.ts:25:33
+    %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(20):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 25, col: 47 } }] @ a335-promise-all.ts:25:47
+    %2: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 25, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 25, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 25, col: 47 } }] @ a335-promise-all.ts:25:32
+    %3: Data(AsyncHandle(Array(I32))) = AsyncAll(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 26, col: 27 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 26, col: 27 } }] @ a335-promise-all.ts:26:27
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(2))], invalidates: [ValueId(2), ValueId(4)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }] }
+  b1(%4: Data(Array(I32)), %10: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }] @ a335-promise-all.ts:26:21
+    %5: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) = AddressOfIndex { checked: true }(%4, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 27, col: 20 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 20 } }] @ a335-promise-all.ts:27:20
+    %6: Data(I32) = LoadAddress(%5) @ a335-promise-all.ts:27:20
+    %7: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) = AddressOfIndex { checked: true }(%4, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 27, col: 29 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 29 } }] @ a335-promise-all.ts:27:29
+    %8: Data(I32) = LoadAddress(%7) @ a335-promise-all.ts:27:29
+    %9: Data(Str) = Template([Text("success "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%6, %8) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 27, col: 9 } }] @ a335-promise-all.ts:27:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) invalidates=[ValueId(10), ValueId(4)] @ a335-promise-all.ts:27:3
+    AsyncHandleArrayRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 24, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 24, col: 16 } }] @ a335-promise-all.ts:24:16
+    -> Return { value: None, pos: Pos { file: "a335-promise-all.ts", line: 24, col: 16 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:26:21
+    AsyncHandleArrayRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }] @ a335-promise-all.ts:26:21
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }] @ a335-promise-all.ts:26:21
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 26, col: 21 } }
+fn f6 "quiet" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a335-promise-all.ts:29:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 29, col: 16 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = Copy(Integer(0):I32) @ a335-promise-all.ts:29:41
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(0)] }, pos: Pos { file: "a335-promise-all.ts", line: 29, col: 41 }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 29, col: 41 } }] }
+  b1(%1: Data(I32)) Some("async-call.resume"):
+    -> Return { value: None, pos: Pos { file: "a335-promise-all.ts", line: 29, col: 16 } }
+fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a335-promise-all.ts:31:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }]
+  can-raise
+  value %0: Data(AsyncHandle(Void)) name=None
+  value %1: Data(AsyncHandle(Void)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(AsyncHandle(I32)) name=None
+  value %6: Data(Array(AsyncHandle(I32))) name=None
+  value %7: Data(Class(ClassId(0))) name=None
+  value %8: Data(AsyncHandle(Array(I32))) name=None
+  value %9: Data(Array(I32)) name=None
+  value %10: Data(Class(ClassId(0))) name=None
+  value %11: Data(U32) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Bool) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(Str) name=None
+  value %24: Data(Array(AsyncHandle(I32))) name=None
+  value %25: Data(AsyncHandle(Array(I32))) name=None
+  value %26: Data(Array(I32)) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(AsyncHandle(I32)) name=None
+  value %30: Data(Array(AsyncHandle(I32))) name=None
+  value %31: Data(AsyncHandle(Array(I32))) name=None
+  value %32: Data(Array(I32)) name=None
+  value %33: Address(AddressType { pointee: I32, array_base: Some(ValueId(32)) }) name=None
+  value %34: Data(I32) name=None
+  value %35: Address(AddressType { pointee: I32, array_base: Some(ValueId(32)) }) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(AsyncHandle(I32)) name=None
+  value %39: Data(AsyncHandle(I32)) name=None
+  value %40: Data(Array(AsyncHandle(I32))) name=None
+  value %41: Data(AsyncHandle(Array(I32))) name=None
+  value %42: Data(AsyncHandle(I32)) name=None
+  value %43: Address(AddressType { pointee: AsyncHandle(I32), array_base: Some(ValueId(40)) }) name=None
+  value %44: Data(AsyncHandle(I32)) name=None
+  value %45: Data(Array(I32)) name=None
+  value %46: Address(AddressType { pointee: I32, array_base: Some(ValueId(45)) }) name=None
+  value %47: Data(I32) name=None
+  value %48: Address(AddressType { pointee: I32, array_base: Some(ValueId(45)) }) name=None
+  value %49: Data(I32) name=None
+  value %50: Data(Str) name=None
+  value %51: Data(I32) name=None
+  value %52: Data(Str) name=None
+  value %53: Data(AsyncHandle(I32)) name=None
+  value %54: Data(Array(AsyncHandle(I32))) name=None
+  value %55: Data(AsyncHandle(Array(I32))) name=None
+  value %56: Data(Array(I32)) name=None
+  value %57: Address(AddressType { pointee: I32, array_base: Some(ValueId(56)) }) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(Str) name=None
+  value %60: Data(I32) name=None
+  value %61: Data(Str) name=None
+  value %62: Data(AsyncHandle(Void)) name=None
+  value %63: Data(AsyncHandle(Void)) name=None
+  value %64: Data(Array(AsyncHandle(Void))) name=None
+  value %65: Data(AsyncHandle(Array(Void))) name=None
+  value %66: Data(Array(Void)) name=None
+  value %67: Data(AsyncHandle(Array(Void))) name=None
+  value %68: Data(Array(Void)) name=None
+  value %69: Data(Str) name=None
+  value %70: Data(AsyncHandle(Void)) name=None
+  value %71: Data(AsyncHandle(Void)) name=None
+  value %72: Data(AsyncHandle(Void)) name=None
+  value %73: Data(AsyncHandle(Void)) name=None
+  value %74: Data(AsyncHandle(Void)) name=None
+  value %75: Data(AsyncHandle(Void)) name=None
+  value %76: Data(Array(AsyncHandle(I32))) name=None
+  value %77: Data(AsyncHandle(Void)) name=None
+  value %78: Data(AsyncHandle(Void)) name=None
+  value %79: Data(Array(AsyncHandle(I32))) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(AsyncHandle(Void)) name=None
+  value %82: Data(AsyncHandle(Void)) name=None
+  value %83: Data(Array(AsyncHandle(I32))) name=None
+  value %84: Data(Array(AsyncHandle(I32))) name=None
+  value %85: Data(AsyncHandle(Void)) name=None
+  value %86: Data(AsyncHandle(Void)) name=None
+  value %87: Data(Array(AsyncHandle(I32))) name=None
+  value %88: Data(Array(AsyncHandle(I32))) name=None
+  value %89: Data(AsyncHandle(I32)) name=None
+  value %90: Data(Array(AsyncHandle(I32))) name=None
+  value %91: Data(AsyncHandle(Void)) name=None
+  value %92: Data(AsyncHandle(Void)) name=None
+  value %93: Data(Array(AsyncHandle(I32))) name=None
+  value %94: Data(Array(AsyncHandle(I32))) name=None
+  value %95: Data(AsyncHandle(I32)) name=None
+  value %96: Data(Array(AsyncHandle(I32))) name=None
+  value %97: Data(Array(AsyncHandle(I32))) name=None
+  value %98: Data(AsyncHandle(Array(I32))) name=None
+  value %99: Data(AsyncHandle(I32)) name=None
+  value %100: Data(AsyncHandle(Void)) name=None
+  value %101: Data(AsyncHandle(Void)) name=None
+  value %102: Data(Array(AsyncHandle(I32))) name=None
+  value %103: Data(Array(AsyncHandle(I32))) name=None
+  value %104: Data(AsyncHandle(I32)) name=None
+  value %105: Data(Array(AsyncHandle(I32))) name=None
+  value %106: Data(Array(AsyncHandle(I32))) name=None
+  value %107: Data(AsyncHandle(Array(I32))) name=None
+  value %108: Data(AsyncHandle(I32)) name=None
+  value %109: Data(AsyncHandle(Void)) name=None
+  value %110: Data(AsyncHandle(Void)) name=None
+  value %111: Data(Array(AsyncHandle(I32))) name=None
+  value %112: Data(Array(AsyncHandle(I32))) name=None
+  value %113: Data(AsyncHandle(I32)) name=None
+  value %114: Data(Array(AsyncHandle(I32))) name=None
+  value %115: Data(Array(AsyncHandle(I32))) name=None
+  value %116: Data(AsyncHandle(Array(I32))) name=None
+  value %117: Data(AsyncHandle(I32)) name=None
+  value %118: Data(AsyncHandle(I32)) name=None
+  value %119: Data(Array(AsyncHandle(I32))) name=None
+  value %120: Data(AsyncHandle(Void)) name=None
+  value %121: Data(AsyncHandle(Void)) name=None
+  value %122: Data(Array(AsyncHandle(I32))) name=None
+  value %123: Data(Array(AsyncHandle(I32))) name=None
+  value %124: Data(AsyncHandle(I32)) name=None
+  value %125: Data(Array(AsyncHandle(I32))) name=None
+  value %126: Data(Array(AsyncHandle(I32))) name=None
+  value %127: Data(AsyncHandle(Array(I32))) name=None
+  value %128: Data(AsyncHandle(I32)) name=None
+  value %129: Data(AsyncHandle(I32)) name=None
+  value %130: Data(Array(AsyncHandle(I32))) name=None
+  value %131: Data(AsyncHandle(Void)) name=None
+  value %132: Data(AsyncHandle(Void)) name=None
+  value %133: Data(Array(AsyncHandle(I32))) name=None
+  value %134: Data(Array(AsyncHandle(I32))) name=None
+  value %135: Data(AsyncHandle(I32)) name=None
+  value %136: Data(Array(AsyncHandle(I32))) name=None
+  value %137: Data(Array(AsyncHandle(I32))) name=None
+  value %138: Data(AsyncHandle(Array(I32))) name=None
+  value %139: Data(AsyncHandle(I32)) name=None
+  value %140: Data(AsyncHandle(I32)) name=None
+  value %141: Data(Array(AsyncHandle(I32))) name=None
+  value %142: Data(Array(AsyncHandle(Void))) name=None
+  value %143: Data(AsyncHandle(Void)) name=None
+  value %144: Data(AsyncHandle(Void)) name=None
+  value %145: Data(Array(AsyncHandle(I32))) name=None
+  value %146: Data(Array(AsyncHandle(I32))) name=None
+  value %147: Data(AsyncHandle(I32)) name=None
+  value %148: Data(Array(AsyncHandle(I32))) name=None
+  value %149: Data(Array(AsyncHandle(I32))) name=None
+  value %150: Data(AsyncHandle(Array(I32))) name=None
+  value %151: Data(AsyncHandle(I32)) name=None
+  value %152: Data(AsyncHandle(I32)) name=None
+  value %153: Data(Array(AsyncHandle(I32))) name=None
+  value %154: Data(Array(AsyncHandle(Void))) name=None
+  value %155: Data(AsyncHandle(Array(Void))) name=None
+  value %156: Data(AsyncHandle(Void)) name=None
+  value %157: Data(AsyncHandle(Void)) name=None
+  value %158: Data(Array(AsyncHandle(I32))) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 32, col: 31 } }] @ a335-promise-all.ts:32:31
+    %1: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 33, col: 32 } }] @ a335-promise-all.ts:33:32
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }] }
+  b1(%70: Data(AsyncHandle(Void)), %71: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }] @ a335-promise-all.ts:34:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(71), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(70)), Value(ValueId(71))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }] }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:34:3
+    AsyncHandleRelease(%71) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }] @ a335-promise-all.ts:34:3
+    AsyncHandleRelease(%70) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }] @ a335-promise-all.ts:34:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }] @ a335-promise-all.ts:34:3
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 34, col: 3 } }
+  b3(%72: Data(AsyncHandle(Void)), %73: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }] @ a335-promise-all.ts:35:3
+    %2: Data(Str) = StringLiteral("input-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 43 } }] @ a335-promise-all.ts:37:43
+    %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) })(%2, Integer(8):I32) traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 37 } }] @ a335-promise-all.ts:37:37
+    %4: Data(Str) = StringLiteral("completion-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 68 } }] @ a335-promise-all.ts:37:68
+    %5: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str), Data(I32)], return_type: Some(Data(I32)) })(%4, Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 62 } }] @ a335-promise-all.ts:37:62
+    %6: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%3, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 37, col: 62 } }] @ a335-promise-all.ts:37:36
+    %8: Data(AsyncHandle(Array(I32))) = AsyncAll(%6) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 38, col: 15 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 38, col: 15 } }] @ a335-promise-all.ts:38:15
+    -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 38, col: 9 }, successor: BlockId(6), resume_value: Some(ValueId(9)), arguments: [Value(ValueId(72)), Value(ValueId(73)), Value(ValueId(6))], invalidates: [ValueId(6), ValueId(9)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 38, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 38, col: 9 } }] }
+  b4 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:35:3
+    AsyncHandleRelease(%73) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }] @ a335-promise-all.ts:35:3
+    AsyncHandleRelease(%72) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }] @ a335-promise-all.ts:35:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }] @ a335-promise-all.ts:35:3
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 35, col: 3 } }
+  b5(%7: Data(Class(ClassId(0)))) Some("catch"):
+    %11: Data(U32) = LoadField(Class(FieldId(0)))(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 39, col: 19 } }] @ a335-promise-all.ts:39:19
+    %12: Data(Bool) = Binary(Lt)(%11, Integer(7):U32) @ a335-promise-all.ts:39:19
+    -> ConditionalBranch { condition: Value(ValueId(12)), then_target: BlockTarget { block: BlockId(8), arguments: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [] } }
+  b6(%9: Data(Array(I32)), %74: Data(AsyncHandle(Void)), %75: Data(AsyncHandle(Void)), %76: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(7))), pos: Pos { file: "a335-promise-all.ts", line: 38, col: 9 } }] @ a335-promise-all.ts:38:9
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [] })
+  b7 Some("catch.landing"):
+    %10: Data(Class(ClassId(0))) = CatchEntry() @ a335-promise-all.ts:38:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(10))] })
+  b8 Some("if.then"):
+    %13: Data(Str) = LoadField(Class(FieldId(2)))(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 39, col: 57 } }] @ a335-promise-all.ts:39:59
+    %14: Data(Str) = Template([Text("caught "), Operand { index: 0, format: Str }])(%13) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 39, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 39, col: 47 } }] @ a335-promise-all.ts:39:47
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) invalidates=[ValueId(76), ValueId(9)] @ a335-promise-all.ts:39:41
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [] })
+  b9 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [] })
+  b10 Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [] })
+  b11 Some("try.join"):
+    %15: Data(Str) = StringLiteral("after catch")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 40, col: 9 } }] @ a335-promise-all.ts:40:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) invalidates=[ValueId(76), ValueId(9)] @ a335-promise-all.ts:40:3
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(74)), Value(ValueId(75)), Value(ValueId(76))] })
+  b12(%16: Data(I32), %156: Data(AsyncHandle(Void)), %157: Data(AsyncHandle(Void)), %158: Data(Array(AsyncHandle(I32)))) Some("for.cond"):
+    %19: Data(Bool) = Binary(Lt)(%16, Integer(10):I32) @ a335-promise-all.ts:41:24
+    -> ConditionalBranch { condition: Value(ValueId(19)), then_target: BlockTarget { block: BlockId(13), arguments: [] }, else_target: BlockTarget { block: BlockId(15), arguments: [Value(ValueId(16))] } }
+  b13 Some("for.body"):
+    %20: Data(I32) = Copy(Integer(0):I32) @ a335-promise-all.ts:41:39
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(20)] }, pos: Pos { file: "a335-promise-all.ts", line: 41, col: 39 }, successor: BlockId(16), resume_value: Some(ValueId(21)), arguments: [Value(ValueId(156)), Value(ValueId(157)), Value(ValueId(158)), Value(ValueId(16))], invalidates: [ValueId(158), ValueId(9)], traps: [Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 41, col: 39 } }] }
+  b14(%17: Data(I32)) Some("for.step"):
+    %22: Data(I32) = Binary(Add)(%17, Integer(1):I32) @ a335-promise-all.ts:41:32
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(22)), Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79))] })
+  b15(%18: Data(I32)) Some("for.exit"):
+    %23: Data(Str) = StringLiteral("after later failure")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 42, col: 9 } }] @ a335-promise-all.ts:42:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%23) invalidates=[ValueId(158), ValueId(9)] @ a335-promise-all.ts:42:3
+    %24: Data(Array(AsyncHandle(I32))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 44, col: 33 } }] @ a335-promise-all.ts:44:33
+    %25: Data(AsyncHandle(Array(I32))) = AsyncAll(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 36 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 36 } }] @ a335-promise-all.ts:45:36
+    -> Suspend { kind: AsyncHandle { handle: ValueId(25), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 }, successor: BlockId(17), resume_value: Some(ValueId(26)), arguments: [Value(ValueId(156)), Value(ValueId(157)), Value(ValueId(158)), Value(ValueId(24))], invalidates: [ValueId(158), ValueId(9), ValueId(24), ValueId(26)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] }
+  b16(%21: Data(I32), %77: Data(AsyncHandle(Void)), %78: Data(AsyncHandle(Void)), %79: Data(Array(AsyncHandle(I32))), %80: Data(I32)) Some("async-call.resume"):
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(80))] })
+  b17(%26: Data(Array(I32)), %81: Data(AsyncHandle(Void)), %82: Data(AsyncHandle(Void)), %83: Data(Array(AsyncHandle(I32))), %84: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(18))), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    %27: Data(I32) = Length(%26) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 46, col: 18 } }] @ a335-promise-all.ts:46:30
+    %28: Data(Str) = Template([Text("empty "), Operand { index: 0, format: I32 }])(%27) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 46, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 46, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 46, col: 9 } }] @ a335-promise-all.ts:46:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) invalidates=[ValueId(83), ValueId(9), ValueId(84), ValueId(26)] @ a335-promise-all.ts:46:3
+    %29: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(30):I32, Integer(1):I32) invalidates=[ValueId(83), ValueId(9), ValueId(84), ValueId(26)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 48, col: 35 } }] @ a335-promise-all.ts:48:35
+    AsyncHandleRetain(%29) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 49, col: 39 } }] @ a335-promise-all.ts:49:39
+    AsyncHandleRetain(%29) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 49, col: 50 } }] @ a335-promise-all.ts:49:50
+    %30: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%29, %29) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 49, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 49, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 49, col: 50 } }] @ a335-promise-all.ts:49:38
+    %31: Data(AsyncHandle(Array(I32))) = AsyncAll(%30) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 40 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 40 } }] @ a335-promise-all.ts:50:40
+    -> Suspend { kind: AsyncHandle { handle: ValueId(31), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 }, successor: BlockId(19), resume_value: Some(ValueId(32)), arguments: [Value(ValueId(81)), Value(ValueId(82)), Value(ValueId(83)), Value(ValueId(84)), Value(ValueId(29)), Value(ValueId(30))], invalidates: [ValueId(83), ValueId(9), ValueId(84), ValueId(26), ValueId(30), ValueId(32)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] }
+  b18 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:45:30
+    AsyncHandleArrayRelease(%84) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    AsyncHandleArrayRelease(%83) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    AsyncHandleRelease(%82) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    AsyncHandleRelease(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }] @ a335-promise-all.ts:45:30
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 45, col: 30 } }
+  b19(%32: Data(Array(I32)), %85: Data(AsyncHandle(Void)), %86: Data(AsyncHandle(Void)), %87: Data(Array(AsyncHandle(I32))), %88: Data(Array(AsyncHandle(I32))), %89: Data(AsyncHandle(I32)), %90: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(20))), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    %33: Address(AddressType { pointee: I32, array_base: Some(ValueId(32)) }) = AddressOfIndex { checked: true }(%32, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 51, col: 22 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 22 } }] @ a335-promise-all.ts:51:22
+    %34: Data(I32) = LoadAddress(%33) @ a335-promise-all.ts:51:22
+    %35: Address(AddressType { pointee: I32, array_base: Some(ValueId(32)) }) = AddressOfIndex { checked: true }(%32, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 51, col: 44 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 44 } }] @ a335-promise-all.ts:51:44
+    %36: Data(I32) = LoadAddress(%35) @ a335-promise-all.ts:51:44
+    %37: Data(Str) = Template([Text("duplicate "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%34, %36) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 51, col: 9 } }] @ a335-promise-all.ts:51:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%37) invalidates=[ValueId(87), ValueId(9), ValueId(88), ValueId(26), ValueId(90), ValueId(32)] @ a335-promise-all.ts:51:3
+    %38: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(Integer(40):I32, Integer(2):I32) invalidates=[ValueId(87), ValueId(9), ValueId(88), ValueId(26), ValueId(90), ValueId(32)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 53, col: 33 } }] @ a335-promise-all.ts:53:33
+    %39: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(50):I32) invalidates=[ValueId(87), ValueId(9), ValueId(88), ValueId(26), ValueId(90), ValueId(32)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 53, col: 47 } }] @ a335-promise-all.ts:53:47
+    %40: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%38, %39) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 53, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 53, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 53, col: 47 } }] @ a335-promise-all.ts:53:32
+    %41: Data(AsyncHandle(Array(I32))) = AsyncAll(%40) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 54, col: 36 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 54, col: 36 } }] @ a335-promise-all.ts:54:36
+    %42: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(99):I32) invalidates=[ValueId(87), ValueId(9), ValueId(88), ValueId(26), ValueId(90), ValueId(32), ValueId(40)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 55, col: 37 } }] @ a335-promise-all.ts:55:37
+    %43: Address(AddressType { pointee: AsyncHandle(I32), array_base: Some(ValueId(40)) }) = AddressOfIndex { checked: true }(%40, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 56, col: 3 } }, Trap { kind: IndexWrite, pos: Pos { file: "a335-promise-all.ts", line: 56, col: 3 } }] @ a335-promise-all.ts:56:3
+    %44: Data(AsyncHandle(I32)) = LoadAddress(%43) @ a335-promise-all.ts:56:3
+    AsyncHandleRetain(%42) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 56, col: 3 } }] @ a335-promise-all.ts:56:3
+    StoreAddress(%43, %42) @ a335-promise-all.ts:56:3
+    AsyncHandleRelease(%44) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 56, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 56, col: 3 } }] @ a335-promise-all.ts:56:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(41), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 }, successor: BlockId(21), resume_value: Some(ValueId(45)), arguments: [Value(ValueId(85)), Value(ValueId(86)), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(89)), Value(ValueId(90)), Value(ValueId(40)), Value(ValueId(41)), Value(ValueId(42))], invalidates: [ValueId(87), ValueId(9), ValueId(88), ValueId(26), ValueId(90), ValueId(32), ValueId(40), ValueId(45)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] }
+  b20 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:50:34
+    AsyncHandleArrayRelease(%90) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    AsyncHandleRelease(%89) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    AsyncHandleArrayRelease(%88) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    AsyncHandleArrayRelease(%87) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    AsyncHandleRelease(%86) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    AsyncHandleRelease(%85) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }] @ a335-promise-all.ts:50:34
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 50, col: 34 } }
+  b21(%45: Data(Array(I32)), %91: Data(AsyncHandle(Void)), %92: Data(AsyncHandle(Void)), %93: Data(Array(AsyncHandle(I32))), %94: Data(Array(AsyncHandle(I32))), %95: Data(AsyncHandle(I32)), %96: Data(Array(AsyncHandle(I32))), %97: Data(Array(AsyncHandle(I32))), %98: Data(AsyncHandle(Array(I32))), %99: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(22))), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    %46: Address(AddressType { pointee: I32, array_base: Some(ValueId(45)) }) = AddressOfIndex { checked: true }(%45, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 58, col: 21 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 21 } }] @ a335-promise-all.ts:58:21
+    %47: Data(I32) = LoadAddress(%46) @ a335-promise-all.ts:58:21
+    %48: Address(AddressType { pointee: I32, array_base: Some(ValueId(45)) }) = AddressOfIndex { checked: true }(%45, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 58, col: 42 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 42 } }] @ a335-promise-all.ts:58:42
+    %49: Data(I32) = LoadAddress(%48) @ a335-promise-all.ts:58:42
+    %50: Data(Str) = Template([Text("snapshot "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%47, %49) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 42 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 58, col: 9 } }] @ a335-promise-all.ts:58:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%50) invalidates=[ValueId(93), ValueId(9), ValueId(94), ValueId(26), ValueId(96), ValueId(32), ValueId(97), ValueId(45)] @ a335-promise-all.ts:58:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(99), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 }, successor: BlockId(23), resume_value: Some(ValueId(51)), arguments: [Value(ValueId(91)), Value(ValueId(92)), Value(ValueId(93)), Value(ValueId(94)), Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(97)), Value(ValueId(98)), Value(ValueId(99))], invalidates: [ValueId(93), ValueId(9), ValueId(94), ValueId(26), ValueId(96), ValueId(32), ValueId(97), ValueId(45)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] }
+  b22 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:57:33
+    AsyncHandleRelease(%99) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleRelease(%98) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleArrayRelease(%97) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleArrayRelease(%96) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleRelease(%95) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleArrayRelease(%94) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleArrayRelease(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleRelease(%92) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    AsyncHandleRelease(%91) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }] @ a335-promise-all.ts:57:33
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 57, col: 33 } }
+  b23(%51: Data(I32), %100: Data(AsyncHandle(Void)), %101: Data(AsyncHandle(Void)), %102: Data(Array(AsyncHandle(I32))), %103: Data(Array(AsyncHandle(I32))), %104: Data(AsyncHandle(I32)), %105: Data(Array(AsyncHandle(I32))), %106: Data(Array(AsyncHandle(I32))), %107: Data(AsyncHandle(Array(I32))), %108: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(24))), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    %52: Data(Str) = Template([Text("replacement "), Operand { index: 0, format: I32 }])(%51) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 9 } }] @ a335-promise-all.ts:59:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%52) invalidates=[ValueId(102), ValueId(9), ValueId(103), ValueId(26), ValueId(105), ValueId(32), ValueId(106), ValueId(45)] @ a335-promise-all.ts:59:3
+    %53: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(60):I32) invalidates=[ValueId(102), ValueId(9), ValueId(103), ValueId(26), ValueId(105), ValueId(32), ValueId(106), ValueId(45)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 61, col: 35 } }] @ a335-promise-all.ts:61:35
+    AsyncHandleRetain(%53) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 62, col: 42 } }] @ a335-promise-all.ts:62:42
+    %54: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%53) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 62, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 62, col: 42 } }] @ a335-promise-all.ts:62:41
+    %55: Data(AsyncHandle(Array(I32))) = AsyncAll(%54) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 40 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 40 } }] @ a335-promise-all.ts:63:40
+    -> Suspend { kind: AsyncHandle { handle: ValueId(55), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 }, successor: BlockId(25), resume_value: Some(ValueId(56)), arguments: [Value(ValueId(100)), Value(ValueId(101)), Value(ValueId(102)), Value(ValueId(103)), Value(ValueId(104)), Value(ValueId(105)), Value(ValueId(106)), Value(ValueId(107)), Value(ValueId(108)), Value(ValueId(53)), Value(ValueId(54))], invalidates: [ValueId(102), ValueId(9), ValueId(103), ValueId(26), ValueId(105), ValueId(32), ValueId(106), ValueId(45), ValueId(54), ValueId(56)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] }
+  b24 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:59:24
+    AsyncHandleRelease(%108) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleRelease(%107) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleArrayRelease(%106) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleArrayRelease(%105) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleRelease(%104) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleArrayRelease(%103) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleArrayRelease(%102) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleRelease(%101) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    AsyncHandleRelease(%100) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }] @ a335-promise-all.ts:59:24
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 59, col: 24 } }
+  b25(%56: Data(Array(I32)), %109: Data(AsyncHandle(Void)), %110: Data(AsyncHandle(Void)), %111: Data(Array(AsyncHandle(I32))), %112: Data(Array(AsyncHandle(I32))), %113: Data(AsyncHandle(I32)), %114: Data(Array(AsyncHandle(I32))), %115: Data(Array(AsyncHandle(I32))), %116: Data(AsyncHandle(Array(I32))), %117: Data(AsyncHandle(I32)), %118: Data(AsyncHandle(I32)), %119: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(26))), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    %57: Address(AddressType { pointee: I32, array_base: Some(ValueId(56)) }) = AddressOfIndex { checked: true }(%56, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 64, col: 22 } }, Trap { kind: IndexRead, pos: Pos { file: "a335-promise-all.ts", line: 64, col: 22 } }] @ a335-promise-all.ts:64:22
+    %58: Data(I32) = LoadAddress(%57) @ a335-promise-all.ts:64:22
+    %59: Data(Str) = Template([Text("completed "), Operand { index: 0, format: I32 }])(%58) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 64, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 64, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 64, col: 9 } }] @ a335-promise-all.ts:64:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%59) invalidates=[ValueId(111), ValueId(9), ValueId(112), ValueId(26), ValueId(114), ValueId(32), ValueId(115), ValueId(45), ValueId(119), ValueId(56)] @ a335-promise-all.ts:64:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(118), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 }, successor: BlockId(27), resume_value: Some(ValueId(60)), arguments: [Value(ValueId(109)), Value(ValueId(110)), Value(ValueId(111)), Value(ValueId(112)), Value(ValueId(113)), Value(ValueId(114)), Value(ValueId(115)), Value(ValueId(116)), Value(ValueId(117)), Value(ValueId(118)), Value(ValueId(119))], invalidates: [ValueId(111), ValueId(9), ValueId(112), ValueId(26), ValueId(114), ValueId(32), ValueId(115), ValueId(45), ValueId(119), ValueId(56)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] }
+  b26 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:63:34
+    AsyncHandleArrayRelease(%119) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%118) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%117) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%116) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleArrayRelease(%115) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleArrayRelease(%114) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%113) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleArrayRelease(%112) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleArrayRelease(%111) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%110) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    AsyncHandleRelease(%109) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }] @ a335-promise-all.ts:63:34
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 63, col: 34 } }
+  b27(%60: Data(I32), %120: Data(AsyncHandle(Void)), %121: Data(AsyncHandle(Void)), %122: Data(Array(AsyncHandle(I32))), %123: Data(Array(AsyncHandle(I32))), %124: Data(AsyncHandle(I32)), %125: Data(Array(AsyncHandle(I32))), %126: Data(Array(AsyncHandle(I32))), %127: Data(AsyncHandle(Array(I32))), %128: Data(AsyncHandle(I32)), %129: Data(AsyncHandle(I32)), %130: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(28))), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    %61: Data(Str) = Template([Text("also awaited "), Operand { index: 0, format: I32 }])(%60) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 9 } }] @ a335-promise-all.ts:65:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%61) invalidates=[ValueId(122), ValueId(9), ValueId(123), ValueId(26), ValueId(125), ValueId(32), ValueId(126), ValueId(45), ValueId(130), ValueId(56)] @ a335-promise-all.ts:65:3
+    %62: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: None })() invalidates=[ValueId(122), ValueId(9), ValueId(123), ValueId(26), ValueId(125), ValueId(32), ValueId(126), ValueId(45), ValueId(130), ValueId(56)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 67, col: 38 } }] @ a335-promise-all.ts:67:38
+    %63: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: None })() invalidates=[ValueId(122), ValueId(9), ValueId(123), ValueId(26), ValueId(125), ValueId(32), ValueId(126), ValueId(45), ValueId(130), ValueId(56)] traps=[Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 67, col: 47 } }] @ a335-promise-all.ts:67:47
+    %64: Data(Array(AsyncHandle(Void))) = ArrayLiteral(%62, %63) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 67, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 67, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 67, col: 47 } }] @ a335-promise-all.ts:67:37
+    %65: Data(AsyncHandle(Array(Void))) = AsyncAll(%64) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 9 } }] @ a335-promise-all.ts:68:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(65), owned: true }, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 }, successor: BlockId(29), resume_value: Some(ValueId(66)), arguments: [Value(ValueId(120)), Value(ValueId(121)), Value(ValueId(122)), Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(125)), Value(ValueId(126)), Value(ValueId(127)), Value(ValueId(128)), Value(ValueId(129)), Value(ValueId(130)), Value(ValueId(64))], invalidates: [ValueId(122), ValueId(9), ValueId(123), ValueId(26), ValueId(125), ValueId(32), ValueId(126), ValueId(45), ValueId(130), ValueId(56), ValueId(64), ValueId(66)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] }
+  b28 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:65:25
+    AsyncHandleArrayRelease(%130) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%129) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%128) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%127) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleArrayRelease(%126) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleArrayRelease(%125) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%124) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleArrayRelease(%123) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleArrayRelease(%122) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%121) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    AsyncHandleRelease(%120) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }] @ a335-promise-all.ts:65:25
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 65, col: 25 } }
+  b29(%66: Data(Array(Void)), %131: Data(AsyncHandle(Void)), %132: Data(AsyncHandle(Void)), %133: Data(Array(AsyncHandle(I32))), %134: Data(Array(AsyncHandle(I32))), %135: Data(AsyncHandle(I32)), %136: Data(Array(AsyncHandle(I32))), %137: Data(Array(AsyncHandle(I32))), %138: Data(AsyncHandle(Array(I32))), %139: Data(AsyncHandle(I32)), %140: Data(AsyncHandle(I32)), %141: Data(Array(AsyncHandle(I32))), %142: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(30))), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    %67: Data(AsyncHandle(Array(Void))) = AsyncAll(%142) traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 69, col: 37 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 69, col: 37 } }] @ a335-promise-all.ts:69:37
+    -> Suspend { kind: AsyncHandle { handle: ValueId(67), owned: false }, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 }, successor: BlockId(31), resume_value: Some(ValueId(68)), arguments: [Value(ValueId(131)), Value(ValueId(132)), Value(ValueId(133)), Value(ValueId(134)), Value(ValueId(135)), Value(ValueId(136)), Value(ValueId(137)), Value(ValueId(138)), Value(ValueId(139)), Value(ValueId(140)), Value(ValueId(141)), Value(ValueId(142)), Value(ValueId(67))], invalidates: [ValueId(133), ValueId(9), ValueId(134), ValueId(26), ValueId(136), ValueId(32), ValueId(137), ValueId(45), ValueId(141), ValueId(56), ValueId(142), ValueId(66), ValueId(68)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] }
+  b30 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%142) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%141) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%140) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%139) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%138) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%137) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%136) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%135) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%134) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleArrayRelease(%133) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%132) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    AsyncHandleRelease(%131) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }] @ a335-promise-all.ts:68:3
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 68, col: 3 } }
+  b31(%68: Data(Array(Void)), %143: Data(AsyncHandle(Void)), %144: Data(AsyncHandle(Void)), %145: Data(Array(AsyncHandle(I32))), %146: Data(Array(AsyncHandle(I32))), %147: Data(AsyncHandle(I32)), %148: Data(Array(AsyncHandle(I32))), %149: Data(Array(AsyncHandle(I32))), %150: Data(AsyncHandle(Array(I32))), %151: Data(AsyncHandle(I32)), %152: Data(AsyncHandle(I32)), %153: Data(Array(AsyncHandle(I32))), %154: Data(Array(AsyncHandle(Void))), %155: Data(AsyncHandle(Array(Void)))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(32))), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    %69: Data(Str) = StringLiteral("void complete")() traps=[Trap { kind: Allocation, pos: Pos { file: "a335-promise-all.ts", line: 71, col: 9 } }] @ a335-promise-all.ts:71:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%69) invalidates=[ValueId(145), ValueId(9), ValueId(146), ValueId(26), ValueId(148), ValueId(32), ValueId(149), ValueId(45), ValueId(153), ValueId(56), ValueId(154), ValueId(66), ValueId(68)] @ a335-promise-all.ts:71:3
+    AsyncHandleRelease(%155) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%154) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%153) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%152) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%151) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%150) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%149) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%148) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%147) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%146) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleArrayRelease(%145) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%144) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    AsyncHandleRelease(%143) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }] @ a335-promise-all.ts:31:23
+    -> Return { value: None, pos: Pos { file: "a335-promise-all.ts", line: 31, col: 23 } }
+  b32 Some("release.landing"):
+    ExceptionPark() @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%155) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%154) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%153) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%152) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%151) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%150) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%149) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%148) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%147) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%146) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleArrayRelease(%145) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%144) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    AsyncHandleRelease(%143) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }] @ a335-promise-all.ts:70:3
+    -> Unreachable { pos: Pos { file: "a335-promise-all.ts", line: 70, col: 3 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

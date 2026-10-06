@@ -21,6 +21,14 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// The language has no void[] value.
+    PromiseAllVoidValue,
+    /// Promise.all derives its result type from its input array; explicit type arguments are outside the admitted form.
+    PromiseAllTypeArguments,
+    /// Promise.all takes a homogeneous array of async handles. Other iterables, thenables, and ordinary values have no aggregate registration.
+    PromiseAllInput,
+    /// An aggregate copies result bytes. An async handle or an array of async handles requires the counted store path.
+    PromiseAllCountedResult,
     /// An inferred function value has optional parameters only in TypeScript.
     FunctionValueOptionalArguments,
     /// A null check of an element changes no type (§163).
@@ -1402,6 +1410,10 @@ impl Divergence {
         Divergence::LiteralUnionAlias,
         Divergence::OptionalDescriptorMember,
         Divergence::BoundaryOnlyObject,
+        Divergence::PromiseAllVoidValue,
+        Divergence::PromiseAllTypeArguments,
+        Divergence::PromiseAllInput,
+        Divergence::PromiseAllCountedResult,
         Divergence::PromiseObject,
         Divergence::AwaitOutsideAsync,
         Divergence::AsyncFunctionShape,
@@ -1734,3 +1746,5 @@ mod tests {
         }
     }
 }
+
+mod promise_all;

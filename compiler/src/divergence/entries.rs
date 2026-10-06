@@ -9,6 +9,11 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::PromiseAllVoidValue => super::promise_all::PROMISEALLVOIDVALUE,
+            Divergence::PromiseAllTypeArguments => super::promise_all::PROMISEALLTYPEARGUMENTS,
+            Divergence::PromiseAllInput => super::promise_all::PROMISEALLINPUT,
+            Divergence::PromiseAllCountedResult => super::promise_all::PROMISEALLCOUNTEDRESULT,
+
             Divergence::FunctionValueOptionalArguments => {
                 super::type_flow::FUNCTION_VALUE_OPTIONAL_ARGUMENTS
             }

@@ -152,6 +152,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t81-generator-done-fixed-wire-alias" => (TrapKind::GeneratorDoneValue, 15, 15),
         "t72-narrowing-boundary-getter" => (TrapKind::SharedNullNarrowing, 13, 44),
         "t71-narrowing-destructuring-getter" => (TrapKind::SharedNullNarrowing, 16, 16),
+        "t83-unobserved-aggregate-exception" => (TrapKind::UncaughtException, 10, 40),
         "t82-worker-trap-site" => (TrapKind::WorkerTrapped, 16, 14),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
@@ -826,7 +827,8 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
                 "t51-bytes-into-range" => {
                     Some("byte range at offset 5 with size 16 exceeds array length 20")
                 }
-                "t82-worker-trap-site" => Some(
+                "t83-unobserved-aggregate-exception" => Some("Error: aggregate dropped"),
+        "t82-worker-trap-site" => Some(
                     "worker trapped with index-out-of-bounds: index 5 out of bounds for array length 1",
                 ),
                 _ => None,

@@ -622,3 +622,5 @@ mod tests {
         }
     }
 }
+
+mod promise_all;

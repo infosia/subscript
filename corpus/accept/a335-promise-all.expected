@@ -1,0 +1,22 @@
+turn 0
+value 10
+turn 1
+value 20
+turn 2
+turn 3
+success 10 20
+turn 4
+fail completion-first
+caught completion-first
+after catch
+fail input-first
+after later failure
+empty 0
+value 30
+duplicate 30 30
+value 40
+snapshot 40 50
+replacement 99
+completed 60
+also awaited 60
+void complete

@@ -517,6 +517,31 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Some(self.lower_async_handle_create(callee, args, expr)?)
             }
             K::AsyncHandleAwait(handle) => self.lower_async_handle_await(handle, expr)?,
+            K::AsyncAll { jobs, .. } => {
+                let input = self.require_expr(jobs)?;
+                let fresh = matches!(&input, l::Operand::Value(value)
+                    if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner)
+                        && !self.moved_async_owners.contains(value));
+                let result = self.emit(
+                    l::InstructionKind::AsyncAll,
+                    vec![input.clone()],
+                    Some(l::ValueType::Data(expr.ty.clone())),
+                    false,
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
+                    expr.pos.clone(),
+                )?;
+                if fresh {
+                    self.discard_owner(
+                        hir::AsyncCopySite::DiscardedResult,
+                        input,
+                        &l::ValueType::Data(jobs.ty.clone()),
+                        &jobs.pos,
+                    )?;
+                }
+                result
+            }
             K::AsyncHandleTransfer { value, .. } => self.lower_expr(value)?,
             K::Cond { cond, then, els } => Some(self.lower_cond(cond, then, els, expr)?),
         };

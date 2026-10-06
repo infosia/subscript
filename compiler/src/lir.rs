@@ -612,6 +612,8 @@ pub enum InstructionKind {
     /// The handle keeps its owner and caches a completed result for later awaits.
     /// A body trap stops the caller at this call, with the callee's position.
     AsyncHandleCreate(CallTarget),
+    /// Creates an aggregate over one handle array. Its result is `Promise<T[]>` (§166).
+    AsyncAll,
     /// Increment one async frame's non-atomic owner count.
     AsyncHandleRetain,
     /// Decrement one async frame's owner count and free it at zero. Its
@@ -672,6 +674,7 @@ impl InstructionKind {
                 | Self::ArrayWithCapacity
                 | Self::ArraySpreadLiteral(_)
                 | Self::Call(_)
+                | Self::AsyncAll
                 | Self::AsyncHandleCreate(_)
         )
     }
@@ -1179,7 +1182,7 @@ impl Terminator {
                     SuspendKind::AsyncCall { operands, .. } => {
                         values.extend(operands.iter().copied());
                     }
-                    SuspendKind::AsyncHandle { handle } => values.push(*handle),
+                    SuspendKind::AsyncHandle { handle, .. } => values.push(*handle),
                 }
             }
             Self::Unreachable { .. } | Self::Trap(_) => {}
@@ -1260,7 +1263,7 @@ impl Terminator {
                             *value = map(*value);
                         }
                     }
-                    SuspendKind::AsyncHandle { handle } => *handle = map(*handle),
+                    SuspendKind::AsyncHandle { handle, .. } => *handle = map(*handle),
                 }
             }
             Self::Unreachable { .. } | Self::Trap(_) => {}
@@ -1343,6 +1346,8 @@ pub enum SuspendKind {
     AsyncHandle {
         /// The awaited handle value.
         handle: ValueId,
+        /// Transfer the temporary handle count to the await registration.
+        owned: bool,
     },
 }
 
@@ -1580,6 +1585,7 @@ mod tests {
                 Terminator::Suspend {
                     kind: SuspendKind::AsyncHandle {
                         handle: ValueId(16),
+                        owned: false,
                     },
                     pos: pos(),
                     successor: BlockId(10),

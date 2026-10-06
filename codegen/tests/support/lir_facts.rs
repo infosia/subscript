@@ -692,6 +692,7 @@ fn collect_trap_expression(
             | hir::ExprKind::Yield(_)
             | hir::ExprKind::AsyncSuspend
             | hir::ExprKind::AsyncHandleAwait(_)
+            | hir::ExprKind::AsyncAll { .. }
             | hir::ExprKind::AsyncHandleTransfer { .. }
             | hir::ExprKind::Cond { .. } => {}
         }
@@ -1215,6 +1216,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::Yield(_)
         | hir::ExprKind::AsyncSuspend
         | hir::ExprKind::AsyncHandleAwait(_)
+        | hir::ExprKind::AsyncAll { .. }
         | hir::ExprKind::AsyncHandleTransfer { .. }
         | hir::ExprKind::Cond { .. } => None,
     })
@@ -1321,7 +1323,8 @@ fn instruction_arity(
                 target.parameter_types.len()
             },
         ),
-        K::AsyncHandleRetain
+        K::AsyncAll
+        | K::AsyncHandleRetain
         | K::AsyncHandleRelease
         | K::AsyncHandleArrayRetain
         | K::AsyncHandleArrayRelease => Arity::Exact(1),

@@ -120,6 +120,7 @@ fn read_operands(
         | Length
         | ForeignArrayData
         | SetFromSource(_)
+        | AsyncAll
         | MapFromSource
         | IteratorCreate { .. }
         | AsyncHandleRetain

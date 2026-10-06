@@ -310,7 +310,7 @@ fn snapshot_terminator_values(terminator: &lir::Terminator) -> Vec<lir::ValueId>
                 lir::SuspendKind::AsyncCall { operands, .. } => {
                     values.extend(operands.iter().copied())
                 }
-                lir::SuspendKind::AsyncHandle { handle } => values.push(*handle),
+                lir::SuspendKind::AsyncHandle { handle, .. } => values.push(*handle),
             }
         }
         Terminator::Trap(_) | Terminator::Unreachable { .. } => {}

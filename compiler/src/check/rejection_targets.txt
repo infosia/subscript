@@ -1401,3 +1401,9 @@ IndexedAssignmentUnchecked	s163-IndexedAssignmentUnchecked	S005	`A | null` may b
 IndexedMemberChecked	s163-switch-receiver-checked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
 IndexedMemberUnchecked	s163-switch-receiver-unchecked	S011	`A | null` may be null here; copy the element to a `const` local and test the local\nnote: const v = xs[i]; if (v !== null) { v.x }
 FunctionValueOptionalArgumentCount	s164-function-value-default	S100	`h` expects 2 argument(s), got 1: a call through a function value passes every parameter
+PromiseAllArguments	s166-PromiseAllArguments	S013	Promise.all requires one Promise<T>[] argument
+PromiseAllVoidValue	s166-PromiseAllVoidValue	S013	the language has no void[] value
+PromiseAllTypeArguments	s166-PromiseAllTypeArguments	S013	Promise.all takes no explicit type arguments
+PromiseAllInput	s166-PromiseAllInput	S013	Promise.all requires Promise<T>[]
+PromiseAllCountedResult	s166-PromiseAllCountedResult	S013	Promise.all cannot store a counted result
+PromiseAllSpread	s166-PromiseAllSpread	S013	spread arguments require variadic parameters, which the language does not have

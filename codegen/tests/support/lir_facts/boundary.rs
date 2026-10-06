@@ -296,6 +296,7 @@ pub(super) fn compare_boundary_boxes(
             | hir::ExprKind::AsyncCall { .. }
             | hir::ExprKind::AsyncHandleCreate { .. }
             | hir::ExprKind::AsyncHandleAwait(_)
+            | hir::ExprKind::AsyncAll { .. }
             | hir::ExprKind::AsyncHandleTransfer { .. }
             | hir::ExprKind::Cond { .. } => {}
         }
@@ -459,6 +460,7 @@ fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
         | K::Template(_)
         | K::Lambda { .. }
         | K::AsyncHandleCreate { .. }
+        | K::AsyncAll { .. }
         | K::AsyncHandleTransfer { .. }
         | K::Cond { .. } => false,
     }

@@ -358,7 +358,12 @@ impl<'p> Checker<'p> {
                     );
                     return Type::Error;
                 }
-                let value = self.resolve_result_type(&args.params[0]);
+                let value = match &*args.params[0] {
+                    ast::TsType::TsArrayType(array) if matches!(&*array.elem_type, ast::TsType::TsKeywordType(keyword) if keyword.kind == ast::TsKeywordTypeKind::TsVoidKeyword) => {
+                        Type::array(Type::Void)
+                    }
+                    _ => self.resolve_result_type(&args.params[0]),
+                };
                 return Type::async_handle(value);
             }
             "FixedArray" if self.type_scope_item(name).is_none() => {
