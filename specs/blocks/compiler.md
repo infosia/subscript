@@ -208,3 +208,4 @@ Every section, with its status:
 | §164 | One exit predicate, and the required arguments | active | [`s164-one-exit-predicate-and-the-required-arguments.md`](compiler/s164-one-exit-predicate-and-the-required-arguments.md) |
 | §165 | The async documentation states the contract | active | [`s165-the-async-documentation-states-the-contract.md`](compiler/s165-the-async-documentation-states-the-contract.md) |
 | §166 | `Promise.all` over an array of handles | active | [`s166-promise-all-over-an-array-of-handles.md`](compiler/s166-promise-all-over-an-array-of-handles.md) |
+| §167 | Async function values and non-capturing async arrows | active | [`s167-async-function-values-and-non-capturing-async-arrows.md`](compiler/s167-async-function-values-and-non-capturing-async-arrows.md) |

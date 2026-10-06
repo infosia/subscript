@@ -258,6 +258,9 @@ when an exception exit releases a handle that holds an unobserved
 exception, this language traps at once; `node` lets a `catch` take
 the propagating exception first and reports the unhandled rejection
 after it (§116.1 rule 4b).
+*Revised 2026-10-06 (§167):* a named async function is a value, and
+an async arrow that captures nothing is accepted. A call through either
+value has the semantics of a direct call (C24 row 36).
 
 ### C9. Field initializers — every construction, earlier fields through `this`
 
@@ -707,6 +710,7 @@ it as a candidate to accept.
 | 33 | A call through a function value with fewer arguments than parameters, where `tsc` gives the value optional parameters (`const h = (a: i32, b: i32 = 5): i32 => a + b; h(1)`) | A function type has no optional parameter (C7), so a call through a function value passes every parameter. A default belongs to a declaration (`compiler.md` §164). | every argument; a direct call of the declaration |
 | 34 | A use of the `void[]` value of `await Promise.all(jobs)` with `jobs: Promise<void>[]` | The language has no `void[]` value (`compiler.md` §166 rule 2). | an `await` statement of the aggregate |
 | 35 | `Promise.all(jobs)` where the result type `T` holds a count: an async handle, or an array of async handles | The aggregate stores each result by a byte copy; a counted result needs the §70.3 store path (`compiler.md` §166 rule 12). | await each input, and build the array |
+| 36 | An async arrow that captures a local, a parameter, or `this` | A frame that a call suspends outlives the stack scope of the captured binding. A capture needs a retained environment, which is not decided (`compiler.md` §167 rule 5). | pass the value as a parameter; a module global |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
