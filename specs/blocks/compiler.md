@@ -213,3 +213,4 @@ Every section, with its status:
 | §169 | The host reads each async task | active | [`s169-the-host-reads-each-async-task.md`](compiler/s169-the-host-reads-each-async-task.md) |
 | §170 | A task group joins its tasks | active | [`s170-a-task-group-joins-its-tasks.md`](compiler/s170-a-task-group-joins-its-tasks.md) |
 | §171 | An array owns its counted elements | active | [`s171-an-array-owns-its-counted-elements.md`](compiler/s171-an-array-owns-its-counted-elements.md) |
+| §172 | A reference object releases its counted values | active | [`s172-a-reference-object-releases-its-counted-values.md`](compiler/s172-a-reference-object-releases-its-counted-values.md) |
