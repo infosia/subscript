@@ -262,6 +262,10 @@ after it (§116.1 rule 4b).
 an async arrow that captures nothing is accepted. A call through either
 value has the semantics of a direct call (C24 row 36). Accept adds
 `a336`; reject adds `r380`–`r382`; `retired:r140-async-lambda`.
+*Revised 2026-10-06 (§170):* `TaskGroup` is a language class with no
+JavaScript counterpart. A group joins its tasks and reports a dropped
+group that holds unfinished or failed work. Its corpus entries are not
+`js-comparable`, and cite C8.
 
 ### C9. Field initializers — every construction, earlier fields through `this`
 
@@ -712,6 +716,7 @@ it as a candidate to accept.
 | 34 | A use of the `void[]` value of `await Promise.all(jobs)` with `jobs: Promise<void>[]` | The language has no `void[]` value (`compiler.md` §166 rule 2). | an `await` statement of the aggregate |
 | 35 | `Promise.all(jobs)` where the result type `T` holds a count: an async handle, or an array of async handles | The aggregate stores each result by a byte copy; a counted result needs the §70.3 store path (`compiler.md` §166 rule 12). | await each input, and build the array |
 | 36 | An async arrow that captures a local, a parameter, or `this` | A frame that a call suspends outlives the stack scope of the captured binding. A capture needs a retained environment, which is not decided (`compiler.md` §167 rule 5; `r379`; control `a336`). | pass the value as a parameter; a module global |
+| 37 | A `TaskGroup` outside one `const` local or a synchronous parameter: a field, an array element, a global, a result, a `let`, an async parameter, a type argument, a literal, an assignment, a return, a capture | A group checks its tasks when its one holder ends. A count does not reach every last holder, and a field holder ends only at an explicit collection (`compiler.md` §170 rules 2 and 15). | a `const` local and `join()` in the same scope; a synchronous helper with a `TaskGroup` parameter |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
