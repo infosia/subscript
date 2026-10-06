@@ -184,14 +184,17 @@ sum=3
 
 ### 5. Async and coroutines, host-stepped
 
-`async`/`await` exist without an event loop: awaiting suspends a
-Context-owned frame, and your application resumes pending computations
-explicitly — `subscript_rt_ctx_async_step(ctx)` in the frame loop steps
-every pending async entry once, in start order, and
-`subscript_rt_ctx_async_pending(ctx)` counts them. There are no
-`Promise` objects at runtime and promises are not storable values, so
-there is nothing to collect and nothing schedules behind your back (the
-fuller reasoning is in the
+`async`/`await` exist without an event loop: each `await` suspends a
+Context-owned frame. Your frame loop calls
+`subscript_rt_ctx_async_step(ctx)` to append the existing parked frames
+after ready jobs, then drain the ready queue in first-in, first-out order
+(§94.1 rules 8 and 9).
+Jobs that join the ready queue during the drain run in that step.
+Frames that park during the drain wait for the next step.
+`subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
+(§94.2). A local, an array, or a field can hold an async handle.
+Copies retain the frame; releases decrement its reference count and free
+it at zero (§70.3). No background scheduler or implicit collection runs (see the
 [TypeScript tutorial](tutorial-typescript.md#asyncawait-without-a-scheduler)).
 Alongside `await`, generator-shaped suspension is a `function*`
 coroutine: each `next()` call advances exactly one step, which matches
@@ -613,9 +616,9 @@ void subscript_export_warmup(subscript_rt_context* ctx) {
 ### Step 6 — traps: what the host reads, and what survives
 
 A script fault is a **trap**: an out-of-range index, integer division
-by zero, a checked `as` that fails, a failed allocation, and about
-twenty more (`runtime/src/trap.rs`, `TrapKind`, kinds 1 through 27 at
-this commit). A trap stops the entry that raised it. It never unwinds
+by zero, a checked `as` that fails, or a failed allocation.
+[`TrapKind`](../runtime/src/trap.rs) lists the trap kinds.
+A trap stops the entry that raised it. It never unwinds
 across the C boundary, and it never raises a signal.
 
 The Context records the **first** trap of a run and ignores later ones.
@@ -1382,9 +1385,12 @@ contract.
   `subscript_rt_ctx_set_regex_budget`.
 - **Async scripts complete only if you step them.** An exported `async`
   entry runs to its first `await` and parks; your frame loop calls
-  `subscript_rt_ctx_async_step(ctx)` to resume every pending entry once
-  (start order, deterministic) and `subscript_rt_ctx_async_pending(ctx)`
-  to see whether work remains. A host that never steps leaves them
+  `subscript_rt_ctx_async_step(ctx)` to append existing parked frames
+  after ready jobs, then drain the ready queue (§94.1 rules 8 and 9).
+  Jobs that join the ready queue during the drain run in that step.
+  Frames that park during the drain wait for the next step.
+  `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
+  (§94.2). A host that never steps leaves them
   parked forever — by design, the same way `Context.collect` never runs
   unbidden. Releasing the Context drops parked computations without
   running any remainder. Measured:

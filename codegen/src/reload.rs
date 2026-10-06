@@ -1051,10 +1051,10 @@ impl ReloadSession {
         self.ctx.live_count()
     }
 
-    /// Number of suspended async roots currently owned by the live
-    /// Context. Calling an async export kicks a root but does not pump it;
-    /// reload-capable hosts retain the same explicit polling control as C
-    /// hosts using `subscript_rt_ctx_async_pending`.
+    /// Returns the number of ready jobs plus parked registrations (§94.2).
+    /// The count includes a trapping job that the Context still holds trapped.
+    /// It excludes blocked continuations, stopped frames, and completed frames
+    /// retained only by handles. This observer executes no script.
     #[must_use]
     pub fn async_pending(&self) -> usize {
         self.ctx.async_pending()

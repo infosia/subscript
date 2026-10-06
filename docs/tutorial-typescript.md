@@ -407,8 +407,8 @@ CI.
 surface than in JavaScript. A thrown value is an `Error`, a
 `SyntaxError`, or a `TypeError`. The catch binding has two uses:
 `instanceof`, which narrows it to the class, and `throw`, which
-rethrows it. `finally` is rejected, and so is a `try` block that
-holds `await` or `yield`. `throw 42` and `catch (e: any)` are
+rethrows it. `finally` is rejected. A `try` block can hold `await`
+or `yield` (§116.1 rule 7). `throw 42` and `catch (e: any)` are
 rejected with `S010`.
 
 `JSON.parse<T>` returns a `T`. Malformed text raises `SyntaxError`
@@ -508,8 +508,9 @@ after 3 steps: 30
 
 Three forms are awaitable: `Context.suspend()`, a direct call of an
 `async` function or `async` instance method, and a handle that an
-earlier call produced. A handle lives in a local or an array, and it
-passes to another function. Every handle a program creates must have
+earlier call produced. A local, an array, a field, or a global can hold
+a handle (§70.3 rule 2a). A handle can pass to another function.
+Every handle a program creates must have
 one awaited completion. `new Promise`, `.then`, `Promise.all`, and the
 other statics do not exist.
 
@@ -573,7 +574,70 @@ And a host that sees no pending work has not proved that every call
 finished: `subscript_rt_ctx_async_unfinished` reports invocations that
 are still waiting on something nothing will complete.
 
-A failed `await` returns a value; it does not throw.
+An exception that leaves an async body completes its handle; the call
+returns that handle (§116.1 rule 1).
+An `await` of the failed handle raises the exception, so a `try`
+around the `await` catches it (§116.1 rule 2):
+
+```ts
+async function fails(): Promise<i32> {
+  throw new Error("boom");
+}
+
+export async function main(): Promise<void> {
+  try {
+    await fails();
+  } catch (e) {
+    if (e instanceof Error) {
+      print(`caught ${e.message}`);
+    }
+  }
+}
+```
+
+```text
+caught boom
+```
+
+Each `await` of one failed handle raises the same exception object
+(§116.1 rule 3). This example prints its message at each raise:
+
+```ts
+async function fails(): Promise<i32> {
+  throw new Error("boom");
+}
+
+export async function main(): Promise<void> {
+  const job: Promise<i32> = fails();
+  print("after call");
+  try {
+    await job;
+  } catch (e) {
+    if (e instanceof Error) {
+      print(`first ${e.message}`);
+    }
+  }
+  try {
+    await job;
+  } catch (e) {
+    if (e instanceof Error) {
+      print(`second ${e.message}`);
+    }
+  }
+}
+```
+
+```text
+after call
+first boom
+second boom
+```
+
+If no `await` observes a failed handle, its last holder's release traps
+(§116.1 rule 4; [`t66`](../corpus/trap/t66-unobserved-async-exception.ts)).
+An exception that leaves a host-callable async export traps with
+`TrapKind::UncaughtException` (29), because the export has no script holder
+(§116.1 rule 5).
 
 ## Coroutines
 

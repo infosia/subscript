@@ -1438,9 +1438,11 @@ impl Context {
         true
     }
 
-    /// Runs a newly invoked async root to its first suspension or
-    /// completion, registering a suspended root at the back of the
-    /// Context's deterministic pending queue.
+    /// Runs a newly invoked async root to its first suspension or completion.
+    /// `Context.suspend()` puts the root on the parked list (§94.1 rule 3).
+    /// An await of an unfinished child puts the root on that child's waiter list
+    /// (§94.1 rule 4). An await of a completed handle queues a ready job
+    /// (§94.1 rule 6). The kick does not drain ready jobs (§94.1 rule 7).
     ///
     /// # Safety
     ///

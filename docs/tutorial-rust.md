@@ -590,9 +590,12 @@ artifact is C either way.
   `main(): void`. A session does not require that export
   (`compiler.md` §53).
 - **Async**: an async export kicks a root but does not pump it.
-  `session.async_pending()` counts the suspended roots, and
-  `session.async_step()` polls each root pending at entry once and
-  returns the number still pending. A Rust host keeps the same
+  `session.async_pending()` counts ready jobs and parked frames (§94.2).
+  `session.async_step()` appends existing parked frames after ready jobs,
+  then drains the ready queue in first-in, first-out order (§94.1 rules 8 and 9).
+  Jobs that join the ready queue during the drain run in that step.
+  Frames that park during the drain wait for the next step.
+  The step returns the number still pending. A Rust host keeps the same
   explicit control a C host has.
 - **A trap during initialization**:
   `ReloadSession::new_capturing_initializer_trap(&files)` returns the
