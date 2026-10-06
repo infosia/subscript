@@ -397,8 +397,6 @@ pub enum Divergence {
     AsyncMethodValue,
     /// A generic async method is a direct call target and has no first-class function value.
     GenericAsyncMethodValue,
-    /// An async function is a direct call target and has no first-class function value.
-    AsyncFunctionValue,
     /// A fixed array supplies length, numeric elements, and the admitted callback methods; it has no object reflection members.
     FixedArrayObjectMember,
     /// A Map supplies the declared container API; it has no Object reflection members.
@@ -455,8 +453,6 @@ pub enum Divergence {
     WorkerExplicitMessageIdentity,
     /// An await consumes an async handle or a direct admitted async call; a synchronous value carries no completion.
     AwaitNonHandle,
-    /// An awaited call directly names an async function or instance method; a local callable is outside this source form.
-    AwaitLocalCall,
     /// An awaited named call must resolve to a declared async function; an ambient synchronous call carries no async completion.
     AwaitUndeclaredAsyncFunction,
     /// An await requires an async completion; a synchronous function call supplies only its immediate result.
@@ -467,7 +463,7 @@ pub enum Divergence {
     AwaitNonClassMethod,
     /// An await requires an async completion; a synchronous method call supplies only its immediate result.
     AwaitSynchronousMethod,
-    /// An awaited call directly names an async function or instance method; an indirect callee has no declared async target.
+    /// An indirect call returns a synchronous value with no async completion.
     AwaitIndirectCall,
     /// The unshift surface inserts exactly one element; it has no zero-element overload.
     ArrayUnshiftEmpty,
@@ -861,8 +857,12 @@ pub enum Divergence {
     PromiseObject,
     /// `await` in a synchronous function or at the top level.
     AwaitOutsideAsync,
-    /// An async static method, generator, value-class method, or lambda.
+    /// An async static method, generator, value-class method, or generic arrow.
     AsyncFunctionShape,
+    /// An async arrow captures a local binding.
+    AsyncArrowCapture,
+    /// An async return carries a fulfilled value, without handle adoption.
+    AsyncReturnHandle,
     /// An async call whose handle no holder awaits.
     DroppedAsyncHandle,
     /// A forbidden `this` form in a field initializer.
@@ -1184,7 +1184,6 @@ impl Divergence {
         Divergence::BareYieldNonVoid,
         Divergence::AsyncMethodValue,
         Divergence::GenericAsyncMethodValue,
-        Divergence::AsyncFunctionValue,
         Divergence::FixedArrayObjectMember,
         Divergence::MapObjectMember,
         Divergence::SetObjectMember,
@@ -1213,7 +1212,6 @@ impl Divergence {
         Divergence::WorkerEntryStructuralEndpoints,
         Divergence::WorkerExplicitMessageIdentity,
         Divergence::AwaitNonHandle,
-        Divergence::AwaitLocalCall,
         Divergence::AwaitUndeclaredAsyncFunction,
         Divergence::AwaitSynchronousFunction,
         Divergence::AwaitComputedMethod,
@@ -1417,6 +1415,8 @@ impl Divergence {
         Divergence::PromiseObject,
         Divergence::AwaitOutsideAsync,
         Divergence::AsyncFunctionShape,
+        Divergence::AsyncArrowCapture,
+        Divergence::AsyncReturnHandle,
         Divergence::DroppedAsyncHandle,
         Divergence::ThisInFieldInitializer,
         Divergence::ClassIndexSignature,

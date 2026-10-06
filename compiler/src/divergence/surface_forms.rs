@@ -614,3 +614,20 @@ pub(super) const THISINPARAMETERDEFAULTARROW: DivergenceEntry = DivergenceEntry 
     why: "A parameter default executes outside the method frame that holds the receiver; its lambda cannot capture that receiver.",
     collision: "C5", // compiler.md §157 rule 4
 };
+
+/// C24 row 36 keeps async environments empty.
+pub(super) const ASYNC_ARROW_CAPTURE: DivergenceEntry = DivergenceEntry {
+    ts: "function f(): void { const n: i32 = 1; const job = async (): Promise<i32> => n; }",
+    subscript: "function f(): void { const job = async (n: i32): Promise<i32> => n; }",
+    why: "An async callable uses a null environment. It has no retained capture storage.",
+    collision: "C24",
+};
+
+/// Async returns do not adopt another handle (§167 rule 3).
+pub(super) const ASYNC_RETURN_HANDLE: DivergenceEntry = DivergenceEntry {
+    ts: "async function f(h: Promise<i32>): Promise<i32> { return h; }",
+    subscript: "async function f(h: Promise<i32>): Promise<i32> { return await h; }",
+    why:
+        "An async return carries its fulfilled value. The language has no implicit handle adoption.",
+    collision: "compiler.md §167",
+};

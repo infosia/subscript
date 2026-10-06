@@ -504,7 +504,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         if captures.is_empty() {
             let _ = writeln!(
                 out,
-                "    {destination} = (SubFn){{ (void*)&sub_f{}, NULL }};",
+                "    {destination} = (SubFn){{ (void*)&sub_{}{}, NULL }};",
+                if target.is_async { "w" } else { "f" },
                 function.0
             );
             return Ok(());

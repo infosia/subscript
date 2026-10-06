@@ -506,9 +506,12 @@ export async function main(): Promise<void> {
 after 3 steps: 30
 ```
 
-Three forms are awaitable: `Context.suspend()`, a direct call of an
+These forms are awaitable: `Context.suspend()`, a direct call of an
 `async` function or `async` instance method, and a handle that an
-earlier call produced. A local, an array, a field, or a global can hold
+earlier call produced. A call through a function value that returns a handle is also awaitable (§167).
+A named async function is a value. An async arrow that captures nothing is accepted (§167 rule 2).
+An async arrow cannot capture a local, a parameter, or `this` (§167 rule 5).
+A local, an array, a field, or a global can hold
 a handle (§70.3 rule 2a). A handle can pass to another function.
 Every handle a program creates must have
 one awaited completion. `new Promise`, `.then`, `Promise.all`, and the

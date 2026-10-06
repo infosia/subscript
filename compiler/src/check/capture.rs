@@ -15,6 +15,7 @@ struct Analysis<'a> {
     calls: Vec<(String, &'a hir::Param, &'a Expr)>,
     escaping: HashSet<usize>,
     capture_bindings: HashMap<usize, Vec<usize>>,
+    async_captures: Vec<(&'a str, &'a crate::Pos)>,
     infer: bool,
 }
 impl<'a> Analysis<'a> {
@@ -152,8 +153,16 @@ impl<'a> Analysis<'a> {
                 params,
                 body,
                 captures,
+                is_async,
                 ..
             } => {
+                if *is_async {
+                    self.async_captures.extend(
+                        captures
+                            .iter()
+                            .map(|capture| (capture.name.as_str(), &e.pos)),
+                    );
+                }
                 self.capture_bindings.insert(
                     e as *const Expr as usize,
                     captures
@@ -433,6 +442,13 @@ impl<'a> Analysis<'a> {
         self.infer_parameters();
         self.solve();
         let mut diagnostics = Vec::new();
+        for (name, pos) in &self.async_captures {
+            diagnostics.push(diagnostic(
+                RejectionSite::AsyncArrowCapture,
+                format!("async arrow captures `{name}`; an async arrow captures nothing"),
+                (*pos).clone(),
+            ));
+        }
         for (kind, e) in &self.escapes {
             if self.fact(e) {
                 let d = diagnostic(
@@ -471,6 +487,7 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
         calls: vec![],
         escaping: HashSet::new(),
         capture_bindings: HashMap::new(),
+        async_captures: Vec::new(),
         infer: false,
     };
     for e in module.globals.iter().map(|g| &g.init).chain(

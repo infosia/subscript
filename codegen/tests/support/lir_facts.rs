@@ -560,6 +560,12 @@ fn collect_trap_expression(
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
     for node in nodes {
+        // An async lambda's callable allocates its frame at invocation (§167 rule 13).
+        if matches!(node.kind, hir::ExprKind::Lambda { is_async: true, .. }) {
+            *expected
+                .entry(trap_key(&node.pos, "Allocation".into()))
+                .or_default() += 1;
+        }
         lifetime::expression(node, hir, expected);
         if !matches!(&node.kind, hir::ExprKind::Template(parts) if parts.is_empty()) {
             for site in node.trap_sites(hir) {

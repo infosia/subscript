@@ -1305,9 +1305,7 @@ impl<'m> Interpreter<'m> {
                         "static closure callable and direct target disagree",
                     ));
                 }
-                let mut arguments = callable.captures.clone();
-                arguments.extend(operands);
-                self.call_function(*function, arguments)
+                self.invoke_callable(&callable, operands)
             }
             l::CallTargetKind::Method(method) => {
                 let function = self
@@ -1329,9 +1327,7 @@ impl<'m> Interpreter<'m> {
                 let Value::Callable(callable) = callable else {
                     return Err(type_error("callable", &callable));
                 };
-                let mut arguments = callable.captures.clone();
-                arguments.extend(operands);
-                self.call_function(callable.function, arguments)
+                self.invoke_callable(&callable, operands)
             }
             l::CallTargetKind::Foreign(id) => {
                 let foreign = self
@@ -1395,7 +1391,19 @@ impl<'m> Interpreter<'m> {
     ) -> Result<Value, InterpretError> {
         let mut operands = callable.captures.clone();
         operands.extend(arguments);
-        self.call_function(callable.function, operands)
+        let value = self.call_function(callable.function, operands)?;
+        if self
+            .module
+            .functions
+            .get(callable.function.0 as usize)
+            .is_some_and(|function| function.is_async)
+        {
+            let Value::Coroutine(handle) = &value else {
+                return Err(self.invalid(None, "async callable returns no handle"));
+            };
+            self.async_start(&Rc::clone(handle))?;
+        }
+        Ok(value)
     }
 
     fn callable_operand(

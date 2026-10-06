@@ -486,7 +486,12 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_return(&mut self, r: &ast::ReturnStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+    pub(in crate::check) fn check_return(
+        &mut self,
+        r: &ast::ReturnStmt,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) {
         let pos = self.pos(r.span);
         let (ret, is_generator) = fx
             .frames
@@ -521,7 +526,7 @@ impl<'p> Checker<'p> {
                     Some(checked)
                 } else {
                     let checked = self.check_expr(arg, Some(&ret), fx);
-                    self.require_expr_assignable(&checked, &ret, fx, "the return value");
+                    self.require_return_assignable(&checked, &ret, fx);
                     if matches!(
                         self.apparent_type(&checked.ty),
                         Type::AsyncHandle(_) | Type::Array(_)

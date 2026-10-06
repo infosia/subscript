@@ -231,6 +231,7 @@ fn expr_children_yield_every_child() {
         ),
         (
             ExprKind::Lambda {
+                is_async: false,
                 id: LambdaId(0),
                 params: Vec::new(),
                 ret: Type::Void,

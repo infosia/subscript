@@ -72,13 +72,6 @@ pub(super) const GENERIC_ASYNC_METHOD_VALUE: DivergenceEntry = DivergenceEntry {
     collision: "compiler.md §93.1",
 };
 
-pub(super) const ASYNC_FUNCTION_VALUE: DivergenceEntry = DivergenceEntry {
-    ts: "async function f(): Promise<i32> { return 1; }\nexport function main(): void { const x = f; }",
-    subscript: "no equivalent; call the async function directly",
-    why: "An async function is a direct call target and has no first-class function value.",
-    collision: "compiler.md §26.1",
-};
-
 pub(super) const FIXED_ARRAY_OBJECT_MEMBER: DivergenceEntry = DivergenceEntry {
     ts: "\nexport function main(): void { const a: FixedArray<i32,1> = [1]; a.constructor; }",
     subscript: "no equivalent; use length, indexing, or an admitted callback method",
@@ -269,13 +262,6 @@ pub(super) const AWAIT_NON_HANDLE: DivergenceEntry = DivergenceEntry {
     collision: "compiler.md §26.1",
 };
 
-pub(super) const AWAIT_LOCAL_CALL: DivergenceEntry = DivergenceEntry {
-    ts: " async function probe(): Promise<void> { const g = (): i32 => 1; await g(); }\nexport function main(): void {}",
-    subscript: "no equivalent; await a directly named async function",
-    why: "An awaited call directly names an async function or instance method; a local callable is outside this source form.",
-    collision: "compiler.md §26.1",
-};
-
 pub(super) const AWAIT_UNDECLARED_ASYNC_FUNCTION: DivergenceEntry = DivergenceEntry {
     ts: " async function probe(): Promise<void> { await print(\"x\"); }\nexport function main(): void {}",
     subscript: "no equivalent; call synchronous ambient functions without await",
@@ -313,9 +299,9 @@ pub(super) const AWAIT_SYNCHRONOUS_METHOD: DivergenceEntry = DivergenceEntry {
 
 pub(super) const AWAIT_INDIRECT_CALL: DivergenceEntry = DivergenceEntry {
     ts: " async function probe(): Promise<void> { await (() : i32 => 1)(); }\nexport function main(): void {}",
-    subscript: "no equivalent; await a directly named async function or instance method",
-    why: "An awaited call directly names an async function or instance method; an indirect callee has no declared async target.",
-    collision: "compiler.md §26.1",
+    subscript: "no equivalent; await a call that returns a handle",
+    why: "The call returns an integer, so it supplies no completion for an await.",
+    collision: "compiler.md §167",
 };
 
 pub(super) const ARRAY_UNSHIFT_EMPTY: DivergenceEntry = DivergenceEntry {

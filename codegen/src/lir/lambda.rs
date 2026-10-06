@@ -32,10 +32,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .collect::<Result<Vec<_>, _>>()?;
         // A lambda body is its own function; the check derives its fact
         // (compiler.md §115.6 rule 3).
-        let hir::ExprKind::Lambda { can_raise, .. } = &expr.kind else {
+        let hir::ExprKind::Lambda {
+            can_raise,
+            is_async,
+            ..
+        } = &expr.kind
+        else {
             return Err(self.error(&expr.pos, "a lambda lowers from a lambda expression"));
         };
         let can_raise = *can_raise;
+        let is_async = *is_async;
         let id = self.lowering.allocate_function_id();
         let function = FunctionInput {
             name: format!(
@@ -44,8 +50,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             ),
             exported: false,
             is_generator: false,
-            is_async: false,
-            creation_traps: Vec::new(),
+            is_async,
+            creation_traps: if is_async {
+                vec![hir::TrapSite::Allocation {
+                    pos: expr.pos.clone(),
+                }]
+            } else {
+                Vec::new()
+            },
             host_entry_traps: None,
             can_raise,
             params: params.to_vec(),

@@ -47,13 +47,11 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let generic_context = self.generic_callback_context;
-        let async_message =
-            "async arrow functions are not in the decided surface; use an async function declaration";
         let value = self.with_expression_work(|checker| {
-            if a.is_async {
+            if a.is_async && a.type_params.is_some() {
                 checker.reject_subset(
                     RejectionSite::AsyncArrowFunction,
-                    async_message,
+                    "generic async arrows are not in the decided surface",
                     pos.clone(),
                 );
                 return checker.err_expr(pos);
@@ -112,8 +110,33 @@ impl<'p> Checker<'p> {
                 .return_type
                 .as_ref()
                 .map(|ann| checker.resolve_result_type(&ann.type_ann))
-                .or_else(|| ret_ctx.cloned());
+                .or_else(|| {
+                    ret_ctx
+                        .filter(|ty| {
+                            !a.is_async
+                                || matches!(
+                                    checker.apparent_type(ty),
+                                    Type::AsyncHandle(_) | Type::Error
+                                )
+                        })
+                        .cloned()
+                });
 
+            if a.is_async
+                && ret.as_ref().is_some_and(|ty| {
+                    !matches!(
+                        checker.apparent_type(ty),
+                        Type::AsyncHandle(_) | Type::Error
+                    )
+                })
+            {
+                checker.reject_subset(
+                    RejectionSite::AsyncArrowResultAnnotation,
+                    "an async arrow result annotation must be Promise<T>",
+                    pos.clone(),
+                );
+                return checker.err_expr(pos);
+            }
             if ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_)) {
                 checker.reject_subset(
                     RejectionSite::BlockLambdaReturnAnnotationMissing,
@@ -148,7 +171,15 @@ impl<'p> Checker<'p> {
                     kind: ExprKind::Lambda {
                         id,
                         params: Vec::new(),
-                        ret: result,
+                        is_async: a.is_async,
+                        ret: if a.is_async {
+                            match checker.apparent_type(&result) {
+                                Type::AsyncHandle(t) => *t,
+                                _ => Type::Error,
+                            }
+                        } else {
+                            result
+                        },
                         body: Vec::new(),
                         captures: Vec::new(),
                         can_raise: false,
@@ -171,12 +202,19 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if a.is_async {
+            ret = ret.map(|ty| match self.apparent_type(&ty) {
+                Type::AsyncHandle(value) => *value,
+                _ => Type::Error,
+            });
+        }
+        let origin_start = fx.async_origins.len();
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
         let frame = Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             is_generator: false,
-            is_async: false,
+            is_async: a.is_async,
             yield_ty: None,
             yield_annotated: false,
             is_lambda: true,
@@ -271,11 +309,30 @@ impl<'p> Checker<'p> {
             crate::check::SyntheticOwnerKind::ArrowBody(body_pos),
             |fx| match &*a.body {
                 ast::BlockStmtOrExpr::Expr(e) => {
+                    if a.is_async && ret.is_some() {
+                        let mut out = Vec::new();
+                        self.check_return(
+                            &ast::ReturnStmt {
+                                span: e.span(),
+                                arg: Some(e.clone()),
+                            },
+                            fx,
+                            &mut out,
+                        );
+                        return out;
+                    }
                     let checked = self.check_expr(e, ret.as_ref(), fx);
                     if let Some(ret) = &ret {
                         self.require_expr_assignable(&checked, &ret.clone(), fx, "the lambda body");
                     } else {
                         ret = Some(checked.ty.clone());
+                        if a.is_async {
+                            let expected = match self.apparent_type(&checked.ty) {
+                                Type::AsyncHandle(inner) => *inner,
+                                other => other,
+                            };
+                            self.require_return_assignable(&checked, &expected, fx);
+                        }
                     }
                     if matches!(
                         self.apparent_type(&checked.ty),
@@ -335,13 +392,32 @@ impl<'p> Checker<'p> {
         fx.shadowed_narrowing_scopes.remove(&fx.scopes.len());
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
+        let unhandled = fx.async_origins[origin_start..]
+            .iter()
+            .filter(|(_, handled)| !*handled)
+            .map(|(pos, _)| pos.clone())
+            .collect::<Vec<_>>();
+        for origin in unhandled {
+            self.reject_subset(
+                RejectionSite::AsyncHandleUnawaited,
+                "an async handle is dropped without any await of its completion",
+                origin,
+            );
+        }
+        fx.async_origins.truncate(origin_start);
         let ret = ret.unwrap_or(Type::Error);
-        let ty = Type::func(params.iter().map(|p| p.ty().clone()).collect(), ret.clone());
+        let result = if a.is_async {
+            Type::AsyncHandle(Box::new(ret.clone()))
+        } else {
+            ret.clone()
+        };
+        let ty = Type::func(params.iter().map(|p| p.ty().clone()).collect(), result);
         hir::Expr {
             pending_work: None,
             kind: ExprKind::Lambda {
                 id,
                 params: hir_params,
+                is_async: a.is_async,
                 ret,
                 body,
                 captures,

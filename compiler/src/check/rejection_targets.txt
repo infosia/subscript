@@ -399,7 +399,9 @@ BoundaryObjectMember	a-s156	S100	`object` is boundary-opaque; narrow it with `as
 ArrayOfTypeArgumentCount	a-s010	S100	`Array.of<T>` takes exactly one type argument
 MapCopyTypeArgumentCount	a-s011	S100	`new Map` takes exactly 2 type argument(s)
 MapCopyNullableSource	a-s012	S011	`Map<i32, i32> | null` may be null here; narrow with a null check first
-AsyncArrowFunction	a-s103	S100	async arrow functions are not in the decided surface; use an async function declaration
+AsyncArrowFunction	r-s167-generic	S100	generic async arrows are not in the decided surface
+AsyncArrowCapture	s167-capture	S009	async arrow captures `n`; an async arrow captures nothing
+AsyncArrowResultAnnotation	s167-result	S100	an async arrow result annotation must be Promise<T>
 LambdaReturnCoverage	a-s106	S100	not all paths return a value
 RegexLiteralUnicodeSetsFlag	a-s107	S100	the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, "v")`
 BigIntLiteral	a-s109	S100	literal form outside the decided surface
@@ -409,7 +411,6 @@ IntegerLiteralRange	a-s112	S008	integer literal 128 out of range for `i8`
 TemplateInterpolationKind	a-s113	S100	type `C` cannot be interpolated into a template
 UnknownValueName	a-s115	S100	namespace import `ns` is a static qualifier and cannot be used as a value
 NamespaceContextValue	a-s116	S100	namespace import `ns` is a static qualifier and cannot be used as a value
-AsyncFunctionValue	a-s117	S100	async functions are not first-class values; call them directly in await position
 GenericFunctionValue	c-apply-id	S100	generic function `id` has no first-class value; call it directly or use a lambda
 ClassRuntimeValue	a-s119	S100	class `C` used as a value
 EnumObjectValue	a-s120	S100	enum `E` used as a value; use a member
@@ -516,7 +517,6 @@ AwaitOutsideAsync	a-s089	S013	`await` is only legal inside an async function
 AwaitNonHandle	a-s090	S100	`await` requires `Context.suspend()`, an async call, or a held async handle
 AwaitNotDirectCall	a-s091	S100	awaitable expressions must be direct calls
 ContextSuspendArguments	a-s092	S100	`Context.suspend()` takes no type arguments or value arguments
-AwaitLocalCall	a-s093	S100	an async awaitable cannot be called through a local value
 AwaitUndeclaredAsyncFunction	a-s094	S100	`print` is not a directly declared async function
 AwaitSynchronousFunction	a-s095	S100	`g` is synchronous and cannot be awaited
 AwaitFunctionTypeArguments	a-s096	S100	`f` is not generic
@@ -525,7 +525,7 @@ AwaitNonClassMethod	a-s098	S018	type `string` has no async method `toString`
 AwaitClassObjectMethod	a-s099	S018	`C` has no method `toString`
 AwaitSynchronousMethod	a-s100	S100	method `f` is synchronous and cannot be awaited
 AwaitMethodTypeArguments	a-s101	S100	method `f` is not generic
-AwaitIndirectCall	a-s102	S100	an async awaitable must directly call a named async function or instance method
+AwaitIndirectCall	a-s102	S100	await requires a call that returns an async handle
 UnsignedShiftAssignment	a-s013	S100	assignment operator outside the decided surface
 LogicalOrPowerAssignment	a-s014	S100	assignment operator outside the decided surface
 DestructuringAssignment	a-s015	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
@@ -1407,3 +1407,5 @@ PromiseAllTypeArguments	s166-PromiseAllTypeArguments	S013	Promise.all takes no e
 PromiseAllInput	s166-PromiseAllInput	S013	Promise.all requires Promise<T>[]
 PromiseAllCountedResult	s166-PromiseAllCountedResult	S013	Promise.all cannot store a counted result
 PromiseAllSpread	s166-PromiseAllSpread	S013	spread arguments require variadic parameters, which the language does not have
+AsyncReturnHandle	s167-return-handle-arrow	S100	type mismatch: the return value expects `i32`, got `Promise<i32>`
+AsyncReturnHandle	s167-return-handle-named	S100	type mismatch: the return value expects `i32`, got `Promise<i32>`

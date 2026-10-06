@@ -409,15 +409,20 @@ impl<'p> Checker<'p> {
                     }
                     return self.err_expr(pos);
                 }
-                if sig.is_generator || sig.is_async {
-                    self.reject_subset(if sig.is_async { RejectionSite::AsyncFunctionValue } else { RejectionSite::GeneratorFunctionValue }, if sig.is_async {
-                            "async functions are not first-class values; call them directly in await position"
-                        } else {
-                            "generators may only be called, not passed as values"
-                        }, pos.clone());
+                if sig.is_generator {
+                    self.reject_subset(
+                        RejectionSite::GeneratorFunctionValue,
+                        "generators may only be called, not passed as values",
+                        pos.clone(),
+                    );
                     return self.err_expr(pos);
                 }
-                let ty = Type::func(sig.params.iter().map(|p| p.ty().clone()).collect(), sig.ret);
+                let result = if sig.is_async {
+                    Type::AsyncHandle(Box::new(sig.ret))
+                } else {
+                    sig.ret
+                };
+                let ty = Type::func(sig.params.iter().map(|p| p.ty().clone()).collect(), result);
                 hir::Expr {
                     pending_work: None,
                     kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),

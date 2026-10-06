@@ -32,7 +32,9 @@ use crate::root_storage::{self, RootStoragePlan};
 
 mod abi;
 mod aggregate;
+mod async_callable;
 mod async_count;
+pub(crate) use async_callable::define_async_callable;
 mod boundary;
 mod builtin;
 mod call;

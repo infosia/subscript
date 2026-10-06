@@ -1775,7 +1775,9 @@ pub enum ExprKind {
         id: LambdaId,
         /// Parameters.
         params: Vec<Param>,
-        /// Return type.
+        /// Whether this lambda has an async body.
+        is_async: bool,
+        /// Fulfilled body result; the expression type carries the callable result.
         ret: Type,
         /// Body statements (an expression body becomes a single
         /// `return`).

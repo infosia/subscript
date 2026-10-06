@@ -476,7 +476,19 @@ fn collision_index(root: &Path) -> Result<CollisionIndex, String> {
     let path = root.join("specs/blocks/collisions.md");
     let source =
         fs::read_to_string(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    CollisionIndex::parse(&source).map_err(|error| format!("parse {}: {error}", path.display()))
+    let mut index = CollisionIndex::parse(&source)
+        .map_err(|error| format!("parse {}: {error}", path.display()))?;
+    // §167 retires the arrow rejection while its historical C8 citation stays intact.
+    let retirement_path = root.join("specs/tracking/s167-async-function-values.md");
+    let retirements = fs::read_to_string(&retirement_path)
+        .map_err(|error| format!("read {}: {error}", retirement_path.display()))?;
+    index.retired.extend(
+        scan_corpus_references(&retirements)
+            .into_iter()
+            .filter(|reference| reference.retired)
+            .map(|reference| reference.name),
+    );
+    Ok(index)
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>, String> {

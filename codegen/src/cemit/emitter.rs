@@ -727,7 +727,10 @@ impl<'m> Emitter<'m> {
                     "static uint8_t sub_f{}_resume(void* ctx, void* frame, void* out);",
                     function.id.0
                 );
-            } else if matches!(function.kind, l::FunctionKind::Free) {
+            }
+            if matches!(function.kind, l::FunctionKind::Free) && !function.is_generator
+                || function.is_async && matches!(function.kind, l::FunctionKind::Lambda)
+            {
                 let _ = writeln!(out, "{};", self.wrapper_signature(function)?);
             }
         }
@@ -760,7 +763,7 @@ impl<'m> Emitter<'m> {
         ))
     }
 
-    fn wrapper_signature(&self, function: &l::Function) -> Result<String, String> {
+    pub(super) fn wrapper_signature(&self, function: &l::Function) -> Result<String, String> {
         let mut parameters = vec!["void* ctx".to_string(), "void* environment".to_string()];
         for parameter in explicit_parameters(function) {
             let ty = &function.values[parameter.value.0 as usize].ty;
@@ -768,7 +771,11 @@ impl<'m> Emitter<'m> {
         }
         Ok(format!(
             "static {} sub_w{}({})",
-            self.ctype(&function.return_type)?,
+            if function.is_async {
+                "void*".into()
+            } else {
+                self.ctype(&function.return_type)?
+            },
             function.id.0,
             parameters.join(", ")
         ))
@@ -776,7 +783,16 @@ impl<'m> Emitter<'m> {
 
     fn emit_function(&mut self, out: &mut String, function: &l::Function) -> Result<(), String> {
         if function.is_generator || function.is_async {
-            self.emit_coroutine(out, function)
+            self.emit_coroutine(out, function)?;
+            if function.is_async
+                && matches!(
+                    function.kind,
+                    l::FunctionKind::Free | l::FunctionKind::Lambda
+                )
+            {
+                self.emit_async_callable(out, function)?;
+            }
+            Ok(())
         } else {
             self.emit_ordinary_function(out, function)?;
             if matches!(function.kind, l::FunctionKind::Free) {

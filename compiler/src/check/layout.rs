@@ -404,9 +404,16 @@ impl<'a> Validator<'a> {
         (size <= limit()).then_some(Layout { size, align })
     }
 
-    fn validate_generator_layout(&mut self, function: &hir::Function, receiver: Option<&Type>) {
+    fn validate_generator_layout(
+        &mut self,
+        params: &[hir::Param],
+        body: &[hir::Stmt],
+        pos: &Pos,
+        is_async: bool,
+        receiver: Option<&Type>,
+    ) {
         let mut end = 16u64;
-        let mut last_pos = &function.pos;
+        let mut last_pos = pos;
         let failure = std::cell::RefCell::new(None);
         let place = |end: &mut u64, layout: Layout, pos: &Pos, what: &str| -> bool {
             let next = raw_round_up(*end, layout.align.max(1))
@@ -435,7 +442,7 @@ impl<'a> Validator<'a> {
             if !place(
                 &mut end,
                 layout,
-                &function.pos,
+                pos,
                 &format!(
                     "async frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing the method receiver"
@@ -445,7 +452,7 @@ impl<'a> Validator<'a> {
                 return;
             }
         }
-        for param in &function.params {
+        for param in params {
             last_pos = &param.pos;
             let Outcome::Layout(layout) = self.type_layout(&param.ty) else {
                 continue;
@@ -465,7 +472,7 @@ impl<'a> Validator<'a> {
             }
         }
         let mut lets = Vec::new();
-        walk_lets(&function.body, &mut lets);
+        walk_lets(body, &mut lets);
         for (ty, pos) in lets {
             last_pos = pos;
             let Outcome::Layout(layout) = self.type_layout(ty) else {
@@ -484,8 +491,8 @@ impl<'a> Validator<'a> {
                 return;
             }
         }
-        if function.is_async {
-            let child_layout = count_async_calls(&function.body).checked_mul(8);
+        if is_async {
+            let child_layout = count_async_calls(body).checked_mul(8);
             if child_layout != Some(0)
                 && child_layout.is_none_or(|layout| {
                     !place(
@@ -494,7 +501,7 @@ impl<'a> Validator<'a> {
                             size: layout,
                             align: 1,
                         },
-                        &function.pos,
+                        pos,
                         &format!(
                             "async frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
@@ -509,7 +516,7 @@ impl<'a> Validator<'a> {
                             "async frame layout exceeds the supported aggregate limit of \
                              {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
                         ),
-                        function.pos.clone(),
+                        pos.clone(),
                     );
                     failure.replace(Some(diagnostic));
                 }
@@ -634,12 +641,16 @@ impl<'a> Validator<'a> {
                 params,
                 body,
                 captures,
+                is_async,
                 ..
             } => {
                 if let Some(layout) = self.closure_storage_layout(captures) {
                     self.add_frame_slot(frame, layout, "closure environment storage", &expr.pos);
                 }
-                self.validate_plain_frame(params, body, &expr.pos, false);
+                if *is_async {
+                    self.validate_generator_layout(params, body, &expr.pos, true, None);
+                }
+                self.validate_plain_frame(params, body, &expr.pos, *is_async);
                 return;
             }
             K::AsyncHandleTransfer { value, .. } => {
@@ -843,7 +854,13 @@ impl<'a> Validator<'a> {
 
     fn validate_function(&mut self, function: &hir::Function, receiver: Option<&Type>) {
         if function.is_generator || function.is_async {
-            self.validate_generator_layout(function, receiver);
+            self.validate_generator_layout(
+                &function.params,
+                &function.body,
+                &function.pos,
+                function.is_async,
+                receiver,
+            );
         }
         self.validate_closures_stmts(&function.body);
         self.validate_plain_frame(

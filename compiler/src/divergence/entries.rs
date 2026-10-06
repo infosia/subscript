@@ -254,7 +254,6 @@ impl Divergence {
             Divergence::BareYieldNonVoid => builtin_calls::BARE_YIELD_NON_VOID,
             Divergence::AsyncMethodValue => builtin_calls::ASYNC_METHOD_VALUE,
             Divergence::GenericAsyncMethodValue => builtin_calls::GENERIC_ASYNC_METHOD_VALUE,
-            Divergence::AsyncFunctionValue => builtin_calls::ASYNC_FUNCTION_VALUE,
             Divergence::FixedArrayObjectMember => builtin_calls::FIXED_ARRAY_OBJECT_MEMBER,
             Divergence::MapObjectMember => builtin_calls::MAP_OBJECT_MEMBER,
             Divergence::SetObjectMember => builtin_calls::SET_OBJECT_MEMBER,
@@ -291,7 +290,6 @@ impl Divergence {
                 builtin_calls::WORKER_EXPLICIT_MESSAGE_IDENTITY
             }
             Divergence::AwaitNonHandle => builtin_calls::AWAIT_NON_HANDLE,
-            Divergence::AwaitLocalCall => builtin_calls::AWAIT_LOCAL_CALL,
             Divergence::AwaitUndeclaredAsyncFunction => {
                 builtin_calls::AWAIT_UNDECLARED_ASYNC_FUNCTION
             }
@@ -539,6 +537,8 @@ impl Divergence {
             Divergence::BoundaryOnlyObject => established_tail::BOUNDARYONLYOBJECT,
             Divergence::PromiseObject => established_tail::PROMISEOBJECT,
             Divergence::AwaitOutsideAsync => established_tail::AWAITOUTSIDEASYNC,
+            Divergence::AsyncArrowCapture => surface_forms::ASYNC_ARROW_CAPTURE,
+            Divergence::AsyncReturnHandle => surface_forms::ASYNC_RETURN_HANDLE,
             Divergence::AsyncFunctionShape => established_tail::ASYNCFUNCTIONSHAPE,
             Divergence::DroppedAsyncHandle => established_tail::DROPPEDASYNCHANDLE,
             Divergence::ThisInFieldInitializer => established_tail::THISINFIELDINITIALIZER,

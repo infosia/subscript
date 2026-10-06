@@ -65,6 +65,7 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r382-async-arrow-handle-body.ts", RuleCode::S100, 9),
     ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
     ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),
@@ -193,7 +194,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r137-descriptor-align.ts", RuleCode::S100, 7),
     ("r138-bytes-of-reference-class.ts", RuleCode::S100, 13),
     ("r139-bytes-of-string-element.ts", RuleCode::S100, 9),
-    ("r140-async-lambda.ts", RuleCode::S100, 9),
     ("r141-value-class-write-accessor.ts", RuleCode::S100, 16),
     ("r142-readonly-accessor-write.ts", RuleCode::S100, 15),
     ("r145-accessor-write-as-value.ts", RuleCode::S100, 22),
@@ -507,6 +507,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r376-function-value-default.ts", RuleCode::S100, 10),
     ("r377-promise-all-void-value.ts", RuleCode::S013, 11),
     ("r378-promise-all-non-handle-array.ts", RuleCode::S013, 10),
+    ("r379-async-arrow-capture.ts", RuleCode::S009, 10),
+    ("r380-dropped-indirect-async-handle.ts", RuleCode::S013, 11),
+    ("r381-async-arrow-result-annotation.ts", RuleCode::S100, 9),
     ("r373-indexed-read-after-null-check.ts", RuleCode::S011, 11),
     (
         "r374-indexed-read-without-null-check.ts",

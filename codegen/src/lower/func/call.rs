@@ -159,7 +159,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         // Lambda bodies belong to the current reload generation and have no
         // stable cross-generation slot. The callable operand supplies that
         // generation's environment, so call its declared body directly.
-        let results = self.call_script_direct(&function_key(target), &arguments, false)?;
+        let key = if target.is_async {
+            FnKey::LirWrapper(function)
+        } else {
+            function_key(target)
+        };
+        let results = self.call_script_direct(&key, &arguments, false)?;
         self.call_result(return_type, &results, sret)
     }
 

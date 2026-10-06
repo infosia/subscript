@@ -1,0 +1,29 @@
+direct start 10
+turn 0
+turn 1
+direct 11
+turn 2
+parameter start 20
+turn 3
+turn 4
+turn 5
+parameter 22
+twice start 30
+after held call
+turn 6
+twice end 30
+turn 7
+held 60
+twice start 40
+twice end 40
+array 80
+twice start 50
+twice end 50
+field 100
+twice start 60
+twice end 60
+global 120
+inferred 73
+contextual 84
+caught arrow failure
+work done

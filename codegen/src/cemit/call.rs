@@ -26,7 +26,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let arguments = operands.iter().skip(1).cloned().collect::<Vec<_>>();
                 let separator = if arguments.is_empty() { "" } else { ", " };
                 let expression = format!(
-                    "sub_f{}(ctx, {callable}.env{separator}{})",
+                    "sub_{}{}(ctx, {callable}.env{separator}{})",
+                    if self.emitter.function(*function)?.is_async {
+                        "w"
+                    } else {
+                        "f"
+                    },
                     function.0,
                     arguments.join(", ")
                 );

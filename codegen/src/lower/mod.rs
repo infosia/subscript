@@ -1479,7 +1479,12 @@ fn lower_lir_module_with<M: Module>(
                             })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let signature = ml.make_sig(&parameters, &function.return_type, true, false)?;
+                let result = if function.is_async {
+                    Type::AsyncHandle(Box::new(function.return_type.clone()))
+                } else {
+                    function.return_type.clone()
+                };
+                let signature = ml.make_sig(&parameters, &result, !function.is_async, false)?;
                 decl(
                     &mut ml,
                     FnKey::LirFunction(function.id),
@@ -1487,14 +1492,29 @@ fn lower_lir_module_with<M: Module>(
                     &signature,
                     false,
                 )?;
+                if function.is_async {
+                    let resume_signature = ml.resume_sig();
+                    decl(
+                        &mut ml,
+                        FnKey::LirResume(function.id),
+                        format!("subscript_lir_f{}_resume", function.id.0),
+                        &resume_signature,
+                        false,
+                    )?;
+                    let wrapper_signature = ml.make_sig(&parameters, &result, true, false)?;
+                    decl(
+                        &mut ml,
+                        FnKey::LirWrapper(function.id),
+                        format!("subscript_lir_wrap{}", function.id.0),
+                        &wrapper_signature,
+                        false,
+                    )?;
+                }
                 continue;
             }
         };
         ml.alias_function(FnKey::LirFunction(function.id), &target)?;
-        if !function.is_generator
-            && !function.is_async
-            && matches!(function.kind, lir::FunctionKind::Free)
-        {
+        if !function.is_generator && matches!(function.kind, lir::FunctionKind::Free) {
             let parameters = function
                 .parameters
                 .iter()
@@ -1515,7 +1535,12 @@ fn lower_lir_module_with<M: Module>(
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let signature = ml.make_sig(&parameters, &function.return_type, true, false)?;
+            let result = if function.is_async {
+                Type::AsyncHandle(Box::new(function.return_type.clone()))
+            } else {
+                function.return_type.clone()
+            };
+            let signature = ml.make_sig(&parameters, &result, true, false)?;
             decl(
                 &mut ml,
                 FnKey::LirWrapper(function.id),
@@ -1545,6 +1570,14 @@ fn lower_lir_module_with<M: Module>(
         }
         if function.is_generator || function.is_async {
             func::define_coroutine(&mut ml, function)?;
+            if function.is_async
+                && matches!(
+                    function.kind,
+                    lir::FunctionKind::Free | lir::FunctionKind::Lambda
+                )
+            {
+                func::define_async_callable(&mut ml, function)?;
+            }
             if function.is_async && host_by_target.contains_key(&function.id) {
                 func::define_async_export(&mut ml, function)?;
             }

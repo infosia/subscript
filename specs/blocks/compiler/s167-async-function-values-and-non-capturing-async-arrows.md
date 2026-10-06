@@ -125,3 +125,27 @@ function (§92).
    existing workloads: the median is at most 1.05 times the pin median
    (release, best of three).
 5. No existing `.expected` golden moves.
+
+### 167.3 Open
+
+The Phase Review found these. None is CRITICAL or MAJOR.
+
+1. A handle-typed expression body with no annotation gives a second,
+   cascading S100: the callable type becomes `Promise<Promise<T>>`
+   (`const f = async () => value(7);` then a template of `await f()`).
+2. A direct `await s(1)` of a synchronous function that returns a handle
+   is rejected ("`s` is synchronous and cannot be awaited"), but
+   `const f = s; await f(1)` is accepted. `tsc` accepts both. Rule 6
+   names calls through values only.
+3. The `AsyncArrowCapture` diagnostic shows the S009 rule line about an
+   escape; an async arrow capture is rejected without an escape. The
+   `AwaitIndirectCall` why-text says "The call returns an integer"; the
+   site covers every non-handle result.
+4. `compiler/tests/js_corpus.rs` reads the tracking note as a retirement
+   source for `r140`, and its comment states that the C8 citation stays
+   historical. C8 now marks `retired:r140-async-lambda`, so the hook is
+   redundant.
+5. `codegen/src/lower/func/async_callable.rs` indexes the incoming
+   parameter slice directly (`incoming[0]`, `incoming[2..]`). The
+   signature always has the context and environment parameters, so the
+   index cannot fail (contrived).

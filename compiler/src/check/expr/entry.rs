@@ -232,6 +232,18 @@ impl<'p> Checker<'p> {
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
             ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
             ast::Expr::This(_) => {
+                if fx
+                    .frames
+                    .last()
+                    .is_some_and(|frame| frame.is_lambda && frame.is_async)
+                {
+                    self.reject_subset(
+                        RejectionSite::AsyncArrowCapture,
+                        "async arrow captures `this`; an async arrow captures nothing",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 if fx.descriptor_default.is_some() {
                     self.reject_subset(
                         RejectionSite::DescriptorDefaultThisUse,
@@ -596,24 +608,55 @@ impl<'p> Checker<'p> {
             }
         }
 
+        let indirect = match callee {
+            ast::Expr::Ident(id) => {
+                fx.owns_local_name(id.sym.as_ref())
+                    || matches!(
+                        self.peek_scope_item(id.sym.as_ref()),
+                        Some(ScopeItem::Global(_))
+                    )
+            }
+            ast::Expr::Member(member) => match (&*member.obj, &member.prop) {
+                (ast::Expr::Ident(receiver), ast::MemberProp::Ident(field))
+                    if !fx.owns_local_name(receiver.sym.as_ref()) =>
+                {
+                    matches!(self.peek_scope_item(receiver.sym.as_ref()), Some(ScopeItem::Class(class))
+                        if self.class_sigs[class.0].static_fields.contains_key(field.sym.as_ref()))
+                }
+                _ => false,
+            },
+            _ => true,
+        };
+        if indirect {
+            let handle = self.check_expr(operand, None, fx);
+            if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
+                let origins = self.expr_async_origins(&handle, fx);
+                fx.handle_async_origins(&origins);
+                return hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
+                    ty: *value,
+                    pos,
+                };
+            }
+            if self.apparent_type(&handle.ty) != Type::Error {
+                let site = if matches!(callee, ast::Expr::Ident(_)) {
+                    RejectionSite::AwaitNonHandle
+                } else {
+                    RejectionSite::AwaitIndirectCall
+                };
+                self.reject_subset(
+                    site,
+                    "await requires a call that returns an async handle",
+                    pos.clone(),
+                );
+            }
+            return self.err_expr(pos);
+        }
+
         match callee {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();
-                if fx.owns_local_name(&name) {
-                    let ident_pos = self.pos(ident.span);
-                    if self
-                        .lookup_local(&name, &ident_pos, fx)
-                        .is_some_and(|local| matches!(self.apparent_type(&local.ty), Type::Error))
-                    {
-                        return self.err_expr(pos);
-                    }
-                    self.reject_subset(
-                        RejectionSite::AwaitLocalCall,
-                        "an async awaitable cannot be called through a local value",
-                        self.pos(ident.span),
-                    );
-                    return self.err_expr(pos);
-                }
                 let callee_pos = self.pos(ident.span);
                 let item = self.scope_item(&name, &callee_pos);
                 if matches!(item, Some(ScopeItem::Poisoned))
@@ -694,6 +737,60 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Expr::Member(member) => {
+                if let ast::MemberProp::Ident(method) = &member.prop {
+                    if self.rejected_static_generic_method(&member.obj, method.sym.as_ref(), fx) {
+                        return self.err_expr(pos);
+                    }
+                }
+                let receiver = self.check_receiver(&member.obj, fx);
+                let receiver_type = self.apparent_type(&receiver.ty);
+                let field = match (&receiver_type, &member.prop) {
+                    (Type::Class(class), ast::MemberProp::Ident(name)) => self.classes[class.0]
+                        .fields
+                        .iter()
+                        .any(|field| field.name == name.sym.as_ref()),
+                    (Type::Array(_) | Type::FixedArray(_, _), ast::MemberProp::Computed(_)) => true,
+                    _ => false,
+                };
+                if field {
+                    let callable = match &member.prop {
+                        ast::MemberProp::Ident(name) => {
+                            let mut field = self.member_on(
+                                receiver,
+                                name.sym.as_ref(),
+                                self.pos(name.span),
+                                None,
+                                fx,
+                            );
+                            self.apply_narrowing(&mut field, fx);
+                            field
+                        }
+                        ast::MemberProp::Computed(index) => {
+                            let index = self.check_expr(&index.expr, Some(&Type::I32), fx);
+                            self.check_index(receiver, index, self.pos(member.span), fx)
+                        }
+                        ast::MemberProp::PrivateName(_) => return self.err_expr(pos),
+                    };
+                    let handle = self.check_indirect_call(callable, call, fx, self.pos(call.span));
+                    if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
+                        let origins = self.expr_async_origins(&handle, fx);
+                        fx.handle_async_origins(&origins);
+                        return hir::Expr {
+                            pending_work: None,
+                            kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
+                            ty: *value,
+                            pos,
+                        };
+                    }
+                    if self.apparent_type(&handle.ty) != Type::Error {
+                        self.reject_subset(
+                            RejectionSite::AwaitNonHandle,
+                            "await requires a call that returns an async handle",
+                            pos.clone(),
+                        );
+                    }
+                    return self.err_expr(pos);
+                }
                 let ast::MemberProp::Ident(method) = &member.prop else {
                     self.reject_subset(
                         RejectionSite::AwaitComputedMethod,
@@ -704,10 +801,6 @@ impl<'p> Checker<'p> {
                 };
                 let name = method.sym.to_string();
                 let method_pos = self.pos(method.span);
-                if self.rejected_static_generic_method(&member.obj, &name, fx) {
-                    return self.err_expr(pos);
-                }
-                let receiver = self.check_receiver(&member.obj, fx);
                 let Type::Class(class) = self.apparent_type(&receiver.ty.clone()) else {
                     if self.apparent_type(&(receiver.ty)) != Type::Error {
                         let receiver_ty = self.type_name(&receiver.ty);
@@ -790,7 +883,11 @@ impl<'p> Checker<'p> {
                 }
             }
             _ => {
-                self.reject_subset(RejectionSite::AwaitIndirectCall, "an async awaitable must directly call a named async function or instance method", pos.clone());
+                self.reject_subset(
+                    RejectionSite::AwaitIndirectCall,
+                    "await requires a call that returns an async handle",
+                    pos.clone(),
+                );
                 self.err_expr(pos)
             }
         }

@@ -1160,6 +1160,9 @@ rejection_classes! {
     Self::MapCopyNullableSource => {
         (RuleCode::S011, Diverges(Divergence::MapCopyNullableSource))
     }
+    Self::AsyncArrowResultAnnotation => (RuleCode::S100, TscRejects),
+    Self::AsyncArrowCapture => (RuleCode::S009, Diverges(Divergence::AsyncArrowCapture)),
+    Self::AsyncReturnHandle => (RuleCode::S100, Diverges(Divergence::AsyncReturnHandle)),
     Self::AsyncArrowFunction => (RuleCode::S100, Diverges(Divergence::AsyncFunctionShape)),
     Self::GeneratorArrowFunction => (RuleCode::S100, TscRejects),
     Self::FieldTypeWithoutInitializer => (
@@ -1203,7 +1206,6 @@ rejection_classes! {
     ),
     Self::UnknownValueName => (RuleCode::S100, Diverges(Divergence::NamedModuleSurface)),
     Self::NamespaceContextValue => (RuleCode::S100, Diverges(Divergence::NamespaceAsValue)),
-    Self::AsyncFunctionValue => (RuleCode::S100, Diverges(Divergence::AsyncFunctionValue)),
     Self::GenericFunctionValue => {
         (RuleCode::S100, Diverges(Divergence::GenericFunctionValue))
     }
@@ -1527,7 +1529,6 @@ rejection_classes! {
     Self::AwaitNonHandle => (RuleCode::S100, Diverges(Divergence::AwaitNonHandle)),
     Self::AwaitNotDirectCall => (RuleCode::S100, TscRejects),
     Self::ContextSuspendArguments => (RuleCode::S100, TscRejects),
-    Self::AwaitLocalCall => (RuleCode::S100, Diverges(Divergence::AwaitLocalCall)),
     Self::AwaitUndeclaredAsyncFunction => (
         RuleCode::S100,
         Diverges(Divergence::AwaitUndeclaredAsyncFunction),

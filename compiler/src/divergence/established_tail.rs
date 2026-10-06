@@ -458,11 +458,9 @@ pub(super) const AWAITOUTSIDEASYNC: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const ASYNCFUNCTIONSHAPE: DivergenceEntry = DivergenceEntry {
-    ts: "class W { static async work(): Promise<void> {} }\n\
-                     const work = async (): Promise<void> => {};",
-    subscript: "class W { async work(): Promise<void> { await Context.suspend(); } }",
-    why: "An async frame belongs to a Context-owned instance, so a static, a \
-                      value class, a generator, and a lambda have none.",
+    ts: "class W { static async work(): Promise<void> {} } const work = async <T>(x: T): Promise<T> => x;",
+    subscript: "async function work(x: i32): Promise<i32> { return x; }",
+    why: "The async surface excludes static methods, value-class methods, generators, and generic arrows.",
     collision: "C8",
 };
 

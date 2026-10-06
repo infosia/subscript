@@ -8953,3 +8953,28 @@ async function value(): Promise<i32> { return 1; }
 export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.all(...[jobs]); }
 END FILE
 END PROGRAM
+PROGRAM	r-s167-generic			0
+FILE	E	target/s154/forms/s167-generic/main.ts
+export function main(): void { const f = async <T>(x: T): Promise<T> => x; }
+END FILE
+END PROGRAM
+PROGRAM	s167-capture			0
+FILE	E	target/s154/forms/s167-capture/main.ts
+export function main(): void { const n: i32 = 1; const f = async (): Promise<i32> => n; }
+END FILE
+END PROGRAM
+PROGRAM	s167-result	TS1064		0
+FILE	E	target/s154/forms/s167-result/main.ts
+export function main(): void { const f = async (): i32 => 1; }
+END FILE
+END PROGRAM
+PROGRAM	s167-return-handle-arrow			0
+FILE	E	target/s154/forms/s167-return-handle-arrow/main.ts
+export function f(): void { const job = async (h: Promise<i32>): Promise<i32> => h; }
+END FILE
+END PROGRAM
+PROGRAM	s167-return-handle-named			0
+FILE	E	target/s154/forms/s167-return-handle-named/main.ts
+export async function f(h: Promise<i32>): Promise<i32> { return h; }
+END FILE
+END PROGRAM
