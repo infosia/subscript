@@ -17,6 +17,9 @@ pub struct AsyncStepReport {
 
 #[derive(Default)]
 pub(crate) struct AsyncFrameMeta {
+    pub(super) task_id: u64,
+    pub(super) await_pos_id: u32,
+    pub(super) create_pos_id: u32,
     created_epoch: u32,
     // compiler.md §116.2 rule 1: a value or an exception.
     pub(crate) completion: Option<crate::exception::Completion>,
@@ -27,7 +30,7 @@ pub(crate) struct AsyncFrameMeta {
     // compiler.md §116.1 rule 5: a host-kicked export root has no script
     // holder, so an exception that leaves it settles into a trap.
     pub(crate) host_root: bool,
-    kind: AsyncKind,
+    pub(super) kind: AsyncKind,
 }
 
 /// Aligned result storage for one scheduler resume (`compiler.md` §94.2).
@@ -75,12 +78,12 @@ impl AsyncJob {
     }
 }
 #[derive(Default)]
-enum AsyncKind {
+pub(super) enum AsyncKind {
     #[default]
     Invocation,
     Aggregate(Box<Aggregate>),
 }
-struct Aggregate {
+pub(super) struct Aggregate {
     inputs: Vec<Option<*mut u8>>,
     result: *mut u8,
     remaining: usize,
@@ -100,12 +103,21 @@ impl Context {
         if frame.is_null() {
             return;
         }
+        let Some(next_id) = self.next_async_task_id.checked_add(1) else {
+            self.trap(TrapKind::Internal, "async task id exhausted", 0);
+            return;
+        };
+        let task_id = self.next_async_task_id;
+        self.next_async_task_id = next_id;
         // SAFETY: guaranteed by the caller; offset four is the aligned
         // `uint32_t reserved` word in every generated coroutine header.
         unsafe { (frame.add(4) as *mut u32).write(1) };
         self.async_frames.insert(
             frame as usize,
             AsyncFrameMeta {
+                task_id,
+                create_pos_id: 0,
+                await_pos_id: 0,
                 created_epoch: self.reload_epoch,
                 completion: None,
                 result_size,
@@ -123,12 +135,15 @@ impl Context {
     /// # Safety
     ///
     /// `frame` is a registered live async frame in this Context.
-    pub unsafe fn async_park(&mut self, frame: *mut u8) {
-        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+    pub unsafe fn async_park(&mut self, frame: *mut u8, pos_id: u32) {
+        let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
             return;
-        }
-        // The scheduler owns one reference for every frame it tracks.
-        unsafe { self.async_retain(frame) };
+        };
+        meta.await_pos_id = pos_id;
+        // The registry lookup above proves that this frame has a live count word.
+        // The scheduler owns one reference for every registered suspension.
+        let count = unsafe { &mut *frame.add(4).cast::<u32>() };
+        *count = count.saturating_add(1);
         self.async_parked.push_back(frame);
     }
 
@@ -141,13 +156,13 @@ impl Context {
     /// # Safety
     ///
     /// Both pointers are registered live async frames in this Context.
-    pub unsafe fn async_await(&mut self, frame: *mut u8, handle: *mut u8) {
+    pub unsafe fn async_await(&mut self, frame: *mut u8, handle: *mut u8, pos_id: u32) {
         if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
             return;
         }
         unsafe {
             self.async_retain(handle);
-            self.async_await_owned(frame, handle);
+            self.async_await_owned(frame, handle, pos_id);
         }
     }
 
@@ -156,12 +171,15 @@ impl Context {
     /// # Safety
     ///
     /// Both pointers are registered live frames. The caller transfers one handle count.
-    pub unsafe fn async_await_owned(&mut self, frame: *mut u8, handle: *mut u8) {
-        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+    pub unsafe fn async_await_owned(&mut self, frame: *mut u8, handle: *mut u8, pos_id: u32) {
+        let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
             return;
-        }
-        // The scheduler owns one reference for every frame it tracks.
-        unsafe { self.async_retain(frame) };
+        };
+        meta.await_pos_id = pos_id;
+        // The registry lookup above proves that this frame has a live count word.
+        // The scheduler owns one reference for every registered suspension.
+        let count = unsafe { &mut *frame.add(4).cast::<u32>() };
+        *count = count.saturating_add(1);
         match self.async_frames.get_mut(&(handle as usize)) {
             Some(meta) if meta.completion.is_none() => {
                 meta.waiters.push(AsyncJob::Invocation(frame))
@@ -369,6 +387,31 @@ impl Context {
         true
     }
 
+    /// Starts a called invocation and keeps it active during host reads (§169).
+    /// The caller caches its completion and owns its handle count.
+    /// `pos_id` identifies the creation call site (§169).
+    ///
+    /// # Safety
+    /// The frame has a live generated resume pointer at offset eight.
+    /// The output holds the invocation's fulfilled representation.
+    pub unsafe fn async_start(&mut self, frame: *mut u8, out: *mut u8, pos_id: u32) -> u8 {
+        if frame.is_null() || self.trapped() {
+            return 0;
+        }
+        if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
+            meta.create_pos_id = pos_id;
+        }
+        self.active_async_frames.push(frame as usize);
+        // SAFETY: the caller supplies a live generated frame and matching output.
+        let resume = unsafe { frame.add(8).cast::<AsyncResume>().read() };
+        let done = unsafe { resume(self, frame, out) };
+        self.active_async_frames.pop();
+        if self.trapped() {
+            self.async_stopped.push(frame);
+        }
+        done
+    }
+
     /// Runs a newly invoked async root to its first suspension or completion.
     /// `Context.suspend()` puts the root on the parked list (§94.1 rule 3).
     /// An await of an unfinished child puts the root on that child's waiter list
@@ -393,7 +436,7 @@ impl Context {
         let done = unsafe { resume(ctx, frame, std::ptr::null_mut()) };
         self.active_async_frames.pop();
         if self.trapped() {
-            // The existing trap policy preserves the trapping frame.
+            self.async_stopped.push(frame);
             return;
         }
         if done != 0 {

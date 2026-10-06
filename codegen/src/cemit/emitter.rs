@@ -756,6 +756,12 @@ impl<'m> Emitter<'m> {
             let ty = &function.values[parameter.value.0 as usize].ty;
             parameters.push(format!("{} a{}", self.value_ctype(ty)?, parameter.value.0));
         }
+        if matches!(function.kind, l::FunctionKind::Lambda)
+            && !function.is_async
+            && matches!(function.return_type, Type::AsyncHandle(_))
+        {
+            parameters.push("uint32_t create_pos".into());
+        }
         Ok(format!(
             "static {return_type} sub_f{}({})",
             function.id.0,
@@ -768,6 +774,9 @@ impl<'m> Emitter<'m> {
         for parameter in explicit_parameters(function) {
             let ty = &function.values[parameter.value.0 as usize].ty;
             parameters.push(format!("{} a{}", self.value_ctype(ty)?, parameter.value.0));
+        }
+        if function.is_async || matches!(function.return_type, Type::AsyncHandle(_)) {
+            parameters.push("uint32_t create_pos".into());
         }
         Ok(format!(
             "static {} sub_w{}({})",

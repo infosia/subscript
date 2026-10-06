@@ -67,7 +67,7 @@ unsafe extern "C" fn parked_throwing_resume(
     record.polls += 1;
     if record.polls == 1 {
         // SAFETY: the frame is registered in this Context.
-        unsafe { context.async_park(frame) };
+        unsafe { context.async_park(frame, 0) };
         return 0;
     }
     raise_and_unwind(context, frame)
@@ -76,7 +76,7 @@ unsafe extern "C" fn parked_throwing_resume(
 /// Parks on each resume and never completes.
 unsafe extern "C" fn parking_resume(ctx: *mut Context, frame: *mut u8, _out: *mut u8) -> u8 {
     // SAFETY: the scheduler and the tests pass the live Context.
-    unsafe { (*ctx).async_park(frame) };
+    unsafe { (*ctx).async_park(frame, 0) };
     0
 }
 
@@ -89,7 +89,7 @@ unsafe extern "C" fn awaiting_resume(ctx: *mut Context, frame: *mut u8, _out: *m
     record.polls += 1;
     if record.polls == 1 {
         // SAFETY: both frames are registered in this Context.
-        unsafe { context.async_await(frame, record.handle) };
+        unsafe { context.async_await(frame, record.handle, 0) };
         return 0;
     }
     // SAFETY: the handle is registered; a zero size reads no bytes.
@@ -391,7 +391,7 @@ fn an_await_registration_holds_its_handle_until_the_completion_read() {
 
 #[test]
 fn async_completion_layout() {
-    assert_eq!(std::mem::size_of::<crate::context::AsyncFrameMeta>(), 72);
+    assert_eq!(std::mem::size_of::<crate::context::AsyncFrameMeta>(), 88);
     assert_eq!(std::mem::size_of::<Option<Completion>>(), 24);
 }
 
@@ -407,9 +407,9 @@ fn a_direct_await_moves_one_count_and_a_held_await_retains_one() {
         unsafe {
             assert_eq!(ctx.async_count(handle), 1);
             if owned {
-                subscript_rt_async_await_owned(&mut *ctx, waiter, handle);
+                subscript_rt_async_await_owned(&mut *ctx, waiter, handle, 0);
             } else {
-                ctx.async_await(waiter, handle);
+                ctx.async_await(waiter, handle, 0);
             }
             assert_eq!(ctx.async_count(handle), if owned { 1 } else { 2 });
             assert!(ctx.async_result(handle, std::ptr::null_mut(), 0));

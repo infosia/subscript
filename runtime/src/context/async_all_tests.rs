@@ -160,12 +160,12 @@ fn aggregate_reactions_and_frame_continuations_share_one_fifo() {
             ctx.async_register(observer, 0);
         }
         if !aggregate_first {
-            unsafe { ctx.async_await(observer, input) };
+            unsafe { ctx.async_await(observer, input, 0) };
         }
         let all = unsafe { ctx.async_all(array, 4, 0) };
         unsafe { (*observer.cast::<Observer>()).observed = all };
         if aggregate_first {
-            unsafe { ctx.async_await(observer, input) };
+            unsafe { ctx.async_await(observer, input, 0) };
         }
         complete(&mut ctx, input, 7);
         assert_eq!(ctx.async_pending(), 2);

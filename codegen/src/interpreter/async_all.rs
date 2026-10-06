@@ -79,7 +79,17 @@ impl<'m> Interpreter<'m> {
         unsafe {
             result.cast::<u64>().write(len as u64);
         }
+        let task_id = self.register_task_id()?;
         let handle = Rc::new(RefCell::new(Coroutine {
+            task_id,
+            #[cfg(test)]
+            function_pos: pos.clone(),
+            #[cfg(test)]
+            create_pos: no_script_site(),
+            #[cfg(test)]
+            suspension_pos: no_script_site(),
+            #[cfg(test)]
+            active: false,
             kind: CoroutineKind::Aggregate(Aggregate {
                 inputs: inputs.clone(),
                 result,
@@ -99,6 +109,9 @@ impl<'m> Interpreter<'m> {
             waiters: Vec::new(),
             awaiting: None,
         }));
+        self.async_registry
+            .borrow_mut()
+            .insert(task_id, Rc::downgrade(&handle));
         self.async_handles
             .borrow_mut()
             .insert(Rc::as_ptr(&handle) as usize, Rc::clone(&handle));

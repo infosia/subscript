@@ -18,7 +18,8 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, AsyncStepReport, Context, DiagnosticsObserver, PrintObserver, TrapObserver,
+    AllocationVisitor, AsyncStepReport, AsyncTaskVisitor, Context, DiagnosticsObserver,
+    PrintObserver, TrapObserver,
 };
 use crate::trap::TrapKind;
 use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
@@ -840,4 +841,21 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_live_allocations(
     // SAFETY: shared Context contract plus the callback/userdata contract
     // documented above.
     unsafe { (&*ctx).visit_live_allocations(visitor, userdata) }
+}
+
+/// Visits registered tasks in task-id order (§169), without script or Context allocation.
+/// States: READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
+/// Kinds: invocation=1, aggregate=2. A null visitor returns zero.
+/// If pending is zero and unfinished is positive, follow each waiting task's awaited_task_id.
+/// Resolve position ids through program.alloc.h; zero means no script site.
+///
+/// # Safety
+/// Shared contract. The callback must not change or release the Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_visit_async_tasks(
+    ctx: *const Context,
+    visitor: Option<AsyncTaskVisitor>,
+    userdata: *mut std::ffi::c_void,
+) -> u64 {
+    unsafe { (&*ctx).visit_async_tasks(visitor, userdata) }
 }

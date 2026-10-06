@@ -1079,7 +1079,9 @@ pub(crate) fn define_wrapper<M: Module>(
         builder.switch_to_block(block);
         let incoming = builder.block_params(block).to_vec();
         let mut arguments = vec![incoming[0]];
-        arguments.extend_from_slice(&incoming[2..]);
+        let end =
+            incoming.len() - usize::from(matches!(function.return_type, Type::AsyncHandle(_)));
+        arguments.extend_from_slice(&incoming[2..end]);
         let call = if ml.opts.reload {
             let slot = ml.slot_of(&FnKey::LirFunction(function.id))?;
             let displacement = i32::try_from(u64::from(slot) * 8)

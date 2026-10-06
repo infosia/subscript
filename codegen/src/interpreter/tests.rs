@@ -328,7 +328,9 @@ fn interpreter_clearance_stops_the_trapping_continuation() {
             assert_eq!(interpreter.async_pending(), 0);
             interpreter.async_step().expect("idle checkpoint");
             assert_eq!(interpreter.context.take_stdout(), b"");
-            assert_eq!(interpreter.async_stopped.len(), 1);
+            // A callee prefix trap stops the child and, at clearance, its ready caller.
+            let stopped = if source == programs::CALLEE { 2 } else { 1 };
+            assert_eq!(interpreter.async_stopped.len(), stopped);
         }
         let weak = Rc::downgrade(&interpreter.async_stopped[0]);
         drop(interpreter);

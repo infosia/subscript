@@ -212,6 +212,22 @@ if (report.pending != 0) {
 }
 ```
 
+Use `subscript_rt_ctx_visit_async_tasks(ctx, visitor, userdata)` to read each registered task (§169).
+The callback receives `const subscript_rt_async_task_info*`. The record pointer lasts only for that callback.
+The visit runs no script, changes no state, and allocates no Context memory. A null visitor returns zero.
+Records arrive in `task_id` order. Context-local ids start at one and are never reused.
+The record gives `task_id`, `awaited_task_id`, `state`, `kind`, `function_pos_id`, and `await_pos_id`.
+Kinds are invocation (1) and aggregate (2).
+The `create_pos_id` names the call site; host kicks and aggregates report 0.
+The `reserved` field is always 0. A prefix trap reports STOPPED immediately.
+
+States are READY (1), PARKED (2), WAITING (3), ACTIVE (4), COMPLETE (5), and STOPPED (6).
+An incomplete aggregate reports WAITING. Only a waiting invocation names an awaited task.
+If `pending` is zero and `unfinished` is positive, visit the tasks and follow `awaited_task_id` to name blocked work.
+Include `program.alloc.h` and resolve each position id through `subscript_alloc_positions[id]`.
+Position id zero means no script site. Each tier owns its position ids.
+The callback must not change or release the Context.
+
 Alongside `await`, generator-shaped suspension is a `function*`
 coroutine: each `next()` call advances exactly one step, which matches
 driving script logic once per frame:

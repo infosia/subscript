@@ -194,7 +194,7 @@ export async function main(): Promise<void> {
     // child it created.
     for (block, suffix) in [("b0", "_owned"), ("b1", "")] {
         let register =
-            format!("subscript_rt_async_await{suffix}(ctx, frame, frame->{block}_child)");
+            format!("subscript_rt_async_await{suffix}(ctx, frame, frame->{block}_child, ");
         assert_eq!(
             source.matches(register.as_str()).count(),
             1,

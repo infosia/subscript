@@ -143,3 +143,37 @@ host resolves a position id through `subscript_alloc_positions`
    suspension, so this measurement covers it.
 5. No `.expected` golden moves. The host header test passes with the
    new declarations.
+
+### 169.3 Open
+
+The Phase Reviews found these. None is CRITICAL or MAJOR.
+
+1. A host visitor that calls a step or another mutating API from inside
+   the callback is not guarded; the visit holds metadata borrows across
+   the callback (contrived).
+2. The C emitter no longer returns an internal error for an invalid
+   async call target kind at a suspension; only the LIR verifier
+   rejects it.
+3. No program reads `ACTIVE` from a host function under generated code
+   in the three-tier test; a hand-written resume tests it. The trapping
+   `READY` head is not in the three-tier test.
+4. The runtime ring control in `runtime/tests/async_inspection.rs` is
+   not same-shape: it builds completed frames that also wait. The
+   script ring in the three-tier test meets acceptance 1.
+5. The runtime visitor is O(n²) in live tasks (queue `contains` and a
+   waiter scan per task). The interpreter prunes its whole task registry
+   on each registration.
+6. The interpreter keeps task ids, its task registry, and the park
+   position in builds without tests, but only the `cfg(test)` read uses
+   them (`cfg` scope convention).
+7. The three-tier test does five optimized C builds and states no cost
+   (core principle 15).
+8. A visit that meets an unclassified frame returns 0 records; the host
+   cannot tell it from no tasks. No good-faith path reaches it
+   (contrived).
+9. The session position table grows by the sites of each accepted
+   reload, with no dedup; the cost is not stated. The doc comments of
+   `ModLower::pos_id` and `Lowered::positions` state that the first id
+   is 1, which is false in a reload generation.
+10. No test reads `async_tasks` or a trap position after a rejected
+    reload.

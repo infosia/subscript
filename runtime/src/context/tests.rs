@@ -68,7 +68,7 @@ unsafe extern "C" fn parking_test_resume(ctx: *mut Context, frame: *mut u8, _out
         return 1;
     }
     // SAFETY: the frame is registered in this Context.
-    unsafe { context.async_park(frame) };
+    unsafe { context.async_park(frame, 0) };
     0
 }
 
@@ -87,7 +87,7 @@ unsafe extern "C" fn collecting_park_resume(
         context.collect();
     }
     // SAFETY: the frame is registered in this Context.
-    unsafe { context.async_park(frame) };
+    unsafe { context.async_park(frame, 0) };
     0
 }
 
@@ -97,7 +97,7 @@ unsafe extern "C" fn teardown_park_resume(ctx: *mut Context, frame: *mut u8, _ou
     // SAFETY: the test passes a matching live `TestSchedulerFrame`.
     let context = unsafe { &mut *ctx };
     // SAFETY: the frame is registered in this Context.
-    unsafe { context.async_park(frame) };
+    unsafe { context.async_park(frame, 0) };
     0
 }
 

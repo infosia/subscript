@@ -5,6 +5,7 @@
 //! producing an ABI guess.
 
 const FFI_SOURCE: &str = include_str!("ffi.rs");
+const TASK_SOURCE: &str = include_str!("context/async_inspection.rs");
 const CONTEXT_SOURCE: &str = include_str!("context.rs");
 const WORKER_SOURCE: &str = include_str!("worker.rs");
 
@@ -72,6 +73,12 @@ pub fn render() -> Result<String, String> {
     let async_unfinished_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_unfinished",
+    )?;
+    let task_visitor_docs = docs_for(TASK_SOURCE, "pub type AsyncTaskVisitor")?;
+    let task_visitor = parse_fn_type(TASK_SOURCE, "AsyncTaskVisitor")?;
+    let task_visit_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_visit_async_tasks",
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
@@ -191,7 +198,34 @@ pub fn render() -> Result<String, String> {
     }
     out.push_str("} subscript_rt_async_step_report;\n\n");
 
+    out.push_str("/* Registered task record (compiler.md §169). */\n");
+    out.push_str("typedef struct subscript_rt_async_task_info {\n");
+    for field in ["task_id", "awaited_task_id"] {
+        out.push_str(&format!("    uint64_t {field};\n"));
+    }
+    for field in [
+        "state",
+        "kind",
+        "function_pos_id",
+        "await_pos_id",
+        "create_pos_id",
+        "reserved",
+    ] {
+        out.push_str(&format!("    uint32_t {field};\n"));
+    }
+    out.push_str("} subscript_rt_async_task_info;\n\n");
+    push_comment(&mut out, &task_visitor_docs);
+    out.push_str("typedef ");
+    out.push_str(&c_fn_pointer(
+        "subscript_rt_async_task_visitor",
+        &task_visitor,
+    )?);
+    out.push_str(";\n\n");
+
     for function in &functions {
+        if function.name == "subscript_rt_ctx_visit_async_tasks" {
+            push_comment(&mut out, &task_visit_docs);
+        }
         if function.name == "subscript_rt_ctx_set_freed_handle_diagnostics" {
             push_comment(&mut out, &freed_handle_diagnostics_docs);
         }
@@ -436,6 +470,8 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "i64" => Ok("int64_t"),
         "u32" => Ok("uint32_t"),
         "u64" => Ok("uint64_t"),
+        "*const AsyncTaskInfo" => Ok("const subscript_rt_async_task_info*"),
+        "Option<AsyncTaskVisitor>" => Ok("subscript_rt_async_task_visitor"),
         "AsyncStepReport" => Ok("subscript_rt_async_step_report"),
         "*mut Context" => Ok("subscript_rt_context*"),
         "*const Context" => Ok("const subscript_rt_context*"),

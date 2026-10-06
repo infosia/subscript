@@ -40,8 +40,8 @@ pub unsafe extern "C" fn subscript_rt_async_register(
 ///
 /// Shared contract; `frame` is a registered async frame owned by `ctx`.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_async_park(ctx: *mut Context, frame: *mut u8) {
-    unsafe { &mut *ctx }.async_park(frame);
+pub unsafe extern "C" fn subscript_rt_async_park(ctx: *mut Context, frame: *mut u8, pos_id: u32) {
+    unsafe { &mut *ctx }.async_park(frame, pos_id);
 }
 
 /// Registers `frame` as a continuation of `handle` (`compiler.md` §94.1
@@ -55,8 +55,9 @@ pub unsafe extern "C" fn subscript_rt_async_await(
     ctx: *mut Context,
     frame: *mut u8,
     handle: *mut u8,
+    pos_id: u32,
 ) {
-    unsafe { &mut *ctx }.async_await(frame, handle);
+    unsafe { &mut *ctx }.async_await(frame, handle, pos_id);
 }
 
 /// Moves the call's handle count to an await registration (§116.1 rule 4a).
@@ -69,8 +70,9 @@ pub unsafe extern "C" fn subscript_rt_async_await_owned(
     ctx: *mut Context,
     frame: *mut u8,
     handle: *mut u8,
+    pos_id: u32,
 ) {
-    unsafe { &mut *ctx }.async_await_owned(frame, handle);
+    unsafe { &mut *ctx }.async_await_owned(frame, handle, pos_id);
 }
 
 /// Reports a scheduled await resume whose awaited handle carries no
@@ -212,4 +214,19 @@ pub unsafe extern "C" fn subscript_rt_async_all(
     pos_id: u32,
 ) -> *mut u8 {
     unsafe { (&mut *ctx).async_all(jobs, elem_size as usize, pos_id) }
+}
+
+/// Starts a called async invocation and exposes ACTIVE during its body (§169).
+/// `pos_id` identifies the creation call site.
+///
+/// # Safety
+/// The frame has a live generated resume pointer. The output matches its result representation.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_start(
+    ctx: *mut Context,
+    frame: *mut u8,
+    out: *mut u8,
+    pos_id: u32,
+) -> u8 {
+    unsafe { (&mut *ctx).async_start(frame, out, pos_id) }
 }

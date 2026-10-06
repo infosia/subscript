@@ -484,6 +484,10 @@ impl Interpreter<'_> {
                 // return. The child becomes no runnable job here, and the
                 // caller does not suspend.
                 let handle = Rc::clone(handle);
+                #[cfg(test)]
+                {
+                    handle.borrow_mut().create_pos = instruction.pos.clone();
+                }
                 self.async_start(&handle)?;
                 Some(value)
             }

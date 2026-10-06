@@ -85,6 +85,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 operands,
                 parameter_types,
                 target.return_type.as_ref(),
+                pos,
             )?,
             l::CallTargetKind::Method(method) => self.script_call(
                 self.method_function(*method)?,
@@ -94,7 +95,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 true,
             )?,
             l::CallTargetKind::Indirect => {
-                self.indirect_call(operands, parameter_types, target.return_type.as_ref())?
+                self.indirect_call(operands, parameter_types, target.return_type.as_ref(), pos)?
             }
             l::CallTargetKind::Foreign(function) => self.foreign_call(
                 *function,
@@ -630,7 +631,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let handle =
                     self.create_async_child_from_values(target, &operands, &instruction.traps)?;
-                self.start_async_handle(target, handle)?;
+                self.start_async_handle(target, handle, &instruction.pos)?;
                 Some(RV::Scalar(handle))
             }
             l::InstructionKind::AsyncHandleRetain => {

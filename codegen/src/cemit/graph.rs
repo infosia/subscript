@@ -389,11 +389,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ("NULL".into(), "0u".into())
                 };
                 let done = self.fresh();
-                let _ = writeln!(
-                    out,
-                    "    uint8_t {done} = sub_f{}_resume(ctx, {handle}, {output});",
-                    function.0
+                let create_pos = self.emitter.pos_id(&instruction.pos);
+                let start = self.emitter.runtime_call(
+                    "uint8_t",
+                    "subscript_rt_async_start",
+                    &[
+                        "void*".into(),
+                        "void*".into(),
+                        "void*".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        handle.clone(),
+                        output.clone(),
+                        format!("{create_pos}u"),
+                    ],
                 );
+                let _ = writeln!(out, "    uint8_t {done} = {start};");
                 self.emit_pending_check(out);
                 let complete = self.emitter.runtime_call(
                     "void",

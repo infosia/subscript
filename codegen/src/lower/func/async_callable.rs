@@ -18,7 +18,10 @@ pub(crate) fn define_async_callable<M: Module>(
         let incoming = builder.block_params(entry).to_vec();
         let ctx = incoming[0];
         let mut arguments = vec![ctx];
-        arguments.extend_from_slice(&incoming[2..]);
+        arguments.extend_from_slice(&incoming[2..incoming.len() - 1]);
+        let pos_id = *incoming
+            .last()
+            .ok_or_else(|| internal("async callable has no call position"))?;
         let call = if ml.opts.reload && matches!(function.kind, l::FunctionKind::Free) {
             let slot = ml.slot_of(&FnKey::LirFunction(function.id))?;
             let offset = i32::try_from(u64::from(slot) * 8)
@@ -54,13 +57,10 @@ pub(crate) fn define_async_callable<M: Module>(
             ));
             (builder.ins().stack_addr(types::I64, slot, 0), size)
         };
-        let resume = builder
-            .ins()
-            .load(types::I64, flags(), handle, COROUTINE_RESUME_OFFSET);
-        let signature = builder.import_signature(ml.resume_sig());
-        let call = builder
-            .ins()
-            .call_indirect(signature, resume, &[ctx, handle, output]);
+        let start = ml
+            .module
+            .declare_func_in_func(ml.rt.async_start, builder.func);
+        let call = builder.ins().call(start, &[ctx, handle, output, pos_id]);
         let done = builder.inst_results(call)[0];
         let trap = builder.ins().load(types::I32, flags(), ctx, 0);
         let clear = builder.ins().icmp_imm(IntCC::Equal, trap, 0);

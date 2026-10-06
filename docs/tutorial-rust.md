@@ -612,6 +612,18 @@ artifact is C either way.
   }
   ```
 
+- **Task inspection (§169)**: `session.async_tasks()` returns `Vec<subscript_codegen::AsyncTaskInfo>` in `task_id` order.
+  The read runs no script and changes no state. Context-local ids start at one and are never reused.
+  Each record gives `task_id`, `awaited_task_id`, `state`, `kind`, `function_pos_id`, and `await_pos_id`.
+  `function_pos` and `await_pos` give the resolved file, line, and column beside their tier-local ids.
+  Position id zero gives an empty file and zero line and column.
+  Kinds are invocation (1) and aggregate (2).
+  `create_pos` names the call site; host kicks and aggregates have no script site.
+  `reserved` is always 0. A prefix trap reports STOPPED immediately.
+  States are READY (1), PARKED (2), WAITING (3), ACTIVE (4), COMPLETE (5), and STOPPED (6).
+  An incomplete aggregate reports WAITING. Only a waiting invocation names an awaited task.
+  If `async_pending()` is zero and `async_unfinished()` is positive, read the tasks and follow `awaited_task_id` to name blocked work.
+
 - **A trap during initialization**:
   `ReloadSession::new_capturing_initializer_trap(&files)` returns the
   session and the trap together, so a reload-capable host reports the

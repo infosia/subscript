@@ -122,6 +122,7 @@ pub(crate) struct RtFns {
     pub shadow_push: FuncId,
     pub shadow_pop: FuncId,
     pub async_kick: FuncId,
+    pub async_start: FuncId,
     pub async_register: FuncId,
     pub async_all: FuncId,
     pub async_park: FuncId,
@@ -409,6 +410,9 @@ impl<'a, M: Module> ModLower<'a, M> {
                 }
                 Repr::Agg { .. } => sig.params.push(AbiParam::new(types::I64)),
             }
+        }
+        if has_env && matches!(ret, Type::AsyncHandle(_)) {
+            sig.params.push(AbiParam::new(types::I32));
         }
         match ret_repr {
             Repr::None | Repr::Agg { .. } => {}
@@ -971,12 +975,17 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         )?,
         shadow_push: mk("subscript_rt_shadow_push", &[I64, I64, I64], None)?,
         shadow_pop: mk("subscript_rt_shadow_pop", &[I64], None)?,
+        async_start: mk("subscript_rt_async_start", &[I64, I64, I64, I32], Some(I8))?,
         async_kick: mk("subscript_rt_async_kick", &[I64, I64, I64], None)?,
         async_all: mk("subscript_rt_async_all", &[I64, I64, I64, I32], Some(I64))?,
         async_register: mk("subscript_rt_async_register", &[I64, I64, I64], None)?,
-        async_park: mk("subscript_rt_async_park", &[I64, I64], None)?,
-        async_await: mk("subscript_rt_async_await", &[I64, I64, I64], None)?,
-        async_await_owned: mk("subscript_rt_async_await_owned", &[I64, I64, I64], None)?,
+        async_park: mk("subscript_rt_async_park", &[I64, I64, I32], None)?,
+        async_await: mk("subscript_rt_async_await", &[I64, I64, I64, I32], None)?,
+        async_await_owned: mk(
+            "subscript_rt_async_await_owned",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
         async_missing_completion: mk("subscript_rt_async_missing_completion", &[I64, I32], None)?,
         async_release: mk("subscript_rt_async_release", &[I64, I64, I32], None)?,
         async_retain_array: mk("subscript_rt_async_retain_array", &[I64, I64], None)?,
@@ -1164,6 +1173,16 @@ pub(crate) fn lower_module_with<M: Module>(
     hirm: &HirModule,
     opts: LowerOptions,
 ) -> Result<Lowered, String> {
+    lower_module_with_positions(module, hirm, opts, PositionTable::new())
+}
+
+/// Lowers a generation with the position ids that its session already owns.
+pub(crate) fn lower_module_with_positions<M: Module>(
+    module: &mut M,
+    hirm: &HirModule,
+    opts: LowerOptions,
+    positions: PositionTable,
+) -> Result<Lowered, String> {
     if let Some(import) = hirm.poisoned_imports.first() {
         return Err(format!(
             "cannot lower discovery HIR: poisoned import `{}`",
@@ -1172,13 +1191,23 @@ pub(crate) fn lower_module_with<M: Module>(
     }
     let lirm = crate::lir::lower_module_for_reload(hirm, opts.reload)
         .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
-    lower_lir_module_with(module, &lirm, opts)
+    lower_lir_module_with_positions(module, &lirm, opts, positions)
 }
 
+#[cfg(test)]
 fn lower_lir_module_with<M: Module>(
     module: &mut M,
     lirm: &lir::Module,
     opts: LowerOptions,
+) -> Result<Lowered, String> {
+    lower_lir_module_with_positions(module, lirm, opts, PositionTable::new())
+}
+
+fn lower_lir_module_with_positions<M: Module>(
+    module: &mut M,
+    lirm: &lir::Module,
+    opts: LowerOptions,
+    positions: PositionTable,
 ) -> Result<Lowered, String> {
     if module.isa().pointer_type() != types::I64 {
         return Err(internal(
@@ -1215,9 +1244,8 @@ fn lower_lir_module_with<M: Module>(
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),
-        // §112 rule 2: the one constructor of the dev-JIT table puts
-        // the reserved entry in place.
-        positions: PositionTable::new(),
+        // §169 rule 12: a reload extends the session's existing ids.
+        positions,
         lambda_count: 0,
         str_count: 0,
         call_conv,

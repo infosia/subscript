@@ -40,8 +40,9 @@ mod valeq;
 pub mod worker;
 
 pub use context::{
-    AsyncStepReport, CallbackBinding, Context, DiagnosticsObserver, ScriptMainEntry, TrapObserver,
-    DIAGNOSTICS_ADVISORY_BINDING_COUNT, DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
+    AsyncStepReport, AsyncTaskInfo, AsyncTaskVisitor, CallbackBinding, Context,
+    DiagnosticsObserver, ScriptMainEntry, TrapObserver, DIAGNOSTICS_ADVISORY_BINDING_COUNT,
+    DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 pub use registration::CallbackRegistration;

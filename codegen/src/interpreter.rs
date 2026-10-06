@@ -266,6 +266,15 @@ struct IteratorCursor {
 }
 
 struct Coroutine {
+    task_id: u64,
+    #[cfg(test)]
+    function_pos: Pos,
+    #[cfg(test)]
+    create_pos: Pos,
+    #[cfg(test)]
+    suspension_pos: Pos,
+    #[cfg(test)]
+    active: bool,
     // Execution storage has its own allocation and borrow domain.
     // Handle ownership and waiter registration never borrow this cell.
     kind: CoroutineKind,
@@ -306,7 +315,7 @@ struct AwaitedHandle {
 /// What a suspension asks the scheduler to do (`compiler.md` §94.1).
 enum AsyncRequest {
     /// `SuspendKind::Async`: wait for the next host checkpoint.
-    Park,
+    Park(Pos),
     /// `SuspendKind::AsyncCall`: create and start the child, then register.
     Call(l::CallTarget, Vec<Value>, Pos),
     /// `SuspendKind::AsyncHandle`: register on the named handle.
@@ -387,6 +396,8 @@ struct Interpreter<'m> {
     padding_cache: HashMap<String, Vec<Range<usize>>>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
+    next_async_task_id: u64,
+    async_registry: RefCell<HashMap<u64, Weak<RefCell<Coroutine>>>>,
     // The generator registry. §106.3 rules 1 and 5 own it.
     generator_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
     // §94 scheduler state: runnable continuations in FIFO order, and the
@@ -419,6 +430,8 @@ impl<'m> Interpreter<'m> {
             padding_cache: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
+            next_async_task_id: 1,
+            async_registry: RefCell::new(HashMap::new()),
             generator_handles: RefCell::new(HashMap::new()),
             async_ready: std::collections::VecDeque::new(),
             async_parked: std::collections::VecDeque::new(),
@@ -560,7 +573,21 @@ impl<'m> Interpreter<'m> {
                     return Err(self.trap_error(trap));
                 }
             }
+            let task_id = if function.is_async {
+                self.register_task_id()?
+            } else {
+                0
+            };
             let coroutine = Rc::new(RefCell::new(Coroutine {
+                task_id,
+                #[cfg(test)]
+                function_pos: function.pos.clone(),
+                #[cfg(test)]
+                create_pos: no_script_site(),
+                #[cfg(test)]
+                suspension_pos: no_script_site(),
+                #[cfg(test)]
+                active: false,
                 kind: CoroutineKind::Invocation(Rc::new(RefCell::new(frame))),
                 completed: false,
                 completion: None,
@@ -570,6 +597,9 @@ impl<'m> Interpreter<'m> {
                 awaiting: None,
             }));
             if function.is_async {
+                self.async_registry
+                    .borrow_mut()
+                    .insert(task_id, Rc::downgrade(&coroutine));
                 self.async_handles
                     .borrow_mut()
                     .insert(Rc::as_ptr(&coroutine) as usize, Rc::clone(&coroutine));
@@ -710,8 +740,13 @@ impl<'m> Interpreter<'m> {
     /// Runs one frame to its first await or return, then applies its
     /// outcome to the scheduler.
     fn async_start(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
-        let flow = self.execute_coroutine(coroutine)?;
-        self.apply_async_flow(coroutine, flow)
+        let result = self
+            .execute_coroutine(coroutine)
+            .and_then(|flow| self.apply_async_flow(coroutine, flow));
+        if result.is_err() || self.context.trapped() {
+            self.async_stopped.push(Rc::clone(coroutine));
+        }
+        result
     }
 
     /// Resumes a queued continuation. §94.1 rule 11: the resume reads the
@@ -821,7 +856,16 @@ impl<'m> Interpreter<'m> {
         // compiler.md §116.1 rule 1: an exception that leaves an async body
         // with a script holder completes its handle. A host-kicked root
         // (rule 5) and a generator body (§115.4 item 3) are boundaries.
-        match self.execute_frame(&mut frame) {
+        #[cfg(test)]
+        {
+            coroutine.borrow_mut().active = true;
+        }
+        let outcome = self.execute_frame(&mut frame);
+        #[cfg(test)]
+        {
+            coroutine.borrow_mut().active = false;
+        }
+        match outcome {
             Err(InterpretError::Exception {
                 object,
                 message,
@@ -875,9 +919,13 @@ impl<'m> Interpreter<'m> {
                 Ok(())
             }
             Flow::Suspended {
-                request: Some(AsyncRequest::Park),
+                request: Some(AsyncRequest::Park(_pos)),
                 ..
             } => {
+                #[cfg(test)]
+                {
+                    coroutine.borrow_mut().suspension_pos = _pos;
+                }
                 self.async_parked.push_back(Rc::clone(coroutine));
                 Ok(())
             }
@@ -892,6 +940,10 @@ impl<'m> Interpreter<'m> {
                 else {
                     return Err(self.invalid(Some(pos), "async call did not create a coroutine"));
                 };
+                #[cfg(test)]
+                {
+                    child.borrow_mut().create_pos = pos.clone();
+                }
                 self.async_start(&child)?;
                 if self.context.trapped() {
                     return Ok(());
@@ -926,6 +978,10 @@ impl<'m> Interpreter<'m> {
         if !owned {
             let mut state = handle.borrow_mut();
             state.owners = state.owners.saturating_add(1);
+        }
+        #[cfg(test)]
+        {
+            frame.borrow_mut().suspension_pos = pos.clone();
         }
         frame.borrow_mut().awaiting = Some(AwaitedHandle {
             handle: Rc::clone(handle),
@@ -968,6 +1024,10 @@ impl<'m> Interpreter<'m> {
                 if unobserved.is_some() {
                     aggregate.reported = true;
                 }
+            }
+            let unread = matches!(&state.kind, CoroutineKind::Aggregate(a) if a.inputs.iter().any(Option::is_some));
+            if state.completed && !unread {
+                self.async_registry.borrow_mut().remove(&state.task_id);
             }
             drop(state);
             self.async_handles.borrow_mut().remove(&key);
@@ -1142,7 +1202,7 @@ impl<'m> Interpreter<'m> {
                                 .transpose()?,
                             None,
                         ),
-                        l::SuspendKind::Async => (None, Some(AsyncRequest::Park)),
+                        l::SuspendKind::Async => (None, Some(AsyncRequest::Park(pos.clone()))),
                         l::SuspendKind::AsyncCall { target, operands } => {
                             let arguments = operands
                                 .iter()
@@ -1269,7 +1329,7 @@ impl<'m> Interpreter<'m> {
                         "static closure callable and direct target disagree",
                     ));
                 }
-                self.invoke_callable(&callable, operands)
+                self.invoke_callable(&callable, operands, pos)
             }
             l::CallTargetKind::Method(method) => {
                 let function = self
@@ -1291,7 +1351,7 @@ impl<'m> Interpreter<'m> {
                 let Value::Callable(callable) = callable else {
                     return Err(type_error("callable", &callable));
                 };
-                self.invoke_callable(&callable, operands)
+                self.invoke_callable(&callable, operands, pos)
             }
             l::CallTargetKind::Foreign(id) => {
                 let foreign = self
@@ -1352,7 +1412,10 @@ impl<'m> Interpreter<'m> {
         &mut self,
         callable: &Rc<Callable>,
         arguments: Vec<Value>,
+        pos: Option<&Pos>,
     ) -> Result<Value, InterpretError> {
+        #[cfg(not(test))]
+        let _ = pos;
         let mut operands = callable.captures.clone();
         operands.extend(arguments);
         let value = self.call_function(callable.function, operands)?;
@@ -1365,6 +1428,10 @@ impl<'m> Interpreter<'m> {
             let Value::Coroutine(handle) = &value else {
                 return Err(self.invalid(None, "async callable returns no handle"));
             };
+            #[cfg(test)]
+            {
+                handle.borrow_mut().create_pos = pos.cloned().unwrap_or_else(no_script_site);
+            }
             self.async_start(&Rc::clone(handle))?;
         }
         Ok(value)
@@ -1577,7 +1644,7 @@ unsafe extern "C" fn map_callback_bridge(
         let key_bytes = unsafe { std::slice::from_raw_parts(key, key_layout.size) };
         let value = interpreter.unpack(&first_ty, value_bytes)?;
         let key = interpreter.unpack(key_ty, key_bytes)?;
-        let _ = interpreter.invoke_callable(&callable, vec![value, key])?;
+        let _ = interpreter.invoke_callable(&callable, vec![value, key], None)?;
         Ok::<(), InterpretError>(())
     })();
     if let Err(error) = result {
@@ -1604,7 +1671,7 @@ unsafe extern "C" fn set_callback_bridge(
             .ok_or_else(|| interpreter.invalid(None, "Set.forEach key has no layout"))?;
         let bytes = unsafe { std::slice::from_raw_parts(key, layout.size) };
         let key = interpreter.unpack(&first_ty, bytes)?;
-        let _ = interpreter.invoke_callable(&callable, vec![key])?;
+        let _ = interpreter.invoke_callable(&callable, vec![key], None)?;
         Ok::<(), InterpretError>(())
     })();
     if let Err(error) = result {
@@ -1639,7 +1706,7 @@ unsafe extern "C" fn group_by_callback_bridge(
             .ok_or_else(|| interpreter.invalid(None, "Map.groupBy key has no layout"))?;
         let bytes = unsafe { std::slice::from_raw_parts(element, element_layout.size) };
         let element = interpreter.unpack(&first_ty, bytes)?;
-        let key = interpreter.invoke_callable(&callable, vec![element])?;
+        let key = interpreter.invoke_callable(&callable, vec![element], None)?;
         let packed = interpreter.pack(key_ty, &key)?;
         unsafe { std::ptr::copy_nonoverlapping(packed.as_ptr(), key_out, key_layout.size) };
         Ok::<(), InterpretError>(())
@@ -1885,3 +1952,8 @@ use async_all::{AsyncJob, CoroutineKind};
 mod budget_tests;
 
 mod checkpoint;
+
+#[cfg(test)]
+mod inspection_tests;
+
+mod async_inspection;

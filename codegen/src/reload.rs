@@ -68,7 +68,7 @@ use subscript_compiler::{check_program, hir, Diagnostic, SourceFile, Type};
 use subscript_runtime::Context;
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
-use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
+use crate::lower::{dev_flags, internal, lower_module_with_positions, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::position_table::PositionTable;
 use crate::NativeLibrary;
@@ -688,7 +688,11 @@ fn is_opaque_handle(module: &hir::Module, ty: &Type) -> bool {
 
 /// Compiles `hir` in reload mode into a fresh JIT module and resolves
 /// every slot to a finalized code address.
-fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation, RunError> {
+fn compile(
+    hirm: &hir::Module,
+    libraries: &[NativeLibrary],
+    positions: PositionTable,
+) -> Result<Generation, RunError> {
     let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
         .map_err(|e| RunError::Internal(internal(format!("host ISA: {e}"))))
@@ -706,13 +710,14 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
 
     // A failure past this point must release the module's code pages:
     // a dropped `JITModule` frees nothing by itself.
-    let lowered = match lower_module_with(
+    let lowered = match lower_module_with_positions(
         &mut module,
         hirm,
         LowerOptions {
             reload: true,
             require_main: false,
         },
+        positions,
     ) {
         Ok(l) => l,
         Err(e) => {
@@ -894,7 +899,7 @@ impl ReloadSession {
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
         let hirm = check_program(files).map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
-        let gen = compile(&hirm, libraries)?;
+        let gen = compile(&hirm, libraries, PositionTable::new())?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
             Ok(g) => g,
             Err(e) => {
@@ -1069,6 +1074,36 @@ impl ReloadSession {
         self.ctx.async_unfinished()
     }
 
+    /// Reads registered tasks in id order, with resolved positions beside their ids (§169).
+    /// This read runs no script and changes no state.
+    #[must_use]
+    pub fn async_tasks(&self) -> Vec<crate::AsyncTaskInfo> {
+        let mut records: Vec<subscript_runtime::AsyncTaskInfo> = Vec::new();
+        // SAFETY: the callback only copies records into its matching vector.
+        unsafe {
+            self.ctx.visit_async_tasks(
+                Some(crate::async_inspection::collect),
+                (&mut records as *mut Vec<subscript_runtime::AsyncTaskInfo>).cast(),
+            );
+        }
+        records
+            .into_iter()
+            .map(|info| crate::AsyncTaskInfo {
+                task_id: info.task_id,
+                awaited_task_id: info.awaited_task_id,
+                state: info.state,
+                kind: info.kind,
+                function_pos_id: info.function_pos_id,
+                await_pos_id: info.await_pos_id,
+                create_pos_id: info.create_pos_id,
+                reserved: info.reserved,
+                create_pos: self.positions.report_position(info.create_pos_id),
+                function_pos: self.positions.report_position(info.function_pos_id),
+                await_pos: self.positions.report_position(info.await_pos_id),
+            })
+            .collect()
+    }
+
     /// Runs one host checkpoint (`compiler.md` §94.1) and returns the work
     /// still pending.
     ///
@@ -1151,10 +1186,15 @@ impl ReloadSession {
                     .unwrap_or_else(|| "<unknown>".to_string()),
             });
         }
-        let gen = compile(&hirm, &self.native_libraries).map_err(|error| match error {
-            RunError::UnresolvedForeignSymbol(name) => ReloadError::UnresolvedForeignSymbol(name),
-            other => ReloadError::Internal(other.to_string()),
-        })?;
+        let gen =
+            compile(&hirm, &self.native_libraries, self.positions.clone()).map_err(|error| {
+                match error {
+                    RunError::UnresolvedForeignSymbol(name) => {
+                        ReloadError::UnresolvedForeignSymbol(name)
+                    }
+                    other => ReloadError::Internal(other.to_string()),
+                }
+            })?;
         // Both follow from the unchanged declaration hash; checked
         // rather than assumed, because getting either wrong would
         // corrupt a live Context instead of failing loudly.
@@ -1820,3 +1860,6 @@ export async function peer(): Promise<void> {
         assert_eq!(session.async_unfinished(), 0);
     }
 }
+
+#[cfg(test)]
+mod inspection_tests;

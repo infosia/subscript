@@ -12,6 +12,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             kind,
             arguments,
             traps,
+            pos,
             ..
         } = &block.terminator
         else {
@@ -37,11 +38,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::SuspendKind::Async => {
                 // B1 experiment rule 8: a `Context.suspend()` waiter becomes
                 // eligible at the next host checkpoint.
+                let pos_id = self.emitter.pos_id(pos);
                 let park = self.emitter.runtime_call(
                     "void",
                     "subscript_rt_async_park",
-                    &["void*".into(), "void*".into()],
-                    &["ctx".into(), "frame".into()],
+                    &["void*".into(), "void*".into(), "uint32_t".into()],
+                    &["ctx".into(), "frame".into(), pos_id.to_string()],
                 );
                 let _ = writeln!(out, "    {park};");
                 let _ = writeln!(out, "    frame->state = {state};");
@@ -50,7 +52,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::SuspendKind::AsyncCall { target, operands } => {
                 self.emit_async_child_create(out, block, target, operands, traps)?;
-                self.emit_async_child_start(out, block, target)?;
+                self.emit_async_child_start(out, block, target, pos)?;
                 self.emit_await_registration(out, block, state)?;
             }
             l::SuspendKind::AsyncHandle { handle, .. } => {
@@ -185,12 +187,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out: &mut String,
         block: &l::BasicBlock,
         target: &l::CallTarget,
+        pos: &Pos,
     ) -> Result<(), String> {
-        let function = match target.kind {
-            l::CallTargetKind::Function(function) => function,
-            l::CallTargetKind::Method(method) => self.emitter.method_function(method)?,
-            ref other => return Err(internal(format!("async target {other:?} is invalid"))),
-        };
         let handle = format!("frame->b{}_child", block.id.0);
         let (output, size) = if let Some(ty) = &target.return_type {
             let value = self.fresh();
@@ -205,11 +203,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             ("NULL".into(), "0u".into())
         };
         let done = self.fresh();
-        let _ = writeln!(
-            out,
-            "    uint8_t {done} = sub_f{}_resume(ctx, {handle}, {output});",
-            function.0
+        let create_pos = self.emitter.pos_id(pos);
+        let start = self.emitter.runtime_call(
+            "uint8_t",
+            "subscript_rt_async_start",
+            &[
+                "void*".into(),
+                "void*".into(),
+                "void*".into(),
+                "uint32_t".into(),
+            ],
+            &[
+                "ctx".into(),
+                handle.clone(),
+                output.clone(),
+                format!("{create_pos}u"),
+            ],
         );
+        let _ = writeln!(out, "    uint8_t {done} = {start};");
         self.emit_pending_check(out);
         let complete = self.emitter.runtime_call(
             "void",
@@ -253,6 +264,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         block: &l::BasicBlock,
         state: u32,
     ) -> Result<(), String> {
+        let l::Terminator::Suspend { pos, .. } = &block.terminator else {
+            return Err(internal("await has no suspension position"));
+        };
+        let pos_id = self.emitter.pos_id(pos);
         let register = self.emitter.runtime_call(
             "void",
             if matches!(
@@ -267,11 +282,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             } else {
                 "subscript_rt_async_await"
             },
-            &["void*".into(), "void*".into(), "void*".into()],
+            &[
+                "void*".into(),
+                "void*".into(),
+                "void*".into(),
+                "uint32_t".into(),
+            ],
             &[
                 "ctx".into(),
                 "frame".into(),
                 format!("frame->b{}_child", block.id.0),
+                pos_id.to_string(),
             ],
         );
         let _ = writeln!(out, "    {register};");

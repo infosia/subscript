@@ -123,6 +123,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         operands: &[RV],
         parameter_types: &[l::ValueType],
         return_type: Option<&l::ValueType>,
+        pos: &Pos,
     ) -> Result<RV, String> {
         let target = self
             .ml
@@ -156,6 +157,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         {
             self.push_argument(&mut arguments, value, ty)?;
         }
+        if matches!(return_type, Some(l::ValueType::Data(Type::AsyncHandle(_)))) {
+            let id = self.position_id(pos);
+            let id = self.iconst(types::I32, id);
+            arguments.push(id);
+        }
         // Lambda bodies belong to the current reload generation and have no
         // stable cross-generation slot. The callable operand supplies that
         // generation's environment, so call its declared body directly.
@@ -173,6 +179,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         operands: &[RV],
         parameter_types: &[l::ValueType],
         return_type: Option<&l::ValueType>,
+        pos: &Pos,
     ) -> Result<RV, String> {
         let callable = *operands
             .first()
@@ -202,6 +209,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .zip(parameter_types.iter().skip(1))
         {
             self.push_argument(&mut arguments, value, ty)?;
+        }
+        if matches!(&signature.ret, Type::AsyncHandle(_)) {
+            let id = self.position_id(pos);
+            let id = self.iconst(types::I32, id);
+            arguments.push(id);
         }
         let signature = self
             .ml

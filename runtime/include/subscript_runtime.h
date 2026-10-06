@@ -131,6 +131,24 @@ typedef struct subscript_rt_async_step_report {
     uint64_t budget_exhausted;
 } subscript_rt_async_step_report;
 
+/* Registered task record (compiler.md §169). */
+typedef struct subscript_rt_async_task_info {
+    uint64_t task_id;
+    uint64_t awaited_task_id;
+    uint32_t state;
+    uint32_t kind;
+    uint32_t function_pos_id;
+    uint32_t await_pos_id;
+    uint32_t create_pos_id;
+    uint32_t reserved;
+} subscript_rt_async_task_info;
+
+/**
+ * Receives one task record (§169). The pointer is valid only during the call.
+ * The callback must not change or release the subscript_rt_context.
+ */
+typedef void (*subscript_rt_async_task_visitor)(void* userdata, const subscript_rt_async_task_info* info);
+
 /**
  * Returns the work a host checkpoint can advance: runnable continuations
  * and aggregate reactions, plus frames that wait for the next checkpoint.
@@ -318,6 +336,17 @@ const uint8_t* subscript_rt_ctx_stdout(const subscript_rt_context* ctx, uint64_t
 uint32_t subscript_rt_ctx_trap_kind(const subscript_rt_context* ctx);
 const uint8_t* subscript_rt_ctx_trap_message(const subscript_rt_context* ctx, uint64_t* len);
 uint32_t subscript_rt_ctx_trap_pos_id(const subscript_rt_context* ctx);
+/**
+ * Visits registered tasks in task-id order (§169), without script or subscript_rt_context allocation.
+ * States: READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
+ * Kinds: invocation=1, aggregate=2. A null visitor returns zero.
+ * If pending is zero and unfinished is positive, follow each waiting task's awaited_task_id.
+ * Resolve position ids through program.alloc.h; zero means no script site.
+ *
+ * # Safety
+ * Shared contract. The callback must not change or release the subscript_rt_context.
+ */
+uint64_t subscript_rt_ctx_visit_async_tasks(const subscript_rt_context* ctx, subscript_rt_async_task_visitor visitor, void* userdata);
 uint64_t subscript_rt_ctx_visit_live_allocations(const subscript_rt_context* ctx, subscript_rt_alloc_visitor visitor, void* userdata);
 
 /**

@@ -211,7 +211,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::SuspendKind::Async => {
                 // B1 experiment rule 8: a `Context.suspend()` waiter becomes
                 // eligible at the next host checkpoint.
-                self.call_runtime(self.ml.rt.async_park, &[self.ctx, frame], false)?;
+                let id = self.position_id(pos);
+                let id = self.iconst(types::I32, id);
+                self.call_runtime(self.ml.rt.async_park, &[self.ctx, frame, id], false)?;
             }
             l::SuspendKind::AsyncCall { target, operands } => {
                 let child = self.create_async_child(target, operands, traps)?;
@@ -222,7 +224,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .ins()
                     .store(flags(), child, frame, child_offset as i32);
                 // B1 experiment rule 1: the call runs the callee's prefix.
-                self.start_async_handle(target, child)?;
+                self.start_async_handle(target, child, pos)?;
                 return self.await_async_child(block, child, &plan, traps, true);
             }
             l::SuspendKind::AsyncHandle { handle, owned } => {
@@ -308,6 +310,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         target: &l::CallTarget,
         handle: Value,
+        pos: &Pos,
     ) -> Result<(), String> {
         let (output, size) = match &target.return_type {
             Some(ty) => {
@@ -318,16 +321,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             None => (self.iconst(types::I64, 0), 0),
         };
-        let resume = self
-            .builder
-            .ins()
-            .load(types::I64, flags(), handle, COROUTINE_RESUME_OFFSET);
-        let signature = self.builder.import_signature(self.ml.resume_sig());
-        let call = self
-            .builder
-            .ins()
-            .call_indirect(signature, resume, &[self.ctx, handle, output]);
-        let done = self.builder.inst_results(call)[0];
+        let id = self.position_id(pos);
+        let id = self.iconst(types::I32, id);
+        let done = self
+            .call_runtime(
+                self.ml.rt.async_start,
+                &[self.ctx, handle, output, id],
+                false,
+            )?
+            .ok_or_else(|| internal("async start has no status"))?;
         self.trap_check();
         let complete = self.builder.create_block();
         let continued = self.builder.create_block();
@@ -373,9 +375,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let frame = self
             .frame
             .ok_or_else(|| internal("async parent has no frame"))?;
+        let l::Terminator::Suspend { pos, .. } = &self.function.blocks[block.0 as usize].terminator
+        else {
+            return Err(internal("await has no suspension position"));
+        };
+        let pos = pos.clone();
+        let id = self.position_id(&pos);
+        let id = self.iconst(types::I32, id);
         self.call_runtime(
             self.ml.rt.async_await_owned,
-            &[self.ctx, frame, child],
+            &[self.ctx, frame, child, id],
             false,
         )?;
         self.suspend_after_await(plan)
@@ -409,7 +418,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         } else {
             self.ml.rt.async_await
         };
-        self.call_runtime(register, &[self.ctx, frame, handle], false)?;
+        let l::Terminator::Suspend { pos, .. } = &self.function.blocks[block.0 as usize].terminator
+        else {
+            return Err(internal("await has no suspension position"));
+        };
+        let pos = pos.clone();
+        let id = self.position_id(&pos);
+        let id = self.iconst(types::I32, id);
+        self.call_runtime(register, &[self.ctx, frame, handle, id], false)?;
         self.suspend_after_await(plan)
     }
 

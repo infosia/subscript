@@ -23,7 +23,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let callable = operands
                     .first()
                     .ok_or_else(|| internal("static closure call has no callable"))?;
-                let arguments = operands.iter().skip(1).cloned().collect::<Vec<_>>();
+                let mut arguments = operands.iter().skip(1).cloned().collect::<Vec<_>>();
+                if matches!(
+                    target.return_type,
+                    Some(l::ValueType::Data(Type::AsyncHandle(_)))
+                ) {
+                    arguments.push(format!("{}u", self.emitter.pos_id(&instruction.pos)));
+                }
                 let separator = if arguments.is_empty() { "" } else { ", " };
                 let expression = format!(
                     "sub_{}{}(ctx, {callable}.env{separator}{})",
@@ -66,7 +72,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         .map(|ty| self.emitter.ctype(ty))
                         .collect::<Result<Vec<_>, _>>()?,
                 );
-                let args = operands.iter().skip(1).cloned().collect::<Vec<_>>();
+                let mut args = operands.iter().skip(1).cloned().collect::<Vec<_>>();
+                if matches!(&signature.ret, Type::AsyncHandle(_)) {
+                    parameter_types.push("uint32_t".into());
+                    args.push(format!("{}u", self.emitter.pos_id(&instruction.pos)));
+                }
                 let separator = if args.is_empty() { "" } else { ", " };
                 let expression = format!(
                     "(({} (*)({}))({callable}.code))(ctx, {callable}.env{separator}{})",

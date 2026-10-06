@@ -625,7 +625,9 @@ pub struct Context {
     // frame header's four-byte `reserved` word; Context metadata holds
     // reload provenance, the fulfilled-value size the scheduler needs, the
     // cached completion, and the continuations registered on the frame.
-    pub(crate) async_frames: HashMap<usize, AsyncFrameMeta>,
+    // Registered frame addresses use the same pointer hash as callback registrations.
+    pub(crate) async_frames: HashMap<usize, AsyncFrameMeta, BuildHasherDefault<AddressHasher>>,
+    next_async_task_id: u64,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.
     // Every site that changes the live set moves it, so a per-frame host
     // read costs the same at every live count.
@@ -792,6 +794,9 @@ mod async_scheduler;
 pub(crate) use async_scheduler::AsyncFrameMeta;
 use async_scheduler::AsyncJob;
 pub use async_scheduler::AsyncStepReport;
+#[path = "context/async_inspection.rs"]
+mod async_inspection;
+pub use async_inspection::{AsyncTaskInfo, AsyncTaskVisitor};
 
 #[path = "context/lifecycle.rs"]
 mod lifecycle;

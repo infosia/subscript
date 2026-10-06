@@ -32,11 +32,23 @@ impl<'m> Emitter<'m> {
             );
             ("&value".to_string(), "sizeof(value)".to_string())
         };
-        let _ = writeln!(
-            out,
-            "    uint8_t done = sub_f{}_resume(ctx, handle, {output});",
-            function.id.0
+        let start = self.runtime_call(
+            "uint8_t",
+            "subscript_rt_async_start",
+            &[
+                "void*".into(),
+                "void*".into(),
+                "void*".into(),
+                "uint32_t".into(),
+            ],
+            &[
+                "ctx".into(),
+                "handle".into(),
+                output.clone(),
+                "create_pos".into(),
+            ],
         );
+        let _ = writeln!(out, "    uint8_t done = {start};");
         out.push_str("    if (*(const uint32_t*)ctx != 0u) return handle;\n");
         let complete = self.runtime_call(
             "void",

@@ -28,9 +28,9 @@ unsafe extern "C" fn resume(ctx: *mut Context, frame: *mut u8, _: *mut u8) -> u8
     f.left -= 1;
     unsafe {
         if f.mode == 1 {
-            ctx.async_park(frame);
+            ctx.async_park(frame, 0);
         } else {
-            ctx.async_await(frame, f.handle);
+            ctx.async_await(frame, f.handle, 0);
         }
     }
     0
@@ -59,9 +59,9 @@ fn chain(ctx: &mut Context, n: u32, mode: u32, id: u8) -> *mut u8 {
         });
         ctx.async_register(frame, 0);
         if mode == 1 {
-            ctx.async_park(frame);
+            ctx.async_park(frame, 0);
         } else {
-            ctx.async_await(frame, handle);
+            ctx.async_await(frame, handle, 0);
         }
         ctx.async_release(frame, 0);
     }

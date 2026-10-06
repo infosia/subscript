@@ -268,7 +268,8 @@ impl Interpreter<'_> {
                     else {
                         break;
                     };
-                    let _ = self.invoke_callable(&callable, callback_arguments(value, index))?;
+                    let _ =
+                        self.invoke_callable(&callable, callback_arguments(value, index), None)?;
                 }
                 Ok(Value::Void)
             }
@@ -285,7 +286,7 @@ impl Interpreter<'_> {
                         break;
                     };
                     let mapped =
-                        self.invoke_callable(&callable, callback_arguments(value, index))?;
+                        self.invoke_callable(&callable, callback_arguments(value, index), None)?;
                     if operation == "FlatMap" {
                         let array_ty = Type::Array(Box::new(result_element.clone()));
                         let count = self.array_subject_len(&mapped, &array_ty)?;
@@ -312,7 +313,7 @@ impl Interpreter<'_> {
                         break;
                     };
                     let keep = self
-                        .invoke_callable(&callable, callback_arguments(value.clone(), index))?
+                        .invoke_callable(&callable, callback_arguments(value.clone(), index), None)?
                         .as_bool()?;
                     if keep {
                         self.array_push_value(out, element_ty, &value)?;
@@ -342,7 +343,7 @@ impl Interpreter<'_> {
                     if indexed {
                         arguments.push(Value::I(index as i64));
                     }
-                    accumulator = self.invoke_callable(&callable, arguments)?;
+                    accumulator = self.invoke_callable(&callable, arguments, None)?;
                 }
                 Ok(accumulator)
             }
@@ -363,7 +364,7 @@ impl Interpreter<'_> {
                         break;
                     };
                     let matched = self
-                        .invoke_callable(&callable, callback_arguments(value.clone(), index))?
+                        .invoke_callable(&callable, callback_arguments(value.clone(), index), None)?
                         .as_bool()?;
                     if operation == "Some" && matched {
                         return Ok(Value::Bool(true));
@@ -407,6 +408,7 @@ impl Interpreter<'_> {
                             .invoke_callable(
                                 &callable,
                                 vec![sorted[cursor - 1].clone(), sorted[cursor].clone()],
+                                None,
                             )?
                             .as_i64()?;
                         if comparison <= 0 {
