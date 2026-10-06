@@ -15,6 +15,8 @@
  * are read on the first warm-up run, so no timed sample includes an
  * observer call. `SUBSCRIPT_ASYNC_COST_NO_UNFINISHED` drops the unfinished
  * read, for a revision whose runtime predates that observer.
+ * argv[4] equal to "budget" adds a separate §168 run after all timed samples.
+ * That run reports the call count and maximum call time for a budget of 1,000.
  */
 
 #include <stdio.h>
@@ -147,6 +149,33 @@ int main(int argc, char **argv) {
     fprintf(stderr, "live-allocations %llu\n",
             (unsigned long long)live_allocations);
     fprintf(stderr, "checksum-stable %d\n", stable);
+    /* §168: this extra run follows every existing timed sample. */
+    if (argc > 4 && strcmp(argv[4], "budget") == 0) {
+        subscript_rt_context *ctx = subscript_rt_ctx_new();
+        if (ctx == NULL) return 2;
+        call_entry(ctx, subscript_init);
+        call_entry(ctx, subscript_export_main);
+        call_entry(ctx, subscript_kick_async_exports);
+        uint64_t calls = 0;
+        uint64_t max_call_ns = 0;
+        while (subscript_rt_ctx_trap_kind(ctx) == 0 &&
+               subscript_rt_ctx_async_pending(ctx) != 0) {
+            const uint64_t start = monotonic_ns();
+            subscript_rt_async_step_report report =
+                subscript_rt_ctx_async_step_budget(ctx, 1000);
+            const uint64_t elapsed = monotonic_ns() - start;
+            if (elapsed > max_call_ns) max_call_ns = elapsed;
+            if (report.dispatched > 1000) return 3;
+            calls++;
+        }
+        uint64_t length = 0;
+        const unsigned char *bytes = subscript_rt_ctx_stdout(ctx, &length);
+        if (subscript_rt_ctx_trap_kind(ctx) != 0 || length != first_len ||
+            memcmp(first, bytes, (size_t)length) != 0) return 3;
+        fprintf(stderr, "budgeted-settled-awaits calls %llu max-call-ns %llu\n",
+                (unsigned long long)calls, (unsigned long long)max_call_ns);
+        subscript_rt_ctx_release(ctx);
+    }
     free(first);
     fflush(stdout);
     return 0;

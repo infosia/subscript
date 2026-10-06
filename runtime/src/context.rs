@@ -618,7 +618,7 @@ pub struct Context {
     pub(crate) async_ready: VecDeque<AsyncJob>,
     async_parked: VecDeque<*mut u8>,
     // §94.2: clearance transfers the recorded ready job to stopped storage.
-    async_trapping: Option<(*mut u8, TrapKind)>,
+    async_trapping: Option<(AsyncJob, TrapKind)>,
     async_stopped: Vec<*mut u8>,
     active_async_frames: Vec<usize>,
     // §70 held async handles. The reference count itself occupies the
@@ -791,6 +791,7 @@ mod tests;
 mod async_scheduler;
 pub(crate) use async_scheduler::AsyncFrameMeta;
 use async_scheduler::AsyncJob;
+pub use async_scheduler::AsyncStepReport;
 
 #[path = "context/lifecycle.rs"]
 mod lifecycle;

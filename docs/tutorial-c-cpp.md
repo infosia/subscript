@@ -196,6 +196,22 @@ Frames that park during the drain wait for the next step.
 Copies retain the frame; releases decrement its reference count and free
 it at zero (§70.3). No background scheduler or implicit collection runs (see the
 [TypeScript tutorial](tutorial-typescript.md#asyncawait-without-a-scheduler)).
+For a dispatch budget, use `subscript_rt_ctx_async_step_budget(ctx, max_dispatches)` (§168).
+The report has `dispatched`, `pending`, `unfinished`, and `budget_exhausted` fields, each a `uint64_t`.
+A zero budget runs no script and promotes no parked frame.
+One dispatch runs to its next suspension, completion, or a trap.
+The budget does not bound that segment's time. This API is no time limit.
+Call the budgeted step once per frame. Work remains while `pending` is not zero.
+
+```c
+/* In the host frame loop, after the async export call: */
+subscript_rt_async_step_report report =
+    subscript_rt_ctx_async_step_budget(ctx, 1000);
+if (report.pending != 0) {
+    /* Keep the checkpoint active for the next frame. */
+}
+```
+
 Alongside `await`, generator-shaped suspension is a `function*`
 coroutine: each `next()` call advances exactly one step, which matches
 driving script logic once per frame:

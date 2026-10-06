@@ -1084,6 +1084,21 @@ impl ReloadSession {
         Ok(remaining)
     }
 
+    /// Starts at most `max_dispatches` jobs and returns checkpoint counts (§168).
+    /// A dispatch runs to suspension, completion, or a trap; this is no time limit.
+    ///
+    /// # Errors
+    /// Returns the Context trap, if one exists after the checkpoint.
+    pub fn async_step_budget(
+        &mut self,
+        max_dispatches: u64,
+    ) -> Result<subscript_runtime::AsyncStepReport, RunError> {
+        // SAFETY: the session retains every queued JIT callback's module.
+        let report = unsafe { self.ctx.async_step_budget(max_dispatches) };
+        self.check_trap()?;
+        Ok(report)
+    }
+
     /// Takes the stdout bytes produced since the last take.
     ///
     /// The session installs no print observer, so the Context sink is

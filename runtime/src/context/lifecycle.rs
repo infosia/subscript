@@ -568,11 +568,10 @@ impl Context {
     /// frame is live would resume a run that has already given up.
     /// [`Context::script_depth`] is the check.
     pub fn clear_trap(&mut self) {
-        if let Some((frame, kind)) = self.async_trapping.take() {
+        if let Some((job, kind)) = self.async_trapping.take() {
             if kind != TrapKind::StaleCoroutine {
-                self.async_ready
-                    .retain(|queued| *queued != AsyncJob::Invocation(frame));
-                self.async_stopped.push(frame);
+                self.async_ready.retain(|queued| *queued != job);
+                self.async_clear_trapping_job(job);
             }
         }
         self.trap = None;

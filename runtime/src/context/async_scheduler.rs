@@ -1,5 +1,20 @@
 use super::*;
 
+/// Host checkpoint counts (`compiler.md` §168). The C layout has no padding.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AsyncStepReport {
+    /// Jobs that the checkpoint started, including a trapping job.
+    pub dispatched: u64,
+    /// Ready jobs plus parked registrations at return.
+    pub pending: u64,
+    /// Registered invocations without a cached completion at return.
+    pub unfinished: u64,
+    /// One when the budget ends with a job still ready; otherwise zero.
+    pub budget_exhausted: u64,
+}
+
 #[derive(Default)]
 pub(crate) struct AsyncFrameMeta {
     created_epoch: u32,
@@ -401,7 +416,7 @@ impl Context {
     /// appends the whole pre-existing parked list after the jobs that are
     /// already ready, then drains the ready queue in FIFO order. Jobs added
     /// during the drain join the same checkpoint; a frame parked during it
-    /// waits for the next one. The drain has no job budget.
+    /// waits for the next one. The drain has no job budget. §168 supplies the bounded form.
     ///
     /// A trap preserves the ready head until clearance (§94.2).
     /// Clearance stops that frame permanently, except for reload staleness.
@@ -412,8 +427,23 @@ impl Context {
     /// Every queued callback/frame pair was supplied through
     /// [`Context::async_kick`] and its generated code remains live.
     pub unsafe fn async_step(&mut self) -> usize {
-        if self.trapped() {
-            return self.async_pending();
+        unsafe { self.async_drain(None) }.pending as usize
+    }
+
+    /// Starts at most `max_dispatches` jobs (`compiler.md` §168).
+    /// A zero budget runs no script and promotes no parked frame.
+    /// One dispatch runs to suspension, completion, or a trap; this is no time limit.
+    ///
+    /// # Safety
+    /// Every queued callback/frame pair matches, and its generated code remains live.
+    pub unsafe fn async_step_budget(&mut self, max_dispatches: u64) -> AsyncStepReport {
+        unsafe { self.async_drain(Some(max_dispatches)) }
+    }
+
+    unsafe fn async_drain(&mut self, limit: Option<u64>) -> AsyncStepReport {
+        let mut dispatched = 0;
+        if self.trapped() || limit == Some(0) {
+            return self.async_report(dispatched, limit);
         }
         // §94.1 rule 8: the checkpoint appends the entire pre-existing
         // parked list after the jobs that are already ready, then drains the
@@ -423,16 +453,24 @@ impl Context {
         self.async_ready
             .extend(parked.into_iter().map(AsyncJob::Invocation));
         if self.async_ready.is_empty() {
-            return self.async_pending();
+            return self.async_report(dispatched, limit);
         }
         let active_base = self.active_async_frames.len();
         self.enter_script();
-        while let Some(job) = self.async_ready.pop_front() {
+        while limit != Some(dispatched) {
+            let Some(job) = self.async_ready.pop_front() else {
+                break;
+            };
+            dispatched += 1;
             let frame = match job {
                 AsyncJob::Invocation(frame) => frame,
                 AsyncJob::Aggregate { handle, index } => {
                     unsafe { self.async_all_react(handle, index) };
                     if self.trapped() {
+                        if let Some(trap) = self.trap_record() {
+                            self.async_trapping = Some((job, trap.kind));
+                        }
+                        self.async_ready.push_front(job);
                         break;
                     }
                     continue;
@@ -456,7 +494,7 @@ impl Context {
                 // §94.2: preserve pending until host clearance. Record the
                 // kind now; only reload staleness permits another resume.
                 if let Some(trap) = self.trap_record() {
-                    self.async_trapping = Some((frame, trap.kind));
+                    self.async_trapping = Some((job, trap.kind));
                 }
                 self.async_ready.push_front(AsyncJob::Invocation(frame));
                 break;
@@ -476,7 +514,20 @@ impl Context {
         }
         self.active_async_frames.truncate(active_base);
         self.exit_script();
-        self.async_pending()
+        self.async_report(dispatched, limit)
+    }
+
+    fn async_report(&self, dispatched: u64, limit: Option<u64>) -> AsyncStepReport {
+        AsyncStepReport {
+            dispatched,
+            pending: self.async_pending() as u64,
+            unfinished: if limit.is_some() {
+                self.async_unfinished() as u64
+            } else {
+                0
+            },
+            budget_exhausted: u64::from(limit == Some(dispatched) && !self.async_ready.is_empty()),
+        }
     }
 }
 
@@ -636,9 +687,24 @@ impl Context {
                     exception.pos_id,
                 );
             }
-            if last {
+            if last && !self.trapped() {
                 self.async_frames.remove(&(handle as usize));
                 self.delete(handle as usize, 0);
+            }
+        }
+    }
+
+    pub(super) fn async_clear_trapping_job(&mut self, job: AsyncJob) {
+        match job {
+            AsyncJob::Invocation(frame) => self.async_stopped.push(frame),
+            AsyncJob::Aggregate { handle, .. } => {
+                let done = self.async_frames.get(&(handle as usize)).is_some_and(|meta| {
+                    matches!(&meta.kind, AsyncKind::Aggregate(state) if state.remaining == 0)
+                });
+                if done && unsafe { self.async_count(handle) } == 0 {
+                    self.async_frames.remove(&(handle as usize));
+                    self.delete(handle as usize, 0);
+                }
             }
         }
     }

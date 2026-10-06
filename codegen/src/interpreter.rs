@@ -707,42 +707,6 @@ impl<'m> Interpreter<'m> {
         self.context.clear_trap();
     }
 
-    /// One host checkpoint (§94.1 rules 8 and 9). It appends the whole
-    /// pre-existing parked list after the jobs that are already ready, then
-    /// drains the ready queue in FIFO order. A frame parked during the drain
-    /// waits for the next checkpoint.
-    fn async_step(&mut self) -> Result<(), InterpretError> {
-        if let Some(error) = &self.async_trapping {
-            return Err(error.clone());
-        }
-        if self.context.trapped() {
-            return Ok(());
-        }
-        let parked = std::mem::take(&mut self.async_parked);
-        self.async_ready
-            .extend(parked.into_iter().map(AsyncJob::Invocation));
-        while let Some(frame) = self.async_ready.pop_front() {
-            let outcome = match &frame {
-                AsyncJob::Invocation(handle) => self.async_resume(handle),
-                AsyncJob::Aggregate { handle, index } => self.async_all_react(handle, *index),
-            };
-            if let Err(error) = outcome {
-                if matches!(error, InterpretError::Trap { .. }) {
-                    self.async_trapping = Some(error.clone());
-                    self.async_ready.push_front(frame);
-                }
-                return Err(error);
-            }
-            if self.context.trapped() {
-                // The trap policy preserves the trapping registration and
-                // every entry this checkpoint has not reached.
-                self.async_ready.push_front(frame);
-                break;
-            }
-        }
-        Ok(())
-    }
-
     /// Runs one frame to its first await or return, then applies its
     /// outcome to the scheduler.
     fn async_start(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
@@ -1916,3 +1880,8 @@ mod operations;
 
 mod async_all;
 use async_all::{AsyncJob, CoroutineKind};
+
+#[cfg(test)]
+mod budget_tests;
+
+mod checkpoint;

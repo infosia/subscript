@@ -65,6 +65,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_step",
     )?;
+    let async_step_budget_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_async_step_budget",
+    )?;
     let async_unfinished_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_unfinished",
@@ -181,6 +185,12 @@ pub fn render() -> Result<String, String> {
     out.push_str(&c_function("subscript_init", &entry)?);
     out.push_str(";\n\n");
 
+    out.push_str("typedef struct subscript_rt_async_step_report {\n");
+    for field in ["dispatched", "pending", "unfinished", "budget_exhausted"] {
+        out.push_str(&format!("    uint64_t {field};\n"));
+    }
+    out.push_str("} subscript_rt_async_step_report;\n\n");
+
     for function in &functions {
         if function.name == "subscript_rt_ctx_set_freed_handle_diagnostics" {
             push_comment(&mut out, &freed_handle_diagnostics_docs);
@@ -202,6 +212,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_async_step" {
             push_comment(&mut out, &async_step_docs);
+        }
+        if function.name == "subscript_rt_ctx_async_step_budget" {
+            push_comment(&mut out, &async_step_budget_docs);
         }
         if function.name == "subscript_rt_ctx_async_unfinished" {
             push_comment(&mut out, &async_unfinished_docs);
@@ -423,6 +436,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "i64" => Ok("int64_t"),
         "u32" => Ok("uint32_t"),
         "u64" => Ok("uint64_t"),
+        "AsyncStepReport" => Ok("subscript_rt_async_step_report"),
         "*mut Context" => Ok("subscript_rt_context*"),
         "*const Context" => Ok("const subscript_rt_context*"),
         "*mut Worker" => Ok("subscript_rt_worker*"),
@@ -548,6 +562,12 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         assert!(header.contains("subscript_rt_ctx_async_pending"));
         assert!(header.contains("subscript_rt_ctx_async_step"));
         assert!(header.contains("subscript_rt_ctx_async_unfinished"));
+        assert!(
+            header.contains("subscript_rt_async_step_report subscript_rt_ctx_async_step_budget(")
+        );
+        assert!(header.contains("compiler.md` §168"));
+        assert!(header.contains("This API is no time limit."));
+        assert!(header.contains("Work remains while `pending` is not zero."));
         // The three observers of `compiler.md` §94.2: what a checkpoint can
         // advance, what one checkpoint does, and what stays unfinished.
         assert!(header.contains("runnable continuations"));

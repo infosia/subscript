@@ -75,6 +75,7 @@ struct Measurement {
     live_allocations: u64,
     stable: bool,
     compile: std::time::Duration,
+    budget_report: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -209,10 +210,15 @@ fn measure(
         ));
     }
 
-    let run = Command::new(&exe)
+    let mut command = Command::new(&exe);
+    command
         .arg(warmup.to_string())
         .arg(timed.to_string())
-        .arg(WARMUP_FLOOR_NS.to_string())
+        .arg(WARMUP_FLOOR_NS.to_string());
+    if workload.name == "settled-awaits" {
+        command.arg("budget");
+    }
+    let run = command
         .output()
         .map_err(|error| format!("running {}: {error}", exe.display()))?;
     if !run.status.success() {
@@ -234,8 +240,12 @@ fn measure(
         live_allocations: 0,
         stable: false,
         compile,
+        budget_report: None,
     };
     for line in String::from_utf8_lossy(&run.stderr).lines() {
+        if line.starts_with("budgeted-settled-awaits ") {
+            measurement.budget_report = Some(line.to_string());
+        }
         let mut fields = line.split_whitespace();
         match (fields.next(), fields.next(), fields.next()) {
             (Some("sample"), Some(_), Some(value)) => {
@@ -290,6 +300,9 @@ fn report(workload: &Workload, measurement: &Measurement) {
         "workload {} median {median} min {min} max {max}",
         workload.name
     );
+    if let Some(line) = &measurement.budget_report {
+        println!("{line}");
+    }
     println!("  shape:            {}", workload.shape);
     println!(
         "  warm-up:          {} iterations, {:.3} ms of measured execution (floors: {} iterations, {:.3} ms)",

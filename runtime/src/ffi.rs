@@ -18,7 +18,7 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, Context, DiagnosticsObserver, PrintObserver, TrapObserver,
+    AllocationVisitor, AsyncStepReport, Context, DiagnosticsObserver, PrintObserver, TrapObserver,
 };
 use crate::trap::TrapKind;
 use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
@@ -710,7 +710,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_clear_trap(ctx: *mut Context) -> i32 {
 }
 
 /// Returns the work a host checkpoint can advance: runnable continuations
-/// plus frames that wait for the next checkpoint.
+/// and aggregate reactions, plus frames that wait for the next checkpoint.
 ///
 /// # Safety
 ///
@@ -735,6 +735,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_unfinished(ctx: *const Context) 
 /// Makes every parked waiter runnable, then drains the ready queue to
 /// empty, and returns the work still pending. On a trapped Context this
 /// is a no-op returning the current count; an empty Context returns zero.
+/// `compiler.md` §168 supplies the bounded form.
 ///
 /// # Safety
 ///
@@ -745,6 +746,24 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
     // SAFETY: exclusive Context contract and queued callbacks were installed
     // by generated code from the same live program.
     unsafe { (&mut *ctx).async_step() as u64 }
+}
+
+/// Starts at most `max_dispatches` jobs and returns checkpoint counts (`compiler.md` §168).
+/// Call this API each frame. Work remains while `pending` is not zero.
+/// A zero budget runs no script and promotes no parked frame.
+/// One dispatch runs to its next suspension, completion, or a trap.
+/// The budget does not bound that segment's time. This API is no time limit.
+/// A trapped Context starts no job and returns the current counts.
+///
+/// # Safety
+/// `ctx` follows the exclusive Context contract. All queued generated code remains callable.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_async_step_budget(
+    ctx: *mut Context,
+    max_dispatches: u64,
+) -> AsyncStepReport {
+    // SAFETY: the caller supplies a live exclusive Context and live callbacks.
+    unsafe { (&mut *ctx).async_step_budget(max_dispatches) }
 }
 
 /// Number of live Context-owned allocations.

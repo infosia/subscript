@@ -124,9 +124,16 @@ typedef void (*subscript_rt_worker_entry)(subscript_rt_context* ctx, subscript_r
 /* The program header declares the entry module's checked host API. */
 void subscript_init(subscript_rt_context* ctx);
 
+typedef struct subscript_rt_async_step_report {
+    uint64_t dispatched;
+    uint64_t pending;
+    uint64_t unfinished;
+    uint64_t budget_exhausted;
+} subscript_rt_async_step_report;
+
 /**
  * Returns the work a host checkpoint can advance: runnable continuations
- * plus frames that wait for the next checkpoint.
+ * and aggregate reactions, plus frames that wait for the next checkpoint.
  *
  * # Safety
  *
@@ -137,6 +144,7 @@ uint64_t subscript_rt_ctx_async_pending(const subscript_rt_context* ctx);
  * Makes every parked waiter runnable, then drains the ready queue to
  * empty, and returns the work still pending. On a trapped subscript_rt_context this
  * is a no-op returning the current count; an empty subscript_rt_context returns zero.
+ * `compiler.md` §168 supplies the bounded form.
  *
  * # Safety
  *
@@ -144,6 +152,18 @@ uint64_t subscript_rt_ctx_async_pending(const subscript_rt_context* ctx);
  * registered frame remains linked and callable.
  */
 uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
+/**
+ * Starts at most `max_dispatches` jobs and returns checkpoint counts (`compiler.md` §168).
+ * Call this API each frame. Work remains while `pending` is not zero.
+ * A zero budget runs no script and promotes no parked frame.
+ * One dispatch runs to its next suspension, completion, or a trap.
+ * The budget does not bound that segment's time. This API is no time limit.
+ * A trapped subscript_rt_context starts no job and returns the current counts.
+ *
+ * # Safety
+ * `ctx` follows the exclusive subscript_rt_context contract. All queued generated code remains callable.
+ */
+subscript_rt_async_step_report subscript_rt_ctx_async_step_budget(subscript_rt_context* ctx, uint64_t max_dispatches);
 /**
  * Returns the number of started invocations without a completion.
  *

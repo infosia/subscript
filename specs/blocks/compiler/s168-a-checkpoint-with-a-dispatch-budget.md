@@ -95,3 +95,21 @@ empty.
    the call count and the maximum time of one call.
 6. No `.expected` golden moves. The host header test passes with the new
    declaration.
+
+### 168.3 Open
+
+The Phase Review found these. None is CRITICAL or MAJOR.
+
+1. The aggregate trap test in `runtime/tests/async_budget.rs` checks
+   that clearance gives no second trap, but not that the aggregate frame
+   is freed. A clearance that left the frame would pass.
+2. The differential test in `codegen/src/interpreter/budget_tests.rs`
+   builds the C program once for each budget, six C builds in all. Only
+   the budget changes. A budget in `argv` needs one build per program
+   (core principle 15).
+3. The interpreter counts `unfinished` by a walk from its handle table
+   and queues, not from a registry. A wait ring whose handles left the
+   table is not counted (contrived).
+4. An aggregate reaction that traps through the missing-completion path
+   after it takes its input keeps one count on that input after
+   clearance (contrived; only a corrupt registration state reaches it).

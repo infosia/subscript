@@ -597,6 +597,21 @@ artifact is C either way.
   Frames that park during the drain wait for the next step.
   The step returns the number still pending. A Rust host keeps the same
   explicit control a C host has.
+  `session.async_step_budget(max_dispatches)` returns an `AsyncStepReport` (§168).
+  Its fields are `dispatched`, `pending`, `unfinished`, and `budget_exhausted`.
+  A zero budget runs no script and promotes no parked frame.
+  One dispatch runs to its next suspension, completion, or a trap.
+  The budget does not bound that segment's time. This API is no time limit.
+  Call the budgeted step once per frame. Work remains while `pending` is not zero.
+
+  ```rust
+  // In the host frame loop, after the async export call:
+  let report = session.async_step_budget(1000)?;
+  if report.pending != 0 {
+      // Keep the checkpoint active for the next frame.
+  }
+  ```
+
 - **A trap during initialization**:
   `ReloadSession::new_capturing_initializer_trap(&files)` returns the
   session and the trap together, so a reload-capable host reports the
