@@ -210,3 +210,4 @@ Every section, with its status:
 | §166 | `Promise.all` over an array of handles | active | [`s166-promise-all-over-an-array-of-handles.md`](compiler/s166-promise-all-over-an-array-of-handles.md) |
 | §167 | Async function values and non-capturing async arrows | active | [`s167-async-function-values-and-non-capturing-async-arrows.md`](compiler/s167-async-function-values-and-non-capturing-async-arrows.md) |
 | §168 | A checkpoint with a dispatch budget | active | [`s168-a-checkpoint-with-a-dispatch-budget.md`](compiler/s168-a-checkpoint-with-a-dispatch-budget.md) |
+| §169 | The host reads each async task | active | [`s169-the-host-reads-each-async-task.md`](compiler/s169-the-host-reads-each-async-task.md) |
