@@ -212,3 +212,4 @@ Every section, with its status:
 | §168 | A checkpoint with a dispatch budget | active | [`s168-a-checkpoint-with-a-dispatch-budget.md`](compiler/s168-a-checkpoint-with-a-dispatch-budget.md) |
 | §169 | The host reads each async task | active | [`s169-the-host-reads-each-async-task.md`](compiler/s169-the-host-reads-each-async-task.md) |
 | §170 | A task group joins its tasks | active | [`s170-a-task-group-joins-its-tasks.md`](compiler/s170-a-task-group-joins-its-tasks.md) |
+| §171 | An array owns its counted elements | active | [`s171-an-array-owns-its-counted-elements.md`](compiler/s171-an-array-owns-its-counted-elements.md) |

@@ -79,6 +79,10 @@ because an arbitrary class's allocation has no spare word.)*
 *(2026-09-27, §116.1 rule 4c: a lambda borrows a captured handle; the
 capture takes no count and no lambda exit releases it.)*
 
+*(2026-10-06, §171: the rules apply to every counted type. A dynamic
+array of a counted type has its own holder count and owns one count of
+each element. A completion owns its counted value.)*
+
 1. **A handle's count starts at one**, held by the value the call
    returns.
 2. **A copy increments; a scope exit decrements.** The compiler emits
