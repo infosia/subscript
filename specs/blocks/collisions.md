@@ -225,7 +225,7 @@ continuation queue schedules async resumes. There is no autonomous event
 loop or user-constructible `Promise` object; the lib `Promise<T>` is only the
 `tsc` view of an async function's value, exactly as `IteratorResult` is
 for coroutines. The model, lifetimes, and the retired entry
-`retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected. Host
+`retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected, except `Promise.all` over `Promise<T>[]` (`compiler.md` §166). Host
 async C APIs still surface as C-style callbacks plus poll functions
 (plan §4 pattern 4); `await` consumes them through script-level polling.
 Accept: `a20`, `a93`–`a95`, `a312`, `a313` (a finished generator's zero, §145). Reject: `r96`–`r100` (Q34 boundaries;
@@ -705,6 +705,8 @@ it as a candidate to accept.
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 | 32 | A null check of an indexed read (`xs[0] !== null`), then a read of the same element | An element is a shared location: another name can hold the array and change the element (C17). `tsc` narrows an element only for a literal or unchanged key, not for a loop key. A `const` copy narrows for every key (`compiler.md` §163). | `const v = xs[i]; if (v !== null) { v.x }` |
 | 33 | A call through a function value with fewer arguments than parameters, where `tsc` gives the value optional parameters (`const h = (a: i32, b: i32 = 5): i32 => a + b; h(1)`) | A function type has no optional parameter (C7), so a call through a function value passes every parameter. A default belongs to a declaration (`compiler.md` §164). | every argument; a direct call of the declaration |
+| 34 | A use of the `void[]` value of `await Promise.all(jobs)` with `jobs: Promise<void>[]` | The language has no `void[]` value (`compiler.md` §166 rule 2). | an `await` statement of the aggregate |
+| 35 | `Promise.all(jobs)` where the result type `T` holds a count: an async handle, or an array of async handles | The aggregate stores each result by a byte copy; a counted result needs the §70.3 store path (`compiler.md` §166 rule 12). | await each input, and build the array |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
