@@ -52,7 +52,9 @@ rejection handling, implicit collection, or background execution.
 12. A checkpoint has no job budget or termination guarantee. A finite
     ready chain drains in one checkpoint. An infinite ready chain can
     prevent return. `Context.suspend()` is the explicit host-step boundary.
-    This is not a real-time execution bound.
+    This is not a real-time execution bound. This rule is of
+    `subscript_rt_ctx_async_step`; §168 adds a checkpoint with a
+    dispatch budget.
 
 The LIR instruction and terminator definitions must state this protocol.
 The verifier checks async target kind, result types, suspension edges,

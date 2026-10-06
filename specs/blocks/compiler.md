@@ -209,3 +209,4 @@ Every section, with its status:
 | §165 | The async documentation states the contract | active | [`s165-the-async-documentation-states-the-contract.md`](compiler/s165-the-async-documentation-states-the-contract.md) |
 | §166 | `Promise.all` over an array of handles | active | [`s166-promise-all-over-an-array-of-handles.md`](compiler/s166-promise-all-over-an-array-of-handles.md) |
 | §167 | Async function values and non-capturing async arrows | active | [`s167-async-function-values-and-non-capturing-async-arrows.md`](compiler/s167-async-function-values-and-non-capturing-async-arrows.md) |
+| §168 | A checkpoint with a dispatch budget | active | [`s168-a-checkpoint-with-a-dispatch-budget.md`](compiler/s168-a-checkpoint-with-a-dispatch-budget.md) |
