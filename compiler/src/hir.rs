@@ -1812,6 +1812,15 @@ pub enum ExprKind {
         /// Checker-local obligation joined through copies and storage.
         origin: u32,
     },
+    /// One runtime task-group operation (§170). Join carries a must-await origin.
+    TaskGroup {
+        /// The runtime operation.
+        operation: TaskGroupOperation,
+        /// Receiver and task in source order.
+        args: Vec<Expr>,
+        /// Creation or join obligation.
+        origin: Option<u32>,
+    },
     /// Creates an aggregate handle from an input-array snapshot (§166).
     AsyncAll {
         /// The input array, evaluated once at the call.
@@ -1897,4 +1906,18 @@ pub enum UpdateKind {
     Prefix,
     /// Return the value before the update.
     Postfix,
+}
+
+/// Operations on a task group with one lexical owner (§170).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TaskGroupOperation {
+    /// Create one open group.
+    Create,
+    /// Transfer one task count to the group.
+    Add,
+    /// Close the group and create its join handle.
+    Join,
+    /// End the declaring scope.
+    Release,
 }

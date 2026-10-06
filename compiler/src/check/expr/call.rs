@@ -1041,6 +1041,7 @@ impl<'p> Checker<'p> {
             ty if checker.apparent_type(&ty).is_numeric() => {
                 checker.check_number_method(recv, &name, c, fx, pos, prop_pos)
             }
+            Type::TaskGroup => checker.check_task_group_method(recv, &name, c, fx, pos),
             Type::Date => checker.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
                 checker.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
@@ -1642,6 +1643,9 @@ impl<'p> Checker<'p> {
         };
         let name = id.sym.to_string();
         let ident_pos = self.pos(id.span);
+        if name == "TaskGroup" && self.ambient_visible(&name, fx) {
+            return self.check_task_group_new(n, fx, pos);
+        }
         if fx.owns_local_name(&name) {
             if self
                 .lookup_local(&name, &ident_pos, fx)

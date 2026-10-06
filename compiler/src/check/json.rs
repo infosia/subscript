@@ -375,6 +375,7 @@ impl Checker<'_> {
                 Type::F16
                 | Type::Void
                 | Type::Null
+                | Type::TaskGroup
                 | Type::Object
                 | Type::RegExp
                 | Type::Enum(_)

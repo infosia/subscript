@@ -152,6 +152,10 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t81-generator-done-fixed-wire-alias" => (TrapKind::GeneratorDoneValue, 15, 15),
         "t72-narrowing-boundary-getter" => (TrapKind::SharedNullNarrowing, 13, 44),
         "t71-narrowing-destructuring-getter" => (TrapKind::SharedNullNarrowing, 16, 16),
+        "t84-dropped-unfinished-task-group" | "t85-dropped-failed-task-group" => {
+            (TrapKind::TaskGroup, 11, 16)
+        }
+        "t86-add-to-closed-task-group" => (TrapKind::TaskGroup, 15, 3),
         "t83-unobserved-aggregate-exception" => (TrapKind::UncaughtException, 10, 40),
         "t82-worker-trap-site" => (TrapKind::WorkerTrapped, 16, 14),
         other => panic!("{other}: trap corpus entry has no exact expectation"),

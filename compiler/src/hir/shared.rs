@@ -44,6 +44,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => false,
@@ -89,6 +90,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => &self.ty,
@@ -120,6 +122,7 @@ fn receiver_is_shared(ty: &Type, classes: &[ClassDef], boxed: bool) -> bool {
         | Type::RegExp
         | Type::Void
         | Type::Null
+        | Type::TaskGroup
         | Type::Object
         | Type::Enum(_)
         | Type::StringAlias(_)

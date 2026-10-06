@@ -116,7 +116,7 @@ impl RuleCode {
             RuleCode::S008 => {
                 "Numeric literals must fit their context and be integral in an integer context."
             }
-            RuleCode::S009 => "A capturing lambda may not escape its defining function.",
+            RuleCode::S009 => "A capturing lambda may not escape its defining function; a task group requires one lexical owner.",
             RuleCode::S010 => {
                 "An exception form outside the decided exception surface is rejected."
             }

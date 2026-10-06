@@ -642,6 +642,74 @@ An exception that leaves a host-callable async export traps with
 `TrapKind::UncaughtException` (29), because the export has no script holder
 (§116.1 rule 5).
 
+## Cooperative cancellation
+
+A token holds a cancellation flag. A source sets that flag.
+A task observes cancellation only when it runs and checks the token.
+The check throws an `Error`; the caller catches it around the await.
+
+```ts
+class CancellationToken {
+  cancelled: boolean = false;
+  throwIfCancelled(): void {
+    if (this.cancelled) { throw new Error("cancelled"); }
+  }
+}
+class CancellationSource {
+  token: CancellationToken = new CancellationToken();
+  cancel(): void { this.token.cancelled = true; }
+}
+async function work(token: CancellationToken): Promise<void> {
+  await Context.suspend();
+  token.throwIfCancelled();
+  print("work completed");
+}
+export async function main(): Promise<void> {
+  const source: CancellationSource = new CancellationSource();
+  const job: Promise<void> = work(source.token);
+  source.cancel();
+  try { await job; }
+  catch (e) {
+    if (e instanceof Error && e.message === "cancelled") { print("work cancelled"); }
+    else { throw e; }
+  }
+}
+```
+
+```text
+work cancelled
+```
+
+## Task groups
+
+A `TaskGroup` holds tasks and waits for all their completions.
+Its join reports the first failure in reaction order after every task finishes.
+The group lives in one `const` local. A synchronous helper can borrow it.
+Call `join()` in its declaring scope. Add no task after that call.
+An unjoined scope exit traps if unfinished or failed tasks remain.
+A group cannot live in a field, an array, a result, or a captured lambda.
+
+```ts
+async function work(tag: string): Promise<void> {
+  await Context.suspend();
+  print(tag);
+}
+function add(group: TaskGroup): void { group.add(work("second")); }
+export async function main(): Promise<void> {
+  const group: TaskGroup = new TaskGroup();
+  group.add(work("first"));
+  add(group);
+  await group.join();
+  print("joined");
+}
+```
+
+```text
+first
+second
+joined
+```
+
 ## Coroutines
 
 A `function*` coroutine yields typed values. The caller advances it,

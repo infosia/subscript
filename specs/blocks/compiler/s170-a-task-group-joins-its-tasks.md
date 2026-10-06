@@ -162,3 +162,25 @@ reference object has no release point.
 4. The async-cost benchmark on the existing workloads: the median is at
    most 1.05 times the pin median (release, best of three).
 5. No existing `.expected` golden moves.
+
+### 170.3 Open
+
+The Phase Reviews found these. None is CRITICAL or MAJOR.
+
+1. The expression statement `g;` of a group local is accepted; rule 2
+   names it as rejected (contrived).
+2. A setter parameter of type `TaskGroup` is rejected with S009, but
+   rule 2 admits a parameter of a synchronous method (contrived; the
+   rejection is conservative).
+3. The S009 diagnostic of the generator-body site prints the shared
+   S009 rule text about a capturing lambda, and its "TypeScript accepts"
+   example is the field form, not a generator.
+4. The TypeScript tutorial lists the rejected group positions without a
+   generator body.
+5. Outside this section: a §70 count does not reach every last holder.
+   An async function whose fulfilled type holds a handle
+   (`Promise<Promise<void>[]>`) leaves a completed task registered after
+   every holder ends, and an element removed through a copy of a handle
+   array keeps one count. `codegen/tests/task_group_count_form.rs` and
+   `runtime/tests/counted_completion_form.rs` measure both against
+   same-shape controls.

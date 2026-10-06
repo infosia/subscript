@@ -326,6 +326,34 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::Call(target) => {
                 self.emit_call(out, instruction, target, &operands, &operand_types, result)
             }
+            l::InstructionKind::TaskGroup(operation) => {
+                let position = self.emitter.pos_id(&instruction.pos);
+                let args = vec![
+                    "ctx".into(),
+                    format!("{}u", *operation as u32),
+                    operands.first().cloned().unwrap_or_else(|| "NULL".into()),
+                    operands.get(1).cloned().unwrap_or_else(|| "NULL".into()),
+                    format!("{position}u"),
+                ];
+                let call = self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_task_group",
+                    &[
+                        "void*".into(),
+                        "uint32_t".into(),
+                        "void*".into(),
+                        "void*".into(),
+                        "uint32_t".into(),
+                    ],
+                    &args,
+                );
+                if result.is_some() {
+                    self.assign(out, result, &call)?;
+                } else {
+                    let _ = writeln!(out, "    (void){call};");
+                }
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
             l::InstructionKind::AsyncAll => {
                 let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
                     return Err(internal("aggregate input type is missing"));

@@ -35,7 +35,7 @@ impl Interpreter<'_> {
         let mut records = Vec::new();
         for handle in &handles {
             let state = handle.borrow();
-            let aggregate = matches!(state.kind, CoroutineKind::Aggregate(_));
+            let aggregate = !matches!(state.kind, CoroutineKind::Invocation(_));
             let unread = matches!(&state.kind, CoroutineKind::Aggregate(a) if a.inputs.iter().any(Option::is_some));
             if state.completed && state.owners == 0 && !unread {
                 continue;
@@ -76,7 +76,11 @@ impl Interpreter<'_> {
                 task_id: state.task_id,
                 awaited_task_id,
                 state: value,
-                kind: if aggregate { 2 } else { 1 },
+                kind: match state.kind {
+                    CoroutineKind::Invocation(_) => 1,
+                    CoroutineKind::Aggregate(_) => 2,
+                    CoroutineKind::GroupJoin(_) => 3,
+                },
                 reserved: 0,
                 function_pos: state.function_pos.clone(),
                 create_pos: state.create_pos.clone(),

@@ -66,6 +66,10 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r382-async-arrow-handle-body.ts", RuleCode::S100, 9),
+    ("r383-unjoined-task-group.ts", RuleCode::S013, 10),
+    ("r384-async-task-group-result.ts", RuleCode::S009, 9),
+    ("r385-task-group-field.ts", RuleCode::S009, 10),
+    ("r386-task-group-generator-body.ts", RuleCode::S009, 13),
     ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
     ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),

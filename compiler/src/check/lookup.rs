@@ -228,6 +228,13 @@ impl<'p> Checker<'p> {
             }
         }
         let (crossed, local) = found?;
+        if crossed > 0 && self.apparent_type(&local.ty) == Type::TaskGroup {
+            self.reject_subset(
+                RejectionSite::TaskGroupPosition,
+                "a lambda cannot capture a TaskGroup",
+                pos.clone(),
+            );
+        }
         if self.apparent_type(&local.ty) == Type::Error {
             return Some(local);
         }

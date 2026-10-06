@@ -130,6 +130,7 @@ impl Expr {
             | K::AsyncCall { .. }
             | K::AsyncHandleCreate { .. }
             | K::AsyncHandleAwait(_)
+            | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => None,
@@ -364,6 +365,11 @@ impl Expr {
                 }
                 sites
             }
+            K::TaskGroup {
+                operation: TaskGroupOperation::Create | TaskGroupOperation::Join,
+                ..
+            } => vec![allocation(&self.pos), call(&self.pos)],
+            K::TaskGroup { .. } => vec![call(&self.pos)],
             K::AsyncAll { .. } => vec![allocation(&self.pos), lifetime(&self.pos)],
             K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
                 let mut sites = Vec::new();
@@ -575,6 +581,7 @@ pub(super) fn declared_field_type<'a>(
         | Type::RegExp
         | Type::Void
         | Type::Null
+        | Type::TaskGroup
         | Type::Object
         | Type::Enum(_)
         | Type::StringAlias(_)

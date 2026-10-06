@@ -59,9 +59,12 @@ impl<'p> Checker<'p> {
     pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> HashSet<u32> {
         use hir::ExprKind as K;
         match &expr.kind {
-            K::AsyncAll { origin, .. } | K::AsyncHandleCreate { origin, .. } => {
-                HashSet::from([*origin])
+            K::TaskGroup {
+                origin: Some(origin),
+                ..
             }
+            | K::AsyncAll { origin, .. }
+            | K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
             K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
             K::Local(name, _, _) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
@@ -178,7 +181,33 @@ impl<'p> Checker<'p> {
         }
         let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
         fx.descriptor_numeric_operand = previous_numeric;
-        if self.apparent_type(&checked.ty) == Type::array(Type::Void) {
+        if self.apparent_type(&checked.ty) == Type::TaskGroup
+            && fx.frames.iter().any(|frame| frame.is_generator)
+        {
+            self.reject_subset(
+                RejectionSite::TaskGroupGeneratorBody,
+                "TaskGroup is not allowed in a generator body",
+                checked.pos.clone(),
+            );
+            self.err_expr(checked.pos)
+        } else if self.apparent_type(&checked.ty) == Type::TaskGroup
+            && !allow_embedded_header_receiver
+            && ctx != Some(&Type::TaskGroup)
+            && !matches!(
+                checked.kind,
+                ExprKind::TaskGroup {
+                    operation: hir::TaskGroupOperation::Create,
+                    ..
+                }
+            )
+        {
+            self.reject_subset(
+                RejectionSite::TaskGroupPosition,
+                "TaskGroup cannot move or copy",
+                checked.pos.clone(),
+            );
+            self.err_expr(checked.pos)
+        } else if self.apparent_type(&checked.ty) == Type::array(Type::Void) {
             self.reject_subset(
                 RejectionSite::PromiseAllVoidValue,
                 "the language has no void[] value",
@@ -572,8 +601,21 @@ impl<'p> Checker<'p> {
         }
 
         if let ast::Expr::Member(member) = callee {
-            if self.ambient_namespace(&member.obj, fx) == Some("Promise")
-                && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all")
+            let group_receiver = if let ast::Expr::Ident(id) = member.obj.as_ref() {
+                fx.scopes
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.vars.get(id.sym.as_ref()))
+                    .is_some_and(|local| self.apparent_type(&local.ty) == Type::TaskGroup)
+            } else {
+                false
+            };
+            let group_join = group_receiver
+                && matches!(&member.prop,
+                ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "join");
+            if group_join
+                || (self.ambient_namespace(&member.obj, fx) == Some("Promise")
+                    && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all"))
             {
                 let handle = self.check_expr(operand, None, fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {

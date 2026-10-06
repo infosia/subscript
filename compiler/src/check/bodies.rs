@@ -296,9 +296,22 @@ impl<'p> Checker<'p> {
             .map(|(pos, _)| pos.clone())
             .collect::<Vec<_>>();
         for origin in unhandled {
+            let group = fx.group_origins.iter().any(|id| {
+                fx.async_origins
+                    .get(*id as usize)
+                    .is_some_and(|(pos, _)| *pos == origin)
+            });
             self.reject_subset(
-                RejectionSite::AsyncHandleUnawaited,
-                "an async handle is dropped without any await of its completion",
+                if group {
+                    RejectionSite::TaskGroupUnjoined
+                } else {
+                    RejectionSite::AsyncHandleUnawaited
+                },
+                if group {
+                    "a task group requires a join in its declaring scope"
+                } else {
+                    "an async handle is dropped without any await of its completion"
+                },
                 origin,
             );
         }

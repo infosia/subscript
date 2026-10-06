@@ -12,11 +12,11 @@ pub struct AsyncTaskInfo {
     pub awaited_task_id: u64,
     /// READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
     pub state: u32,
-    /// Invocation=1, aggregate=2.
+    /// Invocation=1, aggregate=2, group join=3.
     pub kind: u32,
-    /// Allocation position of the function or the aggregate call.
+    /// Allocation position of the function or the aggregate/group join call.
     pub function_pos_id: u32,
-    /// Suspension position; zero for active, complete, aggregate, and initial ready tasks.
+    /// Suspension position; zero for active, complete, aggregate, group join, and initial ready tasks.
     pub await_pos_id: u32,
     /// Call position; zero for host roots and aggregates.
     pub create_pos_id: u32,
@@ -47,7 +47,7 @@ impl Context {
         frames.sort_unstable_by_key(|(_, meta)| meta.task_id);
         let mut records = Vec::with_capacity(frames.len());
         for (&frame, meta) in &frames {
-            let aggregate = matches!(meta.kind, AsyncKind::Aggregate(_));
+            let aggregate = !matches!(meta.kind, AsyncKind::Invocation);
             let mut awaited_task_id = 0;
             let state = if meta.completion.is_some() {
                 5
@@ -81,7 +81,7 @@ impl Context {
                 task_id: meta.task_id,
                 awaited_task_id,
                 state,
-                kind: if aggregate { 2 } else { 1 },
+                kind: meta.kind.task_kind(),
                 function_pos_id,
                 create_pos_id: meta.create_pos_id,
                 reserved: 0,

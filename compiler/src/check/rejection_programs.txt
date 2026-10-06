@@ -8978,3 +8978,44 @@ FILE	E	target/s154/forms/s167-return-handle-named/main.ts
 export async function f(h: Promise<i32>): Promise<i32> { return h; }
 END FILE
 END PROGRAM
+PROGRAM	s170-position			0
+FILE	E	target/s154/forms/s170-position/main.ts
+class Holder { group: TaskGroup; constructor(group: TaskGroup) { this.group = group; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s170-unjoined			0
+FILE	E	target/s154/forms/s170-unjoined/main.ts
+export function main(): void { const group: TaskGroup = new TaskGroup(); }
+END FILE
+END PROGRAM
+PROGRAM	s170-unsupported	TS2339		0
+FILE	E	target/s154/forms/s170-unsupported/main.ts
+export async function main(): Promise<void> { const group = new TaskGroup(); group.missing(); await group.join(); }
+END FILE
+END PROGRAM
+PROGRAM	s170-generator-body			0
+FILE	E	target/s154/forms/s170-generator-body/main.ts
+// corpus: reject/r386-task-group-generator-body
+// purpose: A dropped generator cannot release a lexical task group.
+// exercises: task-group, generator, dropped-iterator
+// questions: compiler.md §170 rules 2 and 7
+// tsc: accepts
+// js-comparable: no C8: TaskGroup has no JavaScript counterpart.
+// expected-error: S009 at the group constructor
+
+async function fail(): Promise<void> { throw new Error("lost"); }
+const jobs: Promise<void>[] = [];
+function consume(job: Promise<void>): void { jobs.push(job); }
+function* values(): Generator<i32> {
+  const group: TaskGroup = new TaskGroup();
+  group.add(fail());
+  yield 1;
+  consume(group.join());
+}
+export async function main(): Promise<void> {
+  for (const value of values()) { print(`${value}`); break; }
+  await Context.suspend();
+  print("end");
+}
+END FILE
+END PROGRAM

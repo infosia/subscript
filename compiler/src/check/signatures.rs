@@ -416,7 +416,10 @@ impl<'p> Checker<'p> {
     /// Resolves a function signature (pass B), including Q34's required
     /// `Promise<T>` view for async declarations.
     pub(crate) fn resolve_fn_sig(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+        let saved = self.task_group_parameters;
+        self.task_group_parameters = !f.is_async && !f.is_generator && !self.in_boundary;
         let params = self.resolve_params(&f.params);
+        self.task_group_parameters = saved;
         let mut sig = self.resolve_fn_result(f, pos);
         sig.params = params;
         sig
@@ -543,7 +546,14 @@ impl<'p> Checker<'p> {
                     );
                 }
                 let ty = match &binding.type_ann {
-                    Some(ann) => self.resolve_type(&ann.type_ann),
+                    Some(ann) => {
+                        let saved = self.task_group_type;
+                        self.task_group_type = self.task_group_parameters
+                            && type_reference_name(Some(&ann.type_ann)) == Some("TaskGroup");
+                        let ty = self.resolve_type(&ann.type_ann);
+                        self.task_group_type = saved;
+                        ty
+                    }
                     None => {
                         let pos = self.pos(binding.id.span);
                         self.reject_subset(

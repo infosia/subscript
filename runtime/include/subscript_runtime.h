@@ -34,6 +34,9 @@ typedef struct subscript_rt_worker_message_descriptor {
 #define SUBSCRIPT_RT_TRAP_NULL_NARROWING 4u
 #define SUBSCRIPT_RT_TRAP_SHARED_NULL_NARROWING 31u
 
+/* Task group trap (compiler.md §170). */
+#define SUBSCRIPT_RT_TRAP_TASK_GROUP 33u
+
 /* Generator value trap (compiler.md §145). */
 #define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE 32u
 

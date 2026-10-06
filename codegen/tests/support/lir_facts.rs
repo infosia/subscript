@@ -453,7 +453,8 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
                     // exception edge of a `using` binding owns the raise
                     // site of its resume; no HIR expression carries either
                     // (compiler.md §115.2, §115.5 rule 7). A handle release
-                    // owns its check (§116.1 rule 4). Counted-store checks place
+                    // owns its check (§116.1 rule 4). A group scope exit owns its check (§170).
+                    // Counted-store checks place
                     // retains; the lifetime verifier checks their read sites.
                     if matches!(
                         instruction.kind,
@@ -463,6 +464,7 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
                             | l::InstructionKind::AsyncHandleArrayRetain
                             | l::InstructionKind::AsyncHandleRelease
                             | l::InstructionKind::AsyncHandleArrayRelease
+                            | l::InstructionKind::TaskGroup(hir::TaskGroupOperation::Release)
                     ) {
                         continue;
                     }
@@ -698,6 +700,7 @@ fn collect_trap_expression(
             | hir::ExprKind::Yield(_)
             | hir::ExprKind::AsyncSuspend
             | hir::ExprKind::AsyncHandleAwait(_)
+            | hir::ExprKind::TaskGroup { .. }
             | hir::ExprKind::AsyncAll { .. }
             | hir::ExprKind::AsyncHandleTransfer { .. }
             | hir::ExprKind::Cond { .. } => {}
@@ -1222,6 +1225,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::Yield(_)
         | hir::ExprKind::AsyncSuspend
         | hir::ExprKind::AsyncHandleAwait(_)
+        | hir::ExprKind::TaskGroup { .. }
         | hir::ExprKind::AsyncAll { .. }
         | hir::ExprKind::AsyncHandleTransfer { .. }
         | hir::ExprKind::Cond { .. } => None,
@@ -1329,6 +1333,12 @@ fn instruction_arity(
                 target.parameter_types.len()
             },
         ),
+        K::TaskGroup(operation) => Arity::Exact(match operation {
+            hir::TaskGroupOperation::Create => 0,
+            hir::TaskGroupOperation::Add => 2,
+            hir::TaskGroupOperation::Join | hir::TaskGroupOperation::Release => 1,
+            _ => usize::MAX,
+        }),
         K::AsyncAll
         | K::AsyncHandleRetain
         | K::AsyncHandleRelease

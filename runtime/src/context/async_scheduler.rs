@@ -68,12 +68,14 @@ impl ResultStorage {
 pub(crate) enum AsyncJob {
     Invocation(*mut u8),
     Aggregate { handle: *mut u8, index: usize },
+    Group { group: usize, index: usize },
 }
 impl AsyncJob {
     pub(super) fn handle(self) -> *mut u8 {
         match self {
             Self::Invocation(frame) => frame,
             Self::Aggregate { handle, .. } => handle,
+            Self::Group { .. } => std::ptr::null_mut(),
         }
     }
 }
@@ -81,7 +83,49 @@ impl AsyncJob {
 pub(super) enum AsyncKind {
     #[default]
     Invocation,
-    Aggregate(Box<Aggregate>),
+    Runtime(Box<RuntimeTask>),
+}
+pub(super) enum RuntimeTask {
+    Aggregate(Aggregate),
+    GroupJoin(usize),
+}
+impl AsyncKind {
+    pub(super) fn aggregate(&self) -> Option<&Aggregate> {
+        match self {
+            Self::Runtime(task) => match task.as_ref() {
+                RuntimeTask::Aggregate(state) => Some(state),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(super) fn aggregate_mut(&mut self) -> Option<&mut Aggregate> {
+        match self {
+            Self::Runtime(task) => match task.as_mut() {
+                RuntimeTask::Aggregate(state) => Some(state),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(super) fn join_group(&self) -> Option<usize> {
+        match self {
+            Self::Runtime(task) => match task.as_ref() {
+                RuntimeTask::GroupJoin(group) => Some(*group),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(super) fn task_kind(&self) -> u32 {
+        match self {
+            Self::Invocation => 1,
+            Self::Runtime(task) => match task.as_ref() {
+                RuntimeTask::Aggregate(_) => 2,
+                RuntimeTask::GroupJoin(_) => 3,
+            },
+        }
+    }
 }
 pub(super) struct Aggregate {
     inputs: Vec<Option<*mut u8>>,
@@ -264,7 +308,16 @@ impl Context {
         }
         *slot -= 1;
         if *slot == 0 {
-            let keep = matches!(&meta.kind, AsyncKind::Aggregate(state) if state.remaining != 0);
+            let group = meta.kind.join_group();
+            let keep = meta
+                .kind
+                .aggregate()
+                .is_some_and(|state| state.remaining != 0)
+                || group.is_some_and(|group| {
+                    self.task_groups
+                        .get(&group)
+                        .is_some_and(|state| state.remaining != 0)
+                });
             let unobserved = if keep {
                 match meta.completion.as_ref() {
                     Some(crate::exception::Completion::Exception(payload)) if !payload.observed => {
@@ -275,11 +328,14 @@ impl Context {
             } else {
                 let meta = self.async_frames.remove(&(frame as usize));
                 self.delete(frame as usize, pos_id);
+                if let Some(group) = group {
+                    self.task_group_join_released(group);
+                }
                 meta.and_then(|meta| meta.completion?.unobserved())
             };
             if let Some(unobserved) = unobserved {
                 if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
-                    if let AsyncKind::Aggregate(state) = &mut meta.kind {
+                    if let Some(state) = meta.kind.aggregate_mut() {
                         state.reported = true;
                     }
                 }
@@ -507,6 +563,17 @@ impl Context {
             dispatched += 1;
             let frame = match job {
                 AsyncJob::Invocation(frame) => frame,
+                AsyncJob::Group { group, index } => {
+                    unsafe { self.task_group_react(group, index) };
+                    if self.trapped() {
+                        if let Some(trap) = self.trap_record() {
+                            self.async_trapping = Some((job, trap.kind));
+                        }
+                        self.async_ready.push_front(job);
+                        break;
+                    }
+                    continue;
+                }
                 AsyncJob::Aggregate { handle, index } => {
                     unsafe { self.async_all_react(handle, index) };
                     if self.trapped() {
@@ -610,13 +677,13 @@ impl Context {
             }
         }
         if let Some(meta) = self.async_frames.get_mut(&(handle as usize)) {
-            meta.kind = AsyncKind::Aggregate(Box::new(Aggregate {
+            meta.kind = AsyncKind::Runtime(Box::new(RuntimeTask::Aggregate(Aggregate {
                 inputs: inputs.clone(),
                 result,
                 remaining,
                 elem_size,
                 reported: false,
-            }));
+            })));
         }
         for (index, input) in inputs.iter().flatten().enumerate() {
             let job = AsyncJob::Aggregate { handle, index };
@@ -642,7 +709,7 @@ impl Context {
             self.async_missing_completion(0);
             return;
         };
-        let AsyncKind::Aggregate(state) = &mut meta.kind else {
+        let Some(state) = meta.kind.aggregate_mut() else {
             self.async_missing_completion(0);
             return;
         };
@@ -713,9 +780,7 @@ impl Context {
                 .async_frames
                 .get_mut(&(handle as usize))
                 .and_then(|meta| {
-                    let AsyncKind::Aggregate(state) = &mut meta.kind else {
-                        return None;
-                    };
+                    let state = meta.kind.aggregate_mut()?;
                     if state.reported {
                         return None;
                     }
@@ -740,10 +805,16 @@ impl Context {
     pub(super) fn async_clear_trapping_job(&mut self, job: AsyncJob) {
         match job {
             AsyncJob::Invocation(frame) => self.async_stopped.push(frame),
+            AsyncJob::Group { .. } => {}
             AsyncJob::Aggregate { handle, .. } => {
-                let done = self.async_frames.get(&(handle as usize)).is_some_and(|meta| {
-                    matches!(&meta.kind, AsyncKind::Aggregate(state) if state.remaining == 0)
-                });
+                let done = self
+                    .async_frames
+                    .get(&(handle as usize))
+                    .is_some_and(|meta| {
+                        meta.kind
+                            .aggregate()
+                            .is_some_and(|state| state.remaining == 0)
+                    });
                 if done && unsafe { self.async_count(handle) } == 0 {
                     self.async_frames.remove(&(handle as usize));
                     self.delete(handle as usize, 0);
@@ -756,9 +827,9 @@ impl Context {
         self.async_frames
             .values()
             .enumerate()
-            .flat_map(|(index, meta)| match &meta.kind {
-                AsyncKind::Invocation => Vec::new(),
-                AsyncKind::Aggregate(state) => std::iter::once((index, 0, state.result as usize))
+            .flat_map(|(index, meta)| match meta.kind.aggregate() {
+                None => Vec::new(),
+                Some(state) => std::iter::once((index, 0, state.result as usize))
                     .chain(
                         state
                             .inputs

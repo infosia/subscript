@@ -64,6 +64,9 @@ impl<'p> Checker<'p> {
                 );
                 return checker.err_expr(pos);
             }
+            let saved_group_parameters = checker.task_group_parameters;
+            checker.task_group_parameters =
+                !a.is_async && !a.is_generator && !fx.frames.iter().any(|frame| frame.is_generator);
             let mut params = Vec::new();
             for (i, pat) in a.params.iter().enumerate() {
                 // An un-annotated lambda parameter takes its type from the
@@ -106,6 +109,7 @@ impl<'p> Checker<'p> {
                 };
                 params.push(sig);
             }
+            checker.task_group_parameters = saved_group_parameters;
             let mut ret = a
                 .return_type
                 .as_ref()
@@ -398,13 +402,27 @@ impl<'p> Checker<'p> {
             .map(|(pos, _)| pos.clone())
             .collect::<Vec<_>>();
         for origin in unhandled {
+            let group = fx.group_origins.iter().any(|id| {
+                fx.async_origins
+                    .get(*id as usize)
+                    .is_some_and(|(pos, _)| *pos == origin)
+            });
             self.reject_subset(
-                RejectionSite::AsyncHandleUnawaited,
-                "an async handle is dropped without any await of its completion",
+                if group {
+                    RejectionSite::TaskGroupUnjoined
+                } else {
+                    RejectionSite::AsyncHandleUnawaited
+                },
+                if group {
+                    "a task group requires a join in its declaring scope"
+                } else {
+                    "an async handle is dropped without any await of its completion"
+                },
                 origin,
             );
         }
         fx.async_origins.truncate(origin_start);
+        fx.group_origins.retain(|id| (*id as usize) < origin_start);
         let ret = ret.unwrap_or(Type::Error);
         let result = if a.is_async {
             Type::AsyncHandle(Box::new(ret.clone()))

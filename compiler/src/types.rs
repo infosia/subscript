@@ -244,6 +244,8 @@ pub enum Type {
     ///
     /// Its runtime representation is a Context-owned handle.
     RegExp,
+    /// A task group with one lexical owner (§170).
+    TaskGroup,
     /// Absence of a value (function returns only).
     Void,
     /// The type of the `null` literal.
@@ -463,6 +465,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
         Type::Str
         | Type::RegExp
+        | Type::TaskGroup
         | Type::Object
         | Type::Array(_)
         | Type::Map(..)
@@ -535,6 +538,7 @@ impl Type {
             | Self::RegExp
             | Self::Void
             | Self::Null
+            | Self::TaskGroup
             | Self::Object
             | Self::Class(_)
             | Self::Enum(_)
@@ -704,6 +708,7 @@ impl Type {
             Type::StringAlias(id) => aliases(*id).is_none_or(|values| values.contains(&0)),
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
@@ -795,6 +800,7 @@ pub fn display_type(
         Type::RegExp => "RegExp".to_string(),
         Type::Void => "void".to_string(),
         Type::Null => "null".to_string(),
+        Type::TaskGroup => "TaskGroup".to_string(),
         Type::Object => "object".to_string(),
         Type::Class(id) => class_name(*id),
         Type::TypeParameter(parameter) => parameter.name.clone(),

@@ -832,6 +832,7 @@ pub(crate) struct FnCtx {
     pub flow_reachable: bool,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Shared<Vec<(Pos, bool)>>,
+    pub group_origins: HashSet<u32>,
     /// Owner-scoped local declarations required by rewritten expressions.
     synthetic_owners: Shared<Vec<SyntheticPrefix>>,
     synthetic_owner_kinds: Shared<Vec<SyntheticOwnerKind>>,
@@ -1009,6 +1010,7 @@ impl FnCtx {
             loop_break_facts: Vec::new().into(),
             flow_reachable: true,
             async_origins: Vec::new().into(),
+            group_origins: HashSet::new(),
             synthetic_owners: Vec::new().into(),
             synthetic_owner_kinds: Vec::new().into(),
             diagnostics,
@@ -1170,6 +1172,9 @@ impl FnCtx {
 
 /// The checker.
 pub(crate) struct Checker<'p> {
+    task_group_type: bool,
+    task_group_local: bool,
+    task_group_parameters: bool,
     deciding_type: bool,
     generic_callback_context: bool,
     initializer_call: Option<swc_common::Span>,

@@ -448,6 +448,9 @@ impl Interpreter<'_> {
                 Some(&operand_types),
                 Some(&instruction.pos),
             )?),
+            l::InstructionKind::TaskGroup(operation) => {
+                self.task_group_operation(*operation, &operands, &instruction.pos)?
+            }
             l::InstructionKind::AsyncAll => {
                 let jobs = operands
                     .first()

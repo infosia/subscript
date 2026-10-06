@@ -517,7 +517,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
-    fn acquire_owner(
+    pub(super) fn acquire_owner(
         &mut self,
         site: hir::AsyncCopySite,
         value: &l::Operand,
@@ -640,7 +640,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .first()
                         .is_some_and(|scope| scope.get(&parameter.source_name) == Some(&binding))
             });
-            if is_async_owner_type(&entry.ty) && !capture {
+            let parameter = self.parameters.iter().any(|parameter| {
+                self.scopes
+                    .first()
+                    .is_some_and(|scope| scope.get(&parameter.source_name) == Some(&binding))
+            });
+            if entry.ty == l::ValueType::Data(Type::TaskGroup) && !parameter {
+                let value = self.read_binding(binding, pos)?;
+                self.emit(
+                    l::InstructionKind::TaskGroup(hir::TaskGroupOperation::Release),
+                    vec![value],
+                    None,
+                    false,
+                    vec![l::Trap {
+                        kind: l::TrapKind::Call,
+                        pos: pos.clone(),
+                    }],
+                    pos.clone(),
+                )?;
+            } else if is_async_owner_type(&entry.ty) && !capture {
                 let value = self.read_binding(binding, pos)?;
                 self.release_owner(value, &entry.ty, pos)?;
             }

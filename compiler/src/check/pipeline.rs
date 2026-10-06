@@ -219,6 +219,9 @@ fn run_with_effects(
         })
     }).then(|| prog.clone());
     let mut ck = Checker {
+        task_group_type: false,
+        task_group_local: false,
+        task_group_parameters: false,
         deciding_type: false,
         generic_callback_context: false,
         initializer_call: None,

@@ -54,6 +54,7 @@ fn default_type(name: &str, constraint: &str) -> String {
 
 // §143 rule 4: every unexpressed prelude declaration needs an explicit reason.
 const OMITTED: &[&str] = &[
+    "TaskGroup.constructor",
     "Descriptor",
     "FixedArray.index",
     "FixedArray.length",
@@ -229,7 +230,9 @@ pub(super) fn cells() -> Vec<Cell> {
                         .map(|(i, t)| format!(", p{i}: {t}"))
                         .collect();
                     let body = format!("{callee}{type_arguments}({});", args.join(", "));
-                    let body = if api.name == "Context.suspend" {
+                    let body = if api.name == "TaskGroup.join" {
+                        format!("return {body}")
+                    } else if api.name == "Context.suspend" {
                         format!("await {body}")
                     } else {
                         body
@@ -239,11 +242,12 @@ pub(super) fn cells() -> Vec<Cell> {
                     } else {
                         ""
                     };
-                    let result_type = if api.name == "Context.suspend" {
-                        "Promise<void>"
-                    } else {
-                        "void"
-                    };
+                    let result_type =
+                        if matches!(api.name.as_str(), "Context.suspend" | "TaskGroup.join") {
+                            "Promise<void>"
+                        } else {
+                            "void"
+                        };
                     let declaration = format!("class Box {{ v: i32 = 1; }} @ValueType class Value {{ v: i32 = 1; }} {async_word}function g<T{}>({expression}: {role_type}{receiver}{extra}): {result_type} {{ {body} }}", kind.constraint);
                     let declaration = format!(
                         "{} {declaration}",
@@ -366,7 +370,12 @@ pub(super) fn cells() -> Vec<Cell> {
                         } else {
                             argument.to_string()
                         };
-                        let main = format!("function admitted({}): void {{ g<{argument_type}>({value}{supplied}); }}", concrete_extra.trim().trim_start_matches(',').trim());
+                        let (result, prefix) = if api.name == "TaskGroup.join" {
+                            ("Promise<void>", "return ")
+                        } else {
+                            ("void", "")
+                        };
+                        let main = format!("function admitted({}): {result} {{ {prefix}g<{argument_type}>({value}{supplied}); }}", concrete_extra.trim().trim_start_matches(',').trim());
                         let source =
                             format!("{declaration} {main} export function main(): void {{}}");
                         let concrete = replace_parameter_names(
@@ -445,7 +454,7 @@ pub(super) fn cells() -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        8798,
+        8937,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

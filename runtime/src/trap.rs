@@ -91,6 +91,8 @@ pub enum TrapKind {
     SharedNullNarrowing = 31,
     /// A finished generator value read traps when the zero of `T` is not a value of `T` (compiler.md §145).
     GeneratorDoneValue = 32,
+    /// A task group closes twice or leaves unfinished or failed work (§170).
+    TaskGroup = 33,
 }
 
 impl TrapKind {
@@ -126,6 +128,7 @@ impl TrapKind {
             30 => TrapKind::DisposeRaisedDuringExit,
             31 => TrapKind::SharedNullNarrowing,
             32 => TrapKind::GeneratorDoneValue,
+            33 => TrapKind::TaskGroup,
             _ => return None,
         })
     }
@@ -161,6 +164,7 @@ impl TrapKind {
             TrapKind::UncaughtException => "uncaught-exception",
             TrapKind::DisposeRaisedDuringExit => "dispose-raised-during-exit",
             TrapKind::GeneratorDoneValue => "generator-done-value",
+            TrapKind::TaskGroup => "task-group",
         }
     }
 
@@ -241,12 +245,12 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30, 31, 32]) {
+        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30, 31, 32, 33]) {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(33), None);
+        assert_eq!(TrapKind::from_u32(34), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 

@@ -224,6 +224,7 @@ impl Interpreter<'_> {
             Type::Null
             | Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Class(_)
             | Type::Array(_)
@@ -732,6 +733,7 @@ impl Interpreter<'_> {
             }
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Class(_)
             | Type::Array(_)
@@ -846,6 +848,7 @@ impl Interpreter<'_> {
             }
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Class(_)
             | Type::Array(_)

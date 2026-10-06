@@ -137,6 +137,10 @@ pub fn render() -> Result<String, String> {
         crate::TrapKind::NullNarrowing as u32,
         crate::TrapKind::SharedNullNarrowing as u32,
     ));
+    out.push_str(&format!(
+        "/* Task group trap (compiler.md §170). */\n#define SUBSCRIPT_RT_TRAP_TASK_GROUP {}u\n\n",
+        crate::TrapKind::TaskGroup as u32
+    ));
     out.push_str(&format!("/* Generator value trap (compiler.md §145). */\n#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE {}u\n\n", crate::TrapKind::GeneratorDoneValue as u32));
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");

@@ -323,7 +323,20 @@ impl<'p> Checker<'p> {
             let saved_divergence = self
                 .aggregate_type_site
                 .replace(RejectionSite::AggregateAnnotationLimit);
+            let group_local = !mutable
+                && !dispose
+                && matches!(d.init.as_deref(),
+                Some(ast::Expr::New(new)) if matches!(&*new.callee,
+                    ast::Expr::Ident(id) if id.sym.as_ref() == "TaskGroup"));
+            let saved_group_type = self.task_group_type;
+            self.task_group_type = group_local
+                && pattern_type_ann(&d.name).is_some_and(|ann| {
+                    super::type_reference_name(Some(&ann.type_ann)) == Some("TaskGroup")
+                });
             let ann = pattern_type_ann(&d.name).map(|ann| self.resolve_type(&ann.type_ann));
+            self.task_group_type = saved_group_type;
+            let saved_group_local = self.task_group_local;
+            self.task_group_local = group_local;
             self.aggregate_type_site = saved_divergence;
             if d.init.is_none()
                 && ann
@@ -331,6 +344,7 @@ impl<'p> Checker<'p> {
                     .is_some_and(|ty| self.apparent_type(ty) == Type::Error)
             {
                 self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                self.task_group_local = saved_group_local;
                 continue;
             }
             let init = if let Some(init_ast) = &d.init {
@@ -358,8 +372,10 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                self.task_group_local = saved_group_local;
                 continue;
             };
+            self.task_group_local = saved_group_local;
             let annotated =
                 pattern_type_ann(&d.name).is_some_and(|ann| self.written_type(&ann.type_ann));
             let ty = match ann {

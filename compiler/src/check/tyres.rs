@@ -325,6 +325,17 @@ impl<'p> Checker<'p> {
                     _ => unreachable!("matched worker ambient name"),
                 };
             }
+            "TaskGroup" if self.type_scope_item(name).is_none() => {
+                if !self.task_group_type || r.type_params.is_some() || self.in_boundary {
+                    self.reject_subset(
+                        RejectionSite::TaskGroupPosition,
+                        "TaskGroup requires one const local or a synchronous borrowed parameter",
+                        pos,
+                    );
+                    return Type::Error;
+                }
+                return Type::TaskGroup;
+            }
             "RegExp" if self.type_scope_item(name).is_none() => {
                 if r.type_params.is_some() {
                     self.reject_subset(

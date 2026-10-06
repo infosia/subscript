@@ -38,6 +38,7 @@ impl Interpreter<'_> {
             dispatched += 1;
             let outcome = match &frame {
                 AsyncJob::Invocation(handle) => self.async_resume(handle),
+                AsyncJob::Group { group, index } => self.task_group_react(group, *index),
                 AsyncJob::Aggregate { handle, index } => self.async_all_react(handle, *index),
             };
             if let Err(error) = outcome {
@@ -67,7 +68,7 @@ impl Interpreter<'_> {
         report.pending = self.async_pending() as u64;
         if limit.is_some() {
             let mut work: Vec<_> = self.async_handles.borrow().values().cloned().collect();
-            work.extend(self.async_ready.iter().map(AsyncJob::handle));
+            work.extend(self.async_ready.iter().filter_map(AsyncJob::handle));
             work.extend(self.async_parked.iter().cloned());
             work.extend(self.async_stopped.iter().cloned());
             let mut seen = std::collections::HashSet::new();
@@ -80,7 +81,7 @@ impl Interpreter<'_> {
                 {
                     report.unfinished += 1;
                 }
-                work.extend(state.waiters.iter().map(AsyncJob::handle));
+                work.extend(state.waiters.iter().filter_map(AsyncJob::handle));
                 if let Some(awaited) = &state.awaiting {
                     work.push(Rc::clone(&awaited.handle));
                 }

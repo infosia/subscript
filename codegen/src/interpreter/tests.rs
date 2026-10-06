@@ -159,7 +159,7 @@ fn reachable_frames(interpreter: &Interpreter<'_>) -> Vec<Rc<RefCell<Coroutine>>
     let mut work: Vec<Rc<RefCell<Coroutine>>> = interpreter
         .async_ready
         .iter()
-        .map(AsyncJob::handle)
+        .filter_map(AsyncJob::handle)
         .chain(interpreter.async_parked.iter().cloned())
         .collect();
     work.extend(interpreter.async_handles.borrow().values().cloned());
@@ -172,7 +172,7 @@ fn reachable_frames(interpreter: &Interpreter<'_>) -> Vec<Rc<RefCell<Coroutine>>
             continue;
         }
         let state = frame.borrow();
-        work.extend(state.waiters.iter().map(AsyncJob::handle));
+        work.extend(state.waiters.iter().filter_map(AsyncJob::handle));
         if let Some(awaited) = state.awaiting.as_ref() {
             work.push(Rc::clone(&awaited.handle));
         }

@@ -529,6 +529,13 @@ impl Context {
             .enumerate()
             .map(|(index, address)| (index, 0, address));
         self.push_root_set(&mut work, &mut tracer, "async_frames", async_frames);
+        let group_roots = self.task_group_roots();
+        self.push_root_set(
+            &mut work,
+            &mut tracer,
+            "task_groups",
+            group_roots.into_iter(),
+        );
         let aggregate_roots = self.async_aggregate_roots();
         self.push_root_set(
             &mut work,

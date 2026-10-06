@@ -13,6 +13,10 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::TaskGroupUnsupported => (RuleCode::S009, TscRejects),
+    Self::TaskGroupGeneratorBody => (RuleCode::S009, Diverges(Divergence::TaskGroupPosition)),
+    Self::TaskGroupPosition => (RuleCode::S009, Diverges(Divergence::TaskGroupPosition)),
+    Self::TaskGroupUnjoined => (RuleCode::S013, Diverges(Divergence::TaskGroupUnjoined)),
     Self::RestrictedMemberOutsideClass
     | Self::RestrictedConstructorOutsideClass
     | Self::ValueTypeRestrictedConstructor

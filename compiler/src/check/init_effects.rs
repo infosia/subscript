@@ -624,6 +624,7 @@ impl<'a> ModuleEffectScanner<'a> {
             | K::Yield(_)
             | K::AsyncSuspend
             | K::AsyncHandleAwait(_)
+            | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
             | K::Cond { .. } => {}

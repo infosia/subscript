@@ -1,0 +1,18 @@
+done success-a
+done success-b
+success joined
+done completion-first
+done input-first
+caught completion-first
+all failures joined
+done helper
+helper joined
+done immediate
+immediate joined
+done completed
+completed joined
+done late-completion-first
+done late-input-first
+caught late-completion-first
+completed failures joined
+empty joined

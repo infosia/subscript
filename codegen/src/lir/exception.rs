@@ -54,9 +54,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             };
             let depth = self.handlers.last().map_or(0, |frame| frame.scope_depth);
             let owns = self.scopes.iter().skip(depth).any(|scope| {
-                scope
-                    .values()
-                    .any(|binding| is_async_owner_type(&self.bindings[binding.0].ty))
+                scope.values().any(|binding| {
+                    is_async_owner_type(&self.bindings[binding.0].ty)
+                        || self.bindings[binding.0].ty == l::ValueType::Data(Type::TaskGroup)
+                })
             });
             let returning = self.exit_return.clone();
             let edge = if owns || returning.is_some() {

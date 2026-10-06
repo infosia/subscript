@@ -458,6 +458,21 @@ pub(super) fn verify_instruction_contract(
                 bad("call target identity/signature is invalid", errors);
             }
         }
+        l::InstructionKind::TaskGroup(operation) => {
+            use hir::TaskGroupOperation as G;
+            let group = l::ValueType::Data(Type::TaskGroup);
+            let handle = l::ValueType::Data(Type::async_handle(Type::Void));
+            let valid = match operation {
+                G::Create => operand_types.is_empty() && result_type == Some(group),
+                G::Add => operand_types == [group, handle] && result_type.is_none(),
+                G::Join => operand_types == [group] && result_type == Some(handle),
+                G::Release => operand_types == [group] && result_type.is_none(),
+                _ => false,
+            };
+            if !valid {
+                bad("task group signature is invalid", errors);
+            }
+        }
         l::InstructionKind::AsyncAll => {
             let valid = match (operand_types.as_slice(), result_type.as_ref()) {
                 (

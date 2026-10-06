@@ -106,6 +106,7 @@ const NAMED: &[(&str, Kind)] = &[
 
 // These variants have no legal constraint spelling in the project surface.
 const UNNAMED: &[(&str, &str)] = &[
+    ("TaskGroup", "A group requires one lexical local or a synchronous parameter; a constraint or type argument cannot hold it (§170)."),
     (
         "Object",
         "object is a boundary-only type, so a script constraint cannot name it.",
@@ -241,7 +242,7 @@ pub(super) fn numeric(kind: &Kind) -> bool {
 fn every_type_variant_has_a_constraint_or_a_reason() {
     let source = include_str!("../../src/types.rs");
     assert!(uncovered(source).is_empty(), "{:?}", uncovered(source));
-    assert_eq!(variants(source).len(), 37);
+    assert_eq!(variants(source).len(), 38);
     assert_eq!(additional().len(), 27);
     assert_eq!(uncovered("pub enum Type {\nFuture,\n}"), ["Future"]);
 }

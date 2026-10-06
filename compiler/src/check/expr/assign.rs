@@ -72,6 +72,13 @@ impl<'p> Checker<'p> {
             place.record_kind();
         }
         let target_ty = place.ty().clone();
+        if self.apparent_type(&target_ty) == Type::TaskGroup {
+            self.reject_subset(
+                RejectionSite::TaskGroupPosition,
+                "a TaskGroup cannot be assigned",
+                pos.clone(),
+            );
+        }
         let value_ctx = if matches!(self.apparent_type(&target_ty), Type::Error) {
             None
         } else {

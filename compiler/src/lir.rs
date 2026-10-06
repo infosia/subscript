@@ -614,6 +614,8 @@ pub enum InstructionKind {
     AsyncHandleCreate(CallTarget),
     /// Creates an aggregate over one handle array. Its result is `Promise<T[]>` (§166).
     AsyncAll,
+    /// Runtime group operation; release marks the lexical exit (§170).
+    TaskGroup(crate::hir::TaskGroupOperation),
     /// Increment one async frame's non-atomic owner count.
     AsyncHandleRetain,
     /// Decrement one async frame's owner count and free it at zero. Its
@@ -674,6 +676,7 @@ impl InstructionKind {
                 | Self::ArrayWithCapacity
                 | Self::ArraySpreadLiteral(_)
                 | Self::Call(_)
+                | Self::TaskGroup(crate::hir::TaskGroupOperation::Join)
                 | Self::AsyncAll
                 | Self::AsyncHandleCreate(_)
         )

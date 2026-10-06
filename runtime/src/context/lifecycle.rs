@@ -42,6 +42,7 @@ impl Context {
             active_async_frames: Vec::new(),
             async_frames: HashMap::default(),
             next_async_task_id: 1,
+            task_groups: HashMap::new(),
             live_bytes_counter: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),

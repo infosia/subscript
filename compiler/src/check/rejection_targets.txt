@@ -1409,3 +1409,7 @@ PromiseAllCountedResult	s166-PromiseAllCountedResult	S013	Promise.all cannot sto
 PromiseAllSpread	s166-PromiseAllSpread	S013	spread arguments require variadic parameters, which the language does not have
 AsyncReturnHandle	s167-return-handle-arrow	S100	type mismatch: the return value expects `i32`, got `Promise<i32>`
 AsyncReturnHandle	s167-return-handle-named	S100	type mismatch: the return value expects `i32`, got `Promise<i32>`
+TaskGroupPosition	s170-position	S009	TaskGroup requires one const local or a synchronous borrowed parameter
+TaskGroupUnjoined	s170-unjoined	S013	a task group requires a join in its declaring scope
+TaskGroupUnsupported	s170-unsupported	S009	TaskGroup has no method `missing`
+TaskGroupGeneratorBody	s170-generator-body	S009	TaskGroup is not allowed in a generator body

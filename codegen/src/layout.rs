@@ -541,6 +541,7 @@ impl Layouts {
             Type::F64 => Repr::Scalar(types::F64),
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Array(_)
             | Type::Map(..)

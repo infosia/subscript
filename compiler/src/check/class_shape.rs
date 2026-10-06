@@ -784,7 +784,10 @@ impl<'p> Checker<'p> {
                         match p {
                             ast::ParamOrTsParamProp::Param(param) => {
                                 self.allow_wire_alias_boundary = self.in_boundary;
+                                let saved = self.task_group_parameters;
+                                self.task_group_parameters = !self.in_boundary;
                                 let resolved = self.resolve_param_pat(&param.pat);
+                                self.task_group_parameters = saved;
                                 self.allow_wire_alias_boundary = false;
                                 if self.in_boundary
                                     && Self::contains_string_alias(resolved.ty())

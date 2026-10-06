@@ -517,6 +517,31 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Some(self.lower_async_handle_create(callee, args, expr)?)
             }
             K::AsyncHandleAwait(handle) => self.lower_async_handle_await(handle, expr)?,
+            K::TaskGroup {
+                operation, args, ..
+            } => {
+                let mut operands = Vec::new();
+                for (index, arg) in args.iter().enumerate() {
+                    let value = self.require_expr(arg)?;
+                    if *operation == hir::TaskGroupOperation::Add && index == 1 {
+                        self.acquire_owner(
+                            hir::AsyncCopySite::CallArgument,
+                            &value,
+                            &l::ValueType::Data(arg.ty.clone()),
+                            &arg.pos,
+                        )?;
+                    }
+                    operands.push(value);
+                }
+                self.emit(
+                    l::InstructionKind::TaskGroup(*operation),
+                    operands,
+                    (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone())),
+                    false,
+                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    expr.pos.clone(),
+                )?
+            }
             K::AsyncAll { jobs, .. } => {
                 let input = self.require_expr(jobs)?;
                 let fresh = matches!(&input, l::Operand::Value(value)

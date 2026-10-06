@@ -17,6 +17,12 @@ type CEnum<M extends Record<string, number>> = Extract<keyof M, string>;
 declare function print(message: string): void;
 declare function unreachable(): never;
 
+declare class TaskGroup {
+  constructor();
+  add(job: Promise<void>): void;
+  join(): Promise<void>;
+}
+
 declare namespace Context {
   function bytesOf<T>(value: T): u8[];
   function bytesInto<T>(value: T, target: u8[], offset: u32): void;

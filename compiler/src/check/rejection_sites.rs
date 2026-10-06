@@ -5,6 +5,10 @@ use crate::divergence::Divergence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RejectionSite {
+    TaskGroupPosition,
+    TaskGroupGeneratorBody,
+    TaskGroupUnsupported,
+    TaskGroupUnjoined,
     BlockLambdaReturnAnnotationMissing,
     RestrictedMemberOutsideClass,
     RestrictedConstructorOutsideClass,

@@ -118,7 +118,8 @@ fn counted_instruction_stores<'i>(
 ) -> Vec<(usize, &'i l::Operand)> {
     let start = match &instruction.kind {
         l::InstructionKind::StoreLocal(_) | l::InstructionKind::StoreGlobal(_) => Some(0),
-        l::InstructionKind::StoreAddress => Some(1),
+        l::InstructionKind::StoreAddress
+        | l::InstructionKind::TaskGroup(hir::TaskGroupOperation::Add) => Some(1),
         l::InstructionKind::ArrayLiteral | l::InstructionKind::ArraySpreadLiteral(_) => Some(0),
         l::InstructionKind::Call(target) => counted_operand_start(&target.kind),
         l::InstructionKind::AsyncHandleCreate(target) => match target.kind {

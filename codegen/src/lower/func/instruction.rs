@@ -600,6 +600,32 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 &instruction.traps,
                 &instruction.pos,
             )?),
+            l::InstructionKind::TaskGroup(operation) => {
+                let operation = self.iconst(types::I32, *operation as i64);
+                let group = match operands.first() {
+                    Some(value) => self.expect_scalar(*value)?,
+                    None => self.iconst(types::I64, 0),
+                };
+                let input = match operands.get(1) {
+                    Some(value) => self.expect_scalar(*value)?,
+                    None => self.iconst(types::I64, 0),
+                };
+                let pos = self.position_id(&instruction.pos);
+                let pos = self.iconst(types::I32, pos);
+                let result = self.call_runtime(
+                    self.ml.rt.task_group,
+                    &[self.ctx, operation, group, input, pos],
+                    true,
+                )?;
+                for trap in &instruction.traps {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
+                if instruction.result.is_some() {
+                    result.map(RV::Scalar)
+                } else {
+                    None
+                }
+            }
             l::InstructionKind::AsyncAll => {
                 let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
                     return Err(internal("aggregate input type is missing"));

@@ -201,6 +201,19 @@ impl<'p> Checker<'p> {
             _ => None,
         };
         let obj = self.apparent_expr(obj);
+        if self.apparent_type(&obj.ty) == Type::TaskGroup {
+            let named = matches!(&index.kind, ExprKind::Str(name) if matches!(name.as_str(), "add" | "join"));
+            self.reject_subset(
+                if named {
+                    RejectionSite::TaskGroupPosition
+                } else {
+                    RejectionSite::TaskGroupUnsupported
+                },
+                "TaskGroup permits only add and join calls",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         if let Type::Class(id) = &self.apparent_type(&obj.ty) {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
                 self.require_assignable(
@@ -302,6 +315,18 @@ impl<'p> Checker<'p> {
         truth_test: bool,
         fx: &FnCtx,
     ) -> hir::Expr {
+        if self.apparent_type(&obj.ty) == Type::TaskGroup {
+            self.reject_subset(
+                if matches!(name, "add" | "join") {
+                    RejectionSite::TaskGroupPosition
+                } else {
+                    RejectionSite::TaskGroupUnsupported
+                },
+                "TaskGroup permits only add and join calls",
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
         let for_write = write.is_some();
         // §143 rule 1a: a member read on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).

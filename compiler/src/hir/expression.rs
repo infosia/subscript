@@ -4,7 +4,11 @@ impl ExprKind {
     /// Reports whether this expression kind can produce a fresh async owner.
     pub fn produces_fresh_async_owner(&self) -> bool {
         match self {
-            Self::AsyncAll { .. }
+            Self::TaskGroup {
+                operation: TaskGroupOperation::Join,
+                ..
+            }
+            | Self::AsyncAll { .. }
             | Self::AsyncHandleCreate { .. }
             | Self::AsyncHandleTransfer { .. }
             | Self::Call { .. }
@@ -116,7 +120,9 @@ impl Expr {
                 children.extend(args.iter().map(HirChild::Expr));
                 children
             }
-            K::New { args, .. } => args.iter().map(HirChild::Expr).collect(),
+            K::TaskGroup { args, .. } | K::New { args, .. } => {
+                args.iter().map(HirChild::Expr).collect()
+            }
             K::DescriptorLit { fields, .. } => {
                 fields.iter().flatten().map(HirChild::Expr).collect()
             }
@@ -209,7 +215,9 @@ impl Expr {
                 children.extend(args.iter_mut().map(HirChildMut::Expr));
                 children
             }
-            K::New { args, .. } => args.iter_mut().map(HirChildMut::Expr).collect(),
+            K::TaskGroup { args, .. } | K::New { args, .. } => {
+                args.iter_mut().map(HirChildMut::Expr).collect()
+            }
             K::DescriptorLit { fields, .. } => {
                 fields.iter_mut().flatten().map(HirChildMut::Expr).collect()
             }

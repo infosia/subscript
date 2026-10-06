@@ -396,6 +396,8 @@ struct Interpreter<'m> {
     padding_cache: HashMap<String, Vec<Range<usize>>>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
+    task_groups: HashMap<usize, Rc<RefCell<task_group::Group>>>,
+    next_group_id: usize,
     next_async_task_id: u64,
     async_registry: RefCell<HashMap<u64, Weak<RefCell<Coroutine>>>>,
     // The generator registry. §106.3 rules 1 and 5 own it.
@@ -430,6 +432,8 @@ impl<'m> Interpreter<'m> {
             padding_cache: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
+            task_groups: HashMap::new(),
+            next_group_id: 2,
             next_async_task_id: 1,
             async_registry: RefCell::new(HashMap::new()),
             generator_handles: RefCell::new(HashMap::new()),
@@ -640,8 +644,11 @@ impl<'m> Interpreter<'m> {
     /// frame the handle table has already released. It runs no continuation
     /// and invokes no collector.
     fn release_scheduler_storage(&mut self) {
-        let mut work: Vec<Rc<RefCell<Coroutine>>> =
-            self.async_ready.drain(..).map(|job| job.handle()).collect();
+        let mut work: Vec<Rc<RefCell<Coroutine>>> = self
+            .async_ready
+            .drain(..)
+            .filter_map(|job| job.handle())
+            .collect();
         work.extend(self.async_parked.drain(..));
         work.append(&mut self.async_stopped);
         work.extend(
@@ -660,6 +667,7 @@ impl<'m> Interpreter<'m> {
         for global in &self.globals {
             collect_coroutines(&global.borrow(), &mut work);
         }
+        self.task_groups.clear();
         let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
         while let Some(frame) = work.pop() {
             if !seen.insert(Rc::as_ptr(&frame) as usize) {
@@ -669,7 +677,7 @@ impl<'m> Interpreter<'m> {
             work.extend(
                 std::mem::take(&mut state.waiters)
                     .into_iter()
-                    .map(|job| job.handle()),
+                    .filter_map(|job| job.handle()),
             );
             if let Some(awaited) = state.awaiting.take() {
                 work.push(awaited.handle);
@@ -680,6 +688,18 @@ impl<'m> Interpreter<'m> {
             // with the registration.
             let frame_cell = match &mut state.kind {
                 CoroutineKind::Invocation(frame) => Rc::clone(frame),
+                CoroutineKind::GroupJoin(group) => {
+                    work.extend(
+                        group
+                            .borrow_mut()
+                            .inputs
+                            .iter_mut()
+                            .filter_map(Option::take),
+                    );
+                    group.borrow_mut().join = None;
+                    state.completion = None;
+                    continue;
+                }
                 CoroutineKind::Aggregate(aggregate) => {
                     work.extend(aggregate.inputs.iter_mut().filter_map(Option::take));
                     state.completion = None;
@@ -731,7 +751,9 @@ impl<'m> Interpreter<'m> {
         if self.async_trapping.take().is_some() {
             // This witness has no reload adapter or staleness exception.
             if let Some(frame) = self.async_ready.pop_front() {
-                self.async_stopped.push(frame.handle());
+                if let Some(handle) = frame.handle() {
+                    self.async_stopped.push(handle);
+                }
             }
         }
         self.context.clear_trap();
@@ -1025,12 +1047,25 @@ impl<'m> Interpreter<'m> {
                     aggregate.reported = true;
                 }
             }
-            let unread = matches!(&state.kind, CoroutineKind::Aggregate(a) if a.inputs.iter().any(Option::is_some));
+            let unread = match &state.kind {
+                CoroutineKind::Aggregate(a) => a.inputs.iter().any(Option::is_some),
+                CoroutineKind::GroupJoin(group) => {
+                    group.borrow().inputs.iter().any(Option::is_some)
+                }
+                _ => false,
+            };
+            if !unread {
+                if let CoroutineKind::GroupJoin(group) = &state.kind {
+                    group.borrow_mut().join = None;
+                }
+            }
             if state.completed && !unread {
                 self.async_registry.borrow_mut().remove(&state.task_id);
             }
             drop(state);
-            self.async_handles.borrow_mut().remove(&key);
+            if !unread {
+                self.async_handles.borrow_mut().remove(&key);
+            }
             if let Some((object, message, pos)) = unobserved {
                 return Err(InterpretError::Exception {
                     object,
@@ -1946,6 +1981,7 @@ mod memory;
 mod operations;
 
 mod async_all;
+mod task_group;
 use async_all::{AsyncJob, CoroutineKind};
 
 #[cfg(test)]

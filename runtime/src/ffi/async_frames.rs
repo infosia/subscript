@@ -230,3 +230,39 @@ pub unsafe extern "C" fn subscript_rt_async_start(
 ) -> u8 {
     unsafe { (&mut *ctx).async_start(frame, out, pos_id) }
 }
+
+/// Executes an internal group operation: create=0, add=1, join=2, release=3 (§170).
+///
+/// # Safety
+/// `ctx` is live. Add transfers one live void task count; join borrows the group.
+/// Release ends its unique lexical owner. Create ignores both pointers.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_task_group(
+    ctx: *mut Context,
+    operation: u32,
+    group: *mut u8,
+    input: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    let ctx = unsafe { &mut *ctx };
+    match operation {
+        0 => ctx.task_group_create(pos_id),
+        1 => {
+            unsafe { ctx.task_group_add(group, input, pos_id) };
+            std::ptr::null_mut()
+        }
+        2 => unsafe { ctx.task_group_join(group, pos_id) },
+        3 => {
+            unsafe { ctx.task_group_release(group, pos_id) };
+            std::ptr::null_mut()
+        }
+        _ => {
+            ctx.trap(
+                crate::TrapKind::Internal,
+                "unknown task group operation",
+                pos_id,
+            );
+            std::ptr::null_mut()
+        }
+    }
+}

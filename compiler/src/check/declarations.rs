@@ -666,6 +666,15 @@ impl<'p> Checker<'p> {
             self.collect_wire_string_alias(file, alias, mapping);
             return;
         }
+        if self.type_scope_item("TaskGroup").is_none()
+            && Self::annotation_has_task_group(&alias.type_ann)
+        {
+            self.reject_subset(
+                RejectionSite::TaskGroupPosition,
+                "a type alias cannot hold a TaskGroup",
+                pos.clone(),
+            );
+        }
         let Some(members) = string_alias_members(&alias.type_ann) else {
             self.reject_subset(
                 RejectionSite::SourceAliasNotLiteralUnion,

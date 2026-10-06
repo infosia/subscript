@@ -624,3 +624,5 @@ mod tests {
 }
 
 mod promise_all;
+
+mod task_group;

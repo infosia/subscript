@@ -188,6 +188,7 @@ impl Interpreter<'_> {
             },
             Type::Null
             | Type::Nullable(_)
+            | Type::TaskGroup
             | Type::Object
             | Type::Class(_)
             | Type::Array(_)
@@ -318,7 +319,7 @@ impl Interpreter<'_> {
                 let raw = value.as_u64()?;
                 self.integer_result(ty, raw)?
             }
-            Type::Nullable(_) | Type::Object | Type::Class(_) => value.clone(),
+            Type::Nullable(_) | Type::TaskGroup | Type::Object | Type::Class(_) => value.clone(),
             _ => value.clone(),
         })
     }

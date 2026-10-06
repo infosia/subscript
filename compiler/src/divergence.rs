@@ -21,6 +21,10 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// A task group has one lexical owner and synchronous borrows (§170).
+    TaskGroupPosition,
+    /// A task group requires a join in its declaring scope (§170).
+    TaskGroupUnjoined,
     /// The language has no void[] value.
     PromiseAllVoidValue,
     /// Promise.all derives its result type from its input array; explicit type arguments are outside the admitted form.
@@ -1408,6 +1412,8 @@ impl Divergence {
         Divergence::LiteralUnionAlias,
         Divergence::OptionalDescriptorMember,
         Divergence::BoundaryOnlyObject,
+        Divergence::TaskGroupPosition,
+        Divergence::TaskGroupUnjoined,
         Divergence::PromiseAllVoidValue,
         Divergence::PromiseAllTypeArguments,
         Divergence::PromiseAllInput,

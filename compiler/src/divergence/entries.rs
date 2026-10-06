@@ -9,6 +9,18 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::TaskGroupPosition => super::DivergenceEntry {
+                ts: "class Holder { group: TaskGroup; constructor(group: TaskGroup) { this.group = group; } } export function main(): void {}",
+                subscript: "export async function main(): Promise<void> { const group: TaskGroup = new TaskGroup(); await group.join(); }",
+                why: "A group needs a lexical release: array counts miss removals, fields end only at collection, and dropped generators have no scope exit.",
+                collision: "C24",
+            },
+            Divergence::TaskGroupUnjoined => super::DivergenceEntry {
+                ts: "export function main(): void { const group: TaskGroup = new TaskGroup(); }",
+                subscript: "export async function main(): Promise<void> { const group: TaskGroup = new TaskGroup(); await group.join(); }",
+                why: "A group requires a join in its declaring scope so every task result has an observer.",
+                collision: "C8",
+            },
             Divergence::PromiseAllVoidValue => super::promise_all::PROMISEALLVOIDVALUE,
             Divergence::PromiseAllTypeArguments => super::promise_all::PROMISEALLTYPEARGUMENTS,
             Divergence::PromiseAllInput => super::promise_all::PROMISEALLINPUT,

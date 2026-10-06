@@ -28635,6 +28635,615 @@ fn f12 "<module initializer>" kind=ModuleInitializer exported=false generator=fa
     %0: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) = FunctionRef(FunctionId(2))() @ a336-async-function-values.ts:14:45
     StoreGlobal(GlobalId(0))(%0) @ a336-async-function-values.ts:14:7
     -> Return { value: None, pos: Pos { file: "a336-async-function-values.ts", line: 14, col: 7 } }
+===== a337-task-group =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "work" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a337-task-group.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 8, col: 16 } }]
+  can-raise
+  param %0 "tag": Data(Str) kind=Explicit storage=None @ a337-task-group.ts:8:21
+  param %1 "turns": Data(I32) kind=Explicit storage=None @ a337-task-group.ts:8:34
+  param %2 "fail": Data(Bool) kind=Explicit storage=None @ a337-task-group.ts:8:46
+  value %0: Data(Str) name=Some("tag")
+  value %1: Data(I32) name=Some("turns")
+  value %2: Data(Bool) name=Some("fail")
+  value %3: Data(Str) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Bool) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Bool) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Class(ClassId(0))) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Str) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(Bool) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Bool) name=None
+  value %28: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2)), Constant(Constant { ty: I32, kind: Integer(0) })] })
+  b1(%3: Data(Str), %4: Data(I32), %5: Data(Bool), %6: Data(I32)) Some("for.cond"):
+    %15: Data(Bool) = Binary(Lt)(%6, %4) @ a337-task-group.ts:9:24
+    -> ConditionalBranch { condition: Value(ValueId(15)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(3)), Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 9, col: 42 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(3)), Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6))], invalidates: [], traps: [] }
+  b3(%7: Data(Str), %8: Data(I32), %9: Data(Bool), %10: Data(I32)) Some("for.step"):
+    %16: Data(I32) = Binary(Add)(%10, Integer(1):I32) @ a337-task-group.ts:9:35
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(7)), Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(16))] })
+  b4(%11: Data(Str), %12: Data(I32), %13: Data(Bool), %14: Data(I32)) Some("for.exit"):
+    %17: Data(Str) = Template([Text("done "), Operand { index: 0, format: Str }])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 10, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 10, col: 9 } }] @ a337-task-group.ts:10:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a337-task-group.ts:10:3
+    -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(6), arguments: [] }, else_target: BlockTarget { block: BlockId(7), arguments: [] } }
+  b5(%25: Data(Str), %26: Data(I32), %27: Data(Bool), %28: Data(I32)) Some("async.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(25)), Value(ValueId(26)), Value(ValueId(27)), Value(ValueId(28))] })
+  b6 Some("if.then"):
+    %18: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 11, col: 21 } }] @ a337-task-group.ts:11:21
+    %19: Data(Str) = StringLiteral("Error")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 11, col: 21 } }] @ a337-task-group.ts:11:21
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%18, Integer(0):U32, %19, %11) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 11, col: 21 } }] @ a337-task-group.ts:11:21
+    %20: Data(Str) = LoadField(Class(FieldId(1)))(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 11, col: 21 } }] @ a337-task-group.ts:11:15
+    %21: Data(Str) = LoadField(Class(FieldId(2)))(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 11, col: 21 } }] @ a337-task-group.ts:11:15
+    Throw(%18, %20, %21) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 11, col: 15 } }] @ a337-task-group.ts:11:15
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 11, col: 15 } }
+  b7 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(8), arguments: [Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(13))] })
+  b8(%22: Data(Str), %23: Data(I32), %24: Data(Bool)) Some("if.join"):
+    -> Return { value: None, pos: Pos { file: "a337-task-group.ts", line: 8, col: 16 } }
+fn f2 "addWork" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a337-task-group.ts:14:10
+  param %0 "group": Data(TaskGroup) kind=Explicit storage=None @ a337-task-group.ts:14:18
+  param %1 "tag": Data(Str) kind=Explicit storage=None @ a337-task-group.ts:14:36
+  value %0: Data(TaskGroup) name=Some("group")
+  value %1: Data(Str) name=Some("tag")
+  value %2: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %2: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%1, Integer(1):I32, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 15, col: 13 } }] @ a337-task-group.ts:15:13
+    TaskGroup(Add)(%0, %2) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 15, col: 3 } }] @ a337-task-group.ts:15:3
+    -> Return { value: None, pos: Pos { file: "a337-task-group.ts", line: 14, col: 10 } }
+fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a337-task-group.ts:18:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }]
+  can-raise
+  value %0: Data(TaskGroup) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(AsyncHandle(Void)) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(AsyncHandle(Void)) name=None
+  value %5: Data(AsyncHandle(Void)) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(TaskGroup) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(AsyncHandle(Void)) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(AsyncHandle(Void)) name=None
+  value %12: Data(Class(ClassId(0))) name=None
+  value %13: Data(AsyncHandle(Void)) name=None
+  value %14: Data(Class(ClassId(0))) name=None
+  value %15: Data(U32) name=None
+  value %16: Data(Bool) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(TaskGroup) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(AsyncHandle(Void)) name=None
+  value %23: Data(Str) name=None
+  value %24: Data(TaskGroup) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(AsyncHandle(Void)) name=None
+  value %27: Data(AsyncHandle(Void)) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(TaskGroup) name=None
+  value %30: Data(Str) name=None
+  value %31: Data(AsyncHandle(Void)) name=None
+  value %32: Data(AsyncHandle(Void)) name=None
+  value %33: Data(Str) name=None
+  value %34: Data(TaskGroup) name=None
+  value %35: Data(Str) name=None
+  value %36: Data(AsyncHandle(Void)) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(AsyncHandle(Void)) name=None
+  value %39: Data(Class(ClassId(0))) name=None
+  value %40: Data(AsyncHandle(Void)) name=None
+  value %41: Data(Class(ClassId(0))) name=None
+  value %42: Data(U32) name=None
+  value %43: Data(Bool) name=None
+  value %44: Data(Str) name=None
+  value %45: Data(Str) name=None
+  value %46: Data(Str) name=None
+  value %47: Data(TaskGroup) name=None
+  value %48: Data(AsyncHandle(Void)) name=None
+  value %49: Data(Str) name=None
+  value %50: Data(TaskGroup) name=None
+  value %51: Data(AsyncHandle(Void)) name=None
+  value %52: Data(TaskGroup) name=None
+  value %53: Data(AsyncHandle(Void)) name=None
+  value %54: Data(TaskGroup) name=None
+  value %55: Data(AsyncHandle(Void)) name=None
+  value %56: Data(TaskGroup) name=None
+  value %57: Data(TaskGroup) name=None
+  value %58: Data(AsyncHandle(Void)) name=None
+  value %59: Data(TaskGroup) name=None
+  value %60: Data(TaskGroup) name=None
+  value %61: Data(TaskGroup) name=None
+  value %62: Data(AsyncHandle(Void)) name=None
+  value %63: Data(TaskGroup) name=None
+  value %64: Data(TaskGroup) name=None
+  value %65: Data(TaskGroup) name=None
+  value %66: Data(TaskGroup) name=None
+  value %67: Data(AsyncHandle(Void)) name=None
+  value %68: Data(TaskGroup) name=None
+  value %69: Data(TaskGroup) name=None
+  value %70: Data(TaskGroup) name=None
+  value %71: Data(TaskGroup) name=None
+  value %72: Data(TaskGroup) name=None
+  value %73: Data(AsyncHandle(Void)) name=None
+  value %74: Data(TaskGroup) name=None
+  value %75: Data(TaskGroup) name=None
+  value %76: Data(TaskGroup) name=None
+  value %77: Data(TaskGroup) name=None
+  value %78: Data(TaskGroup) name=None
+  value %79: Data(AsyncHandle(Void)) name=None
+  value %80: Data(TaskGroup) name=None
+  value %81: Data(TaskGroup) name=None
+  value %82: Data(TaskGroup) name=None
+  value %83: Data(TaskGroup) name=None
+  value %84: Data(TaskGroup) name=None
+  value %85: Data(AsyncHandle(Void)) name=None
+  value %86: Data(TaskGroup) name=None
+  value %87: Data(TaskGroup) name=None
+  value %88: Data(TaskGroup) name=None
+  value %89: Data(TaskGroup) name=None
+  value %90: Data(TaskGroup) name=None
+  value %91: Data(TaskGroup) name=None
+  value %92: Data(AsyncHandle(Void)) name=None
+  value %93: Data(TaskGroup) name=None
+  value %94: Data(TaskGroup) name=None
+  value %95: Data(TaskGroup) name=None
+  value %96: Data(TaskGroup) name=None
+  value %97: Data(TaskGroup) name=None
+  value %98: Data(TaskGroup) name=None
+  value %99: Data(AsyncHandle(Void)) name=None
+  value %100: Data(TaskGroup) name=None
+  value %101: Data(TaskGroup) name=None
+  value %102: Data(TaskGroup) name=None
+  value %103: Data(TaskGroup) name=None
+  value %104: Data(TaskGroup) name=None
+  value %105: Data(TaskGroup) name=None
+  value %106: Data(AsyncHandle(Void)) name=None
+  value %107: Data(TaskGroup) name=None
+  value %108: Data(TaskGroup) name=None
+  value %109: Data(TaskGroup) name=None
+  value %110: Data(TaskGroup) name=None
+  value %111: Data(TaskGroup) name=None
+  value %112: Data(TaskGroup) name=None
+  value %113: Data(AsyncHandle(Void)) name=None
+  value %114: Data(TaskGroup) name=None
+  value %115: Data(TaskGroup) name=None
+  value %116: Data(TaskGroup) name=None
+  value %117: Data(TaskGroup) name=None
+  value %118: Data(TaskGroup) name=None
+  value %119: Data(TaskGroup) name=None
+  b0 Some("entry"):
+    %0: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 19, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 19, col: 30 } }] @ a337-task-group.ts:19:30
+    %1: Data(Str) = StringLiteral("success-a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 20, col: 20 } }] @ a337-task-group.ts:20:20
+    %2: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%1, Integer(1):I32, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 20, col: 15 } }] @ a337-task-group.ts:20:15
+    TaskGroup(Add)(%0, %2) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 20, col: 3 } }] @ a337-task-group.ts:20:3
+    %3: Data(Str) = StringLiteral("success-b")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 21, col: 20 } }] @ a337-task-group.ts:21:20
+    %4: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%3, Integer(2):I32, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 21, col: 15 } }] @ a337-task-group.ts:21:15
+    TaskGroup(Add)(%0, %4) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 21, col: 3 } }] @ a337-task-group.ts:21:3
+    %5: Data(AsyncHandle(Void)) = TaskGroup(Join)(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 22, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 22, col: 33 } }] @ a337-task-group.ts:22:33
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a337-task-group.ts:23:3
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 24, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(5))], invalidates: [], traps: [] }
+  b1(%50: Data(TaskGroup), %51: Data(AsyncHandle(Void))) Some("async.resume"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a337-task-group.ts:25:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(51), owned: false }, pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 }, successor: BlockId(2), resume_value: None, arguments: [Value(ValueId(50)), Value(ValueId(51))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }] }
+  b2(%52: Data(TaskGroup), %53: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }] @ a337-task-group.ts:26:3
+    %6: Data(Str) = StringLiteral("success joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 27, col: 9 } }] @ a337-task-group.ts:27:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a337-task-group.ts:27:3
+    %7: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 29, col: 31 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 29, col: 31 } }] @ a337-task-group.ts:29:31
+    %8: Data(Str) = StringLiteral("input-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 30, col: 21 } }] @ a337-task-group.ts:30:21
+    %9: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%8, Integer(3):I32, Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 30, col: 16 } }] @ a337-task-group.ts:30:16
+    TaskGroup(Add)(%7, %9) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 30, col: 3 } }] @ a337-task-group.ts:30:3
+    %10: Data(Str) = StringLiteral("completion-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 31, col: 21 } }] @ a337-task-group.ts:31:21
+    %11: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%10, Integer(1):I32, Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 31, col: 16 } }] @ a337-task-group.ts:31:16
+    TaskGroup(Add)(%7, %11) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 31, col: 3 } }] @ a337-task-group.ts:31:3
+    %13: Data(AsyncHandle(Void)) = TaskGroup(Join)(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 32, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 32, col: 15 } }] @ a337-task-group.ts:32:15
+    -> Suspend { kind: AsyncHandle { handle: ValueId(13), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 32, col: 9 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(52)), Value(ValueId(53)), Value(ValueId(7))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 32, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 32, col: 9 } }] }
+  b3 Some("release.landing"):
+    ExceptionPark() @ a337-task-group.ts:26:3
+    AsyncHandleRelease(%53) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }] @ a337-task-group.ts:26:3
+    TaskGroup(Release)(%52) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }] @ a337-task-group.ts:26:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }] @ a337-task-group.ts:26:3
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 26, col: 3 } }
+  b4(%12: Data(Class(ClassId(0)))) Some("catch"):
+    %15: Data(U32) = LoadField(Class(FieldId(0)))(%12) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 33, col: 19 } }] @ a337-task-group.ts:33:19
+    %16: Data(Bool) = Binary(Lt)(%15, Integer(7):U32) @ a337-task-group.ts:33:19
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(7), arguments: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [] } }
+  b5(%54: Data(TaskGroup), %55: Data(AsyncHandle(Void)), %56: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a337-task-group.ts", line: 32, col: 9 } }] @ a337-task-group.ts:32:9
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [] })
+  b6 Some("catch.landing"):
+    %14: Data(Class(ClassId(0))) = CatchEntry() @ a337-task-group.ts:32:3
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(14))] })
+  b7 Some("if.then"):
+    %17: Data(Str) = LoadField(Class(FieldId(2)))(%12) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 33, col: 57 } }] @ a337-task-group.ts:33:59
+    %18: Data(Str) = Template([Text("caught "), Operand { index: 0, format: Str }])(%17) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 33, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 33, col: 47 } }] @ a337-task-group.ts:33:47
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) @ a337-task-group.ts:33:41
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [] })
+  b8 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [] })
+  b9 Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [] })
+  b10 Some("try.join"):
+    %19: Data(Str) = StringLiteral("all failures joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 34, col: 9 } }] @ a337-task-group.ts:34:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) @ a337-task-group.ts:34:3
+    %20: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 36, col: 31 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 36, col: 31 } }] @ a337-task-group.ts:36:31
+    %21: Data(Str) = StringLiteral("helper")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 37, col: 21 } }] @ a337-task-group.ts:37:21
+    Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(TaskGroup), Data(Str)], return_type: None })(%20, %21) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 37, col: 3 } }] @ a337-task-group.ts:37:3
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a337-task-group.ts:38:3
+    %22: Data(AsyncHandle(Void)) = TaskGroup(Join)(%20) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 39, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 9 } }] @ a337-task-group.ts:39:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(22), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 }, successor: BlockId(11), resume_value: None, arguments: [Value(ValueId(54)), Value(ValueId(55)), Value(ValueId(56)), Value(ValueId(20))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] }
+  b11(%57: Data(TaskGroup), %58: Data(AsyncHandle(Void)), %59: Data(TaskGroup), %60: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(12))), pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    %23: Data(Str) = StringLiteral("helper joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 40, col: 9 } }] @ a337-task-group.ts:40:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%23) @ a337-task-group.ts:40:3
+    %24: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 42, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 42, col: 32 } }] @ a337-task-group.ts:42:32
+    %25: Data(Str) = StringLiteral("immediate")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 43, col: 22 } }] @ a337-task-group.ts:43:22
+    %26: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%25, Integer(0):I32, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 43, col: 17 } }] @ a337-task-group.ts:43:17
+    TaskGroup(Add)(%24, %26) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 43, col: 3 } }] @ a337-task-group.ts:43:3
+    %27: Data(AsyncHandle(Void)) = TaskGroup(Join)(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 44, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 9 } }] @ a337-task-group.ts:44:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(27), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 }, successor: BlockId(13), resume_value: None, arguments: [Value(ValueId(57)), Value(ValueId(58)), Value(ValueId(59)), Value(ValueId(60)), Value(ValueId(24))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] }
+  b12 Some("release.landing"):
+    ExceptionPark() @ a337-task-group.ts:39:3
+    TaskGroup(Release)(%60) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    TaskGroup(Release)(%59) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    AsyncHandleRelease(%58) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    TaskGroup(Release)(%57) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }] @ a337-task-group.ts:39:3
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 39, col: 3 } }
+  b13(%61: Data(TaskGroup), %62: Data(AsyncHandle(Void)), %63: Data(TaskGroup), %64: Data(TaskGroup), %65: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(14))), pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    %28: Data(Str) = StringLiteral("immediate joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 45, col: 9 } }] @ a337-task-group.ts:45:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) @ a337-task-group.ts:45:3
+    %29: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 47, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 47, col: 32 } }] @ a337-task-group.ts:47:32
+    %30: Data(Str) = StringLiteral("completed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 48, col: 22 } }] @ a337-task-group.ts:48:22
+    %31: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%30, Integer(1):I32, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 48, col: 17 } }] @ a337-task-group.ts:48:17
+    TaskGroup(Add)(%29, %31) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 48, col: 3 } }] @ a337-task-group.ts:48:3
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 49, col: 3 }, successor: BlockId(15), resume_value: None, arguments: [Value(ValueId(61)), Value(ValueId(62)), Value(ValueId(63)), Value(ValueId(64)), Value(ValueId(65)), Value(ValueId(29))], invalidates: [], traps: [] }
+  b14 Some("release.landing"):
+    ExceptionPark() @ a337-task-group.ts:44:3
+    TaskGroup(Release)(%65) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    TaskGroup(Release)(%64) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    TaskGroup(Release)(%63) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    AsyncHandleRelease(%62) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    TaskGroup(Release)(%61) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }] @ a337-task-group.ts:44:3
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 44, col: 3 } }
+  b15(%66: Data(TaskGroup), %67: Data(AsyncHandle(Void)), %68: Data(TaskGroup), %69: Data(TaskGroup), %70: Data(TaskGroup), %71: Data(TaskGroup)) Some("async.resume"):
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 50, col: 3 }, successor: BlockId(16), resume_value: None, arguments: [Value(ValueId(66)), Value(ValueId(67)), Value(ValueId(68)), Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71))], invalidates: [], traps: [] }
+  b16(%72: Data(TaskGroup), %73: Data(AsyncHandle(Void)), %74: Data(TaskGroup), %75: Data(TaskGroup), %76: Data(TaskGroup), %77: Data(TaskGroup)) Some("async.resume"):
+    %32: Data(AsyncHandle(Void)) = TaskGroup(Join)(%77) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 51, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 9 } }] @ a337-task-group.ts:51:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(32), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 }, successor: BlockId(17), resume_value: None, arguments: [Value(ValueId(72)), Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(77))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] }
+  b17(%78: Data(TaskGroup), %79: Data(AsyncHandle(Void)), %80: Data(TaskGroup), %81: Data(TaskGroup), %82: Data(TaskGroup), %83: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(18))), pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    %33: Data(Str) = StringLiteral("completed joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 52, col: 9 } }] @ a337-task-group.ts:52:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%33) @ a337-task-group.ts:52:3
+    %34: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 54, col: 40 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 54, col: 40 } }] @ a337-task-group.ts:54:40
+    %35: Data(Str) = StringLiteral("late-input-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 55, col: 30 } }] @ a337-task-group.ts:55:30
+    %36: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%35, Integer(2):I32, Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 55, col: 25 } }] @ a337-task-group.ts:55:25
+    TaskGroup(Add)(%34, %36) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 55, col: 3 } }] @ a337-task-group.ts:55:3
+    %37: Data(Str) = StringLiteral("late-completion-first")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 56, col: 30 } }] @ a337-task-group.ts:56:30
+    %38: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Str), Data(I32), Data(Bool)], return_type: None })(%37, Integer(1):I32, Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 56, col: 25 } }] @ a337-task-group.ts:56:25
+    TaskGroup(Add)(%34, %38) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 56, col: 3 } }] @ a337-task-group.ts:56:3
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 57, col: 3 }, successor: BlockId(19), resume_value: None, arguments: [Value(ValueId(78)), Value(ValueId(79)), Value(ValueId(80)), Value(ValueId(81)), Value(ValueId(82)), Value(ValueId(83)), Value(ValueId(34))], invalidates: [], traps: [] }
+  b18 Some("release.landing"):
+    ExceptionPark() @ a337-task-group.ts:51:3
+    TaskGroup(Release)(%83) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    TaskGroup(Release)(%82) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    TaskGroup(Release)(%81) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    TaskGroup(Release)(%80) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    AsyncHandleRelease(%79) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    TaskGroup(Release)(%78) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }] @ a337-task-group.ts:51:3
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 51, col: 3 } }
+  b19(%84: Data(TaskGroup), %85: Data(AsyncHandle(Void)), %86: Data(TaskGroup), %87: Data(TaskGroup), %88: Data(TaskGroup), %89: Data(TaskGroup), %90: Data(TaskGroup)) Some("async.resume"):
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 58, col: 3 }, successor: BlockId(20), resume_value: None, arguments: [Value(ValueId(84)), Value(ValueId(85)), Value(ValueId(86)), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(89)), Value(ValueId(90))], invalidates: [], traps: [] }
+  b20(%91: Data(TaskGroup), %92: Data(AsyncHandle(Void)), %93: Data(TaskGroup), %94: Data(TaskGroup), %95: Data(TaskGroup), %96: Data(TaskGroup), %97: Data(TaskGroup)) Some("async.resume"):
+    -> Suspend { kind: Async, pos: Pos { file: "a337-task-group.ts", line: 59, col: 3 }, successor: BlockId(21), resume_value: None, arguments: [Value(ValueId(91)), Value(ValueId(92)), Value(ValueId(93)), Value(ValueId(94)), Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(97))], invalidates: [], traps: [] }
+  b21(%98: Data(TaskGroup), %99: Data(AsyncHandle(Void)), %100: Data(TaskGroup), %101: Data(TaskGroup), %102: Data(TaskGroup), %103: Data(TaskGroup), %104: Data(TaskGroup)) Some("async.resume"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a337-task-group.ts:60:3
+    %40: Data(AsyncHandle(Void)) = TaskGroup(Join)(%104) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 61, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 61, col: 15 } }] @ a337-task-group.ts:61:15
+    -> Suspend { kind: AsyncHandle { handle: ValueId(40), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 61, col: 9 }, successor: BlockId(23), resume_value: None, arguments: [Value(ValueId(98)), Value(ValueId(99)), Value(ValueId(100)), Value(ValueId(101)), Value(ValueId(102)), Value(ValueId(103)), Value(ValueId(104))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 61, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 61, col: 9 } }] }
+  b22(%39: Data(Class(ClassId(0)))) Some("catch"):
+    %42: Data(U32) = LoadField(Class(FieldId(0)))(%39) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 62, col: 19 } }] @ a337-task-group.ts:62:19
+    %43: Data(Bool) = Binary(Lt)(%42, Integer(7):U32) @ a337-task-group.ts:62:19
+    -> ConditionalBranch { condition: Value(ValueId(43)), then_target: BlockTarget { block: BlockId(25), arguments: [] }, else_target: BlockTarget { block: BlockId(26), arguments: [] } }
+  b23(%105: Data(TaskGroup), %106: Data(AsyncHandle(Void)), %107: Data(TaskGroup), %108: Data(TaskGroup), %109: Data(TaskGroup), %110: Data(TaskGroup), %111: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(24))), pos: Pos { file: "a337-task-group.ts", line: 61, col: 9 } }] @ a337-task-group.ts:61:9
+    -> Branch(BlockTarget { block: BlockId(28), arguments: [] })
+  b24 Some("catch.landing"):
+    %41: Data(Class(ClassId(0))) = CatchEntry() @ a337-task-group.ts:61:3
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(41))] })
+  b25 Some("if.then"):
+    %44: Data(Str) = LoadField(Class(FieldId(2)))(%39) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 62, col: 57 } }] @ a337-task-group.ts:62:59
+    %45: Data(Str) = Template([Text("caught "), Operand { index: 0, format: Str }])(%44) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 62, col: 47 } }, Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 62, col: 47 } }] @ a337-task-group.ts:62:47
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%45) @ a337-task-group.ts:62:41
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [] })
+  b26 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [] })
+  b27 Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(28), arguments: [] })
+  b28 Some("try.join"):
+    %46: Data(Str) = StringLiteral("completed failures joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 63, col: 9 } }] @ a337-task-group.ts:63:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%46) @ a337-task-group.ts:63:3
+    %47: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 65, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 65, col: 28 } }] @ a337-task-group.ts:65:28
+    %48: Data(AsyncHandle(Void)) = TaskGroup(Join)(%47) traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 66, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 9 } }] @ a337-task-group.ts:66:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(48), owned: true }, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 }, successor: BlockId(29), resume_value: None, arguments: [Value(ValueId(105)), Value(ValueId(106)), Value(ValueId(107)), Value(ValueId(108)), Value(ValueId(109)), Value(ValueId(110)), Value(ValueId(111)), Value(ValueId(47))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] }
+  b29(%112: Data(TaskGroup), %113: Data(AsyncHandle(Void)), %114: Data(TaskGroup), %115: Data(TaskGroup), %116: Data(TaskGroup), %117: Data(TaskGroup), %118: Data(TaskGroup), %119: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() traps=[Trap { kind: Raise(Handler(BlockId(30))), pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    %49: Data(Str) = StringLiteral("empty joined")() traps=[Trap { kind: Allocation, pos: Pos { file: "a337-task-group.ts", line: 67, col: 9 } }] @ a337-task-group.ts:67:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%49) @ a337-task-group.ts:67:3
+    TaskGroup(Release)(%119) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%118) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%117) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%116) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%115) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%114) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    AsyncHandleRelease(%113) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    TaskGroup(Release)(%112) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }] @ a337-task-group.ts:18:23
+    -> Return { value: None, pos: Pos { file: "a337-task-group.ts", line: 18, col: 23 } }
+  b30 Some("release.landing"):
+    ExceptionPark() @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%119) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%118) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%117) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%116) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%115) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%114) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    AsyncHandleRelease(%113) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    TaskGroup(Release)(%112) traps=[Trap { kind: Call, pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }] @ a337-task-group.ts:66:3
+    -> Unreachable { pos: Pos { file: "a337-task-group.ts", line: 66, col: 3 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

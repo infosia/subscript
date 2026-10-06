@@ -628,6 +628,7 @@ pub struct Context {
     // Registered frame addresses use the same pointer hash as callback registrations.
     pub(crate) async_frames: HashMap<usize, AsyncFrameMeta, BuildHasherDefault<AddressHasher>>,
     next_async_task_id: u64,
+    task_groups: HashMap<usize, task_group::Group>,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.
     // Every site that changes the live set moves it, so a per-frame host
     // read costs the same at every live count.
@@ -791,6 +792,10 @@ mod tests;
 
 #[path = "context/async_scheduler.rs"]
 mod async_scheduler;
+mod task_group;
+#[cfg(test)]
+#[path = "context/task_group_tests.rs"]
+mod task_group_tests;
 pub(crate) use async_scheduler::AsyncFrameMeta;
 use async_scheduler::AsyncJob;
 pub use async_scheduler::AsyncStepReport;

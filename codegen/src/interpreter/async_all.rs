@@ -2,28 +2,38 @@ use super::*;
 
 pub(super) enum AsyncJob {
     Invocation(Rc<RefCell<Coroutine>>),
+    Group {
+        group: Rc<RefCell<task_group::Group>>,
+        index: usize,
+    },
     Aggregate {
         handle: Rc<RefCell<Coroutine>>,
         index: usize,
     },
 }
 impl AsyncJob {
-    pub(super) fn handle(&self) -> Rc<RefCell<Coroutine>> {
+    pub(super) fn handle(&self) -> Option<Rc<RefCell<Coroutine>>> {
         match self {
-            Self::Invocation(frame) => Rc::clone(frame),
-            Self::Aggregate { handle, .. } => Rc::clone(handle),
+            Self::Invocation(frame) => Some(Rc::clone(frame)),
+            Self::Aggregate { handle, .. } => Some(Rc::clone(handle)),
+            Self::Group { group, index } => group
+                .borrow()
+                .inputs
+                .get(*index)
+                .and_then(|input| input.clone()),
         }
     }
 }
 pub(super) enum CoroutineKind {
     Invocation(Rc<RefCell<Frame>>),
     Aggregate(Aggregate),
+    GroupJoin(Rc<RefCell<task_group::Group>>),
 }
 impl CoroutineKind {
     pub(super) fn frame(&self) -> Option<Rc<RefCell<Frame>>> {
         match self {
             Self::Invocation(frame) => Some(Rc::clone(frame)),
-            Self::Aggregate(_) => None,
+            Self::Aggregate(_) | Self::GroupJoin(_) => None,
         }
     }
 }

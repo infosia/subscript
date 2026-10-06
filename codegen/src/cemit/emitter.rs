@@ -205,6 +205,7 @@ impl<'m> Emitter<'m> {
             Type::Func(_) => "fn".into(),
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
@@ -240,6 +241,7 @@ impl<'m> Emitter<'m> {
             Type::Void => "void".into(),
             Type::Str
             | Type::RegExp
+            | Type::TaskGroup
             | Type::Object
             | Type::Array(_)
             | Type::Map(_, _)
