@@ -160,12 +160,8 @@ The Phase Reviews found these. None is CRITICAL or MAJOR.
 4. The runtime ring control in `runtime/tests/async_inspection.rs` is
    not same-shape: it builds completed frames that also wait. The
    script ring in the three-tier test meets acceptance 1.
-5. The runtime visitor is O(n²) in live tasks (queue `contains` and a
-   waiter scan per task). The interpreter prunes its whole task registry
-   on each registration.
-6. The interpreter keeps task ids, its task registry, and the park
-   position in builds without tests, but only the `cfg(test)` read uses
-   them (`cfg` scope convention).
+5. Closed by §177 rule 3 and rule 2.
+6. Closed by §177 rule 2.
 7. The three-tier test does five optimized C builds and states no cost
    (core principle 15).
 8. A visit that meets an unclassified frame returns 0 records; the host

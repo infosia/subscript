@@ -191,11 +191,8 @@ to the same rule. This section uses the release form.
 
 ### 172.3 Open
 
-1. The summed lowering time of the interpreter corpus run grows from
-   2.573 s to 3.161 s (+23 %) between `9647c72a` and the round 6
-   tree; the corpus wall time does not grow. The cause is not
-   attributed (the class and Map descriptions, or the verifier
-   checks).
+1. Closed by §177 rule 1. The cause is the operation table that the
+   LIR builder rebuilt for each call instruction.
 2. The frame-lifetime half of the suspension total check seeds each
    suspension with the lifetime set, so a missing native write of an
    `env_v`, `stable_v`, or frame-local field cannot fail it; only the

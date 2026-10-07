@@ -58,12 +58,14 @@ inference.
 ### 160.3 Open
 
 1. Rule 1 is not met for annotated field initializers: 6,000 classes
-   with four annotated fields check in 1.16–1.17 times the `40b0cbff`
-   time (0.215 s against 0.185 s for fields that read earlier fields,
-   0.146 s against 0.125 s for constant fields, release, best of three,
-   2026-10-05). The fix of the Phase Review removed the §156 decision
-   path from annotated fields (1.5 times before it); the residual is in
-   the per-field checks that §156 and §158 share. About 5 µs per class.
+   with four annotated fields check in 1.056 (reads, 0.204 s against
+   0.193 s) and 1.042 (constants, 0.141 s against 0.135 s) times the
+   `40b0cbff` time (release, best of three, 2026-10-07,
+   `specs/tracking/s177-cost-measurement.md` B). The excess is spread
+   over the synthetic-owner setup, the expression checks, and the
+   §158 and §175 field-initializer scans. A prototype that reuses the
+   owner buffers and tests `void[]` with no allocation removes part of
+   the constant excess, and none of the read excess (§177).
 2. The §158 local analysis is linear for independent `if` and `switch`
    statements (2,000 uninitialized locals: 4.05 s to 0.31 s, equal to
    initialized locals). One large nested statement, or many exits that
