@@ -9319,3 +9319,8 @@ FILE	E	target/s154/forms/s174-length-update/main.ts
 export function main(): void { const xs: i32[] = [1]; xs.length++; }
 END FILE
 END PROGRAM
+PROGRAM	s175-block			0
+FILE	E	target/s154/forms/s175-block/main.ts
+async function work(): Promise<i32> { return 7; } export function main(): void { let f: () => Promise<i32> = work; { const h = work(); f = () => h; } }
+END FILE
+END PROGRAM

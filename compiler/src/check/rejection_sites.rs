@@ -463,6 +463,7 @@ pub(crate) enum RejectionSite {
     ArrayToFixedArray,
     FunctionParameterIdentity,
     AssignmentTypeMismatch,
+    CaptureOutlivesBlock,
     CaptureEffectEscapes,
     CaptureEffectArgument,
     UnaryNumericCoercion,

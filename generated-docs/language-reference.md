@@ -179,24 +179,23 @@ export function main(): void {
 
 ### S009
 
-A capturing lambda may not escape its defining function; a task group requires one lexical owner.
+A capturing lambda stays in its defining function and each captured counted binding block; a task group requires one lexical owner.
 
-Pinned corpus: [`corpus/reject/r384-async-task-group-result.ts`](../corpus/reject/r384-async-task-group-result.ts), line 9.
+Pinned corpus: [`corpus/reject/r396-counted-capture-direct.ts`](../corpus/reject/r396-counted-capture-direct.ts), line 11.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// js-comparable: no C8: TaskGroup has no JavaScript counterpart.
-// expected-error: S009 at the async result declaration
+// expected-error: S009: captured binding `h` is released when its block exits; local `f` is declared outside that block
 ```
 
 ```ts
-// expected-error: S009 at the async result declaration
-
-async function make(): Promise<TaskGroup> { return new TaskGroup(); }
 export async function main(): Promise<void> {
-  const group: TaskGroup = await make();
+  let f: () => Promise<i32> = () => work(0);
+  { const h = work(1); f = () => h; }
+  print(`${await f()}`);
+}
 ```
 
 ### S010

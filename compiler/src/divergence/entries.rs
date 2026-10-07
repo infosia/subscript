@@ -9,6 +9,12 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::CaptureOutlivesBlock => DivergenceEntry {
+                ts: "async function work(): Promise<i32> { return 7; } export function main(): void { let f: () => Promise<i32> = work; { const h = work(); f = () => h; } }",
+                subscript: "async function work(): Promise<i32> { return 7; } export function main(): void { { const h = work(); let f: () => Promise<i32> = () => h; } }",
+                why: "A lambda borrows a captured counted binding. Its block exit releases that binding, so a local outside the block cannot receive the lambda.",
+                collision: "C5",
+            },
             Divergence::ArrayLengthStore => DivergenceEntry {
                 ts: "export function main(): void { const xs: i32[] = [1]; xs.length = 2; xs.length -= 1; const n = (xs.length = 0); }",
                 subscript: "export function main(): void { const xs: i32[] = [1]; xs.length = 0; xs.push(2); xs.pop(); }",

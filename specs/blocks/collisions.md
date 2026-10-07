@@ -117,9 +117,13 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   exit of the block releases the binding, and the lambda borrows it.
   `tsc` accepts the assignment, and `node` keeps the value alive.
 
-Accept: `a13`, `a14`, `a262`. Reject: `r10-escaping-capture` (returns a
-capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean), `r353`, `r354`, `r357`, `r358`
-(a lambda that captures `this`, §157; `tsc`-clean).
+Accept: `a13`, `a14`, `a262`, `a345-counted-capture-block`. Reject:
+`r10-escaping-capture` (returns a capturing lambda; `tsc`-clean),
+`r240`–`r248` (§118; `tsc`-clean), `r353`, `r354`, `r357`, `r358` (a
+lambda that captures `this`, §157; `tsc`-clean),
+`r396-counted-capture-direct`, `r396-counted-capture-copy`,
+`r396-counted-capture-transitive`, `r396-counted-capture-loop` (§175;
+`tsc`-clean).
 
 ### C6. Exceptions (Q9) — `Error`-family only, uncatchable traps
 

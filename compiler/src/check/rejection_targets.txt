@@ -1473,3 +1473,4 @@ ArrayLengthStore	s174-length-compound	S100	only `xs.length = 0` as a statement i
 ArrayLengthStore	s174-length-expression	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
 ArrayLengthStore	s174-length-variable	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
 ArrayLengthStore	s174-length-update	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
+CaptureOutlivesBlock	s175-block	S009	captured binding `h` is released when its block exits; local `f` is declared outside that block

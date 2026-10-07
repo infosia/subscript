@@ -980,6 +980,7 @@ rejection_classes! {
         Diverges(Divergence::FunctionParameterIdentity),
     ),
     Self::AssignmentTypeMismatch => (RuleCode::S100, TscRejects),
+    Self::CaptureOutlivesBlock => (RuleCode::S009, Diverges(Divergence::CaptureOutlivesBlock)),
     Self::CaptureEffectEscapes => (RuleCode::S009, Diverges(Divergence::EscapingCapture)),
     Self::CaptureEffectArgument => (RuleCode::S009, Diverges(Divergence::EscapingCapture)),
     Self::UnaryNumericCoercion => {

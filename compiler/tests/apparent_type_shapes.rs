@@ -574,7 +574,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "concrete-captures", reason: "Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1).", sites: &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
-        ("capture.rs", "fact", 0x80bc8ebc9b829d3a),
+        ("capture/blocks.rs", "flow_inputs", 0x80bc8ebc9b829d3a),
         ("capture.rs", "type_name", 0x538ecbfbc819af8a),
     ] },
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[

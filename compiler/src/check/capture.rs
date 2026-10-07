@@ -2,7 +2,9 @@
 use crate::check::rejection::{diagnostic, RejectionSite};
 use crate::hir::{self, ArrFn, Callee, Expr, ExprKind as E, HirChild, MapFn, SetFn, Stmt};
 use crate::{Diagnostic, Type};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+mod blocks;
 
 type Env = super::Shared<HashMap<String, usize>>;
 struct Analysis<'a> {
@@ -17,14 +19,25 @@ struct Analysis<'a> {
     capture_bindings: HashMap<usize, Vec<usize>>,
     async_captures: Vec<(&'a str, &'a crate::Pos)>,
     infer: bool,
+    block: usize,
+    block_parents: Vec<Option<usize>>,
+    locals: Vec<blocks::Local<'a>>,
+    counted_capture: bool,
+    block_equations: Vec<usize>,
+    capture_blocks: Vec<BTreeSet<usize>>,
 }
 impl<'a> Analysis<'a> {
     fn carries(&self, t: &Type) -> bool {
         self.module.carries_capture(t)
     }
-    fn bind(&mut self, env: &mut Env, name: &str, initial: bool) -> usize {
+    fn bind(&mut self, env: &mut Env, name: &'a str, initial: bool) -> usize {
         let id = self.facts.len();
         self.facts.push(initial);
+        self.locals.push(blocks::Local {
+            name,
+            block: self.block,
+            counted: false,
+        });
         env.insert(name.into(), id);
         id
     }
@@ -58,19 +71,21 @@ impl<'a> Analysis<'a> {
                 self.escapes.push(("return".to_owned(), v));
                 self.expr(v, env);
             }
-            Stmt::Block(body) | Stmt::Using { body, .. } => self.sequence(body, &mut env.clone()),
+            Stmt::Block(body) => self.scoped_sequence(body, &mut env.clone()),
+            // A using scope ends with its source block; it adds no lexical block.
+            Stmt::Using { body, .. } => self.sequence(body, &mut env.clone()),
             Stmt::If {
                 cond, then, els, ..
             } => {
                 self.expr(cond, env);
-                self.sequence(then, &mut env.clone());
+                self.scoped_sequence(then, &mut env.clone());
                 if let Some(body) = els {
-                    self.sequence(body, &mut env.clone());
+                    self.scoped_sequence(body, &mut env.clone());
                 }
             }
             Stmt::While { cond, body, .. } => {
                 self.expr(cond, env);
-                self.sequence(body, &mut env.clone());
+                self.scoped_sequence(body, &mut env.clone());
             }
             Stmt::For {
                 init,
@@ -79,6 +94,7 @@ impl<'a> Analysis<'a> {
                 body,
                 ..
             } => {
+                let parent = self.enter_block();
                 let mut scope = env.clone();
                 if let Some(s) = init {
                     self.stmt(s, &mut scope);
@@ -86,10 +102,11 @@ impl<'a> Analysis<'a> {
                 if let Some(e) = cond {
                     self.expr(e, &scope);
                 }
-                self.sequence(body, &mut scope.clone());
+                self.scoped_sequence(body, &mut scope.clone());
                 if let Some(e) = step {
                     self.expr(e, &scope);
                 }
+                self.block = parent;
             }
             Stmt::ForOf {
                 name,
@@ -100,14 +117,17 @@ impl<'a> Analysis<'a> {
             } => {
                 self.expr(subject, env);
                 let mut scope = env.clone();
+                let parent = self.enter_block();
                 let id = self.bind(&mut scope, name, false);
                 if self.carries(ty) {
                     self.equations.push((id, subject));
                 }
                 self.sequence(body, &mut scope);
+                self.block = parent;
             }
             Stmt::Switch { disc, cases, .. } => {
                 self.expr(disc, env);
+                let parent = self.enter_block();
                 let mut scope = env.clone();
                 for c in cases {
                     if let Some(t) = &c.test {
@@ -115,6 +135,7 @@ impl<'a> Analysis<'a> {
                     }
                     self.sequence(&c.body, &mut scope);
                 }
+                self.block = parent;
             }
             Stmt::Try {
                 body,
@@ -122,12 +143,14 @@ impl<'a> Analysis<'a> {
                 handler,
                 ..
             } => {
-                self.sequence(body, &mut env.clone());
+                self.scoped_sequence(body, &mut env.clone());
+                let parent = self.enter_block();
                 let mut scope = env.clone();
                 if let Some((name, ty)) = binding {
                     self.bind(&mut scope, name, self.carries(ty));
                 }
                 self.sequence(handler, &mut scope);
+                self.block = parent;
             }
             _ => {
                 for child in s.children() {
@@ -163,6 +186,14 @@ impl<'a> Analysis<'a> {
                             .map(|capture| (capture.name.as_str(), &e.pos)),
                     );
                 }
+                for capture in captures {
+                    if let Some(id) = env.get(&capture.name) {
+                        if capture.ty.counted_type().is_some() {
+                            self.locals[*id].counted = true;
+                            self.counted_capture = true;
+                        }
+                    }
+                }
                 self.capture_bindings.insert(
                     e as *const Expr as usize,
                     captures
@@ -171,8 +202,10 @@ impl<'a> Analysis<'a> {
                         .collect(),
                 );
                 let mut scope = env.clone();
+                let parent = self.enter_block();
                 self.params(params, &mut scope);
                 self.sequence(body, &mut scope);
+                self.block = parent;
                 return;
             }
             E::Assign { target, value, .. } => match &target.kind {
@@ -386,10 +419,6 @@ impl<'a> Analysis<'a> {
             return false;
         }
         match &e.kind {
-            E::New { args, .. } => args.iter().any(|e| self.fact(e)),
-            E::Null | E::Zero | E::FuncRef(_) | E::Global(_) | E::This | E::AsyncHandleAwait(_) => {
-                false
-            }
             E::Local(..) => self
                 .bindings
                 .get(&(e as *const Expr as usize))
@@ -403,39 +432,9 @@ impl<'a> Analysis<'a> {
                     !captures.is_empty()
                 }
             }
-            E::Field { obj, .. } if matches!(obj.ty, Type::IterResult(_)) => self.fact(obj),
-            E::Field { .. } => false,
-            E::Index { obj, .. } => self.fact(obj),
-            E::Cast(v) | E::Assign { value: v, .. } => self.fact(v),
-            E::Cond { then, els, .. } => self.fact(then) || self.fact(els),
-            E::ArrayLit(v) => v.iter().any(|e| self.fact(e)),
-            E::ArraySpreadLit(v) => v.iter().any(|e| self.fact(&e.expr)),
-            E::DescriptorLit { fields, .. } => fields.iter().flatten().any(|e| self.fact(e)),
-            E::Call {
-                callee: Callee::Method { recv, .. },
-                ..
-            } if !matches!(recv.ty, Type::Class(_)) => self.fact(recv),
-            E::Call { callee, args } if self.generator(callee) => {
-                args.iter().any(|e| self.fact(e))
-                    || match callee {
-                        Callee::Value(v) => self.fact(v),
-                        Callee::Method { recv, .. } => self.fact(recv),
-                        _ => false,
-                    }
-            }
-            E::Call {
-                callee: Callee::Map(MapFn::GetOr),
-                args,
-            } => {
-                args.first().is_some_and(|arg| self.fact(arg))
-                    || args.get(2).is_some_and(|arg| self.fact(arg))
-            }
-            E::Call {
-                callee: Callee::Arr(_) | Callee::Map(_) | Callee::Set(_),
-                args,
-            } => args.first().is_some_and(|arg| self.fact(arg)),
-            E::Call { .. } | E::AsyncCall { .. } => false,
-            _ => !self.infer,
+            _ => self
+                .flow_inputs(e, |input| self.fact(input))
+                .unwrap_or(!self.infer),
         }
     }
     fn finish(mut self) -> (Vec<Diagnostic>, HashSet<usize>) {
@@ -473,6 +472,10 @@ impl<'a> Analysis<'a> {
                 diagnostics.push(d);
             }
         }
+        if !self.block_equations.is_empty() {
+            let values = self.solve_blocks();
+            self.check_blocks(&values, &mut diagnostics);
+        }
         (diagnostics, self.escaping)
     }
 }
@@ -489,6 +492,12 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
         capture_bindings: HashMap::new(),
         async_captures: Vec::new(),
         infer: false,
+        block: 0,
+        block_parents: vec![None],
+        locals: vec![],
+        counted_capture: false,
+        block_equations: vec![],
+        capture_blocks: vec![],
     };
     for e in module.globals.iter().map(|g| &g.init).chain(
         module
@@ -496,7 +505,10 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
             .iter()
             .flat_map(|c| c.fields.iter().filter_map(|f| f.init.as_ref())),
     ) {
+        let start = a.equations.len();
+        a.counted_capture = false;
         a.expr(e, &Env::default());
+        a.collect_block_equations(start);
         a.escapes.push(("initializer".to_owned(), e));
     }
     for owner in module.expression_owners() {
@@ -507,10 +519,15 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
                 statements,
                 function,
             } => {
+                let start = a.equations.len();
+                a.counted_capture = false;
+                let parent = a.enter_block();
                 if let Some(f) = function {
                     a.params(&f.params, &mut env);
                 }
                 a.sequence(statements, &mut env);
+                a.block = parent;
+                a.collect_block_equations(start);
             }
         }
     }

@@ -839,6 +839,8 @@ pub enum Divergence {
     WireEnumValues,
     /// A capturing lambda that escapes, and the container callback parameter.
     EscapingCapture,
+    /// A local outside a counted binding block cannot receive its capture.
+    CaptureOutlivesBlock,
     /// A form outside the decided exception surface: a non-Error `throw`,
     /// `finally`, and a catch binding read or annotation outside the two
     /// legal forms.
@@ -1412,6 +1414,7 @@ impl Divergence {
         Divergence::IntegerLiteralRange,
         Divergence::WireEnumValues,
         Divergence::EscapingCapture,
+        Divergence::CaptureOutlivesBlock,
         Divergence::Exceptions,
         Divergence::InstanceofNonError,
         Divergence::GeneralUnionAndUndefined,

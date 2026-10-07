@@ -65,6 +65,10 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r396-counted-capture-direct.ts", RuleCode::S009, 11),
+    ("r396-counted-capture-copy.ts", RuleCode::S009, 11),
+    ("r396-counted-capture-transitive.ts", RuleCode::S009, 11),
+    ("r396-counted-capture-loop.ts", RuleCode::S009, 11),
     ("r395-array-length-store.ts", RuleCode::S100, 10),
     ("r389-error-outside-surface.ts", RuleCode::S018, 8),
     ("r390-map-pair-initializer.ts", RuleCode::S014, 8),
