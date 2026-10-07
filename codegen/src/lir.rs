@@ -692,6 +692,7 @@ fn lower_builtin_method(method: hir::BuiltinMethod) -> l::BuiltinMethod {
     match method {
         hir::BuiltinMethod::ArrayPush => l::BuiltinMethod::ArrayPush,
         hir::BuiltinMethod::ArrayPop => l::BuiltinMethod::ArrayPop,
+        hir::BuiltinMethod::ArrayClear => l::BuiltinMethod::ArrayClear,
         hir::BuiltinMethod::StringSlice => l::BuiltinMethod::StringSlice,
         hir::BuiltinMethod::GeneratorNext => l::BuiltinMethod::GeneratorNext,
     }

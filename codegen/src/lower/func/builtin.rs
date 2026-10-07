@@ -155,6 +155,22 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let result = self.builder.ins().ireduce(types::I32, result);
                 Ok(RV::Scalar(result))
             }
+            l::BuiltinMethod::ArrayClear => {
+                let array = self.expect_scalar(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("array clear has no receiver"))?,
+                )?;
+                let null = self.iconst(types::I64, 0);
+                let zero = self.iconst(types::I32, 0);
+                self.counted_array_operation(array, 3, null, zero, zero, zero, pos)?;
+                for trap in traps {
+                    if trap.kind == l::TrapKind::Call {
+                        self.emit_trap(trap, TrapOperand::Pending)?;
+                    }
+                }
+                Ok(RV::None)
+            }
             l::BuiltinMethod::ArrayPop => {
                 let l::ValueType::Data(Type::Array(element)) = parameter_types
                     .first()

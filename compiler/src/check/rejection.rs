@@ -138,6 +138,7 @@ rejection_classes! {
     Self::MapUnknownMethod => (RuleCode::S100, TscRejects),
     Self::SetUnknownMethod => (RuleCode::S100, TscRejects),
     Self::ArrayUnknownMember => (RuleCode::S100, TscRejects),
+    Self::ArrayLengthStore => (RuleCode::S100, Diverges(Divergence::ArrayLengthStore)),
     Self::RegexCompileUnknownMethod => (RuleCode::S100, TscRejects),
     Self::SynchronousMethodValue => (
         RuleCode::S100,

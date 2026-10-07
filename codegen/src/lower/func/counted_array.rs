@@ -34,12 +34,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let element = self
             .count_action
             .as_ref()
-            .and_then(l::CountAction::release_type)
-            .ok_or_else(|| internal("counted array operation has no count action"))?;
-        let description = crate::counted::description(&self.ml.layouts, &element)?;
-        let data = self.ml.literal_data(&description)?;
-        let global = self.ml.module.declare_data_in_func(data, self.builder.func);
-        let description = self.builder.ins().symbol_value(types::I64, global);
+            .and_then(l::CountAction::release_type);
+        let description = if let Some(element) = element {
+            let description = crate::counted::description(&self.ml.layouts, &element)?;
+            let data = self.ml.literal_data(&description)?;
+            let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+            self.builder.ins().symbol_value(types::I64, global)
+        } else if operation == 3 && self.count_action == Some(l::CountAction::Uncounted) {
+            self.iconst(types::I64, 0)
+        } else {
+            return Err(internal("counted array operation has no count action"));
+        };
         let operation = self.iconst(types::I32, i64::from(operation));
         let position = self.position_id(pos);
         let position = self.iconst(types::I32, position);

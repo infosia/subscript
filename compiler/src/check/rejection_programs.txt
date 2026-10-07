@@ -9294,3 +9294,28 @@ FILE	E	main.ts
 export function main(): void { try { throw new Error("x"); } catch (e) { print(e?.message.length); } }
 END FILE
 END PROGRAM
+PROGRAM	s174-length-nonzero			0
+FILE	E	target/s154/forms/s174-length-nonzero/main.ts
+export function main(): void { const xs: i32[] = [1]; xs.length = 2; }
+END FILE
+END PROGRAM
+PROGRAM	s174-length-compound			0
+FILE	E	target/s154/forms/s174-length-compound/main.ts
+export function main(): void { const xs: i32[] = [1]; xs.length -= 1; }
+END FILE
+END PROGRAM
+PROGRAM	s174-length-expression			0
+FILE	E	target/s154/forms/s174-length-expression/main.ts
+export function main(): void { const xs: i32[] = [1]; const n = (xs.length = 0); }
+END FILE
+END PROGRAM
+PROGRAM	s174-length-variable			0
+FILE	E	target/s154/forms/s174-length-variable/main.ts
+export function main(): void { const xs: i32[] = [1]; const zero: i32 = 0; xs.length = zero; }
+END FILE
+END PROGRAM
+PROGRAM	s174-length-update			0
+FILE	E	target/s154/forms/s174-length-update/main.ts
+export function main(): void { const xs: i32[] = [1]; xs.length++; }
+END FILE
+END PROGRAM

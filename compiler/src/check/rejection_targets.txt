@@ -1468,3 +1468,8 @@ CatchBindingUnnarrowedProperty	s173-catch-optional-property-0	S010	the catch bin
 CatchBindingUnnarrowedProperty	s173-catch-optional-property-1	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
 CatchBindingUnnarrowedProperty	s173-catch-optional-property-2	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
 CatchBindingUnnarrowedProperty	s173-catch-optional-property-3	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+ArrayLengthStore	s174-length-nonzero	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
+ArrayLengthStore	s174-length-compound	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
+ArrayLengthStore	s174-length-expression	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
+ArrayLengthStore	s174-length-variable	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements
+ArrayLengthStore	s174-length-update	S100	only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements

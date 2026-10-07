@@ -48,7 +48,7 @@ impl Context {
         unsafe { self.array_holder(array, 2, pos) };
     }
 
-    // Operation 0 acquires copied elements, 1 fills, and 2 copies a range.
+    // Operation 0 acquires, 1 fills, 2 copies a range, and 3 clears.
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn counted_array_operation(
         &mut self,
@@ -77,6 +77,23 @@ impl Context {
         if operation == 0 {
             for index in 0..len {
                 unsafe { self.counted_value(data.add(index * size), description, false, pos) };
+            }
+            return;
+        }
+        if operation == 3 {
+            if description.is_null() || len == 0 {
+                unsafe { self.array_truncate(array, 0, pos) };
+                return;
+            }
+            let removed = unsafe { std::slice::from_raw_parts(data, len * size) }.to_vec();
+            unsafe { self.array_truncate(array, 0, pos) };
+            for index in 0..len {
+                unsafe {
+                    self.counted_value(removed.as_ptr().add(index * size), description, true, pos)
+                };
+                if self.trapped() {
+                    return;
+                }
             }
             return;
         }

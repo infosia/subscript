@@ -148,10 +148,12 @@ pub unsafe extern "C" fn subscript_rt_counted_value(
 }
 
 /// Acquires copied elements or replaces a counted array range.
-/// Operation 0 acquires all elements, 1 fills, and 2 copies within the array.
+/// Operation 0 acquires all elements, 1 fills, 2 copies within, and 3 clears.
+/// A clear accepts a null description for uncounted elements.
 ///
 /// # Safety
 /// The array is live. The description matches its element type.
+/// Only an uncounted clear accepts a null description.
 /// For operation 1, `value` contains one readable element.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]

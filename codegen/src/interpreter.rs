@@ -1448,6 +1448,7 @@ impl<'m> Interpreter<'m> {
                     self.invalid(pos.cloned(), "built-in call has no operand types")
                 })?,
                 target.return_type.as_ref(),
+                pos,
             ),
         }
     }
@@ -1470,6 +1471,7 @@ impl<'m> Interpreter<'m> {
         operands: Vec<Value>,
         parameter_types: &[l::ValueType],
         result_ty: Option<&l::ValueType>,
+        pos: Option<&Pos>,
     ) -> Result<Value, InterpretError> {
         match method {
             l::BuiltinMethod::ArrayPush => {
@@ -1496,6 +1498,7 @@ impl<'m> Interpreter<'m> {
                 self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
                 Ok(Value::I(length as i64))
             }
+            l::BuiltinMethod::ArrayClear => self.clear_array(&operands, pos),
             l::BuiltinMethod::ArrayPop => {
                 let array = operands
                     .first()

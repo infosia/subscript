@@ -237,6 +237,7 @@ impl<'a> ModuleEffectScanner<'a> {
                     match method {
                         hir::BuiltinMethod::ArrayPush
                         | hir::BuiltinMethod::ArrayPop
+                        | hir::BuiltinMethod::ArrayClear
                         | hir::BuiltinMethod::StringSlice => {}
                         hir::BuiltinMethod::GeneratorNext => self.record_indirect_call(),
                     }

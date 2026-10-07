@@ -24,6 +24,56 @@ impl<'p> Checker<'p> {
         mut prefix: Option<&mut crate::check::SyntheticPrefix>,
     ) -> hir::Expr {
         use ast::AssignOp as A;
+        let mut length_place = None;
+        if let ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) = &a.left {
+            if matches!(&member.prop, ast::MemberProp::Ident(name) if name.sym == "length") {
+                if self.reject_static_this_member(member, fx) {
+                    return self.err_expr(pos);
+                }
+                if let Some(place) = self.check_namespace_place(
+                    &member.obj,
+                    "length",
+                    self.pos(member.prop.span()),
+                    fx,
+                ) {
+                    length_place = Some(place);
+                } else {
+                    let receiver = self.check_write_receiver(member, fx);
+                    if matches!(self.apparent_type(&receiver.ty), Type::Array(_)) {
+                        if statement_position
+                            && a.op == A::Assign
+                            && matches!(&*a.right, ast::Expr::Lit(ast::Lit::Num(value)) if value.value == 0.0 && value.raw.as_ref().is_some_and(|raw| raw == "0"))
+                        {
+                            return hir::Expr {
+                                pending_work: None,
+                                kind: ExprKind::Call {
+                                    callee: Callee::Method {
+                                        recv: Box::new(receiver),
+                                        name: hir::Symbol::from_full_text("[[array_clear]]"),
+                                    },
+                                    args: Vec::new(),
+                                },
+                                ty: Type::Void,
+                                pos,
+                            };
+                        }
+                        self.reject_subset(
+                            RejectionSite::ArrayLengthStore,
+                            "only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements",
+                            self.pos(member.prop.span()),
+                        );
+                        return self.err_expr(pos);
+                    }
+                    length_place = Some(self.check_named_member_place(
+                        member,
+                        receiver,
+                        "length",
+                        self.pos(member.prop.span()),
+                        fx,
+                    ));
+                }
+            }
+        }
         let operation = assign_op(a.op);
         let op = if a.op == A::Assign {
             None
@@ -66,7 +116,7 @@ impl<'p> Checker<'p> {
             }
             _ => PlaceSource::Unsupported,
         };
-        let place = self.check_assign_target(source, fx, &pos);
+        let place = length_place.unwrap_or_else(|| self.check_assign_target(source, fx, &pos));
         #[cfg(test)]
         if self.narrowing_analysis.is_some() {
             place.record_kind();
@@ -656,57 +706,7 @@ impl<'p> Checker<'p> {
                     return place;
                 }
                 let obj = self.check_write_receiver(m, fx);
-                if let Type::Class(id) = &self.apparent_type(&obj.ty) {
-                    if self.classes[id.0]
-                        .fields
-                        .iter()
-                        .any(|field| field.name == name)
-                    {
-                        return Place::Field(self.member_on(
-                            obj,
-                            &name,
-                            prop_pos,
-                            Some(matches!(&*m.obj, ast::Expr::This(_))),
-                            fx,
-                        ));
-                    }
-                    if self.class_sigs[id.0].has_accessor(&name) {
-                        if self.reject_member_access(*id, &name, false, true, fx, prop_pos.clone())
-                        {
-                            return Place::Field(self.err_expr(prop_pos));
-                        }
-                        let Some(signature) = self.class_sigs[id.0].methods.get(&name) else {
-                            self.reject_subset(
-                                RejectionSite::WriteSetterOnlyAccessor,
-                                format!("read accessor `{name}` has no checker signature"),
-                                prop_pos.clone(),
-                            );
-                            return Place::Accessor {
-                                class: *id,
-                                receiver: Some(obj),
-                                name,
-                                ty: Type::Error,
-                                pos: prop_pos,
-                            };
-                        };
-                        let ty = signature.ret.clone();
-                        let call_pos = obj.pos.clone();
-                        return Place::Accessor {
-                            class: *id,
-                            receiver: Some(obj),
-                            name,
-                            ty,
-                            pos: call_pos,
-                        };
-                    }
-                }
-                Place::Field(self.member_on(
-                    obj,
-                    &name,
-                    prop_pos,
-                    Some(matches!(&*m.obj, ast::Expr::This(_))),
-                    fx,
-                ))
+                self.check_named_member_place(m, obj, &name, prop_pos, fx)
             }
             ast::MemberProp::PrivateName(_) => {
                 self.reject_subset(
@@ -717,6 +717,66 @@ impl<'p> Checker<'p> {
                 Place::Field(self.err_expr(pos))
             }
         }
+    }
+
+    fn check_named_member_place(
+        &mut self,
+        m: &ast::MemberExpr,
+        obj: hir::Expr,
+        name: &str,
+        prop_pos: Pos,
+        fx: &mut FnCtx,
+    ) -> Place {
+        if let Type::Class(id) = &self.apparent_type(&obj.ty) {
+            if self.classes[id.0]
+                .fields
+                .iter()
+                .any(|field| field.name == name)
+            {
+                return Place::Field(self.member_on(
+                    obj,
+                    name,
+                    prop_pos,
+                    Some(matches!(&*m.obj, ast::Expr::This(_))),
+                    fx,
+                ));
+            }
+            if self.class_sigs[id.0].has_accessor(name) {
+                if self.reject_member_access(*id, name, false, true, fx, prop_pos.clone()) {
+                    return Place::Field(self.err_expr(prop_pos));
+                }
+                let Some(signature) = self.class_sigs[id.0].methods.get(name) else {
+                    self.reject_subset(
+                        RejectionSite::WriteSetterOnlyAccessor,
+                        format!("read accessor `{name}` has no checker signature"),
+                        prop_pos.clone(),
+                    );
+                    return Place::Accessor {
+                        class: *id,
+                        receiver: Some(obj),
+                        name: name.to_owned(),
+                        ty: Type::Error,
+                        pos: prop_pos,
+                    };
+                };
+                let ty = signature.ret.clone();
+                let call_pos = obj.pos.clone();
+                return Place::Accessor {
+                    class: *id,
+                    receiver: Some(obj),
+                    name: name.to_owned(),
+                    ty,
+                    pos: call_pos,
+                };
+            }
+        }
+        Place::Field(self.member_on(
+            obj,
+            name,
+            prop_pos,
+            Some(matches!(&*m.obj, ast::Expr::This(_))),
+            fx,
+        ))
     }
 
     fn check_namespace_place(

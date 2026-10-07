@@ -118,6 +118,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::StringUnknownMember => WitnessEntry::General { files: &["string-unknown-member"], variant: None, reason: "" },
         RejectionSite::MapUnknownMethod => WitnessEntry::General { files: &["map-unknown-method"], variant: None, reason: "" },
         RejectionSite::SetUnknownMethod => WitnessEntry::General { files: &["set-unknown-method"], variant: None, reason: "" },
+        RejectionSite::ArrayLengthStore => WitnessEntry::General { files: &["s174-length-nonzero", "s174-length-compound", "s174-length-expression", "s174-length-variable", "s174-length-update"], variant: Some(Divergence::ArrayLengthStore), reason: "" },
         RejectionSite::ArrayUnknownMember => WitnessEntry::General { files: &["array-unknown-member"], variant: None, reason: "" },
         RejectionSite::RegexCompileUnknownMethod => WitnessEntry::General { files: &["regex-compile-unknown-method"], variant: None, reason: "" },
         RejectionSite::SynchronousMethodValue => WitnessEntry::General { files: &["synchronous-method-value"], variant: Some(Divergence::SynchronousMethodValueForm), reason: "" },

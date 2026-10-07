@@ -3,6 +3,57 @@
 use super::*;
 
 impl Interpreter<'_> {
+    pub(super) fn clear_array(
+        &mut self,
+        operands: &[Value],
+        pos: Option<&Pos>,
+    ) -> Result<Value, InterpretError> {
+        let pos = pos
+            .cloned()
+            .ok_or_else(|| self.invalid(None, "array clear has no position"))?;
+        let array = operands
+            .first()
+            .ok_or_else(|| self.invalid(Some(pos.clone()), "array clear has no receiver"))?
+            .as_handle()?;
+        let element = self
+            .count_action
+            .as_ref()
+            .and_then(l::CountAction::release_type);
+        let mut removed = Vec::new();
+        if let Some(element) = &element {
+            let size = self.type_layout(element)?.size;
+            let len =
+                unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) }.max(0) as usize;
+            let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
+            for index in 0..len {
+                // SAFETY: each element lies inside the live array storage.
+                let bytes = unsafe { std::slice::from_raw_parts(data.add(index * size), size) };
+                removed.push(self.unpack(element, bytes)?);
+            }
+        }
+        // SAFETY: the array is live; this call only clears element storage.
+        unsafe {
+            ffi::subscript_rt_counted_array_operation(
+                &mut *self.context,
+                array,
+                std::ptr::null(),
+                3,
+                std::ptr::null(),
+                0,
+                0,
+                0,
+                0,
+            )
+        };
+        self.check_runtime(&pos)?;
+        if let Some(element) = element {
+            for value in removed {
+                self.counted_owner(&element, &value, true, &pos)?;
+            }
+        }
+        Ok(Value::Void)
+    }
+
     /// Ends one holder's ownership of a handle. The last release drops the
     /// interpreter's handle table entry; the completion cache and the values
     /// reachable from it live as long as some owner holds them (§94.2).

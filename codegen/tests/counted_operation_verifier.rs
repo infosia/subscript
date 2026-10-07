@@ -596,3 +596,85 @@ fn a_fresh_builtin_receiver_with_a_release_passes() {
         });
     verify_module(&form).expect("receiver release consumes the fresh owner");
 }
+
+fn clear_module(element: Type, action: Option<l::CountAction>, trap: bool) -> l::Module {
+    // Build a clear form directly. No checker or lowering supplies its obligations.
+    let mut form = module(element.clone(), true, false, false);
+    let function = &mut form.functions[0];
+    function.parameters.truncate(1);
+    function.values.truncate(1);
+    let pos = function.pos.clone();
+    function.blocks[0].instructions = vec![l::Instruction {
+        result: None,
+        kind: l::InstructionKind::Call(l::CallTarget {
+            kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayClear),
+            parameter_types: Vec::new(),
+            return_type: None,
+        }),
+        operands: vec![l::Operand::Value(l::ValueId(0))],
+        count_action: action,
+        invalidates: vec![l::ValueId(0)],
+        traps: std::iter::once(l::Trap {
+            kind: l::TrapKind::DevOnlyLifetime(0),
+            pos: pos.clone(),
+        })
+        .chain(trap.then_some(l::Trap {
+            kind: l::TrapKind::Call,
+            pos: pos.clone(),
+        }))
+        .collect(),
+        pos,
+    }];
+    form.intrinsic_operations[0].signatures = vec![l::CallSignature {
+        target: l::CallSignatureTarget::BuiltinMethod(l::BuiltinMethod::ArrayClear),
+        parameter_types: vec![l::ValueType::Data(Type::Array(Box::new(element)))],
+        return_type: None,
+    }];
+    form
+}
+
+#[test]
+fn a_clear_requires_the_static_count_action_and_release_trap_at_every_depth() {
+    for element in [
+        Type::I32,
+        Type::async_handle(Type::Void),
+        Type::Array(Box::new(Type::async_handle(Type::Void))),
+        Type::Array(Box::new(Type::Array(Box::new(Type::async_handle(
+            Type::Void,
+        ))))),
+    ] {
+        let action = l::CountAction::for_type(&element);
+        verify_module(&clear_module(element.clone(), Some(action.clone()), true))
+            .expect("same-shape clear control");
+        let errors =
+            verify_module(&clear_module(element.clone(), None, true)).expect_err("missing action");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message.contains("missing or wrong count action")),
+            "{errors:?}"
+        );
+        if element.counted_type().is_some() {
+            let errors = verify_module(&clear_module(
+                element.clone(),
+                Some(l::CountAction::Uncounted),
+                true,
+            ))
+            .expect_err("wrong action");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.message.contains("missing or wrong count action")),
+                "{errors:?}"
+            );
+            let errors = verify_module(&clear_module(element, Some(action), false))
+                .expect_err("missing trap");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.message.contains("without a Call trap")),
+                "{errors:?}"
+            );
+        }
+    }
+}

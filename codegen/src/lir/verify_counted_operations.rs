@@ -195,6 +195,9 @@ pub(super) fn verify(module: &l::Module, function: &l::Function, errors: &mut Ve
                             &target.kind
                         ),
                         Some("Fill" | "CopyWithin" | "Slice" | "Concat")
+                    ) || matches!(
+                        target.kind,
+                        l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayClear)
                     ) =>
                 {
                     instruction

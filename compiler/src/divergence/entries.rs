@@ -9,6 +9,12 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::ArrayLengthStore => DivergenceEntry {
+                ts: "export function main(): void { const xs: i32[] = [1]; xs.length = 2; xs.length -= 1; const n = (xs.length = 0); }",
+                subscript: "export function main(): void { const xs: i32[] = [1]; xs.length = 0; xs.push(2); xs.pop(); }",
+                why: "A nonzero length store can grow an array with holes. The language has no hole value. Only a literal zero store statement clears it.",
+                collision: "stdlib.md §9.12",
+            },
             Divergence::ErrorMemberOutsideSurface => DivergenceEntry {
                 ts: "export function main(): void { const e = new Error(\"x\"); print(`${e.stack}`); print(`${e.cause}`); }",
                 subscript: "export function main(): void { const e = new Error(\"x\"); print(e.message); }",

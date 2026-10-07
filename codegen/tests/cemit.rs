@@ -156,7 +156,8 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
             (TrapKind::TaskGroup, 11, 16)
         }
         "t86-add-to-closed-task-group" => (TrapKind::TaskGroup, 15, 3),
-        "t87-discarded-counted-shift"
+        "t102-zero-length-store"
+        | "t87-discarded-counted-shift"
         | "t88-parameter-counted-pop"
         | "t89-counted-array-completion"
         | "t90-nested-counted-array"

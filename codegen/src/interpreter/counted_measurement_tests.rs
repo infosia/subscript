@@ -567,3 +567,45 @@ export async function main(): Promise<void> {{ await use(); }}
         zero_in_three_tiers(&format!("input-hold-{index}"), &source);
     }
 }
+
+#[test]
+fn zero_length_store_and_pop_controls_release_each_counted_shape() {
+    // Each row costs two C builds and measures counts before Context teardown.
+    for (shape, ty, initializer, read) in [
+        ("handle", "Promise<i32>[]", "[work(7), work(8)]", "jobs[0]"),
+        (
+            "handle-array",
+            "Promise<i32>[][]",
+            "[[work(7)], [work(8)]]",
+            "jobs[0][0]",
+        ),
+        (
+            "nested-array",
+            "Promise<i32>[][][]",
+            "[[[work(7)]], [[work(8)]]]",
+            "jobs[0][0][0]",
+        ),
+    ] {
+        for clear in [false, true] {
+            let removal = if clear {
+                "jobs.length = 0;"
+            } else {
+                "jobs.pop(); jobs.pop();"
+            };
+            let source = format!(
+                r#"
+async function work(n: i32): Promise<i32> {{ return n; }}
+async function use(): Promise<void> {{
+ const jobs: {ty} = {initializer};
+ const alias = jobs;
+ await {read};
+ {removal}
+ print(`${{alias.length}}`);
+}}
+export async function main(): Promise<void> {{ await use(); }}
+"#
+            );
+            zero_in_three_tiers(&format!("zero-store-{shape}-{clear}"), &source);
+        }
+    }
+}

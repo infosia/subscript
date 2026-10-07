@@ -73,6 +73,7 @@ pub(crate) enum RejectionSite {
     MapUnknownMethod,
     SetUnknownMethod,
     ArrayUnknownMember,
+    ArrayLengthStore,
     RegexCompileUnknownMethod,
     SynchronousMethodValue,
     GenericSynchronousMethodValue,

@@ -674,6 +674,17 @@ Measured on `node` v24.18.0: `Array.of()` `[]`, `Array.of(7)` `[7]`,
 `Array.of(1, 2)` `[1,2]`. `tsc` 5.9.2 accepts `Array.of<i32>()`,
 `Array.of<i32>(7)`, and `Array.of(7)`.
 
+### 9.12 A zero-length store (2026-10-07)
+
+`xs.length = 0` as a statement clears a dynamic array in place
+(`compiler.md` §174); a counted element is released as a discarded
+removal releases it. Every other length store is rejected at the
+`ArrayLengthStore` site: a nonzero length can grow the array, and
+JavaScript fills the new slots with holes, but this language has no
+hole value. Use `splice` or `pop` to remove elements. The assignment as
+an expression and a compound length store are rejected at the same
+site. Accept `a344`; trap `t102`; reject `r395`.
+
 ## 10. P15 — `Map` / `Set` (Q24)
 
 Owner decision 2026-07-25 reversed the non-goal (§7). This is the

@@ -21,6 +21,8 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// Only a literal zero length store statement clears a dynamic array.
+    ArrayLengthStore,
     /// An abstract property has no implementation without class inheritance.
     AbstractMember,
     /// Structurally equal classes remain nominal inside compound types.
@@ -1011,6 +1013,7 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::ArrayLengthStore,
         Divergence::AbstractMember,
         Divergence::NestedNominalClass,
         Divergence::ErrorMemberOutsideSurface,

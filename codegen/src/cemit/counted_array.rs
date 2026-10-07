@@ -18,9 +18,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let element = instruction
             .count_action
             .as_ref()
-            .and_then(l::CountAction::release_type)
-            .ok_or_else(|| internal("counted array operation has no count action"))?;
-        let bytes = crate::counted::description(&self.emitter.layouts, &element)?;
+            .and_then(l::CountAction::release_type);
+        let bytes = if let Some(element) = element {
+            crate::counted::description(&self.emitter.layouts, &element)?
+        } else if operation == 3 && instruction.count_action == Some(l::CountAction::Uncounted) {
+            Vec::new()
+        } else {
+            return Err(internal("counted array operation has no count action"));
+        };
         let description = bytes
             .chunks_exact(8)
             .map(|word| {
@@ -48,7 +53,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             &[
                 "ctx".into(),
                 array.into(),
-                format!("(const uint64_t[]){{{description}}}"),
+                if bytes.is_empty() {
+                    "NULL".into()
+                } else {
+                    format!("(const uint64_t[]){{{description}}}")
+                },
                 format!("{operation}u"),
                 value.into(),
                 target.into(),

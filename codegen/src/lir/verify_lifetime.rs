@@ -219,6 +219,7 @@ fn call_reads(
         }
         l::CallTargetKind::BuiltinMethod(
             l::BuiltinMethod::ArrayPop
+            | l::BuiltinMethod::ArrayClear
             | l::BuiltinMethod::StringSlice
             | l::BuiltinMethod::GeneratorNext,
         ) => vec![0],

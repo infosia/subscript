@@ -65,6 +65,7 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r395-array-length-store.ts", RuleCode::S100, 10),
     ("r389-error-outside-surface.ts", RuleCode::S018, 8),
     ("r390-map-pair-initializer.ts", RuleCode::S014, 8),
     ("r391-nested-nominal-classes.ts", RuleCode::S100, 12),

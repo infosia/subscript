@@ -66,6 +66,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 out.push_str("    }\n");
                 self.assign(out, result, &format!("(int32_t)({header}->len)"))
             }
+            l::BuiltinMethod::ArrayClear => {
+                self.emit_counted_array_operation(
+                    out,
+                    &operands[0],
+                    3,
+                    "NULL",
+                    "0",
+                    "0",
+                    "0",
+                    instruction,
+                )?;
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
             l::BuiltinMethod::ArrayPop => {
                 let l::ValueType::Data(Type::Array(element)) = &operand_types[0] else {
                     return Err(internal("array pop receiver is not an array"));

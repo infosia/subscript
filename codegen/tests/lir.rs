@@ -833,6 +833,7 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    ("t102-zero-length-store", "a clear releases a failed element", "uncaught-exception", 10, 40),
     ("t101-unused-coroutine-parameter", "an unused parameter stays rooted until completion", "uncaught-exception", 19, 79),
     ("t102-generator-parameter", "a generator parameter stays rooted until completion", "uncaught-exception", 24, 5),
     ("t103-unstarted-generator-parameter", "an unstarted generator roots its unused parameter", "uncaught-exception", 22, 5),

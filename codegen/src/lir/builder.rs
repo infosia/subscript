@@ -433,6 +433,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 if matches!(
                     array_ownership::array_operation_name(&intrinsic_operations(), &target.kind),
                     Some("Fill" | "CopyWithin" | "Slice" | "Concat")
+                ) || matches!(
+                    target.kind,
+                    l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayClear)
                 ) =>
             {
                 operands

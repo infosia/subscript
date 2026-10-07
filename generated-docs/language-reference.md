@@ -365,19 +365,21 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r391-nested-nominal-classes.ts`](../corpus/reject/r391-nested-nominal-classes.ts), line 12.
+Pinned corpus: [`corpus/reject/r395-array-length-store.ts`](../corpus/reject/r395-array-length-store.ts), line 10.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S100: type mismatch: the initializer expects `P[]`, got `Q[]`
+// expected-error: S100: only `xs.length = 0` as a statement is accepted
 ```
 
 ```ts
-function q(): Q { return new Q(); }
-function take(v: Q): i32 { return v.x; }
-export function main(): void { const qs: Q[] = [new Q()]; const ps: P[] = qs; const p: () => P = q; const f: (v: P) => i32 = take; }
+export function main(): void {
+  const xs: i32[] = [1];
+  xs.length = 2;
+  xs.length -= 1;
+  const n = (xs.length = 0);
 ```
 
 ## Warning rules

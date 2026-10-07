@@ -190,6 +190,8 @@ pub enum BuiltinMethod {
     ArrayPush,
     /// `Array.pop`.
     ArrayPop,
+    /// Clears a dynamic array for a zero length store.
+    ArrayClear,
     /// `String.slice`.
     StringSlice,
     /// `Generator.next`.
@@ -1591,6 +1593,7 @@ pub fn operation_signature_target(
             let method = match (&recv.ty, name.full_text()) {
                 (Type::Array(_), "push") => BuiltinMethod::ArrayPush,
                 (Type::Array(_), "pop") => BuiltinMethod::ArrayPop,
+                (Type::Array(_), "[[array_clear]]") => BuiltinMethod::ArrayClear,
                 (Type::Str, "slice") => BuiltinMethod::StringSlice,
                 (Type::Generator(_), "next") => BuiltinMethod::GeneratorNext,
                 _ => return None,

@@ -924,6 +924,8 @@ pub enum BuiltinMethod {
     ArrayPush,
     /// Dynamic-array `pop`.
     ArrayPop,
+    /// Clears a dynamic array for a zero length store.
+    ArrayClear,
     /// String `slice` method form.
     StringSlice,
     /// Generator `next`.

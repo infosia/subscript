@@ -477,7 +477,13 @@ impl<'p> Checker<'p> {
                     // A member on an array outside a call position
                     // (stdlib.md §9): the accepted members beyond
                     // `length` are all methods.
-                    if !for_write
+                    if for_write && name == "length" {
+                        self.reject_subset(
+                            RejectionSite::ArrayLengthStore,
+                            "only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements",
+                            prop_pos.clone(),
+                        );
+                    } else if !for_write
                         && (name == "push"
                             || name == "pop"
                             || crate::ambient::arr_method(name).is_some())

@@ -68,6 +68,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::MapUnknownMethod,
     RejectionSite::SetUnknownMethod,
     RejectionSite::ArrayUnknownMember,
+    RejectionSite::ArrayLengthStore,
     RejectionSite::RegexCompileUnknownMethod,
     RejectionSite::SynchronousMethodValue,
     RejectionSite::GenericSynchronousMethodValue,
