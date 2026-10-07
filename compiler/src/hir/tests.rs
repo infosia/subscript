@@ -554,6 +554,7 @@ fn date_fn_field_codes_cover_the_eight_accessors_in_order() {
 #[test]
 fn callee_trap_policy_delegates_to_operation_predicates() {
     assert!(!Callee::Ambient(AmbientFn::Print).has_call_site());
+    assert!(Callee::Ambient(AmbientFn::Collect).has_call_site());
     assert!(Callee::Ambient(AmbientFn::Unreachable).has_call_site());
     assert!(Callee::Ambient(AmbientFn::UnsafeDelete).has_call_site());
     assert!(!Callee::Math(MathFn::Abs).has_call_site());
@@ -930,4 +931,49 @@ export function main(): void { quiet(); raises(); }
             .unwrap()
             .can_raise
     );
+}
+
+#[test]
+fn counted_map_operations_and_free_carry_call_traps() {
+    let module = crate::check_program(&[crate::SourceFile::new(
+        "map-sites.ts",
+        "export function main():void{}",
+    )])
+    .expect("empty module");
+    for counted in [false, true] {
+        let value = if counted {
+            Type::Array(Box::new(Type::AsyncHandle(Box::new(Type::Void))))
+        } else {
+            Type::I32
+        };
+        let map = Type::Map(Box::new(Type::I32), Box::new(value));
+        for callee in [
+            Callee::Map(MapFn::GetOr),
+            Callee::Map(MapFn::Delete),
+            Callee::Map(MapFn::Clear),
+            Callee::Ambient(AmbientFn::UnsafeDelete),
+        ] {
+            let expression = Expr {
+                pending_work: None,
+                kind: ExprKind::Call {
+                    callee,
+                    args: vec![Expr {
+                        pending_work: None,
+                        kind: ExprKind::Local("map".into(), map.clone(), false),
+                        ty: map.clone(),
+                        pos: Pos::new("map-sites.ts", 2, 1),
+                    }],
+                },
+                ty: Type::Void,
+                pos: Pos::new("map-sites.ts", 2, 1),
+            };
+            let sites = expression.trap_sites(&module);
+            assert_eq!(
+                sites
+                    .iter()
+                    .any(|site| matches!(site, TrapSite::Call { .. })),
+                counted
+            );
+        }
+    }
 }

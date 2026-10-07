@@ -1362,8 +1362,16 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s026.ts"],
             variant: Divergence::NumberCoercionAndArguments,
         },
+        RejectionSite::MapCallbackCountedValue => WitnessEntry::Reachable {
+            files: &["s172-counted-map-callback.ts"],
+            variant: Divergence::MethodTypeDomain,
+        },
         RejectionSite::ArrayElementDomain => WitnessEntry::Reachable {
-            files: &["s027.ts", "s027-b.ts", "s171-nested-counted-element.ts"],
+            files: &[
+                "s027.ts",
+                "s027-b.ts",
+                "s171-nested-counted-element.ts",
+            ],
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::ArrayJoinDomain => WitnessEntry::Reachable {
@@ -1379,7 +1387,12 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::ArrayMapResult => WitnessEntry::Reachable {
-            files: &["s031.ts", "s031-b.ts", "s171-counted-callback-result.ts"],
+            files: &[
+                "s031.ts",
+                "s031-b.ts",
+                "s171-counted-callback-result.ts",
+                "s172-counted-map-callback-result.ts",
+            ],
             variant: Divergence::MethodTypeDomain,
         },
         RejectionSite::MapGroupByKey => WitnessEntry::Reachable {
@@ -1614,6 +1627,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::NumberMethodValue,
     RejectionSite::NumberMethodArgumentCount,
     RejectionSite::ArrayElementDomain,
+    RejectionSite::MapCallbackCountedValue,
     RejectionSite::ArrayJoinDomain,
     RejectionSite::ArrayCallbackSpread,
     RejectionSite::ArrayAccumulatorDomain,

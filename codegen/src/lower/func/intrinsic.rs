@@ -71,7 +71,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     RV::None
                 }
                 "Collect" => {
-                    self.call_runtime(self.ml.rt.collect, &[self.ctx], false)?;
+                    let position = self.position_id(pos);
+                    let position = self.iconst(types::I32, position);
+                    self.call_runtime(self.ml.rt.collect, &[self.ctx, position], false)?;
+                    self.trap_check();
                     RV::None
                 }
                 "UnsafeDelete" => {
@@ -738,10 +741,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.iconst(types::I32, i64::from(kind)),
                 self.iconst(types::I32, position),
             ];
-            return self
+            let handle = self
                 .call_runtime(function, &arguments, checked)?
-                .map(RV::Scalar)
-                .ok_or_else(|| internal("Map.New has no result"));
+                .ok_or_else(|| internal("Map.New has no result"))?;
+            if value.counted_type().is_some() {
+                let bytes = crate::counted::description(&self.ml.layouts, &value)?;
+                let data = self.ml.literal_data(&bytes)?;
+                let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+                let description = self.builder.ins().symbol_value(types::I64, global);
+                self.call_runtime(
+                    self.ml.rt.map_describe,
+                    &[self.ctx, handle, description],
+                    false,
+                )?;
+            }
+            return Ok(RV::Scalar(handle));
         }
 
         let handle = self.expect_scalar(
@@ -808,7 +822,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )))
             }
             "Clear" => {
-                self.call_runtime(function, &[self.ctx, handle], false)?;
+                self.call_runtime(function, &[self.ctx, handle], checked)?;
                 Ok(RV::None)
             }
             "ForEach" => {
@@ -913,7 +927,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )))
             }
             "Clear" => {
-                self.call_runtime(function, &[self.ctx, handle], false)?;
+                self.call_runtime(function, &[self.ctx, handle], checked)?;
                 Ok(RV::None)
             }
             "ForEach" => {

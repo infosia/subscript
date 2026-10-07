@@ -5,7 +5,7 @@ use super::*;
 impl Interpreter<'_> {
     pub(super) fn execute_instruction(
         &mut self,
-        frame: &mut Frame,
+        frame: *mut Frame,
         function: &l::Function,
         instruction: &l::Instruction,
     ) -> Result<(), InterpretError> {
@@ -19,10 +19,13 @@ impl Interpreter<'_> {
 
     fn execute_instruction_effect(
         &mut self,
-        frame: &mut Frame,
+        frame: *mut Frame,
         function: &l::Function,
         instruction: &l::Instruction,
     ) -> Result<(), InterpretError> {
+        // SAFETY: execute_frame owns the registered frame for this call.
+        // Operand and local references end before a call can collect.
+        // The result write starts after all calls return.
         let operand_types = instruction
             .operands
             .iter()
@@ -43,7 +46,7 @@ impl Interpreter<'_> {
         let operands = instruction
             .operands
             .iter()
-            .map(|operand| self.operand(frame, operand, &instruction.pos))
+            .map(|operand| self.operand(unsafe { &*frame }, operand, &instruction.pos))
             .collect::<Result<Vec<_>, _>>()?;
         let result_ty = instruction
             .result
@@ -102,7 +105,7 @@ impl Interpreter<'_> {
             // compiler.md §116.2 rule 3: the resume of an exception
             // completion delivered its exception; this raise site raises it.
             l::InstructionKind::AwaitRaise => {
-                if let Some((object, message, pos)) = frame.delivered.take() {
+                if let Some((object, message, pos)) = unsafe { &mut (*frame).delivered }.take() {
                     return Err(InterpretError::Exception {
                         object,
                         message,
@@ -144,24 +147,26 @@ impl Interpreter<'_> {
                 }
             }),
             l::InstructionKind::LoadLocal(local) => {
-                let stored = frame.locals.get(local.0 as usize).ok_or_else(|| {
-                    self.invalid(
-                        Some(instruction.pos.clone()),
-                        format!("local {} is missing", local.0),
-                    )
-                })?;
+                let stored = unsafe { &(*frame).locals }
+                    .get(local.0 as usize)
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            format!("local {} is missing", local.0),
+                        )
+                    })?;
                 if let Some((suspend, suspend_pos)) = &stored.poisoned_at {
                     let name = function
                         .locals
                         .get(local.0 as usize)
                         .map_or("<missing>", |local| local.source_name.as_str());
                     return Err(self.invalid(
-                        Some(instruction.pos.clone()),
-                        format!(
-                            "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
-                            local.0, suspend.0
-                        ),
-                    ));
+                    Some(instruction.pos.clone()),
+                    format!(
+                        "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
+                        local.0, suspend.0
+                    ),
+                ));
                 }
                 Some(stored.slot().borrow().clone())
             }
@@ -169,35 +174,39 @@ impl Interpreter<'_> {
                 let value = operands
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?;
-                let stored = frame.locals.get_mut(local.0 as usize).ok_or_else(|| {
-                    self.invalid(
-                        Some(instruction.pos.clone()),
-                        format!("local {} is missing", local.0),
-                    )
-                })?;
+                let stored = unsafe { &mut (*frame).locals }
+                    .get_mut(local.0 as usize)
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            format!("local {} is missing", local.0),
+                        )
+                    })?;
                 *stored.slot().borrow_mut() = value.clone();
                 stored.poisoned_at = None;
                 None
             }
             l::InstructionKind::AddressOfLocal(local) => {
-                let stored = frame.locals.get(local.0 as usize).ok_or_else(|| {
-                    self.invalid(
-                        Some(instruction.pos.clone()),
-                        format!("local {} is missing", local.0),
-                    )
-                })?;
+                let stored = unsafe { &(*frame).locals }
+                    .get(local.0 as usize)
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            format!("local {} is missing", local.0),
+                        )
+                    })?;
                 if let Some((suspend, suspend_pos)) = &stored.poisoned_at {
                     let name = function
                         .locals
                         .get(local.0 as usize)
                         .map_or("<missing>", |local| local.source_name.as_str());
                     return Err(self.invalid(
-                        Some(instruction.pos.clone()),
-                        format!(
-                            "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
-                            local.0, suspend.0
-                        ),
-                    ));
+                    Some(instruction.pos.clone()),
+                    format!(
+                        "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
+                        local.0, suspend.0
+                    ),
+                ));
                 }
                 Some(Value::Address(Address {
                     target: AddressTarget::Slot(stored.slot().clone()),
@@ -423,7 +432,18 @@ impl Interpreter<'_> {
                 let handle =
                     unsafe { ffi::subscript_rt_map_from_assoc(&mut *self.context, source, 0) };
                 self.check_runtime(&instruction.pos)?;
-                self.root_handle(handle);
+                if let Some(value_ty) = instruction
+                    .count_action
+                    .as_ref()
+                    .and_then(l::CountAction::release_type)
+                {
+                    self.describe_interpreter_map(handle, &value_ty, &instruction.pos)?;
+                    let values = self.counted_map_values(handle, &value_ty)?;
+                    for value in values {
+                        self.counted_owner(&value_ty, &value, false, &instruction.pos)?;
+                    }
+                }
+
                 Some(Value::Handle(handle))
             }
             l::InstructionKind::SetFromSource(spread) => {
@@ -645,7 +665,12 @@ impl Interpreter<'_> {
                         .push(Rc::downgrade(&address.poison));
                 }
             }
-            self.set_value(&mut frame.values, id, result, &instruction.pos)?;
+            self.set_value(
+                unsafe { &mut (*frame).values },
+                id,
+                result,
+                &instruction.pos,
+            )?;
         }
         Ok(())
     }

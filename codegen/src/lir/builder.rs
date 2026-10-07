@@ -404,7 +404,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &kind,
             l::InstructionKind::Call(l::CallTarget {
                 kind: l::CallTargetKind::Intrinsic(l::Intrinsic {
-                    family: l::IntrinsicFamily::Array,
+                    family: l::IntrinsicFamily::Array | l::IntrinsicFamily::Map,
                     ..
                 }),
                 ..
@@ -443,6 +443,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         l::ValueType::Data(Type::Array(element) | Type::FixedArray(element, _)) => {
                             Some(*element)
                         }
+                        _ => None,
+                    })
+            }
+            l::InstructionKind::MapFromSource => result_type.as_ref().and_then(|ty| match ty {
+                l::ValueType::Data(Type::Map(_, value)) => Some((**value).clone()),
+                _ => None,
+            }),
+            l::InstructionKind::Call(target)
+                if array_ownership::map_operation_name(&intrinsic_operations(), &target.kind)
+                    .is_some() =>
+            {
+                operands
+                    .first()
+                    .and_then(|operand| self.operand_type(operand, &pos).ok())
+                    .or_else(|| result_type.as_ref().cloned())
+                    .and_then(|ty| match ty {
+                        l::ValueType::Data(Type::Map(_, value)) => Some(*value),
                         _ => None,
                     })
             }

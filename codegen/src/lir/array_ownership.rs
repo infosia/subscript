@@ -20,11 +20,34 @@ pub(super) fn array_operation_name<'a>(
         .map(|operation| operation.semantic_name.as_str())
 }
 
+pub(super) fn map_operation_name<'a>(
+    operations: &'a [l::IntrinsicOperation],
+    kind: &l::CallTargetKind,
+) -> Option<&'a str> {
+    let l::CallTargetKind::Intrinsic(intrinsic) = kind else {
+        return None;
+    };
+    let operation = operations.iter().find(|operation| {
+        operation.family == intrinsic.family && operation.operation == intrinsic.operation
+    })?;
+    if intrinsic.family == l::IntrinsicFamily::Map
+        || (intrinsic.family == l::IntrinsicFamily::Ambient
+            && operation.semantic_name == "UnsafeDelete")
+    {
+        Some(&operation.semantic_name)
+    } else {
+        None
+    }
+}
+
 pub(super) fn produces_fresh_owner(
     operations: &[l::IntrinsicOperation],
     kind: &l::InstructionKind,
 ) -> bool {
     if let l::InstructionKind::Call(target) = kind {
+        if map_operation_name(operations, &target.kind).is_some() {
+            return false;
+        }
         if let Some(name) = array_operation_name(operations, &target.kind) {
             let class = hir::ArrFn::ALL
                 .iter()

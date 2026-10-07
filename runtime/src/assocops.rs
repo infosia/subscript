@@ -64,6 +64,9 @@ impl KeyKind {
 #[path = "assoc_copy.rs"]
 mod copy;
 pub(crate) use copy::copy_map;
+#[path = "assoc_counted.rs"]
+mod counted;
+pub(crate) use counted::{clear, describe, release_leaves};
 
 fn header_kind(header: &AssocHeader) -> KeyKind {
     KeyKind::from_u32(header.key_kind as u32).unwrap_or(KeyKind::Bits)
@@ -87,6 +90,7 @@ pub(crate) struct AssocHeader {
     entries: *mut u8,
     buckets: *mut u8,
     iteration_depth: u64,
+    value_description: *const u8,
 }
 
 fn round_word(value: usize) -> Option<usize> {
@@ -639,13 +643,24 @@ pub(crate) unsafe fn insert(
     let found = unsafe { lookup(ctx, h, key, hash) };
     if let Some(entry) = found.entry {
         if h.value_size != 0 && !value.is_null() {
+            // Snapshot the old owner before the store, including an aliased value.
+            let description = h.value_description;
+            let old = if description.is_null() {
+                Vec::new()
+            } else {
+                unsafe { std::slice::from_raw_parts(entry_value(h, entry), h.value_size as usize) }
+                    .to_vec()
+            };
             // SAFETY: destination and source cover `value_size` bytes.
             unsafe {
-                std::ptr::copy_nonoverlapping(
+                std::ptr::copy(
                     value,
                     entry_value(h, entry) as *mut u8,
                     h.value_size as usize,
                 );
+            }
+            if !description.is_null() {
+                unsafe { (*ctx).counted_value(old.as_ptr(), description, true, pos_id) };
             }
         }
         return handle;
@@ -779,6 +794,12 @@ pub(crate) unsafe fn delete(ctx: *mut Context, handle: *mut u8, key: *const u8) 
     let Some(entry) = found.entry else {
         return false;
     };
+    let description = h.value_description;
+    let old = if description.is_null() {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(entry_value(h, entry), h.value_size as usize) }.to_vec()
+    };
     // SAFETY: bucket and entry lie inside their allocations.
     unsafe {
         h.buckets
@@ -789,35 +810,10 @@ pub(crate) unsafe fn delete(ctx: *mut Context, handle: *mut u8, key: *const u8) 
     }
     h.len = h.len.saturating_sub(1);
     h.tombstones = h.tombstones.saturating_add(1);
+    if !description.is_null() {
+        unsafe { (*ctx).counted_value(old.as_ptr(), description, true, 0) };
+    }
     true
-}
-
-/// Eagerly retires a container's entry and bucket allocations and resets
-/// it to the empty state. This is also called by `Context::delete` before
-/// deleting a Map/Set header.
-///
-/// # Safety
-///
-/// `handle` is a live `AssocHeader` owned by `ctx`.
-pub(crate) unsafe fn clear(ctx: &mut Context, handle: *mut u8) {
-    let Some(h) = (unsafe { header(handle) }) else {
-        return;
-    };
-    let entries = h.entries;
-    let buckets = h.buckets;
-    h.len = 0;
-    h.order_len = 0;
-    h.order_cap = 0;
-    h.bucket_cap = 0;
-    h.tombstones = 0;
-    h.entries = std::ptr::null_mut();
-    h.buckets = std::ptr::null_mut();
-    if !entries.is_null() {
-        ctx.delete(entries as usize, 0);
-    }
-    if !buckets.is_null() {
-        ctx.delete(buckets as usize, 0);
-    }
 }
 
 /// Fixed ABI of a generated Map callback bridge. The bridge loads

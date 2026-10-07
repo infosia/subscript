@@ -373,7 +373,7 @@ impl Interpreter<'_> {
             ffi::subscript_rt_array_new(&mut *self.context, element_layout.size as u64, 0)
         };
         self.check_runtime(pos)?;
-        self.root_handle(array);
+
         for element in elements {
             let bytes = self.pack(element_ty, element)?;
             // SAFETY: `bytes` is exactly one element and the array is live.
@@ -409,7 +409,7 @@ impl Interpreter<'_> {
             )
         };
         self.check_runtime(pos)?;
-        self.root_handle(array);
+
         Ok(Value::Handle(array))
     }
 
@@ -580,7 +580,7 @@ impl Interpreter<'_> {
             },
         };
         self.check_runtime(pos)?;
-        self.root_handle(set);
+
         Ok(Value::Handle(set))
     }
 
@@ -911,7 +911,7 @@ impl Interpreter<'_> {
                     )
                 };
                 self.check_runtime(pos)?;
-                self.root_handle(value);
+
                 Ok(Value::Handle(value))
             }
         }

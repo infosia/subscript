@@ -84,7 +84,7 @@ impl<'m> Interpreter<'m> {
         };
         let result = self.context.array_with_capacity(len, size, 0);
         self.check_runtime(pos)?;
-        self.root_handle(result);
+
         // The runtime header has the same length and capacity ABI as other interpreter arrays.
         unsafe {
             result.cast::<u64>().write(len as u64);
@@ -212,5 +212,16 @@ impl<'m> Interpreter<'m> {
             self.release_coroutine(handle, &pos)?;
         }
         Ok(())
+    }
+}
+
+impl Aggregate {
+    pub(super) fn root_values(
+        &self,
+        words: &mut Vec<usize>,
+        coroutines: &mut Vec<Rc<RefCell<Coroutine>>>,
+    ) {
+        words.push(self.result as usize);
+        coroutines.extend(self.inputs.iter().flatten().cloned());
     }
 }

@@ -214,6 +214,13 @@ impl Expr {
                         operand: LifetimeOperand::Argument(0),
                         pos: self.pos.clone(),
                     });
+                    if args.first().is_some_and(|argument| {
+                        matches!(&argument.ty,
+                        Type::Map(_, value) if value.counted_type().is_some())
+                        || matches!(argument.ty, Type::Class(id) if module.classes.get(id.0).is_some_and(|class| class.fields.iter().any(|field| field.ty.counted_type().is_some())))
+                    }) {
+                        sites.push(call(&self.pos));
+                    }
                     return sites;
                 }
                 if let Callee::Method { recv, name } = callee {
@@ -318,7 +325,11 @@ impl Expr {
                         }
                     }
                 }
-                if callee.has_call_site() {
+                let counted_map = matches!(callee, Callee::Map(_))
+                    && args.first().map(|argument| &argument.ty).into_iter()
+                        .chain(std::iter::once(&self.ty))
+                        .any(|ty| matches!(ty, Type::Map(_, value) if value.counted_type().is_some()));
+                if callee.has_call_site() || counted_map {
                     sites.push(call(&self.pos));
                 }
                 if (reload && callee.has_call_site())

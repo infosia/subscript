@@ -74,7 +74,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(self.address_offset(base, i64::from(offset)))
     }
 
-    fn relocate_closure_environment(
+    pub(super) fn relocate_closure_environment(
         &mut self,
         code: Value,
         environment: Value,
@@ -84,17 +84,31 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             return Ok(RV::Pair(code, environment));
         };
         let copy = self.builder.create_block();
+        let absent = self.builder.create_block();
         let done = self.builder.create_block();
         self.builder.append_block_param(done, types::I64);
         let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
-        self.builder
-            .ins()
-            .brif(present, copy, &[], done, &[BlockArg::Value(environment)]);
+        let branch = self.builder.ins().brif(present, copy, &[], absent, &[]);
+        #[cfg(test)]
+        let source_location = self.builder.func.srcloc(branch);
+        #[cfg(not(test))]
+        let _ = branch;
         self.builder.switch_to_block(copy);
         self.copy_bytes(destination, environment, size, align);
         self.builder
             .ins()
             .jump(done, &[BlockArg::Value(destination)]);
+        self.builder.switch_to_block(absent);
+        // A conditional null assignment is not an interval-end clear.
+        #[cfg(test)]
+        self.builder
+            .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX - 1));
+        self.zero_bytes(destination, size, align);
+        #[cfg(test)]
+        self.builder.set_srcloc(source_location);
+        self.builder
+            .ins()
+            .jump(done, &[BlockArg::Value(environment)]);
         self.builder.switch_to_block(done);
         Ok(RV::Pair(code, self.builder.block_params(done)[0]))
     }
@@ -261,10 +275,22 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let ty = self.value_type(id)?.clone();
             return self.load_value_type(&ty, address, 0);
         }
-        self.values
+        let value = self
+            .values
             .get(id.0 as usize)
             .and_then(|value| *value)
-            .ok_or_else(|| internal(format!("value {} is not available", id.0)))
+            .ok_or_else(|| internal(format!("value {} is not available", id.0)))?;
+        if self.coroutine.is_some()
+            && self.closure_environment_layout.is_some()
+            && matches!(self.value_type(id)?, l::ValueType::Data(ty) if ty.function_type().is_some())
+        {
+            let (code, environment) = self.expect_pair(value)?;
+            let destination = self.closure_environment_address(id)?;
+            let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
+            let environment = self.builder.ins().select(present, destination, environment);
+            return Ok(RV::Pair(code, environment));
+        }
+        Ok(value)
     }
 
     pub(super) fn set_value(&mut self, id: l::ValueId, mut value: RV) -> Result<(), String> {

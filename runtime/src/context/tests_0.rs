@@ -147,10 +147,17 @@ fn async_unfinished_counts_invocations_without_a_completion() {
     unsafe { ctx.async_complete(first, std::ptr::null(), 0) };
     assert_eq!(ctx.async_unfinished(), 1);
     assert_eq!(ctx.async_pending(), 0, "a completion is not pending work");
-    // Releasing the last owner drops the record entirely.
+    // Releasing the last owner preserves an unfinished invocation.
     // SAFETY: each frame holds exactly the registration reference.
     unsafe {
         ctx.async_release(first, 0);
+        ctx.async_release(second, 0);
+    }
+    assert_eq!(ctx.async_unfinished(), 1);
+    assert!(ctx.is_live(second as usize));
+    // SAFETY: completion ends the unowned invocation before the final scheduler release.
+    unsafe {
+        ctx.async_complete(second, std::ptr::null(), 0);
         ctx.async_release(second, 0);
     }
     assert_eq!(ctx.async_unfinished(), 0);

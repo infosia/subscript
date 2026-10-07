@@ -1,5 +1,8 @@
 //! Shared live-range storage plan for managed LIR values.
 
+mod value_liveness;
+pub(crate) use value_liveness::value_interference;
+
 use std::collections::BTreeSet;
 
 use subscript_compiler::lir as l;
@@ -23,6 +26,39 @@ pub(crate) struct RootStoragePlan {
     pub(crate) clear_at_block_entry: Vec<Vec<usize>>,
     pub(crate) clear_after_instruction: Vec<Vec<Vec<usize>>>,
     pub(crate) words: u32,
+}
+
+/// Stable address targets use one storage lifetime across suspend aliases.
+pub(crate) fn stable_values(function: &l::Function) -> BTreeSet<l::ValueId> {
+    let live = function
+        .blocks
+        .iter()
+        .filter_map(|block| match &block.terminator {
+            l::Terminator::Suspend { arguments, .. } => Some(arguments),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|operand| value_operand(Some(operand)))
+        .collect::<BTreeSet<_>>();
+    function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| {
+            matches!(
+                instruction.kind,
+                l::InstructionKind::AllocateClass(_) | l::InstructionKind::AddressOfValue
+            )
+        })
+        .filter_map(|instruction| instruction.result)
+        .filter(|result| {
+            live.contains(result)
+                && matches!(
+                    function.values[result.0 as usize].ty,
+                    l::ValueType::Address(_)
+                )
+        })
+        .collect()
 }
 
 fn internal(message: impl AsRef<str>) -> String {
@@ -83,7 +119,11 @@ fn record_value(
     function: &l::Function,
     values: &mut BTreeSet<l::ValueId>,
     value: l::ValueId,
+    dependencies: &[BTreeSet<l::ValueId>],
 ) -> Result<(), String> {
+    for dependency in &dependencies[value.0 as usize] {
+        values.insert(origin(function, *dependency)?);
+    }
     if let l::ValueType::Address(address) = &function.values[value.0 as usize].ty {
         if let Some(array_base) = address.array_base {
             values.insert(origin(function, array_base)?);
@@ -97,9 +137,10 @@ fn record_operand(
     function: &l::Function,
     values: &mut BTreeSet<l::ValueId>,
     operand: &l::Operand,
+    dependencies: &[BTreeSet<l::ValueId>],
 ) -> Result<(), String> {
     if let l::Operand::Value(value) = operand {
-        record_value(function, values, *value)?;
+        record_value(function, values, *value, dependencies)?;
     }
     Ok(())
 }
@@ -108,14 +149,15 @@ fn record_terminator(
     function: &l::Function,
     values: &mut BTreeSet<l::ValueId>,
     terminator: &l::Terminator,
+    dependencies: &[BTreeSet<l::ValueId>],
 ) -> Result<(), String> {
     for value in terminator.value_uses() {
-        record_value(function, values, value)?;
+        record_value(function, values, value, dependencies)?;
     }
     if let l::Terminator::Suspend { invalidates, .. } = terminator {
         // Root interference needs every storage mention during suspension.
         for value in invalidates {
-            record_value(function, values, *value)?;
+            record_value(function, values, *value, dependencies)?;
         }
     }
     Ok(())
@@ -124,6 +166,7 @@ fn record_terminator(
 fn live_ins(
     function: &l::Function,
     held_to_exit: &BTreeSet<l::ValueId>,
+    dependencies: &[BTreeSet<l::ValueId>],
 ) -> Result<Vec<BTreeSet<l::ValueId>>, String> {
     if function.liveness.live_ins.len() != function.blocks.len() {
         return Err(internal(format!(
@@ -149,7 +192,7 @@ fn live_ins(
             values
                 .iter()
                 .try_fold(held_to_exit.clone(), |mut live, value| {
-                    record_value(function, &mut live, *value)?;
+                    record_value(function, &mut live, *value, dependencies)?;
                     Ok(live)
                 })
         })
@@ -177,8 +220,16 @@ pub(crate) struct Interference {
 impl Interference {
     /// Builds the function's relation once from its root-storage mentions.
     pub(crate) fn build(function: &l::Function) -> Result<Self, String> {
+        let dependencies = value_liveness::environment_dependencies(function);
+        Self::build_with_dependencies(function, &dependencies)
+    }
+
+    fn build_with_dependencies(
+        function: &l::Function,
+        dependencies: &[BTreeSet<l::ValueId>],
+    ) -> Result<Self, String> {
         let held = address_taken_values(function)?;
-        let live_in = live_ins(function, &held)?;
+        let live_in = live_ins(function, &held, dependencies)?;
         let mut intervals = vec![Vec::new(); function.values.len()];
         let mut parameter_rules = Vec::new();
         for block in &function.blocks {
@@ -190,7 +241,7 @@ impl Interference {
                 .flat_map(|successor| live_in[successor.0 as usize].iter().copied())
                 .collect::<BTreeSet<_>>();
             live.extend(held.iter().copied());
-            record_terminator(function, &mut live, &block.terminator)?;
+            record_terminator(function, &mut live, &block.terminator, dependencies)?;
             // Zero is entry; instructions are 1..=n; n+1 is the terminator/exit.
             let mut ends = live
                 .iter()
@@ -210,7 +261,7 @@ impl Interference {
                 }
                 let mut uses = BTreeSet::new();
                 for operand in &instruction.operands {
-                    record_operand(function, &mut uses, operand)?;
+                    record_operand(function, &mut uses, operand, dependencies)?;
                 }
                 for value in uses {
                     ends.entry(value).or_insert(point);
@@ -286,6 +337,15 @@ impl Interference {
             parameter_rules,
             parameter_index,
             origin_groups,
+        })
+    }
+
+    /// Tests an origin before the current instruction or at suspended block entry.
+    pub(crate) fn live_before(&self, origin: l::ValueId, block: l::BlockId, point: usize) -> bool {
+        self.intervals[origin.0 as usize].iter().any(|range| {
+            range.block == block
+                && (range.start < point || point == 0 && range.start == 0)
+                && point <= range.end
         })
     }
 
@@ -932,6 +992,21 @@ mod tests {
     }
 
     #[test]
+    fn frame_roots_exclude_definitions_and_keep_last_uses_and_suspended_live_ins() {
+        let interference = Interference::build(&interval_fixture()).unwrap();
+        let block = l::BlockId(0);
+        assert!(interference.live_before(l::ValueId(0), block, 0));
+        assert!(interference.live_before(l::ValueId(0), block, 1));
+        assert!(!interference.live_before(l::ValueId(1), block, 1));
+        assert!(interference.live_before(l::ValueId(1), block, 2));
+        assert!(!interference.live_before(l::ValueId(1), block, 3));
+        assert!(!interference.live_before(l::ValueId(2), block, 2));
+        assert!(interference.live_before(l::ValueId(2), block, 3));
+        assert!(interference.live_before(l::ValueId(2), l::BlockId(1), 0));
+        assert!(!interference.live_before(l::ValueId(3), l::BlockId(1), 1));
+    }
+
+    #[test]
     fn interval_interference_matches_the_hand_written_matrix() {
         let interference = Interference::build(&interval_fixture()).unwrap();
         let expected = [
@@ -1086,7 +1161,13 @@ mod tests {
         );
         let function = function(values, vec![block]);
         let mut live = BTreeSet::new();
-        record_value(&function, &mut live, l::ValueId(1)).unwrap();
+        record_value(
+            &function,
+            &mut live,
+            l::ValueId(1),
+            &value_liveness::environment_dependencies(&function),
+        )
+        .unwrap();
         assert_eq!(live, BTreeSet::from([l::ValueId(0), l::ValueId(1)]));
     }
 

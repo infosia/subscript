@@ -1,6 +1,12 @@
 use super::*;
 
-fn empty_module(functions: Vec<l::Function>) -> l::Module {
+fn empty_module(mut functions: Vec<l::Function>) -> l::Module {
+    for function in &mut functions {
+        function.liveness = l::Liveness {
+            live_ins: vec![Vec::new(); function.blocks.len()],
+            value_origins: function.values.iter().map(|value| value.id).collect(),
+        };
+    }
     l::Module {
         host_entries: Vec::new(),
         entry: Some(l::FunctionId(0)),

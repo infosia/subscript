@@ -304,11 +304,11 @@ impl Context {
         };
         // SAFETY: guaranteed by the caller.
         let slot = unsafe { &mut *(frame.add(4) as *mut u32) };
-        if *slot == 0 {
-            return;
+        if *slot != 0 {
+            *slot -= 1;
         }
-        *slot -= 1;
-        if *slot == 0 {
+        // An unfinished invocation remains registered after its last holder ends.
+        if *slot == 0 && meta.completion.is_some() {
             let unobserved = match &meta.kind {
                 AsyncKind::Invocation => {
                     let meta = self.async_frames.remove(&(frame as usize));

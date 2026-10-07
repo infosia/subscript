@@ -615,8 +615,15 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "    void* b{}_child;", block.id.0);
             }
         }
+        let stable_values = root_storage::stable_values(function);
         for block in &function.blocks {
             for instruction in &block.instructions {
+                if !instruction
+                    .result
+                    .is_some_and(|result| stable_values.contains(&result))
+                {
+                    continue;
+                }
                 if let (Some(result), l::InstructionKind::AddressOfValue) =
                     (instruction.result, &instruction.kind)
                 {
@@ -925,6 +932,12 @@ impl<'m> Emitter<'m> {
         }
         for parameter in &function.parameters {
             if parameter.kind != l::ParameterKind::Capture {
+                if self.has_closure_environments()
+                    && matches!(&function.values[parameter.value.0 as usize].ty, l::ValueType::Data(ty) if ty.function_type().is_some())
+                {
+                    let value = parameter.value.0;
+                    let _ = writeln!(out, "    if (a{value}.env != NULL) {{ memcpy(&frame->env_v{value}, a{value}.env, sizeof(SubEnvStorage)); a{value}.env = &frame->env_v{value}; }}");
+                }
                 let _ = writeln!(
                     out,
                     "    frame->p{} = a{};",

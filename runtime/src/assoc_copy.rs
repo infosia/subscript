@@ -19,6 +19,7 @@ pub(crate) unsafe fn copy_map(ctx: *mut Context, source: *mut u8, pos_id: u32) -
     if out.is_null() {
         return out;
     }
+    unsafe { crate::assocops::describe(&mut *ctx, out, h.value_description) };
     // SAFETY: the source remains live throughout this traversal.
     let bound = unsafe { iteration_begin(source) };
     for index in 0..bound {
@@ -28,6 +29,10 @@ pub(crate) unsafe fn copy_map(ctx: *mut Context, source: *mut u8, pos_id: u32) -
             unsafe { insert(ctx, out, key, value, pos_id) };
             if unsafe { (*ctx).trapped() } {
                 break;
+            }
+            // The source owns the value throughout insertion. A failed store acquires nothing.
+            if !h.value_description.is_null() {
+                unsafe { (*ctx).counted_value(value, h.value_description, false, pos_id) };
             }
         }
     }

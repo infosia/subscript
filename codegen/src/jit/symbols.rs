@@ -21,6 +21,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     let symbols: &[(&str, *const u8)] = runtime_symbols!(
         subscript_rt_print,
         subscript_rt_collect,
+        subscript_rt_collect_at,
         subscript_rt_alloc,
         subscript_rt_globals_init,
         subscript_rt_boundary_scratch_mark,
@@ -234,6 +235,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_fixed_arr_find_index,
         subscript_rt_fixed_arr_reduce_right,
         subscript_rt_map_new,
+        subscript_rt_map_describe,
+        subscript_rt_object_describe,
         subscript_rt_map_from_assoc,
         subscript_rt_assoc_size,
         subscript_rt_assoc_has,

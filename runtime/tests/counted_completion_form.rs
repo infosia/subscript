@@ -62,7 +62,11 @@ fn completion_release_frees_its_counted_payload() {
             unsafe { ctx.async_release(result, 0) };
         } else {
             // The control transfers directly to a local, with no completion cache.
-            unsafe { ctx.async_release(payload, 0) };
+            unsafe {
+                ctx.async_release(payload, 0);
+                let empty: *mut u8 = std::ptr::null_mut();
+                ctx.async_complete(owner, (&raw const empty).cast(), 8);
+            };
         }
         // SAFETY: the caller owns the parent's initial count.
         unsafe { ctx.async_release(owner, 0) };

@@ -49,7 +49,7 @@ pub(crate) struct ClassLayout {
     /// Field byte offsets, in declaration order.
     pub field_offsets: Vec<u32>,
     /// Field types in declaration order.
-    field_types: Vec<Type>,
+    pub field_types: Vec<Type>,
     /// True for `@ValueType class`.
     pub is_value: bool,
 }

@@ -501,7 +501,38 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("{position}u"),
                 ],
             );
-            self.assign(out, result, &call)?;
+            self.assign(out, result.clone(), &call)?;
+            if value.counted_type().is_some() {
+                let bytes = crate::counted::description(&self.emitter.layouts, value)?;
+                let words = bytes
+                    .chunks_exact(8)
+                    .map(|word| {
+                        let mut bytes = [0; 8];
+                        bytes.copy_from_slice(word);
+                        format!("{}ULL", u64::from_ne_bytes(bytes))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let destination = result.ok_or_else(|| internal("Map.New has no result"))?;
+                let description_name = format!(
+                    "map_description_{}",
+                    instruction
+                        .result
+                        .ok_or_else(|| internal("Map.New has no value id"))?
+                        .0
+                );
+                let _ = writeln!(
+                    out,
+                    "    static const uint64_t {description_name}[] = {{{words}}};"
+                );
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_map_describe",
+                    &["void*".into(), "void*".into(), "const void*".into()],
+                    &["ctx".into(), destination.clone(), description_name],
+                );
+                let _ = writeln!(out, "    {call};");
+            }
             return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         let receiver = operands

@@ -63,25 +63,8 @@ pub(super) fn expression(
                 }
             }
         }
-        K::Call {
-            callee: Callee::Ambient(hir::AmbientFn::UnsafeDelete),
-            args,
-        } => {
-            if let Some(argument) = args.first() {
-                if let Type::Class(id) = argument.ty {
-                    let count = hir.classes[id.0]
-                        .fields
-                        .iter()
-                        .filter(|field| field.ty.counted_type().is_some())
-                        .count();
-                    let site = hir::TrapSite::DevOnlyRelease {
-                        operand: hir::LifetimeOperand::Argument(0),
-                        pos: expr.pos.clone(),
-                    };
-                    *expected.entry(hir_trap_key(&site)).or_default() += count;
-                }
-            }
-        }
+        // Class free consumes the allocation's field description in the runtime.
+        // The call's receiver check covers every field; no LIR field read expands it.
         K::Call {
             callee: Callee::Map(hir::MapFn::ForEach),
             args,

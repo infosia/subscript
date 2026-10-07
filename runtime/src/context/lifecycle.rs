@@ -65,6 +65,8 @@ impl Context {
             astral_code_points: HashMap::new(),
             shadow: Vec::new(),
             roots: Vec::new(),
+            object_descriptions: HashMap::new(),
+            counted_maps: HashMap::new(),
             callbacks: Vec::new(),
             callback_interns: HashMap::new(),
             registrations: crate::registration::RegistrationSet::default(),
@@ -1129,7 +1131,7 @@ impl Context {
             // SAFETY: `block` heads a block inside an owned chunk; both
             // header reads stay inside it.
             let class_id = unsafe {
-                if (block as *const u64).read() != LIVE_STATE {
+                if !matches!((block as *const u64).read(), LIVE_STATE | MARK_STATE) {
                     return;
                 }
                 header_class_id(block)
@@ -1286,6 +1288,9 @@ impl Context {
     /// handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
         self.advise_callback_userdata_free(payload, pos_id);
+        if !self.object_descriptions.is_empty() || !self.counted_maps.is_empty() {
+            self.release_reference_holder(payload, pos_id);
+        }
         if self.uses_ship_arena() {
             self.arena_release(payload);
             return;
@@ -1324,7 +1329,10 @@ impl Context {
         if self.uses_ship_arena() {
             if let Some((block, _)) = self.arena_lookup_block(payload) {
                 // SAFETY: `block` heads a block inside an owned chunk.
-                return unsafe { (block as *const u64).read() } == LIVE_STATE;
+                return matches!(
+                    unsafe { (block as *const u64).read() },
+                    LIVE_STATE | MARK_STATE
+                );
             }
             return self.large.contains_key(&payload);
         }

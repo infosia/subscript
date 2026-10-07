@@ -71,6 +71,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r385-task-group-field.ts", RuleCode::S009, 10),
     ("r386-task-group-generator-body.ts", RuleCode::S009, 13),
     ("r387-nested-counted-array-methods.ts", RuleCode::S014, 13),
+    ("r388-counted-map-for-each.ts", RuleCode::S014, 15),
     ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
     ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),
@@ -1552,4 +1553,44 @@ fn bare_yield_does_not_repeat_an_element_type_error() {
     .expect_err("the declared element type is unknown");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert!(!diagnostics[0].message.contains("bare `yield;`"));
+}
+
+#[test]
+fn counted_map_callbacks_reject_recursive_and_substituted_value_types() {
+    for value in [
+        "Promise<i32>",
+        "Promise<i32>[]",
+        "Promise<i32>[][]",
+        "FixedArray<Promise<i32>, 1>",
+    ] {
+        let source = format!(
+            "export function main(): void {{ const m: Map<i32, {value}> = new Map<i32, {value}>(); \
+             m.forEach((v: {value}, k: i32): void => {{}}); }}"
+        );
+        let diagnostics = check_program(&[SourceFile::new("map-callback.ts", source)])
+            .expect_err("counted Map callback");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == RuleCode::S014));
+    }
+    let control =
+        "export function main(): void { const m: Map<i32, i32[][]> = new Map<i32, i32[][]>(); \
+                   m.forEach((v: i32[][], k: i32): void => {}); }";
+    check_program(&[SourceFile::new("map-callback-control.ts", control)])
+        .expect("uncounted Map callback");
+    let callback_result =
+        "export function main(): void { const m: Map<i32, i32> = new Map<i32, i32>(); \
+        m.forEach((v: i32, k: i32): Promise<i32>[] => []); }";
+    let diagnostics = check_program(&[SourceFile::new("map-callback-result.ts", callback_result)])
+        .expect_err("counted Map callback result");
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == RuleCode::S014));
+    let generic = "function visit<T>(m: Map<i32, T>): void { m.forEach((v: T, k: i32): void => {}); } \
+                   export function main(): void { visit<Promise<i32>[]>(new Map<i32, Promise<i32>[]>()); }";
+    let diagnostics = check_program(&[SourceFile::new("generic-map-callback.ts", generic)])
+        .expect_err("substituted counted Map callback");
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == RuleCode::S014));
 }

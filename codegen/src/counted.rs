@@ -54,6 +54,29 @@ pub(crate) fn description(layouts: &Layouts, ty: &Type) -> Result<Vec<u8>, Strin
     Ok(bytes)
 }
 
+// The object description starts with the field count. Each field has an
+// offset and description byte length, followed by its recursive description.
+pub(crate) fn class_description(
+    layouts: &Layouts,
+    class: &subscript_compiler::lir::Class,
+) -> Result<Vec<u8>, String> {
+    if class.field_releases.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut bytes = (class.field_releases.len() as u64).to_ne_bytes().to_vec();
+    for (offset, action) in &class.field_releases {
+        let ty = action
+            .release_type()
+            .ok_or_else(|| internal("release field is uncounted"))?;
+        let child = description(layouts, &ty)?;
+        bytes.extend_from_slice(&u64::from(*offset).to_ne_bytes());
+        bytes.extend_from_slice(&(child.len() as u64).to_ne_bytes());
+        bytes.extend_from_slice(&child);
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

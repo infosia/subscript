@@ -20,6 +20,9 @@ impl Interpreter<'_> {
             state.owners -= 1;
         }
         if state.owners == 0 {
+            if !state.completed {
+                return Ok(());
+            }
             let mut unobserved = match &state.completion {
                 Some(Completion::Exception(payload)) if !payload.observed => {
                     Some(payload.exception.clone())
@@ -82,6 +85,61 @@ impl Interpreter<'_> {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn read_counted_map_value(
+        &mut self,
+        map: *mut u8,
+        value_ty: &Type,
+        key: &[u8],
+    ) -> Result<Option<Value>, InterpretError> {
+        if value_ty.counted_type().is_none() {
+            return Ok(None);
+        }
+        let mut bytes = vec![0; self.type_layout(value_ty)?.size];
+        let context = &mut *self.context as *mut Context;
+        let present =
+            unsafe { ffi::subscript_rt_map_get(context, map, key.as_ptr(), bytes.as_mut_ptr()) }
+                != 0;
+        if present {
+            Ok(Some(self.unpack(value_ty, &bytes)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(super) fn counted_map_values(
+        &mut self,
+        map: *mut u8,
+        value_ty: &Type,
+    ) -> Result<Vec<Value>, InterpretError> {
+        if value_ty.counted_type().is_none() {
+            return Ok(Vec::new());
+        }
+        let size = self.type_layout(value_ty)?.size;
+        let bound = unsafe { ffi::subscript_rt_assoc_iter_begin(&mut *self.context, map, 0) };
+        let result = (|| {
+            let mut values = Vec::new();
+            let mut bytes = vec![0; size];
+            for index in 0..bound {
+                if unsafe {
+                    ffi::subscript_rt_assoc_iter_copy(
+                        &mut *self.context,
+                        map,
+                        index,
+                        1,
+                        bytes.as_mut_ptr(),
+                        0,
+                    )
+                } != 0
+                {
+                    values.push(self.unpack(value_ty, &bytes)?);
+                }
+            }
+            Ok(values)
+        })();
+        unsafe { ffi::subscript_rt_assoc_iter_end(&mut *self.context, map) };
+        result
     }
 
     pub(super) fn counted_array_elements(
@@ -192,19 +250,35 @@ impl Interpreter<'_> {
                     as usize;
                 let data = unsafe { ffi::subscript_rt_array_data(&*self.context, array) };
                 let size = self.type_layout(element)?.size;
+                let mut first = None;
                 for index in 0..len {
                     let bytes = unsafe { std::slice::from_raw_parts(data.add(index * size), size) };
                     let value = self.unpack(element, bytes)?;
-                    self.counted_owner(element, &value, true, pos)?;
+                    if let Err(error) = self.counted_owner(element, &value, true, pos) {
+                        if first.is_none() {
+                            first = Some(error);
+                        }
+                    }
                 }
                 unsafe { ffi::subscript_rt_array_holder(&mut *self.context, array, 2, 0) };
+                if let Some(error) = first {
+                    return Err(error);
+                }
             }
             Type::FixedArray(element, count) => {
                 let bytes = self.pack(ty, value)?;
                 let size = self.type_layout(element)?.size;
+                let mut first = None;
                 for index in 0..*count as usize {
                     let value = self.unpack(element, &bytes[index * size..(index + 1) * size])?;
-                    self.counted_owner(element, &value, release, pos)?;
+                    if let Err(error) = self.counted_owner(element, &value, release, pos) {
+                        if first.is_none() {
+                            first = Some(error);
+                        }
+                    }
+                }
+                if let Some(error) = first {
+                    return Err(error);
                 }
             }
             Type::IterResult(element) => {
@@ -222,5 +296,81 @@ impl Interpreter<'_> {
             }
         }
         Ok(())
+    }
+}
+
+impl Interpreter<'_> {
+    pub(super) fn free_counted_map(
+        &mut self,
+        operands: &[Value],
+        parameter_types: &[l::ValueType],
+        pos: &Pos,
+    ) -> Result<(), InterpretError> {
+        let Some(l::ValueType::Data(Type::Map(_, value_ty))) = parameter_types.first() else {
+            return Ok(());
+        };
+        if value_ty.counted_type().is_none() {
+            return Ok(());
+        }
+        let map = operands
+            .first()
+            .ok_or_else(|| self.invalid(Some(pos.clone()), "Map free has no receiver"))?
+            .as_handle()?;
+        if !self.context.is_live(map as usize) {
+            self.context.delete(map as usize, 0);
+            return self.check_runtime(pos);
+        }
+        let values = self.counted_map_values(map, value_ty)?;
+        unsafe { ffi::subscript_rt_assoc_clear(&mut *self.context, map) };
+        let mut first = None;
+        for value in values {
+            if let Err(error) = self.counted_owner(value_ty, &value, true, pos) {
+                if first.is_none() {
+                    first = Some(error);
+                }
+            }
+        }
+        self.context.delete(map as usize, 0);
+        if let Some(error) = first {
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Interpreter<'_> {
+    pub(super) fn free_counted_object(
+        &mut self,
+        operands: &[Value],
+        pos: &Pos,
+    ) -> Result<(), InterpretError> {
+        let handle = operands
+            .first()
+            .ok_or_else(|| self.invalid(Some(pos.clone()), "object free has no receiver"))?
+            .as_handle()?;
+        let (leaves, storage) = self
+            .context
+            .take_object_releases(handle as usize, 0)
+            .map_err(|message| self.invalid(Some(pos.clone()), message))?;
+        let mut first = None;
+        for leaf in leaves {
+            let coroutine = self.async_handles.borrow().get(&leaf).cloned();
+            if let Some(coroutine) = coroutine {
+                if let Err(error) = self.release_coroutine(&coroutine, pos) {
+                    if first.is_none() {
+                        first = Some(error);
+                    }
+                }
+            } else if leaf != 0 && first.is_none() {
+                first = Some(self.invalid(Some(pos.clone()), "unknown packed async handle"));
+            }
+        }
+        for address in storage {
+            self.context.delete(address, 0);
+        }
+        // Retire the object even if a leaf reports an unobserved exception.
+        self.context.delete(handle as usize, 0);
+        first.map_or(Ok(()), Err)
     }
 }

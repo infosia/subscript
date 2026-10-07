@@ -263,7 +263,7 @@ macro_rules! rejection_classes {
                         RuleCode::S014,
                         Diverges(Divergence::NumberCoercionAndArguments),
                     ),
-                    Self::ArrayElementDomain => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
+                    Self::ArrayElementDomain | Self::MapCallbackCountedValue => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
                     Self::ArrayJoinDomain => (RuleCode::S014, Diverges(Divergence::ArrayJoinDomain)),
                     Self::ArrayCallbackSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
                     Self::ArrayAccumulatorDomain => {

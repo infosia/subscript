@@ -30,6 +30,15 @@ pub unsafe extern "C" fn subscript_rt_collect(ctx: *mut Context) {
     unsafe { &mut *ctx }.collect();
 }
 
+/// Collects at a script call site and reports an unobserved exception at that site.
+///
+/// # Safety
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_collect_at(ctx: *mut Context, pos_id: u32) {
+    unsafe { &mut *ctx }.collect_at(pos_id);
+}
+
 /// Allocates `size` payload bytes tagged `class_id`; null on trap.
 ///
 /// Fresh storage and classes that can hold handles are zeroed. A
@@ -241,6 +250,36 @@ pub unsafe extern "C" fn subscript_rt_shadow_push(ctx: *mut Context, base: *mut 
 pub unsafe extern "C" fn subscript_rt_shadow_pop(ctx: *mut Context) {
     // SAFETY: shared contract.
     unsafe { &mut *ctx }.shadow_pop();
+}
+
+/// Installs a class allocation's resolved field release description (§172).
+///
+/// # Safety
+/// Shared contract; `description` contains `size` bytes of valid field release nodes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_object_describe(
+    ctx: *mut Context,
+    object: *mut u8,
+    description: *const u8,
+    size: u64,
+) {
+    let Ok(size) = usize::try_from(size) else {
+        unsafe { (&mut *ctx).trap(TrapKind::Internal, "invalid object description size", 0) };
+        return;
+    };
+    if description.is_null() || size > isize::MAX as usize {
+        unsafe {
+            (&mut *ctx).trap(
+                TrapKind::Internal,
+                "invalid object description pointer or size",
+                0,
+            )
+        };
+        return;
+    }
+    // SAFETY: the pointer is non-null and the caller supplies `size` readable bytes.
+    let description = unsafe { std::slice::from_raw_parts(description, size) };
+    unsafe { (&mut *ctx).describe_object(object as usize, description) };
 }
 
 #[cfg(test)]

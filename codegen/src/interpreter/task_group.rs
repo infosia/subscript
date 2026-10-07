@@ -205,3 +205,17 @@ fn group_trap(pos: &Pos, message: String) -> InterpretError {
         pos: pos.clone(),
     }
 }
+
+impl Group {
+    pub(super) fn root_values(
+        &self,
+        words: &mut Vec<usize>,
+        coroutines: &mut Vec<Rc<RefCell<Coroutine>>>,
+    ) {
+        if let Some((object, _, _)) = &self.first {
+            words.push(*object);
+        }
+        coroutines.extend(self.inputs.iter().flatten().cloned());
+        coroutines.extend(self.join.iter().cloned());
+    }
+}

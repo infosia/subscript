@@ -153,7 +153,10 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                     source_name: Some("saved".to_string()),
                 },
             ],
-            liveness: lir::Liveness::default(),
+            liveness: lir::Liveness {
+                live_ins: vec![Vec::new(); 2],
+                value_origins: vec![lir::ValueId(0), lir::ValueId(1)],
+            },
             blocks: vec![
                 lir::BasicBlock {
                     id: BlockId(0),

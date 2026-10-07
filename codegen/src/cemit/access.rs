@@ -16,7 +16,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .result
                 .ok_or_else(|| internal("allocation has no id"))?;
             if matches!(self.value_type(result_id)?, l::ValueType::Address(_)) {
-                if self.coroutine {
+                if self.coroutine && self.stable_values.contains(&result_id) {
                     let _ = writeln!(
                         out,
                         "    memset(&frame->stable_v{}, 0, sizeof frame->stable_v{});",
@@ -60,8 +60,46 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 format!("{pos}u"),
             ],
         );
-        self.assign(out, Some(destination), &call)?;
+        self.assign(out, Some(destination.clone()), &call)?;
         self.emit_pending_check(out);
+        let class = &self.emitter.module.classes[class.0];
+        let bytes = crate::counted::class_description(&self.emitter.layouts, class)?;
+        if !bytes.is_empty() {
+            let words = bytes
+                .chunks_exact(8)
+                .map(|word| {
+                    let mut bytes = [0; 8];
+                    bytes.copy_from_slice(word);
+                    format!("{}ULL", u64::from_ne_bytes(bytes))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let name = format!(
+                "object_description_{}",
+                instruction
+                    .result
+                    .ok_or_else(|| internal("allocation has no id"))?
+                    .0
+            );
+            let _ = writeln!(out, "    static const uint64_t {name}[] = {{{words}}};");
+            let call = self.emitter.runtime_call(
+                "void",
+                "subscript_rt_object_describe",
+                &[
+                    "void*".into(),
+                    "void*".into(),
+                    "const void*".into(),
+                    "uint64_t".into(),
+                ],
+                &[
+                    "ctx".into(),
+                    destination,
+                    name,
+                    format!("{}ULL", bytes.len()),
+                ],
+            );
+            let _ = writeln!(out, "    {call};");
+        }
         Ok(())
     }
 

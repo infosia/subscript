@@ -526,3 +526,21 @@ pub unsafe extern "C" fn subscript_rt_set_is_disjoint_from(
     }
     i32::from(unsafe { crate::assocops::set_is_disjoint_from(ctx, left, right) })
 }
+
+/// Gives an empty Map its static counted-value description (§172).
+///
+/// # Safety
+/// `map` must be a live empty Map. `description` must match its value type
+/// and remain readable until the Context destroys the Map.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_map_describe(
+    ctx: *mut Context,
+    map: *mut u8,
+    description: *const u8,
+) {
+    let runtime = unsafe { &mut *ctx };
+    if !assoc_receiver_is_live(runtime, map, 0) {
+        return;
+    }
+    unsafe { crate::assocops::describe(runtime, map, description) };
+}

@@ -22,6 +22,8 @@ mod lambda;
 mod liveness;
 mod lowering;
 mod place;
+#[cfg(test)]
+mod reference_description_tests;
 mod stmt;
 mod unroll;
 mod using;
@@ -117,6 +119,23 @@ pub fn lower_module_for_reload(
     reload: bool,
 ) -> Result<l::Module, LowerError> {
     let mut lowered = Lowering::new(module, reload)?.run()?;
+    let layouts = crate::layout::Layouts::build(module).map_err(|message| LowerError {
+        pos: Pos::new("<module>", 1, 1),
+        message,
+    })?;
+    for class in &mut lowered.classes {
+        let layout = layouts.class(class.id.0).map_err(|message| LowerError {
+            pos: class.pos.clone(),
+            message,
+        })?;
+        class.field_releases = class
+            .fields
+            .iter()
+            .zip(&layout.field_offsets)
+            .filter(|(field, _)| field.ty.counted_type().is_some())
+            .map(|(field, offset)| (*offset, l::CountAction::for_type(&field.ty)))
+            .collect();
+    }
     unroll::run(&mut lowered);
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
@@ -152,6 +171,35 @@ pub fn lower_module_for_reload(
 pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
     let mut errors = Vec::new();
     verify_module_entries(module, &mut errors);
+    let layouts = crate::layout::Layouts::build_lir(module);
+    if let Err(message) = &layouts {
+        errors.push(VerifyError {
+            message: message.clone(),
+        });
+    }
+    for class in &module.classes {
+        let Ok(layouts) = &layouts else {
+            continue;
+        };
+        let Ok(layout) = layouts.class(class.id.0) else {
+            continue;
+        };
+        let expected = layout
+            .field_types
+            .iter()
+            .zip(&layout.field_offsets)
+            .filter(|(ty, _)| ty.counted_type().is_some())
+            .map(|(ty, offset)| (*offset, l::CountAction::for_type(ty)))
+            .collect::<Vec<_>>();
+        if class.field_releases != expected {
+            errors.push(VerifyError {
+                message: format!(
+                    "class {} has an inconsistent counted field release description",
+                    class.id.0
+                ),
+            });
+        }
+    }
     verify_lifetime::verify(module, &mut errors);
     for function in &module.functions {
         verify_function(module, function, &mut errors);
@@ -385,7 +433,7 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
 fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'static str> {
     Some(match (family, name) {
         (l::IntrinsicFamily::Ambient, "Print") => "subscript_rt_print",
-        (l::IntrinsicFamily::Ambient, "Collect") => "subscript_rt_collect",
+        (l::IntrinsicFamily::Ambient, "Collect") => "subscript_rt_collect_at",
         (l::IntrinsicFamily::Ambient, "UnsafeDelete") => "subscript_rt_delete",
         (l::IntrinsicFamily::Math, "Abs") => "subscript_rt_math_abs",
         (l::IntrinsicFamily::Math, "Acos") => "subscript_rt_math_acos",
@@ -1358,6 +1406,27 @@ mod verifier_tests {
         actual_parameters: Vec<l::ValueType>,
         actual_return: Option<l::ValueType>,
     ) -> l::Module {
+        hand_built_call_module_with_count(
+            kind,
+            declared_parameters,
+            declared_return,
+            actual_parameters,
+            actual_return,
+            None,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn hand_built_call_module_with_count(
+        kind: l::CallTargetKind,
+        declared_parameters: Vec<l::ValueType>,
+        declared_return: Option<l::ValueType>,
+        actual_parameters: Vec<l::ValueType>,
+        actual_return: Option<l::ValueType>,
+        count_action: Option<l::CountAction>,
+        traps: Vec<l::Trap>,
+    ) -> l::Module {
         let operation_target = match &kind {
             l::CallTargetKind::Intrinsic(intrinsic) => {
                 Some(l::CallSignatureTarget::Intrinsic(intrinsic.clone()))
@@ -1431,7 +1500,7 @@ mod verifier_tests {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![l::Instruction {
-                    count_action: None,
+                    count_action,
                     result,
                     kind: l::InstructionKind::Call(l::CallTarget {
                         kind,
@@ -1440,7 +1509,7 @@ mod verifier_tests {
                     }),
                     operands,
                     invalidates: Vec::new(),
-                    traps: Vec::new(),
+                    traps,
                     pos: pos(),
                 }],
                 terminator: l::Terminator::Return {
@@ -1747,5 +1816,97 @@ mod verifier_tests {
                 .message
                 .contains("call signature disagrees with the target declaration")
         }));
+    }
+    #[test]
+    fn each_counted_map_operation_requires_its_static_count_action() {
+        let handle = Type::AsyncHandle(Box::new(Type::Void));
+        for value in [
+            handle.clone(),
+            Type::Array(Box::new(handle.clone())),
+            Type::Array(Box::new(Type::Array(Box::new(handle.clone())))),
+            Type::FixedArray(Box::new(handle), 2),
+        ] {
+            let map = l::ValueType::Data(Type::Map(Box::new(Type::I32), Box::new(value.clone())));
+            for (index, operation) in hir::MapFn::ALL.iter().enumerate().take(8) {
+                let inputs = match operation {
+                    hir::MapFn::New => Vec::new(),
+                    hir::MapFn::Set | hir::MapFn::GetOr => vec![
+                        map.clone(),
+                        l::ValueType::Data(Type::I32),
+                        l::ValueType::Data(value.clone()),
+                    ],
+                    hir::MapFn::Size | hir::MapFn::Clear => vec![map.clone()],
+                    _ => vec![map.clone(), l::ValueType::Data(Type::I32)],
+                };
+                let output = match operation {
+                    hir::MapFn::New | hir::MapFn::Set => Some(map.clone()),
+                    hir::MapFn::Get | hir::MapFn::GetOr => Some(l::ValueType::Data(value.clone())),
+                    hir::MapFn::Size => Some(l::ValueType::Data(Type::I32)),
+                    hir::MapFn::Clear => None,
+                    _ => Some(l::ValueType::Data(Type::Bool)),
+                };
+                let module = hand_built_call_module(
+                    l::CallTargetKind::Intrinsic(l::Intrinsic {
+                        family: l::IntrinsicFamily::Map,
+                        operation: index as u16,
+                        type_argument: None,
+                        worker_entry: None,
+                    }),
+                    Vec::new(),
+                    output.clone(),
+                    inputs,
+                    output,
+                );
+                let errors = verify_module(&module).expect_err("missing Map count action");
+                assert!(
+                    errors
+                        .iter()
+                        .any(|error| error.message.contains("missing or wrong count action")),
+                    "{operation:?}: {errors:?}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn a_counted_map_release_requires_a_call_trap() {
+        let value = Type::Array(Box::new(Type::AsyncHandle(Box::new(Type::Void))));
+        let map = l::ValueType::Data(Type::Map(Box::new(Type::I32), Box::new(value.clone())));
+        let operation = hir::MapFn::ALL
+            .iter()
+            .position(|operation| *operation == hir::MapFn::Clear)
+            .expect("Map.clear");
+        for guarded in [false, true] {
+            let traps = if guarded {
+                vec![l::Trap {
+                    kind: l::TrapKind::Call,
+                    pos: pos(),
+                }]
+            } else {
+                Vec::new()
+            };
+            let module = hand_built_call_module_with_count(
+                l::CallTargetKind::Intrinsic(l::Intrinsic {
+                    family: l::IntrinsicFamily::Map,
+                    operation: operation as u16,
+                    type_argument: None,
+                    worker_entry: None,
+                }),
+                Vec::new(),
+                None,
+                vec![map.clone()],
+                None,
+                Some(l::CountAction::for_type(&value)),
+                traps,
+            );
+            let mut errors = Vec::new();
+            verify_counted_operations::verify(&module, &module.functions[0], &mut errors);
+            if guarded {
+                assert!(errors.is_empty(), "{errors:?}");
+            } else {
+                assert!(errors
+                    .iter()
+                    .any(|error| error.message.contains("without a Call trap")));
+            }
+        }
     }
 }

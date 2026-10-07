@@ -897,6 +897,7 @@ pub(crate) enum RejectionSite {
     NumberMethodValue,
     NumberMethodArgumentCount,
     ArrayElementDomain,
+    MapCallbackCountedValue,
     ArrayJoinDomain,
     ArrayCallbackSpread,
     ArrayAccumulatorDomain,

@@ -35,6 +35,7 @@ mod collection;
 mod counted_array;
 mod emitter;
 mod exception;
+mod frame_roots;
 mod graph;
 mod intrinsic;
 mod iterator;
@@ -173,6 +174,7 @@ struct Body<'e, 'm, 'f> {
     removable_edge_copies: HashSet<(l::BlockId, l::BlockId, usize)>,
     value_storage: Vec<l::ValueId>,
     root_storage: RootStoragePlan,
+    stable_values: std::collections::BTreeSet<l::ValueId>,
     dead_forward_iterator_results: HashSet<l::ValueId>,
     fixed_iterators: HashSet<l::ValueId>,
     delayed_declarations: HashMap<String, l::ValueId>,

@@ -630,6 +630,7 @@ pub struct Context {
     // Registered frame addresses use the same pointer hash as callback registrations.
     pub(crate) async_frames: HashMap<usize, AsyncFrameMeta, BuildHasherDefault<AddressHasher>>,
     next_async_task_id: u64,
+    pub(crate) counted_maps: HashMap<usize, Vec<u8>>,
     task_groups: HashMap<usize, task_group::Group>,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.
     // Every site that changes the live set moves it, so a per-frame host
@@ -670,6 +671,8 @@ pub struct Context {
     astral_code_points: HashMap<u32, usize>,
     shadow: Vec<(usize, usize)>,
     roots: Vec<(usize, usize)>,
+    // Only counted class allocations have a release description.
+    object_descriptions: HashMap<usize, Vec<u8>>,
     callbacks: Vec<Box<CallbackBinding>>,
     callback_interns: HashMap<CallbackIdentity, *mut CallbackBinding>,
     // The live set of §111: the open and the active callback

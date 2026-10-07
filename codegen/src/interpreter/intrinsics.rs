@@ -18,11 +18,6 @@ impl Interpreter<'_> {
                 unsafe { ffi::subscript_rt_print(&mut *self.context, string) };
                 Ok(Value::Void)
             }
-            "Collect" => {
-                // SAFETY: this interpreter exclusively owns the Context.
-                unsafe { ffi::subscript_rt_collect(&mut *self.context) };
-                Ok(Value::Void)
-            }
             "UnsafeDelete" => {
                 let handle = operands
                     .first()
@@ -82,7 +77,7 @@ impl Interpreter<'_> {
                     ffi::subscript_rt_array_from_bytes(&mut *self.context, bytes.as_ptr(), size, 0)
                 };
                 self.check_runtime(&trap_pos)?;
-                self.root_handle(handle);
+
                 Ok(Value::Handle(handle))
             }
             "BytesInto" => {
@@ -352,7 +347,6 @@ impl Interpreter<'_> {
         };
         self.check_runtime(&Pos::new("<number>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            self.root_handle(handle);
             Ok(Value::Handle(handle))
         } else {
             Ok(value)
@@ -427,7 +421,6 @@ impl Interpreter<'_> {
             };
         self.check_runtime(&Pos::new("<date>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            self.root_handle(handle);
             Ok(Value::Handle(handle))
         } else {
             Ok(value)
@@ -565,7 +558,6 @@ impl Interpreter<'_> {
         };
         self.check_runtime(&Pos::new("<string>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            self.root_handle(handle);
             Ok(Value::Handle(handle))
         } else {
             Ok(value)
@@ -671,7 +663,6 @@ impl Interpreter<'_> {
         };
         self.check_runtime(&Pos::new("<regexp>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            self.root_handle(handle);
             Ok(Value::Handle(handle))
         } else {
             Ok(value)
@@ -861,7 +852,6 @@ impl Interpreter<'_> {
         };
         self.check_runtime(&Pos::new("<json>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            self.root_handle(handle);
             Ok(Value::Handle(handle))
         } else {
             Ok(value)

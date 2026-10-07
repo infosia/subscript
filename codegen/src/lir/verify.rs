@@ -141,6 +141,14 @@ pub(super) fn counted_instruction_stores<'i>(
                 } else {
                     None
                 }
+            } else if let Some(name) =
+                array_ownership::map_operation_name(&module.intrinsic_operations, &target.kind)
+            {
+                if name == "Set" {
+                    Some(2)
+                } else {
+                    None
+                }
             } else {
                 counted_operand_start(&target.kind)
             }

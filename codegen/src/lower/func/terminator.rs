@@ -26,6 +26,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.store_data(&return_type, output, 0, value)?;
                 }
             }
+            self.clear_finished_frame()?;
             let done = self.iconst(types::I32, COROUTINE_DONE);
             self.builder.ins().store(flags(), done, frame, 0);
             self.pop_shadow()?;

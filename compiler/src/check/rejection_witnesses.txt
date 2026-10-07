@@ -1499,3 +1499,17 @@ export function main(): void { const jobs: Promise<i32>[][] = []; jobs.includes(
 s171-counted-callback-result.ts	expr/method.rs expect_callback_shape		S014		§171
 `map` cannot carry a counted callback result (§171)
 export function main(): void { const values: i32[] = [1]; values.map((value: i32): Promise<i32>[] => []); }
+===
+s172-counted-map-callback.ts	expr/method.rs check_map_method		S014		§172
+`Map.forEach` cannot carry a counted value type (§172)
+export function main(): void {
+  const values: Map<i32, Promise<i32>[][]> = new Map<i32, Promise<i32>[][]>();
+  values.forEach((value: Promise<i32>[][], key: i32): void => {});
+}
+===
+s172-counted-map-callback-result.ts	expr/method.rs expect_callback_shape		S014		§172
+`Map.forEach` cannot carry a counted callback result (§171)
+export function main(): void {
+  const values: Map<i32, i32> = new Map<i32, i32>();
+  values.forEach((value: i32, key: i32): Promise<i32>[] => []);
+}

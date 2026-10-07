@@ -442,6 +442,7 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     ctx: Value,
     sret: Option<Value>,
     frame: Option<Value>,
+    frame_size: u32,
     out: Option<Value>,
     coroutine: Option<CoroutineKind>,
     values: Vec<Option<RV>>,
@@ -472,8 +473,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             return Ok(());
         };
         self.builder.switch_to_block(block);
+        #[cfg(test)]
+        self.builder
+            .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX));
         self.pop_shadow()?;
         if self.coroutine.is_some() {
+            self.clear_finished_frame()?;
             // compiler.md §116.2 rule 2: an exception that leaves an `async`
             // body completes its handle. A generator body is an exception
             // boundary (§115.4 item 3). The unwind exit is cold, so the
@@ -551,9 +556,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             for (parameter, value) in incoming {
                 self.set_value(parameter, value)?;
             }
+            #[cfg(test)]
+            self.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                    (source.id.0 + 1) * 65536,
+                ));
             let entry_clears = self.root_storage.clear_at_block_entry[source.id.0 as usize].clone();
             self.clear_root_slots(&entry_clears)?;
             for (instruction_index, instruction) in source.instructions.iter().enumerate() {
+                #[cfg(test)]
+                self.builder
+                    .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                        (source.id.0 + 1) * 65536 + instruction_index as u32 + 1,
+                    ));
                 self.emit_raise_site(instruction).map_err(|error| {
                     internal(format!(
                         "function {} block {} instruction {:?}: {error}",
@@ -565,8 +580,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .clone();
                 self.clear_root_slots(&clears)?;
             }
+            #[cfg(test)]
+            self.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                    (source.id.0 + 1) * 65536 + source.instructions.len() as u32 + 1,
+                ));
             self.emit_terminator(source.id, &source.terminator)?;
         }
+        #[cfg(test)]
+        self.builder
+            .set_srcloc(cranelift_codegen::ir::SourceLoc::default());
         self.emit_unwind()?;
         Ok(())
     }
@@ -851,6 +874,9 @@ pub(super) fn take_defined_function_texts() -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod frame_root_tests;
+
+#[cfg(test)]
 mod completed_child_tests {
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::default_libcall_names;
@@ -976,6 +1002,7 @@ pub(crate) fn define_function<M: Module>(
             ctx,
             sret,
             frame: None,
+            frame_size: 0,
             out: None,
             coroutine: None,
             values: vec![None; function.values.len()],
@@ -1145,6 +1172,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 ctx,
                 sret: None,
                 frame: None,
+                frame_size: 0,
                 out: None,
                 coroutine: None,
                 values: vec![None; function.values.len()],
@@ -1236,6 +1264,16 @@ pub(crate) fn define_coroutine<M: Module>(
                         RV::Aggregate(value)
                     }
                 };
+                let value = if body.closure_environment_layout.is_some()
+                    && matches!(&ty, l::ValueType::Data(ty) if ty.function_type().is_some())
+                {
+                    let offset = plan.closure_environments[&parameter.value];
+                    let destination = body.address_offset(frame, i64::from(offset));
+                    let (code, environment) = body.expect_pair(value)?;
+                    body.relocate_closure_environment(code, environment, destination)?
+                } else {
+                    value
+                };
                 body.store_value_type(&slot.ty, frame, slot.offset as i32, value)?;
             }
             body.builder.ins().return_(&[frame]);
@@ -1296,6 +1334,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 ctx,
                 sret: None,
                 frame: Some(frame),
+                frame_size: plan.size,
                 out: Some(out),
                 coroutine: coroutine_kind(function),
                 values: vec![None; function.values.len()],
@@ -1316,19 +1355,32 @@ pub(crate) fn define_coroutine<M: Module>(
                 pending_checks: 0,
             };
             initialize_storage(&mut body)?;
+            let state = body.builder.ins().load(types::I32, flags(), frame, 0);
+            let fresh = body.builder.ins().icmp_imm(IntCC::Equal, state, 0);
+            let initialize = body.builder.create_block();
+            let dispatch = body.builder.create_block();
+            body.builder
+                .ins()
+                .brif(fresh, initialize, &[], dispatch, &[]);
+            body.builder.switch_to_block(initialize);
             for (parameter, slot) in function.parameters.iter().zip(&plan.parameter_slots) {
-                let value = body.load_value_type(&slot.ty, frame, slot.offset as i32)?;
+                let mut value = body.load_value_type(&slot.ty, frame, slot.offset as i32)?;
+                if let RV::Aggregate(source) = value {
+                    let (size, align) = value_size_align(&body.ml.layouts, &slot.ty)?;
+                    let copy = body.stack_slot(size, align);
+                    body.copy_bytes(copy, source, size, align);
+                    value = RV::Aggregate(copy);
+                }
                 body.set_value(parameter.value, value)?;
                 if let Some(storage) = parameter.storage {
                     let address = body.locals[storage.0 as usize].address;
                     body.store_value_type(&slot.ty, address, 0, value)?;
                 }
             }
-            let state = body.builder.ins().load(types::I32, flags(), frame, 0);
             let start = body.blocks[function.entry.0 as usize];
-            let fresh = body.builder.ins().icmp_imm(IntCC::Equal, state, 0);
-            let mut next = body.builder.create_block();
-            body.builder.ins().brif(fresh, start, &[], next, &[]);
+            body.builder.ins().jump(start, &[]);
+            body.builder.switch_to_block(dispatch);
+            let mut next = dispatch;
             for source in &function.blocks {
                 let Some(suspend) = plan.suspends.get(&source.id) else {
                     continue;

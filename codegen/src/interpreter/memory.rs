@@ -319,7 +319,14 @@ impl Interpreter<'_> {
         }
         let handle = self.context.alloc(layout.size, id.0 as u32, 0);
         self.check_runtime(pos)?;
-        self.root_handle(handle);
+        if !class.field_releases.is_empty() {
+            let layouts = &self.layouts;
+            let description = crate::counted::class_description(layouts, class)
+                .map_err(|message| self.invalid(Some(pos.clone()), message))?;
+            // SAFETY: the resolved class layout supplies all offsets and recursive nodes.
+            unsafe { self.context.describe_object(handle as usize, &description) };
+        }
+
         Ok(Value::Handle(handle))
     }
 
@@ -353,17 +360,8 @@ impl Interpreter<'_> {
             // bytes, and `pack` returns that class layout's exact byte image.
             unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), handle, bytes.len()) };
         }
-        self.root_handle(handle);
-        Ok(Value::Handle(handle))
-    }
 
-    pub(super) fn root_handle(&mut self, handle: *mut u8) {
-        if handle.is_null() || handle.addr() & 1 != 0 {
-            return;
-        }
-        let slot = Rc::new(Cell::new(handle as usize));
-        self.context.root_add(slot.as_ptr() as usize, 1);
-        self.roots.push(slot);
+        Ok(Value::Handle(handle))
     }
 
     pub(super) fn alloc_string(
@@ -373,7 +371,7 @@ impl Interpreter<'_> {
     ) -> Result<*mut u8, InterpretError> {
         let handle = self.context.alloc_str(bytes, 0);
         self.check_runtime(pos)?;
-        self.root_handle(handle);
+
         Ok(handle)
     }
 

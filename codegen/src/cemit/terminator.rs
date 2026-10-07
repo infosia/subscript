@@ -60,6 +60,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                             let _ = writeln!(out, "    *(({ty}*)coroutine_out) = {value};");
                         }
                     }
+                    self.emit_finished_frame_clear(out);
                     out.push_str("    frame->state = 0x7fffffff;\n");
                     self.emit_pop(out);
                     out.push_str("    return 1;\n");
@@ -199,12 +200,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<(), String> {
         let destination = &self.function.blocks[target.block.0 as usize];
         let mut copies = Vec::new();
+        let mut function_copies = Vec::new();
         for (index, (argument, parameter)) in target
             .arguments
             .iter()
             .zip(&destination.parameters)
             .enumerate()
         {
+            if self.coroutine
+                && self.is_function_value(*parameter)?
+                && self.emitter.has_closure_environments()
+            {
+                let source = self.operand(argument)?;
+                let snapshot = self.snapshot_function_value(out, &source);
+                function_copies.push((*parameter, snapshot));
+                continue;
+            }
             if self
                 .removable_edge_copies
                 .contains(&(source, target.block, index))
@@ -226,6 +237,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 destination,
                 source,
             });
+        }
+        for (parameter, snapshot) in function_copies {
+            self.assign_function_value(out, parameter, &snapshot)?;
         }
         while !copies.is_empty() {
             if let Some(index) = copies.iter().position(|copy| {

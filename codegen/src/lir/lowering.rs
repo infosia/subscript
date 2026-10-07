@@ -550,6 +550,7 @@ impl<'a> Lowering<'a> {
                     // §111 rule 2: the lowering copies the checked value.
                     callback_lifetime: class.callback_lifetime,
                     alignment: class.alignment_override.as_ref().map(|value| value.value),
+                    field_releases: Vec::new(),
                     fields,
                     constructor,
                     methods,

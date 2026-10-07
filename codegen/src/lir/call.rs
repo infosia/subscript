@@ -138,13 +138,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 operands[0] = self.materialize_address_inner(&place, &expr.pos, false)?;
             }
         }
-        let deleted_field_owners = self.owners_destroyed_by_unsafe_delete(
-            callee,
-            args,
-            &operands,
-            explicit_offset,
-            &expr.pos,
-        )?;
         let table_signature = matches!(
             kind,
             l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
@@ -175,6 +168,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .filter(|(index, _)| match callee {
                     hir::Callee::Arr(hir::ArrFn::Unshift) => *index == 1,
                     hir::Callee::Arr(_) => false,
+                    hir::Callee::Map(hir::MapFn::Set) => *index == 2,
+                    hir::Callee::Map(_) => false,
                     _ => true,
                 })
                 .map(|(index, parameter)| StoredOperand {
@@ -260,9 +255,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         for (value, ty) in temporaries {
             self.discard_owner(hir::AsyncCopySite::DiscardedResult, value, &ty, &expr.pos)?;
         }
-        for (owner, ty, pos) in deleted_field_owners {
-            self.release_owner(owner, &ty, &pos)?;
-        }
         Ok(result)
     }
 
@@ -335,69 +327,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 })
                 .collect()
         }))
-    }
-
-    fn owners_destroyed_by_unsafe_delete(
-        &mut self,
-        callee: &hir::Callee,
-        args: &[hir::Expr],
-        operands: &[l::Operand],
-        explicit_offset: usize,
-        call_pos: &Pos,
-    ) -> Result<Vec<(l::Operand, l::ValueType, Pos)>, LowerError> {
-        if !matches!(callee, hir::Callee::Ambient(hir::AmbientFn::UnsafeDelete)) {
-            return Ok(Vec::new());
-        }
-        let Some(argument) = args.first() else {
-            return Ok(Vec::new());
-        };
-        let Type::Class(class_id) = argument.ty else {
-            return Ok(Vec::new());
-        };
-        let class = self
-            .lowering
-            .hir
-            .classes
-            .get(class_id.0)
-            .ok_or_else(|| self.error(&argument.pos, "deleted class is missing"))?;
-        if class.is_value {
-            return Ok(Vec::new());
-        }
-        let fields = class
-            .fields
-            .iter()
-            .filter(|field| is_async_owner_type(&l::ValueType::Data(field.ty.clone())))
-            .map(|field| (field.name.clone(), field.ty.clone(), field.pos.clone()))
-            .collect::<Vec<_>>();
-        let base = operands
-            .get(explicit_offset)
-            .cloned()
-            .ok_or_else(|| self.error(&argument.pos, "deleted class operand is missing"))?;
-        let mut owners = Vec::with_capacity(fields.len());
-        for (name, field_type, pos) in fields {
-            let field = self
-                .lowering
-                .fields
-                .get(&(class_id.0, name))
-                .copied()
-                .ok_or_else(|| self.error(&pos, "deleted class field is missing"))?;
-            let ty = l::ValueType::Data(field_type);
-            let owner = self
-                .emit(
-                    l::InstructionKind::LoadField(l::FieldRef::Class(field)),
-                    vec![base.clone()],
-                    Some(ty.clone()),
-                    false,
-                    vec![l::Trap {
-                        kind: l::TrapKind::DevOnlyRelease(0),
-                        pos: call_pos.clone(),
-                    }],
-                    pos.clone(),
-                )?
-                .ok_or_else(|| self.error(&pos, "deleted class field produced no owner"))?;
-            owners.push((owner, ty, pos));
-        }
-        Ok(owners)
     }
 
     fn declared_hir_call_signature(

@@ -1361,6 +1361,14 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
+                if self.apparent_type(&value).counted_type().is_some() {
+                    self.reject_subset(
+                        RejectionSite::MapCallbackCountedValue,
+                        "`Map.forEach` cannot carry a counted value type (§172)",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 let callback = self.check_arr_callback(
                     &c.args[0],
                     vec![value, key],
@@ -1723,7 +1731,7 @@ impl<'p> Checker<'p> {
             allow_index,
             ..
         } = spec;
-        let counted_callback = method == "Map.groupBy"
+        let counted_callback = matches!(method, "Map.groupBy" | "Map.forEach")
             || ArrFn::ALL.iter().any(|operation| {
                 operation.name() == method
                     && operation.counted_class() == hir::CountedArrayMethod::Callback

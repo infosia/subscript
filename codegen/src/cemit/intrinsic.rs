@@ -183,10 +183,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     out,
                     instruction,
                     target,
-                    "subscript_rt_collect",
+                    "subscript_rt_collect_at",
                     operands,
                     operand_types,
-                    false,
+                    true,
                     result,
                 ),
                 "UnsafeDelete" => self.emit_simple_runtime_intrinsic(

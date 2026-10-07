@@ -85,8 +85,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
-        let (removable_edge_copies, elided_values) =
+        let (removable_edge_copies, mut elided_values) =
             removable_block_parameter_copies(function, &index);
+        if coroutine {
+            elided_values.retain(|value| {
+                !matches!(&function.values[value.0 as usize].ty,
+                    l::ValueType::Data(ty) if ty.function_type().is_some())
+            });
+        }
         let value_storage = coalesced_value_storage(
             function,
             &root_storage,
@@ -135,6 +141,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             removable_edge_copies,
             value_storage,
             root_storage,
+            stable_values: root_storage::stable_values(function),
             dead_forward_iterator_results,
             fixed_iterators,
             delayed_declarations,
@@ -231,7 +238,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let _ = writeln!(out, "    SubFn {temporary} = {source};");
         let _ = writeln!(
             out,
-            "    if ({temporary}.env != NULL) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }}"
+            "    if ({temporary}.env != NULL) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }} else {{ memset({environment}, 0, sizeof(SubEnvStorage)); }}"
         );
         self.assign(out, Some(self.value(id)), &temporary)
     }
@@ -499,6 +506,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     pub(super) fn emit_coroutine_dispatch(&mut self, out: &mut String) -> Result<(), String> {
+        out.push_str("    if (frame->state == 0) {\n");
         for parameter in &self.function.parameters {
             let source = format!("frame->p{}", parameter.value.0);
             if self.is_function_value(parameter.value)? {
@@ -517,11 +525,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
             }
         }
-        let _ = writeln!(
-            out,
-            "    if (frame->state == 0) goto b{};",
-            self.function.entry.0
-        );
+        let _ = writeln!(out, "    goto b{};\n    }}", self.function.entry.0);
         let mut state = 1u32;
         for block in &self.function.blocks {
             if matches!(block.terminator, l::Terminator::Suspend { .. }) {

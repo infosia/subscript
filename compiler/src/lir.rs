@@ -104,6 +104,8 @@ pub struct Class {
     pub alignment: Option<u32>,
     /// Fields in declaration order.
     pub fields: Vec<Field>,
+    /// Counted field byte offsets and recursive release actions after type substitution.
+    pub field_releases: Vec<(u32, CountAction)>,
     /// Constructor method, when declared.
     pub constructor: Option<Method>,
     /// Methods in declaration order.

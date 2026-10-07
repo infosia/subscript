@@ -133,6 +133,8 @@ pub(crate) struct RtFns {
     pub async_missing_completion: FuncId,
     pub async_release: FuncId,
     pub counted_value: FuncId,
+    pub map_describe: FuncId,
+    pub object_describe: FuncId,
     pub counted_array_operation: FuncId,
     pub async_retain_array: FuncId,
     pub async_release_array: FuncId,
@@ -945,7 +947,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         .map_err(|_| internal("Set import table size"))?;
     Ok(RtFns {
         print: mk("subscript_rt_print", &[I64, I64], None)?,
-        collect: mk("subscript_rt_collect", &[I64], None)?,
+        collect: mk("subscript_rt_collect_at", &[I64, I32], None)?,
         alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
         globals_init: mk("subscript_rt_globals_init", &[I64, I64, I64], Some(I64))?,
         root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
@@ -1010,6 +1012,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I32, I64, I32, I32, I32, I32],
             None,
         )?,
+        object_describe: mk("subscript_rt_object_describe", &[I64, I64, I64, I64], None)?,
+        map_describe: mk("subscript_rt_map_describe", &[I64, I64, I64], None)?,
         counted_value: mk(
             "subscript_rt_counted_value",
             &[I64, I64, I64, I32, I32],

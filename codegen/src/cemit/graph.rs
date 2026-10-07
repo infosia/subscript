@@ -23,6 +23,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal(format!("block {} is missing", block_id.0)))?
             .clone();
         let _ = writeln!(out, "b{}:\n    ;\n    {{", block.id.0);
+        #[cfg(test)]
+        let _ = writeln!(out, "    // root-point {} 0", block.id.0);
         let entry_clears = self.root_storage.clear_at_block_entry[block.id.0 as usize].clone();
         self.emit_root_clears(out, &entry_clears)?;
         for value in self.block_value_declarations[block.id.0 as usize].clone() {
@@ -38,6 +40,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             );
         }
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            #[cfg(test)]
+            let _ = writeln!(
+                out,
+                "    // root-point {} {}",
+                block.id.0,
+                instruction_index + 1
+            );
             self.emit_raise_site(out, instruction).map_err(|error| {
                 internal(format!(
                     "function {} block {} instruction {:?}: {error}",
@@ -59,6 +68,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             self.emit_root_clears(out, &clears)?;
         }
+        #[cfg(test)]
+        let _ = writeln!(
+            out,
+            "    // root-point {} {}",
+            block.id.0,
+            block.instructions.len() + 1
+        );
         self.emit_terminator(out, &block)?;
         for child in self.dominator_children[block.id.0 as usize].clone() {
             self.emit_dominator_subtree(out, child)?;
@@ -231,7 +247,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let id = instruction
                     .result
                     .ok_or_else(|| internal("AddressOfValue has no result"))?;
-                if self.coroutine {
+                if self.coroutine && self.stable_values.contains(&id) {
                     let _ = writeln!(out, "    frame->stable_v{} = {};", id.0, operands[0]);
                     self.assign(out, result, &format!("&frame->stable_v{}", id.0))
                 } else {
@@ -668,6 +684,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out.push_str("unwind:\n    ;\n");
         self.emit_pop(out);
         if self.coroutine {
+            self.emit_finished_frame_clear(out);
             // compiler.md §116.2 rule 2: an exception that leaves an `async`
             // body completes its handle. A generator body is an exception
             // boundary (§115.4 item 3). The unwind exit is cold, so the

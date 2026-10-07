@@ -133,6 +133,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             } else {
                 let _ = writeln!(out, "    {} = {source};", self.value(*parameter));
             }
+            // The restored value now uses activation storage.
+            let _ = writeln!(out, "    memset(&{source}, 0, sizeof {source});");
         }
         Ok(())
     }

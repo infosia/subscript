@@ -68,7 +68,10 @@ impl AmbientFn {
     /// Whether the runtime call can leave the Context trapped.
     #[must_use]
     pub fn can_trap(self) -> bool {
-        matches!(self, AmbientFn::Unreachable | AmbientFn::UnsafeDelete)
+        matches!(
+            self,
+            AmbientFn::Unreachable | AmbientFn::UnsafeDelete | AmbientFn::Collect
+        )
     }
 
     /// Source-level subscript signature.

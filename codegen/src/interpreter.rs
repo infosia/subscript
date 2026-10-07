@@ -3,7 +3,7 @@
 //! This module intentionally consumes only [`subscript_compiler::lir`].  It
 //! is a test oracle for the shared lowering, not a shipped execution tier.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -326,7 +326,9 @@ struct Frame {
     function: l::FunctionId,
     block: l::BlockId,
     values: Vec<Option<Value>>,
+    frame_lifetime: Rc<std::collections::BTreeSet<l::ValueId>>,
     locals: Vec<InterpreterLocal>,
+    instruction: usize,
     /// A value supplied by the completed child operation.
     resume: Option<Value>,
     /// The exact successor parameter that receives `resume`.
@@ -385,11 +387,12 @@ struct CallbackState {
 struct Interpreter<'m> {
     module: &'m l::Module,
     context: Box<Context>,
+    layouts: crate::layout::Layouts,
     globals: Vec<Slot>,
-    // `Context` retains raw addresses to these root slots. Indirection keeps
-    // every address stable when this Vec grows; `Vec<usize>` would move its
-    // elements on reallocation and leave the runtime holding dangling roots.
-    roots: Vec<Rc<Cell<usize>>>,
+    active_frames: Vec<*mut Frame>,
+    frame_lifetimes: Vec<Rc<std::collections::BTreeSet<l::ValueId>>>,
+    root_interference: RefCell<HashMap<l::FunctionId, crate::root_storage::Interference>>,
+    active_roots: Vec<roots::Snapshot>,
     field_layouts: HashMap<l::FieldId, (usize, Type)>,
     class_layouts: HashMap<ClassId, Layout>,
     layout_cache: HashMap<String, Layout>,
@@ -425,8 +428,17 @@ impl<'m> Interpreter<'m> {
         let mut interpreter = Self {
             module,
             context: Context::new(),
+            layouts: crate::layout::Layouts::build_lir(module)
+                .map_err(|message| InterpretError::InvalidLir { pos: None, message })?,
             globals: Vec::new(),
-            roots: Vec::new(),
+            active_frames: Vec::new(),
+            frame_lifetimes: module
+                .functions
+                .iter()
+                .map(|function| Rc::new(roots::frame_lifetime_values(function)))
+                .collect(),
+            root_interference: RefCell::new(HashMap::new()),
+            active_roots: Vec::new(),
             field_layouts: HashMap::new(),
             class_layouts: HashMap::new(),
             layout_cache: HashMap::new(),
@@ -568,6 +580,8 @@ impl<'m> Interpreter<'m> {
             function: id,
             block: function.entry,
             values,
+            frame_lifetime: Rc::clone(&self.frame_lifetimes[id.0 as usize]),
+            instruction: 0,
             locals,
             resume: None,
             resume_target: None,
@@ -912,6 +926,9 @@ impl<'m> Interpreter<'m> {
             coroutine.borrow_mut().active = true;
         }
         let outcome = self.execute_frame(&mut frame);
+        if !matches!(outcome, Ok(Flow::Suspended { .. })) {
+            roots::clear_finished_frame(&mut frame);
+        }
         #[cfg(test)]
         {
             coroutine.borrow_mut().active = false;
@@ -943,6 +960,9 @@ impl<'m> Interpreter<'m> {
                 // §94.1 rule 5: completion makes every registered
                 // continuation runnable, in registration order, at the tail.
                 self.async_ready.extend(waiters);
+                if coroutine.borrow().owners == 0 {
+                    self.release_coroutine(coroutine, &Pos::new("<completion>", 1, 1))?;
+                }
                 Ok(())
             }
             Flow::Raised(exception) => {
@@ -959,13 +979,7 @@ impl<'m> Interpreter<'m> {
                 // compiler.md §116.1 rule 4: with no holder left, the
                 // exception can never be observed.
                 if owners == 0 {
-                    let (object, message, pos) = exception;
-                    return Err(InterpretError::Exception {
-                        object,
-                        message,
-                        pos,
-                    }
-                    .settled());
+                    self.release_coroutine(coroutine, &exception.2)?;
                 }
                 Ok(())
             }
@@ -1083,192 +1097,216 @@ impl<'m> Interpreter<'m> {
     }
 
     fn execute_frame(&mut self, frame: &mut Frame) -> Result<Flow, InterpretError> {
-        loop {
-            let function = self.function(frame.function)? as *const l::Function;
-            // SAFETY: `module` is immutable for the interpreter's lifetime.
-            // Taking `&mut self` while executing an instruction cannot move or
-            // mutate the referenced LIR function.
-            let function = unsafe { &*function };
-            let block = function
-                .blocks
-                .get(frame.block.0 as usize)
-                .filter(|block| block.id == frame.block)
-                .ok_or_else(|| {
-                    self.invalid(
-                        Some(function.pos.clone()),
-                        format!("block b{} is missing", frame.block.0),
-                    )
-                })?;
+        let frame = frame as *mut Frame;
+        self.active_frames.push(frame);
+        let result = self.execute_frame_effect(frame);
+        self.active_frames.pop();
+        result
+    }
 
-            if let Some(resume) = frame.resume.take() {
-                if let Some(target) = frame.resume_target.take() {
-                    self.set_value(&mut frame.values, target, resume, &function.pos)?;
-                }
-            }
-            let mut handler = None;
-            for instruction in &block.instructions {
-                let outcome = self.execute_instruction(frame, function, instruction);
-                // compiler.md §115.6 rule 2: a raise site with a handler
-                // edge takes it for an exception.
-                match (outcome, instruction.handler()) {
-                    (Ok(()), _) => {}
-                    (
-                        Err(InterpretError::Exception {
-                            object,
-                            message,
-                            pos,
-                        }),
-                        Some(block),
-                    ) => {
-                        self.caught = Some((object, message, pos));
-                        handler = Some(block);
-                    }
-                    (Err(error), _) => return Err(error),
-                }
-                self.invalidate(&instruction.invalidates, &instruction.pos, || {
-                    format!("{:?}", instruction.kind)
-                });
-                if handler.is_some() {
-                    break;
-                }
-            }
-            if let Some(handler) = handler {
-                frame.block = handler;
-                continue;
-            }
-            match &block.terminator {
-                l::Terminator::Branch(target) => {
-                    self.take_edge(frame, function, target)?;
-                }
-                l::Terminator::ConditionalBranch {
-                    condition,
-                    then_target,
-                    else_target,
-                } => {
-                    let condition = self.operand(frame, condition, &function.pos)?.as_bool()?;
-                    self.take_edge(
-                        frame,
-                        function,
-                        if condition { then_target } else { else_target },
-                    )?;
-                }
-                l::Terminator::Switch {
-                    value,
-                    arms,
-                    default,
-                } => {
-                    let value = self.operand(frame, value, &function.pos)?;
-                    let mut selected = default;
-                    for arm in arms {
-                        let constant = self.constant(&arm.value)?;
-                        if self.equal(&value, &constant, &arm.value.ty)? {
-                            selected = &arm.target;
-                            break;
-                        }
-                    }
-                    self.take_edge(frame, function, selected)?;
-                }
-                l::Terminator::Return { value, .. } => {
-                    return Ok(Flow::Returned(match value {
-                        Some(value) => self.operand(frame, value, &function.pos)?,
-                        None => Value::Void,
-                    }));
-                }
-                l::Terminator::Unreachable { pos } => {
-                    return Err(self.invalid(
-                        Some(pos.clone()),
-                        "reached a structurally unreachable LIR block",
-                    ));
-                }
-                l::Terminator::Trap(trap) => return Err(self.trap_error(trap)),
-                l::Terminator::Suspend {
-                    kind,
-                    pos,
-                    successor,
-                    resume_value,
-                    arguments,
-                    invalidates,
-                    traps: _,
-                } => {
-                    self.invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
-                    let destination =
-                        function.blocks.get(successor.0 as usize).ok_or_else(|| {
-                            self.invalid(
-                                Some(function.pos.clone()),
-                                format!("suspend successor b{} is missing", successor.0),
-                            )
-                        })?;
-                    // Read every terminator operand before changing the frame.
-                    // §68.7.4 and §94.1: the suspension kind decides which
-                    // registration the scheduler makes.
-                    let pending: (Option<Value>, Option<AsyncRequest>) = match kind {
-                        l::SuspendKind::Yield(value) => (
-                            value
-                                .map(|value| self.get_value(frame, value, &function.pos))
-                                .transpose()?,
-                            None,
-                        ),
-                        l::SuspendKind::Async => (None, Some(AsyncRequest::Park(pos.clone()))),
-                        l::SuspendKind::AsyncCall { target, operands } => {
-                            let arguments = operands
-                                .iter()
-                                .map(|value| self.get_value(frame, *value, &function.pos))
-                                .collect::<Result<Vec<_>, _>>()?;
-                            (
-                                None,
-                                Some(AsyncRequest::Call(target.clone(), arguments, pos.clone())),
-                            )
-                        }
-                        l::SuspendKind::AsyncHandle { handle, owned } => {
-                            let Value::Coroutine(handle) =
-                                self.get_value(frame, *handle, &function.pos)?
-                            else {
-                                return Err(self.invalid(
-                                    Some(pos.clone()),
-                                    "held await operand is not an async handle",
-                                ));
-                            };
-                            (
-                                None,
-                                Some(AsyncRequest::Handle(handle, pos.clone(), *owned)),
-                            )
-                        }
-                    };
-                    let parameters = &destination.parameters[usize::from(resume_value.is_some())..];
-                    if arguments.len() != parameters.len() {
-                        return Err(self.invalid(
+    fn execute_frame_effect(&mut self, frame: *mut Frame) -> Result<Flow, InterpretError> {
+        // SAFETY: execute_frame keeps the frame in place until this call returns.
+        // Each reference ends before an instruction executes and can collect.
+        unsafe {
+            loop {
+                let function = self.function((*frame).function)? as *const l::Function;
+                // SAFETY: `module` is immutable for the interpreter's lifetime.
+                // Taking `&mut self` while executing an instruction cannot move or
+                // mutate the referenced LIR function.
+                let function = &*function;
+                let block = function
+                    .blocks
+                    .get((*frame).block.0 as usize)
+                    .filter(|block| block.id == (*frame).block)
+                    .ok_or_else(|| {
+                        self.invalid(
                             Some(function.pos.clone()),
-                            format!(
-                                "suspend to b{} has {} arguments for {} live-in parameters",
-                                successor.0,
-                                arguments.len(),
-                                parameters.len()
-                            ),
+                            format!("block b{} is missing", (*frame).block.0),
+                        )
+                    })?;
+
+                if let Some(resume) = (*frame).resume.take() {
+                    if let Some(target) = (*frame).resume_target.take() {
+                        self.set_value(&mut (*frame).values, target, resume, &function.pos)?;
+                    }
+                }
+                let mut handler = None;
+                for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+                    (*frame).instruction = instruction_index + 1;
+                    let outcome = self.execute_instruction(frame, function, instruction);
+                    // compiler.md §115.6 rule 2: a raise site with a handler
+                    // edge takes it for an exception.
+                    match (outcome, instruction.handler()) {
+                        (Ok(()), _) => {}
+                        (
+                            Err(InterpretError::Exception {
+                                object,
+                                message,
+                                pos,
+                            }),
+                            Some(block),
+                        ) => {
+                            self.caught = Some((object, message, pos));
+                            handler = Some(block);
+                        }
+                        (Err(error), _) => return Err(error),
+                    }
+                    self.invalidate(&instruction.invalidates, &instruction.pos, || {
+                        format!("{:?}", instruction.kind)
+                    });
+                    if handler.is_some() {
+                        break;
+                    }
+                }
+                (*frame).instruction = block.instructions.len() + 1;
+                if let Some(handler) = handler {
+                    (*frame).block = handler;
+                    continue;
+                }
+                match &block.terminator {
+                    l::Terminator::Branch(target) => {
+                        self.take_edge(&mut *frame, function, target)?;
+                    }
+                    l::Terminator::ConditionalBranch {
+                        condition,
+                        then_target,
+                        else_target,
+                    } => {
+                        let condition =
+                            self.operand(&*frame, condition, &function.pos)?.as_bool()?;
+                        self.take_edge(
+                            &mut *frame,
+                            function,
+                            if condition { then_target } else { else_target },
+                        )?;
+                    }
+                    l::Terminator::Switch {
+                        value,
+                        arms,
+                        default,
+                    } => {
+                        let value = self.operand(&*frame, value, &function.pos)?;
+                        let mut selected = default;
+                        for arm in arms {
+                            let constant = self.constant(&arm.value)?;
+                            if self.equal(&value, &constant, &arm.value.ty)? {
+                                selected = &arm.target;
+                                break;
+                            }
+                        }
+                        self.take_edge(&mut *frame, function, selected)?;
+                    }
+                    l::Terminator::Return { value, .. } => {
+                        return Ok(Flow::Returned(match value {
+                            Some(value) => self.operand(&*frame, value, &function.pos)?,
+                            None => Value::Void,
+                        }));
+                    }
+                    l::Terminator::Unreachable { pos } => {
+                        return Err(self.invalid(
+                            Some(pos.clone()),
+                            "reached a structurally unreachable LIR block",
                         ));
                     }
-                    let saved = arguments
-                        .iter()
-                        .zip(parameters)
-                        .map(|(argument, parameter)| {
-                            self.operand(frame, argument, &function.pos)
-                                .map(|value| (*parameter, value))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    for local in &mut frame.locals {
-                        if local.storage == l::LocalStorageClass::Activation {
-                            local.poisoned_at = Some((block.id, pos.clone()));
+                    l::Terminator::Trap(trap) => return Err(self.trap_error(trap)),
+                    l::Terminator::Suspend {
+                        kind,
+                        pos,
+                        successor,
+                        resume_value,
+                        arguments,
+                        invalidates,
+                        traps: _,
+                    } => {
+                        self.invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
+                        let destination =
+                            function.blocks.get(successor.0 as usize).ok_or_else(|| {
+                                self.invalid(
+                                    Some(function.pos.clone()),
+                                    format!("suspend successor b{} is missing", successor.0),
+                                )
+                            })?;
+                        // Read every terminator operand before changing the frame.
+                        // §68.7.4 and §94.1: the suspension kind decides which
+                        // registration the scheduler makes.
+                        let pending: (Option<Value>, Option<AsyncRequest>) = match kind {
+                            l::SuspendKind::Yield(value) => (
+                                value
+                                    .map(|value| self.get_value(&*frame, value, &function.pos))
+                                    .transpose()?,
+                                None,
+                            ),
+                            l::SuspendKind::Async => (None, Some(AsyncRequest::Park(pos.clone()))),
+                            l::SuspendKind::AsyncCall { target, operands } => {
+                                let arguments = operands
+                                    .iter()
+                                    .map(|value| self.get_value(&*frame, *value, &function.pos))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                (
+                                    None,
+                                    Some(AsyncRequest::Call(
+                                        target.clone(),
+                                        arguments,
+                                        pos.clone(),
+                                    )),
+                                )
+                            }
+                            l::SuspendKind::AsyncHandle { handle, owned } => {
+                                let Value::Coroutine(handle) =
+                                    self.get_value(&*frame, *handle, &function.pos)?
+                                else {
+                                    return Err(self.invalid(
+                                        Some(pos.clone()),
+                                        "held await operand is not an async handle",
+                                    ));
+                                };
+                                (
+                                    None,
+                                    Some(AsyncRequest::Handle(handle, pos.clone(), *owned)),
+                                )
+                            }
+                        };
+                        let parameters =
+                            &destination.parameters[usize::from(resume_value.is_some())..];
+                        if arguments.len() != parameters.len() {
+                            return Err(self.invalid(
+                                Some(function.pos.clone()),
+                                format!(
+                                    "suspend to b{} has {} arguments for {} live-in parameters",
+                                    successor.0,
+                                    arguments.len(),
+                                    parameters.len()
+                                ),
+                            ));
                         }
+                        let saved = arguments
+                            .iter()
+                            .zip(parameters)
+                            .map(|(argument, parameter)| {
+                                self.operand(&*frame, argument, &function.pos)
+                                    .map(|value| (*parameter, value))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        for local in &mut (*frame).locals {
+                            if local.storage == l::LocalStorageClass::Activation {
+                                local.poisoned_at = Some((block.id, pos.clone()));
+                            }
+                        }
+                        // Frame storage survives suspension; other values follow the live-in set.
+                        for (index, value) in (*frame).values.iter_mut().enumerate() {
+                            if !(*frame).frame_lifetime.contains(&l::ValueId(index as u32)) {
+                                *value = None;
+                            }
+                        }
+                        for (parameter, value) in saved {
+                            self.set_value(&mut (*frame).values, parameter, value, &function.pos)?;
+                        }
+                        (*frame).block = *successor;
+                        (*frame).instruction = 0;
+                        (*frame).resume_target = *resume_value;
+                        let (yielded, request) = pending;
+                        return Ok(Flow::Suspended { yielded, request });
                     }
-                    // The successor parameters are the entire live-in set. Nothing
-                    // else is retained in the suspended frame.
-                    frame.values.fill(None);
-                    for (parameter, value) in saved {
-                        self.set_value(&mut frame.values, parameter, value, &function.pos)?;
-                    }
-                    frame.block = *successor;
-                    frame.resume_target = *resume_value;
-                    let (yielded, request) = pending;
-                    return Ok(Flow::Suspended { yielded, request });
                 }
             }
         }
@@ -1414,35 +1452,6 @@ impl<'m> Interpreter<'m> {
         }
     }
 
-    fn invoke_callable(
-        &mut self,
-        callable: &Rc<Callable>,
-        arguments: Vec<Value>,
-        pos: Option<&Pos>,
-    ) -> Result<Value, InterpretError> {
-        #[cfg(not(test))]
-        let _ = pos;
-        let mut operands = callable.captures.clone();
-        operands.extend(arguments);
-        let value = self.call_function(callable.function, operands)?;
-        if self
-            .module
-            .functions
-            .get(callable.function.0 as usize)
-            .is_some_and(|function| function.is_async)
-        {
-            let Value::Coroutine(handle) = &value else {
-                return Err(self.invalid(None, "async callable returns no handle"));
-            };
-            #[cfg(test)]
-            {
-                handle.borrow_mut().create_pos = pos.cloned().unwrap_or_else(no_script_site);
-            }
-            self.async_start(&Rc::clone(handle))?;
-        }
-        Ok(value)
-    }
-
     fn callable_operand(
         &self,
         value: Option<&Value>,
@@ -1525,7 +1534,6 @@ impl<'m> Interpreter<'m> {
                     ffi::subscript_rt_str_slice(&mut *self.context, string, start, end, 0)
                 };
                 self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
-                self.root_handle(value);
                 Ok(Value::Handle(value))
             }
             l::BuiltinMethod::GeneratorNext => {
@@ -1542,54 +1550,6 @@ impl<'m> Interpreter<'m> {
                 };
                 self.resume_generator(&coroutine, value_ty)
             }
-        }
-    }
-
-    fn invoke_intrinsic(
-        &mut self,
-        intrinsic: &l::Intrinsic,
-        operation: &str,
-        operands: Vec<Value>,
-        parameter_types: &[l::ValueType],
-        result_ty: Option<&l::ValueType>,
-        pos: Option<&Pos>,
-    ) -> Result<Value, InterpretError> {
-        match intrinsic.family {
-            l::IntrinsicFamily::Ambient => self.intrinsic_ambient(operation, operands),
-            l::IntrinsicFamily::Math => self.intrinsic_math(operation, operands),
-            l::IntrinsicFamily::Number => self.intrinsic_number(operation, operands),
-            l::IntrinsicFamily::Date => self.intrinsic_date(operation, operands),
-            l::IntrinsicFamily::String => self.intrinsic_string(operation, operands),
-            l::IntrinsicFamily::Regex => self.intrinsic_regex(operation, operands),
-            l::IntrinsicFamily::Text => self.intrinsic_text(operation, operands),
-            l::IntrinsicFamily::Json => self.intrinsic_json(operation, operands, result_ty),
-            l::IntrinsicFamily::Array => self.intrinsic_array(
-                operation,
-                operands,
-                parameter_types,
-                result_ty,
-                pos.ok_or_else(|| self.invalid(None, "array call has no position"))?,
-            ),
-            l::IntrinsicFamily::Map => self.intrinsic_map(
-                operation,
-                operands,
-                parameter_types,
-                intrinsic.type_argument.as_ref(),
-                result_ty,
-            ),
-            l::IntrinsicFamily::Set => self.intrinsic_set(
-                operation,
-                operands,
-                parameter_types,
-                intrinsic.type_argument.as_ref(),
-                result_ty,
-            ),
-            l::IntrinsicFamily::ContextBytes => {
-                self.intrinsic_context_bytes(intrinsic, operation, operands, pos)
-            }
-            l::IntrinsicFamily::Worker => Err(InterpretError::Unsupported {
-                reason: format!("Worker.{operation} requires a runtime worker adapter"),
-            }),
         }
     }
 }
@@ -1948,6 +1908,8 @@ fn assoc_key_kind(ty: &Type, module: &l::Module) -> u32 {
 mod completion_tests;
 #[cfg(test)]
 mod counted_measurement_tests;
+#[cfg(test)]
+mod reference_holder_tests;
 
 mod text;
 
@@ -1971,3 +1933,10 @@ mod checkpoint;
 mod inspection_tests;
 
 mod async_inspection;
+
+mod roots;
+
+mod dispatch;
+
+#[cfg(test)]
+mod collection_tests;

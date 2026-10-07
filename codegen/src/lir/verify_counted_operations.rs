@@ -120,10 +120,20 @@ pub(super) fn verify(module: &l::Module, function: &l::Function, errors: &mut Ve
     }
     for block in &function.blocks {
         for (index, instruction) in block.instructions.iter().enumerate() {
-            let releases = instruction
-                .count_action
-                .as_ref()
-                .is_some_and(|action| action.release_type().is_some())
+            let class_free = matches!(&instruction.kind, l::InstructionKind::Call(target)
+                if array_ownership::map_operation_name(&module.intrinsic_operations, &target.kind) == Some("UnsafeDelete")
+                && instruction.operands.first().and_then(|operand| operand_type(function, operand))
+                    .is_some_and(|ty| matches!(ty, l::ValueType::Data(Type::Class(id))
+                        if module.classes.get(id.0).is_some_and(|class| class.fields.iter().any(|field| field.ty.counted_type().is_some())))));
+            let collect = matches!(&instruction.kind, l::InstructionKind::Call(target)
+                if matches!(&target.kind, l::CallTargetKind::Intrinsic(intrinsic)
+                    if intrinsic.family == l::IntrinsicFamily::Ambient && module.intrinsic_operations.iter().any(|operation| operation.family == intrinsic.family && operation.operation == intrinsic.operation && operation.semantic_name == "Collect")));
+            let releases = collect
+                || class_free
+                || instruction
+                    .count_action
+                    .as_ref()
+                    .is_some_and(|action| action.release_type().is_some())
                 || matches!(
                     instruction.kind,
                     l::InstructionKind::AsyncHandleRelease
@@ -230,6 +240,35 @@ pub(super) fn verify(module: &l::Module, function: &l::Function, errors: &mut Ve
                         _ => None,
                     }
                 }),
+                l::InstructionKind::MapFromSource => instruction
+                    .result
+                    .and_then(|value| value_type(function, value))
+                    .and_then(|ty| match ty {
+                        l::ValueType::Data(Type::Map(_, value)) => Some((**value).clone()),
+                        _ => None,
+                    }),
+                l::InstructionKind::Call(target)
+                    if array_ownership::map_operation_name(
+                        &module.intrinsic_operations,
+                        &target.kind,
+                    )
+                    .is_some() =>
+                {
+                    instruction
+                        .operands
+                        .first()
+                        .and_then(|operand| operand_type(function, operand))
+                        .or_else(|| {
+                            instruction
+                                .result
+                                .and_then(|value| value_type(function, value))
+                                .cloned()
+                        })
+                        .and_then(|ty| match ty {
+                            l::ValueType::Data(Type::Map(_, value)) => Some(*value),
+                            _ => None,
+                        })
+                }
                 _ => None,
             };
             if let Some(ty) = expected_type {

@@ -435,10 +435,7 @@ impl Context {
         }
     }
 
-    pub(super) fn collect_with_trace(
-        &mut self,
-        trace_target: Option<MarkTraceTarget>,
-    ) -> Vec<String> {
+    fn prepare_collection(&mut self, trace_target: Option<MarkTraceTarget>) -> CollectionReleases {
         let mut work: Vec<usize> = Vec::new();
         let mut tracer = trace_target.map(MarkTracer::new);
         let roots = self
@@ -613,34 +610,35 @@ impl Context {
         );
 
         if self.uses_ship_arena() {
-            // Ship tier (§8.1b): mark state lives in the block header
-            // (MARK_STATE), not in a map; sweep walks the chunk grids and
-            // the large records.
             self.arena_mark(&mut work, &mut tracer);
-            self.arena_sweep();
-            self.sweep_regex_values();
-            return tracer.map_or_else(Vec::new, |tracer| tracer.records);
+        } else {
+            while let Some(addr) = work.pop() {
+                let Some((class_id, words)) =
+                    self.allocations.get_mut(&addr).and_then(|allocation| {
+                        if allocation.marked {
+                            return None;
+                        }
+                        allocation.marked = true;
+                        Some((allocation.class_id, allocation.payload_size / 8))
+                    })
+                else {
+                    continue;
+                };
+                self.scan_payload(
+                    addr as *const u8,
+                    words * 8,
+                    class_id,
+                    &mut work,
+                    &mut tracer,
+                );
+            }
         }
-
-        let mut marked_count = 0usize;
-        while let Some(addr) = work.pop() {
-            let Some((class_id, words)) = self.allocations.get_mut(&addr).and_then(|allocation| {
-                if allocation.marked {
-                    return None;
-                }
-                allocation.marked = true;
-                Some((allocation.class_id, allocation.payload_size / 8))
-            }) else {
-                continue;
-            };
-            marked_count += 1;
-            let payload = addr as *const u8;
-            self.scan_payload(payload, words * 8, class_id, &mut work, &mut tracer);
+        let (handles, storage) = self.unreachable_releases();
+        CollectionReleases {
+            handles,
+            storage,
+            trace: tracer.map_or_else(Vec::new, |tracer| tracer.records),
         }
-
-        self.sweep_dev_allocations(self.allocations.len() - marked_count);
-        self.sweep_regex_values();
-        tracer.map_or_else(Vec::new, |tracer| tracer.records)
     }
 
     /// Exact-size allocator sweep: extract unreachable records from the
@@ -792,6 +790,8 @@ impl Context {
                 let c = &self.chunks[ci];
                 (c.base, c.block_size, c.class, c.bump)
             };
+            let mut free_head = self.free_heads[class];
+            let mut retired_bytes = 0usize;
             for bi in 0..bump {
                 // SAFETY: `bi < bump`, so the block is inside the owned
                 // chunk; the state word and the payload's first word (the
@@ -803,17 +803,17 @@ impl Context {
                         LIVE_STATE => {
                             (block as *mut u64).write(DEAD_STATE);
                             let payload = block.add(HEADER_SIZE);
-                            (payload as *mut usize).write(self.free_heads[class]);
-                            self.free_heads[class] = payload as usize;
-                            self.live_bytes_counter = self
-                                .live_bytes_counter
-                                .saturating_sub(block_size - HEADER_SIZE);
+                            (payload as *mut usize).write(free_head);
+                            free_head = payload as usize;
+                            retired_bytes += block_size - HEADER_SIZE;
                         }
                         // DEAD_STATE: already on the free list.
                         _ => {}
                     }
                 }
             }
+            self.free_heads[class] = free_head;
+            self.live_bytes_counter = self.live_bytes_counter.saturating_sub(retired_bytes);
         }
         // Cannot `remove`+`dealloc` while iterating, so collect the
         // unreached payload addresses first.
@@ -1404,5 +1404,149 @@ impl Context {
             unsafe { std::ptr::write_bytes(header.data.add(start), 0, bytes) };
         }
         header.len = new_len as u64;
+    }
+}
+
+/// A collection release plan whose allocation storage remains live until sweep.
+#[must_use]
+#[non_exhaustive]
+pub(super) struct CollectionReleases {
+    /// Handle leaves. The consumer resolves and sorts these by its task ids.
+    pub handles: Vec<usize>,
+    storage: Vec<usize>,
+    trace: Vec<String>,
+}
+
+impl Context {
+    /// Marks the heap, calls the owner's release consumer, and always sweeps before return.
+    /// The accessor selects the owner's Context. The consumer releases every handle leaf.
+    /// An early return or unwind also completes the sweep.
+    pub fn with_collection<T, R>(
+        owner: &mut T,
+        context: fn(&mut T) -> &mut Context,
+        consume: impl FnOnce(&mut T, &mut [usize]) -> R,
+    ) -> R {
+        struct Guard<'a, T> {
+            owner: &'a mut T,
+            context: fn(&mut T) -> &mut Context,
+            plan: Option<CollectionReleases>,
+        }
+        impl<T> Drop for Guard<'_, T> {
+            fn drop(&mut self) {
+                if let Some(plan) = self.plan.take() {
+                    (self.context)(self.owner).finish_collection(plan);
+                }
+            }
+        }
+        let mut plan = context(owner).prepare_collection(mark_trace_target());
+        let mut handles = std::mem::take(&mut plan.handles);
+        let guard = Guard {
+            owner,
+            context,
+            plan: Some(plan),
+        };
+        consume(guard.owner, &mut handles)
+    }
+
+    /// Frees the release plan's array storage and sweeps the marked heap.
+    /// The caller must release every handle from the plan before this call.
+    fn finish_collection(&mut self, plan: CollectionReleases) {
+        for address in plan.storage {
+            if self.is_live(address) {
+                self.delete(address, 0);
+            }
+        }
+        if self.uses_ship_arena() {
+            self.arena_sweep();
+        } else {
+            let retiring = if self.freed_handle_diagnostics
+                && self.freed_handle_diagnostics_max_retained_bytes == usize::MAX
+            {
+                self.allocations
+                    .values()
+                    .filter(|allocation| !allocation.marked)
+                    .count()
+            } else {
+                0
+            };
+            self.sweep_dev_allocations(retiring);
+        }
+        self.sweep_regex_values();
+    }
+
+    pub(super) fn collect_with_trace(
+        &mut self,
+        trace_target: Option<MarkTraceTarget>,
+    ) -> Vec<String> {
+        if self.allocations.is_empty() && self.chunks.is_empty() && self.large.is_empty() {
+            self.sweep_regex_values();
+            return Vec::new();
+        }
+        let mut plan = self.prepare_collection(trace_target);
+        plan.handles.sort_unstable_by_key(|handle| {
+            self.async_frames.get(handle).map_or(0, |meta| meta.task_id)
+        });
+        for &handle in &plan.handles {
+            // SAFETY: descriptions contain native registered frame keys.
+            unsafe { self.async_release(handle as *mut u8, 0) };
+        }
+        let trace = std::mem::take(&mut plan.trace);
+        self.finish_collection(plan);
+        trace
+    }
+}
+
+impl Context {
+    pub(crate) fn collect_at(&mut self, pos: u32) {
+        let trapped = self.trapped();
+        self.collect();
+        if !trapped {
+            if let Some(trap) = self
+                .trap
+                .as_mut()
+                .filter(|trap| trap.kind == TrapKind::UncaughtException)
+            {
+                trap.pos_id = pos;
+            }
+        }
+    }
+}
+
+impl Context {
+    /// Returns root words and the words reachable through live allocation payloads.
+    /// This walk preserves the collector's scalar-payload exclusions.
+    pub fn reachable_words(&self, roots: &[usize]) -> Vec<usize> {
+        let mut work = roots.to_vec();
+        for &(base, count) in self.roots.iter().chain(&self.shadow) {
+            for index in 0..count {
+                // SAFETY: registered root ranges remain live until their owner removes them.
+                work.push(unsafe { ((base + index * 8) as *const usize).read_unaligned() });
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        while let Some(address) = work.pop() {
+            if !seen.insert(address) {
+                continue;
+            }
+            let Some(size) = self.live_payload_size(address) else {
+                continue;
+            };
+            let class_id = if !self.uses_ship_arena() {
+                self.allocations
+                    .get(&address)
+                    .map(|allocation| allocation.class_id)
+            } else if let Some((block, _)) = self.arena_lookup_block(address) {
+                // SAFETY: live payload membership establishes the allocation header.
+                Some(unsafe { header_class_id(block) })
+            } else {
+                self.large
+                    .get(&address)
+                    .map(|allocation| unsafe { header_class_id(allocation.base) })
+            };
+            if let Some(class_id) = class_id {
+                self.scan_payload(address as *const u8, size, class_id, &mut work, &mut None);
+            }
+        }
+        seen.into_iter().collect()
     }
 }

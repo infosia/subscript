@@ -249,9 +249,6 @@ impl Interpreter<'_> {
             self.counted_array_elements(value.as_handle()?, count_type, false, pos)?;
         }
         if let Value::Handle(handle) = value {
-            if handle != array || matches!(operation, "Slice" | "Concat" | "Splice") {
-                self.root_handle(handle);
-            }
             Ok(Value::Handle(handle))
         } else {
             let _ = result_ty;
@@ -260,6 +257,27 @@ impl Interpreter<'_> {
     }
 
     fn intrinsic_array_callback(
+        &mut self,
+        operation: &str,
+        operands: Vec<Value>,
+        receiver_ty: &Type,
+        element_ty: &Type,
+        result_ty: Option<&l::ValueType>,
+    ) -> Result<Value, InterpretError> {
+        self.active_roots
+            .push(roots::Snapshot::temporaries(&operands));
+        let result = self.intrinsic_array_callback_effect(
+            operation,
+            operands,
+            receiver_ty,
+            element_ty,
+            result_ty,
+        );
+        self.active_roots.pop();
+        result
+    }
+
+    fn intrinsic_array_callback_effect(
         &mut self,
         operation: &str,
         operands: Vec<Value>,
@@ -430,6 +448,9 @@ impl Interpreter<'_> {
                     };
                     sorted.push(value);
                 }
+                for value in &sorted {
+                    self.hold_temporary(value.clone());
+                }
                 // Stable insertion into scratch storage. No receiver bytes are
                 // changed until every comparator invocation has succeeded.
                 for index in 1..sorted.len() {
@@ -533,7 +554,8 @@ impl Interpreter<'_> {
             .ok_or_else(|| self.invalid(None, "array result element has no layout"))?;
         let handle = self.context.array_new(layout.size, 0);
         self.check_runtime(&Pos::new("<array-callback>", 1, 1))?;
-        self.root_handle(handle);
+
+        self.hold_temporary(Value::Handle(handle));
         Ok(handle)
     }
 
@@ -573,6 +595,7 @@ impl Interpreter<'_> {
         parameter_types: &[l::ValueType],
         _type_argument: Option<&Type>,
         result_ty: Option<&l::ValueType>,
+        pos: &Pos,
     ) -> Result<Value, InterpretError> {
         if operation == "GroupBy" {
             let element_ty = match parameter_types.first() {
@@ -618,7 +641,7 @@ impl Interpreter<'_> {
                 return Err(error);
             }
             self.check_runtime(&Pos::new("<map>", 1, 1))?;
-            self.root_handle(result);
+
             return Ok(Value::Handle(result));
         }
         let shape = parameter_types
@@ -710,16 +733,16 @@ impl Interpreter<'_> {
                         .get(2)
                         .ok_or_else(|| self.invalid(None, "Map.set has no value"))?,
                 )?;
+                let handle = receiver()?;
+                let old = self.read_counted_map_value(handle, shape.1, &key)?;
                 // SAFETY: live receiver and exact key/value storage.
-                Value::Handle(unsafe {
-                    ffi::subscript_rt_map_set(
-                        context,
-                        receiver()?,
-                        key.as_ptr(),
-                        stored.as_ptr(),
-                        0,
-                    )
-                })
+                let result = Value::Handle(unsafe {
+                    ffi::subscript_rt_map_set(context, handle, key.as_ptr(), stored.as_ptr(), 0)
+                });
+                if let Some(old) = old {
+                    self.counted_owner(shape.1, &old, true, pos)?;
+                }
+                result
             }
             "Has" => {
                 let key = packed_key()?;
@@ -730,15 +753,34 @@ impl Interpreter<'_> {
             }
             "Delete" => {
                 let key = packed_key()?;
+                let handle = receiver()?;
+                let old = self.read_counted_map_value(handle, shape.1, &key)?;
                 // SAFETY: live receiver and exact key storage.
-                Value::Bool(
-                    unsafe { ffi::subscript_rt_assoc_delete(context, receiver()?, key.as_ptr()) }
-                        != 0,
-                )
+                let removed =
+                    unsafe { ffi::subscript_rt_assoc_delete(context, handle, key.as_ptr()) } != 0;
+                if removed {
+                    if let Some(old) = old {
+                        self.counted_owner(shape.1, &old, true, pos)?;
+                    }
+                }
+                Value::Bool(removed)
             }
             "Clear" => {
+                let handle = receiver()?;
+                let values = self.counted_map_values(handle, shape.1)?;
                 // SAFETY: live receiver.
-                unsafe { ffi::subscript_rt_assoc_clear(context, receiver()?) };
+                unsafe { ffi::subscript_rt_assoc_clear(context, handle) };
+                let mut first = None;
+                for value in values {
+                    if let Err(error) = self.counted_owner(shape.1, &value, true, pos) {
+                        if first.is_none() {
+                            first = Some(error);
+                        }
+                    }
+                }
+                if let Some(error) = first {
+                    return Err(error);
+                }
                 Value::Void
             }
             "ForEach" => {
@@ -771,7 +813,7 @@ impl Interpreter<'_> {
         self.check_runtime(&Pos::new("<map>", 1, 1))?;
         if let Value::Handle(handle) = value {
             if operation == "New" {
-                self.root_handle(handle);
+                self.describe_interpreter_map(handle, shape.1, pos)?;
             }
             Ok(Value::Handle(handle))
         } else {
@@ -978,12 +1020,6 @@ impl Interpreter<'_> {
         };
         self.check_runtime(&Pos::new("<set>", 1, 1))?;
         if let Value::Handle(handle) = value {
-            if matches!(
-                operation,
-                "New" | "Union" | "Intersection" | "Difference" | "SymmetricDifference"
-            ) {
-                self.root_handle(handle);
-            }
             Ok(Value::Handle(handle))
         } else {
             Ok(value)

@@ -108,19 +108,7 @@ pub(super) fn plan_coroutine(
         );
         state += 1;
     }
-    let live_across_suspend = function
-        .blocks
-        .iter()
-        .filter_map(|block| match &block.terminator {
-            l::Terminator::Suspend { arguments, .. } => Some(arguments),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|operand| match operand {
-            l::Operand::Value(value) => Some(*value),
-            l::Operand::Constant(_) => None,
-        })
-        .collect::<HashSet<_>>();
+    let live_across_suspend = root_storage::stable_values(function);
     let mut stable_addresses = HashMap::new();
     for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
         if !matches!(
@@ -480,11 +468,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             arguments.extend(rv_args(self.load_data(ty, *address, 0)?));
         }
         for slot in &plan.arguments {
-            arguments.extend(rv_args(self.load_value_type(
-                &slot.ty,
-                frame,
-                slot.offset as i32,
-            )?));
+            arguments.extend(rv_args(self.restore_suspend_slot(frame, slot)?));
         }
         let child_offset = plan
             .child
@@ -549,11 +533,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             arguments.extend(rv_args(self.load_data(ty, *address, 0)?));
         }
         for slot in &plan.arguments {
-            arguments.extend(rv_args(self.load_value_type(
-                &slot.ty,
-                frame,
-                slot.offset as i32,
-            )?));
+            arguments.extend(rv_args(self.restore_suspend_slot(frame, slot)?));
         }
         let child_offset = plan
             .child
@@ -627,6 +607,22 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(())
     }
 
+    // Saved arguments belong to the suspended activation, not the entire frame.
+    fn restore_suspend_slot(&mut self, frame: Value, slot: &FrameSlot) -> Result<RV, String> {
+        let value = self.load_value_type(&slot.ty, frame, slot.offset as i32)?;
+        let (size, align) = value_size_align(&self.ml.layouts, &slot.ty)?;
+        let value = if let RV::Aggregate(source) = value {
+            let copy = self.stack_slot(size.max(1), align.max(1));
+            self.copy_bytes(copy, source, size, align);
+            RV::Aggregate(copy)
+        } else {
+            value
+        };
+        let saved = self.address_offset(frame, i64::from(slot.offset));
+        self.zero_bytes(saved, size.max(1), align.max(1));
+        Ok(value)
+    }
+
     pub(super) fn emit_resume_adapters(&mut self, plan: &CoroutinePlan) -> Result<(), String> {
         for source in &self.function.blocks {
             let l::Terminator::Suspend {
@@ -683,14 +679,23 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             let mut arguments = Vec::new();
             for slot in &suspend.arguments {
-                arguments.extend(rv_args(self.load_value_type(
-                    &slot.ty,
-                    frame,
-                    slot.offset as i32,
-                )?));
+                arguments.extend(rv_args(self.restore_suspend_slot(frame, slot)?));
             }
             let successor = self.blocks[successor.0 as usize];
             self.builder.ins().jump(successor, &arguments);
+        }
+        Ok(())
+    }
+}
+
+impl<M: Module> Body<'_, '_, '_, '_, M> {
+    pub(super) fn clear_finished_frame(&mut self) -> Result<(), String> {
+        if let Some(frame) = self.frame {
+            #[cfg(test)]
+            self.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX - 1));
+            let address = self.address_offset(frame, i64::from(COROUTINE_PAYLOAD_OFFSET));
+            self.zero_bytes(address, self.frame_size - COROUTINE_PAYLOAD_OFFSET, 8);
         }
         Ok(())
     }

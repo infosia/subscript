@@ -300,8 +300,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         } else {
             format!("(({})({operand}))", self.emitter.ctype(target)?)
         };
-        let _ = writeln!(out, "    {destination} = {expression};");
-        Ok(())
+        if self.coroutine && target.function_type().is_some() {
+            self.assign_function_value(out, result, &expression)
+        } else {
+            let _ = writeln!(out, "    {destination} = {expression};");
+            Ok(())
+        }
     }
 
     pub(super) fn emit_guard(

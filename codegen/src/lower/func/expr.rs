@@ -480,6 +480,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.emit_trap(trap, TrapOperand::Pending)?;
             }
         }
+        let bytes = crate::counted::class_description(&self.ml.layouts, definition)?;
+        if !bytes.is_empty() {
+            let size = self.iconst(types::I64, bytes.len() as i64);
+            let data = self.ml.literal_data(&bytes)?;
+            let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+            let description = self.builder.ins().symbol_value(types::I64, global);
+            self.call_runtime(
+                self.ml.rt.object_describe,
+                &[self.ctx, pointer, description, size],
+                false,
+            )?;
+        }
         Ok(RV::Scalar(pointer))
     }
 

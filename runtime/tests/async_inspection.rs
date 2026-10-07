@@ -195,6 +195,7 @@ fn ids_are_not_reused_and_layout_has_no_padding() {
     let mut ctx = Context::new();
     let a = frame(&mut ctx, resume);
     unsafe {
+        ctx.async_complete(a, std::ptr::null(), 0);
         ctx.async_release(a, 0);
     }
     assert!(tasks(&ctx).is_empty());

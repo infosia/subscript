@@ -55,6 +55,9 @@ pub fn print_module(module: &lir::Module) -> String {
             )
             .unwrap();
         }
+        for (field, action) in &class.field_releases {
+            let _ = writeln!(&mut out, "  release offset={} {:?}", field, action);
+        }
         for method in class.constructor.iter().chain(&class.methods) {
             writeln!(
                 &mut out,
