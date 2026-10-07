@@ -16,7 +16,6 @@ mod snapshot;
 #[path = "lir/verifier.rs"]
 mod verifier;
 // This target uses only part of the shared trap helpers.
-#[cfg(debug_assertions)]
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
@@ -1879,4 +1878,27 @@ fn generator_result_narrowing_has_a_local_origin() {
             .any(|trap| trap.kind == TrapKind::SharedNullNarrowing);
         assert_eq!(guarded, origin == NarrowOrigin::SharedRead);
     }
+}
+
+#[test]
+fn collected_tasks_trap_in_task_id_order() {
+    let id = "t107-collected-task-order";
+    let trap = trap_corpus::corpus_trap();
+    let sources = trap_corpus::trap_sources(&trap, id);
+    let hir = check_program(&sources).expect("collected task entry checks");
+    let module = lower_module(&hir).expect("collected task entry lowers");
+    let error = interpret(&module).expect_err("collection must trap");
+    assert_eq!(error.output(), trap_corpus::trap_expected(&trap, id));
+    let subscript_codegen::interpreter::InterpretError::Execution { source, .. } = error else {
+        panic!("collection must preserve execution output");
+    };
+    let subscript_codegen::interpreter::InterpretError::Trap {
+        kind, pos, message, ..
+    } = *source
+    else {
+        panic!("collection must report a semantic trap");
+    };
+    assert_eq!(kind, "uncaught-exception");
+    assert_eq!((pos.line, pos.col), (23, 3));
+    assert_eq!(message, "Error: first");
 }

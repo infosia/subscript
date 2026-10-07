@@ -8,10 +8,11 @@ use super::*;
 
 pub(super) fn verify_function(
     module: &l::Module,
+    operations: &array_ownership::RecordedOperations<'_>,
     function: &l::Function,
     errors: &mut Vec<VerifyError>,
 ) {
-    verify_structure_and_types(module, function, errors);
+    verify_structure_and_types(module, operations, function, errors);
     verify_counted_stores(module, function, errors);
     super::verify_counted_operations::verify(module, function, errors);
     super::verify_generator_counts::verify(module, function, errors);
@@ -259,6 +260,7 @@ pub(super) fn finding(function: &l::Function, message: impl Into<String>) -> Ver
 
 fn verify_structure_and_types(
     module: &l::Module,
+    operations: &array_ownership::RecordedOperations<'_>,
     function: &l::Function,
     errors: &mut Vec<VerifyError>,
 ) {
@@ -370,6 +372,7 @@ fn verify_structure_and_types(
             }
             verify_instruction_contract(
                 module,
+                operations,
                 function,
                 block,
                 instruction_index,

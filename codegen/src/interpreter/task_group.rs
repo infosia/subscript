@@ -92,6 +92,7 @@ impl Interpreter<'_> {
                     waiters: Vec::new(),
                     awaiting: None,
                 }));
+                #[cfg(test)]
                 self.async_registry
                     .borrow_mut()
                     .insert(task_id, Rc::downgrade(&handle));

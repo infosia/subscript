@@ -5,6 +5,7 @@ use super::*;
 
 pub(super) fn verify_instruction_contract(
     module: &l::Module,
+    operations: &array_ownership::RecordedOperations<'_>,
     function: &l::Function,
     block: &l::BasicBlock,
     instruction_index: usize,
@@ -106,9 +107,8 @@ pub(super) fn verify_instruction_contract(
         }
     }
     if let Some(result) = instruction.result {
-        let expected_fresh =
-            array_ownership::produces_fresh_owner(&module.intrinsic_operations, &instruction.kind)
-                && result_type.as_ref().is_some_and(is_async_owner_type);
+        let expected_fresh = operations.produces_fresh_owner(&instruction.kind)
+            && result_type.as_ref().is_some_and(is_async_owner_type);
         if function
             .values
             .get(result.0 as usize)

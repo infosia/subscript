@@ -202,8 +202,9 @@ pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
         }
     }
     verify_lifetime::verify(module, &mut errors);
+    let operations = array_ownership::RecordedOperations::new(&module.intrinsic_operations);
     for function in &module.functions {
-        verify_function(module, function, &mut errors);
+        verify_function(module, &operations, function, &mut errors);
     }
     if errors.is_empty() {
         Ok(())
@@ -362,74 +363,8 @@ struct Lowering<'a> {
     foreign: Vec<l::ForeignFunction>,
 }
 
-fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
-    fn append<T: fmt::Debug>(
-        table: &mut Vec<l::IntrinsicOperation>,
-        family: l::IntrinsicFamily,
-        values: &[T],
-    ) {
-        table.extend(
-            values
-                .iter()
-                .enumerate()
-                .map(|(operation, value)| l::IntrinsicOperation {
-                    family,
-                    operation: operation as u16,
-                    semantic_name: format!("{value:?}"),
-                    runtime_symbol: intrinsic_runtime_symbol(family, &format!("{value:?}"))
-                        .map(str::to_string),
-                    signatures: Vec::new(),
-                }),
-        );
-    }
-
-    let mut table = Vec::new();
-    append(
-        &mut table,
-        l::IntrinsicFamily::Ambient,
-        &hir::AmbientFn::ALL,
-    );
-    append(
-        &mut table,
-        l::IntrinsicFamily::ContextBytes,
-        &hir::ContextBytesFn::ALL,
-    );
-    append(&mut table, l::IntrinsicFamily::Math, &hir::MathFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Number, &hir::NumFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Date, &hir::DateFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Json, &hir::JsonFn::ALL);
-    append(&mut table, l::IntrinsicFamily::String, &hir::StrFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Regex, &hir::RegexFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Array, &hir::ArrFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Map, &hir::MapFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Set, &hir::SetFn::ALL);
-    table.extend(
-        hir::WorkerFn::ALL
-            .iter()
-            .enumerate()
-            .map(|(operation, value)| {
-                let semantic_name = format!("{value:?}");
-                l::IntrinsicOperation {
-                    family: l::IntrinsicFamily::Worker,
-                    operation: operation as u16,
-                    semantic_name: semantic_name
-                        .split_once('(')
-                        .map_or(semantic_name.as_str(), |(name, _)| name)
-                        .to_string(),
-                    runtime_symbol: intrinsic_runtime_symbol(
-                        l::IntrinsicFamily::Worker,
-                        semantic_name
-                            .split_once('(')
-                            .map_or(semantic_name.as_str(), |(name, _)| name),
-                    )
-                    .map(str::to_string),
-                    signatures: Vec::new(),
-                }
-            }),
-    );
-    append(&mut table, l::IntrinsicFamily::Text, &hir::TextFn::ALL);
-    table
-}
+mod operation_table;
+use operation_table::intrinsic_operations;
 
 fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'static str> {
     Some(match (family, name) {

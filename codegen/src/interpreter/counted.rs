@@ -120,6 +120,7 @@ impl Interpreter<'_> {
                     group.borrow_mut().join = None;
                 }
             }
+            #[cfg(test)]
             if state.completed && !unread {
                 self.async_registry.borrow_mut().remove(&state.task_id);
             }

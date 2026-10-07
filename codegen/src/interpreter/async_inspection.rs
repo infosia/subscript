@@ -17,10 +17,15 @@ impl Interpreter<'_> {
         self.next_async_task_id = id
             .checked_add(1)
             .ok_or_else(|| self.invalid(None, "async task id exhausted"))?;
-        // Remove dead weak entries without retaining task history.
-        self.async_registry
-            .borrow_mut()
-            .retain(|_, handle| handle.strong_count() != 0);
+        #[cfg(test)]
+        {
+            let registry = self.async_registry.get_mut();
+            if registry.len() >= self.async_registry_sweep_len.saturating_mul(2).max(64) {
+                registry.retain(|_, handle| handle.strong_count() != 0);
+                registry.shrink_to_fit();
+                self.async_registry_sweep_len = registry.len();
+            }
+        }
         Ok(id)
     }
 

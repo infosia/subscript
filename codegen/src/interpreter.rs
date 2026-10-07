@@ -403,6 +403,9 @@ struct Interpreter<'m> {
     task_groups: HashMap<usize, Rc<RefCell<task_group::Group>>>,
     next_group_id: usize,
     next_async_task_id: u64,
+    #[cfg(test)]
+    async_registry_sweep_len: usize,
+    #[cfg(test)]
     async_registry: RefCell<HashMap<u64, Weak<RefCell<Coroutine>>>>,
     // The generator registry. §106.3 rules 1 and 5 own it.
     generator_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
@@ -449,6 +452,9 @@ impl<'m> Interpreter<'m> {
             task_groups: HashMap::new(),
             next_group_id: 2,
             next_async_task_id: 1,
+            #[cfg(test)]
+            async_registry_sweep_len: 0,
+            #[cfg(test)]
             async_registry: RefCell::new(HashMap::new()),
             generator_handles: RefCell::new(HashMap::new()),
             async_ready: std::collections::VecDeque::new(),
@@ -620,6 +626,7 @@ impl<'m> Interpreter<'m> {
                 awaiting: None,
             }));
             if function.is_async {
+                #[cfg(test)]
                 self.async_registry
                     .borrow_mut()
                     .insert(task_id, Rc::downgrade(&coroutine));

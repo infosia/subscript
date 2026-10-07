@@ -40,19 +40,75 @@ pub(super) fn map_operation_name<'a>(
     }
 }
 
-pub(super) fn produces_fresh_owner(
-    operations: &[l::IntrinsicOperation],
-    kind: &l::InstructionKind,
-) -> bool {
+/// The verifier indexes the module's recorded rows independently of the builder.
+pub(super) struct RecordedOperations<'a> {
+    rows: HashMap<(usize, u16), &'a l::IntrinsicOperation>,
+}
+
+impl<'a> RecordedOperations<'a> {
+    pub(super) fn new(operations: &'a [l::IntrinsicOperation]) -> Self {
+        let mut rows = HashMap::new();
+        for row in operations {
+            rows.entry((row.family as usize, row.operation))
+                .or_insert(row);
+        }
+        Self { rows }
+    }
+
+    pub(super) fn produces_fresh_owner(&self, kind: &l::InstructionKind) -> bool {
+        if let l::InstructionKind::Call(target) = kind {
+            if let l::CallTargetKind::Intrinsic(intrinsic) = &target.kind {
+                if let Some(row) = self
+                    .rows
+                    .get(&(intrinsic.family as usize, intrinsic.operation))
+                {
+                    if intrinsic.family == l::IntrinsicFamily::Map
+                        || (intrinsic.family == l::IntrinsicFamily::Ambient
+                            && row.semantic_name == "UnsafeDelete")
+                    {
+                        return false;
+                    }
+                    if intrinsic.family == l::IntrinsicFamily::Array {
+                        static CLASSES: std::sync::OnceLock<
+                            HashMap<String, hir::CountedArrayMethod>,
+                        > = std::sync::OnceLock::new();
+                        let classes = CLASSES.get_or_init(|| {
+                            hir::ArrFn::ALL
+                                .iter()
+                                .map(|operation| {
+                                    (format!("{operation:?}"), operation.counted_class())
+                                })
+                                .collect()
+                        });
+                        return !matches!(
+                            classes.get(&row.semantic_name),
+                            Some(
+                                hir::CountedArrayMethod::Borrow
+                                    | hir::CountedArrayMethod::Replace
+                                    | hir::CountedArrayMethod::Reorder
+                            )
+                        ) && row.semantic_name != "Sort";
+                    }
+                }
+            }
+        }
+        kind.produces_fresh_async_owner()
+    }
+}
+
+pub(super) fn produces_fresh_owner_indexed(kind: &l::InstructionKind) -> bool {
     if let l::InstructionKind::Call(target) = kind {
-        if map_operation_name(operations, &target.kind).is_some() {
+        let rows = operation_table::lookup(&target.kind);
+        if map_operation_name(rows, &target.kind).is_some() {
             return false;
         }
-        if let Some(name) = array_operation_name(operations, &target.kind) {
+        if let Some(name) = array_operation_name(rows, &target.kind) {
+            let l::CallTargetKind::Intrinsic(intrinsic) = &target.kind else {
+                return false;
+            };
             let class = hir::ArrFn::ALL
-                .iter()
-                .find(|operation| format!("{operation:?}") == name)
-                .map(|operation| operation.counted_class());
+                .get(intrinsic.operation as usize)
+                .map(|op| op.counted_class());
             return !matches!(
                 class,
                 Some(

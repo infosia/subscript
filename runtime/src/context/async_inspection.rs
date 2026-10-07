@@ -44,6 +44,34 @@ impl Context {
         };
         let mut frames: Vec<_> = self.async_frames.iter().collect();
         frames.sort_unstable_by_key(|(_, meta)| meta.task_id);
+        let ready: std::collections::HashSet<_> = self
+            .async_ready
+            .iter()
+            .filter_map(|job| match job {
+                AsyncJob::Invocation(frame) => Some(*frame as usize),
+                _ => None,
+            })
+            .collect();
+        let parked: std::collections::HashSet<_> = self
+            .async_parked
+            .iter()
+            .map(|frame| *frame as usize)
+            .collect();
+        let stopped: std::collections::HashSet<_> = self
+            .async_stopped
+            .iter()
+            .map(|frame| *frame as usize)
+            .collect();
+        let active: std::collections::HashSet<_> =
+            self.active_async_frames.iter().copied().collect();
+        let mut waiting = HashMap::new();
+        for meta in self.async_frames.values() {
+            for job in &meta.waiters {
+                if let AsyncJob::Invocation(frame) = job {
+                    waiting.entry(*frame as usize).or_insert(meta.task_id);
+                }
+            }
+        }
         let mut records = Vec::with_capacity(frames.len());
         for (&frame, meta) in &frames {
             let aggregate = meta.kind.task_kind() != 1;
@@ -52,23 +80,16 @@ impl Context {
                 5
             } else if aggregate {
                 3
-            } else if self.active_async_frames.contains(&frame) {
+            } else if active.contains(&frame) {
                 4
-            } else if self
-                .async_ready
-                .contains(&AsyncJob::Invocation(frame as *mut u8))
-            {
+            } else if ready.contains(&frame) {
                 1
-            } else if self.async_parked.contains(&(frame as *mut u8)) {
+            } else if parked.contains(&frame) {
                 2
-            } else if self.async_stopped.contains(&(frame as *mut u8)) {
+            } else if stopped.contains(&frame) {
                 6
-            } else if let Some(awaited) = self.async_frames.values().find(|other| {
-                other
-                    .waiters
-                    .contains(&AsyncJob::Invocation(frame as *mut u8))
-            }) {
-                awaited_task_id = awaited.task_id;
+            } else if let Some(&awaited) = waiting.get(&frame) {
+                awaited_task_id = awaited;
                 3
             } else {
                 // An unclassified frame violates the scheduler invariant (§169).

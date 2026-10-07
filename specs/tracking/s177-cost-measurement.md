@@ -303,3 +303,146 @@ Each temporary worktree gives an empty `git status --short` after the revert.
 The original tree gives only `?? specs/tracking/s177-cost-measurement.md`.
 The original `git diff --stat` is empty; no tracked production change remains.
 The final release CLI and runtime build use the original HEAD sources.
+
+## Implementation
+
+The implementation uses one immutable operation table and an index by family and operation.
+Each LIR module clones its recorded rows from that table.
+Builder ownership checks borrow the indexed row.
+The verifier indexes the module's recorded rows separately and indexes the array semantic classes once per process.
+The interpreter keeps task ids and increasing-id collection order in every build.
+Only the task registry and its sweep state are inside `cfg(test)`.
+Task retirement removes its registry entry.
+A threshold sweep removes dead weak entries and reduces the registry capacity.
+The runtime visitor builds state sets and the awaited-id map before its task loop.
+It also indexes active frames, so nested active calls do not add a task-by-stack scan.
+
+The release measurements use the same hardware and toolchain as the measurement sections above.
+The implementation measurements span 2026-10-07 and 2026-10-08 in Asia/Tokyo.
+Each binary runs alone, with no concurrent build, test, or gate.
+Each quantity is the best of three samples.
+Temporary source copies contain the timers and harnesses; the working tree contains neither.
+The implementation comparison pin is `9767cd18`.
+
+### Preparation and task growth
+
+The preparation run uses the fixed 265-entry set and source bytes from `9647c72a`.
+The timer excludes HIR checks and script execution, as section A requires.
+
+| Preparation | Seconds | Limit |
+|---|---:|---:|
+| Complete HIR-to-interpreter preparation | 0.074727127 | 0.182 |
+
+The live-task program and visitor harness use the inputs and execution spans from section C.
+Each script output equals n.
+Each visit reads n + 1 records and checks the parked task and each waiting task's awaited id.
+
+| n | Interpreter seconds | Visitor seconds |
+|---:|---:|---:|
+| 1,000 | 0.004754209 | 0.000081208 |
+| 10,000 | 0.047325041 | 0.000795959 |
+| 100,000 | 0.490286792 | 0.010212459 |
+
+The 10,000-to-100,000 interpreter growth is 10.359987; its limit is 15.
+The visitor growth is 12.830383; its limit is 15.
+Both 100,000-task times pass their respective 1-second and 0.05-second limits.
+
+### Corpus and benchmark controls
+
+The release interpreter run uses all 270 runnable entries from the pin, including `cost: benchmark`.
+Every output matches its frozen golden in all six runs.
+The native benchmark controls run separately under the dev JIT and C AOT.
+The corpus execution span includes interpreter setup, execution, checkpoints, and release.
+The complete loop also includes source reads, HIR checks, and LIR construction.
+
+| Release interpreter corpus span | Pin seconds | Implementation seconds | Implementation / pin |
+|---|---:|---:|---:|
+| Execution | 206.701526375 | 209.399303923 | 1.013052 |
+| Complete sequential loop | 207.118085584 | 209.614835375 | 1.012055 |
+
+The full-corpus samples are:
+
+| Sample | Pin execution seconds | Implementation execution seconds |
+|---:|---:|---:|
+| 1 | 208.115515547 | 248.697110259 |
+| 2 | 206.701526375 | 209.399303923 |
+| 3 | 207.915955182 | 324.466118039 |
+
+The implementation samples have substantial variation.
+The acceptance criterion uses the best of three; the tables retain all three execution samples.
+No cause is assigned to the variation.
+
+An additional non-benchmark control uses the pin's 269 entries that the debug corpus gate selects.
+Every output matches its frozen golden.
+
+| Non-benchmark interpreter corpus span | Pin seconds | Implementation seconds | Implementation / pin |
+|---|---:|---:|---:|
+| Execution | 1.158145962 | 1.157892751 | 0.999781 |
+| Complete sequential loop | 1.570718417 | 1.344791416 | 0.856163 |
+
+The ten cross-language workloads retain the pin's source bytes and workload parameters.
+The additional `a22` row covers the performance gate's matrix workload.
+JIT compilation precedes its three discarded warm-up calls and three timed calls.
+C AOT compilation precedes its warm-up floor of 200 ms and three timed calls.
+Both tiers time only the exported workload call.
+Context creation, initialization, release, and output reads stay outside these benchmark timers.
+All checksums match across the pin, the implementation, and both tiers.
+
+| Workload | Tier | Pin seconds | Implementation seconds | Implementation / pin |
+|---|---|---:|---:|---:|
+| fib-recursive | Dev JIT | 0.009621959 | 0.009065125 | 0.942129 |
+| fib-recursive | C AOT | 0.004236000 | 0.004236000 | 1.000000 |
+| fib-loop | Dev JIT | 0.081509042 | 0.079267625 | 0.972501 |
+| fib-loop | C AOT | 0.033929000 | 0.033242000 | 0.979752 |
+| mandelbrot | Dev JIT | 0.146306375 | 0.147929208 | 1.011092 |
+| mandelbrot | C AOT | 0.137900000 | 0.139094000 | 1.008658 |
+| primes | Dev JIT | 0.035424334 | 0.035507250 | 1.002341 |
+| primes | C AOT | 0.023379000 | 0.023493000 | 1.004876 |
+| sort | Dev JIT | 0.038533167 | 0.039250167 | 1.018607 |
+| sort | C AOT | 0.020270000 | 0.019554000 | 0.964677 |
+| tree | Dev JIT | 0.463150916 | 0.457207333 | 0.987167 |
+| tree | C AOT | 0.120610000 | 0.115646000 | 0.958843 |
+| queen | Dev JIT | 0.040729250 | 0.039280417 | 0.964428 |
+| queen | C AOT | 0.029246000 | 0.027887000 | 0.953532 |
+| particles | Dev JIT | 0.517910125 | 0.511820375 | 0.988242 |
+| particles | C AOT | 0.088217000 | 0.086286000 | 0.978111 |
+| callbacks | Dev JIT | 0.308244291 | 0.297729208 | 0.965887 |
+| callbacks | C AOT | 0.041727000 | 0.040348000 | 0.966952 |
+| collect | Dev JIT | 0.125479000 | 0.122277916 | 0.974489 |
+| collect | C AOT | 0.038335000 | 0.038691000 | 1.009287 |
+| a22-matrix-propagation | Dev JIT | 0.092780583 | 0.091135375 | 0.982268 |
+| a22-matrix-propagation | C AOT | 0.006267000 | 0.006082000 | 0.970480 |
+
+Every final benchmark ratio is below 1.05.
+The first C AOT primes comparison gave 0.023443 versus 0.024668 seconds, a ratio of 1.052255.
+A fresh paired batch gave 0.023379 versus 0.023493 seconds, a ratio of 1.004876, as the table records.
+Each batch uses three timed samples; the initial result remains visible here.
+
+### New gate test cost
+
+Each debug test runs alone in its compiled test binary, with one test thread.
+Each cost includes process start, test-harness setup, the test, and process release; compilation stays outside it.
+Each row is the best of three process times.
+The 100,000-task measurements remain outside the gate tests.
+
+| Test | State and control | Seconds |
+|---|---|---:|
+| `lir::operation_table::tests::many_calls_share_one_table_across_modules` | Two independently lowered modules, each with 256 calls; one row copy, then two | 0.026816625 |
+| `interpreter::inspection_tests::registry_retirement_and_live_control_keep_bounded_metadata` | 256 registrations with retirement, against 256 live holders; dead weak entries against live weak entries | 0.008912209 |
+| `one_visit_reads_all_states_with_a_complete_control` | Six invocation states in one visit, against the same frame shape with completion instead of a trap | 0.003427459 |
+| `collected_tasks_trap_in_task_id_order` | Five failed reference-field tasks; collection reports the first task and no stdout | 0.007761500 |
+
+The row-copy counter is test-only and local to the test thread.
+A temporary defect control copies the rows for each call instruction.
+The test fails with 257 copies instead of one; the unmodified implementation reads one copy, then two.
+
+`t107-collected-task-order` is Red against the round 1 non-test interpreter under `cargo test --release`.
+The measured trap is `uncaught-exception` at 23:3, with `Error: third` instead of `Error: first` and no stdout.
+At `dc3acdb4`, the dev JIT, C AOT, and interpreter all report `Error: first` at 23:3 with no stdout.
+The fixed debug and release interpreter tests report the same result.
+TypeScript 5.9.2 accepts the entry.
+The source is copied to temporary storage before each CLI run.
+
+The operation-table submodule keeps `lir.rs` below the 2,000-line limit with its added test.
+The interpreter source has 1,986 lines.
+Only `t107` adds a golden; no existing golden or compiler contract changes.

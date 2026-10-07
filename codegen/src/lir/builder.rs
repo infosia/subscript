@@ -436,7 +436,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ..
             })
         ) {
-            array_ownership::produces_fresh_owner(&intrinsic_operations(), &kind)
+            array_ownership::produces_fresh_owner_indexed(&kind)
         } else {
             kind.produces_fresh_async_owner()
         };
@@ -457,7 +457,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             },
             l::InstructionKind::Call(target)
                 if matches!(
-                    array_ownership::array_operation_name(&intrinsic_operations(), &target.kind),
+                    array_ownership::array_operation_name(
+                        operation_table::lookup(&target.kind),
+                        &target.kind
+                    ),
                     Some("Fill" | "CopyWithin" | "Slice" | "Concat")
                 ) || matches!(
                     target.kind,
@@ -480,8 +483,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 _ => None,
             }),
             l::InstructionKind::Call(target)
-                if array_ownership::map_operation_name(&intrinsic_operations(), &target.kind)
-                    .is_some() =>
+                if array_ownership::map_operation_name(
+                    operation_table::lookup(&target.kind),
+                    &target.kind,
+                )
+                .is_some() =>
             {
                 operands
                     .first()

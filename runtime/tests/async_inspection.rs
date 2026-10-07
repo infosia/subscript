@@ -298,3 +298,66 @@ fn a_manual_frame_without_a_scheduler_state_never_causes_a_partial_visit() {
         assert_eq!(count, if parked { 2 } else { 0 });
     }
 }
+
+#[test]
+fn one_visit_reads_all_states_with_a_complete_control() {
+    unsafe extern "C" fn finish(_: *mut Context, _: *mut u8, _: *mut u8) -> u8 {
+        1
+    }
+    unsafe extern "C" fn read(ctx: *mut Context, _: *mut u8, out: *mut u8) -> u8 {
+        let records = unsafe { &mut *out.cast::<Vec<AsyncTaskInfo>>() };
+        unsafe {
+            (&*ctx).visit_async_tasks(Some(visit), (records as *mut Vec<AsyncTaskInfo>).cast())
+        };
+        1
+    }
+    for trapping in [false, true] {
+        let mut ctx = Context::new();
+        let complete = frame(&mut ctx, resume);
+        let ready = frame(&mut ctx, resume);
+        let parked = frame(&mut ctx, resume);
+        let waiting = frame(&mut ctx, resume);
+        let stopped = frame(&mut ctx, if trapping { fail } else { finish });
+        let active = frame(&mut ctx, read);
+        unsafe {
+            ctx.async_complete(complete, std::ptr::null(), 0);
+            ctx.async_await(ready, complete, 17);
+            ctx.async_park(parked, 19);
+            ctx.async_await(waiting, parked, 23);
+            let done = ctx.async_start(stopped, std::ptr::null_mut(), 29);
+            if done != 0 {
+                ctx.async_complete(stopped, std::ptr::null(), 0);
+            }
+        }
+        ctx.clear_trap();
+        let before = (
+            ctx.async_pending(),
+            ctx.async_unfinished(),
+            ctx.live_count(),
+        );
+        let mut records = Vec::<AsyncTaskInfo>::new();
+        unsafe {
+            ctx.async_start(active, (&mut records as *mut Vec<AsyncTaskInfo>).cast(), 31);
+        }
+        assert_eq!(records.len(), 6);
+        assert_eq!(
+            records.iter().map(|t| t.state).collect::<Vec<_>>(),
+            vec![5, 1, 2, 3, if trapping { 6 } else { 5 }, 4]
+        );
+        assert_eq!(
+            records.iter().map(|t| t.task_id).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(records[3].awaited_task_id, 3);
+        assert_eq!(records[3].await_pos_id, 23);
+        assert_eq!(records[5].await_pos_id, 0);
+        assert_eq!(
+            before,
+            (
+                ctx.async_pending(),
+                ctx.async_unfinished(),
+                ctx.live_count()
+            )
+        );
+    }
+}

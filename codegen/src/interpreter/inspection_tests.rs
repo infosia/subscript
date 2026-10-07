@@ -286,3 +286,61 @@ int main(void) {
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn registry_retirement_and_live_control_keep_bounded_metadata() {
+    let hir = check_program(&[SourceFile::new(
+        "registry.ts",
+        "export async function main(): Promise<void> {}",
+    )])
+    .unwrap();
+    let module = crate::lir::lower_module(&hir).unwrap();
+    let id = module
+        .functions
+        .iter()
+        .find(|f| f.source_name == "main")
+        .unwrap()
+        .id;
+    for hold_live in [false, true] {
+        let mut interpreter = Interpreter::new(&module).unwrap();
+        let mut held = Vec::new();
+        for i in 0..256 {
+            let Value::Coroutine(handle) = interpreter.call_function(id, vec![]).unwrap() else {
+                panic!("task handle");
+            };
+            interpreter.async_start(&handle).unwrap();
+            if hold_live {
+                held.push(handle);
+                assert_eq!(interpreter.async_registry.borrow().len(), i + 1);
+            } else {
+                interpreter
+                    .release_coroutine(&handle, &no_script_site())
+                    .unwrap();
+                assert_eq!(interpreter.async_registry.borrow().len(), 0);
+            }
+        }
+        assert_eq!(held.len(), if hold_live { 256 } else { 0 });
+    }
+    // Context retirement can leave weak entries without a holder release.
+    for hold_live in [false, true] {
+        let mut interpreter = Interpreter::new(&module).unwrap();
+        let mut held = Vec::new();
+        for i in 0..256 {
+            let Value::Coroutine(handle) = interpreter.call_function(id, vec![]).unwrap() else {
+                panic!("task handle");
+            };
+            interpreter.release_scheduler_storage();
+            if hold_live {
+                held.push(handle);
+            } else {
+                drop(handle);
+            }
+            let len = interpreter.async_registry.borrow().len();
+            if hold_live {
+                assert_eq!(len, i + 1);
+            } else {
+                assert!(len <= 64, "{len} dead entries");
+            }
+        }
+    }
+}
