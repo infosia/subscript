@@ -9,6 +9,24 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::ErrorMemberOutsideSurface => DivergenceEntry {
+                ts: "export function main(): void { const e = new Error(\"x\"); print(`${e.stack}`); print(`${e.cause}`); }",
+                subscript: "export function main(): void { const e = new Error(\"x\"); print(e.message); }",
+                why: "The runtime has no call-stack representation. Error cause needs an arbitrary payload and an absent value; the language has no undefined.",
+                collision: "stdlib.md §19",
+            },
+            Divergence::NestedNominalClass => DivergenceEntry {
+                ts: "class P { x: i32 = 1; } class Q { x: i32 = 1; } function q(): Q { return new Q(); } export function main(): void { const qs: Q[] = [new Q()]; const ps: P[] = qs; const f: () => P = q; }",
+                subscript: "class P { x: i32 = 1; } function p(): P { return new P(); } export function main(): void { const ps: P[] = [new P()]; const f: () => P = p; }",
+                why: "Class identity remains nominal inside arrays and function types, even when TypeScript relates the classes structurally.",
+                collision: "C1",
+            },
+            Divergence::AbstractMember => DivergenceEntry {
+                ts: "abstract class P { abstract x: i32; } export function main(): void {}",
+                subscript: "class P { x: i32 = 1; } export function main(): void {}",
+                why: "No subclass can implement an abstract member because the language rejects class inheritance.",
+                collision: "C24",
+            },
             Divergence::TaskGroupPosition => super::DivergenceEntry {
                 ts: "class Holder { group: TaskGroup; constructor(group: TaskGroup) { this.group = group; } } export function main(): void {}",
                 subscript: "export async function main(): Promise<void> { const group: TaskGroup = new TaskGroup(); await group.join(); }",

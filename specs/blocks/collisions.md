@@ -30,7 +30,9 @@ position expecting a **Q33 `@Descriptor` class** *constructs* that class
 members are structural); this compiler rejects structural substitution.
 Accept: `a05`. Reject: `r06-structural-substitution` (passes a same-shaped
 class instance where the other nominal type is expected — `tsc`-clean by
-design).
+design). Class identity stays nominal inside compound types: an array
+element and a function parameter or result, at any depth (`compiler.md`
+§173 rule 3). Reject: `r391`.
 
 ### C2. Value types (Q2) — `@ValueType class`
 
@@ -691,11 +693,11 @@ it as a candidate to accept.
 | 8 | A string-literal enum member name; a constructor parameter property | No lowering is decided. | an identifier member; a field and an assignment |
 | 9 | `declare namespace` and `declare module` in a mirror | A mirror declares the C items of a header (§12.2), and C has no namespace. | — |
 | 10 | An import of a module that no program file supplies | The program is its files (C18). `node` cannot load such a module. | add the file |
-| 11 | A `#name` member, `static {}`, an `accessor` field, a `declare` field, an `abstract` member, an instance generator method | No lowering is decided. TypeScript `private` is the member privacy. | `private`; a static generator method |
+| 11 | A `#name` member, `static {}`, an `accessor` field, a `declare` field, an `abstract` member, an instance generator method | No lowering is decided. TypeScript `private` is the member privacy. An `abstract` member has no implementation: no subclass can implement it, because the checker rejects class inheritance (`compiler.md` §173 rule 4, `r392`). | `private`; a static generator method |
 | 12 | A method read as a value | The value loses its receiver. A bound value captures the receiver, and C5 forbids the escape of a capturing value. | `(x) => o.m(x)` |
 | 13 | A generator function, a static method, an ambient function, or a foreign function read as a value | No first-class value is decided for a direct call target. | a lambda that calls it |
 | 14 | A class or an enum as a run-time object: `new (expr)()`, a constructor type, an enum value as an object, an enum member such as `toString` | A class lowers to a C layout, and an enum lowers to integer constants. Neither has a run-time object. | a direct `new C()`; the enum member |
-| 15 | `this` in a lambda in a `@ValueType` method; `this` in a static method; a `function` expression | A `@ValueType` receiver captured by a lambda is a copy (C2), so a write does not reach it. A static method has no instance. A `function` expression binds its own `this`. A lambda in a reference-class method captures `this` (`compiler.md` §157). | a reference class, or a parameter; an arrow |
+| 15 | `this` in a lambda in a `@ValueType` method; `this` in a static method; a `function` expression | A `@ValueType` receiver captured by a lambda is a copy (C2), so a write does not reach it. A static method has no instance; it names its class (`ClassName.member`), and an arrow in it follows the same rule (`compiler.md` §173 rule 5, `r393`). A `function` expression binds its own `this`. A lambda in a reference-class method captures `this` (`compiler.md` §157). | a reference class, or a parameter; an arrow |
 | 16 | `yield*`; a generator `return()` call; a generator return value; a write to a step result | A generator gives values of one yield type through `next()`, and its finished result carries a zero (C8). For `yield*`, no lowering is decided. | `for (const x of xs) yield x;` |
 | 17 | A type annotation that is not a declared or builtin type: a type literal, a literal type, `keyof`, `typeof`, an indexed, mapped, or conditional type, a type predicate, the `this` type, `readonly T[]`, `never`, `unknown`, a qualified name other than a namespace import (§148), an intersection, a constructor type, a rest parameter or a pattern in a function type | An annotation names a declared or builtin type. Types are nominal (C1). | the declared type |
 | 18 | `typeof`, `void`, unary `+`, `in`, `**`, `&&=`, `\|\|=`, `**=`, a comma expression, a tagged template, a class expression, `import.meta`, `new.target`, `<T>x`, `x satisfies T`, `x as const`, an instantiation expression, `x!` | No lowering is decided, except: `in` reads dynamic properties (C10); `void` gives `undefined` (C7); unary `+` converts (Q25). | `Math.pow`; an explicit comparison; a null check |

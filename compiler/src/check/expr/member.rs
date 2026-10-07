@@ -24,7 +24,7 @@ impl<'p> Checker<'p> {
         truth_test: bool,
     ) -> hir::Expr {
         let pos = self.pos(m.span);
-        if self.reject_static_this_member(m, fx) {
+        if self.reject_caught_property(&m.obj, fx) || self.reject_static_this_member(m, fx) {
             return self.err_expr(pos);
         }
         // Classify optional descriptor arithmetic before checking this.
@@ -420,7 +420,9 @@ impl<'p> Checker<'p> {
                 }
                 if for_write {
                     self.reject_subset(
-                        if super::is_object_member(name) {
+                        if id == self.error_class && matches!(name, "stack" | "cause") {
+                            RejectionSite::ErrorMemberOutsideSurface
+                        } else if super::is_object_member(name) {
                             RejectionSite::ClassObjectMemberWrite
                         } else {
                             RejectionSite::ClassUndeclaredPropertyWrite
@@ -449,7 +451,9 @@ impl<'p> Checker<'p> {
                         }, prop_pos.clone());
                 } else {
                     self.reject_subset(
-                        if super::is_object_member(name) {
+                        if id == self.error_class && matches!(name, "stack" | "cause") {
+                            RejectionSite::ErrorMemberOutsideSurface
+                        } else if super::is_object_member(name) {
                             RejectionSite::ClassObjectMemberRead
                         } else {
                             RejectionSite::ClassUndeclaredMemberRead

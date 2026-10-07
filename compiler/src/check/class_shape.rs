@@ -522,6 +522,13 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     };
+                    if prop.is_abstract {
+                        self.reject_subset(
+                            RejectionSite::AbstractMember,
+                            format!("abstract member `{}` of `{}` is not supported because class inheritance is rejected", key.sym, self.classes[id.0].name),
+                            self.pos(key.span),
+                        );
+                    }
                     if prop.is_static {
                         let pos = self.pos(key.span);
                         if is_descriptor {

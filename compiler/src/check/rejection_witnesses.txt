@@ -1513,3 +1513,8 @@ export function main(): void {
   const values: Map<i32, i32> = new Map<i32, i32>();
   values.forEach((value: i32, key: i32): Promise<i32>[] => []);
 }
+===
+s173-map-pairs.ts	MAP_API		S014		§173
+`new Map(iterable)` is rejected: `new Map([[k, v]])` requires a pair element, but the language has no tuple type; use `construct empty, then set` (Q30)
+export function main(): void { const m = new Map<string, i32>([["a", 1]]); const a = new Map([["a", null], ["b", 1]]); const b = new Map([["a", 1], ["b", null]]); const c = new Map([["a", 1], ["b", 1.5]]); const d = new Map([["a", null], ["b", null], ["c", 1]]); }
+===

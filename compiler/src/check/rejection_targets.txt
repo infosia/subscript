@@ -1386,7 +1386,7 @@ StaticFieldTypeWithoutInitializer	s156-static-field-type	S100	static fields with
 FunctionValueParameterAnnotationNeeded	s156-function-value-parameter	S100	avoid a recursive function value in the parameter default
 GenericCallbackParameterAnnotationMissing	s156-generic-callback	S100	parameters require a type annotation
 GenericClassDefaultParameterAnnotationNeeded	s156-generic-class-default	S100	a generic-class default needs a parameter type; annotate the parameter
-ThisInStaticMethodArrow	this-static-arrow	S100	`this` is only available in constructors and methods
+ThisInStaticMethodArrow	this-static-arrow	S100	a static method must name its class instead of `this`; use `ClassName.member`
 ThisInParameterDefaultArrow	this-default-inferred	S009	a lambda in a parameter default cannot capture `this`
 ThisInParameterDefaultArrow	this-default-annotated	S009	a lambda in a parameter default cannot capture `this`
 LocalTypeWithoutInitializer	local-type-without-initializer	S100	a local without an initializer requires a type annotation
@@ -1413,3 +1413,58 @@ TaskGroupPosition	s170-position	S009	TaskGroup requires one const local or a syn
 TaskGroupUnjoined	s170-unjoined	S013	a task group requires a join in its declaring scope
 TaskGroupUnsupported	s170-unsupported	S009	TaskGroup has no method `missing`
 TaskGroupGeneratorBody	s170-generator-body	S009	TaskGroup is not allowed in a generator body
+ErrorMemberOutsideSurface	s173-error-stack	S018	`Error` has no member `stack`
+ErrorMemberOutsideSurface	s173-typeerror-stack	S018	`Error` has no member `stack`
+ErrorMemberOutsideSurface	s173-error-cause	S018	`Error` has no member `cause`
+ErrorMemberOutsideSurface	s173-typeerror-cause	S018	`Error` has no member `cause`
+ClassUndeclaredMemberRead	s173-error-missing	S018	`Error` has no member `missing`
+ClassUndeclaredMemberRead	s173-source-error-stack	S018	`Error` has no member `stack`
+AssignmentTypeMismatch	s173-mixed-array	S100	type mismatch: the array element expects `string`, got `i32`
+NestedNominalClass	s173-nested-0-equal	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-0-different	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+NestedNominalClass	s173-nested-1-equal	S100	type mismatch: the initializer expects `P[][]`, got `Q[][]`
+AssignmentTypeMismatch	s173-nested-1-different	S100	type mismatch: the initializer expects `P[][]`, got `Q[][]`
+NestedNominalClass	s173-nested-2-equal	S100	type mismatch: the initializer expects `() => P`, got `() => Q`
+AssignmentTypeMismatch	s173-nested-2-different	S100	type mismatch: the initializer expects `() => P`, got `() => Q`
+NestedNominalClass	s173-nested-3-equal	S100	type mismatch: the initializer expects `(P) => i32`, got `(Q) => i32`
+AssignmentTypeMismatch	s173-nested-3-different	S100	type mismatch: the initializer expects `(P) => i32`, got `(Q) => i32`
+NestedNominalClass	s173-nested-4-equal	S100	type mismatch: the initializer expects `() => P[]`, got `() => Q[]`
+AssignmentTypeMismatch	s173-nested-4-different	S100	type mismatch: the initializer expects `() => P[]`, got `() => Q[]`
+NestedNominalClass	s173-nested-5-equal	S100	type mismatch: the initializer expects `((P[]) => i32)[]`, got `((Q[]) => i32)[]`
+AssignmentTypeMismatch	s173-nested-5-different	S100	type mismatch: the initializer expects `((P[]) => i32)[]`, got `((Q[]) => i32)[]`
+AbstractMember	s173-abstract-property	S100	abstract member `x` of `P` is not supported because class inheritance is rejected
+FieldAssignmentMissingUnassignedExit	s173-concrete-property	S100	field `x` of `P` has no initializer, and no constructor statement assigns it; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
+CatchBindingUnnarrowedProperty	s173-catch-property-0	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-property-1	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-property-2	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-property-3	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedUse	s173-catch-template	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+VoidExpressionNonVoidDestination	s173-void-annotated	S100	a `void` expression is only allowed as an expression statement
+VoidExpressionValue	s173-void-inferred	S100	a `void` expression is only allowed as an expression statement
+ImmediatePendingLocalRead	s173-pending-immediate	S100	`x` is read before its declaration in this block
+BlockPendingReadWithoutProgramShadow	s173-pending-lambda	S100	`x` is read before its declaration in this block
+ThisInStaticMethodArrow	s173-static-arrow	S100	a static method must name its class instead of `this`; use `ClassName.member`
+CatchBindingUnnarrowedProperty	s173-catch-property-arrow	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+AssignmentTypeMismatch	s173-nested-access-0	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-access-1	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-access-2	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-access-3	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-method-access-0	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-method-access-1	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-method-access-2	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+AssignmentTypeMismatch	s173-nested-method-access-3	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
+ErrorMemberOutsideSurface	s173-error-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberOutsideSurface	s173-error-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ErrorMemberOutsideSurface	s173-typeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberOutsideSurface	s173-typeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ErrorMemberOutsideSurface	s173-rangeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberOutsideSurface	s173-rangeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ClassUndeclaredPropertyWrite	s173-error-missing-write	S004	nominal types are closed: `Error` has no property `missing`
+ClassUndeclaredPropertyWrite	s173-source-error-stack-write	S004	nominal types are closed: `Error` has no property `stack`
+AssignmentTypeMismatch	s173-map-pair-mismatch-0	S100	type mismatch: the Map pair value expects `i32`, got `string`
+AssignmentTypeMismatch	s173-map-pair-mismatch-1	S100	type mismatch: the Map pair key expects `string`, got `i32`
+AssignmentTypeMismatch	s173-map-pair-mismatch-2	S100	type mismatch: the Map pair value expects `i32`, got `string`
+CatchBindingUnnarrowedProperty	s173-catch-optional-property-0	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-optional-property-1	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-optional-property-2	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
+CatchBindingUnnarrowedProperty	s173-catch-optional-property-3	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`

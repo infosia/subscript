@@ -203,21 +203,21 @@ export async function main(): Promise<void> {
 
 An exception form outside the decided exception surface is rejected.
 
-Pinned corpus: [`corpus/reject/r11-throw.ts`](../corpus/reject/r11-throw.ts), line 8.
+Pinned corpus: [`corpus/reject/r394-tsc-rejected-reverse-cost.ts`](../corpus/reject/r394-tsc-rejected-reverse-cost.ts), line 10.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: S010 at the `throw` of a string operand
+// tsc: rejects TS18046, TS2322, TS2448, TS2454
+// expected-error: S010: the catch binding `e` is used outside `instanceof` and `throw`
 ```
 
 ```ts
-// expected-error: S010 at the `throw` of a string operand
-function fail(): void {
-  throw "failure";
-}
-
+function f(): void {}
+export function main(): void {
+  try { throw new Error("x"); } catch (e) { print(e.message); }
+  const value: i32 = f();
+  print(`${x}`); const x: i32 = 1;
 ```
 
 ### S011
@@ -287,20 +287,19 @@ export function main(): void {
 
 Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected.
 
-Pinned corpus: [`corpus/reject/r387-nested-counted-array-methods.ts`](../corpus/reject/r387-nested-counted-array-methods.ts), line 13.
+Pinned corpus: [`corpus/reject/r390-map-pair-initializer.ts`](../corpus/reject/r390-map-pair-initializer.ts), line 8.
 
 Header guidance:
 
 ```text
 // tsc: accepts
+// expected-error: S014: `new Map(iterable)` requires a pair element, but the language has no tuple type.
 ```
 
 ```ts
-  const jobs: Promise<void>[][] = [[work()]];
-  await jobs[0][0];
-  jobs.find((row: Promise<void>[]): boolean => row.length > 0);
-  jobs.sort((a: Promise<void>[], b: Promise<void>[]): i32 => a.length - b.length);
-  jobs.includes(jobs[0]);
+// expected-error: S014: `new Map(iterable)` requires a pair element, but the language has no tuple type.
+
+export function main(): void { const m = new Map<string, i32>([["a", 1]]); print(`${m.size}`); }
 ```
 
 ### S016
@@ -347,40 +346,38 @@ class C {
 
 A receiver type must declare each accessed member.
 
-Pinned corpus: [`corpus/reject/r176-unknown-member.ts`](../corpus/reject/r176-unknown-member.ts), line 10.
+Pinned corpus: [`corpus/reject/r389-error-outside-surface.ts`](../corpus/reject/r389-error-outside-surface.ts), line 8.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS2339
-// expected-error: S018 at the unknown member
+// tsc: accepts
+// expected-error: S018: `Error` has no member `stack`
 ```
 
 ```ts
-export function main(): void {
-  const s: Store = new Store();
-  s.store(1);
-}
+// expected-error: S018: `Error` has no member `stack`
+
+export function main(): void { const e = new Error("x"); print(`${e.stack}`); print(`${e.cause}`); }
 ```
 
 ### S100
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r382-async-arrow-handle-body.ts`](../corpus/reject/r382-async-arrow-handle-body.ts), line 9.
+Pinned corpus: [`corpus/reject/r391-nested-nominal-classes.ts`](../corpus/reject/r391-nested-nominal-classes.ts), line 12.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S100, the return value expects i32, got Promise<i32>
+// expected-error: S100: type mismatch: the initializer expects `P[]`, got `Q[]`
 ```
 
 ```ts
-
-export function main(): void {
-  const job = async (h: Promise<i32>): Promise<i32> => h;
-}
+function q(): Q { return new Q(); }
+function take(v: Q): i32 { return v.x; }
+export function main(): void { const qs: Q[] = [new Q()]; const ps: P[] = qs; const p: () => P = q; const f: (v: P) => i32 = take; }
 ```
 
 ## Warning rules

@@ -68,7 +68,7 @@ fn fixed_arity_forms_check_and_invalid_forms_keep_their_reasons() {
         ("Array.of<i32, i32>(1)", "exactly one type argument"),
         ("Array.of<i32>(\"wrong\")", "array element"),
         ("Array.of(...[1])", "variadic-parameter prerequisite"),
-        ("new Map<string, i32>([[\"a\", 1]])", "array element"),
+        ("new Map<string, i32>([[\"a\", 1]])", "no tuple type"),
         ("new Map<string, i32>([1])", "no tuple type"),
         ("new Map<string, i32>(new Set<i32>())", "no tuple type"),
         ("new Map<string, i32>(\"a\")", "no tuple type"),

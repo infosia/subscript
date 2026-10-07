@@ -575,3 +575,186 @@ error[S100]: `outer` is read before its declaration in this block
   Correct the bare static-arrow message without a new lowering.
 
 The tracking note contains measurements and candidates only. It changes no contract or production code.
+
+## Rule 4 branch measurement
+
+Code pin: `451edc8b`. TypeScript: stock 5.9.2. CLI: a debug build of this pin.
+Each program uses the measurement configuration above, with `noEmit: true`.
+Each source file resides under `$TMPDIR`.
+
+### Abstract property implementation
+
+```ts
+abstract class A { abstract x: i32; }
+class B extends A { x: i32 = 1; }
+export function main(): void { print(`${new B().x}`); }
+```
+
+TypeScript exits 0 with no diagnostics. The CLI exits 1 with two S100 diagnostics:
+
+| Position | Message | Site and class |
+|---|---|---|
+| 1:29 | field `x` of `A` has no initializer, and no constructor statement assigns it; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor | `FieldAssignmentMissingUnassignedExit`, `TscRejects`, no block |
+| 2:17 | class inheritance is not in the decided surface | `ReferenceClassInheritance`, `Diverges(ReferenceClassInheritance)`, `compiler.md` §115.1 block |
+
+### Abstract method implementation
+
+```ts
+abstract class A { abstract f(): i32; }
+class B extends A { f(): i32 { return 1; } }
+export function main(): void { print(`${new B().f()}`); }
+```
+
+TypeScript exits 0 with no diagnostics. The CLI exits 1 with two S100 diagnostics:
+
+| Position | Message | Block |
+|---|---|---|
+| 1:29 | function bodies are required | C24: no lowering is decided for abstract members |
+| 2:17 | class inheritance is not in the decided surface | `compiler.md` §115.1: no class inheritance |
+
+Both concrete subclasses implement their abstract member. The checker rejects both `extends` declarations.
+Rule 4 selects the rejection branch: no subclass can implement the member within the accepted language.
+The selected branch requires `AbstractMember` with C24 row 11.
+Row 11 needs this reason: no subclass can implement an abstract member because the language rejects class inheritance.
+The contract must select this branch before implementation.
+
+## §173 fact splits
+
+Contract pin: `a10b87ab`. TypeScript: stock 5.9.2.
+Each corpus entry uses a copy under `$TMPDIR` for its CLI measurement.
+The TypeScript project uses strict checks, ES2022, and the language prelude.
+
+### Corpus evidence at the contract pin
+
+| Entry | TypeScript | Pin diagnostic | Pin class or message defect |
+|---|---|---|---|
+| `r389-error-outside-surface` | accepts | S018 at 8:69 and 8:90: `Error` has no member `stack` or `cause` | Both diagnostics lack a block. |
+| `r390-map-pair-initializer` | accepts | S100 at 8:70: type mismatch: the array element expects `string`, got `i32` | The element check precedes the Map rejection. |
+| `r391-nested-nominal-classes` | accepts | S100 at 12:75, 12:98, and 12:126: the initializer type mismatch | The array, function result, and function parameter diagnostics lack a block. |
+| `r392-abstract-property` | accepts | S100 at 8:29: field `x` of `P` has no initializer, and no constructor statement assigns it | The diagnostic names initialization and lacks a block. |
+| `r393-static-arrow-this` | accepts | S100 at 8:67: `this` is only available in constructors and methods | The block is correct. The message names the wrong context. |
+| `r394-tsc-rejected-reverse-cost` | TS18046, TS2322, TS2448, TS2454 | S010 at 10:51; S100 at 11:22 and 12:12 | All three diagnostics carry an incorrect block. |
+
+The pin rejects all six entries with exit 1.
+The corpus block test reports five entries with incorrect blocks.
+All eight dedicated fact tests fail at the pin.
+The static-arrow test reports the message defect that the corpus block test cannot detect.
+
+### Resulting sites
+
+| Guard | Site | Class and collision |
+|---|---|---|
+| Receiver class ID equals `self.error_class`; `stack` or `cause`, read or write | `ErrorMemberOutsideSurface` | `Diverges(ErrorMemberOutsideSurface)`, `stdlib.md` §19 |
+| Non-spread pair-array literal with keys and values assignable to the Map types | `FormNewMapIterable` | `Diverges(NoTupleType)`, `stdlib.md` §10.4 |
+| Compound mismatch that the structural comparison accepts | `NestedNominalClass` | `Diverges(NestedNominalClass)`, C1 |
+| Abstract property declaration | `AbstractMember` | `Diverges(AbstractMember)`, C24 row 11 |
+| Bare `this` in a static-method arrow | `ThisInStaticMethodArrow` | `Diverges(ThisStaticMethodMember)`, C24 row 15 |
+| Property access on an unnarrowed catch binding | `CatchBindingUnnarrowedProperty` | `TscRejects`, no block |
+| Void expression with a non-void destination type | `VoidExpressionNonVoidDestination` | `TscRejects`, no block |
+| Pending local read without a lambda boundary | `ImmediatePendingLocalRead` | `TscRejects`, no block |
+
+The Error guard compares the receiver class ID with `self.error_class` at both read and write sites.
+Builtin error constructors use this shared class ID. A source class named Error keeps the missing-member site.
+The pair-array guard precedes homogeneous array inference and checks each key and value against the Map types.
+A non-assignable pair keeps `AssignmentTypeMismatch` with no block. Map copies keep their existing branch.
+Unannotated pair inference includes null values and compares numeric types through their TypeScript number type.
+The Map API witness includes both null orders, repeated null values, and mixed numeric literals.
+The nested comparison checks arrays, function parameters, and function results at any depth.
+The comparison reads the collected private and protected member facts.
+Distinct restricted members keep `AssignmentTypeMismatch`, because TypeScript requires their declaration identity.
+Eight field and method controls get TS2322 and keep no block.
+A declared scalar type parameter keeps its existing site. Its apparent constraint cannot select the compound guard.
+An abstract property rejects at its name and stays in the class shape with its declared type.
+The field-value check excludes abstract properties. A `this.x` read adds no diagnostic.
+The static-arrow message says: ``a static method must name its class instead of `this`; use `ClassName.member` ``.
+
+The catch template, inferred void binding, and deferred local read keep their C6, C21, and C14 blocks.
+A parenthesized unknown catch receiver gets TS2571. Direct, indexed, and called property uses get TS18046.
+Optional named property accesses get TS2339. Optional indexed property accesses get TS7053. Neither carries a block.
+The site table includes all six new sites and the controls for the original sites.
+The new NestedNominalClass fragment contains an array assignment and a function type assignment.
+
+### Required collision row text
+
+| Record | Required text |
+|---|---|
+| `stdlib.md` §19, `stack` | Reject `Error.stack`: the three execution tiers have no call-stack representation with frames and source positions. |
+| `stdlib.md` §19, `cause` | Reject `Error.cause`: it requires an arbitrary payload and an absent-value model. C7 provides no `undefined`. |
+| `stdlib.md` §10.4 | Reject pair-array Map construction before array element inference. Pair elements require tuple types. Construct an empty Map, then call `set`. |
+| C1 | Class identity remains nominal inside compound types, including array elements and function parameters and results at any depth. |
+| C24 row 11 | Reject abstract properties: no subclass can implement an abstract member because the checker rejects class inheritance. |
+| C24 row 15 | A static method must name its class explicitly. An arrow in that method follows the same rule. Use `ClassName.member`. |
+
+The existing Rule 4 branch measurement above supplies the inheritance evidence.
+
+### Test evidence
+
+The §154 total test covers 1,677 witnesses and 476 variants in one TypeScript process.
+The test passes. TypeScript costs 1.410 seconds; the checker costs 1.115 seconds; the total costs 3.144 seconds.
+Four extended fact tests fail before these corrections. All eleven tests pass after them.
+The eleven dedicated fact tests pass, including write controls, non-assignable Map pairs, and optional catch property accesses.
+Fifteen added witnesses measure these cases and their controls in the §154 TypeScript batch.
+The r392 corpus test requires exactly one AbstractMember diagnostic after its `this.x` read.
+The type-shape test pins the updated compound guard without Map and Set branches.
+The generic matrix keeps its existing scalar classification and passes all 39,119 cells.
+The final CLI rejects each new entry with exit 1.
+The r389, r390, r391, r392, and r393 entries carry two, one, three, one, and one blocks, respectively.
+The r394 entry carries three diagnostics and no block.
+
+### Required checks
+
+| Check | Result |
+|---|---|
+| `cargo build --offline --locked --workspace --all-targets` | pass |
+| `cargo test --offline --locked -p subscript-compiler` | pass |
+| `cargo test --offline --locked -p subscript-codegen` | pass |
+| `cargo test --offline --locked -p subscript-runtime` | pass |
+| `cargo fmt --check` | pass |
+| `cargo clippy --offline --locked --workspace --all-targets` | pass; no new warning |
+| `tools/hygiene.sh` | pass |
+
+Clippy reports existing warnings. The corrections add no warning.
+The tree keeps every existing `.expected` file.
+Every changed Rust file stays below 2,000 lines.
+The generator supplies both generated document changes.
+
+### Changed files
+
+- `compiler/src/check/bodies.rs`
+- `compiler/src/check/class_shape.rs`
+- `compiler/src/check/exception.rs`
+- `compiler/src/check/expr/array_of_and_map_copy.rs`
+- `compiler/src/check/expr/call.rs`
+- `compiler/src/check/expr/entry.rs`
+- `compiler/src/check/expr/literal.rs`
+- `compiler/src/check/expr/member.rs`
+- `compiler/src/check/expr/operator.rs`
+- `compiler/src/check/lookup.rs`
+- `compiler/src/check/member_modifiers.rs`
+- `compiler/src/check/mod.rs`
+- `compiler/src/check/rejection.rs`
+- `compiler/src/check/rejection_fact_tests.rs`
+- `compiler/src/check/rejection_facts.rs`
+- `compiler/src/check/rejection_programs.txt`
+- `compiler/src/check/rejection_sites.rs`
+- `compiler/src/check/rejection_targets.txt`
+- `compiler/src/check/rejection_witness_index.rs`
+- `compiler/src/check/rejection_witness_sites.rs`
+- `compiler/src/check/rejection_witnesses.txt`
+- `compiler/src/check/type_rules.rs`
+- `compiler/src/divergence.rs`
+- `compiler/src/divergence/entries.rs`
+- `compiler/tests/apparent_type_shapes.rs`
+- `compiler/tests/array_of_and_map_copy.rs`
+- `compiler/tests/corpus_reject.rs`
+- `corpus/reject/r389-error-outside-surface.ts`
+- `corpus/reject/r390-map-pair-initializer.ts`
+- `corpus/reject/r391-nested-nominal-classes.ts`
+- `corpus/reject/r392-abstract-property.ts`
+- `corpus/reject/r393-static-arrow-this.ts`
+- `corpus/reject/r394-tsc-rejected-reverse-cost.ts`
+- `generated-docs/corpus-index.md`
+- `generated-docs/language-reference.md`
+- `specs/blocks/collisions.md` — Claude edited this file.
+- `specs/blocks/stdlib.md` — Claude edited this file.
+- `specs/tracking/s173-tsc-rejects-instances.md`

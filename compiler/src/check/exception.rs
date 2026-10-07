@@ -324,6 +324,28 @@ impl Checker<'_> {
         Some(local_expr(&name, local.ty, pos))
     }
 
+    /// Rejects a property access on an unnarrowed catch binding.
+    pub(super) fn reject_caught_property(&mut self, receiver: &ast::Expr, fx: &FnCtx) -> bool {
+        let mut receiver = receiver;
+        while let ast::Expr::Paren(paren) = receiver {
+            receiver = &paren.expr;
+        }
+        let ast::Expr::Ident(id) = receiver else {
+            return false;
+        };
+        let name = id.sym.as_ref();
+        let Some(local) = fx
+            .scopes
+            .iter()
+            .rev()
+            .find(|scope| scope.vars.contains_key(name) || scope.pending.contains(name))
+            .and_then(|scope| scope.vars.get(name))
+        else {
+            return false;
+        };
+        self.reject_caught_read(name, local, &self.pos(id.span), fx, true)
+    }
+
     /// Reports a read of an unnarrowed catch binding (§115.3 rule 4).
     /// Answers true when the read is rejected.
     pub(crate) fn reject_caught_read(
@@ -332,6 +354,7 @@ impl Checker<'_> {
         local: &Local,
         pos: &Pos,
         fx: &FnCtx,
+        property: bool,
     ) -> bool {
         if !local.caught
             || fx
@@ -342,7 +365,11 @@ impl Checker<'_> {
             return false;
         }
         self.reject_subset(
-            RejectionSite::CatchBindingUnnarrowedUse,
+            if property {
+                RejectionSite::CatchBindingUnnarrowedProperty
+            } else {
+                RejectionSite::CatchBindingUnnarrowedUse
+            },
             format!(
                 "the catch binding `{name}` is used outside `instanceof` and `throw`; \
                  narrow it first with `{name} instanceof Error`"

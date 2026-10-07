@@ -484,36 +484,48 @@ impl super::Checker<'_> {
                 }
                 _ if structural_classes => {
                     self.classes[b.0].fields.iter().all(|target| {
-                        self.classes[a.0].fields.iter().any(|source| {
-                            source.name == target.name
-                                && self.ts_erased_assignable_inner(
-                                    &source.ty,
-                                    &target.ty,
-                                    seen,
-                                    structural_classes,
-                                )
-                        })
-                    }) && self.class_sigs[b.0].methods.iter().all(|(name, target)| {
                         self.class_sigs[a.0]
-                            .methods
-                            .get(name)
-                            .is_some_and(|source| {
-                                source.params.len() == target.params.len()
-                                    && source.params.iter().zip(&target.params).all(|(x, y)| {
-                                        self.ts_erased_assignable_inner(
-                                            y.ty(),
-                                            x.ty(),
-                                            seen,
-                                            structural_classes,
-                                        )
-                                    })
+                            .modifiers
+                            .structural_member_is_public(&target.name)
+                            && self.class_sigs[b.0]
+                                .modifiers
+                                .structural_member_is_public(&target.name)
+                            && self.classes[a.0].fields.iter().any(|source| {
+                                source.name == target.name
                                     && self.ts_erased_assignable_inner(
-                                        &source.ret,
-                                        &target.ret,
+                                        &source.ty,
+                                        &target.ty,
                                         seen,
                                         structural_classes,
                                     )
                             })
+                    }) && self.class_sigs[b.0].methods.iter().all(|(name, target)| {
+                        self.class_sigs[a.0]
+                            .modifiers
+                            .structural_member_is_public(name)
+                            && self.class_sigs[b.0]
+                                .modifiers
+                                .structural_member_is_public(name)
+                            && self.class_sigs[a.0]
+                                .methods
+                                .get(name)
+                                .is_some_and(|source| {
+                                    source.params.len() == target.params.len()
+                                        && source.params.iter().zip(&target.params).all(|(x, y)| {
+                                            self.ts_erased_assignable_inner(
+                                                y.ty(),
+                                                x.ty(),
+                                                seen,
+                                                structural_classes,
+                                            )
+                                        })
+                                        && self.ts_erased_assignable_inner(
+                                            &source.ret,
+                                            &target.ret,
+                                            seen,
+                                            structural_classes,
+                                        )
+                                })
                     })
                 }
                 _ => false,

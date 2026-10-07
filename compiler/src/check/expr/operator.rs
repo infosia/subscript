@@ -625,6 +625,15 @@ impl<'p> Checker<'p> {
     fn check_optional_plan(&mut self, chain: &ast::OptChainExpr, fx: &mut FnCtx) -> OptionalPlan {
         let mut steps = Vec::new();
         let root = flatten_optional_chain(chain, &mut steps);
+        if matches!(steps.first(), Some(OptionalStep::Member { .. }))
+            && self.reject_caught_property(root, fx)
+        {
+            return OptionalPlan {
+                tests: Vec::new(),
+                value: self.err_expr(self.pos(root.span())),
+                ends_in_call: false,
+            };
+        }
         let mut current = self.check_expr(root, None, fx);
         let mut tests = Vec::new();
         let mut ends_in_call = false;

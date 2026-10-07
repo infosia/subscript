@@ -216,7 +216,12 @@ impl<'p> Checker<'p> {
             self.err_expr(checked.pos)
         } else if self.apparent_type(&checked.ty) == Type::Void {
             self.reject_subset(
-                RejectionSite::VoidExpressionValue,
+                if ctx.is_some_and(|ty| !matches!(self.apparent_type(ty), Type::Void | Type::Error))
+                {
+                    RejectionSite::VoidExpressionNonVoidDestination
+                } else {
+                    RejectionSite::VoidExpressionValue
+                },
                 "a `void` expression is only allowed as an expression statement",
                 checked.pos.clone(),
             );
@@ -356,7 +361,11 @@ impl<'p> Checker<'p> {
                         };
                         self.reject_subset(
                             site,
-                            "`this` is only available in constructors and methods",
+                            if site == RejectionSite::ThisInStaticMethodArrow {
+                                "a static method must name its class instead of `this`; use `ClassName.member`"
+                            } else {
+                                "`this` is only available in constructors and methods"
+                            },
                             pos.clone(),
                         );
                         self.err_expr(pos)

@@ -3,6 +3,12 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::ErrorMemberOutsideSurface,
+    RejectionSite::NestedNominalClass,
+    RejectionSite::AbstractMember,
+    RejectionSite::CatchBindingUnnarrowedProperty,
+    RejectionSite::VoidExpressionNonVoidDestination,
+    RejectionSite::ImmediatePendingLocalRead,
     RejectionSite::BlockLambdaReturnAnnotationMissing,
     RejectionSite::GenericClassDefaultParameterAnnotationNeeded,
     RejectionSite::InitializerTypeCycle,

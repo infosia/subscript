@@ -757,7 +757,10 @@ invariant 5 excludes it. A **`Generator<K>` source is rejected** by
 §14.4's rule — a generator is single-use, and construction is a value
 expression. **`new Map(source)` stays rejected in every form**: a
 pair element needs a tuple type. *(Except `new Map(otherMap)`, which
-§10.9 accepts: it needs no user-visible tuple.)*
+§10.9 accepts: it needs no user-visible tuple.)* A pair-array literal source
+(`new Map([["a", 1]])`) reaches this rejection before the array element
+check (`compiler.md` §173 rule 2); construct an empty Map, then call
+`set`. Reject entry `r390`.
 
 Added by Q27 (2026-07-25):
 
@@ -2532,3 +2535,12 @@ in each of the three name/message cases, every §19.3 row, and every
 §19.4 success row, with each failure row caught and printing only
 `e instanceof URIError` and `e.name` (`js-comparable` against `node`).
 
+### 19.5 `stack` and `cause` stay rejected (2026-10-07)
+
+`Error.stack` and `Error.cause` are rejected at the
+`ErrorMemberOutsideSurface` site (`compiler.md` §173 rule 1); `tsc`
+5.9.2 accepts both. `stack`: the three execution tiers have no
+call-stack representation with frames and source positions (node prints
+the frames of the run). `cause`: it needs an arbitrary payload and an
+absent-value model, and C7 provides no `undefined`. Reject entry
+`r389`.

@@ -15,6 +15,17 @@ pub(super) struct ClassModifiers {
 }
 
 impl ClassModifiers {
+    /// Distinct class declarations can share only public instance members.
+    pub(super) fn structural_member_is_public(&self, name: &str) -> bool {
+        [false, true].into_iter().all(|write| {
+            self.accessibility
+                .get(&(false, write, name.to_owned()))
+                .copied()
+                .and_then(restricted)
+                .is_none()
+        })
+    }
+
     pub(super) fn from_class(class: &ast::Class) -> Self {
         let mut facts = Self {
             is_abstract: class.is_abstract,

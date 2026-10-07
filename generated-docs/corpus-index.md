@@ -713,7 +713,13 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r386-task-group-generator-body`](../corpus/reject/r386-task-group-generator-body.ts) | A dropped generator cannot release a lexical task group. | task-group, generator, dropped-iterator | compiler.md §170 rules 2 and 7 |
 | [`reject/r387-nested-counted-array-methods`](../corpus/reject/r387-nested-counted-array-methods.ts) | Counted elements, callback results, and accumulators reject array methods. | counted-array, async-handle, ownership | compiler.md §171, §70, §116; stdlib.md §9 |
 | [`reject/r388-counted-map-for-each`](../corpus/reject/r388-counted-map-for-each.ts) | A callback collection cannot carry a counted value. | counted-map, counted-field, async-handle, ownership | compiler.md §172, §171, §70, §116 |
+| [`reject/r389-error-outside-surface`](../corpus/reject/r389-error-outside-surface.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
 | [`reject/r39-map-array-key`](../corpus/reject/r39-map-array-key.ts) | Rejects a dynamic array key because Q24 defines no array hash. | map-key-whitelist, dynamic-array | Q24, Q22 |
+| [`reject/r390-map-pair-initializer`](../corpus/reject/r390-map-pair-initializer.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
+| [`reject/r391-nested-nominal-classes`](../corpus/reject/r391-nested-nominal-classes.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
+| [`reject/r392-abstract-property`](../corpus/reject/r392-abstract-property.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
+| [`reject/r393-static-arrow-this`](../corpus/reject/r393-static-arrow-this.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
+| [`reject/r394-tsc-rejected-reverse-cost`](../corpus/reject/r394-tsc-rejected-reverse-cost.ts) | Pin the fact split of compiler section 173. | rejection-class, divergence-block | compiler.md §173 |
 | [`reject/r40-map-valuetype-key`](../corpus/reject/r40-map-valuetype-key.ts) | Rejects a by-value @ValueType key with no identity hash. | map-key-whitelist, value-class | Q24, Q22, C2 |
 | [`reject/r41-map-scalar-get`](../corpus/reject/r41-map-scalar-get.ts) | Rejects get on a scalar-valued Map with no null miss value. | map-get-miss, scalar-value | Q24, C7 |
 | [`reject/r42-map-iterator-member`](../corpus/reject/r42-map-iterator-member.ts) | Rejects assigning a subject-only fused Map keys() view. | for-of-subject-restriction, escaping-iterator-temporary | Q30 |

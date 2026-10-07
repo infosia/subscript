@@ -627,9 +627,9 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "closed-alias", reason: "The switch checker admits exhaustive aliases only from a declared StringAlias, never T.", sites: &[
         ("fallthrough.rs", "exits", 0x236c857a745d8fa1),
     ] },
-    AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
+    AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b). The nested-nominality guard requires a declared compound type (§173 rule 3).", sites: &[
         ("type_rules.rs", "assignable_through_constraints", 0xbb1305f0120713de),
-        ("type_rules.rs", "report_not_assignable", 0x3b63376ac19d0a25),
+        ("type_rules.rs", "report_not_assignable", 0xb027c95ea3b05166),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[
         ("type_rules.rs", "contains_string_alias", 0xac8041c10ca4be34),

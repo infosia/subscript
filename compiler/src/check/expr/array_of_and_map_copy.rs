@@ -96,6 +96,12 @@ impl<'p> Checker<'p> {
         let arguments = call.args.as_deref().unwrap_or(&[]);
         if let [argument] = arguments {
             if argument.spread.is_none() {
+                // Pair literals need tuple context before homogeneous array inference.
+                if let ast::Expr::Array(array) = super::unparen_expr(&argument.expr) {
+                    if self.reject_map_pairs(array, declared.as_ref().or(ctx), fx, &pos) {
+                        return self.err_expr(pos);
+                    }
+                }
                 let diagnostics_before = self.diags.len();
                 let source = self.check_expr(&argument.expr, declared.as_ref(), fx);
                 if self.apparent_type(&(source.ty)) == Type::Error
@@ -131,5 +137,80 @@ impl<'p> Checker<'p> {
         }
         self.reject_api_form("Map", "new Map(iterable)", "new Map(iterable)", pos.clone());
         self.err_expr(pos)
+    }
+
+    fn reject_map_pairs(
+        &mut self,
+        array: &ast::ArrayLit,
+        context: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: &Pos,
+    ) -> bool {
+        if !array.elems.iter().all(|element| element.as_ref().is_some_and(|element|
+            element.spread.is_none() && matches!(super::unparen_expr(&element.expr), ast::Expr::Array(pair)
+                if pair.elems.len() == 2 && pair.elems.iter().all(|part| part.as_ref().is_some_and(|part| part.spread.is_none())))))
+        {
+            return false;
+        }
+        let mut destinations = context.and_then(|ty| match self.apparent_type(ty) {
+            Type::Map(key, value) => Some([*key, *value]),
+            _ => None,
+        });
+        let infer = destinations.is_none();
+        for element in array.elems.iter().flatten() {
+            let ast::Expr::Array(pair) = super::unparen_expr(&element.expr) else {
+                return false;
+            };
+            let mut inferred = Vec::new();
+            for (index, part) in pair.elems.iter().flatten().enumerate() {
+                let destination = destinations
+                    .as_ref()
+                    .filter(|_| !infer)
+                    .map(|types| &types[index]);
+                let before = self.diags.len();
+                let value = self.check_expr(&part.expr, destination, fx);
+                if self.diags.len() > before || self.apparent_type(&value.ty) == Type::Error {
+                    return true;
+                }
+                if infer {
+                    if let Some(types) = destinations.as_mut() {
+                        if self.apparent_type(&types[index]) == Type::Null
+                            && self.apparent_type(&value.ty) != Type::Null
+                        {
+                            types[index] = Type::nullable(value.ty.clone());
+                        } else if self.apparent_type(&value.ty) == Type::Null
+                            && self.apparent_type(&types[index]) != Type::Null
+                            && !matches!(self.apparent_type(&types[index]), Type::Nullable(_))
+                        {
+                            types[index] = Type::nullable(types[index].clone());
+                        }
+                    }
+                }
+                if let Some(destination) = destinations.as_ref().map(|types| &types[index]) {
+                    if !self.ts_nominal_assignable(&value.ty, destination) {
+                        self.reject_subset(
+                            RejectionSite::AssignmentTypeMismatch,
+                            format!(
+                                "type mismatch: the Map pair {} expects `{}`, got `{}`",
+                                if index == 0 { "key" } else { "value" },
+                                self.type_name(destination),
+                                self.type_name(&value.ty),
+                            ),
+                            value.pos,
+                        );
+                        return true;
+                    }
+                }
+                inferred.push(value.ty);
+            }
+            if destinations.is_none() {
+                let mut types = inferred.into_iter();
+                if let (Some(key), Some(value)) = (types.next(), types.next()) {
+                    destinations = Some([key, value]);
+                }
+            }
+        }
+        self.reject_api_form("Map", "new Map(iterable)", "new Map(iterable)", pos.clone());
+        true
     }
 }

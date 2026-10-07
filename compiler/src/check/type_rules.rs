@@ -423,6 +423,21 @@ impl<'p> Checker<'p> {
                         _ if self.ts_erased_assignable(from, to) => {
                             RejectionSite::ErasedAssignableTypeMismatch
                         }
+                        _ if matches!(
+                            from_nominal,
+                            Type::Array(_)
+                                | Type::FixedArray(..)
+                                | Type::Func(_)
+                                | Type::Generator(_)
+                                | Type::AsyncHandle(_)
+                                | Type::IterResult(_)
+                                | Type::Worker(..)
+                                | Type::Inbox(_)
+                                | Type::Outbox(_)
+                        ) && self.ts_nominal_assignable(from, to) =>
+                        {
+                            RejectionSite::NestedNominalClass
+                        }
                         _ => RejectionSite::AssignmentTypeMismatch,
                     },
                     message,

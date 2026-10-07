@@ -13,6 +13,12 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::ErrorMemberOutsideSurface => (RuleCode::S018, Diverges(Divergence::ErrorMemberOutsideSurface)),
+    Self::NestedNominalClass => (RuleCode::S100, Diverges(Divergence::NestedNominalClass)),
+    Self::AbstractMember => (RuleCode::S100, Diverges(Divergence::AbstractMember)),
+    Self::CatchBindingUnnarrowedProperty => (RuleCode::S010, TscRejects),
+    Self::VoidExpressionNonVoidDestination => (RuleCode::S100, TscRejects),
+    Self::ImmediatePendingLocalRead => (RuleCode::S100, TscRejects),
     Self::TaskGroupUnsupported => (RuleCode::S009, TscRejects),
     Self::TaskGroupGeneratorBody => (RuleCode::S009, Diverges(Divergence::TaskGroupPosition)),
     Self::TaskGroupPosition => (RuleCode::S009, Diverges(Divergence::TaskGroupPosition)),

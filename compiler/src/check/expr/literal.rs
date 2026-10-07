@@ -324,7 +324,7 @@ impl<'p> Checker<'p> {
             }
         }
         if let Some(local) = self.lookup_local(&name, &pos, fx) {
-            if self.reject_caught_read(&name, &local, &pos, fx) {
+            if self.reject_caught_read(&name, &local, &pos, fx, false) {
                 return self.err_expr(pos);
             }
             let mut expr = hir::Expr {

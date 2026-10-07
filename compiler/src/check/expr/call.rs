@@ -802,7 +802,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        if self.reject_static_this_member(m, fx) {
+        if self.reject_caught_property(&m.obj, fx) || self.reject_static_this_member(m, fx) {
             return self.err_expr(pos);
         }
         let ast::MemberProp::Ident(prop) = &m.prop else {

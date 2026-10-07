@@ -9019,3 +9019,278 @@ export async function main(): Promise<void> {
 }
 END FILE
 END PROGRAM
+PROGRAM	s173-error-stack			0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); print(`${e.stack}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-typeerror-stack			0
+FILE	E	main.ts
+export function main(): void { const e = new TypeError("x"); print(`${e.stack}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-error-cause			0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); print(`${e.cause}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-typeerror-cause			0
+FILE	E	main.ts
+export function main(): void { const e = new TypeError("x"); print(`${e.cause}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-error-missing	TS2339		0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); print(`${e.missing}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-source-error-stack	TS2339		0
+FILE	E	main.ts
+class Error { x: i32 = 1; } export function main(): void { print(`${new Error().stack}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-mixed-array	TS2322		0
+FILE	E	main.ts
+export function main(): void { const pair: string[] = ["a", 1]; }
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-0-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-0-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-1-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: Q[][]): void { const p: P[][] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-1-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: Q[][]): void { const p: P[][] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-2-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: () => Q): void { const p: () => P = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-2-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: () => Q): void { const p: () => P = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-3-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: (v: Q) => i32): void { const p: (v: P) => i32 = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-3-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: (v: Q) => i32): void { const p: (v: P) => i32 = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-4-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: () => Q[]): void { const p: () => P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-4-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: () => Q[]): void { const p: () => P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-5-equal			0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: i32 = 1; } function f(q: ((v: Q[]) => i32)[]): void { const p: ((v: P[]) => i32)[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-5-different	TS2322		0
+FILE	E	main.ts
+class P { x: i32 = 1; } class Q { x: string = "x"; } function f(q: ((v: Q[]) => i32)[]): void { const p: ((v: P[]) => i32)[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-abstract-property			0
+FILE	E	main.ts
+abstract class P { abstract x: i32; get(): i32 { return this.x; } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-concrete-property	TS2564		0
+FILE	E	main.ts
+class P { x: i32; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-property-0	TS18046		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e.message); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-property-1	TS2571		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print((e).message); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-property-2	TS18046		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e["message"]); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-property-3	TS18046		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e.toString()); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-template			0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(`${e}`); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-void-annotated	TS2322		0
+FILE	E	main.ts
+function f(): void {} export function main(): void { const x: i32 = f(); }
+END FILE
+END PROGRAM
+PROGRAM	s173-void-inferred			0
+FILE	E	main.ts
+function f(): void {} export function main(): void { const x = f(); }
+END FILE
+END PROGRAM
+PROGRAM	s173-pending-immediate	TS2448,TS2454		0
+FILE	E	main.ts
+export function main(): void { print(`${x}`); const x: i32 = 1; }
+END FILE
+END PROGRAM
+PROGRAM	s173-pending-lambda			0
+FILE	E	main.ts
+export function main(): void { const read = (): i32 => x; const x: i32 = 4; print(`${read()}`); }
+END FILE
+END PROGRAM
+PROGRAM	s173-static-arrow			0
+FILE	E	main.ts
+class N { static f(): void { const g = (): void => { const self = this; }; g(); } } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-property-arrow	TS18046		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { const read = async (): Promise<void> => { print(e.message); }; } }
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-access-0	TS2322		0
+FILE	E	main.ts
+class P { private x: i32 = 1; } class Q { private x: i32 = 1; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-access-1	TS2322		0
+FILE	E	main.ts
+class P { protected x: i32 = 1; } class Q { protected x: i32 = 1; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-access-2	TS2322		0
+FILE	E	main.ts
+class P { public x: i32 = 1; } class Q { private x: i32 = 1; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-access-3	TS2322		0
+FILE	E	main.ts
+class P { private x: i32 = 1; } class Q { public x: i32 = 1; } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-method-access-0	TS2322		0
+FILE	E	main.ts
+class P { private f(): i32 { return 1; } } class Q { private f(): i32 { return 1; } } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-method-access-1	TS2322		0
+FILE	E	main.ts
+class P { protected f(): i32 { return 1; } } class Q { protected f(): i32 { return 1; } } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-method-access-2	TS2322		0
+FILE	E	main.ts
+class P { public f(): i32 { return 1; } } class Q { private f(): i32 { return 1; } } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-nested-method-access-3	TS2322		0
+FILE	E	main.ts
+class P { private f(): i32 { return 1; } } class Q { public f(): i32 { return 1; } } function f(q: Q[]): void { const p: P[] = q; } export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s173-error-stack-write			0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); e.stack = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-error-cause-write			0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); e.cause = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-typeerror-stack-write			0
+FILE	E	main.ts
+export function main(): void { const e = new TypeError("x"); e.stack = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-typeerror-cause-write			0
+FILE	E	main.ts
+export function main(): void { const e = new TypeError("x"); e.cause = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-rangeerror-stack-write			0
+FILE	E	main.ts
+export function main(): void { const e = new RangeError("x"); e.stack = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-rangeerror-cause-write			0
+FILE	E	main.ts
+export function main(): void { const e = new RangeError("x"); e.cause = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-error-missing-write	TS2339		0
+FILE	E	main.ts
+export function main(): void { const e = new Error("x"); e.missing = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-source-error-stack-write	TS2339		0
+FILE	E	main.ts
+class Error { x: i32 = 1; } export function main(): void { const e = new Error(); e.stack = "s"; }
+END FILE
+END PROGRAM
+PROGRAM	s173-map-pair-mismatch-0	TS2769		0
+FILE	E	main.ts
+export function main(): void { const m = new Map<string, i32>([["a", "b"]]); }
+END FILE
+END PROGRAM
+PROGRAM	s173-map-pair-mismatch-1	TS2769		0
+FILE	E	main.ts
+export function main(): void { const m = new Map<string, i32>([[1, 2]]); }
+END FILE
+END PROGRAM
+PROGRAM	s173-map-pair-mismatch-2	TS2769		0
+FILE	E	main.ts
+export function main(): void { const m = new Map<string, i32>([["a", 1], ["b", "c"]]); }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-optional-property-0	TS2339		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e?.message); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-optional-property-1	TS2339		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print((e)?.message); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-optional-property-2	TS7053		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e?.["message"]); } }
+END FILE
+END PROGRAM
+PROGRAM	s173-catch-optional-property-3	TS2339		0
+FILE	E	main.ts
+export function main(): void { try { throw new Error("x"); } catch (e) { print(e?.message.length); } }
+END FILE
+END PROGRAM

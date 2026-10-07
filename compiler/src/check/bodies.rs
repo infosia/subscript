@@ -823,6 +823,7 @@ impl<'p> Checker<'p> {
                     key.sym.to_string(),
                     FieldSpelling {
                         declared: prop.declare,
+                        abstract_member: prop.is_abstract,
                         definite: prop.definite,
                         optional: prop.is_optional,
                         // The declared text, not the resolved type: a
@@ -868,7 +869,7 @@ impl<'p> Checker<'p> {
             .collect();
         for (name, ty, pos) in unassigned {
             let spelling = spellings.get(&name).cloned().unwrap_or_default();
-            if spelling.optional || top_level.contains(&name) {
+            if spelling.abstract_member || spelling.optional || top_level.contains(&name) {
                 continue;
             }
             // `…` names no field, so the advice never reads as an

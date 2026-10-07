@@ -19,6 +19,8 @@ mod member_modifiers;
 #[cfg(test)]
 mod member_modifiers_tests;
 pub(crate) mod rejection;
+#[cfg(test)]
+mod rejection_fact_tests;
 mod rejection_facts;
 #[cfg(test)]
 mod rejection_programs;
@@ -570,6 +572,8 @@ fn this_field_assignment(statement: &hir::Stmt) -> Option<&str> {
 struct FieldSpelling {
     /// A source `declare` field.
     declared: bool,
+    /// An abstract field has no implementation.
+    abstract_member: bool,
     /// The `!` definite-assignment assertion.
     definite: bool,
     /// The `?` optional marker.

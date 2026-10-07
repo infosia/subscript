@@ -21,6 +21,12 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// An abstract property has no implementation without class inheritance.
+    AbstractMember,
+    /// Structurally equal classes remain nominal inside compound types.
+    NestedNominalClass,
+    /// An Error stack or cause has no runtime representation.
+    ErrorMemberOutsideSurface,
     /// A task group has one lexical owner and synchronous borrows (§170).
     TaskGroupPosition,
     /// A task group requires a join in its declaring scope (§170).
@@ -1005,6 +1011,9 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::AbstractMember,
+        Divergence::NestedNominalClass,
+        Divergence::ErrorMemberOutsideSurface,
         Divergence::FunctionValueOptionalArguments,
         Divergence::IndexedReadNullCheck,
         Divergence::RestParameter,

@@ -186,7 +186,11 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.reject_subset(
-                        RejectionSite::BlockPendingReadWithoutProgramShadow,
+                        if crossed == 0 {
+                            RejectionSite::ImmediatePendingLocalRead
+                        } else {
+                            RejectionSite::BlockPendingReadWithoutProgramShadow
+                        },
                         message,
                         pos.clone(),
                     );

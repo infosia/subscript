@@ -65,6 +65,12 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r389-error-outside-surface.ts", RuleCode::S018, 8),
+    ("r390-map-pair-initializer.ts", RuleCode::S014, 8),
+    ("r391-nested-nominal-classes.ts", RuleCode::S100, 12),
+    ("r392-abstract-property.ts", RuleCode::S100, 8),
+    ("r393-static-arrow-this.ts", RuleCode::S100, 8),
+    ("r394-tsc-rejected-reverse-cost.ts", RuleCode::S010, 10),
     ("r382-async-arrow-handle-body.ts", RuleCode::S100, 9),
     ("r383-unjoined-task-group.ts", RuleCode::S013, 10),
     ("r384-async-task-group-result.ts", RuleCode::S009, 9),
@@ -1593,4 +1599,15 @@ fn counted_map_callbacks_reject_recursive_and_substituted_value_types() {
     assert!(diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == RuleCode::S014));
+}
+
+#[test]
+fn abstract_property_read_keeps_one_diagnostic() {
+    let file = "r392-abstract-property.ts";
+    let diagnostics = check_entry(&reject_sources(&corpus_dir().join("reject"), file));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].divergence,
+        Some(subscript_compiler::divergence::Divergence::AbstractMember)
+    );
 }
