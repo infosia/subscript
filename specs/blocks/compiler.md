@@ -214,3 +214,4 @@ Every section, with its status:
 | §170 | A task group joins its tasks | active | [`s170-a-task-group-joins-its-tasks.md`](compiler/s170-a-task-group-joins-its-tasks.md) |
 | §171 | An array owns its counted elements | active | [`s171-an-array-owns-its-counted-elements.md`](compiler/s171-an-array-owns-its-counted-elements.md) |
 | §172 | A reference object releases its counted values | active | [`s172-a-reference-object-releases-its-counted-values.md`](compiler/s172-a-reference-object-releases-its-counted-values.md) |
+| §173 | Each `TscRejects` site is split on its fact | active | [`s173-each-tsc-rejects-site-is-split-on-its-fact.md`](compiler/s173-each-tsc-rejects-site-is-split-on-its-fact.md) |
