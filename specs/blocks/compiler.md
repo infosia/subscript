@@ -217,3 +217,4 @@ Every section, with its status:
 | §173 | Each `TscRejects` site is split on its fact | active | [`s173-each-tsc-rejects-site-is-split-on-its-fact.md`](compiler/s173-each-tsc-rejects-site-is-split-on-its-fact.md) |
 | §174 | A zero-length store clears an array | active | [`s174-a-zero-length-store-clears-an-array.md`](compiler/s174-a-zero-length-store-clears-an-array.md) |
 | §175 | A counted capture stays in its block | active | [`s175-a-counted-capture-stays-in-its-block.md`](compiler/s175-a-counted-capture-stays-in-its-block.md) |
+| §176 | A dropped generator releases its frame | active | [`s176-a-dropped-generator-releases-its-frame.md`](compiler/s176-a-dropped-generator-releases-its-frame.md) |

@@ -196,7 +196,7 @@ specifications only, so the code of each amended pin is that tree.
    the same trap, and the same output. The interpreter has the same
    holder count and element ownership.
 13. A generator that is suspended and then dropped keeps its locals.
-   This section does not change that (171.3).
+   This section does not change that (171.3). §176 replaces this rule.
 
 ### 171.2 Acceptance
 
@@ -249,7 +249,7 @@ specifications only, so the code of each amended pin is that tree.
 
 1. A suspended generator that is dropped keeps its locals and their
    counts (measurement item 1, generator row). A dropped iterator has
-   no scope exit.
+   no scope exit. §176 closes it.
 2. The LIR does not carry a lexical holder or its scope exit
    (`specs/tracking/s171-counted-holders.md` item 10). A form with a
    holder identity and an exit boundary lets the verifier check the
@@ -266,4 +266,5 @@ specifications only, so the code of each amended pin is that tree.
 4. `await G[0]` borrows the element of a module-global array. If
    another task resets `G` during the suspension, the awaited frame can
    be freed. This was present before §171, through the handle-array
-   release (Phase Review 2; not measured).
+   release (Phase Review 2; not measured). §176 measured it at `e8cf6e09`:
+   the await holds its own count, and the item does not reproduce.
