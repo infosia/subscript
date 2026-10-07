@@ -219,3 +219,4 @@ Every section, with its status:
 | §175 | A counted capture stays in its block | active | [`s175-a-counted-capture-stays-in-its-block.md`](compiler/s175-a-counted-capture-stays-in-its-block.md) |
 | §176 | A dropped generator releases its frame | active | [`s176-a-dropped-generator-releases-its-frame.md`](compiler/s176-a-dropped-generator-releases-its-frame.md) |
 | §177 | Bookkeeping cost stays linear | active | [`s177-bookkeeping-cost-stays-linear.md`](compiler/s177-bookkeeping-cost-stays-linear.md) |
+| §178 | A host operation completes a promise | active | [`s178-a-host-operation-completes-a-promise.md`](compiler/s178-a-host-operation-completes-a-promise.md) |
