@@ -111,6 +111,11 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   this by type: every value of a type that can carry a function may
   capture unless it is syntactically clean, a parameter that escapes is
   inferred, and its callers pass clean values.
+- *(Added 2026-10-07, `compiler.md` §175.)* A lambda that captures a
+  counted binding (`compiler.md` §171 rule 1) stays in the block of that
+  binding: a local declared outside the block cannot receive it. The
+  exit of the block releases the binding, and the lambda borrows it.
+  `tsc` accepts the assignment, and `node` keeps the value alive.
 
 Accept: `a13`, `a14`, `a262`. Reject: `r10-escaping-capture` (returns a
 capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean), `r353`, `r354`, `r357`, `r358`

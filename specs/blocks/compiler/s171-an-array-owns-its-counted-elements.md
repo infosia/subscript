@@ -262,6 +262,7 @@ specifications only, so the code of each amended pin is that tree.
    the C AOT tier fail at the later await, and node prints the value
    (`specs/tracking/s171-counted-holders.md` item 14). The defect is a
    capture lifetime, not an array operation; a later section closes it.
+   §175 closes it.
 4. `await G[0]` borrows the element of a module-global array. If
    another task resets `G` during the suspension, the awaited frame can
    be freed. This was present before §171, through the handle-array
