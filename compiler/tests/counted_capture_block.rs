@@ -128,7 +128,6 @@ fn uncounted_bindings_keep_the_same_outer_assignment() {
         ("const h: i32 = 7;", "h"),
         ("const h: i32[] = [7];", "h[0]"),
         ("const h = new Box();", "h.value"),
-        ("const h = numbers();", "h.next().value"),
     ] {
         accepted(&format!("class Box {{ value: i32 = 7; }} function* numbers(): Generator<i32> {{ yield 7; }} export function main(): void {{ let f: () => i32 = () => 0; {{ {setup} f = () => {read}; }} }}"));
     }
@@ -180,4 +179,30 @@ fn a_using_scope_keeps_the_source_block() {
     let prelude = format!("{PRELUDE} class Resource {{ [Symbol.dispose](): void {{ }} }}");
     accepted(&format!("{prelude} export function main(): void {{ let f: () => Promise<i32> = work; using r = new Resource(); const h = work(); f = () => h; }}"));
     rejected(&format!("{prelude} export function main(): void {{ let f: () => Promise<i32> = work; {{ using r = new Resource(); const h = work(); f = () => h; }} }}"), 1);
+}
+
+#[test]
+fn a_generator_capture_uses_its_counted_binding_block() {
+    let prelude = "function* numbers(): Generator<i32> { yield 7; }";
+    rejected(&format!("{prelude} export function main(): void {{ let f: () => i32 = () => 0; {{ const h = numbers(); f = () => h.next().value; }} }}"), 1);
+    accepted(&format!("{prelude} export function main(): void {{ {{ const h = numbers(); let f: () => i32 = () => h.next().value; }} }}"));
+}
+
+#[test]
+fn a_generator_callback_diagnostic_gives_the_for_of_fix() {
+    let source = "function* gen():Generator<i32>{yield 1;} export function main():void{const values:Generator<i32>[]=[gen()];values.forEach(value=>{value.next();});}";
+    let files = [SourceFile::new("generator-callback.ts", source)];
+    let errors = check_program(&files).expect_err("counted callback");
+    assert_eq!(errors[0].code, RuleCode::S014);
+    let rendered = subscript_compiler::render_diagnostics(&files, &errors);
+    assert!(
+        rendered.contains("a generator is a counted type (§176)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("for (const value of values) { value.next(); }"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("toFixed"), "{rendered}");
+    accepted("function* gen():Generator<i32>{yield 1;} export function main():void{const values:Generator<i32>[]=[gen()];for(const value of values){value.next();}}");
 }

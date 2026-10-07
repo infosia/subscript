@@ -8,6 +8,8 @@ use super::Type;
 pub enum CountedType {
     /// A registered async frame.
     Handle,
+    /// A generator frame with state-specific cleanup.
+    Generator,
     /// A reference to an array that owns its elements.
     Array(Box<CountedType>),
     /// Inline element owners.
@@ -21,6 +23,7 @@ impl Type {
     pub fn counted_type(&self) -> Option<CountedType> {
         match self {
             Self::AsyncHandle(_) => Some(CountedType::Handle),
+            Self::Generator(_) => Some(CountedType::Generator),
             Self::Array(element) => element
                 .counted_type()
                 .map(|element| CountedType::Array(Box::new(element))),
@@ -43,6 +46,14 @@ mod tests {
     fn counted_description_covers_every_holder_at_arbitrary_depth() {
         let handle = Type::AsyncHandle(Box::new(Type::I32));
         assert_eq!(handle.counted_type(), Some(CountedType::Handle));
+        assert_eq!(
+            Type::Generator(Box::new(Type::I32)).counted_type(),
+            Some(CountedType::Generator)
+        );
+        assert_eq!(
+            crate::lir::GeneratorCleanup::new(None, vec![crate::lir::ValueId(0)]).owners,
+            vec![crate::lir::ValueId(0)]
+        );
         let mut ty = handle;
         let mut description = CountedType::Handle;
         for _ in 0..8 {

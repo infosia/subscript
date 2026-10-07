@@ -305,7 +305,7 @@ fn reachable_generator_through_heap_storage_resumes_after_collection() {
 }
 
 #[test]
-fn collection_removes_an_unreachable_generator_without_heap_allocations() {
+fn drop_removes_an_unstarted_generator_before_collection() {
     let files = [SourceFile::new(
         "unstarted-generator.ts",
         "function* g():Generator<i32>{yield 1;}export function main():void{const it=g();}",
@@ -317,7 +317,7 @@ fn collection_removes_an_unreachable_generator_without_heap_allocations() {
         .call_function(module.entry.expect("entry"), Vec::new())
         .expect("main");
     assert_eq!(interpreter.context.live_count(), 0);
-    assert_eq!(interpreter.generator_handles.borrow().len(), 1);
+    assert_eq!(interpreter.generator_handles.borrow().len(), 0);
     interpreter
         .collect_interpreter(&Pos::new("<host>", 1, 1))
         .expect("collection");

@@ -187,6 +187,8 @@ pub struct Diagnostic {
     pub pos: Pos,
     /// The TypeScript divergence that this rejection reports.
     pub divergence: Option<Divergence>,
+    /// A form-specific example that replaces the generic divergence example.
+    pub example: Option<&'static crate::divergence::DivergenceEntry>,
     /// True when import or export resolution owns this failure.
     pub resolution: bool,
     /// A form-specific instruction that accompanies the diagnostic.
@@ -202,6 +204,7 @@ impl Diagnostic {
             message: message.into(),
             pos,
             divergence: None,
+            example: None,
             resolution: false,
             note: None,
         }

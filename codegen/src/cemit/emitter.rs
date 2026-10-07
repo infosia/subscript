@@ -574,6 +574,11 @@ impl<'m> Emitter<'m> {
     fn emit_frame_type(&self, out: &mut String, function: &l::Function) -> Result<(), String> {
         let _ = writeln!(out, "typedef struct SubFrame{} {{", function.id.0);
         out.push_str("    int32_t state;\n    uint32_t reserved;\n    SubAsyncResume resume;\n");
+        if function.is_generator {
+            out.push_str(
+                "    uint32_t holders;\n    uint32_t padding;\n    const uint64_t* cleanup;\n",
+            );
+        }
         for parameter in &function.parameters {
             let ty = &function.values[parameter.value.0 as usize].ty;
             let _ = writeln!(out, "    {} p{};", self.value_ctype(ty)?, parameter.value.0);
@@ -659,6 +664,28 @@ impl<'m> Emitter<'m> {
             }
         }
         let _ = writeln!(out, "}} SubFrame{};", function.id.0);
+        if function.is_generator {
+            let payload = subscript_runtime::generator_layout::PAYLOAD_OFFSET;
+            let _ = writeln!(out, "_Static_assert(offsetof(SubFrame{}, cleanup) + sizeof(((SubFrame{}*)0)->cleanup) == {payload}, \"generator payload offset\");", function.id.0, function.id.0);
+            for (field, offset) in [
+                ("state", subscript_runtime::generator_layout::STATE_OFFSET),
+                (
+                    "reserved",
+                    subscript_runtime::generator_layout::EPOCH_OFFSET,
+                ),
+                ("resume", subscript_runtime::generator_layout::RESUME_OFFSET),
+                (
+                    "holders",
+                    subscript_runtime::generator_layout::HOLDERS_OFFSET,
+                ),
+                (
+                    "cleanup",
+                    subscript_runtime::generator_layout::CLEANUP_OFFSET,
+                ),
+            ] {
+                let _ = writeln!(out, "_Static_assert(offsetof(SubFrame{}, {field}) == {offset}, \"generator header offset\");", function.id.0);
+            }
+        }
         Ok(())
     }
 
@@ -944,6 +971,33 @@ impl<'m> Emitter<'m> {
                     parameter.value.0, parameter.value.0
                 );
             }
+        }
+        if function.is_generator {
+            out.push_str("    frame->holders = 1u;\n");
+            let slots = function
+                .parameters
+                .iter()
+                .map(|parameter| (parameter.value, format!("p{}", parameter.value.0)))
+                .collect::<Vec<_>>();
+            self.emit_generator_cleanup(out, function, None, &slots)?;
+            out.push_str("    static const uint64_t generator_marker[] = {0ULL};\n");
+            let register = self.runtime_call(
+                "void",
+                "subscript_rt_object_describe",
+                &[
+                    "void*".into(),
+                    "void*".into(),
+                    "const void*".into(),
+                    "uint64_t".into(),
+                ],
+                &[
+                    "ctx".into(),
+                    "frame".into(),
+                    "generator_marker".into(),
+                    "8ULL".into(),
+                ],
+            );
+            let _ = writeln!(out, "    {register};");
         }
         out.push_str("    return frame;\n}\n");
         verify_trap_consumption(

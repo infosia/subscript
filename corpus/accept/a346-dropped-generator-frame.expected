@@ -1,0 +1,25 @@
+shape 0
+v 1
+end
+shape 1
+v 1
+end
+shape 2
+v 1
+end
+shape 3
+unused
+end
+shape 4
+v 1
+end
+shape 5
+v 1
+end
+shape 6
+v 1
+resumed
+v 2
+done
+exhaust true
+end

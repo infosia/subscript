@@ -82,6 +82,7 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 .into_iter()
                 .map(|values| values.into_iter().collect())
                 .collect(),
+            generator_cleanup: std::mem::take(&mut function.liveness.generator_cleanup),
             value_origins,
         };
         return Ok(());
@@ -226,6 +227,11 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 origin,
                 current,
             );
+            for cleanup in &mut function.liveness.generator_cleanup {
+                if cleanup.suspension == Some(block_id) {
+                    replace_ids(&mut cleanup.owners, origin, current);
+                }
+            }
         }
 
         for (destination_index, merge) in merges.iter().enumerate().take(block_count) {
@@ -263,10 +269,14 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                         origin.0, function.blocks[source_index].id.0
                     ),
                 })?;
-                if let l::Terminator::Suspend { arguments, .. } =
-                    &mut function.blocks[source_index].terminator
+                if let l::Terminator::Suspend {
+                    arguments,
+                    ownership,
+                    ..
+                } = &mut function.blocks[source_index].terminator
                 {
                     arguments.push(l::Operand::Value(version));
+                    ownership.push(false);
                 }
             }
         }
@@ -276,6 +286,7 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
             .into_iter()
             .map(|values| values.into_iter().collect())
             .collect(),
+        generator_cleanup: std::mem::take(&mut function.liveness.generator_cleanup),
         value_origins,
     };
     Ok(())
@@ -523,6 +534,7 @@ fn append_normal_edge_argument(
     let append = |target: &mut l::BlockTarget| {
         if target.block == destination {
             target.arguments.push(argument.clone());
+            target.ownership.push(false);
         }
     };
     match terminator {

@@ -30,6 +30,7 @@ mod using;
 mod verify;
 mod verify_counted_operations;
 mod verify_dominance;
+mod verify_generator_counts;
 mod verify_instruction;
 mod verify_lifetime;
 mod verify_narrowing;
@@ -972,6 +973,7 @@ struct FunctionBuilder<'a, 'm> {
     usings: Vec<using::UsingFrame>,
     /// The returned owner to release if an exit hook raises.
     exit_return: Option<(l::Operand, l::ValueType)>,
+    generator_cleanup: Vec<l::GeneratorCleanup>,
 }
 
 type CallResolution = (
@@ -1114,7 +1116,11 @@ fn stmt_pos(statement: &hir::Stmt) -> Pos {
 }
 
 fn target(block: l::BlockId, arguments: Vec<l::Operand>) -> l::BlockTarget {
-    l::BlockTarget { block, arguments }
+    l::BlockTarget {
+        ownership: vec![false; arguments.len()],
+        block,
+        arguments,
+    }
 }
 
 fn i32_constant(value: i32) -> l::Operand {
@@ -1678,6 +1684,7 @@ mod verifier_tests {
                 parameters: Vec::new(),
                 instructions: Vec::new(),
                 terminator: l::Terminator::Suspend {
+                    ownership: Vec::new(),
                     kind: l::SuspendKind::Async,
                     pos: pos(),
                     successor: l::BlockId(1),

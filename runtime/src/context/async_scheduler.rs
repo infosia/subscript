@@ -277,7 +277,19 @@ impl Context {
     ///
     /// `frame` is a registered live async frame in this Context.
     pub unsafe fn async_retain(&mut self, frame: *mut u8) {
-        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+        if frame.is_null() {
+            return;
+        }
+        if !self.async_frames.contains_key(&(frame as usize)) {
+            if self.object_descriptions.contains_key(&(frame as usize)) {
+                // SAFETY: a registered generator holds its count at offset 16.
+                let count = unsafe {
+                    &mut *frame
+                        .add(crate::generator_layout::HOLDERS_OFFSET as usize)
+                        .cast::<u32>()
+                };
+                *count = count.saturating_add(1);
+            }
             return;
         }
         // SAFETY: guaranteed by the caller.
@@ -300,6 +312,7 @@ impl Context {
     /// caller owns one reference.
     pub unsafe fn async_release(&mut self, frame: *mut u8, pos_id: u32) {
         let Some(meta) = self.async_frames.get(&(frame as usize)) else {
+            unsafe { self.generator_release(frame, pos_id) };
             return;
         };
         // SAFETY: guaranteed by the caller.

@@ -25,6 +25,7 @@ struct RenderItem<'a> {
     explanation: &'static str,
     divergence: Option<Divergence>,
     note: Option<&'a str>,
+    example: Option<&'static crate::divergence::DivergenceEntry>,
 }
 
 /// The byte offset where each line of one source starts.
@@ -140,6 +141,7 @@ pub fn render_diagnostics(files: &[SourceFile], diagnostics: &[Diagnostic]) -> S
             explanation: diagnostic.code.explanation(),
             divergence: diagnostic.divergence,
             note: diagnostic.note,
+            example: diagnostic.example,
         })
         .collect::<Vec<_>>();
     render_items(files, &items, "error")
@@ -161,6 +163,7 @@ pub fn render_warnings(files: &[SourceFile], warnings: &[Warning]) -> String {
             explanation: warning.code.explanation(),
             divergence: None,
             note: None,
+            example: None,
         })
         .collect::<Vec<_>>();
     render_items(files, &items, "warning")
@@ -207,7 +210,7 @@ fn render_items(files: &[SourceFile], items: &[RenderItem<'_>], severity: &str) 
             let _ = writeln!(rendered, "{gutter_padding}= note: {note}");
         }
         if let Some(divergence) = item.divergence {
-            let entry = divergence.entry();
+            let entry = item.example.copied().unwrap_or_else(|| divergence.entry());
             let _ = writeln!(rendered, "{gutter_padding}= TypeScript accepts:");
             for line in entry.ts.lines() {
                 let _ = writeln!(rendered, "{gutter_padding}|   {line}");

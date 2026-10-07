@@ -529,6 +529,7 @@ mod tests {
             .expect("handler");
         let entry = module.functions[main].entry.0 as usize;
         module.functions[main].blocks[entry].terminator = l::Terminator::Branch(l::BlockTarget {
+            ownership: Vec::new(),
             block: handler,
             arguments: Vec::new(),
         });

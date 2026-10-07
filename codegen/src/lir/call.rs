@@ -111,7 +111,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let foreign = matches!(kind, l::CallTargetKind::Foreign(_));
         let explicit_offset = operands.len();
-        if args.iter().any(array_ownership::runs_user_code)
+        if matches!(
+            kind,
+            l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::GeneratorNext)
+        ) || args.iter().any(array_ownership::runs_user_code)
             || params
                 .iter()
                 .filter_map(|parameter| parameter.default.as_ref())

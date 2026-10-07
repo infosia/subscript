@@ -16,6 +16,7 @@ pub(crate) fn description(layouts: &Layouts, ty: &Type) -> Result<Vec<u8>, Strin
     ) -> Result<(), String> {
         let (kind, offset, count, child) = match (description, ty) {
             (CountedType::Handle, Type::AsyncHandle(_)) => (1, 0, 0, None),
+            (CountedType::Generator, Type::Generator(_)) => (5, 0, 0, None),
             (CountedType::Array(child), Type::Array(element)) => {
                 (2, 0, 0, Some((&**element, &**child)))
             }

@@ -489,6 +489,7 @@ fn transform_inner(function: &mut l::Function, shape: &LoopShape) -> bool {
         };
         let terminator = if let Some(next_block) = iteration_blocks.get(iteration + 1) {
             l::Terminator::Branch(l::BlockTarget {
+                ownership: backedge.ownership.clone(),
                 block: *next_block,
                 arguments: next_state,
             })
@@ -501,6 +502,7 @@ fn transform_inner(function: &mut l::Function, shape: &LoopShape) -> bool {
                 return false;
             };
             l::Terminator::Branch(l::BlockTarget {
+                ownership: shape.exit_target.ownership.clone(),
                 block: shape.exit_target.block,
                 arguments,
             })

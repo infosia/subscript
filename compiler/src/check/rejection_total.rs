@@ -689,6 +689,7 @@ fn tsc_rejects_diagnostic_with_block_fires() {
         "export {}; const value:i32=1;",
     )];
     let diagnostic = Diagnostic {
+        example: None,
         divergence: Some(Divergence::CompilerOwnedValue),
         ..super::rejection::diagnostic(
             RejectionSite::NullableMember,

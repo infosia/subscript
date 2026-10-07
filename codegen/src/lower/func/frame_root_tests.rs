@@ -327,7 +327,11 @@ fn c_field_names(definition: &str) -> BTreeSet<String> {
         .filter_map(|line| {
             let line = line.trim().strip_suffix(';')?;
             let name = line.split_whitespace().last()?;
-            (!matches!(name, "state" | "reserved" | "resume" | "epoch")).then(|| name.to_string())
+            (!matches!(
+                name,
+                "state" | "reserved" | "resume" | "epoch" | "holders" | "padding" | "cleanup"
+            ))
+            .then(|| name.to_string())
         })
         .collect()
 }
@@ -683,15 +687,19 @@ fn every_corpus_coroutine_field_matches_live_values_at_suspension() {
             let jit_bytes = jit_zero_bytes(clif);
             let jit_writes = jit_bytes_with_frame(clif, "v1", 0, true);
             assert!(
-                plan.size == COROUTINE_PAYLOAD_OFFSET
+                plan.size == payload_offset(function)
                     || jit_bytes
                         .get(&(65534, 65534))
-                        .is_some_and(|bytes| (COROUTINE_PAYLOAD_OFFSET..plan.size)
+                        .is_some_and(|bytes| (payload_offset(function)..plan.size)
                             .all(|byte| bytes.contains(&byte))),
                 "{id}: finished JIT payload clear"
             );
             assert!(
-                c_body.contains("memset((unsigned char*)frame + sizeof frame->state"),
+                c_body.contains(if function.is_generator {
+                    "memset((unsigned char*)frame + 32"
+                } else {
+                    "memset((unsigned char*)frame + sizeof frame->state"
+                }),
                 "{id}: finished C payload clear"
             );
             let all_fields = lifetime
@@ -884,5 +892,13 @@ fn hand_built_native_storage_rejects_extra_and_missing_roots() {
             .map(|field| field.name.clone())
             .collect::<BTreeSet<_>>();
         assert_eq!(equal_fields(&expected, &actual).is_ok(), valid);
+    }
+}
+
+fn payload_offset(function: &l::Function) -> u32 {
+    if function.is_generator {
+        32
+    } else {
+        COROUTINE_PAYLOAD_OFFSET
     }
 }

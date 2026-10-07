@@ -328,7 +328,6 @@ The sole remaining repository file is `specs/tracking/s176-count-measurement.md`
 `git status --short` reports only that untracked note.
 `git diff --stat` reports no tracked change.
 `git diff --check` reports no whitespace error.
-No commit or `tools/gate.sh` run forms part of this measurement.
 
 ## Implementation: the LIR cleanup input
 
@@ -535,7 +534,6 @@ A verifier that takes the division from the cleanup description checks the descr
 
 The LIR needs explicit ownership routes on ordinary edges, or persistent holder roles and provenance for block parameters.
 That fact must distinguish an owned count from a borrowed payload and preserve multiplicity.
-The independent Phase Review confirms this missing input in a realistic mutable alias across an ordinary branch.
 Core principle 8 and the handoff stop condition apply.
 The native layout and the release implementation remain at the pin.
 No post-implementation cost exists.
@@ -567,7 +565,6 @@ The successful count test path still needs a cost measurement after the implemen
 Workspace all-target clippy passes with existing warnings and no new warning.
 The only warning site in a changed Rust file is the existing `repeat().take()` in `codegen/tests/cemit.rs`.
 `git diff --check` passes.
-The Phase Review reports zero findings in the current diff.
 `tools/hygiene.sh` passes.
 
 ### Changed files
@@ -674,7 +671,6 @@ The count description and the edge ownership flags do not supply this source fac
 The lexical exit position must pass from the syntax form through HIR to the LIR release instruction.
 A consumer cannot recover it from the current LIR.
 Core principle 8 and the handoff's missing-input condition apply.
-The independent Phase Review confirms this missing input in a realistic local-generator block exit.
 
 ### The trap witnesses need a sole task holder
 
@@ -771,3 +767,314 @@ The final file set contains these 13 files:
 - `specs/tracking/s176-count-measurement.md`
 
 `tools/hygiene.sh` passes with exit 0.
+
+## Round 5 implementation: state counts and edge routes
+
+The contract pin is `ee4cd6a9`.
+The earlier measurement and Red results stay above.
+The corrected trap entries are `t105-dropped-generator-break` and `t106-dropped-generator-local`.
+Their trap position is the last `throw`, at 12:39 (§176 rule 5 and §116.1 rule 4).
+A lexical exit needs no source position of its own.
+The implementation removes the obsolete lexical-position test.
+
+### LIR cleanup input and independent check
+
+`Type::Generator` has the recursive `CountedType::Generator` action.
+The existing copy-site analysis and owner lowering acquire and release its holders.
+Arrays, inline values, fields, Maps, and completions therefore use the same recursive description path.
+
+Each generator has a start cleanup description and one description for each suspension.
+The builder reads its lexical bindings, including hidden subjects and input holds.
+Each owner entry denotes one count; duplicate values preserve count multiplicity.
+The suspension saves each described value, even if its payload has no later use.
+The shared suspension pass renames cleanup operands with the executable operands.
+
+Each edge argument carries an ownership flag.
+The binding table supplies the flag for a lexical holder route.
+A fresh conditional result also carries an owned route.
+Liveness-only arguments borrow their payload and move no count.
+
+The verifier derives its balance from parameter roles, fresh instruction results, retains, releases, stores, and edge flags.
+An owned outgoing argument subtracts one count; its incoming parameter adds one.
+A join compares routed balances, so a mutable holder can select different payloads on different paths.
+The verifier compares that independent balance with the suspension descriptions.
+Its four required tests report missing counts, extra counts, ownerless owned arguments, and mixed incoming flags.
+A separate control covers distinct conditional payloads, element replacement, hidden for-of subjects, and loop backedges.
+A borrowed displaced element belongs to its replacing store, not to the frame's owner balance (§171 rule 9).
+
+### Native layout and lifetime
+
+| Native generator field | Pin offset | Implementation offset |
+|---|---:|---:|
+| State | 0 | 0 |
+| Reload epoch | 4 | 4 |
+| Resume function | 8 | 8 |
+| Holder count | None | 16 |
+| Static state cleanup pointer | None | 24 |
+| Payload start | 16 | 32 |
+
+The payload start moves by 16 bytes; the layout then applies each field's alignment.
+Extra owner spill slots can move later fields further.
+The async frame layout does not change.
+The C emitter asserts every generator header offset.
+The JIT and C emitter store static descriptions at creation and suspension.
+They allocate no cleanup description at a yield.
+The finish path clears the cleanup pointer and payload, while it preserves the holder count and reload epoch.
+A reload therefore preserves the generator holder count.
+
+The native runtime retires the generator's description and allocation on the last release.
+It releases the saved owners without a resume call.
+The interpreter removes its generator registry entry and releases the same state counts.
+Its teardown clears the saved cleanup values, including self references.
+
+An explicit sweep also releases unreachable generator state counts (§172 rules 2 and 7).
+The interpreter gathers these counts through the same runtime leaf walk as native containers.
+It sorts task leaves before release and retires container storage after the releases.
+The direct leaf-walk test checks deferred frame release and storage retirement, with a shared-array control.
+
+### Verification evidence
+
+The complete `a346` count test passes in all three tiers with zero retained tasks.
+The interpreter, JIT, and C trap witnesses print only `v 1` and report `Error: lost` at 12:39.
+The C/JIT trap corpus test passes: 105 tests, zero failures.
+The LIR integration suite passes: 56 tests, zero failures.
+The four violating verifier forms and the route control pass: five tests, zero failures.
+The field and Map sweep pairs pass in all three tiers, with zero retained tasks.
+
+The `t32` live-allocation test changes from three allocations to two in both native tiers.
+The generator's immediate release removes its frame before the test reads the live-allocation count.
+Its allocation-failure trap and stdout golden do not change.
+Only the LIR text golden changes; no existing `.expected` file changes.
+The text includes state cleanup operands and edge ownership flags.
+The corpus index generator reads the renamed entries.
+
+The generator capture control now follows the counted binding-block restriction of §175.
+The checker rejects its inner-block closure assignment and accepts a same-block closure.
+The API admission trace adds 15 omitted generator cells and removes no cell omission.
+These cells use counted Array callbacks, FixedArray callbacks and reducers, and Map.groupBy (§171 rule 5a).
+Fourteen existing omission messages also change to the counted-type reason.
+The omission count changes from 8,937 to 8,952.
+
+
+### Final cost and gate results
+
+No benchmark workload source uses a generator.
+The interpreter corpus runs alone, with the same debug selection as the pin.
+Each run sets `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` and excludes Rust compilation.
+The new `a346` entry adds one selected program.
+The sweep keeps the benchmark exclusion and the 64 declared interpreter exclusions.
+
+| Run | Pin seconds | Initial implementation seconds | Final implementation seconds | Final golden matches |
+|---|---:|---:|---:|---:|
+| 1 | 8.998 | 9.664 | 9.131 | 269/269 |
+| 2 | 9.177 | 9.638 | 9.154 | 269/269 |
+| 3 | 9.163 | 9.554 | 9.314 | 269/269 |
+
+The initial best cost exceeds the 9.448-second limit.
+A temporary per-entry profile identifies `a24-particle-system` as the longest interpreter execution.
+Its lowering takes 0.014 seconds; its total time is 9.207 seconds in that profile.
+The final implementation puts `Frame.generator_owners` after the existing frame fields.
+The implementation removes the temporary profile code.
+The final best cost is 9.131 seconds, or 1.0148 times the pin's 8.998 seconds.
+This result passes the 1.05 limit, with the additional corpus entry.
+
+Each new gate test runs alone after the cost sweep.
+The table uses the Rust test harness duration and excludes Rust compilation.
+A reported 0.00 seconds means less than 0.01 seconds at that display precision.
+The shape and sweep tests include their script compilation and all three execution tiers.
+
+| New gate test | Seconds | Evidence |
+|---|---:|---|
+| `dropped_generator_corpus_releases_every_task` | 0.59 | Combined `a346` interactions leave zero tasks |
+| `each_generator_drop_shape_and_exhausted_control_releases_every_task` | 5.42 | Eight isolated shapes and eight exhausted controls leave zero tasks |
+| `generator_reference_sweeps_and_exhausted_controls_release_every_task` | 1.55 | Field and Map sweeps, with exhausted controls, leave zero tasks |
+| `a_missing_cleanup_count_reports_the_state` | 0.01 | Valid control passes; missing count reports its state |
+| `an_extra_cleanup_count_reports_the_state` | 0.00 | Valid control passes; extra count reports its state |
+| `an_owned_edge_without_a_count_reports_the_balance` | 0.00 | Valid control passes; ownerless route reports a negative balance |
+| `a_parameter_with_mixed_flags_reports_the_parameter` | 0.00 | Valid control passes; mixed routes report their parameter |
+| `conditional_results_replacements_and_loops_have_count_routes` | 0.01 | Conditional, replacement, hidden subject, and backedge controls pass |
+| `release_leaf_walk_defers_frame_release_and_container_retirement` | 0.00 | Direct public API test and shared-container control pass |
+| `generator_header_counts_preserve_epoch_and_release_only_the_current_state` | 0.00 | Native header and exhausted controls pass in both runtime modes |
+| `a_generator_capture_uses_its_counted_binding_block` | 0.00 | Inner-block rejection and same-block acceptance pass |
+
+The combined count test checks interactions among shapes.
+The isolated tests check each shape before teardown, with its exhausted control.
+The existing corpus sweeps execute the trap entries.
+
+`tools/gate.sh full` passes with exit 0:
+
+| Check | Result |
+|---|---|
+| Debug workspace tests | 2,588 pass; zero failures; three ignored |
+| Release workspace tests | 2,585 pass; zero failures; three ignored |
+| Declared gate skips | Two debug; zero release |
+| Clippy warnings, compiler/runtime/codegen | 5/18/13; within the standing 7/18/13 budgets |
+| TypeScript admission | Pass, `tsc` 5.9.2 |
+| Format and hygiene | Pass |
+| Existing changed golden files | One LIR text file; zero `.expected` files |
+
+The gate's debug step takes 463 seconds; the release step takes 477 seconds.
+This gate precedes the final private `Frame` field order change.
+The final field order preserves all named field operations and changes no runtime ABI.
+The final performance sweep and all new direct tests pass after that change.
+
+The final codegen library suite passes: 288 tests, zero failures, 35.86 seconds.
+The final LIR integration suite passes: 56 tests, zero failures, 10.75 seconds.
+These suites run after the private field order change.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass after the final change.
+Only this tracking note changes under `specs/`.
+
+
+## Round 6: review fixes
+
+The current contract pin is `879f6778875fbd3277f79d5f4157ac667ff05a6d`.
+The implementation keeps the round 5 working tree.
+The three corpus pin headers name this contract pin.
+
+### Cycle roots and release
+
+The new cycle test passes a failed, unobserved task through an awaited array result.
+The generator holds its scheduler; the scheduler queue holds the generator.
+The queue receiver crosses the await in frame storage (§172 rule 7).
+The interpreter, JIT, and C print `unstarted\nend\n` without a trap.
+Each tier retains one failed task after the builder frame finishes.
+The subsequent collect reports `UncaughtException`; each tier keeps only the stopped root task.
+The test rejects `after collect` output and checks both counts before Context destruction.
+These measured tiers agree, so this round changes no interpreter root rule.
+The two inputs check frame retention and later release; each input needs one C build.
+
+### Total edges and independent suspension checks
+
+The verifier checks one ownership flag per argument on every function edge.
+The unroller preserves the source edge flags.
+Async suspension sites use the common edge builder.
+The liveness pass appends one borrowed flag for each additional resume argument.
+An async control checks nonempty arguments at call, handle, and Context suspensions.
+An ordinary function control rejects a missing flag after loop expansion.
+
+The verifier precomputes each value origin and local-load key once per generator.
+Key lookups no longer scan the function instructions.
+The start comparison supplied no independent evidence: both sides used the parameter-owner rule.
+The verifier removes that comparison and keeps the parameter balance as the walk's initial condition.
+It checks each yield description against executed count actions and owned routes.
+The missing-count and extra-count tests alter a yield description; each test first verifies its valid control.
+The verifier reports an unreachable suspension and a description that names a block without a suspension.
+Each new violating form has a valid control.
+
+### Shared native layout and callback diagnostics
+
+`runtime::generator_layout` supplies the header offsets to the runtime, JIT, and C emitter.
+The C emitter checks these offsets with `offsetof` assertions.
+It also checks that the cleanup pointer ends at the shared payload offset.
+The runtime unit test checks the constants against a C-compatible header.
+
+A generator callback diagnostic states that a generator is a counted type (§176).
+The diagnostic supplies the explicit for-of form and replaces the unrelated numeric example.
+The test checks the rendered diagnostic and accepts the replacement program.
+A static example reference keeps Diagnostic small and adds no Clippy warning.
+
+### Gate cost
+
+The consolidated shape test uses one C build.
+It checks the inner-block drop and all eight exhausted controls in one program.
+The `a346` count test already covers the other seven drop forms.
+
+The Rust harness reports 1.04 seconds for the consolidated shape test, against 5.42 seconds for the earlier sixteen builds.
+Its process wall time is 1.054 seconds.
+The two-state cycle test costs 1.01 seconds in the harness, or 1.018 seconds of process wall time.
+These tests run alone and exclude Rust compilation.
+
+The interpreter cost sweep executes the compiled debug LIR test binary alone.
+Each run sets `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`.
+The sweep keeps the existing benchmark exclusion and 64 declared exclusions.
+
+| Run | Process seconds | Golden matches |
+|---|---:|---:|
+| 1 | 9.389 | 269/269 |
+| 2 | 10.046 | 269/269 |
+| 3 | 9.273 | 269/269 |
+
+The best process cost is 9.273 seconds, or 1.0305 times the pin's 8.998 seconds.
+The best run reports 9.267 seconds inside the corpus loop.
+The result passes the 1.05 limit of 9.448 seconds.
+
+### Required checks
+
+| Command or check | Result |
+|---|---|
+| `cargo build --offline --locked --workspace --all-targets` | Pass |
+| `cargo test --offline --locked -p subscript-compiler` | 1,093 pass; zero failures; one ignored |
+| `cargo test --offline --locked -p subscript-codegen` | 846 pass; zero failures; one ignored |
+| `cargo test --offline --locked -p subscript-runtime` | 432 pass; zero failures; one ignored |
+| `cargo clippy --offline --locked --workspace --all-targets` | Pass; no new warning; compiler/runtime/codegen libraries keep 5/18/13 warnings |
+| `cargo fmt --check` | Pass |
+| `git diff --check` | Pass |
+| `tools/hygiene.sh` | Pass |
+| Existing `.expected` files | Zero changes |
+
+The changed Rust files stay within 2,000 lines; `interpreter.rs` stays at 1,979 lines.
+The implementation changes only this tracking note under `specs/`.
+
+### Changed files
+
+This list includes the preserved round 5 implementation and the round 6 fixes.
+
+- `codegen/src/cemit.rs`
+- `codegen/src/cemit/emitter.rs`
+- `codegen/src/cemit/frame_roots.rs`
+- `codegen/src/cemit/generator_cleanup.rs`
+- `codegen/src/cemit/suspend.rs`
+- `codegen/src/counted.rs`
+- `codegen/src/generator_cleanup.rs`
+- `codegen/src/interpreter.rs`
+- `codegen/src/interpreter/collection_tests.rs`
+- `codegen/src/interpreter/counted.rs`
+- `codegen/src/interpreter/counted_measurement_tests.rs`
+- `codegen/src/interpreter/roots.rs`
+- `codegen/src/interpreter/tests.rs`
+- `codegen/src/lib.rs`
+- `codegen/src/lir.rs`
+- `codegen/src/lir/builder.rs`
+- `codegen/src/lir/call.rs`
+- `codegen/src/lir/expr.rs`
+- `codegen/src/lir/lambda.rs`
+- `codegen/src/lir/liveness.rs`
+- `codegen/src/lir/unroll.rs`
+- `codegen/src/lir/verify.rs`
+- `codegen/src/lir/verify_generator_counts.rs`
+- `codegen/src/lir/verify_raise.rs`
+- `codegen/src/lower/func.rs`
+- `codegen/src/lower/func/coroutine.rs`
+- `codegen/src/lower/func/frame_root_tests.rs`
+- `codegen/src/root_storage.rs`
+- `codegen/src/ship_tests.rs`
+- `codegen/tests/cemit.rs`
+- `codegen/tests/counted_operation_verifier.rs`
+- `codegen/tests/emission_chain.rs`
+- `codegen/tests/generator_count_verifier.rs`
+- `codegen/tests/lir-goldens/corpus.txt`
+- `codegen/tests/lir.rs`
+- `codegen/tests/lir/verifier.rs`
+- `compiler/src/check/expr/method.rs`
+- `compiler/src/check/rejection_diagnostic.rs`
+- `compiler/src/check/rejection_total.rs`
+- `compiler/src/diag.rs`
+- `compiler/src/diag_render.rs`
+- `compiler/src/lir.rs`
+- `compiler/src/lir_text.rs`
+- `compiler/src/types/counted.rs`
+- `compiler/tests/counted_capture_block.rs`
+- `compiler/tests/generic_tsc_matrix/api.rs`
+- `corpus/accept/a346-dropped-generator-frame.expected`
+- `corpus/accept/a346-dropped-generator-frame.ts`
+- `corpus/trap/t105-dropped-generator-break.expected`
+- `corpus/trap/t105-dropped-generator-break.ts`
+- `corpus/trap/t106-dropped-generator-local.expected`
+- `corpus/trap/t106-dropped-generator-local.ts`
+- `generated-docs/corpus-index.md`
+- `runtime/src/context/async_scheduler.rs`
+- `runtime/src/context/counted.rs`
+- `runtime/src/generator_layout.rs`
+- `runtime/src/lib.rs`
+- `runtime/tests/counted_object.rs`
+- `specs/tracking/s176-count-measurement.md`

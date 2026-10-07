@@ -26,6 +26,7 @@ pub mod date;
 pub mod exception;
 pub mod ffi;
 pub mod fmt;
+pub mod generator_layout;
 mod half;
 pub mod host_header;
 pub mod json;

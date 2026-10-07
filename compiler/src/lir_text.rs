@@ -150,6 +150,14 @@ pub fn print_module(module: &lir::Module) -> String {
         if function.can_raise {
             writeln!(&mut out, "  can-raise").unwrap();
         }
+        for cleanup in &function.liveness.generator_cleanup {
+            writeln!(
+                &mut out,
+                "  cleanup {:?}: {:?}",
+                cleanup.suspension, cleanup.owners
+            )
+            .unwrap();
+        }
         for parameter in &function.parameters {
             writeln!(
                 &mut out,

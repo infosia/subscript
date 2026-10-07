@@ -1133,7 +1133,7 @@ fn allocation_corpus_object_request_counts_match_across_tiers() {
         (
             "t32-allocation-failure-generator-frame",
             include_str!("../../corpus/trap/t32-allocation-failure-generator-frame.ts"),
-            3,
+            2,
         ),
         (
             "t33-allocation-failure-json-raw-new",
@@ -1189,7 +1189,7 @@ int main(void) {
             .trim()
             .parse()
             .expect("ship allocation count");
-        eprintln!("{id}: object allocation requests dev={dev}, ship={ship}");
+        eprintln!("{id}: live object allocations dev={dev}, ship={ship}");
         assert_eq!(dev, expected, "{id}: dev exact allocation count changed");
         assert_eq!(ship, expected, "{id}: ship exact allocation count changed");
     }

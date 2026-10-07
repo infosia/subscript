@@ -336,6 +336,7 @@ struct Frame {
     /// The exception of an exception completion, which the `AwaitRaise`
     /// of the resume successor raises (`compiler.md` §116.2 rule 3).
     delivered: Option<(usize, String, Pos)>,
+    generator_owners: Vec<(Type, Value)>,
 }
 
 struct InterpreterLocal {
@@ -576,7 +577,9 @@ impl<'m> Interpreter<'m> {
                 *slot.slot().borrow_mut() = argument;
             }
         }
+        let generator_owners = counted::start_generator_owners(function, &values);
         let frame = Frame {
+            generator_owners,
             function: id,
             block: function.entry,
             values,
@@ -611,7 +614,7 @@ impl<'m> Interpreter<'m> {
                 kind: CoroutineKind::Invocation(Rc::new(RefCell::new(frame))),
                 completed: false,
                 completion: None,
-                owners: u32::from(function.is_async),
+                owners: 1,
                 host_root: false,
                 waiters: Vec::new(),
                 awaiting: None,
@@ -723,6 +726,9 @@ impl<'m> Interpreter<'m> {
                 }
             };
             let mut saved = frame_cell.borrow_mut();
+            for (_, value) in std::mem::take(&mut saved.generator_owners) {
+                collect_coroutines(&value, &mut work);
+            }
             for value in saved.values.iter().flatten() {
                 collect_coroutines(value, &mut work);
             }
@@ -1217,6 +1223,7 @@ impl<'m> Interpreter<'m> {
                         arguments,
                         invalidates,
                         traps: _,
+                        ownership: _,
                     } => {
                         self.invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
                         let destination =
@@ -1278,6 +1285,33 @@ impl<'m> Interpreter<'m> {
                                     parameters.len()
                                 ),
                             ));
+                        }
+                        if function.is_generator {
+                            let cleanup = function
+                                .liveness
+                                .generator_cleanup
+                                .iter()
+                                .find(|state| state.suspension == Some(block.id))
+                                .ok_or_else(|| {
+                                    self.invalid(
+                                        Some(pos.clone()),
+                                        "generator suspension has no cleanup",
+                                    )
+                                })?;
+                            (*frame).generator_owners = cleanup
+                                .owners
+                                .iter()
+                                .map(|id| {
+                                    let l::ValueType::Data(ty) = &function.values[id.0 as usize].ty
+                                    else {
+                                        return Err(self.invalid(
+                                            Some(pos.clone()),
+                                            "generator cleanup has no data type",
+                                        ));
+                                    };
+                                    Ok((ty.clone(), self.get_value(&*frame, *id, pos)?))
+                                })
+                                .collect::<Result<Vec<_>, InterpretError>>()?;
                         }
                         let saved = arguments
                             .iter()

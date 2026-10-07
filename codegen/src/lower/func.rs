@@ -1276,6 +1276,32 @@ pub(crate) fn define_coroutine<M: Module>(
                 };
                 body.store_value_type(&slot.ty, frame, slot.offset as i32, value)?;
             }
+            if function.is_generator {
+                let count = body.iconst(types::I32, 1);
+                body.builder.ins().store(
+                    flags(),
+                    count,
+                    frame,
+                    subscript_runtime::generator_layout::HOLDERS_OFFSET as i32,
+                );
+                let slots = function
+                    .parameters
+                    .iter()
+                    .zip(&plan.parameter_slots)
+                    .map(|(p, slot)| (p.value, slot.offset))
+                    .collect::<Vec<_>>();
+                body.store_generator_cleanup(frame, None, &slots)?;
+                let bytes = 0u64.to_ne_bytes();
+                let data = body.ml.literal_data(&bytes)?;
+                let global = body.ml.module.declare_data_in_func(data, body.builder.func);
+                let description = body.builder.ins().symbol_value(types::I64, global);
+                let size = body.iconst(types::I64, 8);
+                body.call_runtime(
+                    body.ml.rt.object_describe,
+                    &[body.ctx, frame, description, size],
+                    false,
+                )?;
+            }
             body.builder.ins().return_(&[frame]);
             if let Some(unwind) = body.unwind {
                 body.builder.switch_to_block(unwind);

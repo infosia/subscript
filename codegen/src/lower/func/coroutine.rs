@@ -29,7 +29,11 @@ pub(super) fn plan_coroutine(
     module: &l::Module,
     function: &l::Function,
 ) -> Result<CoroutinePlan, String> {
-    let mut offset = COROUTINE_PAYLOAD_OFFSET;
+    let mut offset = if function.is_generator {
+        subscript_runtime::generator_layout::PAYLOAD_OFFSET
+    } else {
+        COROUTINE_PAYLOAD_OFFSET
+    };
     let mut parameter_slots = Vec::with_capacity(function.parameters.len());
     for parameter in &function.parameters {
         let ty = function
@@ -186,6 +190,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         for (argument, slot) in arguments.iter().zip(&plan.arguments) {
             let value = self.operand(argument)?;
             self.store_value_type(&slot.ty, frame, slot.offset as i32, value)?;
+        }
+        if self.function.is_generator {
+            let slots = arguments
+                .iter()
+                .zip(&plan.arguments)
+                .filter_map(|(argument, slot)| match argument {
+                    l::Operand::Value(value) => Some((*value, slot.offset)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            self.store_generator_cleanup(frame, Some(block), &slots)?;
         }
         match kind {
             l::SuspendKind::Yield(value) => {
@@ -694,9 +709,52 @@ impl<M: Module> Body<'_, '_, '_, '_, M> {
             #[cfg(test)]
             self.builder
                 .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX - 1));
-            let address = self.address_offset(frame, i64::from(COROUTINE_PAYLOAD_OFFSET));
-            self.zero_bytes(address, self.frame_size - COROUTINE_PAYLOAD_OFFSET, 8);
+            let address = self.address_offset(
+                frame,
+                i64::from(if self.function.is_generator {
+                    subscript_runtime::generator_layout::PAYLOAD_OFFSET
+                } else {
+                    COROUTINE_PAYLOAD_OFFSET
+                }),
+            );
+            let offset = if self.function.is_generator {
+                subscript_runtime::generator_layout::PAYLOAD_OFFSET
+            } else {
+                COROUTINE_PAYLOAD_OFFSET
+            };
+            self.zero_bytes(address, self.frame_size - offset, 8);
+            if self.function.is_generator {
+                let zero = self.iconst(types::I64, 0);
+                self.builder.ins().store(
+                    flags(),
+                    zero,
+                    frame,
+                    subscript_runtime::generator_layout::CLEANUP_OFFSET as i32,
+                );
+            }
         }
+        Ok(())
+    }
+}
+
+impl<M: Module> Body<'_, '_, '_, '_, M> {
+    pub(super) fn store_generator_cleanup(
+        &mut self,
+        frame: Value,
+        state: Option<l::BlockId>,
+        slots: &[(l::ValueId, u32)],
+    ) -> Result<(), String> {
+        let bytes =
+            crate::generator_cleanup::description(&self.ml.layouts, self.function, state, slots)?;
+        let data = self.ml.literal_data(&bytes)?;
+        let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+        let description = self.builder.ins().symbol_value(types::I64, global);
+        self.builder.ins().store(
+            flags(),
+            description,
+            frame,
+            subscript_runtime::generator_layout::CLEANUP_OFFSET as i32,
+        );
         Ok(())
     }
 }

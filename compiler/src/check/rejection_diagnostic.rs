@@ -34,6 +34,17 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
     let (code, class) = site.class();
     let mut diagnostic = Diagnostic::new(code, message, pos);
     diagnostic.divergence = class.divergence();
+    if diagnostic
+        .message
+        .contains("a generator is a counted type (§176)")
+    {
+        diagnostic.example = Some(&crate::divergence::DivergenceEntry {
+            ts: "values.forEach(value => value.next());",
+            subscript: "for (const value of values) { value.next(); }",
+            why: "A generator is a counted type; callback positions do not carry its owner counts.",
+            collision: "compiler.md §176",
+        });
+    }
     if matches!(
         site,
         RejectionSite::FunctionValueArgumentCount

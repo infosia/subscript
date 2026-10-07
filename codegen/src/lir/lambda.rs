@@ -211,8 +211,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let (raise, traps) = split_await_raise(convert_traps(
             &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
         ));
+        let edge = self.block_target(successor, Vec::new())?;
         self.terminate(
             l::Terminator::Suspend {
+                ownership: edge.ownership,
                 kind: l::SuspendKind::AsyncCall {
                     target,
                     operands: typed_operands,
@@ -220,7 +222,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 pos: expr.pos.clone(),
                 successor,
                 resume_value,
-                arguments: Vec::new(),
+                arguments: edge.arguments,
                 invalidates: self.array_values.clone(),
                 traps,
             },
@@ -280,13 +282,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let (raise, traps) = split_await_raise(convert_traps(
             &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
         ));
+        let edge = self.block_target(successor, Vec::new())?;
         self.terminate(
             l::Terminator::Suspend {
+                ownership: edge.ownership,
                 kind: l::SuspendKind::AsyncHandle { handle, owned },
                 pos: expr.pos.clone(),
                 successor,
                 resume_value,
-                arguments: Vec::new(),
+                arguments: edge.arguments,
                 invalidates: self.array_values.clone(),
                 traps,
             },

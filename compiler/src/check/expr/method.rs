@@ -11,6 +11,24 @@ use crate::types::{HandleKind, Type};
 
 use super::CallbackSpec;
 
+fn counted_method_message(ty: &Type, message: String) -> String {
+    fn generator(ty: &crate::types::CountedType) -> bool {
+        use crate::types::CountedType;
+        match ty {
+            CountedType::Generator => true,
+            CountedType::Array(inner)
+            | CountedType::FixedArray(inner, _)
+            | CountedType::IterResult(inner) => generator(inner),
+            _ => false,
+        }
+    }
+    if ty.counted_type().as_ref().is_some_and(generator) {
+        format!("{message}; a generator is a counted type (§176). Use `for (const value of values) {{ ... }}`.")
+    } else {
+        message
+    }
+}
+
 impl<'p> Checker<'p> {
     /// A Q25/Q26 numeric receiver method. The accepted formatting
     /// methods operate on `f32`/`f64`; methods with a shared `f64`
@@ -324,7 +342,10 @@ impl<'p> Checker<'p> {
         {
             self.reject_subset(
                 RejectionSite::ArrayElementDomain,
-                format!("`{}` cannot carry a counted element type (§171)", f.name()),
+                counted_method_message(
+                    &self.apparent_type(&elem),
+                    format!("`{}` cannot carry a counted element type (§171)", f.name()),
+                ),
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -986,7 +1007,10 @@ impl<'p> Checker<'p> {
         {
             self.reject_subset(
                 RejectionSite::ArrayElementDomain,
-                "`Map.groupBy` cannot carry a counted element type (§171)",
+                counted_method_message(
+                    &self.apparent_type(&elem),
+                    "`Map.groupBy` cannot carry a counted element type (§171)".to_string(),
+                ),
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -1364,7 +1388,10 @@ impl<'p> Checker<'p> {
                 if self.apparent_type(&value).counted_type().is_some() {
                     self.reject_subset(
                         RejectionSite::MapCallbackCountedValue,
-                        "`Map.forEach` cannot carry a counted value type (§172)",
+                        counted_method_message(
+                            &self.apparent_type(&value),
+                            "`Map.forEach` cannot carry a counted value type (§172)".to_string(),
+                        ),
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -1745,12 +1772,15 @@ impl<'p> Checker<'p> {
                 {
                     self.reject_subset(
                         RejectionSite::ArrayMapResult,
-                        format!("`{method}` cannot carry a counted callback result (§171)"),
+                        counted_method_message(
+                            &self.apparent_type(&function.ret),
+                            format!("`{method}` cannot carry a counted callback result (§171)"),
+                        ),
                         checked.pos.clone(),
                     );
                     return self.err_expr(checked.pos);
                 }
-                if function.params.iter().any(|parameter| {
+                if let Some(parameter) = function.params.iter().find(|parameter| {
                     !self.instance_restriction(
                         crate::check::opaque::InstanceRestriction::ArrayElementKind,
                         parameter,
@@ -1758,7 +1788,10 @@ impl<'p> Checker<'p> {
                 }) {
                     self.reject_subset(
                         RejectionSite::ArrayElementDomain,
-                        format!("`{method}` cannot carry a counted callback parameter (§171)"),
+                        counted_method_message(
+                            &self.apparent_type(parameter),
+                            format!("`{method}` cannot carry a counted callback parameter (§171)"),
+                        ),
                         checked.pos.clone(),
                     );
                     return self.err_expr(checked.pos);

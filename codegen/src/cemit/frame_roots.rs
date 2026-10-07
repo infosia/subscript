@@ -7,6 +7,11 @@ impl Body<'_, '_, '_> {
         #[cfg(test)]
         out.push_str("    // root-point 4294967294 0\n");
         // The header remains executable. Completion storage owns the returned value.
+        if self.function.is_generator {
+            let offset = subscript_runtime::generator_layout::PAYLOAD_OFFSET;
+            let _ = writeln!(out, "    frame->cleanup = NULL;\n    memset((unsigned char*)frame + {offset}, 0, sizeof *frame - {offset});");
+            return;
+        }
         out.push_str("    memset((unsigned char*)frame + sizeof frame->state + sizeof frame->reserved + sizeof frame->resume, 0, sizeof *frame - sizeof frame->state - sizeof frame->reserved - sizeof frame->resume);\n");
     }
 }

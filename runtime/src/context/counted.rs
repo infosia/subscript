@@ -155,7 +155,7 @@ impl Context {
         let count = word(16) as usize;
         let child = unsafe { description.add(24) };
         match kind {
-            1 => {
+            1 | 5 => {
                 let handle = unsafe { value.cast::<*mut u8>().read_unaligned() };
                 if release {
                     unsafe { self.async_release(handle, pos) };
@@ -220,11 +220,18 @@ impl Context {
         payload: usize,
         pos: u32,
     ) -> Result<(Vec<usize>, Vec<usize>), &'static str> {
-        let Some(description) = self.object_descriptions.remove(&payload) else {
+        let Some(mut description) = self.object_descriptions.remove(&payload) else {
             return Ok((Vec::new(), Vec::new()));
         };
         if !self.is_live(payload) {
             return Ok((Vec::new(), Vec::new()));
+        }
+        if description == 0u64.to_ne_bytes()
+            && unsafe { header_class_id((payload as *const u8).sub(HEADER_SIZE)) }
+                == CLASS_GENERATOR
+        {
+            // SAFETY: the generator marker refers to a live generated frame.
+            description = unsafe { self.generator_description(payload as *mut u8) };
         }
         let word = |offset: usize| -> Result<usize, &'static str> {
             let end = offset
@@ -263,7 +270,7 @@ impl Context {
                 let mut kind = [0; 8];
                 kind.copy_from_slice(&node[..8]);
                 match (u64::from_ne_bytes(kind), index + 1 == nodes.len() / 24) {
-                    (1, true) | (2..=4, false) => {}
+                    (1 | 5, true) | (2..=4, false) => {}
                     _ => return Err("malformed object description size"),
                 }
             }
@@ -290,7 +297,12 @@ impl Context {
         Ok((handles, storage))
     }
 
-    pub(crate) unsafe fn counted_release_leaves(
+    /// Releases container counts and gathers frame keys before storage retirement.
+    ///
+    /// # Safety
+    /// `value` must match the static recursive `description`. All container storage must be live.
+    /// The caller must consume each frame key and then retire the returned storage.
+    pub unsafe fn counted_release_leaves(
         &mut self,
         value: *const u8,
         description: *const u8,
@@ -302,7 +314,7 @@ impl Context {
             |offset| unsafe { description.add(offset).cast::<u64>().read_unaligned() as usize };
         let child = unsafe { description.add(24) };
         match word(0) {
-            1 => handles.push(unsafe { value.cast::<usize>().read_unaligned() }),
+            1 | 5 => handles.push(unsafe { value.cast::<usize>().read_unaligned() }),
             2 => {
                 let array = unsafe { value.cast::<*mut u8>().read_unaligned() };
                 if !unsafe { self.array_holder(array, 1, pos) } {
@@ -459,5 +471,47 @@ impl Context {
         for address in storage {
             self.delete(address, pos);
         }
+    }
+}
+
+impl Context {
+    pub(super) unsafe fn generator_description(&self, frame: *mut u8) -> Vec<u8> {
+        // SAFETY: the generator header stores a static generated description at offset 24.
+        let description = unsafe {
+            frame
+                .add(crate::generator_layout::CLEANUP_OFFSET as usize)
+                .cast::<*const u8>()
+                .read()
+        };
+        if description.is_null() {
+            return 0u64.to_ne_bytes().to_vec();
+        }
+        let fields = unsafe { description.cast::<u64>().read() };
+        let mut size = 8usize;
+        for _ in 0..fields {
+            let child = unsafe { description.add(size + 8).cast::<u64>().read() } as usize;
+            size += 16 + child;
+        }
+        unsafe { std::slice::from_raw_parts(description, size) }.to_vec()
+    }
+
+    pub(super) unsafe fn generator_release(&mut self, frame: *mut u8, pos: u32) {
+        if frame.is_null() || !self.object_descriptions.contains_key(&(frame as usize)) {
+            return;
+        }
+        // SAFETY: the registered generator frame has a holder count at offset 16.
+        let count = unsafe {
+            &mut *frame
+                .add(crate::generator_layout::HOLDERS_OFFSET as usize)
+                .cast::<u32>()
+        };
+        if *count != 0 {
+            *count -= 1;
+        }
+        if *count != 0 {
+            return;
+        }
+        self.release_reference_holder(frame as usize, pos);
+        self.delete(frame as usize, pos);
     }
 }

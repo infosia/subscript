@@ -859,6 +859,7 @@ mod tests {
             return_type: Type::Void,
             locals: Vec::new(),
             liveness: l::Liveness {
+                generator_cleanup: Vec::new(),
                 live_ins: vec![Vec::new(); blocks.len()],
                 value_origins: values.iter().map(|value| value.id).collect(),
             },
@@ -932,6 +933,7 @@ mod tests {
             ],
         );
         first.terminator = l::Terminator::Branch(l::BlockTarget {
+            ownership: Vec::new(),
             block: l::BlockId(1),
             arguments: vec![l::Operand::Constant(l::Constant {
                 ty: Type::Nullable(Box::new(Type::Str)),

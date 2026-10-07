@@ -71,6 +71,26 @@ impl Interpreter<'_> {
             state.owners -= 1;
         }
         if state.owners == 0 {
+            if let CoroutineKind::Invocation(frame) = &state.kind {
+                let function = frame.borrow().function;
+                if self.module.functions[function.0 as usize].is_generator {
+                    let frame = Rc::clone(frame);
+                    state.completed = true;
+                    drop(state);
+                    self.generator_handles.borrow_mut().remove(&key);
+                    let owners = std::mem::take(&mut frame.borrow_mut().generator_owners);
+                    let mut first = None;
+                    for (ty, value) in owners {
+                        if let Err(error) = self.counted_owner(&ty, &value, true, pos) {
+                            if first.is_none() {
+                                first = Some(error);
+                            }
+                        }
+                    }
+                    roots::clear_finished_frame(&mut frame.borrow_mut());
+                    return first.map_or(Ok(()), Err);
+                }
+            }
             if !state.completed {
                 return Ok(());
             }
@@ -275,7 +295,7 @@ impl Interpreter<'_> {
         pos: &Pos,
     ) -> Result<(), InterpretError> {
         match ty {
-            Type::AsyncHandle(_) => {
+            Type::AsyncHandle(_) | Type::Generator(_) => {
                 if let Value::Coroutine(handle) = value {
                     if release {
                         self.release_coroutine(handle, pos)?;
@@ -406,7 +426,12 @@ impl Interpreter<'_> {
             .map_err(|message| self.invalid(Some(pos.clone()), message))?;
         let mut first = None;
         for leaf in leaves {
-            let coroutine = self.async_handles.borrow().get(&leaf).cloned();
+            let coroutine = self
+                .async_handles
+                .borrow()
+                .get(&leaf)
+                .cloned()
+                .or_else(|| self.generator_handles.borrow().get(&leaf).cloned());
             if let Some(coroutine) = coroutine {
                 if let Err(error) = self.release_coroutine(&coroutine, pos) {
                     if first.is_none() {
@@ -423,5 +448,79 @@ impl Interpreter<'_> {
         // Retire the object even if a leaf reports an unobserved exception.
         self.context.delete(handle as usize, 0);
         first.map_or(Ok(()), Err)
+    }
+}
+
+// The start state borrows the argument payloads and records their frame counts.
+pub(super) fn start_generator_owners(
+    function: &l::Function,
+    values: &[Option<Value>],
+) -> Vec<(Type, Value)> {
+    if function.is_generator {
+        function
+            .liveness
+            .generator_cleanup
+            .iter()
+            .find(|state| state.suspension.is_none())
+            .map(|state| {
+                state
+                    .owners
+                    .iter()
+                    .filter_map(|id| {
+                        match (
+                            &function.values[id.0 as usize].ty,
+                            values[id.0 as usize].as_ref(),
+                        ) {
+                            (l::ValueType::Data(ty), Some(value)) => {
+                                Some((ty.clone(), value.clone()))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+impl Interpreter<'_> {
+    pub(super) fn sweep_generator(
+        &mut self,
+        key: usize,
+        handles: &mut Vec<usize>,
+        storage: &mut Vec<usize>,
+        pos: &Pos,
+    ) -> Result<(), InterpretError> {
+        let Some(coroutine) = self.generator_handles.borrow_mut().remove(&key) else {
+            return Ok(());
+        };
+        let frame = {
+            let mut state = coroutine.borrow_mut();
+            state.completed = true;
+            let CoroutineKind::Invocation(frame) = &state.kind else {
+                return Ok(());
+            };
+            Rc::clone(frame)
+        };
+        let owners = std::mem::take(&mut frame.borrow_mut().generator_owners);
+        for (ty, value) in owners {
+            let bytes = self.pack(&ty, &value)?;
+            let description = crate::counted::description(&self.layouts, &ty)
+                .map_err(|message| self.invalid(Some(pos.clone()), message))?;
+            // SAFETY: the LIR description supplies the packed type and live container storage.
+            unsafe {
+                self.context.counted_release_leaves(
+                    bytes.as_ptr(),
+                    description.as_ptr(),
+                    0,
+                    handles,
+                    storage,
+                );
+            }
+        }
+        roots::clear_finished_frame(&mut frame.borrow_mut());
+        Ok(())
     }
 }

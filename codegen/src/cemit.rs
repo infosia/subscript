@@ -36,6 +36,7 @@ mod counted_array;
 mod emitter;
 mod exception;
 mod frame_roots;
+mod generator_cleanup;
 mod graph;
 mod intrinsic;
 mod iterator;
@@ -742,6 +743,7 @@ mod tests {
                 })
                 .collect(),
             liveness: l::Liveness {
+                generator_cleanup: Vec::new(),
                 live_ins: vec![Vec::new(), Vec::new()],
                 value_origins: (0..6).map(l::ValueId).collect(),
             },
@@ -782,6 +784,7 @@ mod tests {
                         ),
                     ],
                     terminator: l::Terminator::Branch(l::BlockTarget {
+                        ownership: Vec::new(),
                         block: l::BlockId(1),
                         arguments: vec![operand(1), operand(1)],
                     }),
@@ -875,6 +878,7 @@ mod tests {
         assert!(error.contains("invalid emission value id 6"), "{error}");
         let mut function = emission_index_fixture();
         function.blocks[0].terminator = l::Terminator::Branch(l::BlockTarget {
+            ownership: Vec::new(),
             block: l::BlockId(2),
             arguments: Vec::new(),
         });
@@ -943,6 +947,7 @@ mod tests {
         };
         let argument = |value| l::Operand::Value(l::ValueId(value));
         let target = |block, values: &[u32]| l::BlockTarget {
+            ownership: Vec::new(),
             block: l::BlockId(block),
             arguments: values.iter().copied().map(argument).collect(),
         };

@@ -36,6 +36,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             handlers: Vec::new(),
             usings: Vec::new(),
             exit_return: None,
+            generator_cleanup: Vec::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
         builder.entry = entry;
@@ -79,6 +80,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 l::ParameterKind::Explicit,
                 parameter.pos,
             )?;
+        }
+        if builder.function.is_generator {
+            builder.generator_cleanup.push(l::GeneratorCleanup::new(
+                None,
+                builder
+                    .parameters
+                    .iter()
+                    .filter(|p| {
+                        p.kind != l::ParameterKind::Capture
+                            && is_async_owner_type(&builder.values[p.value.0 as usize].ty)
+                    })
+                    .map(|p| p.value)
+                    .collect(),
+            ));
         }
         Ok(builder)
     }
@@ -166,7 +181,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return_type: self.function.ret,
             locals: self.locals,
             values: self.values,
-            liveness: l::Liveness::default(),
+            liveness: l::Liveness {
+                generator_cleanup: self.generator_cleanup,
+                ..Default::default()
+            },
             blocks: self
                 .blocks
                 .into_iter()
@@ -219,6 +237,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         forced: &[BindingId],
     ) -> l::BlockId {
         let mut state_bindings = self.visible_mutable_bindings();
+        if self.function.is_generator {
+            state_bindings.extend(
+                self.scopes
+                    .iter()
+                    .flat_map(|scope| scope.values().copied())
+                    .filter(|binding| is_async_owner_type(&self.bindings[binding.0].ty)),
+            );
+        }
         state_bindings.extend(forced.iter().copied());
         state_bindings.sort_unstable();
         state_bindings.dedup();
@@ -531,9 +557,51 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     pub(super) fn terminate(
         &mut self,
-        terminator: l::Terminator,
+        mut terminator: l::Terminator,
         pos: &Pos,
     ) -> Result<(), LowerError> {
+        if self.function.is_generator && matches!(terminator, l::Terminator::Suspend { .. }) {
+            let block = self
+                .current
+                .ok_or_else(|| self.error(pos, "suspension has no block"))?;
+            let mut bindings = self
+                .scopes
+                .iter()
+                .flat_map(|s| s.values().copied())
+                .collect::<Vec<_>>();
+            bindings.sort_unstable();
+            bindings.dedup();
+            let mut owners = Vec::new();
+            for binding in bindings {
+                if is_async_owner_type(&self.bindings[binding.0].ty) {
+                    let owner = self.read_binding(binding, pos)?;
+                    if let l::Operand::Value(value) = owner {
+                        owners.push(value);
+                    }
+                }
+            }
+            if let l::Terminator::Suspend {
+                successor,
+                ownership,
+                arguments,
+                ..
+            } = &mut terminator
+            {
+                ownership.resize(arguments.len(), false);
+                for value in &owners {
+                    let operand = l::Operand::Value(*value);
+                    if !arguments.contains(&operand) {
+                        let ty = self.values[value.0 as usize].ty.clone();
+                        let parameter = self.new_value(ty, None);
+                        self.blocks[successor.0 as usize].parameters.push(parameter);
+                        arguments.push(operand);
+                        ownership.push(false);
+                    }
+                }
+            }
+            self.generator_cleanup
+                .push(l::GeneratorCleanup::new(Some(block), owners));
+        }
         let block = self
             .current
             .take()
@@ -856,7 +924,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             })?;
             prefix.push(value);
         }
-        Ok(target(block, prefix))
+        let prefix_len = prefix.len() - draft.state_bindings.len();
+        let mut edge = target(block, prefix);
+        for index in 0..prefix_len {
+            edge.ownership[index] = matches!(&edge.arguments[index], l::Operand::Value(value)
+                if self.values[value.0 as usize].fresh_owner && is_async_owner_type(&self.values[value.0 as usize].ty));
+        }
+        for (index, binding) in draft.state_bindings.iter().enumerate() {
+            edge.ownership[prefix_len + index] = is_async_owner_type(&self.bindings[binding.0].ty);
+        }
+        Ok(edge)
     }
 
     pub(super) fn enter_block(&mut self, block: l::BlockId) -> Result<(), LowerError> {

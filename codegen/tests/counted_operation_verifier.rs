@@ -372,6 +372,7 @@ fn completion_module(result: Type, action: Option<l::CountAction>) -> l::Module 
     let pos = function.pos.clone();
     function.blocks[0].instructions.clear();
     function.blocks[0].terminator = l::Terminator::Suspend {
+        ownership: Vec::new(),
         kind: l::SuspendKind::AsyncHandle {
             handle: l::ValueId(0),
             owned: false,

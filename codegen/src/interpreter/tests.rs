@@ -3,6 +3,7 @@ use super::*;
 fn empty_module(mut functions: Vec<l::Function>) -> l::Module {
     for function in &mut functions {
         function.liveness = l::Liveness {
+            generator_cleanup: Vec::new(),
             live_ins: vec![Vec::new(); function.blocks.len()],
             value_origins: function.values.iter().map(|value| value.id).collect(),
         };
@@ -817,6 +818,7 @@ fn suspend_restores_resume_value_then_remaining_live_ins() {
                     pos: pos.clone(),
                 }],
                 terminator: l::Terminator::Suspend {
+                    ownership: Vec::new(),
                     kind: l::SuspendKind::AsyncCall {
                         target: l::CallTarget {
                             kind: l::CallTargetKind::Function(l::FunctionId(1)),

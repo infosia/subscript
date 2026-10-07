@@ -133,9 +133,13 @@ impl Interpreter<'_> {
                 break;
             }
         }
-        self.generator_handles
-            .borrow_mut()
-            .retain(|key, _| seen.contains(key));
+        let unreachable_generators = self
+            .generator_handles
+            .borrow()
+            .keys()
+            .filter(|key| !seen.contains(key))
+            .copied()
+            .collect::<Vec<_>>();
         self.context
             .shadow_push(words.as_ptr() as usize, words.len());
         let first = Context::with_collection(
@@ -143,6 +147,14 @@ impl Interpreter<'_> {
             |owner| &mut owner.context,
             |owner, handles| {
                 owner.context.shadow_pop();
+                let mut handles = handles.to_vec();
+                let mut storage = Vec::new();
+                for key in &unreachable_generators {
+                    if let Err(error) = owner.sweep_generator(*key, &mut handles, &mut storage, pos)
+                    {
+                        return Some(error);
+                    }
+                }
                 handles.sort_unstable_by_key(|key| {
                     owner
                         .async_handles
@@ -152,10 +164,15 @@ impl Interpreter<'_> {
                 });
                 let mut first = None;
                 for &key in handles.iter() {
-                    let coroutine = owner.async_handles.borrow().get(&key).cloned();
+                    let coroutine = owner
+                        .async_handles
+                        .borrow()
+                        .get(&key)
+                        .cloned()
+                        .or_else(|| owner.generator_handles.borrow().get(&key).cloned());
                     let result = if let Some(coroutine) = coroutine {
                         owner.release_coroutine(&coroutine, pos)
-                    } else if key == 0 {
+                    } else if key == 0 || unreachable_generators.contains(&key) {
                         Ok(())
                     } else {
                         Err(owner.invalid(Some(pos.clone()), "unknown packed async handle"))
@@ -172,6 +189,11 @@ impl Interpreter<'_> {
                         if first.is_none() {
                             first = Some(error);
                         }
+                    }
+                }
+                for address in storage {
+                    if owner.context.is_live(address) {
+                        owner.context.delete(address, 0);
                     }
                 }
                 first
@@ -288,6 +310,7 @@ pub(super) fn frame_lifetime_values(
 
 /// Completion owns its result separately from the frame storage.
 pub(super) fn clear_finished_frame(frame: &mut Frame) {
+    frame.generator_owners.clear();
     frame.values.fill(None);
     for local in &frame.locals {
         *local.slot().borrow_mut() = Value::Void;

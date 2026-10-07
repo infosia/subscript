@@ -63,6 +63,7 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
                     pos: pos.clone(),
                 }],
                 terminator: Terminator::Suspend {
+                    ownership: Vec::new(),
                     kind: lir::SuspendKind::Async,
                     pos: pos.clone(),
                     successor: BlockId(1),
@@ -154,6 +155,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                 },
             ],
             liveness: lir::Liveness {
+                generator_cleanup: Vec::new(),
                 live_ins: vec![Vec::new(); 2],
                 value_origins: vec![lir::ValueId(0), lir::ValueId(1)],
             },
@@ -183,6 +185,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
                         },
                     ],
                     terminator: Terminator::Suspend {
+                        ownership: Vec::new(),
                         kind: lir::SuspendKind::Async,
                         pos: pos.clone(),
                         successor: BlockId(1),

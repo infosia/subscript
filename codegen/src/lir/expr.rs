@@ -493,31 +493,36 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .transpose()?
                     .map(|value| self.terminator_value(value, &expr.pos))
                     .transpose()?;
-                let successor = self.new_block(Vec::new(), Some("yield.resume".to_string()));
+                let successor =
+                    self.new_state_block(Vec::new(), Some("yield.resume".to_string()), &[]);
+                let edge = self.block_target(successor, Vec::new())?;
                 self.terminate(
                     l::Terminator::Suspend {
                         kind: l::SuspendKind::Yield(value),
                         pos: expr.pos.clone(),
                         successor,
                         resume_value: None,
-                        arguments: Vec::new(),
+                        arguments: edge.arguments,
+                        ownership: edge.ownership,
                         invalidates: Vec::new(),
                         traps: Vec::new(),
                     },
                     &expr.pos,
                 )?;
-                self.current = Some(successor);
+                self.enter_block(successor)?;
                 None
             }
             K::AsyncSuspend => {
                 let successor = self.new_block(Vec::new(), Some("async.resume".to_string()));
+                let edge = self.block_target(successor, Vec::new())?;
                 self.terminate(
                     l::Terminator::Suspend {
+                        ownership: edge.ownership,
                         kind: l::SuspendKind::Async,
                         pos: expr.pos.clone(),
                         successor,
                         resume_value: None,
-                        arguments: Vec::new(),
+                        arguments: edge.arguments,
                         invalidates: self.array_values.clone(),
                         traps: Vec::new(),
                     },

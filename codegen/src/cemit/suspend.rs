@@ -19,6 +19,33 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             return Err(internal("non-suspend passed to suspend emitter"));
         };
         self.save_suspend_arguments(out, block, arguments)?;
+        if self.function.is_generator {
+            let l::Terminator::Suspend {
+                successor,
+                resume_value,
+                ..
+            } = &block.terminator
+            else {
+                return Err(internal("generator cleanup has no suspension"));
+            };
+            let slots = arguments
+                .iter()
+                .zip(
+                    self.function.blocks[successor.0 as usize]
+                        .parameters
+                        .iter()
+                        .skip(usize::from(resume_value.is_some())),
+                )
+                .filter_map(|(argument, parameter)| match argument {
+                    l::Operand::Value(value) => {
+                        Some((*value, format!("b{}_v{}", block.id.0, parameter.0)))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            self.emitter
+                .emit_generator_cleanup(out, self.function, Some(block.id), &slots)?;
+        }
         let state = self.suspend_state(block.id)?;
         match kind {
             l::SuspendKind::Yield(value) => {

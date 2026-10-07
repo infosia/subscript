@@ -11,6 +11,16 @@ fn zero_in_three_tiers(label: &str, source: &str) {
 }
 
 fn outcome_in_three_tiers(label: &str, source: &str, expected: usize, traps: bool) {
+    outcome_with_output_in_three_tiers(label, source, expected, traps, None);
+}
+
+fn outcome_with_output_in_three_tiers(
+    label: &str,
+    source: &str,
+    expected: usize,
+    traps: bool,
+    stdout: Option<&[u8]>,
+) {
     let files = [SourceFile::new("counted-measurement.ts", source)];
     let hir = check_program(&files).unwrap_or_else(|errors| panic!("{label}: {errors:?}"));
     let module = crate::lir::lower_module(&hir).expect("verified measurement");
@@ -49,6 +59,13 @@ fn outcome_in_three_tiers(label: &str, source: &str, expected: usize, traps: boo
         expected,
         "{label}: interpreter"
     );
+    if let Some(stdout) = stdout {
+        assert_eq!(
+            interpreter.context.stdout_bytes(),
+            stdout,
+            "{label}: interpreter stdout"
+        );
+    }
     let mut jit = ReloadSession::new(&files).expect("reload session");
     let mut error = jit.call_main().err();
     while error.is_none() && jit.async_pending() != 0 {
@@ -63,6 +80,9 @@ fn outcome_in_three_tiers(label: &str, source: &str, expected: usize, traps: boo
         assert!(error.is_none(), "{label}: {error:?}");
     }
     assert_eq!(jit.async_tasks().len(), expected, "{label}: JIT");
+    if let Some(stdout) = stdout {
+        assert_eq!(jit.take_output(), stdout, "{label}: JIT stdout");
+    }
     let emitted = emit_c(&hir).expect("C emission");
     let dir = std::env::temp_dir().join(format!(
         "subscript-counted-measurement-{}-{label}",
@@ -82,6 +102,7 @@ fn outcome_in_three_tiers(label: &str, source: &str, expected: usize, traps: boo
         ""
     };
     let host = crate::host_entry(r#"
+#include <stdio.h>
 static void visit(void* data, const subscript_rt_async_task_info* task) {
  (void)task; ++*(uint64_t*)data;
 }
@@ -91,6 +112,8 @@ int main(void) {
  while (subscript_rt_ctx_async_pending(ctx) && !subscript_rt_ctx_trap_kind(ctx)) subscript_rt_ctx_async_step(ctx);
  uint64_t count=0;subscript_rt_ctx_visit_async_tasks(ctx,visit,&count);
  int result=(count != EXPECTED || subscript_rt_ctx_trap_kind(ctx) != TRAP);
+ uint64_t length=0;const uint8_t* output=subscript_rt_ctx_stdout(ctx,&length);
+ fwrite(output,1,(size_t)length,stdout);
  subscript_rt_ctx_release(ctx);return result;
 }
 "#, &emitted.host_header).expect("host entry").replace("INITIALIZE", initialize)
@@ -119,6 +142,9 @@ int main(void) {
         "{label}: C retained a task or trapped: {}",
         crate::tool_output_report(&ran)
     );
+    if let Some(stdout) = stdout {
+        assert_eq!(ran.stdout, stdout, "{label}: C stdout");
+    }
     std::fs::remove_dir_all(dir).expect("remove fixture");
 }
 
@@ -456,7 +482,7 @@ fn measured_fresh_index_positions_still_have_no_accepted_form() {
 }
 
 #[test]
-fn deferred_reference_holders_and_dropped_generators_keep_the_measured_count() {
+fn deferred_reference_holders_keep_counts_and_generator_drop_releases() {
     let prelude = r#"
 async function work():Promise<void>{return;}
 class Box{jobs:Promise<void>[];constructor(a:Promise<void>[]){this.jobs=a;}}
@@ -481,7 +507,10 @@ function* gen(a:Promise<void>[]):Generator<i32>{const local=a;consume(local[0]);
             "const it=gen([h]);it.next();it.next();",
         ),
     ] {
-        for (body, expected) in [(body, 1), (control, 0)] {
+        for (body, expected) in [
+            (body, usize::from(label != "dropped-generator-array")),
+            (control, 0),
+        ] {
             let source = format!("{prelude}\nasync function use():Promise<void>{{const h=work();await h;{body}}}\nexport async function main():Promise<void>{{await use();}}");
             outcome_in_three_tiers(&format!("{label}-{expected}"), &source, expected, false);
         }
@@ -608,4 +637,144 @@ export async function main(): Promise<void> {{ await use(); }}
             zero_in_three_tiers(&format!("zero-store-{shape}-{clear}"), &source);
         }
     }
+}
+
+#[test]
+fn dropped_generator_corpus_releases_every_task() {
+    // One input costs one interpreter run, one JIT session, and one C build.
+    zero_in_three_tiers(
+        "dropped-generator-frame",
+        include_str!("../../../corpus/accept/a346-dropped-generator-frame.ts"),
+    );
+}
+
+#[test]
+fn each_generator_drop_shape_and_exhausted_control_releases_every_task() {
+    // One C build checks the inner-block drop and all eight exhausted controls.
+    let prelude = r#"
+let transfer: Promise<i32>[] = [];
+function consume(h: Promise<i32>): void { transfer.push(h); }
+async function work(): Promise<i32> { return 7; }
+function* gen(a: Promise<i32>[]): Generator<i32> {
+    { const local = a; consume(local[0]); transfer.pop(); yield 1; }
+    yield 2;
+}
+class Holder { g: Generator<i32>; constructor(g: Generator<i32>) { this.g = g; } }
+"#;
+    let mut source = prelude.to_string();
+    source.push_str("async function use(shape:i32, exhausted:boolean):Promise<void> { const h=work(); await h; ");
+    for (shape, setup, drop, control) in [
+        (
+            0,
+            "",
+            "for(const v of gen([h])){break;}",
+            "for(const v of gen([h])){}",
+        ),
+        (
+            1,
+            "",
+            "for(const v of gen([h])){return;}",
+            "for(const v of gen([h])){} return;",
+        ),
+        (
+            2,
+            "const it=gen([h]);",
+            "it.next();",
+            "it.next();it.next();it.next();",
+        ),
+        (
+            3,
+            "const it=gen([h]);",
+            "",
+            "it.next();it.next();it.next();",
+        ),
+        (
+            4,
+            "const o=new Holder(gen([h]));",
+            "o.g.next();Context.free(o);",
+            "o.g.next();o.g.next();o.g.next();Context.free(o);",
+        ),
+        (
+            5,
+            "const gs:Generator<i32>[]=[gen([h])];",
+            "gs[0].next();gs.pop();",
+            "gs[0].next();gs[0].next();gs[0].next();gs.pop();",
+        ),
+        (
+            6,
+            "const it=gen([h]);",
+            "{const copy=it;copy.next();}it.next();",
+            "{const copy=it;copy.next();copy.next();copy.next();}it.next();",
+        ),
+        (
+            7,
+            "const it=gen([h]);",
+            "it.next();",
+            "it.next();it.next();it.next();",
+        ),
+    ] {
+        source.push_str(&format!(
+            "if(shape=={shape}){{ {setup} if(exhausted){{{control}}}else{{{drop}}} }}"
+        ));
+    }
+    source.push_str("} export async function main():Promise<void>{");
+    // a346 covers the first seven drop forms. Keep the inner-block drop and all exhausted controls.
+    source.push_str("await use(7,false);");
+    for shape in 0..8 {
+        source.push_str(&format!("await use({shape},true);"));
+    }
+    source.push('}');
+    zero_in_three_tiers("generator-drop-controls", &source);
+}
+
+#[test]
+fn generator_reference_sweeps_and_exhausted_controls_release_every_task() {
+    for shape in ["field", "map"] {
+        for exhausted in [false, true] {
+            let create = if shape == "field" {
+                "const o = new Holder(gen([h])); const it = o.g;"
+            } else {
+                "const m = new Map<i32, Generator<i32>>(); m.set(1, gen([h])); const it = m.getOr(1, empty());"
+            };
+            let finish = if exhausted {
+                "it.next(); it.next();"
+            } else {
+                ""
+            };
+            let source = format!(
+                r#"
+let transfer: Promise<i32>[] = [];
+function consume(h: Promise<i32>): void {{ transfer.push(h); }}
+async function work(): Promise<i32> {{ return 7; }}
+function* gen(a: Promise<i32>[]): Generator<i32> {{ const local = a; consume(local[0]); transfer.pop(); yield 1; yield 2; }}
+function* empty(): Generator<i32> {{ yield 0; }}
+class Holder {{ g: Generator<i32>; constructor(g: Generator<i32>) {{ this.g = g; }} }}
+async function use(): Promise<void> {{ const h = work(); await h; {create} it.next(); {finish} }}
+export async function main(): Promise<void> {{ await use(); Context.collect(); }}
+"#
+            );
+            zero_in_three_tiers(&format!("generator-sweep-{shape}-{exhausted}"), &source);
+        }
+    }
+}
+
+#[test]
+fn spilled_receiver_keeps_a_generator_cycle_until_frame_completion() {
+    let prelude = r#"
+let transfer:Promise<i32>[]=[];
+function touch(a:Promise<i32>[]):void { transfer.push(a[0]); transfer.pop(); }
+async function fail():Promise<i32>{throw new Error("lost");}
+async function bad():Promise<Promise<i32>[]> { const h=fail(); if(false){await h;} return [h]; }
+class Sched { queue:Generator<i32>[]=[]; }
+function* spawner(s:Sched,a:Promise<i32>[]):Generator<i32>{touch(a);yield 1;yield 2;}
+async function build():Promise<void>{ {const s=new Sched();s.queue.push(spawner(s,await bad()));print("unstarted");}Context.collect();print("end"); }
+"#;
+    outcome_with_output_in_three_tiers(
+        "spilled-receiver-cycle",
+        &format!("{prelude} export async function main():Promise<void>{{await build();}}"),
+        1,
+        false,
+        Some(b"unstarted\nend\n"),
+    );
+    outcome_with_output_in_three_tiers("spilled-receiver-cycle-release", &format!("{prelude} export async function main():Promise<void>{{await build();Context.collect();print(\"after collect\");}}"), 1, true, Some(b"unstarted\nend\n"));
 }

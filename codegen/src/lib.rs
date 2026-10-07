@@ -32,6 +32,7 @@
 mod cemit;
 mod counted;
 mod emit_files;
+mod generator_cleanup;
 pub mod interpreter;
 mod jit;
 mod layout;

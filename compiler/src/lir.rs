@@ -329,6 +329,26 @@ pub struct Liveness {
     pub live_ins: Vec<Vec<ValueId>>,
     /// Original logical value for each SSA version, in [`ValueId`] order.
     pub value_origins: Vec<ValueId>,
+    /// Counted frame owners at creation and each generator suspension.
+    pub generator_cleanup: Vec<GeneratorCleanup>,
+}
+
+/// The counted owners at one generator state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct GeneratorCleanup {
+    /// The suspension block; `None` identifies the start state.
+    pub suspension: Option<BlockId>,
+    /// Each entry releases one count. Duplicate values keep their multiplicity.
+    pub owners: Vec<ValueId>,
+}
+
+impl GeneratorCleanup {
+    /// Creates the release description for one generator state.
+    #[must_use]
+    pub fn new(suspension: Option<BlockId>, owners: Vec<ValueId>) -> Self {
+        Self { suspension, owners }
+    }
 }
 
 /// The source role of an executable function.
@@ -549,6 +569,7 @@ impl CountAction {
             use crate::types::CountedType as C;
             match shape {
                 C::Handle => Type::AsyncHandle(Box::new(Type::Void)),
+                C::Generator => Type::Generator(Box::new(Type::Void)),
                 C::Array(child) => Type::Array(Box::new(storage(child))),
                 C::FixedArray(child, count) => Type::FixedArray(Box::new(storage(child)), *count),
                 C::IterResult(child) => Type::IterResult(Box::new(storage(child))),
@@ -1138,6 +1159,8 @@ pub enum Terminator {
         /// Values supplied to the successor parameters after the optional
         /// resume value.
         arguments: Vec<Operand>,
+        /// Each owned argument moves one count to its successor parameter.
+        ownership: Vec<bool>,
         /// Dynamic-array values invalidated before suspension completes.
         invalidates: Vec<ValueId>,
         /// Ordered trap sites owned by starting/resuming the operation.
@@ -1164,10 +1187,12 @@ impl Terminator {
             Self::Suspend {
                 successor,
                 arguments,
+                ownership,
                 ..
             } => vec![BlockTarget {
                 block: *successor,
                 arguments: arguments.clone(),
+                ownership: ownership.clone(),
             }],
             Self::Return { .. } | Self::Unreachable { .. } | Self::Trap(_) => Vec::new(),
         }
@@ -1338,6 +1363,8 @@ pub struct BlockTarget {
     pub block: BlockId,
     /// Values supplied to ordinary destination parameters.
     pub arguments: Vec<Operand>,
+    /// Each owned argument moves one count to its destination parameter.
+    pub ownership: Vec<bool>,
 }
 
 /// One switch case edge.
@@ -1476,6 +1503,7 @@ mod tests {
 
     fn target(block: u32, values: &[u32]) -> BlockTarget {
         BlockTarget {
+            ownership: vec![false; values.len()],
             block: BlockId(block),
             arguments: values.iter().copied().map(operand).collect(),
         }
@@ -1592,6 +1620,7 @@ mod tests {
             ),
             (
                 Terminator::Suspend {
+                    ownership: vec![false],
                     kind: SuspendKind::Yield(Some(ValueId(10))),
                     pos: pos(),
                     successor: BlockId(7),
@@ -1605,6 +1634,7 @@ mod tests {
             ),
             (
                 Terminator::Suspend {
+                    ownership: vec![false],
                     kind: SuspendKind::Async,
                     pos: pos(),
                     successor: BlockId(8),
@@ -1618,6 +1648,7 @@ mod tests {
             ),
             (
                 Terminator::Suspend {
+                    ownership: vec![false],
                     kind: SuspendKind::AsyncCall {
                         target: async_target(),
                         operands: vec![ValueId(13), ValueId(14)],
@@ -1634,6 +1665,7 @@ mod tests {
             ),
             (
                 Terminator::Suspend {
+                    ownership: vec![false],
                     kind: SuspendKind::AsyncHandle {
                         handle: ValueId(16),
                         owned: false,
@@ -1719,6 +1751,7 @@ mod tests {
     #[test]
     fn map_values_maps_reads_and_invalidations_but_not_resume_definitions() {
         let mut terminator = Terminator::Suspend {
+            ownership: vec![false],
             kind: SuspendKind::AsyncCall {
                 target: async_target(),
                 operands: vec![ValueId(2), ValueId(3)],

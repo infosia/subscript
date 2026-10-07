@@ -14,6 +14,7 @@ pub(super) fn verify_function(
     verify_structure_and_types(module, function, errors);
     verify_counted_stores(module, function, errors);
     super::verify_counted_operations::verify(module, function, errors);
+    super::verify_generator_counts::verify(module, function, errors);
     verify_raise_edges(module, function, errors);
     verify_dominance(function, errors);
     super::verify_narrowing::verify_narrowing(function, errors);
@@ -261,6 +262,19 @@ fn verify_structure_and_types(
     function: &l::Function,
     errors: &mut Vec<VerifyError>,
 ) {
+    for block in &function.blocks {
+        for edge in block.terminator.targets() {
+            if edge.ownership.len() != edge.arguments.len() {
+                errors.push(finding(
+                    function,
+                    format!(
+                        "block {} edge to {} needs one ownership flag per argument",
+                        block.id.0, edge.block.0
+                    ),
+                ));
+            }
+        }
+    }
     let mut definitions = vec![0_u32; function.values.len()];
     if function
         .blocks

@@ -247,3 +247,103 @@ fn null_object_description_traps_before_slice_construction() {
         );
     }
 }
+
+#[test]
+fn release_leaf_walk_defers_frame_release_and_container_retirement() {
+    for shared in [false, true] {
+        let mut ctx = Context::new();
+        let frame = completed(&mut ctx);
+        let array = ctx.array_new(8, 0);
+        // SAFETY: the array slot takes the initial frame count.
+        unsafe {
+            ctx.array_push(array, (&frame as *const *mut u8).cast(), 0);
+        }
+        let data = unsafe { ctx.array_data(array) };
+        let description = [2u64, 0, 0, 1, 0, 0];
+        let mut handles = Vec::new();
+        let mut storage = Vec::new();
+        // SAFETY: the description matches one live counted array reference.
+        unsafe {
+            if shared {
+                subscript_rt_array_holder(&mut *ctx, array, 0, 0);
+            }
+            ctx.counted_release_leaves(
+                (&array as *const *mut u8).cast(),
+                description.as_ptr().cast(),
+                0,
+                &mut handles,
+                &mut storage,
+            );
+            assert!(ctx.is_live(array as usize));
+            assert_eq!(ctx.async_count(frame), 1);
+            if shared {
+                assert!(handles.is_empty());
+                assert!(storage.is_empty());
+                ctx.counted_release_leaves(
+                    (&array as *const *mut u8).cast(),
+                    description.as_ptr().cast(),
+                    0,
+                    &mut handles,
+                    &mut storage,
+                );
+            }
+            assert_eq!(handles, [frame as usize]);
+            assert_eq!(storage, [data as usize, array as usize]);
+            ctx.async_release(frame, 0);
+        }
+        for address in storage {
+            ctx.delete(address, 0);
+        }
+        assert!(!ctx.is_live(frame as usize));
+        assert!(!ctx.is_live(array as usize));
+        assert!(!ctx.is_live(data as usize));
+        assert!(!ctx.trapped());
+    }
+}
+
+#[test]
+fn generator_header_counts_preserve_epoch_and_release_only_the_current_state() {
+    for ship in [false, true] {
+        for exhausted in [false, true] {
+            let mut ctx = if ship {
+                Context::new_releasing()
+            } else {
+                Context::new()
+            };
+            let child = completed(&mut ctx);
+            let frame = ctx.alloc(40, CLASS_GENERATOR, 0);
+            let cleanup = [1u64, 32, 24, 1, 0, 0];
+            let marker = [0u64];
+            // SAFETY: these fields implement the generated 32-byte generator header and one task parameter.
+            unsafe {
+                frame.cast::<u32>().write(u32::from(exhausted));
+                frame.add(4).cast::<u32>().write(73);
+                frame.add(8).cast::<usize>().write(0);
+                frame.add(16).cast::<u32>().write(1);
+                frame.add(24).cast::<*const u64>().write(if exhausted {
+                    std::ptr::null()
+                } else {
+                    cleanup.as_ptr()
+                });
+                frame.add(32).cast::<*mut u8>().write(child);
+                ctx.describe_object(
+                    frame as usize,
+                    std::slice::from_raw_parts(marker.as_ptr().cast(), 8),
+                );
+                if exhausted {
+                    ctx.async_release(child, 0);
+                }
+                ctx.async_retain(frame);
+                assert_eq!(frame.add(16).cast::<u32>().read(), 2);
+                ctx.async_release(frame, 0);
+                assert_eq!(frame.add(16).cast::<u32>().read(), 1);
+                assert_eq!(frame.add(4).cast::<u32>().read(), 73);
+                assert_eq!(ctx.is_live(child as usize), !exhausted);
+                ctx.async_release(frame, 0);
+            }
+            assert!(!ctx.is_live(frame as usize));
+            assert!(!ctx.is_live(child as usize));
+            assert!(!ctx.trapped());
+        }
+    }
+}

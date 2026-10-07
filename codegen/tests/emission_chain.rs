@@ -64,6 +64,7 @@ fn chain_module(n: u32) -> l::Module {
                 }
             } else {
                 l::Terminator::Branch(l::BlockTarget {
+                    ownership: vec![false],
                     block: l::BlockId(id + 1),
                     arguments: vec![l::Operand::Value(l::ValueId(id))],
                 })
@@ -71,6 +72,7 @@ fn chain_module(n: u32) -> l::Module {
         })
         .collect();
     function.liveness = l::Liveness {
+        generator_cleanup: Vec::new(),
         live_ins: vec![Vec::new(); n as usize],
         value_origins: (0..2 * n - 1).map(l::ValueId).collect(),
     };
