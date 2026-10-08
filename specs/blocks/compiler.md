@@ -223,3 +223,4 @@ Every section, with its status:
 | §179 | A boundary value has its C ABI form | active | [`s179-a-boundary-value-has-its-c-abi-form.md`](compiler/s179-a-boundary-value-has-its-c-abi-form.md) |
 | §180 | A `finally` block runs on each exit | active | [`s180-a-finally-block-runs-on-each-exit.md`](compiler/s180-a-finally-block-runs-on-each-exit.md) |
 | §181 | An async arrow owns its captures | active | [`s181-an-async-arrow-owns-its-captures.md`](compiler/s181-an-async-arrow-owns-its-captures.md) |
+| §182 | A diagnostic shows the form it rejects | active | [`s182-a-diagnostic-shows-the-form-it-rejects.md`](compiler/s182-a-diagnostic-shows-the-form-it-rejects.md) |
