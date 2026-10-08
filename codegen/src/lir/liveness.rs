@@ -83,6 +83,7 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 .map(|values| values.into_iter().collect())
                 .collect(),
             generator_cleanup: std::mem::take(&mut function.liveness.generator_cleanup),
+            generator_close: std::mem::take(&mut function.liveness.generator_close),
             value_origins,
         };
         return Ok(());
@@ -287,6 +288,7 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
             .map(|values| values.into_iter().collect())
             .collect(),
         generator_cleanup: std::mem::take(&mut function.liveness.generator_cleanup),
+        generator_close: std::mem::take(&mut function.liveness.generator_close),
         value_origins,
     };
     Ok(())

@@ -633,7 +633,7 @@ impl<'m> Emitter<'m> {
         out.push_str("    int32_t state;\n    uint32_t reserved;\n    SubAsyncResume resume;\n");
         if function.is_generator {
             out.push_str(
-                "    uint32_t holders;\n    uint32_t padding;\n    const uint64_t* cleanup;\n",
+                "    uint32_t holders;\n    uint32_t padding;\n    const uint64_t* cleanup;\n    void* close_output;\n",
             );
         }
         for parameter in &function.parameters {
@@ -723,8 +723,12 @@ impl<'m> Emitter<'m> {
         let _ = writeln!(out, "}} SubFrame{};", function.id.0);
         if function.is_generator {
             let payload = subscript_runtime::generator_layout::PAYLOAD_OFFSET;
-            let _ = writeln!(out, "_Static_assert(offsetof(SubFrame{}, cleanup) + sizeof(((SubFrame{}*)0)->cleanup) == {payload}, \"generator payload offset\");", function.id.0, function.id.0);
+            let _ = writeln!(out, "_Static_assert(offsetof(SubFrame{}, close_output) + sizeof(((SubFrame{}*)0)->close_output) == {payload}, \"generator payload offset\");", function.id.0, function.id.0);
             for (field, offset) in [
+                (
+                    "close_output",
+                    subscript_runtime::generator_layout::CLOSE_OUTPUT_OFFSET,
+                ),
                 ("state", subscript_runtime::generator_layout::STATE_OFFSET),
                 (
                     "reserved",

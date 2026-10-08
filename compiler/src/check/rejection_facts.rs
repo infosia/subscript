@@ -45,7 +45,10 @@ impl super::Checker<'_> {
             || body.iter().any(|statement| match statement {
                 hir::Stmt::Block(body) => self.ts_return_coverage(body),
                 hir::Stmt::If {
-                    cond, then, els, ..
+                    cond,
+                    then,
+                    els,
+                    pos: _,
                 } => match cond.kind {
                     hir::ExprKind::Bool(true) => self.ts_return_coverage(then),
                     hir::ExprKind::Bool(false) => els
@@ -58,7 +61,22 @@ impl super::Checker<'_> {
                                 .is_some_and(|body| self.ts_return_coverage(body))
                     }
                 },
-                hir::Stmt::Switch { disc, cases, .. } => {
+                hir::Stmt::Using {
+                    bindings: _,
+                    body,
+                    finalizer,
+                    pos: _,
+                } => {
+                    self.ts_return_coverage(body)
+                        || finalizer
+                            .as_ref()
+                            .is_some_and(|body| self.ts_return_coverage(body))
+                }
+                hir::Stmt::Switch {
+                    disc,
+                    cases,
+                    pos: _,
+                } => {
                     let Type::Enum(id) = self.apparent_type(&disc.ty) else {
                         return false;
                     };

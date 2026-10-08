@@ -131,12 +131,38 @@ fn walk_statements<S: Clone>(
     for (index, statement) in statements.iter().enumerate() {
         let remaining = &statements[index + 1..];
         match statement {
-            Stmt::While { body, .. } | Stmt::ForOf { body, .. } => {
+            Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            } => {
                 let mut nested = state.clone();
                 visit(statement, remaining, loop_depth, &mut nested);
                 walk_statements(body, loop_depth + 1, &mut nested, visit);
             }
-            Stmt::For { init, body, .. } => {
+            Stmt::For {
+                init,
+                body,
+                cond: _,
+                step: _,
+                pos: _,
+            } => {
                 let mut nested = state.clone();
                 if let Some(init) = init {
                     walk_statements(
@@ -149,7 +175,12 @@ fn walk_statements<S: Clone>(
                 visit(statement, remaining, loop_depth, &mut nested);
                 walk_statements(body, loop_depth + 1, &mut nested, visit);
             }
-            Stmt::If { then, els, .. } => {
+            Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 let mut branch = state.clone();
                 visit(statement, remaining, loop_depth, &mut branch);
                 walk_statements(then, loop_depth, &mut branch.clone(), visit);
@@ -157,7 +188,11 @@ fn walk_statements<S: Clone>(
                     walk_statements(els, loop_depth, &mut branch, visit);
                 }
             }
-            Stmt::Switch { cases, .. } => {
+            Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 let mut branch = state.clone();
                 visit(statement, remaining, loop_depth, &mut branch);
                 for case in cases {
@@ -169,12 +204,25 @@ fn walk_statements<S: Clone>(
                 visit(statement, remaining, loop_depth, &mut nested);
                 walk_statements(body, loop_depth, &mut nested, visit);
             }
-            Stmt::Using { body, .. } => {
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
                 let mut nested = state.clone();
                 visit(statement, remaining, loop_depth, &mut nested);
                 walk_statements(body, loop_depth, &mut nested, visit);
+                if let Some(finalizer) = finalizer {
+                    walk_statements(finalizer, loop_depth, &mut nested, visit);
+                }
             }
-            Stmt::Try { body, handler, .. } => {
+            Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 let mut branch = state.clone();
                 visit(statement, remaining, loop_depth, &mut branch);
                 walk_statements(body, loop_depth, &mut branch.clone(), visit);
@@ -447,7 +495,22 @@ impl WarningChecker<'_> {
                         fresh.remove(name);
                     }
                 }
-                Stmt::ForOf { name, subject, .. } => {
+                Stmt::ForOf {
+                    name,
+                    subject,
+                    ty: _,
+                    kind: _,
+                    body: _,
+                    pos: _,
+                }
+                | Stmt::GeneratorForOf {
+                    name,
+                    subject,
+                    ty: _,
+                    mutable: _,
+                    body: _,
+                    pos: _,
+                } => {
                     self.scan_w003_expr(subject, loop_depth, fresh);
                     fresh.remove(name);
                 }
@@ -521,23 +584,65 @@ impl WarningChecker<'_> {
             }
 
             match stmt {
-                Stmt::If { then, els, .. } => {
+                Stmt::If {
+                    then,
+                    els,
+                    cond: _,
+                    pos: _,
+                } => {
                     self.analyze_w002_block(then);
                     if let Some(els) = els {
                         self.analyze_w002_block(els);
                     }
                 }
-                Stmt::While { body, .. }
-                | Stmt::For { body, .. }
-                | Stmt::ForOf { body, .. }
+                Stmt::While {
+                    body,
+                    cond: _,
+                    pos: _,
+                }
+                | Stmt::For {
+                    body,
+                    init: _,
+                    cond: _,
+                    step: _,
+                    pos: _,
+                }
+                | Stmt::ForOf {
+                    body,
+                    name: _,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    pos: _,
+                }
+                | Stmt::GeneratorForOf {
+                    body,
+                    name: _,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    pos: _,
+                }
                 | Stmt::Block(body) => self.analyze_w002_block(body),
-                Stmt::Switch { cases, .. } => {
+                Stmt::Switch {
+                    cases,
+                    disc: _,
+                    pos: _,
+                } => {
                     for case in cases {
                         self.analyze_w002_block(&case.body);
                     }
                 }
-                Stmt::Using { bindings, body, .. } => {
+                Stmt::Using {
+                    bindings,
+                    body,
+                    finalizer,
+                    pos: _,
+                } => {
                     self.analyze_w002_using(bindings, body, &freed);
+                    if let Some(finalizer) = finalizer {
+                        self.analyze_w002_block(finalizer);
+                    }
                 }
                 Stmt::Let { .. }
                 | Stmt::Expr(_)
@@ -545,7 +650,12 @@ impl WarningChecker<'_> {
                 | Stmt::Break(_)
                 | Stmt::Continue(_)
                 | Stmt::Throw { .. }
-                | Stmt::Try { .. } => {
+                | Stmt::Try {
+                    body: _,
+                    binding: _,
+                    handler: _,
+                    pos: _,
+                } => {
                     for child in stmt.children() {
                         if let hir::HirChild::Stmt(child) = child {
                             self.analyze_w002_block(std::slice::from_ref(child));
@@ -556,14 +666,52 @@ impl WarningChecker<'_> {
 
             if matches!(
                 stmt,
-                Stmt::If { .. }
-                    | Stmt::While { .. }
-                    | Stmt::For { .. }
-                    | Stmt::ForOf { .. }
-                    | Stmt::Switch { .. }
-                    | Stmt::Block(_)
-                    | Stmt::Try { .. }
-                    | Stmt::Using { .. }
+                Stmt::If {
+                    cond: _,
+                    then: _,
+                    els: _,
+                    pos: _
+                } | Stmt::While {
+                    cond: _,
+                    body: _,
+                    pos: _
+                } | Stmt::For {
+                    init: _,
+                    cond: _,
+                    step: _,
+                    body: _,
+                    pos: _
+                } | Stmt::ForOf {
+                    name: _,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    body: _,
+                    pos: _
+                } | Stmt::GeneratorForOf {
+                    name: _,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    body: _,
+                    pos: _
+                } | Stmt::Switch {
+                    disc: _,
+                    cases: _,
+                    pos: _
+                } | Stmt::Block(_)
+                    | Stmt::Try {
+                        body: _,
+                        binding: _,
+                        handler: _,
+                        pos: _
+                    }
+                    | Stmt::Using {
+                        bindings: _,
+                        body: _,
+                        finalizer: _,
+                        pos: _
+                    }
             ) {
                 // v1 carries no freed-state facts through a control-flow
                 // join. The condition/discriminant above is still a direct
@@ -576,7 +724,13 @@ impl WarningChecker<'_> {
 
     fn warn_w002_direct_uses(&mut self, stmt: &Stmt, freed: &HashSet<String>) {
         let for_init = match stmt {
-            Stmt::For { init, .. } => init.as_deref(),
+            Stmt::For {
+                init,
+                cond: _,
+                step: _,
+                body: _,
+                pos: _,
+            } => init.as_deref(),
             _ => None,
         };
         for child in stmt.children() {
@@ -748,27 +902,72 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, .. } => count_bound_name(counts, name),
-            Stmt::ForOf { name, body, .. } => {
+            Stmt::ForOf {
+                name,
+                body,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name,
+                body,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            } => {
                 count_bound_name(counts, name);
                 count_w004_bound_names(body, counts);
             }
-            Stmt::If { then, els, .. } => {
+            Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 count_w004_bound_names(then, counts);
                 if let Some(els) = els {
                     count_w004_bound_names(els, counts);
                 }
             }
-            Stmt::While { body, .. } | Stmt::Block(body) => {
+            Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::Block(body) => {
                 count_w004_bound_names(body, counts);
             }
-            Stmt::Using { body, .. } => count_w004_bound_names(body, counts),
-            Stmt::For { init, body, .. } => {
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                count_w004_bound_names(body, counts);
+                if let Some(finalizer) = finalizer {
+                    count_w004_bound_names(finalizer, counts);
+                }
+            }
+            Stmt::For {
+                init,
+                body,
+                cond: _,
+                step: _,
+                pos: _,
+            } => {
                 if let Some(init) = init {
                     count_w004_bound_names(std::slice::from_ref(init.as_ref()), counts);
                 }
                 count_w004_bound_names(body, counts);
             }
-            Stmt::Switch { cases, .. } => {
+            Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     count_w004_bound_names(&case.body, counts);
                 }
@@ -777,7 +976,7 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
                 body,
                 binding,
                 handler,
-                ..
+                pos: _,
             } => {
                 count_w004_bound_names(body, counts);
                 if let Some((binding, _)) = binding {
@@ -807,35 +1006,86 @@ fn collect_synthesized_origins(stmts: &[Stmt], origins: &mut HashMap<String, Str
                 name,
                 subject,
                 kind,
-                ..
+                ty: _,
+                body: _,
+                pos: _,
             } if is_pattern_storage(name, ".element]]") => {
                 origins.insert(name.clone(), for_of_element_source(subject, *kind, origins));
             }
             _ => {}
         }
         match stmt {
-            Stmt::If { then, els, .. } => {
+            Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 collect_synthesized_origins(then, origins);
                 if let Some(els) = els {
                     collect_synthesized_origins(els, origins);
                 }
             }
-            Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
-                collect_synthesized_origins(body, origins)
+            Stmt::While {
+                body,
+                cond: _,
+                pos: _,
             }
-            Stmt::Using { body, .. } => collect_synthesized_origins(body, origins),
-            Stmt::For { init, body, .. } => {
+            | Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            }
+            | Stmt::Block(body) => collect_synthesized_origins(body, origins),
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                collect_synthesized_origins(body, origins);
+                if let Some(finalizer) = finalizer {
+                    collect_synthesized_origins(finalizer, origins);
+                }
+            }
+            Stmt::For {
+                init,
+                body,
+                cond: _,
+                step: _,
+                pos: _,
+            } => {
                 if let Some(init) = init {
                     collect_synthesized_origins(std::slice::from_ref(init.as_ref()), origins);
                 }
                 collect_synthesized_origins(body, origins);
             }
-            Stmt::Switch { cases, .. } => {
+            Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     collect_synthesized_origins(&case.body, origins);
                 }
             }
-            Stmt::Try { body, handler, .. } => {
+            Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 collect_synthesized_origins(body, origins);
                 collect_synthesized_origins(handler, origins);
             }
@@ -901,12 +1151,34 @@ fn collect_w004_local_bindings(
                 }
             }
         }
+        if let Stmt::GeneratorForOf {
+            name,
+            ty,
+            subject,
+            mutable: _,
+            body: _,
+            pos: _,
+        } = stmt
+        {
+            if !name.starts_with("[[")
+                && bound_names.get(name) == Some(&1)
+                && is_value_type(module, ty)
+            {
+                bindings.push(CopyBinding {
+                    name: name.clone(),
+                    origin: CopyOrigin::Place(render_source_expr(subject, origins)),
+                    field_writes: Vec::new(),
+                    read: false,
+                });
+            }
+        }
         if let Stmt::ForOf {
             name,
             ty,
             subject,
             kind,
-            ..
+            body: _,
+            pos: _,
         } = stmt
         {
             if !name.starts_with("[[")
@@ -923,19 +1195,59 @@ fn collect_w004_local_bindings(
         }
 
         match stmt {
-            Stmt::If { then, els, .. } => {
+            Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 collect_w004_local_bindings(module, then, bound_names, origins, bindings);
                 if let Some(els) = els {
                     collect_w004_local_bindings(module, els, bound_names, origins, bindings);
                 }
             }
-            Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
+            Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            }
+            | Stmt::Block(body) => {
                 collect_w004_local_bindings(module, body, bound_names, origins, bindings)
             }
-            Stmt::Using { body, .. } => {
-                collect_w004_local_bindings(module, body, bound_names, origins, bindings)
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                collect_w004_local_bindings(module, body, bound_names, origins, bindings);
+                if let Some(finalizer) = finalizer {
+                    collect_w004_local_bindings(module, finalizer, bound_names, origins, bindings);
+                }
             }
-            Stmt::For { init, body, .. } => {
+            Stmt::For {
+                init,
+                body,
+                cond: _,
+                step: _,
+                pos: _,
+            } => {
                 if let Some(init) = init {
                     collect_w004_local_bindings(
                         module,
@@ -947,12 +1259,21 @@ fn collect_w004_local_bindings(
                 }
                 collect_w004_local_bindings(module, body, bound_names, origins, bindings);
             }
-            Stmt::Switch { cases, .. } => {
+            Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     collect_w004_local_bindings(module, &case.body, bound_names, origins, bindings);
                 }
             }
-            Stmt::Try { body, handler, .. } => {
+            Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 collect_w004_local_bindings(module, body, bound_names, origins, bindings);
                 collect_w004_local_bindings(module, handler, bound_names, origins, bindings);
             }
@@ -1106,7 +1427,7 @@ fn scan_w004_stmts(stmts: &[Stmt], bindings: &mut [CopyBinding]) {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 if let Some(init) = init {
                     scan_w004_stmts(std::slice::from_ref(init.as_ref()), bindings);
@@ -1114,9 +1435,7 @@ fn scan_w004_stmts(stmts: &[Stmt], bindings: &mut [CopyBinding]) {
                 if let Some(cond) = cond {
                     scan_w004_expr(cond, bindings);
                 }
-                if let Some(step) = step {
-                    scan_w004_discarded_expr(step, bindings);
-                }
+                scan_w004_stmts(step, bindings);
                 scan_w004_stmts(body, bindings);
                 continue;
             }
@@ -1393,21 +1712,65 @@ fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
             }
             // Each exit of the scope calls the hook of each binding
             // (compiler.md §115.5 rule 5).
-            Stmt::Using { bindings, .. } => {
+            Stmt::Using {
+                bindings,
+                body: _,
+                finalizer: _,
+                pos: _,
+            } => {
                 for binding in bindings {
                     scan_candidate_stmts(&[binding.hook()], name, state);
                 }
             }
             Stmt::Expr(_)
-            | Stmt::If { .. }
-            | Stmt::While { .. }
-            | Stmt::For { .. }
-            | Stmt::ForOf { .. }
-            | Stmt::Switch { .. }
+            | Stmt::If {
+                cond: _,
+                then: _,
+                els: _,
+                pos: _,
+            }
+            | Stmt::While {
+                cond: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::For {
+                init: _,
+                cond: _,
+                step: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::ForOf {
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::Switch {
+                disc: _,
+                cases: _,
+                pos: _,
+            }
             | Stmt::Break(_)
             | Stmt::Continue(_)
             | Stmt::Block(_)
-            | Stmt::Try { .. } => {}
+            | Stmt::Try {
+                body: _,
+                binding: _,
+                handler: _,
+                pos: _,
+            } => {}
         }
         for child in stmt.children() {
             match child {

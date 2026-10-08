@@ -854,6 +854,7 @@ mod tests {
                 })
                 .collect(),
             liveness: l::Liveness {
+                generator_close: Vec::new(),
                 generator_cleanup: Vec::new(),
                 live_ins: vec![Vec::new(), Vec::new()],
                 value_origins: (0..6).map(l::ValueId).collect(),

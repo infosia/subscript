@@ -101,6 +101,26 @@ fn operation_signatures(module: &mut hir::Module) -> Vec<hir::OperationSignature
     }
 
     fn visit_stmt(statement: &hir::Stmt, signatures: &mut Vec<hir::OperationSignature>) {
+        if let hir::Stmt::GeneratorForOf {
+            subject,
+            ty,
+            name: _,
+            mutable: _,
+            body: _,
+            pos: _,
+        } = statement
+        {
+            let signature = hir::OperationSignature {
+                target: hir::OperationSignatureTarget::BuiltinMethod(
+                    hir::BuiltinMethod::GeneratorNext,
+                ),
+                parameter_types: vec![subject.ty.clone()],
+                return_type: Some(Type::iter_result(ty.clone())),
+            };
+            if !signatures.contains(&signature) {
+                signatures.push(signature);
+            }
+        }
         for child in statement.children() {
             visit_child(child, signatures);
         }

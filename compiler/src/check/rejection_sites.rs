@@ -284,7 +284,6 @@ pub(crate) enum RejectionSite {
     ErrorCallWithoutNew,
     CatchBindingUnnarrowedUse,
     ThrowOperandNotErrorFamily,
-    FinallyClause,
     CatchBindingPattern,
     CatchBindingPatternWithoutAny,
     CatchBindingAnnotation,

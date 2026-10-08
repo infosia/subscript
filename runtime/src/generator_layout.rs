@@ -10,8 +10,10 @@ pub const RESUME_OFFSET: u32 = 8;
 pub const HOLDERS_OFFSET: u32 = 16;
 /// Static cleanup description pointer offset.
 pub const CLEANUP_OFFSET: u32 = 24;
+/// Temporary result destination during a close invocation.
+pub const CLOSE_OUTPUT_OFFSET: u32 = 32;
 /// First payload byte offset.
-pub const PAYLOAD_OFFSET: u32 = 32;
+pub const PAYLOAD_OFFSET: u32 = 40;
 
 #[cfg(test)]
 mod tests {
@@ -27,6 +29,7 @@ mod tests {
             holders: u32,
             padding: u32,
             cleanup: *const u64,
+            close_output: *mut u8,
         }
         assert_eq!(STATE_OFFSET as usize, std::mem::offset_of!(Header, state));
         assert_eq!(EPOCH_OFFSET as usize, std::mem::offset_of!(Header, epoch));
@@ -38,6 +41,10 @@ mod tests {
         assert_eq!(
             CLEANUP_OFFSET as usize,
             std::mem::offset_of!(Header, cleanup)
+        );
+        assert_eq!(
+            CLOSE_OUTPUT_OFFSET as usize,
+            std::mem::offset_of!(Header, close_output)
         );
         assert_eq!(PAYLOAD_OFFSET as usize, std::mem::size_of::<Header>());
     }

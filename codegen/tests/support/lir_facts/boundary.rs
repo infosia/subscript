@@ -377,7 +377,7 @@ pub(super) fn compare_terminator_positions(
     }
 
     let mut expected = Vec::<Pos>::new();
-    walk_module_expressions(hir, &mut |expr| {
+    walk_placed_module_expressions(hir, &mut |expr| {
         if expression_owns_terminator_position(expr) {
             expected.push(expr.pos.clone());
         }
@@ -392,7 +392,17 @@ pub(super) fn compare_terminator_positions(
         }
     });
 
-    expected.extend(using::hook_facts(hir).trap_positions);
+    let cleanup = using::hook_facts(hir);
+    for body in &cleanup.finalizers {
+        walk_placed_statement_expression_roots(hir, body, &mut |root| {
+            walk_expr(hir, root, &mut |expr| {
+                if expression_owns_terminator_position(expr) {
+                    expected.push(expr.pos.clone());
+                }
+            });
+        });
+    }
+    expected.extend(cleanup.trap_positions);
 
     for function in all_declared_functions(hir) {
         let subscript_compiler::Type::Class(class) = &function.ret else {

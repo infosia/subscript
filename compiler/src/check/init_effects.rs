@@ -193,17 +193,61 @@ impl<'a> ModuleEffectScanner<'a> {
             S::Let { .. }
             | S::Expr(_)
             | S::Return { .. }
-            | S::If { .. }
-            | S::While { .. }
-            | S::For { .. }
-            | S::ForOf { .. }
-            | S::Switch { .. }
+            | S::If {
+                cond: _,
+                then: _,
+                els: _,
+                pos: _,
+            }
+            | S::While {
+                cond: _,
+                body: _,
+                pos: _,
+            }
+            | S::For {
+                init: _,
+                cond: _,
+                step: _,
+                body: _,
+                pos: _,
+            }
+            | S::ForOf {
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                body: _,
+                pos: _,
+            }
+            | S::GeneratorForOf {
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                body: _,
+                pos: _,
+            }
+            | S::Switch {
+                disc: _,
+                cases: _,
+                pos: _,
+            }
             | S::Break(_)
             | S::Continue(_)
             | S::Block(_)
             | S::Throw { .. }
-            | S::Try { .. }
-            | S::Using { .. } => {
+            | S::Try {
+                body: _,
+                binding: _,
+                handler: _,
+                pos: _,
+            }
+            | S::Using {
+                bindings: _,
+                body: _,
+                finalizer: _,
+                pos: _,
+            } => {
                 for child in statement.children() {
                     match child {
                         hir::HirChild::Expr(expression) => self.expr(expression),
@@ -212,7 +256,26 @@ impl<'a> ModuleEffectScanner<'a> {
                 }
             }
         }
-        if let S::Using { bindings, .. } = statement {
+        if matches!(
+            statement,
+            S::GeneratorForOf {
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                body: _,
+                pos: _
+            }
+        ) {
+            self.record_indirect_call();
+        }
+        if let S::Using {
+            bindings,
+            body: _,
+            finalizer: _,
+            pos: _,
+        } = statement
+        {
             for binding in bindings.iter().rev() {
                 self.stmt(&binding.hook());
             }

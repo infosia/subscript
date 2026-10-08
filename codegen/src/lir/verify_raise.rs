@@ -55,7 +55,34 @@ pub(super) fn verify_raise_edges(
                     format!("{site} propagates an exception from a function that cannot raise"),
                 ));
             }
-            if starts_handler(instruction) && index != 0 {
+            if matches!(instruction.kind, l::InstructionKind::ExceptionMessage)
+                && !(index == 0
+                    && block
+                        .instructions
+                        .get(1)
+                        .is_some_and(|i| matches!(i.kind, l::InstructionKind::ExceptionPosition))
+                    && block.instructions.get(2).is_some_and(|i| {
+                        matches!(i.kind, l::InstructionKind::CatchEntry) && i.result.is_some()
+                    }))
+            {
+                errors.push(finding(
+                    function,
+                    format!("{site} has no complete frame-owned exception capture"),
+                ));
+            }
+            if starts_handler(instruction)
+                && index != 0
+                && !(index == 2
+                    && matches!(instruction.kind, l::InstructionKind::CatchEntry)
+                    && matches!(
+                        block.instructions[0].kind,
+                        l::InstructionKind::ExceptionMessage
+                    )
+                    && matches!(
+                        block.instructions[1].kind,
+                        l::InstructionKind::ExceptionPosition
+                    ))
+            {
                 errors.push(finding(
                     function,
                     format!("{site} is a catch entry that does not start its block"),
@@ -209,7 +236,9 @@ fn target_can_raise(module: &l::Module, target: &l::CallTarget) -> bool {
 fn starts_handler(instruction: &l::Instruction) -> bool {
     matches!(
         instruction.kind,
-        l::InstructionKind::CatchEntry | l::InstructionKind::ExceptionPark
+        l::InstructionKind::CatchEntry
+            | l::InstructionKind::ExceptionPark
+            | l::InstructionKind::ExceptionMessage
     )
 }
 
@@ -300,7 +329,9 @@ fn is_raise_site(
     instruction: &l::Instruction,
 ) -> bool {
     let target = match &instruction.kind {
-        l::InstructionKind::Throw | l::InstructionKind::ExceptionResume => return true,
+        l::InstructionKind::Throw
+        | l::InstructionKind::ExceptionResume
+        | l::InstructionKind::ExceptionRestore => return true,
         l::InstructionKind::AwaitRaise => {
             return function
                 .blocks

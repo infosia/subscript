@@ -50,7 +50,13 @@ fn lowered(source: &str) -> (Vec<hir::Stmt>, usize) {
 
 /// The body of the one `using` node that follows the binding `r`.
 fn node_body(body: &[hir::Stmt]) -> &[hir::Stmt] {
-    let [hir::Stmt::Let { name, .. }, hir::Stmt::Using { bindings, body, .. }] = body else {
+    let [hir::Stmt::Let { name, .. }, hir::Stmt::Using {
+        bindings,
+        body,
+        finalizer: _,
+        pos: _,
+    }] = body
+    else {
         panic!("a binding and its node: {body:#?}");
     };
     assert_eq!(name, "r");

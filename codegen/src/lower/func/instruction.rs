@@ -913,6 +913,99 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::InstructionKind::CatchEntry => {
                 self.emit_catch_entry(instruction.result.is_some())?
             }
+            l::InstructionKind::FinalizerEnter(_) | l::InstructionKind::GeneratorFinalizer(_) => {
+                None
+            }
+            l::InstructionKind::GeneratorIsClosing => {
+                let output = self
+                    .out
+                    .ok_or_else(|| internal("generator close flag has no output"))?;
+                let closing = self.builder.ins().icmp_imm(IntCC::Equal, output, 0);
+                Some(RV::Scalar(closing))
+            }
+            l::InstructionKind::GeneratorClose => {
+                let frame = self.expect_scalar(operands[0])?;
+                let state = self.builder.ins().load(types::I32, flags(), frame, 0);
+                let active = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThan, state, 0);
+                let close = self.builder.create_block();
+                let done = self.builder.create_block();
+                let initial = self.builder.ins().icmp_imm(IntCC::Equal, state, 0);
+                let exhausted = self.builder.ins().iconst(types::I32, -1);
+                let updated = self.builder.ins().select(initial, exhausted, state);
+                self.builder.ins().store(flags(), updated, frame, 0);
+                self.builder.ins().brif(active, close, &[], done, &[]);
+                self.builder.switch_to_block(close);
+                let resume =
+                    self.builder
+                        .ins()
+                        .load(types::I64, flags(), frame, COROUTINE_RESUME_OFFSET);
+                let signature = self.builder.import_signature(self.ml.resume_sig());
+                let l::ValueType::Data(Type::Generator(ty)) = &operand_types[0] else {
+                    return Err(internal("generator close type is missing"));
+                };
+                let (size, align) = self.ml.layouts.size_align(ty)?;
+                let result = self.stack_slot(size.max(1), align.max(1));
+                self.zero_bytes(result, size.max(1), align.max(1));
+                self.builder.ins().store(
+                    flags(),
+                    result,
+                    frame,
+                    subscript_runtime::generator_layout::CLOSE_OUTPUT_OFFSET as i32,
+                );
+                let output = self.builder.ins().iconst(types::I64, 0);
+                let call =
+                    self.builder
+                        .ins()
+                        .call_indirect(signature, resume, &[self.ctx, frame, output]);
+                let completed = self.builder.inst_results(call)[0];
+                self.builder.ins().store(
+                    flags(),
+                    output,
+                    frame,
+                    subscript_runtime::generator_layout::CLOSE_OUTPUT_OFFSET as i32,
+                );
+                if ty.counted_type().is_some() {
+                    let release = self.builder.create_block();
+                    self.builder.ins().brif(completed, done, &[], release, &[]);
+                    self.builder.switch_to_block(release);
+                    let bytes = crate::counted::description(&self.ml.layouts, ty)?;
+                    let data = self.ml.literal_data(&bytes)?;
+                    let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+                    let description = self.builder.ins().symbol_value(types::I64, global);
+                    let operation = self.iconst(types::I32, 1);
+                    let pos = self.position_id(&instruction.pos);
+                    let pos = self.iconst(types::I32, pos);
+                    self.call_runtime(
+                        self.ml.rt.counted_value,
+                        &[self.ctx, result, description, operation, pos],
+                        false,
+                    )?;
+                }
+                self.builder.ins().jump(done, &[]);
+                self.builder.switch_to_block(done);
+                self.trap_check();
+                None
+            }
+            l::InstructionKind::ExceptionMessage => self
+                .call_runtime(self.ml.rt.exception_message, &[self.ctx], false)?
+                .map(RV::Scalar),
+            l::InstructionKind::ExceptionPosition => self
+                .call_runtime(self.ml.rt.exception_position, &[self.ctx], false)?
+                .map(RV::Scalar),
+            l::InstructionKind::ExceptionRestore => {
+                let mut args = vec![self.ctx];
+                args.extend(
+                    operands
+                        .iter()
+                        .map(|value| self.expect_scalar(*value))
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                self.call_runtime(self.ml.rt.exception_restore, &args, true)?;
+                None
+            }
             l::InstructionKind::ExceptionPark => {
                 self.call_runtime(self.ml.rt.exception_park, &[self.ctx], false)?;
                 None

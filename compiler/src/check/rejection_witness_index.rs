@@ -305,7 +305,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::ErrorCallWithoutNew => WitnessEntry::General { files: &["error-call-without-new"], variant: Some(Divergence::ErrorCallWithoutNew), reason: "" },
         RejectionSite::CatchBindingUnnarrowedUse => WitnessEntry::General { files: &["s173-catch-template", "catch-binding-unnarrowed-use"], variant: Some(Divergence::Exceptions), reason: "" },
         RejectionSite::ThrowOperandNotErrorFamily => WitnessEntry::General { files: &["throw-operand-not-error-family"], variant: Some(Divergence::Exceptions), reason: "" },
-        RejectionSite::FinallyClause => WitnessEntry::General { files: &["finally-clause"], variant: Some(Divergence::Exceptions), reason: "" },
         RejectionSite::CatchBindingPattern => WitnessEntry::General { files: &["catch-binding-pattern"], variant: Some(Divergence::Exceptions), reason: "" },
         RejectionSite::CatchBindingPatternWithoutAny => WitnessEntry::General { files: &["catch-binding-pattern-without-any", "catch-binding-pattern-without-any-witness-2"], variant: None, reason: "" },
         RejectionSite::CatchBindingAnnotation => WitnessEntry::General { files: &["catch-binding-annotation"], variant: Some(Divergence::Exceptions), reason: "" },

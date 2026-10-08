@@ -833,6 +833,7 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     ("t105-dropped-generator-break", "break releases the failed task through its generator", "uncaught-exception", 12, 39),
+    ("t109-generator-close-throws", "a generator close finalizer traps at its throw", "uncaught-exception", 11, 13),
     ("t106-dropped-generator-local", "the block exit releases the failed task through its generator", "uncaught-exception", 12, 39),
     ("t102-zero-length-store", "a clear releases a failed element", "uncaught-exception", 10, 40),
     ("t101-unused-coroutine-parameter", "an unused parameter stays rooted until completion", "uncaught-exception", 19, 79),

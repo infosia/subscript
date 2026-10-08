@@ -144,7 +144,22 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h Type, &'h Pos)>) {
     for stmt in stmts {
         match stmt {
             hir::Stmt::Let { ty, pos, .. } => out.push((ty, pos)),
-            hir::Stmt::ForOf { ty, pos, .. } => out.push((ty, pos)),
+            hir::Stmt::ForOf {
+                ty,
+                pos,
+                name: _,
+                subject: _,
+                kind: _,
+                body: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                ty,
+                pos,
+                name: _,
+                mutable: _,
+                subject: _,
+                body: _,
+            } => out.push((ty, pos)),
             _ => {}
         }
         for child in stmt.children() {
@@ -788,10 +803,46 @@ impl<'a> Validator<'a> {
                     self.validate_expr_frame(init, destination, frame);
                 }
                 hir::Stmt::ForOf {
-                    ty, subject, pos, ..
+                    ty,
+                    subject,
+                    pos,
+                    name: _,
+                    kind: _,
+                    body: _,
+                }
+                | hir::Stmt::GeneratorForOf {
+                    ty,
+                    subject,
+                    pos,
+                    name: _,
+                    mutable: _,
+                    body: _,
                 } => {
                     if !generator && self.is_aggregate(ty) && !self.has_managed_interior(ty) {
                         self.add_type_slot(frame, ty, "`for…of` binding storage", pos);
+                    }
+                    if !generator
+                        && matches!(
+                            stmt,
+                            hir::Stmt::GeneratorForOf {
+                                name: _,
+                                ty: _,
+                                mutable: _,
+                                subject: _,
+                                body: _,
+                                pos: _
+                            }
+                        )
+                    {
+                        let step = Type::iter_result(ty.clone());
+                        if !self.has_managed_interior(&step) {
+                            self.add_type_slot(
+                                frame,
+                                &step,
+                                "generator iteration result storage",
+                                pos,
+                            );
+                        }
                     }
                     self.validate_expr_frame(subject, false, frame);
                 }
@@ -800,7 +851,26 @@ impl<'a> Validator<'a> {
             for child in stmt.children() {
                 match child {
                     hir::HirChild::Expr(expr)
-                        if !matches!(stmt, hir::Stmt::Let { .. } | hir::Stmt::ForOf { .. }) =>
+                        if !matches!(
+                            stmt,
+                            hir::Stmt::Let { .. }
+                                | hir::Stmt::ForOf {
+                                    name: _,
+                                    ty: _,
+                                    subject: _,
+                                    kind: _,
+                                    body: _,
+                                    pos: _
+                                }
+                                | hir::Stmt::GeneratorForOf {
+                                    name: _,
+                                    ty: _,
+                                    mutable: _,
+                                    subject: _,
+                                    body: _,
+                                    pos: _
+                                }
+                        ) =>
                     {
                         self.validate_expr_frame(expr, false, frame);
                     }

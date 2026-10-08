@@ -103,16 +103,24 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 els,
                 pos,
             } => self.lower_if(cond, then, els.as_deref().unwrap_or(&[]), pos)?,
-            hir::Stmt::While {
-                cond, body, pos, ..
-            } => self.lower_while(cond, body, pos)?,
+            hir::Stmt::While { cond, body, pos } => self.lower_while(cond, body, pos)?,
             hir::Stmt::For {
                 init,
                 cond,
                 step,
                 body,
                 pos,
-            } => self.lower_for(init.as_deref(), cond.as_ref(), step.as_ref(), body, pos)?,
+            } => self.lower_for(init.as_deref(), cond.as_ref(), step, body, pos)?,
+            hir::Stmt::GeneratorForOf {
+                name,
+                ty,
+                mutable,
+                subject,
+                body,
+                pos,
+            } => {
+                self.lower_generator_for_of(name, ty, *mutable, subject, body, pos)?;
+            }
             hir::Stmt::ForOf {
                 name,
                 ty,
@@ -137,8 +145,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             hir::Stmt::Using {
                 bindings,
                 body,
+                finalizer,
                 pos,
-            } => self.lower_using(bindings, body, pos)?,
+            } => self.lower_using(bindings, body, finalizer.as_deref(), pos)?,
         }
         Ok(())
     }
@@ -246,7 +255,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         &mut self,
         init: Option<&hir::Stmt>,
         cond: Option<&hir::Expr>,
-        step: Option<&hir::Expr>,
+        step: &[hir::Stmt],
         body: &[hir::Stmt],
         pos: &Pos,
     ) -> Result<(), LowerError> {
@@ -293,9 +302,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let step_reachable = self.block_reachable(step_block);
         if step_reachable {
             self.enter_block(step_block)?;
-            if let Some(step) = step {
-                self.lower_expr(step)?;
-            }
+            self.lower_scoped(step)?;
             if self.current.is_some() {
                 let edge = self.block_target(header, Vec::new())?;
                 self.terminate(l::Terminator::Branch(edge), pos)?;
@@ -313,6 +320,130 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             self.current = None;
         }
+        self.scopes.pop();
+        Ok(())
+    }
+
+    fn lower_generator_for_of(
+        &mut self,
+        name: &str,
+        ty: &Type,
+        mutable: bool,
+        subject: &hir::Expr,
+        body: &[hir::Stmt],
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let value = self.lower_stored_expr_at(&subject.ty, subject, pos)?;
+        self.scopes.push(HashMap::new());
+        let holder_name = "<generator for-of owner>";
+        let (holder, _) = self.declare_binding(
+            holder_name.to_string(),
+            l::ValueType::Data(subject.ty.clone()),
+            false,
+            value,
+            pos.clone(),
+            Some(hir::AsyncCopySite::Binding),
+        )?;
+        let header =
+            self.new_state_block(Vec::new(), Some("generator-for-of.next".to_string()), &[]);
+        let body_block = self.new_block(Vec::new(), Some("generator-for-of.body".to_string()));
+        let exhausted = self.new_state_block(
+            Vec::new(),
+            Some("generator-for-of.exhausted".to_string()),
+            &[],
+        );
+        let consumer_exit = self.new_state_block(
+            Vec::new(),
+            Some("generator-for-of.consumer-exit".to_string()),
+            &[],
+        );
+        let exit = self.new_state_block(Vec::new(), Some("generator-for-of.exit".to_string()), &[]);
+        let edge = self.block_target(header, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), pos)?;
+        self.enter_block(header)?;
+        let mut receiver = subject.clone();
+        receiver.kind = hir::ExprKind::Local(holder_name.to_string(), subject.ty.clone(), false);
+        let step_ty = Type::iter_result(ty.clone());
+        let mut next = subject.clone();
+        next.kind = hir::ExprKind::Call {
+            callee: hir::Callee::Method {
+                recv: Box::new(receiver),
+                name: hir::Symbol::from_full_text("next"),
+            },
+            args: Vec::new(),
+        };
+        next.ty = step_ty.clone();
+        next.pos = pos.clone();
+        let step = self.require_expr(&next)?;
+        self.scopes.push(HashMap::new());
+        let step_name = "<generator for-of step>";
+        let (step_binding, _) = self.declare_binding(
+            step_name.to_string(),
+            l::ValueType::Data(step_ty.clone()),
+            false,
+            step,
+            pos.clone(),
+            Some(hir::AsyncCopySite::Binding),
+        )?;
+        let field = |name: &str, ty: Type| {
+            let mut local = subject.clone();
+            local.kind = hir::ExprKind::Local(step_name.to_string(), step_ty.clone(), false);
+            local.ty = step_ty.clone();
+            local.pos = pos.clone();
+            let mut expression = local.clone();
+            expression.kind = hir::ExprKind::Field {
+                obj: Box::new(local),
+                name: name.to_string(),
+            };
+            expression.ty = ty;
+            expression
+        };
+        let done = self.require_expr(&field("done", Type::Bool))?;
+        let exit_edge = self.block_target(exhausted, Vec::new())?;
+        self.terminate(
+            l::Terminator::ConditionalBranch {
+                condition: done,
+                then_target: exit_edge,
+                else_target: target(body_block, Vec::new()),
+            },
+            pos,
+        )?;
+        let mut control = self.control(consumer_exit, Some(header));
+        control.scope_depth -= 1;
+        self.controls.push(control);
+        self.begin_generator_consumer(holder, pos);
+        self.current = Some(body_block);
+        let element = self.require_expr(&field("value", ty.clone()))?;
+        self.declare_binding(
+            name.to_string(),
+            l::ValueType::Data(ty.clone()),
+            mutable,
+            element,
+            pos.clone(),
+            Some(hir::AsyncCopySite::Binding),
+        )?;
+        self.lower_scoped(body)?;
+        if self.current.is_some() {
+            self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
+            let edge = self.block_target(header, Vec::new())?;
+            self.terminate(l::Terminator::Branch(edge), pos)?;
+        }
+        self.controls.pop();
+        self.end_generator_consumer(pos)?;
+        self.scopes.pop();
+        for path in [exhausted, consumer_exit] {
+            if self.block_reachable(path) {
+                self.enter_block(path)?;
+                if path == exhausted {
+                    let step = self.read_binding(step_binding, pos)?;
+                    self.release_owner(step, &l::ValueType::Data(step_ty.clone()), pos)?;
+                }
+                let edge = self.block_target(exit, Vec::new())?;
+                self.terminate(l::Terminator::Branch(edge), pos)?;
+            }
+        }
+        self.enter_block(exit)?;
+        self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
         self.scopes.pop();
         Ok(())
     }

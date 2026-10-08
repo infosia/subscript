@@ -135,6 +135,107 @@ pub(super) fn verify_instruction_contract(
                 bad("throw signature is invalid", errors);
             }
         }
+        l::InstructionKind::GeneratorFinalizer(_) => {
+            if !function.is_generator || !operand_types.is_empty() || instruction.result.is_some() {
+                bad("generator finalizer marker signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::GeneratorClose => {
+            if !matches!(
+                operand_types.as_slice(),
+                [l::ValueType::Data(Type::Generator(_))]
+            ) || instruction.result.is_some()
+            {
+                bad("generator close signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::GeneratorIsClosing => {
+            if !function.is_generator
+                || !operand_types.is_empty()
+                || result_type != Some(l::ValueType::Data(Type::Bool))
+            {
+                bad("generator close flag signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::FinalizerEnter(completion) => match completion {
+            None => bad("finalizer exit has no completion record", errors),
+            Some(l::FinalizerCompletion::Throw) => {
+                if !matches!(
+                    operand_types.as_slice(),
+                    [
+                        l::ValueType::Data(Type::Class(_)),
+                        l::ValueType::Data(Type::Str),
+                        l::ValueType::Data(Type::U32)
+                    ]
+                ) {
+                    bad("finalizer exception payload is invalid", errors);
+                }
+            }
+            Some(l::FinalizerCompletion::Return) => {
+                let expected = if function.is_generator || function.return_type == Type::Void {
+                    Vec::new()
+                } else {
+                    vec![l::ValueType::Data(function.return_type.clone())]
+                };
+                if operand_types != expected {
+                    bad("finalizer return payload is invalid", errors);
+                }
+            }
+            Some(
+                l::FinalizerCompletion::Break(target) | l::FinalizerCompletion::Continue(target),
+            ) => {
+                if function.blocks.get(target.0 as usize).is_none() || !operand_types.is_empty() {
+                    bad("finalizer jump target is invalid", errors);
+                }
+            }
+            Some(l::FinalizerCompletion::FallThrough) => {
+                if !operand_types.is_empty() {
+                    bad("finalizer fall-through payload is invalid", errors);
+                }
+            }
+        },
+        l::InstructionKind::ExceptionMessage | l::InstructionKind::ExceptionPosition => {
+            let ty = if matches!(instruction.kind, l::InstructionKind::ExceptionMessage) {
+                Type::Str
+            } else {
+                Type::U32
+            };
+            if !instruction.operands.is_empty() || result_type != Some(l::ValueType::Data(ty)) {
+                bad("exception payload read signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::ExceptionRestore => {
+            for operand in &instruction.operands {
+                let saved = match operand {
+                    l::Operand::Value(value) => function
+                        .blocks
+                        .iter()
+                        .flat_map(|block| &block.instructions)
+                        .find(|definition| definition.result == Some(*value))
+                        .is_some_and(|definition| {
+                            matches!(definition.kind, l::InstructionKind::LoadLocal(_))
+                        }),
+                    _ => false,
+                };
+                if !saved {
+                    bad(
+                        "finalizer exception restore does not read a frame-owned slot",
+                        errors,
+                    );
+                }
+            }
+            if !matches!(
+                operand_types.as_slice(),
+                [
+                    l::ValueType::Data(Type::Class(_)),
+                    l::ValueType::Data(Type::Str),
+                    l::ValueType::Data(Type::U32)
+                ]
+            ) || instruction.result.is_some()
+            {
+                bad("exception restore signature is invalid", errors);
+            }
+        }
         l::InstructionKind::ExceptionPark | l::InstructionKind::ExceptionResume => {
             if !instruction.operands.is_empty() || instruction.result.is_some() {
                 bad("exception exit signature is invalid", errors);

@@ -69,9 +69,24 @@ fn exit_shapes_and_using_scopes_share_the_predicate() {
                     "{using}: {body:?}"
                 );
                 if using {
-                    let hir::Stmt::Using { body, .. } = body
+                    let hir::Stmt::Using {
+                        body,
+                        bindings: _,
+                        finalizer: _,
+                        pos: _,
+                    } = body
                         .iter()
-                        .find(|s| matches!(s, hir::Stmt::Using { .. }))
+                        .find(|s| {
+                            matches!(
+                                s,
+                                hir::Stmt::Using {
+                                    bindings: _,
+                                    body: _,
+                                    finalizer: _,
+                                    pos: _
+                                }
+                            )
+                        })
                         .expect("using node")
                     else {
                         panic!("using scope");

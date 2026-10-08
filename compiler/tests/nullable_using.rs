@@ -40,7 +40,7 @@ fn null_guard(statement: &hir::Stmt) -> (&hir::Expr, &hir::Expr) {
         cond,
         then,
         els: None,
-        ..
+        pos: _,
     } = statement
     else {
         panic!("null guard")
@@ -69,7 +69,13 @@ fn null_guard(statement: &hir::Stmt) -> (&hir::Expr, &hir::Expr) {
 
 /// The bindings of the one `using` node at `body[1]`.
 fn node_bindings(body: &[hir::Stmt]) -> &[hir::UsingBinding] {
-    let hir::Stmt::Using { bindings, body, .. } = &body[1] else {
+    let hir::Stmt::Using {
+        bindings,
+        body,
+        finalizer: _,
+        pos: _,
+    } = &body[1]
+    else {
         panic!("the using node: {body:#?}");
     };
     assert!(body.is_empty(), "the checker places no hook call");
@@ -148,7 +154,10 @@ fn check_storage_reads(statement: &hir::Stmt, active: &[String]) -> usize {
         reads
     }
     if let hir::Stmt::If {
-        cond, then, els, ..
+        cond,
+        then,
+        els,
+        pos: _,
     } = statement
     {
         if let hir::ExprKind::Local(flag, _, _) = &cond.kind {
@@ -205,7 +214,12 @@ fn skipped_switch_declaration_reads_no_disposal_storage() {
     let node = body
         .iter()
         .find_map(|statement| match statement {
-            hir::Stmt::Using { bindings, .. } => Some(bindings),
+            hir::Stmt::Using {
+                bindings,
+                body: _,
+                finalizer: _,
+                pos: _,
+            } => Some(bindings),
             _ => None,
         })
         .expect("the switch node");

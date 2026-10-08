@@ -89,6 +89,18 @@ impl Interpreter<'_> {
                     .result
                     .map(|_| Value::Handle(caught.0 as *mut u8))
             }
+            l::InstructionKind::FinalizerEnter(_) | l::InstructionKind::GeneratorFinalizer(_) => {
+                None
+            }
+            l::InstructionKind::GeneratorIsClosing => {
+                Some(Value::Bool(unsafe { (*frame).closing }))
+            }
+            l::InstructionKind::GeneratorClose
+            | l::InstructionKind::ExceptionMessage
+            | l::InstructionKind::ExceptionPosition
+            | l::InstructionKind::ExceptionRestore => {
+                self.execute_finalizer_instruction(instruction, &operands, &operand_types)?
+            }
             l::InstructionKind::ExceptionPark => {
                 let caught = self.caught.take().ok_or_else(|| {
                     self.invalid(
@@ -1057,6 +1069,137 @@ impl Interpreter<'_> {
             runtime_kind: Some(trap.kind),
             pos,
             message: trap.message.clone(),
+        })
+    }
+}
+
+impl Interpreter<'_> {
+    // Keep finalizer-only work outside the common instruction dispatch.
+    #[cold]
+    #[inline(never)]
+    fn execute_finalizer_instruction(
+        &mut self,
+        instruction: &l::Instruction,
+        operands: &[Value],
+        operand_types: &[l::ValueType],
+    ) -> Result<Option<Value>, InterpretError> {
+        Ok(match &instruction.kind {
+            l::InstructionKind::GeneratorClose => {
+                let Value::Coroutine(coroutine) = &operands[0] else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "generator close has no coroutine",
+                    ));
+                };
+                if !coroutine.borrow().completed {
+                    let saved = coroutine.borrow().kind.frame().ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            "generator close has no frame",
+                        )
+                    })?;
+                    let started =
+                        saved.borrow().block != self.function(saved.borrow().function)?.entry;
+                    if started {
+                        saved.borrow_mut().closing = true;
+                        let flow = self.execute_coroutine(coroutine);
+                        saved.borrow_mut().closing = false;
+                        match flow? {
+                            Flow::Returned(_) => coroutine.borrow_mut().completed = true,
+                            Flow::Suspended {
+                                yielded: Some(value),
+                                ..
+                            } => {
+                                let l::ValueType::Data(Type::Generator(ty)) = &operand_types[0]
+                                else {
+                                    return Err(self.invalid(
+                                        Some(instruction.pos.clone()),
+                                        "generator close type is missing",
+                                    ));
+                                };
+                                if ty.counted_type().is_some() {
+                                    self.counted_owner(ty, &value, true, &instruction.pos)?;
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        coroutine.borrow_mut().completed = true;
+                    }
+                }
+                None
+            }
+            l::InstructionKind::ExceptionMessage => {
+                let message = self
+                    .caught
+                    .as_ref()
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            "a finalizer saved no pending exception",
+                        )
+                    })?
+                    .1
+                    .clone();
+                Some(Value::Handle(
+                    self.alloc_string(message.as_bytes(), &instruction.pos)?,
+                ))
+            }
+            l::InstructionKind::ExceptionPosition => {
+                let position = self
+                    .caught
+                    .as_ref()
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            "a finalizer saved no pending exception",
+                        )
+                    })?
+                    .2
+                    .clone();
+                let id = self
+                    .exception_positions
+                    .iter()
+                    .position(|saved| saved == &position)
+                    .unwrap_or_else(|| {
+                        let id = self.exception_positions.len();
+                        self.exception_positions.push(position);
+                        id
+                    });
+                Some(Value::U(id as u64))
+            }
+            l::InstructionKind::ExceptionRestore => {
+                let [object, message, position] = operands else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "exception restore requires three operands",
+                    ));
+                };
+                let object = object.as_handle()? as usize;
+                let message =
+                    String::from_utf8_lossy(&self.string_bytes(message.as_handle()?)?).into_owned();
+                let pos = self
+                    .exception_positions
+                    .get(position.as_u64()? as usize)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            "a finalizer position is invalid",
+                        )
+                    })?;
+                return Err(InterpretError::Exception {
+                    object,
+                    message,
+                    pos,
+                });
+            }
+            _ => {
+                return Err(self.invalid(
+                    Some(instruction.pos.clone()),
+                    "invalid finalizer instruction",
+                ))
+            }
         })
     }
 }

@@ -131,7 +131,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         .value_ctype(target.return_type.as_ref().unwrap())?
                 );
                 let output = if **value == Type::Void {
-                    "NULL".to_string()
+                    format!("&{destination}.done")
                 } else {
                     format!("&{destination}.value")
                 };

@@ -100,7 +100,14 @@ fn collect_for_of_bounds(
 ) {
     for statement in statements {
         match statement {
-            hir::Stmt::ForOf { body, pos, .. } => {
+            hir::Stmt::ForOf {
+                body,
+                pos,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+            } => {
                 expected.insert(
                     pos_key(pos),
                     ExpectedIteratorBound {
@@ -111,27 +118,69 @@ fn collect_for_of_bounds(
                 );
                 collect_for_of_bounds(hir, body, expected);
             }
-            hir::Stmt::If { then, els, .. } => {
+            hir::Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 collect_for_of_bounds(hir, then, expected);
                 if let Some(els) = els {
                     collect_for_of_bounds(hir, els, expected);
                 }
             }
-            hir::Stmt::While { body, .. }
-            | hir::Stmt::For { body, .. }
+            hir::Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            }
+            | hir::Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | hir::Stmt::For {
+                body,
+                init: _,
+                cond: _,
+                step: _,
+                pos: _,
+            }
             | hir::Stmt::Block(body) => collect_for_of_bounds(hir, body, expected),
-            hir::Stmt::Switch { cases, .. } => {
+            hir::Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     collect_for_of_bounds(hir, &case.body, expected);
                 }
             }
-            hir::Stmt::Try { body, handler, .. } => {
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 collect_for_of_bounds(hir, body, expected);
                 if try_body_raises(hir, body) {
                     collect_for_of_bounds(hir, handler, expected);
                 }
             }
-            hir::Stmt::Using { body, .. } => collect_for_of_bounds(hir, body, expected),
+            hir::Stmt::Using {
+                body,
+                bindings: _,
+                finalizer,
+                pos: _,
+            } => {
+                collect_for_of_bounds(hir, body, expected);
+                if let Some(finalizer) = finalizer {
+                    collect_for_of_bounds(hir, finalizer, expected);
+                }
+            }
             hir::Stmt::Let { .. }
             | hir::Stmt::Expr(_)
             | hir::Stmt::Return { .. }

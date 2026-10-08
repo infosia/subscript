@@ -349,20 +349,64 @@ impl Stmt {
         declared_globals: Option<&HashMap<Symbol, Type>>,
     ) -> NarrowingEffects {
         let script = match self {
-            Stmt::Using { .. } => true,
+            Stmt::Using {
+                bindings: _,
+                body: _,
+                finalizer: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                body: _,
+                pos: _,
+            } => true,
             Stmt::Let { dispose, .. } => *dispose,
             Stmt::Expr(_)
             | Stmt::Return { .. }
-            | Stmt::If { .. }
-            | Stmt::While { .. }
-            | Stmt::For { .. }
-            | Stmt::ForOf { .. }
-            | Stmt::Switch { .. }
+            | Stmt::If {
+                cond: _,
+                then: _,
+                els: _,
+                pos: _,
+            }
+            | Stmt::While {
+                cond: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::For {
+                init: _,
+                cond: _,
+                step: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::ForOf {
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::Switch {
+                disc: _,
+                cases: _,
+                pos: _,
+            }
             | Stmt::Break(_)
             | Stmt::Continue(_)
             | Stmt::Block(_)
             | Stmt::Throw { .. }
-            | Stmt::Try { .. } => false,
+            | Stmt::Try {
+                body: _,
+                binding: _,
+                handler: _,
+                pos: _,
+            } => false,
         };
         let mut effects = NarrowingEffects {
             script,
@@ -377,15 +421,32 @@ impl Stmt {
         let body_effects =
             |body: &[Stmt]| NarrowingEffects::body(body, classes, helpers, declared_globals);
         match self {
-            Stmt::If { then, els, .. } => {
+            Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 effects.merge(body_effects(then));
                 if let Some(els) = els {
                     effects.merge(body_effects(els));
                 }
             }
-            Stmt::While { body, .. } | Stmt::Block(body) => effects.merge(body_effects(body)),
-            Stmt::For { init, body, .. } => {
+            Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::Block(body) => effects.merge(body_effects(body)),
+            Stmt::For {
+                init,
+                body,
+                cond: _,
+                step,
+                pos: _,
+            } => {
                 effects.merge(body_effects(body));
+                effects.merge(body_effects(step));
                 if let Some(init) = init {
                     effects.merge(init.narrowing_effects(classes, helpers, declared_globals));
                     if let Stmt::Let { name, .. } = init.as_ref() {
@@ -393,11 +454,30 @@ impl Stmt {
                     }
                 }
             }
-            Stmt::ForOf { name, body, .. } => {
+            Stmt::ForOf {
+                name,
+                body,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name,
+                body,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            } => {
                 effects.merge(body_effects(body));
                 effects.hide_binding(name);
             }
-            Stmt::Switch { cases, .. } => {
+            Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     effects.merge(body_effects(&case.body));
                 }
@@ -411,7 +491,7 @@ impl Stmt {
                 body,
                 binding,
                 handler,
-                ..
+                pos: _,
             } => {
                 effects.merge(body_effects(body));
                 let mut handler_effects = body_effects(handler);
@@ -420,8 +500,16 @@ impl Stmt {
                 }
                 effects.merge(handler_effects);
             }
-            Stmt::Using { body, bindings, .. } => {
+            Stmt::Using {
+                body,
+                bindings,
+                finalizer,
+                pos: _,
+            } => {
                 effects.merge(body_effects(body));
+                if let Some(finalizer) = finalizer {
+                    effects.merge(body_effects(finalizer));
+                }
                 for binding in bindings {
                     effects.hide_binding(&binding.name);
                 }

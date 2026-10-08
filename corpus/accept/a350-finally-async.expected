@@ -1,0 +1,10 @@
+before A
+before B
+after A
+after B
+a A
+b B
+finally
+true
+catch caught
+catch finally

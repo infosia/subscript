@@ -3,6 +3,7 @@ use super::*;
 fn empty_module(mut functions: Vec<l::Function>) -> l::Module {
     for function in &mut functions {
         function.liveness = l::Liveness {
+            generator_close: Vec::new(),
             generator_cleanup: Vec::new(),
             live_ins: vec![Vec::new(); function.blocks.len()],
             value_origins: function.values.iter().map(|value| value.id).collect(),
@@ -873,4 +874,51 @@ fn suspend_restores_resume_value_then_remaining_live_ins() {
     };
     let module = empty_module(vec![main, child]);
     assert_eq!(interpret(&module), Ok(Vec::new()));
+}
+
+#[test]
+fn s180_interpreter_suspended_finalizers_have_distinct_frame_slots() {
+    let (module, ()) = interpreter_for(crate::finally_tests::FRAME_SOURCE);
+    let id = module
+        .functions
+        .iter()
+        .find(|f| f.source_name == "f")
+        .unwrap()
+        .id;
+    for count in 1..=2 {
+        let mut interpreter = Interpreter::new(&module).unwrap();
+        let mut handles = Vec::new();
+        for tag in ["A", "B"].into_iter().take(count) {
+            let pos = Pos::new("slots.ts", 1, 1);
+            let tag = interpreter.alloc_string(tag.as_bytes(), &pos).unwrap();
+            let Value::Coroutine(handle) = interpreter
+                .call_function(id, vec![Value::Handle(tag)])
+                .unwrap()
+            else {
+                panic!("frame handle");
+            };
+            interpreter.async_start(&handle).unwrap();
+            handles.push(handle);
+        }
+        let mut objects = Vec::new();
+        for (handle, expected) in handles.iter().zip(["Error: A", "Error: B"]) {
+            let state = handle.borrow();
+            let CoroutineKind::Invocation(frame) = &state.kind else {
+                panic!("invocation");
+            };
+            let frame = frame.borrow();
+            let values = &frame.locals;
+            let object = values[0].slot.borrow().as_handle().unwrap();
+            let text = values[1].slot.borrow().as_handle().unwrap();
+            let position = values[2].slot.borrow().as_u64().unwrap();
+            assert!(!object.is_null());
+            assert_eq!(interpreter.string_bytes(text).unwrap(), expected.as_bytes());
+            assert_eq!(interpreter.exception_positions[position as usize].line, 3);
+            objects.push(object);
+        }
+        if count == 2 {
+            assert_ne!(objects[0], objects[1]);
+        }
+        assert!(interpreter.parked.is_empty());
+    }
 }

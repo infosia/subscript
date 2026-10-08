@@ -185,6 +185,13 @@ fn read_operands(
         | Zero
         | Throw
         | CatchEntry
+        | ExceptionMessage
+        | ExceptionPosition
+        | ExceptionRestore
+        | FinalizerEnter(_)
+        | GeneratorFinalizer(_)
+        | GeneratorClose
+        | GeneratorIsClosing
         | ExceptionPark
         | ExceptionResume
         | AwaitRaise => vec![],

@@ -494,7 +494,8 @@ fn r31_multi_binding_using_nests_one_node_per_binding_in_hir() {
     }, hir::Stmt::Using {
         bindings: outer,
         body: outer_body,
-        ..
+        finalizer: _,
+        pos: _,
     }] = body.as_slice()
     else {
         panic!("the first binding and its node: {body:#?}");
@@ -504,7 +505,10 @@ fn r31_multi_binding_using_nests_one_node_per_binding_in_hir() {
         dispose: true,
         ..
     }, hir::Stmt::Using {
-        bindings: inner, ..
+        bindings: inner,
+        body: _,
+        finalizer: _,
+        pos: _,
     }, ..] = outer_body.as_slice()
     else {
         panic!("the second binding and its node: {outer_body:#?}");

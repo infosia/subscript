@@ -19,6 +19,7 @@ mod construct;
 mod defaults;
 mod exception;
 mod expr;
+mod generator_close;
 mod lambda;
 mod liveness;
 mod lowering;
@@ -981,7 +982,12 @@ struct FunctionBuilder<'a, 'm> {
     usings: Vec<using::UsingFrame>,
     /// The returned owner to release if an exit hook raises.
     exit_return: Option<(l::Operand, l::ValueType)>,
+    exit_return_depth: usize,
+    finalizer_scope_depth: Option<usize>,
+    finalizer_exception_active: bool,
+    completion: Option<(l::FinalizerCompletion, Vec<l::Operand>)>,
     generator_cleanup: Vec<l::GeneratorCleanup>,
+    generator_close: Vec<l::GeneratorClose>,
 }
 
 type CallResolution = (
@@ -1105,16 +1111,60 @@ fn stmt_pos(statement: &hir::Stmt) -> Pos {
     match statement {
         hir::Stmt::Let { pos, .. }
         | hir::Stmt::Return { pos, .. }
-        | hir::Stmt::If { pos, .. }
-        | hir::Stmt::While { pos, .. }
-        | hir::Stmt::For { pos, .. }
-        | hir::Stmt::ForOf { pos, .. }
-        | hir::Stmt::Switch { pos, .. }
+        | hir::Stmt::If {
+            pos,
+            cond: _,
+            then: _,
+            els: _,
+        }
+        | hir::Stmt::While {
+            pos,
+            cond: _,
+            body: _,
+        }
+        | hir::Stmt::For {
+            pos,
+            init: _,
+            cond: _,
+            step: _,
+            body: _,
+        }
+        | hir::Stmt::ForOf {
+            pos,
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+        }
+        | hir::Stmt::GeneratorForOf {
+            pos,
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+        }
+        | hir::Stmt::Switch {
+            pos,
+            disc: _,
+            cases: _,
+        }
         | hir::Stmt::Break(pos)
         | hir::Stmt::Continue(pos)
         | hir::Stmt::Throw { pos, .. }
-        | hir::Stmt::Try { pos, .. }
-        | hir::Stmt::Using { pos, .. } => pos.clone(),
+        | hir::Stmt::Try {
+            pos,
+            body: _,
+            binding: _,
+            handler: _,
+        }
+        | hir::Stmt::Using {
+            pos,
+            bindings: _,
+            body: _,
+            finalizer: _,
+        } => pos.clone(),
         hir::Stmt::Expr(expr) => expr.pos.clone(),
         hir::Stmt::Block(statements) => statements
             .first()

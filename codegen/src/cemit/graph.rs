@@ -128,6 +128,118 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         match &instruction.kind {
             l::InstructionKind::Throw => self.emit_throw(out, instruction, &operands),
             l::InstructionKind::CatchEntry => self.emit_catch_entry(out, result),
+            l::InstructionKind::FinalizerEnter(_) | l::InstructionKind::GeneratorFinalizer(_) => {
+                Ok(())
+            }
+            l::InstructionKind::GeneratorIsClosing => {
+                self.assign(out, result, "(coroutine_out == NULL)")
+            }
+            l::InstructionKind::GeneratorClose => {
+                let l::ValueType::Data(Type::Generator(ty)) = &operand_types[0] else {
+                    return Err(internal("generator close type is missing"));
+                };
+                let temporary = self.fresh();
+                let destination = if **ty == Type::Void {
+                    "NULL".into()
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "    {} {temporary} = {};",
+                        self.emitter.ctype(ty)?,
+                        self.emitter.zero(&l::ValueType::Data((**ty).clone()))?
+                    );
+                    format!("&{temporary}")
+                };
+                let offset = subscript_runtime::generator_layout::CLOSE_OUTPUT_OFFSET;
+                let _ = writeln!(
+                    out,
+                    "    if (((SubCoroutinePrefix*)({0}))->state > 0) {{",
+                    operands[0]
+                );
+                let _ = writeln!(
+                    out,
+                    "    *(void**)((unsigned char*)({0}) + {offset}) = {destination};",
+                    operands[0]
+                );
+                let done = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    uint8_t {done} = ((SubCoroutinePrefix*)({0}))->resume(ctx, {0}, NULL);",
+                    operands[0]
+                );
+                let _ = writeln!(
+                    out,
+                    "    *(void**)((unsigned char*)({0}) + {offset}) = NULL;",
+                    operands[0]
+                );
+                if ty.counted_type().is_some() {
+                    let bytes = crate::counted::description(&self.emitter.layouts, ty)?;
+                    let words = bytes
+                        .chunks_exact(8)
+                        .map(|word| {
+                            let mut bytes = [0; 8];
+                            bytes.copy_from_slice(word);
+                            format!("{}ULL", u64::from_ne_bytes(bytes))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let pos = self.emitter.pos_id(&instruction.pos);
+                    let call = self.emitter.runtime_call(
+                        "void",
+                        "subscript_rt_counted_value",
+                        &[
+                            "void*".into(),
+                            "const void*".into(),
+                            "const void*".into(),
+                            "uint32_t".into(),
+                            "uint32_t".into(),
+                        ],
+                        &[
+                            "ctx".into(),
+                            destination,
+                            format!("(const uint64_t[]){{{words}}}"),
+                            "1u".into(),
+                            pos.to_string(),
+                        ],
+                    );
+                    let _ = writeln!(out, "    if (!{done}) {{ {call}; }}");
+                } else {
+                    let _ = writeln!(out, "    (void){done};");
+                }
+                let _ = writeln!(out, "    }} else if (((SubCoroutinePrefix*)({0}))->state == 0) ((SubCoroutinePrefix*)({0}))->state = -1;", operands[0]);
+                self.emit_pending_check(out);
+                Ok(())
+            }
+            l::InstructionKind::ExceptionMessage | l::InstructionKind::ExceptionPosition => {
+                let (ret, name) =
+                    if matches!(instruction.kind, l::InstructionKind::ExceptionMessage) {
+                        ("void*", "subscript_rt_exception_message")
+                    } else {
+                        ("uint32_t", "subscript_rt_exception_position")
+                    };
+                let call = self
+                    .emitter
+                    .runtime_call(ret, name, &["void*".into()], &["ctx".into()]);
+                self.assign(out, result, &call)
+            }
+            l::InstructionKind::ExceptionRestore => {
+                let mut args = vec!["ctx".into()];
+                args.extend(operands);
+                let call = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_exception_restore",
+                    &[
+                        "void*".into(),
+                        "void*".into(),
+                        "void*".into(),
+                        "uint32_t".into(),
+                    ],
+                    &args,
+                );
+                let _ = writeln!(out, "    {call};");
+                self.emit_pending_check(out);
+                Ok(())
+            }
             l::InstructionKind::ExceptionPark => self.emit_exception_park(out),
             l::InstructionKind::ExceptionResume => self.emit_exception_resume(out),
             // compiler.md §116.2 rule 3: the resume made the exception of

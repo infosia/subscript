@@ -2323,12 +2323,6 @@ FILE	E	target/s154/forms/throw-operand-not-error-family/main.ts
 export function main(): void { throw 1; }
 END FILE
 END PROGRAM
-PROGRAM	finally-clause			0
-FILE	E	target/s154/forms/finally-clause/main.ts
-
-export function main(): void { try {} finally {} }
-END FILE
-END PROGRAM
 PROGRAM	catch-binding-pattern-without-any	TS2339		0
 FILE	E	target/s154/forms/catch-binding-pattern-without-any/main.ts
 

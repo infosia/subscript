@@ -169,7 +169,6 @@ ErrorConstructorArguments	error-constructor-arguments	S100	`new Error` takes one
 ErrorCallWithoutNew	error-call-without-new	S100	`Error` is constructed with `new Error(message)`; a call without `new` is rejected
 CatchBindingUnnarrowedUse	catch-binding-unnarrowed-use	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
 ThrowOperandNotErrorFamily	throw-operand-not-error-family	S010	`throw` requires an Error-family object; this operand has type `i32`
-FinallyClause	finally-clause	S010	`finally` is not in the decided exception surface; repeat the cleanup after the `try` statement and in its `catch` block
 CatchBindingPatternWithoutAny	catch-binding-pattern-without-any	S010	a catch binding is one name; a binding pattern is not in the decided exception surface
 CatchBindingPatternWithoutAny	catch-binding-pattern-without-any-witness-2	S010	a catch binding is one name; a binding pattern is not in the decided exception surface
 CatchBindingPattern	catch-binding-pattern	S010	a catch binding is one name; a binding pattern is not in the decided exception surface

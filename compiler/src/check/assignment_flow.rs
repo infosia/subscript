@@ -185,11 +185,44 @@ impl Flow<'_, '_> {
             }
             hir::Stmt::Break(_) => return vec![Exit::Break(state)],
             hir::Stmt::Continue(_) => return vec![Exit::Continue(state)],
-            hir::Stmt::Block(body) | hir::Stmt::Using { body, .. } => {
-                return self.scope(body, state)
+            hir::Stmt::Block(body) => return self.scope(body, state),
+            hir::Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                let paths = self.scope(body, state);
+                let Some(finalizer) = finalizer else {
+                    return paths;
+                };
+                let mut exits = Vec::new();
+                // The exceptional path can reach the finalizer before an assignment.
+                let mut entries = paths;
+                entries.push(Exit::Return(state));
+                for prior in entries {
+                    let entry = match prior {
+                        Exit::Next(s) | Exit::Return(s) | Exit::Break(s) | Exit::Continue(s) => s,
+                    };
+                    for tail in self.scope(finalizer, entry) {
+                        exits.push(match tail {
+                            Exit::Next(s) => match prior {
+                                Exit::Next(_) => Exit::Next(s),
+                                Exit::Return(_) => Exit::Return(s),
+                                Exit::Break(_) => Exit::Break(s),
+                                Exit::Continue(_) => Exit::Continue(s),
+                            },
+                            other => other,
+                        });
+                    }
+                }
+                return exits;
             }
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 self.expression(cond, &mut state);
                 let mut exits = Vec::new();
@@ -201,7 +234,11 @@ impl Flow<'_, '_> {
                 }
                 return exits;
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 self.expression(disc, &mut state);
                 let dispatch = state;
                 let mut entries = vec![state; cases.len()];
@@ -250,7 +287,7 @@ impl Flow<'_, '_> {
                 body,
                 handler,
                 binding,
-                ..
+                pos: _,
             } => {
                 // An exception can reach the catch before any assignment in the try.
                 let mut exits = self.scope(body, state);
@@ -262,7 +299,7 @@ impl Flow<'_, '_> {
                 exits.extend(Self::restore_scope(self.scope(handler, catch_entry), state));
                 return exits;
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 self.expression(cond, &mut state);
                 if matches!(cond.kind, hir::ExprKind::Bool(false)) {
                     return vec![Exit::Next(state)];
@@ -271,7 +308,7 @@ impl Flow<'_, '_> {
                     body,
                     state,
                     matches!(cond.kind, hir::ExprKind::Bool(true)),
-                    None,
+                    &[],
                 );
             }
             hir::Stmt::For {
@@ -279,7 +316,7 @@ impl Flow<'_, '_> {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let outer = state;
                 if let Some(init) = init {
@@ -298,7 +335,7 @@ impl Flow<'_, '_> {
                         state,
                         cond.as_ref()
                             .is_none_or(|cond| matches!(cond.kind, hir::ExprKind::Bool(true))),
-                        step.as_ref(),
+                        step,
                     ),
                     outer,
                 );
@@ -307,14 +344,24 @@ impl Flow<'_, '_> {
                 subject,
                 body,
                 name,
-                ..
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                subject,
+                body,
+                name,
+                ty: _,
+                mutable: _,
+                pos: _,
             } => {
                 self.expression(subject, &mut state);
                 let entry = state;
                 if matches!(self.binding, Binding::Local(binding, _) if binding == name) {
                     state.active = false;
                 }
-                return Self::restore_scope(self.loop_body(body, state, false, None), entry);
+                return Self::restore_scope(self.loop_body(body, state, false, &[]), entry);
             }
         }
         vec![Exit::Next(state)]
@@ -325,7 +372,7 @@ impl Flow<'_, '_> {
         body: &[hir::Stmt],
         state: State,
         infinite: bool,
-        step: Option<&hir::Expr>,
+        step: &[hir::Stmt],
     ) -> Vec<Exit> {
         let mut exits = if infinite {
             Vec::new()
@@ -336,10 +383,12 @@ impl Flow<'_, '_> {
             match exit {
                 Exit::Break(state) => exits.push(Exit::Next(state)),
                 Exit::Return(state) => exits.push(Exit::Return(state)),
-                Exit::Next(mut state) | Exit::Continue(mut state) => {
-                    if let Some(step) = step {
-                        self.expression(step, &mut state);
-                    }
+                Exit::Next(state) | Exit::Continue(state) => {
+                    exits.extend(
+                        self.scope(step, state)
+                            .into_iter()
+                            .filter(|exit| !matches!(exit, Exit::Next(_) | Exit::Continue(_))),
+                    );
                 }
             }
         }
@@ -381,19 +430,47 @@ impl<'a> LocalStatements<'a> {
         fn statement<'a>(value: &'a hir::Stmt, names: &mut HashSet<&'a str>) -> Exits {
             let mut exits = Exits::default();
             match value {
-                hir::Stmt::Let { name, .. } | hir::Stmt::ForOf { name, .. } => {
+                hir::Stmt::Let { name, .. }
+                | hir::Stmt::ForOf {
+                    name,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    body: _,
+                    pos: _,
+                }
+                | hir::Stmt::GeneratorForOf {
+                    name,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    body: _,
+                    pos: _,
+                } => {
                     names.insert(name);
                 }
                 hir::Stmt::Try {
                     binding: Some((name, _)),
-                    ..
+                    body: _,
+                    handler: _,
+                    pos: _,
                 } => {
                     names.insert(name);
                 }
                 hir::Stmt::Return { .. }
                 | hir::Stmt::Throw { .. }
-                | hir::Stmt::While { .. }
-                | hir::Stmt::For { .. } => exits.stops = true,
+                | hir::Stmt::While {
+                    cond: _,
+                    body: _,
+                    pos: _,
+                }
+                | hir::Stmt::For {
+                    init: _,
+                    cond: _,
+                    step: _,
+                    body: _,
+                    pos: _,
+                } => exits.stops = true,
                 hir::Stmt::Break(_) => exits.breaks = true,
                 hir::Stmt::Continue(_) => exits.continues = true,
                 hir::Stmt::Expr(value)
@@ -421,12 +498,43 @@ impl<'a> LocalStatements<'a> {
                 }
             }
             match value {
-                hir::Stmt::Switch { cases, .. } => {
+                hir::Stmt::Switch {
+                    cases,
+                    disc: _,
+                    pos: _,
+                } => {
                     exits.breaks = false;
                     // An empty exhaustive switch can remove every path.
                     exits.stops |= cases.is_empty();
                 }
-                hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {
+                hir::Stmt::While {
+                    cond: _,
+                    body: _,
+                    pos: _,
+                }
+                | hir::Stmt::For {
+                    init: _,
+                    cond: _,
+                    step: _,
+                    body: _,
+                    pos: _,
+                }
+                | hir::Stmt::ForOf {
+                    name: _,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    body: _,
+                    pos: _,
+                }
+                | hir::Stmt::GeneratorForOf {
+                    name: _,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    body: _,
+                    pos: _,
+                } => {
                     exits.breaks = false;
                     exits.continues = false;
                 }

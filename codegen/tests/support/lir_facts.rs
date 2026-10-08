@@ -460,6 +460,7 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
                         instruction.kind,
                         l::InstructionKind::Throw
                             | l::InstructionKind::ExceptionResume
+                            | l::InstructionKind::ExceptionRestore
                             | l::InstructionKind::AsyncHandleRetain
                             | l::InstructionKind::AsyncHandleArrayRetain
                             | l::InstructionKind::AsyncHandleRelease
@@ -494,7 +495,14 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
     for function in all_declared_functions(hir) {
         lifetime::statements(&function.body, hir, &mut expected);
     }
-    for key in using::hook_facts(hir).traps {
+    let cleanup = using::hook_facts(hir);
+    for body in &cleanup.finalizers {
+        walk_placed_statement_expression_roots(hir, body, &mut |expr| {
+            collect_trap_expression(expr, hir, &mut expected, findings, &mut seen_defaults)
+        });
+        lifetime::statements(body, hir, &mut expected);
+    }
+    for key in cleanup.traps {
         *expected.entry(key).or_default() += 1;
     }
     for function in all_declared_functions(hir) {
@@ -859,15 +867,33 @@ fn walk_execution_root_expressions<'a>(
         visit(&global.init);
     }
     for function in all_declared_functions(hir) {
-        walk_statement_expression_roots(hir, &function.body, visit);
+        walk_placed_statement_expression_roots(hir, &function.body, visit);
     }
-    walk_statement_expression_roots(hir, &hir.top_level, visit);
+    walk_placed_statement_expression_roots(hir, &hir.top_level, visit);
 }
 
 fn walk_statement_expression_roots<'a>(
     hir: &hir::Module,
     statements: &'a [hir::Stmt],
     visit: &mut impl FnMut(&'a hir::Expr),
+) {
+    walk_statement_expression_roots_mode(hir, statements, visit, true);
+}
+
+// Cleanup placements count each finalizer through hook_facts, rather than its declaration.
+fn walk_placed_statement_expression_roots<'a>(
+    hir: &hir::Module,
+    statements: &'a [hir::Stmt],
+    visit: &mut impl FnMut(&'a hir::Expr),
+) {
+    walk_statement_expression_roots_mode(hir, statements, visit, false);
+}
+
+fn walk_statement_expression_roots_mode<'a>(
+    hir: &hir::Module,
+    statements: &'a [hir::Stmt],
+    visit: &mut impl FnMut(&'a hir::Expr),
+    lexical_finalizers: bool,
 ) {
     for statement in statements {
         match statement {
@@ -878,63 +904,110 @@ fn walk_statement_expression_roots<'a>(
                 }
             }
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 visit(cond);
-                walk_statement_expression_roots(hir, then, visit);
+                walk_statement_expression_roots_mode(hir, then, visit, lexical_finalizers);
                 if let Some(els) = els {
-                    walk_statement_expression_roots(hir, els, visit);
+                    walk_statement_expression_roots_mode(hir, els, visit, lexical_finalizers);
                 }
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 visit(cond);
-                walk_statement_expression_roots(hir, body, visit);
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
             }
             hir::Stmt::For {
                 init,
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 if let Some(init) = init {
-                    walk_statement_expression_roots(hir, std::slice::from_ref(init), visit);
+                    walk_statement_expression_roots_mode(
+                        hir,
+                        std::slice::from_ref(init),
+                        visit,
+                        lexical_finalizers,
+                    );
                 }
                 if let Some(cond) = cond {
                     visit(cond);
                 }
-                walk_statement_expression_roots(hir, body, visit);
-                if let Some(step) = step {
-                    visit(step);
-                }
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
+                walk_statement_expression_roots_mode(hir, step, visit, lexical_finalizers);
             }
-            hir::Stmt::ForOf { subject, body, .. } => {
+            hir::Stmt::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                pos: _,
+            } => {
                 visit(subject);
-                walk_statement_expression_roots(hir, body, visit);
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 visit(disc);
                 for case in cases {
                     if let Some(test) = &case.test {
                         visit(test);
                     }
-                    walk_statement_expression_roots(hir, &case.body, visit);
+                    walk_statement_expression_roots_mode(
+                        hir,
+                        &case.body,
+                        visit,
+                        lexical_finalizers,
+                    );
                 }
             }
-            hir::Stmt::Block(body) => walk_statement_expression_roots(hir, body, visit),
+            hir::Stmt::Block(body) => {
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers)
+            }
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
             hir::Stmt::Throw { value, .. } => visit(value),
             // The lowering emits a handler only when a raise site of the
             // `try` block reaches it (compiler.md §115.6 rule 2).
-            hir::Stmt::Try { body, handler, .. } => {
-                walk_statement_expression_roots(hir, body, visit);
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
                 if try_body_raises(hir, body) {
-                    walk_statement_expression_roots(hir, handler, visit);
+                    walk_statement_expression_roots_mode(hir, handler, visit, lexical_finalizers);
                 }
             }
             // The hooks are not HIR expressions; `using::hook_facts` derives
             // their placements (compiler.md §115.5 rule 5).
-            hir::Stmt::Using { body, .. } => walk_statement_expression_roots(hir, body, visit),
+            hir::Stmt::Using {
+                body,
+                bindings: _,
+                finalizer,
+                pos: _,
+            } => {
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
+                if let Some(finalizer) = finalizer.as_ref().filter(|_| lexical_finalizers) {
+                    walk_statement_expression_roots_mode(hir, finalizer, visit, lexical_finalizers);
+                }
+            }
         }
         if stops_statement_sequence(hir, statement) {
             break;
@@ -1036,7 +1109,7 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
                 ..
             } = &block.terminator
             {
-                let pos = suspend_position(&block.terminator).unwrap_or_else(|| &function.pos);
+                let pos = suspend_position(&block.terminator).unwrap_or(&function.pos);
                 *actual
                     .entry((pos.file.clone(), pos.line, pos.col, operands.len()))
                     .or_default() += 1;
@@ -1268,6 +1341,8 @@ fn instruction_arity(
 ) -> Arity {
     use l::InstructionKind as K;
     match &instruction.kind {
+        K::GeneratorClose => Arity::Exact(1),
+        K::GeneratorIsClosing | K::GeneratorFinalizer(_) => Arity::Exact(0),
         K::Copy
         | K::Unary(_)
         | K::Cast
@@ -1292,11 +1367,14 @@ fn instruction_arity(
         | K::FunctionRef(_)
         | K::AllocateClass(_)
         | K::CatchEntry
+        | K::ExceptionMessage
+        | K::ExceptionPosition
         | K::ExceptionPark
         | K::ExceptionResume
         | K::AwaitRaise
         | K::Zero => Arity::Exact(0),
-        K::Throw => Arity::Exact(3),
+        K::Throw | K::ExceptionRestore => Arity::Exact(3),
+        K::FinalizerEnter(_) => Arity::Variable,
         K::StoreLocal(_) | K::StoreGlobal(_) => Arity::Exact(1),
         K::Binary(_) | K::AddressOfIndex { .. } | K::StoreAddress => Arity::Exact(2),
         K::AddressOfField(_) => Arity::Exact(1),
@@ -1381,28 +1459,77 @@ fn collect_return_positions<'a>(
     for statement in statements {
         match statement {
             hir::Stmt::Return { pos, .. } => visit(pos),
-            hir::Stmt::If { then, els, .. } => {
+            hir::Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 collect_return_positions(hir, then, visit);
                 if let Some(els) = els {
                     collect_return_positions(hir, els, visit);
                 }
             }
-            hir::Stmt::While { body, .. }
-            | hir::Stmt::For { body, .. }
-            | hir::Stmt::ForOf { body, .. }
+            hir::Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | hir::Stmt::For {
+                body,
+                init: _,
+                cond: _,
+                step: _,
+                pos: _,
+            }
+            | hir::Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            }
             | hir::Stmt::Block(body) => collect_return_positions(hir, body, visit),
-            hir::Stmt::Switch { cases, .. } => {
+            hir::Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     collect_return_positions(hir, &case.body, visit);
                 }
             }
-            hir::Stmt::Try { body, handler, .. } => {
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 collect_return_positions(hir, body, visit);
                 if try_body_raises(hir, body) {
                     collect_return_positions(hir, handler, visit);
                 }
             }
-            hir::Stmt::Using { body, .. } => collect_return_positions(hir, body, visit),
+            hir::Stmt::Using {
+                body,
+                bindings: _,
+                finalizer,
+                pos: _,
+            } => {
+                collect_return_positions(hir, body, visit);
+                if let Some(finalizer) = finalizer {
+                    collect_return_positions(hir, finalizer, visit);
+                }
+            }
             hir::Stmt::Let { .. }
             | hir::Stmt::Expr(_)
             | hir::Stmt::Break(_)
@@ -1464,6 +1591,19 @@ fn walk_module_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnMut(&'a 
     }
 }
 
+fn walk_placed_module_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnMut(&'a hir::Expr)) {
+    for owner in hir.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expression) => walk_expr(hir, expression, visit),
+            hir::ExpressionOwner::Body { statements, .. } => {
+                walk_placed_statement_expression_roots(hir, statements, &mut |expression| {
+                    walk_expr(hir, expression, visit);
+                });
+            }
+        }
+    }
+}
+
 // Describe exits in one exhaustive match. A new HIR statement must supply its exits.
 // Break ends an arm's sequence, but becomes fallthrough at its owning switch.
 #[derive(Clone, Copy)]
@@ -1514,7 +1654,12 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
         }
         // The lowering emits the handler only when a raise site of the
         // `try` block reaches it (compiler.md §115.6 rule 2).
-        hir::Stmt::Try { body, handler, .. } => {
+        hir::Stmt::Try {
+            body,
+            handler,
+            binding: _,
+            pos: _,
+        } => {
             if try_body_raises(hir, body) {
                 sequence_exits(hir, body).union(sequence_exits(hir, handler))
             } else {
@@ -1523,7 +1668,22 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
         }
         // A hook that raises leaves through the exception edge, so the
         // exits of the scope are the exits of its body.
-        hir::Stmt::Using { body, .. } => sequence_exits(hir, body),
+        hir::Stmt::Using {
+            body,
+            finalizer,
+            bindings: _,
+            pos: _,
+        } => {
+            let prior = sequence_exits(hir, body);
+            let Some(finalizer) = finalizer else {
+                return prior;
+            };
+            let tail = sequence_exits(hir, finalizer);
+            SequenceExits {
+                next: prior.next && tail.next,
+                breaks: tail.breaks || (tail.next && prior.breaks),
+            }
+        }
         hir::Stmt::Break(_) => SequenceExits {
             next: false,
             breaks: true,
@@ -1543,7 +1703,10 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
         }
         hir::Stmt::Block(body) => sequence_exits(hir, body),
         hir::Stmt::If {
-            cond, then, els, ..
+            cond,
+            then,
+            els,
+            pos: _,
         } => {
             let then = sequence_exits(hir, then);
             let els = els
@@ -1555,7 +1718,11 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
                 _ => then.union(els),
             }
         }
-        hir::Stmt::Switch { disc, cases, .. } => {
+        hir::Stmt::Switch {
+            disc,
+            cases,
+            pos: _,
+        } => {
             let mut exits = if cases.iter().any(|case| case.test.is_none())
                 || matches!(disc.ty, subscript_compiler::Type::StringAlias(_))
             {
@@ -1574,7 +1741,11 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
             }
         }
         hir::Stmt::For {
-            init, cond, body, ..
+            init,
+            cond,
+            body,
+            step: _,
+            pos: _,
         } => {
             let init = init
                 .as_deref()
@@ -1588,12 +1759,28 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
                 breaks: false,
             })
         }
-        hir::Stmt::While { cond, body, .. } => SequenceExits {
+        hir::Stmt::While { cond, body, pos: _ } => SequenceExits {
             next: !matches!(cond.kind, hir::ExprKind::Bool(true))
                 || sequence_exits(hir, body).breaks,
             breaks: false,
         },
-        hir::Stmt::Let { .. } | hir::Stmt::ForOf { .. } => SequenceExits::NEXT,
+        hir::Stmt::Let { .. }
+        | hir::Stmt::ForOf {
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+            pos: _,
+        }
+        | hir::Stmt::GeneratorForOf {
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+            pos: _,
+        } => SequenceExits::NEXT,
     }
 }
 
@@ -1621,7 +1808,10 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
                 .as_ref()
                 .is_some_and(|value| raises_in_expression(hir, value)),
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 raises_in_expression(hir, cond)
                     || raises_in_sequence(hir, then)
@@ -1629,7 +1819,7 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
                         .as_deref()
                         .is_some_and(|els| raises_in_sequence(hir, els))
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 raises_in_expression(hir, cond) || raises_in_sequence(hir, body)
             }
             hir::Stmt::For {
@@ -1637,7 +1827,7 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 init.as_deref()
                     .is_some_and(|init| raises_in_statement(hir, init))
@@ -1645,14 +1835,29 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
                         .as_ref()
                         .is_some_and(|cond| raises_in_expression(hir, cond))
                     || raises_in_sequence(hir, body)
-                    || step
-                        .as_ref()
-                        .is_some_and(|step| raises_in_expression(hir, step))
+                    || raises_in_sequence(hir, step)
             }
-            hir::Stmt::ForOf { subject, body, .. } => {
-                raises_in_expression(hir, subject) || raises_in_sequence(hir, body)
+            hir::Stmt::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            | hir::Stmt::GeneratorForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                pos: _,
+            } => raises_in_expression(hir, subject) || raises_in_sequence(hir, body),
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 raises_in_expression(hir, disc)
                     || cases.iter().any(|case| {
                         case.test
@@ -1664,18 +1869,29 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
             hir::Stmt::Block(body) => raises_in_sequence(hir, body),
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) => false,
             hir::Stmt::Throw { .. } => true,
-            hir::Stmt::Try { body, handler, .. } => {
-                raises_in_sequence(hir, body) && raises_in_sequence(hir, handler)
-            }
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => raises_in_sequence(hir, body) && raises_in_sequence(hir, handler),
             // The exception edge resumes after the hooks. A hook that
             // raises on a normal exit leaves the scope with an exception
             // (compiler.md §115.5 rules 3 and 7).
-            hir::Stmt::Using { bindings, body, .. } => {
-                raises_in_sequence(hir, body)
+            hir::Stmt::Using {
+                bindings,
+                body,
+                finalizer,
+                pos: _,
+            } => {
+                let prior = raises_in_sequence(hir, body)
                     || (bindings
                         .iter()
                         .any(|binding| using::hook_raises(hir, binding))
-                        && using::has_normal_exit(hir, body))
+                        && using::has_normal_exit(hir, body));
+                finalizer.as_ref().map_or(prior, |body| {
+                    raises_in_sequence(hir, body) || (sequence_exits(hir, body).next && prior)
+                })
             }
         }
     }
@@ -1756,202 +1972,5 @@ fn walk_place_children<'a>(
 mod call_lookup_tests;
 
 #[cfg(test)]
-mod sequence_tests {
-    use super::*;
-    use subscript_compiler::{check_program, SourceFile};
-
-    fn checked(source: &str) -> (hir::Module, l::Module) {
-        let hir = check_program(&[SourceFile::new("sequence.ts", source)])
-            .expect("sequence witness checks");
-        let lir = subscript_codegen::lir::lower_module(&hir)
-            .unwrap_or_else(|error| panic!("sequence witness lowers: {error:?}\n{source}"));
-        (hir, lir)
-    }
-
-    #[test]
-    fn statement_exits_preserve_execution_facts() {
-        for body in [
-            "{ return; }",
-            "switch (0) { case 0: return; default: return; }",
-            "switch (0) { default: { return; } case 0: if (stop) { return; } else { return; } }",
-            "switch (0) { case 0: return; } print(\"after\");",
-            "switch (0) { case 0: return; default: print(\"default\"); } print(\"after\");",
-            "switch (0) { case 0: break; default: return; } print(\"after\");",
-            "switch (0) { case 0: if (stop) { break; } return; default: return; } print(\"after\");",
-            "switch (0) { case 0: default: return; }",
-            "switch (0) { case 0: switch (1) { default: break; } return; default: return; }",
-            "if (stop) { return; } else { { return; } }",
-            "if (stop) { { return; } } print(\"fallthrough\");",
-            "if (stop) { return; } else { print(\"else\"); } print(\"after\");",
-            "{ print(\"block\"); } print(\"after\");",
-        ] {
-            let source = format!(
-                "class R {{ [Symbol.dispose](): void {{}} }}
-                 function run(stop: boolean): void {{
-                   using resource: R | null = new R();
-                   {body}
-                 }}
-                 export function main(): void {{ run(true); run(false); }}"
-            );
-            let (hir, mut lir) = checked(&source);
-            assert_eq!(dropped_facts(&hir, &lir), Vec::<String>::new(), "{body}");
-
-            // Delete a reachable call, not its trap metadata. The check must still fail.
-            let block = lir
-                .functions
-                .iter_mut()
-                .flat_map(|function| &mut function.blocks)
-                .find(|block| {
-                    block.instructions.iter().any(|instruction| {
-                        matches!(instruction.kind, l::InstructionKind::Call(_))
-                            && instruction
-                                .traps
-                                .iter()
-                                .any(|trap| matches!(trap.kind, l::TrapKind::Call))
-                    })
-                })
-                .expect("reachable call block");
-            let index = block
-                .instructions
-                .iter()
-                .position(|instruction| {
-                    matches!(instruction.kind, l::InstructionKind::Call(_))
-                        && instruction
-                            .traps
-                            .iter()
-                            .any(|trap| matches!(trap.kind, l::TrapKind::Call))
-                })
-                .expect("reachable call");
-            block.instructions.remove(index);
-            assert!(
-                dropped_facts(&hir, &lir)
-                    .iter()
-                    .any(|finding| { finding.contains("trap \"Call\" carries") }),
-                "the missing reachable call must fail: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_conditionless_for_drops_its_trailing_execution_facts() {
-        let source = "function run(a: i32[], flag: boolean): i32 {
-                        if (flag) { for (;;) { return 1; } } return a[0];
-                      }
-                      export function main(): void {}";
-        let (hir, lir) = checked(source);
-        assert!(dropped_facts(&hir, &lir).is_empty());
-        let function = hir.functions.iter().find(|f| f.name == "run").unwrap();
-        let hir::Stmt::If { then, .. } = &function.body[0] else {
-            panic!("the if");
-        };
-        assert!(stops_statement_sequence(&hir, &then[0]));
-        let reads = lir
-            .functions
-            .iter()
-            .flat_map(|f| &f.blocks)
-            .flat_map(|block| &block.instructions)
-            .filter(|instruction| {
-                instruction
-                    .traps
-                    .iter()
-                    .any(|trap| matches!(trap.kind, l::TrapKind::IndexRead))
-            })
-            .count();
-        assert_eq!(
-            reads, 1,
-            "the read after the `if` stays; nothing follows the loop"
-        );
-        let (hir, lir) = checked(
-            "function run(a: i32[]): i32 { for (;;) { return 1; } return a[0]; }
-             export function main(): void {}",
-        );
-        assert!(dropped_facts(&hir, &lir).is_empty());
-        let reads = lir
-            .functions
-            .iter()
-            .flat_map(|f| &f.blocks)
-            .flat_map(|block| &block.instructions)
-            .filter(|instruction| {
-                instruction
-                    .traps
-                    .iter()
-                    .any(|trap| matches!(trap.kind, l::TrapKind::IndexRead))
-            })
-            .count();
-        assert_eq!(
-            reads, 0,
-            "control cannot leave the loop (compiler.md §101 rule 2)"
-        );
-    }
-
-    #[test]
-    fn loop_conditions_select_trailing_execution_facts() {
-        for (body, stops) in [
-            ("while (true) { return; }", true),
-            ("for (; true;) { return; }", true),
-            ("while (a.length > 0) { return; }", false),
-            ("for (; a.length > 0;) { return; }", false),
-        ] {
-            let source = format!(
-                "function run(a: i32[]): i32 {{ {body} return a[0]; }}
-                 export function main(): void {{}}"
-            )
-            .replace("{ return; }", "{ return 1; }");
-            let (hir, mut lir) = checked(&source);
-            assert!(dropped_facts(&hir, &lir).is_empty(), "{body}");
-            let function = hir.functions.iter().find(|f| f.name == "run").unwrap();
-            assert_eq!(
-                stops_statement_sequence(&hir, &function.body[0]),
-                stops,
-                "{body}"
-            );
-            let mut removed = 0;
-            for block in lir.functions.iter_mut().flat_map(|f| &mut f.blocks) {
-                block.instructions.retain(|instruction| {
-                    let keep = !instruction
-                        .traps
-                        .iter()
-                        .any(|trap| matches!(trap.kind, l::TrapKind::IndexRead));
-                    if !keep {
-                        removed += 1;
-                    }
-                    keep
-                });
-            }
-            assert_eq!(removed > 0, !stops, "{body}");
-            assert_eq!(dropped_facts(&hir, &lir).is_empty(), stops, "{body}");
-        }
-    }
-
-    #[test]
-    fn blocks_preserve_break_and_continue_sequence_exits() {
-        let (hir, lir) = checked(
-            "export function main(): void {
-               for (let i: i32 = 0; i < 2; i += 1) {
-                 if (i === 0) { { continue; } } else { { break; } }
-               }
-               print(\"after\");
-             }",
-        );
-        assert!(dropped_facts(&hir, &lir).is_empty());
-        let pos = hir
-            .functions
-            .iter()
-            .find(|function| function.name == "main")
-            .expect("main")
-            .pos
-            .clone();
-        assert!(stops_statement_sequence(
-            &hir,
-            &hir::Stmt::Block(vec![hir::Stmt::Break(pos.clone())])
-        ));
-        assert!(stops_statement_sequence(
-            &hir,
-            &hir::Stmt::Block(vec![hir::Stmt::Continue(pos)])
-        ));
-        assert!(!stops_statement_sequence(
-            &hir,
-            &hir::Stmt::Block(Vec::new())
-        ));
-    }
-}
+#[path = "lir_facts/sequence_tests.rs"]
+mod sequence_tests;

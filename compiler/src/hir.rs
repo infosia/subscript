@@ -529,8 +529,8 @@ pub enum Stmt {
         init: Option<Box<Stmt>>,
         /// Condition (boolean), when present.
         cond: Option<Expr>,
-        /// Step expression, when present.
-        step: Option<Expr>,
+        /// Update statements, after the body exits and its finalizers.
+        step: Vec<Stmt>,
         /// Body statements.
         body: Vec<Stmt>,
         /// Position of the statement.
@@ -550,6 +550,21 @@ pub enum Stmt {
         subject: Expr,
         /// Built-in traversal selected by the checker.
         kind: ForOfKind,
+        /// Loop body.
+        body: Vec<Stmt>,
+        /// Position of the statement.
+        pos: Pos,
+    },
+    /// Generator iteration with a distinct exhaustion exit and consumer exits.
+    GeneratorForOf {
+        /// Loop binding name.
+        name: String,
+        /// Type bound on each visit.
+        ty: Type,
+        /// True for a mutable element binding.
+        mutable: bool,
+        /// Generator expression evaluated once.
+        subject: Expr,
         /// Loop body.
         body: Vec<Stmt>,
         /// Position of the statement.
@@ -597,6 +612,8 @@ pub enum Stmt {
         bindings: Vec<UsingBinding>,
         /// The statements of the scope.
         body: Vec<Stmt>,
+        /// The finalizer of this cleanup scope, when it has no resource bindings.
+        finalizer: Option<Vec<Stmt>>,
         /// Position of the first declaration.
         pos: Pos,
     },

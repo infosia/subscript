@@ -50,7 +50,10 @@ fn stmt_shape(statement: &hir::Stmt) -> String {
             value.as_ref().map_or_else(String::new, expr_shape)
         ),
         hir::Stmt::If {
-            cond, then, els, ..
+            cond,
+            then,
+            els,
+            pos: _,
         } => format!(
             "if({};{};{})",
             expr_shape(cond),

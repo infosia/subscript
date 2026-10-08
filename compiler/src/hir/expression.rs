@@ -288,7 +288,10 @@ impl Stmt {
             Stmt::Let { init, .. } | Stmt::Expr(init) => vec![HirChild::Expr(init)],
             Stmt::Return { value, .. } => value.iter().map(HirChild::Expr).collect(),
             Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 let mut children =
                     Vec::with_capacity(1 + then.len() + els.as_ref().map_or(0, Vec::len));
@@ -297,7 +300,7 @@ impl Stmt {
                 children.extend(els.iter().flatten().map(HirChild::Stmt));
                 children
             }
-            Stmt::While { cond, body, .. } => {
+            Stmt::While { cond, body, pos: _ } => {
                 let mut children = Vec::with_capacity(1 + body.len());
                 children.push(HirChild::Expr(cond));
                 children.extend(body.iter().map(HirChild::Stmt));
@@ -308,22 +311,41 @@ impl Stmt {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let mut children = Vec::with_capacity(3 + body.len());
                 children.extend(init.iter().map(|stmt| HirChild::Stmt(stmt)));
                 children.extend(cond.iter().map(HirChild::Expr));
-                children.extend(step.iter().map(HirChild::Expr));
+                children.extend(step.iter().map(HirChild::Stmt));
                 children.extend(body.iter().map(HirChild::Stmt));
                 children
             }
-            Stmt::ForOf { subject, body, .. } => {
+            Stmt::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                pos: _,
+            } => {
                 let mut children = Vec::with_capacity(1 + body.len());
                 children.push(HirChild::Expr(subject));
                 children.extend(body.iter().map(HirChild::Stmt));
                 children
             }
-            Stmt::Switch { disc, cases, .. } => {
+            Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 let mut children = Vec::new();
                 children.push(HirChild::Expr(disc));
                 for case in cases {
@@ -335,10 +357,22 @@ impl Stmt {
             Stmt::Block(body) => body.iter().map(HirChild::Stmt).collect(),
             Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
             Stmt::Throw { value, .. } => vec![HirChild::Expr(value)],
-            Stmt::Try { body, handler, .. } => {
-                body.iter().chain(handler).map(HirChild::Stmt).collect()
-            }
-            Stmt::Using { body, .. } => body.iter().map(HirChild::Stmt).collect(),
+            Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => body.iter().chain(handler).map(HirChild::Stmt).collect(),
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => body
+                .iter()
+                .chain(finalizer.iter().flatten())
+                .map(HirChild::Stmt)
+                .collect(),
         }
     }
 
@@ -348,7 +382,10 @@ impl Stmt {
             Stmt::Let { init, .. } | Stmt::Expr(init) => vec![HirChildMut::Expr(init)],
             Stmt::Return { value, .. } => value.iter_mut().map(HirChildMut::Expr).collect(),
             Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 let mut children =
                     Vec::with_capacity(1 + then.len() + els.as_ref().map_or(0, Vec::len));
@@ -357,7 +394,7 @@ impl Stmt {
                 children.extend(els.iter_mut().flatten().map(HirChildMut::Stmt));
                 children
             }
-            Stmt::While { cond, body, .. } => {
+            Stmt::While { cond, body, pos: _ } => {
                 let mut children = Vec::with_capacity(1 + body.len());
                 children.push(HirChildMut::Expr(cond));
                 children.extend(body.iter_mut().map(HirChildMut::Stmt));
@@ -368,22 +405,41 @@ impl Stmt {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let mut children = Vec::with_capacity(3 + body.len());
                 children.extend(init.iter_mut().map(|stmt| HirChildMut::Stmt(stmt)));
                 children.extend(cond.iter_mut().map(HirChildMut::Expr));
-                children.extend(step.iter_mut().map(HirChildMut::Expr));
+                children.extend(step.iter_mut().map(HirChildMut::Stmt));
                 children.extend(body.iter_mut().map(HirChildMut::Stmt));
                 children
             }
-            Stmt::ForOf { subject, body, .. } => {
+            Stmt::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                pos: _,
+            } => {
                 let mut children = Vec::with_capacity(1 + body.len());
                 children.push(HirChildMut::Expr(subject));
                 children.extend(body.iter_mut().map(HirChildMut::Stmt));
                 children
             }
-            Stmt::Switch { disc, cases, .. } => {
+            Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 let mut children = Vec::new();
                 children.push(HirChildMut::Expr(disc));
                 for case in cases {
@@ -395,12 +451,26 @@ impl Stmt {
             Stmt::Block(body) => body.iter_mut().map(HirChildMut::Stmt).collect(),
             Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
             Stmt::Throw { value, .. } => vec![HirChildMut::Expr(value)],
-            Stmt::Try { body, handler, .. } => body
+            Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => body
                 .iter_mut()
                 .chain(handler)
                 .map(HirChildMut::Stmt)
                 .collect(),
-            Stmt::Using { body, .. } => body.iter_mut().map(HirChildMut::Stmt).collect(),
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => body
+                .iter_mut()
+                .chain(finalizer.iter_mut().flatten())
+                .map(HirChildMut::Stmt)
+                .collect(),
         }
     }
 }

@@ -847,3 +847,6 @@ mod postfix_update_tests;
 
 mod async_inspection;
 pub use async_inspection::AsyncTaskInfo;
+
+#[cfg(test)]
+mod finally_tests;

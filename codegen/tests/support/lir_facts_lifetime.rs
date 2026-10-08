@@ -103,32 +103,96 @@ pub(super) fn statements(
     for stmt in body {
         use hir::Stmt as S;
         match stmt {
-            S::ForOf { subject, body, .. } => {
+            S::GeneratorForOf {
+                subject,
+                ty,
+                body,
+                pos,
+                name: _,
+                mutable: _,
+            } => {
+                add_read(subject, hir, 1, expected);
+                for kind in ["Call", "DevReloadOnlyStaleCoroutine"] {
+                    *expected.entry(trap_key(pos, kind.to_string())).or_default() += 1;
+                }
+                let handles = hir
+                    .classes
+                    .iter()
+                    .map(subscript_compiler::types::HandleClass::from)
+                    .collect::<Vec<_>>();
+                if !ty.zero_is_value(
+                    &handles,
+                    &|id| hir.classes[id.0].fields.iter().map(|field| &field.ty),
+                    &|id| hir.string_aliases[id.0].wire_values.as_deref(),
+                ) {
+                    *expected
+                        .entry(trap_key(pos, "GeneratorDoneValue".to_string()))
+                        .or_default() += 1;
+                }
+                statements(body, hir, expected);
+            }
+            S::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
+            } => {
                 add_read(subject, hir, 1, expected);
                 statements(body, hir, expected);
             }
             S::Throw { value, .. } => add_read(value, hir, 2, expected),
-            S::If { then, els, .. } => {
+            S::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 statements(then, hir, expected);
                 if let Some(els) = els {
                     statements(els, hir, expected);
                 }
             }
-            S::While { body, .. } | S::Block(body) | S::Using { body, .. } => {
-                statements(body, hir, expected)
+            S::While {
+                body,
+                cond: _,
+                pos: _,
             }
-            S::For { init, body, .. } => {
+            | S::Block(body)
+            | S::Using {
+                body,
+                bindings: _,
+                finalizer: _,
+                pos: _,
+            } => statements(body, hir, expected),
+            S::For {
+                init,
+                body,
+                cond: _,
+                step: _,
+                pos: _,
+            } => {
                 if let Some(init) = init {
                     statements(std::slice::from_ref(init), hir, expected);
                 }
                 statements(body, hir, expected);
             }
-            S::Switch { cases, .. } => {
+            S::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 for case in cases {
                     statements(&case.body, hir, expected);
                 }
             }
-            S::Try { body, handler, .. } => {
+            S::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 statements(body, hir, expected);
                 if try_body_raises(hir, body) {
                     statements(handler, hir, expected);

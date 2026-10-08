@@ -339,6 +339,32 @@ pub struct Liveness {
     pub value_origins: Vec<ValueId>,
     /// Counted frame owners at creation and each generator suspension.
     pub generator_cleanup: Vec<GeneratorCleanup>,
+    /// Close paths and independently derived lexical finalizers per yield.
+    pub generator_close: Vec<GeneratorClose>,
+}
+
+/// The close continuation at one generator suspension.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct GeneratorClose {
+    /// The yield block.
+    pub suspension: BlockId,
+    /// The close branch after restored suspension values.
+    pub continuation: BlockId,
+    /// Lexical finalizer positions, innermost first, derived from HIR.
+    pub finalizers: Vec<Pos>,
+}
+
+impl GeneratorClose {
+    /// Creates a per-suspension close description.
+    #[must_use]
+    pub fn new(suspension: BlockId, continuation: BlockId, finalizers: Vec<Pos>) -> Self {
+        Self {
+            suspension,
+            continuation,
+            finalizers,
+        }
+    }
 }
 
 /// The counted owners at one generator state.
@@ -479,6 +505,21 @@ pub struct IteratorType {
     pub kind: ForOfKind,
     /// Bound element type.
     pub element: Type,
+}
+
+/// The completion that enters a finalizer (§180).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinalizerCompletion {
+    /// Continue after the cleanup scope.
+    FallThrough,
+    /// Return the evaluated operand, or void.
+    Return,
+    /// Restore the saved object, report text, and last-throw position.
+    Throw,
+    /// Leave the selected control.
+    Break(BlockId),
+    /// Advance the selected loop.
+    Continue(BlockId),
 }
 
 /// One basic block. Instructions cannot be terminators, and the terminator
@@ -739,6 +780,20 @@ pub enum InstructionKind {
     /// Make the exception that the last park set aside pending again. The
     /// instruction's `Raise` trap names its handler edge (§115.5 rule 7).
     ExceptionResume,
+    /// Read the pending exception report into a frame-owned string value.
+    ExceptionMessage,
+    /// Read the pending exception's last-throw position.
+    ExceptionPosition,
+    /// Restore an exception from its object, report, and position operands.
+    ExceptionRestore,
+    /// Enter a finalizer with its explicit completion and payload operands.
+    FinalizerEnter(Option<FinalizerCompletion>),
+    /// Resumes the close continuation of a generator holder.
+    GeneratorClose,
+    /// Reads whether this generator invocation closes its suspension.
+    GeneratorIsClosing,
+    /// Identifies a lexical finalizer on a generator close path.
+    GeneratorFinalizer(Pos),
     /// The raise site of an `await` (§116.1 rule 2). It is the first
     /// instruction of the resume successor of an `AsyncCall` or
     /// `AsyncHandle` suspension. For a handle that completed with an

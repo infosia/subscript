@@ -36,7 +36,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             handlers: Vec::new(),
             usings: Vec::new(),
             exit_return: None,
+            exit_return_depth: 0,
+            finalizer_scope_depth: None,
+            finalizer_exception_active: false,
+            completion: None,
             generator_cleanup: Vec::new(),
+            generator_close: Vec::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
         builder.entry = entry;
@@ -183,6 +188,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             values: self.values,
             liveness: l::Liveness {
                 generator_cleanup: self.generator_cleanup,
+                generator_close: self.generator_close,
                 ..Default::default()
             },
             blocks: self
@@ -278,7 +284,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         id
     }
 
-    fn add_local(
+    pub(super) fn add_local(
         &mut self,
         source_name: String,
         ty: l::ValueType,
@@ -625,16 +631,39 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         ty: l::ValueType,
         pos: &Pos,
     ) -> Result<(), LowerError> {
+        let crosses_finalizer = self.finalizers_pending();
+        let return_type = ty.clone();
+        let prior_return = self.exit_return.take();
         if let Some(value) = &value {
             self.acquire_owner(hir::AsyncCopySite::Return, value, &ty, pos)?;
+        }
+        if let Some((held, held_ty)) = &prior_return {
+            self.release_owner(held.clone(), held_ty, pos)?;
         }
         self.exit_return = value
             .as_ref()
             .filter(|_| is_async_owner_type(&ty))
             .map(|value| (value.clone(), ty));
+        let prior_completion = self.completion.replace((
+            l::FinalizerCompletion::Return,
+            value.clone().into_iter().collect(),
+        ));
+        let prior_exception = std::mem::replace(&mut self.finalizer_exception_active, false);
         let actions = self.exit_actions(0, 0, pos);
-        self.exit_return = None;
+        self.finalizer_exception_active = prior_exception;
+        self.completion = prior_completion;
+        self.exit_return = prior_return;
         actions?;
+        if self.current.is_none() {
+            return Ok(());
+        }
+        if crosses_finalizer && is_async_owner_type(&return_type) {
+            if let Some(value) = &value {
+                // Transfer the held completion owner at the final return block.
+                self.acquire_owner(hir::AsyncCopySite::Return, value, &return_type, pos)?;
+                self.release_owner(value.clone(), &return_type, pos)?;
+            }
+        }
         self.terminate(
             l::Terminator::Return {
                 value,

@@ -859,6 +859,7 @@ mod tests {
             return_type: Type::Void,
             locals: Vec::new(),
             liveness: l::Liveness {
+                generator_close: Vec::new(),
                 generator_cleanup: Vec::new(),
                 live_ins: vec![Vec::new(); blocks.len()],
                 value_origins: values.iter().map(|value| value.id).collect(),

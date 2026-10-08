@@ -44,11 +44,25 @@ fn walk(
                 walk(hir::HirChild::Expr(init), locals, out, exceptional);
                 locals.insert(name.clone(), carries_receiver(init, locals));
             }
-            hir::Stmt::Block(body) | hir::Stmt::Using { body, .. } => {
+            hir::Stmt::Block(body) => {
                 scope(body, locals, out, exceptional);
             }
+            hir::Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                scope(body, locals, out, exceptional);
+                if let Some(finalizer) = finalizer {
+                    scope(finalizer, locals, out, exceptional);
+                }
+            }
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 walk(hir::HirChild::Expr(cond), locals, out, exceptional);
                 let mut left = locals.clone();
@@ -60,7 +74,7 @@ fn walk(
                 merge(&mut left, &right);
                 *locals = left;
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 loop_facts(locals, out, |facts, out| {
                     walk(hir::HirChild::Expr(cond), facts, out, exceptional);
                     scope(body, facts, out, exceptional);
@@ -71,7 +85,7 @@ fn walk(
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let mut loop_scope = locals.clone();
                 if let Some(statement) = init {
@@ -87,9 +101,7 @@ fn walk(
                         walk(hir::HirChild::Expr(value), facts, out, exceptional);
                     }
                     scope(body, facts, out, exceptional);
-                    if let Some(value) = step {
-                        walk(hir::HirChild::Expr(value), facts, out, exceptional);
-                    }
+                    scope(step, facts, out, exceptional);
                 });
                 for (name, fact) in locals.iter_mut() {
                     if !matches!(init.as_deref(), Some(hir::Stmt::Let { name: binding, .. }) if binding == name)
@@ -102,7 +114,17 @@ fn walk(
                 name,
                 subject,
                 body,
-                ..
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                name,
+                subject,
+                body,
+                ty: _,
+                mutable: _,
+                pos: _,
             } => {
                 walk(hir::HirChild::Expr(subject), locals, out, exceptional);
                 let mut loop_scope = locals.clone();
@@ -116,7 +138,11 @@ fn walk(
                     }
                 }
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 walk(hir::HirChild::Expr(disc), locals, out, exceptional);
                 let entry = locals.clone();
                 let mut exits = entry.keys().map(|name| (name.clone(), false)).collect();
@@ -145,7 +171,7 @@ fn walk(
                 body,
                 binding,
                 handler,
-                ..
+                pos: _,
             } => {
                 let mut normal = locals.clone();
                 let mut raised = locals.keys().map(|name| (name.clone(), false)).collect();

@@ -134,7 +134,7 @@ language. A thrown value is an `Error`, `SyntaxError`, `TypeError`,
 four since 2026-09-27, `stdlib.md` §19);
 the language has no other thrown type and no user error class. The
 catch binding has two legal uses: `instanceof` and `throw`. `finally`
-is rejected. An exception that leaves an async body completes its
+runs on each exit and can replace the prior completion (§180). An exception that leaves an async body completes its
 handle, and an `await` of the handle raises it (`compiler.md` §116,
 2026-09-26); a `try` block can hold `await` and `yield`. An exception
 that leaves a host entry, a generator body, a Worker entry, a
@@ -144,15 +144,18 @@ narrowing, allocation failure) still trap, and a trap is still not
 catchable in-language.
 
 Divergences from JS: `throw` of a non-Error value is rejected
-(`tsc`-clean); `finally` is rejected; the `JSON.parse` messages are
+(`tsc`-clean); traps run no finalizer; the `JSON.parse` messages are
 this project's, so an entry that prints one is not `js-comparable`.
 *(Until 2026-09-26 this entry held "exceptions — out", with fallible
 operations returning result values. `a18` keeps that pattern as one
 accepted style.)*
 Accept: `a18`, `a250`–`a257`, `a267` (stdlib §19). Reject: `r11-throw` (a non-Error
-operand), `r233`, `r236`–`r239`. Trap: `t61`–`t67`. Accept adds
+operand), `retired:r233-finally`, `r236`–`r239`. Trap: `t61`–`t67`. Accept adds
 `a258`–`a261` (§116). `retired:r234-try-holds-await` and
-`retired:r235-try-holds-yield` by §116.
+`retired:r235-try-holds-yield` by §116. Accept adds `a349`, `a350`, and `a351` (§180).
+A consumer exit from generator for-of runs its suspended finalizers before the holder release.
+A plain drop runs no finalizer. A yield in a close finalizer stops close until the next call.
+An exception that leaves a close finalizer traps at its throw (`t109`), while JavaScript propagates it.
 
 ### C7. Unions, `null`, `undefined` (Q8) — `T | null` only
 

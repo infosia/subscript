@@ -1,0 +1,30 @@
+body
+normal finally
+caught
+catch finally
+99
+7
+2
+3
+finally
+new
+return replaced
+0
+finally 0
+1
+finally 1
+break
+continue 0
+continue 1
+local loop
+local loop end
+nested
+dispose inner
+inner finally
+dispose finally
+outer finally
+catch throws
+throwing catch finally
+second
+dispose outer
+20

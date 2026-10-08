@@ -230,3 +230,33 @@ fn pending_local_splits_on_the_lambda_boundary() {
     );
     rejected("export function main(): void { const read = (): i32 => x; const x: i32 = 4; print(`${read()}`); }", "BlockPendingReadWithoutProgramShadow", Some("DeclarationScope"));
 }
+
+#[test]
+fn s180_finally_keeps_enum_switch_return_coverage_site() {
+    let switch = "switch (e) { case E.A: return 1; case E.B: return 2; }";
+    let probe = |body: &str| {
+        let source = format!("enum E {{ A, B }} function f(e: E): i32 {{ {body} }} export function main(): void {{}}");
+        rejection_total::clear_reached();
+        let diagnostics = check_program(&[SourceFile::entry("coverage.ts", source)])
+            .expect_err("the subset requires an explicit default return");
+        let reached = rejection_total::take_reached();
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        reached
+            .into_iter()
+            .find(|(_, message, pos)| {
+                *message == diagnostics[0].message && *pos == diagnostics[0].pos
+            })
+            .expect("the diagnostic carries its rejection site")
+            .0
+    };
+    let plain = probe(switch);
+    assert_eq!(plain, RejectionSite::FunctionReturnCoverage);
+    let wrapped = probe(&format!(
+        "try {{ {switch} }} finally {{ print(\"done\"); }}"
+    ));
+    assert_eq!(wrapped, plain);
+    let finalizer = probe(&format!(
+        "try {{ print(\"body\"); }} finally {{ {switch} }}"
+    ));
+    assert_eq!(finalizer, plain);
+}

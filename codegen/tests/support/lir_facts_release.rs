@@ -100,13 +100,17 @@ fn block_releases(
     let mut count = 0;
     for instruction in &block.instructions {
         match instruction.kind {
-            l::InstructionKind::CatchEntry => {
+            l::InstructionKind::CatchEntry
+                if !block.instructions.iter().any(|instruction| {
+                    instruction.kind == l::InstructionKind::ExceptionMessage
+                }) =>
+            {
                 path.pop();
                 return (count, count);
             }
             l::InstructionKind::AsyncHandleRelease
             | l::InstructionKind::AsyncHandleArrayRelease => count += 1,
-            l::InstructionKind::ExceptionResume => {
+            l::InstructionKind::ExceptionResume | l::InstructionKind::ExceptionRestore => {
                 let (minimum, maximum) = instruction
                     .raise_edge()
                     .map_or((0, 0), |edge| releases(function, edge, path));
@@ -231,7 +235,10 @@ impl Walk<'_> {
                 self.site(pos);
             }
             S::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 self.expression(cond);
                 self.sequence(then);
@@ -239,7 +246,7 @@ impl Walk<'_> {
                     self.sequence(els);
                 }
             }
-            S::While { cond, body, .. } => {
+            S::While { cond, body, pos: _ } => {
                 self.expression(cond);
                 self.controls.push((self.hooks.len(), true));
                 self.sequence(body);
@@ -250,7 +257,7 @@ impl Walk<'_> {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let owners = self.owners;
                 if let Some(init) = init {
@@ -262,24 +269,52 @@ impl Walk<'_> {
                 self.controls.push((self.hooks.len(), true));
                 self.sequence(body);
                 self.controls.pop();
-                if let Some(step) = step {
-                    self.expression(step);
-                }
+                self.sequence(step);
                 self.owners = owners;
             }
             S::ForOf {
-                ty, subject, body, ..
+                ty,
+                subject,
+                body,
+                name: _,
+                kind: _,
+                pos: _,
+            }
+            | S::GeneratorForOf {
+                ty,
+                subject,
+                body,
+                name: _,
+                mutable: _,
+                pos: _,
             } => {
                 self.expression(subject);
                 let owners = self.owners;
                 self.owners += usize::from(owned(ty));
+                if matches!(
+                    stmt,
+                    S::GeneratorForOf {
+                        name: _,
+                        ty: _,
+                        mutable: _,
+                        subject: _,
+                        body: _,
+                        pos: _
+                    }
+                ) {
+                    self.owners += usize::from(owned(&Type::iter_result(ty.clone())));
+                }
                 self.owners += usize::from(owned(&subject.ty));
                 self.controls.push((self.hooks.len(), true));
                 self.sequence(body);
                 self.controls.pop();
                 self.owners = owners;
             }
-            S::Switch { disc, cases, .. } => {
+            S::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 self.expression(disc);
                 self.controls.push((self.hooks.len(), false));
                 for case in cases {
@@ -290,7 +325,12 @@ impl Walk<'_> {
                 }
                 self.controls.pop();
             }
-            S::Try { body, handler, .. } => {
+            S::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 let caught = self.caught;
                 self.caught = self.owners;
                 self.sequence(body);
@@ -300,7 +340,12 @@ impl Walk<'_> {
                 }
             }
             S::Block(body) => self.sequence(body),
-            S::Using { bindings, body, .. } => {
+            S::Using {
+                bindings,
+                body,
+                finalizer: _,
+                pos: _,
+            } => {
                 self.hooks.push(Hooks {
                     bindings: bindings.clone(),
                     owners: self.owners,

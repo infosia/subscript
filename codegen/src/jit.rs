@@ -762,3 +762,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod finally_tests;

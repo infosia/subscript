@@ -53,7 +53,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let ty = data_type(self.value_type(*value)?)?;
                     let _ = writeln!(
                         out,
-                        "    *(({}*)coroutine_out) = {};",
+                        "    *(({}*)(coroutine_out != NULL ? coroutine_out : frame->close_output)) = {};",
                         self.emitter.ctype(ty)?,
                         self.value(*value)
                     );

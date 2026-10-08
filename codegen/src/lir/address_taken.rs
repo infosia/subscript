@@ -71,7 +71,10 @@ impl AddressTaken<'_> {
                 self.declare(name, pos);
             }
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 self.expr(cond);
                 self.scoped(then);
@@ -79,7 +82,7 @@ impl AddressTaken<'_> {
                     self.scoped(els);
                 }
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 self.expr(cond);
                 self.scoped(body);
             }
@@ -88,7 +91,7 @@ impl AddressTaken<'_> {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 self.scopes.push(HashMap::new());
                 if let Some(init) = init {
@@ -98,9 +101,7 @@ impl AddressTaken<'_> {
                     self.expr(cond);
                 }
                 self.scoped(body);
-                if let Some(step) = step {
-                    self.expr(step);
-                }
+                self.scoped(step);
                 self.scopes.pop();
             }
             hir::Stmt::ForOf {
@@ -108,7 +109,16 @@ impl AddressTaken<'_> {
                 subject,
                 body,
                 pos,
-                ..
+                ty: _,
+                kind: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                name,
+                subject,
+                body,
+                pos,
+                ty: _,
+                mutable: _,
             } => {
                 self.expr(subject);
                 self.scopes.push(HashMap::new());
@@ -116,7 +126,11 @@ impl AddressTaken<'_> {
                 self.scoped(body);
                 self.scopes.pop();
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 self.expr(disc);
                 for case in cases {
                     if let Some(test) = &case.test {
@@ -126,7 +140,17 @@ impl AddressTaken<'_> {
                 }
             }
             hir::Stmt::Block(statements) => self.scoped(statements),
-            hir::Stmt::Using { body, .. } => self.scoped(body),
+            hir::Stmt::Using {
+                bindings: _,
+                body,
+                finalizer,
+                pos: _,
+            } => {
+                self.scoped(body);
+                if let Some(finalizer) = finalizer {
+                    self.scoped(finalizer);
+                }
+            }
             _ => {
                 for child in statement.children() {
                     match child {

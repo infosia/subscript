@@ -62,7 +62,23 @@ fn loop_exits(condition: Option<&crate::hir::Expr>, body: &[Stmt]) -> Exits {
 
 fn exits(statement: &Stmt) -> Exits {
     match statement {
-        Stmt::Let { .. } | Stmt::ForOf { .. } => Exits::NEXT,
+        Stmt::Let { .. }
+        | Stmt::ForOf {
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+            pos: _,
+        }
+        | Stmt::GeneratorForOf {
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+            pos: _,
+        } => Exits::NEXT,
         Stmt::Return { .. } | Stmt::Continue(_) | Stmt::Throw { .. } => Exits::STOP,
         Stmt::Break(_) => Exits {
             next: false,
@@ -78,12 +94,35 @@ fn exits(statement: &Stmt) -> Exits {
         Stmt::Block(body) => sequence_exits(body),
         // A hook that raises leaves through the exception edge, so each
         // exit of the scope is an exit of its body.
-        Stmt::Using { body, .. } => sequence_exits(body),
+        Stmt::Using {
+            body,
+            finalizer,
+            bindings: _,
+            pos: _,
+        } => {
+            let body = sequence_exits(body);
+            let Some(finalizer) = finalizer else {
+                return body;
+            };
+            let tail = sequence_exits(finalizer);
+            Exits {
+                next: body.next && tail.next,
+                breaks: tail.breaks || (tail.next && body.breaks),
+            }
+        }
         // The handler runs after a raise anywhere in the body, so each
         // exit of either block is an exit of the statement.
-        Stmt::Try { body, handler, .. } => sequence_exits(body).either(sequence_exits(handler)),
+        Stmt::Try {
+            body,
+            handler,
+            binding: _,
+            pos: _,
+        } => sequence_exits(body).either(sequence_exits(handler)),
         Stmt::If {
-            cond, then, els, ..
+            cond,
+            then,
+            els,
+            pos: _,
         } => {
             let then = sequence_exits(then);
             let els = els.as_deref().map_or(Exits::NEXT, sequence_exits);
@@ -93,14 +132,22 @@ fn exits(statement: &Stmt) -> Exits {
                 _ => then.either(els),
             }
         }
-        Stmt::While { cond, body, .. } => loop_exits(Some(cond), body),
+        Stmt::While { cond, body, pos: _ } => loop_exits(Some(cond), body),
         Stmt::For {
-            init, cond, body, ..
+            init,
+            cond,
+            body,
+            step: _,
+            pos: _,
         } => init
             .as_deref()
             .map_or(Exits::NEXT, exits)
             .followed_by(loop_exits(cond.as_ref(), body)),
-        Stmt::Switch { disc, cases, .. } => {
+        Stmt::Switch {
+            disc,
+            cases,
+            pos: _,
+        } => {
             let mut result = if cases.iter().any(|case| case.test.is_none())
                 || matches!(disc.ty, crate::types::Type::StringAlias(_))
             {
@@ -180,7 +227,12 @@ mod tests {
         }
         for source in ["while (true) { break; }", "while (true) { continue; }"] {
             let statements = body(source);
-            let Stmt::While { body, .. } = &statements[0] else {
+            let Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            } = &statements[0]
+            else {
                 panic!("while fixture");
             };
             assert!(!can_fall_through(&body[0]), "{source}");
@@ -195,7 +247,24 @@ mod tests {
                 panic!("for-of subject scope");
             };
             let statement = block.last().expect("for-of loop");
-            assert!(matches!(statement, Stmt::ForOf { .. }));
+            assert!(matches!(
+                statement,
+                Stmt::ForOf {
+                    name: _,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    body: _,
+                    pos: _
+                } | Stmt::GeneratorForOf {
+                    name: _,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    body: _,
+                    pos: _
+                }
+            ));
             assert!(can_fall_through(statement));
         }
     }
@@ -244,7 +313,14 @@ mod tests {
     #[test]
     fn for_initializer_exits_compose_before_the_loop() {
         let mut statements = body("for (;;) { break; }");
-        let Stmt::For { init, .. } = &mut statements[0] else {
+        let Stmt::For {
+            init,
+            cond: _,
+            step: _,
+            body: _,
+            pos: _,
+        } = &mut statements[0]
+        else {
             panic!("for fixture");
         };
         *init = Some(Box::new(hir::Stmt::Return {

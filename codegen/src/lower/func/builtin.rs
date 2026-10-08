@@ -243,7 +243,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let result = self.stack_slot(size, align);
                 self.zero_bytes(result, size, align);
                 let output = if **value == Type::Void {
-                    self.builder.ins().iconst(types::I64, 0)
+                    result
                 } else {
                     let value_offset = self.ml.layouts.iter_result_value_offset(value)?;
                     self.address_offset(result, i64::from(value_offset))

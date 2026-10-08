@@ -337,6 +337,7 @@ struct Frame {
     /// of the resume successor raises (`compiler.md` §116.2 rule 3).
     delivered: Option<(usize, String, Pos)>,
     generator_owners: Vec<(Type, Value)>,
+    closing: bool,
 }
 
 struct InterpreterLocal {
@@ -425,6 +426,7 @@ struct Interpreter<'m> {
     // The exceptions that wait while the hooks of an exception exit run,
     // innermost last (compiler.md §115.5 rule 7).
     parked: Vec<(usize, String, Pos)>,
+    exception_positions: Vec<Pos>,
 }
 
 impl<'m> Interpreter<'m> {
@@ -465,6 +467,7 @@ impl<'m> Interpreter<'m> {
             count_action: None,
             caught: None,
             parked: Vec::new(),
+            exception_positions: Vec::new(),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -586,6 +589,7 @@ impl<'m> Interpreter<'m> {
         let generator_owners = counted::start_generator_owners(function, &values);
         let frame = Frame {
             generator_owners,
+            closing: false,
             function: id,
             block: function.entry,
             values,

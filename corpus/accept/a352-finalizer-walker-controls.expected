@@ -1,0 +1,16 @@
+only finalizer
+value body
+counter 1
+body 0
+body fin 0
+body 1
+body fin 1
+finalizer body 0
+continue fin 0
+finalizer body 1
+continue fin 1
+4
+h fin
+local hook
+outer held local
+replaced hook

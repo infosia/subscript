@@ -227,9 +227,34 @@ impl Analysis {
     }
 
     fn statement(&mut self, statement: &hir::Stmt, classes: &[hir::ClassDef]) {
-        if let hir::Stmt::While { pos, .. }
-        | hir::Stmt::For { pos, .. }
-        | hir::Stmt::ForOf { pos, .. } = statement
+        if let hir::Stmt::While {
+            pos,
+            cond: _,
+            body: _,
+        }
+        | hir::Stmt::For {
+            pos,
+            init: _,
+            cond: _,
+            step: _,
+            body: _,
+        }
+        | hir::Stmt::ForOf {
+            pos,
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+        }
+        | hir::Stmt::GeneratorForOf {
+            pos,
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+        } = statement
         {
             self.loops
                 .entry(position_key(pos))

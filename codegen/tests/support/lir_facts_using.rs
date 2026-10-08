@@ -25,6 +25,7 @@ pub(super) struct HookFacts {
     pub(super) traps: Vec<TrapKey>,
     /// The position of each `DisposeRaisedDuringExit` trap terminator.
     pub(super) trap_positions: Vec<Pos>,
+    pub(super) finalizers: Vec<Vec<hir::Stmt>>,
 }
 
 pub(super) fn hook_facts(hir: &hir::Module) -> HookFacts {
@@ -88,22 +89,70 @@ fn leaves(hir: &hir::Module, statements: &[hir::Stmt], loops: usize, switches: u
             hir::Stmt::Return { .. } => true,
             hir::Stmt::Break(_) => loops == 0 && switches == 0,
             hir::Stmt::Continue(_) => loops == 0,
-            hir::Stmt::If { then, els, .. } => {
+            hir::Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 leaves(hir, then, loops, switches)
                     || els
                         .as_deref()
                         .is_some_and(|els| leaves(hir, els, loops, switches))
             }
-            hir::Stmt::While { body, .. }
-            | hir::Stmt::For { body, .. }
-            | hir::Stmt::ForOf { body, .. } => leaves(hir, body, loops + 1, switches),
-            hir::Stmt::Switch { cases, .. } => cases
+            hir::Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | hir::Stmt::For {
+                body,
+                init: _,
+                cond: _,
+                step: _,
+                pos: _,
+            }
+            | hir::Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            } => leaves(hir, body, loops + 1, switches),
+            hir::Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => cases
                 .iter()
                 .any(|case| leaves(hir, &case.body, loops, switches + 1)),
-            hir::Stmt::Block(body) | hir::Stmt::Using { body, .. } => {
+            hir::Stmt::Block(body) => leaves(hir, body, loops, switches),
+            hir::Stmt::Using {
+                body,
+                bindings: _,
+                finalizer,
+                pos: _,
+            } => {
                 leaves(hir, body, loops, switches)
+                    || finalizer
+                        .as_ref()
+                        .is_some_and(|body| leaves(hir, body, loops, switches))
             }
-            hir::Stmt::Try { body, handler, .. } => {
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 leaves(hir, body, loops, switches)
                     || (try_body_raises(hir, body) && leaves(hir, handler, loops, switches))
             }
@@ -157,7 +206,23 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
     };
     let literal_true = |cond: &hir::Expr| matches!(cond.kind, hir::ExprKind::Bool(true));
     match statement {
-        hir::Stmt::Let { .. } | hir::Stmt::ForOf { .. } => NEXT,
+        hir::Stmt::Let { .. }
+        | hir::Stmt::ForOf {
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+            pos: _,
+        }
+        | hir::Stmt::GeneratorForOf {
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+            pos: _,
+        } => NEXT,
         hir::Stmt::Return { .. } | hir::Stmt::Continue(_) | hir::Stmt::Throw { .. } => STOP,
         hir::Stmt::Break(_) => Arrival {
             next: false,
@@ -176,8 +241,26 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
                 NEXT
             }
         }
-        hir::Stmt::Block(body) | hir::Stmt::Using { body, .. } => arrives(body),
-        hir::Stmt::Try { body, handler, .. } => {
+        hir::Stmt::Block(body) => arrives(body),
+        hir::Stmt::Using {
+            body,
+            bindings: _,
+            finalizer,
+            pos: _,
+        } => {
+            let head = arrives(body);
+            let tail = finalizer.as_ref().map_or(NEXT, |body| arrives(body));
+            Arrival {
+                next: head.next && tail.next,
+                breaks: tail.breaks || (tail.next && head.breaks),
+            }
+        }
+        hir::Stmt::Try {
+            body,
+            handler,
+            binding: _,
+            pos: _,
+        } => {
             let (body, handler) = (arrives(body), arrives(handler));
             Arrival {
                 next: body.next || handler.next,
@@ -185,7 +268,10 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             }
         }
         hir::Stmt::If {
-            cond, then, els, ..
+            cond,
+            then,
+            els,
+            pos: _,
         } => {
             let then = arrives(then);
             let els = els.as_deref().map_or(NEXT, arrives);
@@ -198,12 +284,16 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
                 },
             }
         }
-        hir::Stmt::While { cond, body, .. } => Arrival {
+        hir::Stmt::While { cond, body, pos: _ } => Arrival {
             next: !literal_true(cond) || arrives(body).breaks,
             breaks: false,
         },
         hir::Stmt::For {
-            init, cond, body, ..
+            init,
+            cond,
+            body,
+            step: _,
+            pos: _,
         } => {
             let init = init.as_deref().map_or(NEXT, arrives_after);
             if !init.next {
@@ -214,7 +304,11 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
                 breaks: init.breaks,
             }
         }
-        hir::Stmt::Switch { cases, .. } => {
+        hir::Stmt::Switch {
+            cases,
+            disc: _,
+            pos: _,
+        } => {
             let mut next = !cases.iter().any(|case| case.test.is_none());
             let mut suffix = NEXT;
             for case in cases.iter().rev() {
@@ -240,7 +334,7 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
 struct Walk<'h> {
     hir: &'h hir::Module,
     /// The bindings of each enclosing `using` scope, outermost first.
-    nodes: Vec<Vec<hir::UsingBinding>>,
+    nodes: Vec<(Vec<hir::UsingBinding>, Option<Vec<hir::Stmt>>)>,
     /// Each enclosing `break` target: whether it is a loop, and the depth
     /// of `nodes` where it starts.
     controls: Vec<(bool, usize)>,
@@ -258,6 +352,20 @@ impl Walk<'_> {
     }
 
     fn statement(&mut self, statement: &hir::Stmt) {
+        // Each generator suspension adds a close exit through its lexical cleanup scopes.
+        let mut yields = 0;
+        for child in statement.children() {
+            if let hir::HirChild::Expr(expr) = child {
+                walk_expr(self.hir, expr, &mut |expr| {
+                    if matches!(expr.kind, hir::ExprKind::Yield(_)) {
+                        yields += 1;
+                    }
+                });
+            }
+        }
+        for _ in 0..yields {
+            self.leave(0);
+        }
         match statement {
             hir::Stmt::Return { .. } => self.leave(0),
             hir::Stmt::Break(_) => {
@@ -271,20 +379,54 @@ impl Walk<'_> {
                     self.leave(depth);
                 }
             }
-            hir::Stmt::If { then, els, .. } => {
+            hir::Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
                 self.sequence(then);
                 if let Some(els) = els {
                     self.sequence(els);
                 }
             }
-            hir::Stmt::While { body, .. }
-            | hir::Stmt::For { body, .. }
-            | hir::Stmt::ForOf { body, .. } => {
+            hir::Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | hir::Stmt::For {
+                body,
+                init: _,
+                cond: _,
+                step: _,
+                pos: _,
+            }
+            | hir::Stmt::ForOf {
+                body,
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                pos: _,
+            } => {
                 self.controls.push((true, self.nodes.len()));
                 self.sequence(body);
                 self.controls.pop();
             }
-            hir::Stmt::Switch { cases, .. } => {
+            hir::Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } => {
                 self.controls.push((false, self.nodes.len()));
                 for case in cases {
                     self.sequence(&case.body);
@@ -292,21 +434,46 @@ impl Walk<'_> {
                 self.controls.pop();
             }
             hir::Stmt::Block(body) => self.sequence(body),
-            hir::Stmt::Try { body, handler, .. } => {
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
                 self.sequence(body);
                 if try_body_raises(self.hir, body) {
                     self.sequence(handler);
                 }
             }
-            hir::Stmt::Using { bindings, body, .. } => self.using(bindings, body),
+            hir::Stmt::Using {
+                bindings,
+                body,
+                finalizer,
+                pos: _,
+            } => self.using(bindings, body, finalizer.as_deref()),
             hir::Stmt::Let { .. } | hir::Stmt::Expr(_) | hir::Stmt::Throw { .. } => {}
         }
     }
 
-    fn using(&mut self, bindings: &[hir::UsingBinding], body: &[hir::Stmt]) {
-        self.nodes.push(bindings.to_vec());
+    fn using(
+        &mut self,
+        bindings: &[hir::UsingBinding],
+        body: &[hir::Stmt],
+        finalizer: Option<&[hir::Stmt]>,
+    ) {
+        self.nodes
+            .push((bindings.to_vec(), finalizer.map(<[hir::Stmt]>::to_vec)));
         self.sequence(body);
         self.nodes.pop();
+        if let Some(finalizer) = finalizer {
+            if end_places_hooks(self.hir, body) {
+                self.place_finalizer(finalizer);
+            }
+            if try_body_raises(self.hir, body) {
+                self.place_finalizer(finalizer);
+            }
+            return;
+        }
         if end_places_hooks(self.hir, body) {
             for binding in bindings.iter().rev() {
                 self.place(binding);
@@ -329,14 +496,26 @@ impl Walk<'_> {
     /// The hooks of the scopes from `first` to the innermost, innermost
     /// first, in reverse declaration order.
     fn leave(&mut self, first: usize) {
-        let bindings = self.nodes[first..]
-            .iter()
-            .rev()
-            .flat_map(|node| node.iter().rev().cloned())
-            .collect::<Vec<_>>();
-        for binding in &bindings {
-            self.place(binding);
+        let nodes = self.nodes.clone();
+        for index in (first..nodes.len()).rev() {
+            self.nodes = nodes[..index].to_vec();
+            if let Some(finalizer) = &nodes[index].1 {
+                self.place_finalizer(finalizer);
+                if !sequence_exits(self.hir, finalizer).next {
+                    break;
+                }
+            } else {
+                for binding in nodes[index].0.iter().rev() {
+                    self.place(binding);
+                }
+            }
         }
+        self.nodes = nodes;
+    }
+
+    fn place_finalizer(&mut self, body: &[hir::Stmt]) {
+        self.facts.finalizers.push(body.to_vec());
+        self.sequence(body);
     }
 
     fn place(&mut self, binding: &hir::UsingBinding) {

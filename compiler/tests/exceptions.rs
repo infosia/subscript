@@ -155,12 +155,11 @@ fn catch_annotations_and_patterns_follow_the_decided_surface() {
 }
 
 #[test]
-fn finally_is_rejected_and_a_try_block_can_hold_a_suspension() {
-    let finally = first_error(&in_main(
+fn finally_is_accepted_and_a_try_block_can_hold_a_suspension() {
+    check(&in_main(
         "  try {\n    print(\"x\");\n  } finally {\n    print(\"y\");\n  }",
-    ));
-    assert_eq!(finally.code, RuleCode::S010);
-    assert!(finally.message.contains("`finally`"), "{}", finally.message);
+    ))
+    .expect("a finally block is accepted");
 
     // compiler.md §116.1 rule 7: a `try` block can hold `await` and
     // `yield`.

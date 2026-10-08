@@ -61,7 +61,7 @@ fn switch_case_tests_without_a_prefix_check_clean() {
 }
 
 #[test]
-fn a_for_condition_prefix_stays_at_the_head_of_the_while_body() {
+fn a_for_condition_prefix_stays_at_the_head_of_the_guarded_body() {
     let source = format!(
         "{SUPPORT}export function main(): void {{\n\
          \x20 const fb: Box = new Box(1);\n\
@@ -79,13 +79,25 @@ fn a_for_condition_prefix_stays_at_the_head_of_the_while_body() {
     let hir::Stmt::Block(loop_block) = &main.body[2] else {
         panic!("the rewritten for must be a block: {:?}", main.body[2]);
     };
-    let [hir::Stmt::Let { name: init, .. }, hir::Stmt::While { body, .. }] = loop_block.as_slice()
+    let [hir::Stmt::Let { name: init, .. }, hir::Stmt::For {
+        body,
+        init: _,
+        step: _,
+        cond: _,
+        pos: _,
+    }] = loop_block.as_slice()
     else {
-        panic!("the block must own the initializer and while: {loop_block:?}");
+        panic!("the block must own the initializer and for: {loop_block:?}");
     };
     assert_eq!(init, "i");
-    let [hir::Stmt::Let { name: prefix, .. }, hir::Stmt::If { .. }] = body.as_slice() else {
-        panic!("the while body must start with the condition prefix: {body:?}");
+    let [hir::Stmt::Let { name: prefix, .. }, hir::Stmt::If {
+        cond: _,
+        then: _,
+        els: _,
+        pos: _,
+    }] = body.as_slice()
+    else {
+        panic!("the guarded body must start with the condition prefix: {body:?}");
     };
     assert!(prefix.starts_with("[["), "synthetic local: {prefix}");
 }
@@ -174,12 +186,12 @@ fn owner_receiver_matrix_matches_hand_written_hir_and_diagnostics() {
         (
             "ForUpdate",
             "(maybe() ?? fb).v",
-            Expected::Hir { count: 1, index: 1 },
+            Expected::Hir { count: 1, index: 0 },
         ),
         (
             "ForUpdate",
             "maybe()?.v ?? 0",
-            Expected::Hir { count: 1, index: 1 },
+            Expected::Hir { count: 1, index: 0 },
         ),
         (
             "ArrowBody",
@@ -325,7 +337,11 @@ fn owner_receiver_matrix_matches_hand_written_hir_and_diagnostics() {
                     }
                     "ForInit" => {
                         let hir::Stmt::For {
-                            init: Some(init), ..
+                            init: Some(init),
+                            cond: _,
+                            step: _,
+                            body: _,
+                            pos: _,
                         } = &main.body[1]
                         else {
                             panic!("initializer must precede a for: {:?}", main.body)
@@ -333,20 +349,45 @@ fn owner_receiver_matrix_matches_hand_written_hir_and_diagnostics() {
                         assert!(matches!(&**init, hir::Stmt::Let { name, .. } if name == "value"));
                         &main.body
                     }
-                    "ForCond" | "ForUpdate" => {
+                    "ForCond" => {
                         let [hir::Stmt::Block(block)] = main.body.as_slice() else {
                             panic!("loop block: {:?}", main.body)
                         };
-                        let [hir::Stmt::While { body, .. }] = block.as_slice() else {
-                            panic!("while: {block:?}")
+                        let [hir::Stmt::For {
+                            body,
+                            init: _,
+                            cond: _,
+                            step: _,
+                            pos: _,
+                        }] = block.as_slice()
+                        else {
+                            panic!("for: {block:?}")
                         };
-                        if kind == "ForCond" {
-                            assert!(matches!(&body[1], hir::Stmt::If { .. }));
-                        } else {
-                            assert!(matches!(&body[0], hir::Stmt::Expr(_)));
-                            assert!(matches!(&body[2], hir::Stmt::Expr(_)));
-                        }
+                        assert!(matches!(
+                            &body[1],
+                            hir::Stmt::If {
+                                cond: _,
+                                then: _,
+                                els: _,
+                                pos: _
+                            }
+                        ));
                         body
+                    }
+                    "ForUpdate" => {
+                        let [hir::Stmt::For {
+                            body,
+                            step,
+                            init: _,
+                            cond: _,
+                            pos: _,
+                        }] = main.body.as_slice()
+                        else {
+                            panic!("for: {:?}", main.body)
+                        };
+                        assert!(matches!(&body[0], hir::Stmt::Expr(_)));
+                        assert!(matches!(&step[1], hir::Stmt::Expr(_)));
+                        step
                     }
                     "ArrowBody" => {
                         let [hir::Stmt::Let { init, .. }] = main.body.as_slice() else {

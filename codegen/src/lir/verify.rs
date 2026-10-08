@@ -16,6 +16,7 @@ pub(super) fn verify_function(
     verify_counted_stores(module, function, errors);
     super::verify_counted_operations::verify(module, function, errors);
     super::verify_generator_counts::verify(module, function, errors);
+    super::generator_close::verify(function, errors);
     verify_raise_edges(module, function, errors);
     verify_dominance(function, errors);
     super::verify_narrowing::verify_narrowing(function, errors);

@@ -16,6 +16,8 @@
 //! runs the dispose hook with a clear word, and resumes the same
 //! exception (§115.5 rule 7). A parked exception keeps its object, its
 //! report text, and its position, and it is a collection root (rule 8).
+//! These hooks cannot suspend: the checker requires synchronous void dispose
+//! methods. Finalizers use three frame-owned values instead (§180 rule 5).
 
 pub(crate) mod host_error;
 
@@ -301,6 +303,57 @@ pub unsafe extern "C" fn subscript_rt_exception_throw(
     ctx.raise_exception(object, text, pos_id);
 }
 
+/// Reads the pending report into a rooted string value for a finalizer.
+///
+/// # Safety
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_exception_message(ctx: *mut Context) -> *mut u8 {
+    // SAFETY: exclusive Context contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(pending) = ctx.pending_exception.as_ref() else {
+        ctx.trap(
+            TrapKind::Internal,
+            "a finalizer saved no pending exception",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    let message = pending.message.clone();
+    let position = pending.pos_id;
+    ctx.alloc_str(message.as_bytes(), position)
+}
+
+/// Reads the pending exception's last-throw position.
+///
+/// # Safety
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_exception_position(ctx: *mut Context) -> u32 {
+    // SAFETY: exclusive Context contract.
+    let ctx = unsafe { &mut *ctx };
+    ctx.pending_exception
+        .as_ref()
+        .map_or(0, |pending| pending.pos_id)
+}
+
+/// Restores a finalizer's frame-owned exception payload.
+///
+/// # Safety
+/// `ctx` follows the exclusive Context contract. The object and text are live Context handles.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_exception_restore(
+    ctx: *mut Context,
+    object: *mut u8,
+    text: *const u8,
+    position: u32,
+) {
+    // SAFETY: exclusive Context contract and live string contract.
+    let ctx = unsafe { &mut *ctx };
+    let message = String::from_utf8_lossy(unsafe { ctx.str_bytes(text) }).into_owned();
+    ctx.raise_exception(object, message, position);
+}
+
 /// A catch entry: takes the pending Error object and clears the word.
 ///
 /// # Safety
@@ -378,6 +431,27 @@ mod tests {
         let object = ctx.alloc(24, 1, 0);
         ctx.raise_exception(object, "Error: failure".to_string(), 7);
         object
+    }
+
+    #[test]
+    fn frame_payload_exports_preserve_report_and_last_throw_position() {
+        let mut ctx = Context::new();
+        let object = raised(&mut ctx);
+        // SAFETY: exclusive live Context; object and report remain live.
+        unsafe {
+            let text = subscript_rt_exception_message(&mut *ctx);
+            let position = subscript_rt_exception_position(&mut *ctx);
+            assert_eq!(ctx.str_bytes(text), b"Error: failure");
+            assert_eq!(position, 7);
+            assert_eq!(ctx.catch_exception(), object);
+            subscript_rt_exception_restore(&mut *ctx, object, text, position);
+        }
+        assert_eq!(ctx.pending_exception_object(), Some(object));
+        ctx.settle_uncaught_exception();
+        let report = ctx.trap_record().unwrap();
+        assert_eq!(report.message, "Error: failure");
+        assert_eq!(report.pos_id, 7);
+        assert_eq!(ctx.parked_exception_count(), 0);
     }
 
     #[test]

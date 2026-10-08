@@ -73,9 +73,22 @@ impl<'a> Analysis<'a> {
             }
             Stmt::Block(body) => self.scoped_sequence(body, &mut env.clone()),
             // A using scope ends with its source block; it adds no lexical block.
-            Stmt::Using { body, .. } => self.sequence(body, &mut env.clone()),
+            Stmt::Using {
+                body,
+                finalizer,
+                bindings: _,
+                pos: _,
+            } => {
+                self.sequence(body, &mut env.clone());
+                if let Some(finalizer) = finalizer {
+                    self.sequence(finalizer, &mut env.clone());
+                }
+            }
             Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 self.expr(cond, env);
                 self.scoped_sequence(then, &mut env.clone());
@@ -83,7 +96,7 @@ impl<'a> Analysis<'a> {
                     self.scoped_sequence(body, &mut env.clone());
                 }
             }
-            Stmt::While { cond, body, .. } => {
+            Stmt::While { cond, body, pos: _ } => {
                 self.expr(cond, env);
                 self.scoped_sequence(body, &mut env.clone());
             }
@@ -92,7 +105,7 @@ impl<'a> Analysis<'a> {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let parent = self.enter_block();
                 let mut scope = env.clone();
@@ -103,9 +116,7 @@ impl<'a> Analysis<'a> {
                     self.expr(e, &scope);
                 }
                 self.scoped_sequence(body, &mut scope.clone());
-                if let Some(e) = step {
-                    self.expr(e, &scope);
-                }
+                self.scoped_sequence(step, &mut scope.clone());
                 self.block = parent;
             }
             Stmt::ForOf {
@@ -113,7 +124,16 @@ impl<'a> Analysis<'a> {
                 subject,
                 ty,
                 body,
-                ..
+                kind: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name,
+                subject,
+                ty,
+                body,
+                mutable: _,
+                pos: _,
             } => {
                 self.expr(subject, env);
                 let mut scope = env.clone();
@@ -125,7 +145,11 @@ impl<'a> Analysis<'a> {
                 self.sequence(body, &mut scope);
                 self.block = parent;
             }
-            Stmt::Switch { disc, cases, .. } => {
+            Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 self.expr(disc, env);
                 let parent = self.enter_block();
                 let mut scope = env.clone();
@@ -141,7 +165,7 @@ impl<'a> Analysis<'a> {
                 body,
                 binding,
                 handler,
-                ..
+                pos: _,
             } => {
                 self.scoped_sequence(body, &mut env.clone());
                 let parent = self.enter_block();

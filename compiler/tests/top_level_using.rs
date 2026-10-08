@@ -27,7 +27,12 @@ fn top_level_block_and_function_block_carry_the_same_using_form() {
         panic!("function block");
     };
     for body in [top, function] {
-        let [Stmt::Let { dispose: true, .. }, Stmt::Using { bindings, body, .. }] = body.as_slice()
+        let [Stmt::Let { dispose: true, .. }, Stmt::Using {
+            bindings,
+            body,
+            finalizer: _,
+            pos: _,
+        }] = body.as_slice()
         else {
             panic!("one using form: {body:?}");
         };
@@ -68,6 +73,13 @@ fn top_level_blocks_without_using_keep_the_initializer_read_scan() {
     };
     assert!(matches!(
         body.as_slice(),
-        [Stmt::While { .. }, Stmt::Expr(_)]
+        [
+            Stmt::While {
+                cond: _,
+                body: _,
+                pos: _
+            },
+            Stmt::Expr(_)
+        ]
     ));
 }

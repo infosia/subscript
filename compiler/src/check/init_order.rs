@@ -71,14 +71,58 @@ pub(super) fn statement_pos(statement: &crate::hir::Stmt) -> Option<&crate::Pos>
         Stmt::Expr(expression) => Some(&expression.pos),
         Stmt::Let { pos, .. }
         | Stmt::Return { pos, .. }
-        | Stmt::If { pos, .. }
-        | Stmt::While { pos, .. }
-        | Stmt::For { pos, .. }
-        | Stmt::ForOf { pos, .. }
-        | Stmt::Switch { pos, .. }
+        | Stmt::If {
+            pos,
+            cond: _,
+            then: _,
+            els: _,
+        }
+        | Stmt::While {
+            pos,
+            cond: _,
+            body: _,
+        }
+        | Stmt::For {
+            pos,
+            init: _,
+            cond: _,
+            step: _,
+            body: _,
+        }
+        | Stmt::ForOf {
+            pos,
+            name: _,
+            ty: _,
+            subject: _,
+            kind: _,
+            body: _,
+        }
+        | Stmt::GeneratorForOf {
+            pos,
+            name: _,
+            ty: _,
+            mutable: _,
+            subject: _,
+            body: _,
+        }
+        | Stmt::Switch {
+            pos,
+            disc: _,
+            cases: _,
+        }
         | Stmt::Throw { pos, .. }
-        | Stmt::Try { pos, .. }
-        | Stmt::Using { pos, .. }
+        | Stmt::Try {
+            pos,
+            body: _,
+            binding: _,
+            handler: _,
+        }
+        | Stmt::Using {
+            pos,
+            bindings: _,
+            body: _,
+            finalizer: _,
+        }
         | Stmt::Break(pos)
         | Stmt::Continue(pos) => Some(pos),
         Stmt::Block(body) => body.iter().find_map(statement_pos),

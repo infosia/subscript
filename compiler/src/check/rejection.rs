@@ -589,7 +589,6 @@ rejection_classes! {
     }
     Self::CatchBindingUnnarrowedUse => (RuleCode::S010, Diverges(Divergence::Exceptions)),
     Self::ThrowOperandNotErrorFamily => (RuleCode::S010, Diverges(Divergence::Exceptions)),
-    Self::FinallyClause => (RuleCode::S010, Diverges(Divergence::Exceptions)),
     Self::CatchBindingPattern => (RuleCode::S010, Diverges(Divergence::Exceptions)),
     Self::CatchBindingAnnotation => (RuleCode::S010, Diverges(Divergence::Exceptions)),
     Self::InstanceofRightNotErrorFamily => {

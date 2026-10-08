@@ -102,15 +102,52 @@ fn nested_using_shadow_does_not_reuse_switch_storage() {
                 {
                     1
                 }
-                hir::Stmt::If { then, els, .. } => {
-                    count_storage_writes(then) + els.as_deref().map_or(0, count_storage_writes)
+                hir::Stmt::If {
+                    then,
+                    els,
+                    cond: _,
+                    pos: _,
+                } => count_storage_writes(then) + els.as_deref().map_or(0, count_storage_writes),
+                hir::Stmt::While {
+                    body,
+                    cond: _,
+                    pos: _,
                 }
-                hir::Stmt::While { body, .. }
-                | hir::Stmt::For { body, .. }
-                | hir::Stmt::ForOf { body, .. }
+                | hir::Stmt::For {
+                    body,
+                    init: _,
+                    cond: _,
+                    step: _,
+                    pos: _,
+                }
+                | hir::Stmt::ForOf {
+                    body,
+                    name: _,
+                    ty: _,
+                    subject: _,
+                    kind: _,
+                    pos: _,
+                }
+                | hir::Stmt::GeneratorForOf {
+                    body,
+                    name: _,
+                    ty: _,
+                    mutable: _,
+                    subject: _,
+                    pos: _,
+                }
                 | hir::Stmt::Block(body)
-                | hir::Stmt::Using { body, .. } => count_storage_writes(body),
-                hir::Stmt::Switch { cases, .. } => cases
+                | hir::Stmt::Using {
+                    body,
+                    bindings: _,
+                    finalizer: _,
+                    pos: _,
+                } => count_storage_writes(body),
+                hir::Stmt::Switch {
+                    cases,
+                    disc: _,
+                    pos: _,
+                } => cases
                     .iter()
                     .map(|case| count_storage_writes(&case.body))
                     .sum(),
@@ -589,7 +626,12 @@ fn exhaustive_string_literal_union_switch_is_accepted() {
         .iter()
         .find(|function| function.name == "classify")
         .expect("classify function");
-    let hir::Stmt::Switch { cases, .. } = &classify.body[0] else {
+    let hir::Stmt::Switch {
+        cases,
+        disc: _,
+        pos: _,
+    } = &classify.body[0]
+    else {
         panic!("classify body begins with a switch");
     };
     let discriminants = cases
@@ -1403,14 +1445,26 @@ fn absence_capable_alias_member_omission_uses_reserved_discriminant() {
             Type::StringAlias(_)
         ))
     ));
-    let hir::Stmt::If { cond, .. } = &main.body[1] else {
+    let hir::Stmt::If {
+        cond,
+        then: _,
+        els: _,
+        pos: _,
+    } = &main.body[1]
+    else {
         panic!("first presence test is an if statement");
     };
     assert!(matches!(
         cond.kind,
         hir::ExprKind::AbsenceTest { negated: true, .. }
     ));
-    let hir::Stmt::If { cond, .. } = &main.body[2] else {
+    let hir::Stmt::If {
+        cond,
+        then: _,
+        els: _,
+        pos: _,
+    } = &main.body[2]
+    else {
         panic!("second presence test is an if statement");
     };
     assert!(matches!(

@@ -419,13 +419,26 @@ impl Checker<'_> {
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let pos = self.pos(t.span);
-        if let Some(finalizer) = &t.finalizer {
-            self.reject_subset(
-                RejectionSite::FinallyClause,
-                "`finally` is not in the decided exception surface; \
-                 repeat the cleanup after the `try` statement and in its `catch` block",
-                self.pos(finalizer.span),
-            );
+        if t.handler.is_none() {
+            let base = fx.narrowed.clone();
+            let notes = fx.ended_shared_narrowing.clone();
+            let (body, _) = self.check_block(&t.block.stmts, fx);
+            let effects = self.body_narrowing_effects(&body, fx, &base, &notes);
+            fx.narrowed = base;
+            if let Some(effects) = &effects {
+                self.apply_narrowing_effects(effects, fx);
+            }
+            let finalizer = t
+                .finalizer
+                .as_ref()
+                .map(|block| self.check_block(&block.stmts, fx).0);
+            out.push(hir::Stmt::Using {
+                bindings: Vec::new(),
+                body,
+                finalizer,
+                pos,
+            });
+            return !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..]);
         }
         let Some(handler) = &t.handler else {
             return false;
@@ -495,12 +508,31 @@ impl Checker<'_> {
         };
         fx.ended_shared_narrowing.extend_facts(body_notes);
         fx.finish_narrowing_join(&note_paths);
-        out.push(hir::Stmt::Try {
+        let statement = hir::Stmt::Try {
             body,
             binding: binding.map(|(name, _)| (name, Type::Class(class))),
             handler: handler_body,
-            pos,
-        });
+            pos: pos.clone(),
+        };
+        if let Some(block) = &t.finalizer {
+            // Every exit reaches the finalizer, including a terminating catch.
+            let notes = fx.ended_shared_narrowing.clone();
+            let effects =
+                self.body_narrowing_effects(std::slice::from_ref(&statement), fx, &base, &notes);
+            fx.narrowed = base.clone();
+            if let Some(effects) = &effects {
+                self.apply_narrowing_effects(effects, fx);
+            }
+            let finalizer = self.check_block(&block.stmts, fx).0;
+            out.push(hir::Stmt::Using {
+                bindings: Vec::new(),
+                body: vec![statement],
+                finalizer: Some(finalizer),
+                pos,
+            });
+        } else {
+            out.push(statement);
+        }
         !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..])
     }
 
@@ -679,5 +711,28 @@ mod tests {
             assert_eq!(kind.name(), *name);
         }
         assert_eq!(ErrorKind::from_name("UnknownError"), None);
+    }
+}
+
+#[cfg(test)]
+mod finally_tests {
+    #[test]
+    fn terminating_catch_stores_reach_the_finalizer() {
+        let source = r#"
+class Box { n:i32=1; }
+function fail():void { throw new Error("fail"); }
+export function main():void {
+  let x:Box|null = new Box();
+  if(x != null) {
+    try { fail(); } catch { x=null; return; } finally { print(`${x.n}`); }
+  }
+}
+"#;
+        let errors = crate::check_program(&[crate::SourceFile::new("narrowing.ts", source)])
+            .expect_err("the finalizer can read null");
+        assert!(
+            errors.iter().any(|error| error.message.contains("null")),
+            "{errors:?}"
+        );
     }
 }

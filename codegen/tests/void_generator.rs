@@ -30,10 +30,20 @@ fn void_suspensions_use_one_form_and_the_c_result_has_only_done() {
         .source
         .contains("typedef struct { int32_t done; } SubIR_void;"));
     assert!(!c.source.contains(".value"));
-    assert!(c
+    let next_calls = c
         .source
         .lines()
-        .any(|line| line.contains("->resume(ctx,") && line.contains(", NULL)")));
+        .filter(|line| line.contains(".done =") && line.contains("->resume(ctx,"))
+        .collect::<Vec<_>>();
+    assert!(!next_calls.is_empty(), "void generator emits next calls");
+    // §180 uses NULL for close; void next passes its own non-null done address.
+    for line in next_calls {
+        let destination = line.trim().split_once(".done =").expect("result field").0;
+        assert!(
+            line.ends_with(&format!(", &{destination}.done);")),
+            "void next must pass its own done address instead of the close sentinel: {line}"
+        );
+    }
 }
 
 #[test]

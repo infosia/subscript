@@ -320,6 +320,18 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             exception::subscript_rt_exception_settle as *const u8,
         ),
         (
+            "subscript_rt_exception_message",
+            exception::subscript_rt_exception_message as *const u8,
+        ),
+        (
+            "subscript_rt_exception_position",
+            exception::subscript_rt_exception_position as *const u8,
+        ),
+        (
+            "subscript_rt_exception_restore",
+            exception::subscript_rt_exception_restore as *const u8,
+        ),
+        (
             "subscript_rt_exception_park",
             exception::subscript_rt_exception_park as *const u8,
         ),

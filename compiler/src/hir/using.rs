@@ -162,7 +162,7 @@ mod tests {
             cond: flag,
             then,
             els: None,
-            ..
+            pos: _,
         } = binding.hook()
         else {
             panic!("the active-flag guard");
@@ -175,7 +175,7 @@ mod tests {
             cond: null_test,
             then: call,
             els: None,
-            ..
+            pos: _,
         }] = then.as_slice()
         else {
             panic!("the null guard inside the flag guard");

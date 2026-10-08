@@ -208,6 +208,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let value = self.value(*value_id)?;
                     let ty = data_type(self.value_type(*value_id)?)?.clone();
                     let output = self.out.ok_or_else(|| internal("yield has no output"))?;
+                    let close_output = self.builder.ins().load(
+                        types::I64,
+                        flags(),
+                        frame,
+                        subscript_runtime::generator_layout::CLOSE_OUTPUT_OFFSET as i32,
+                    );
+                    let closing = self.builder.ins().icmp_imm(IntCC::Equal, output, 0);
+                    let output = self.builder.ins().select(closing, close_output, output);
                     self.store_data(&ty, output, 0, value)?;
                 }
             }

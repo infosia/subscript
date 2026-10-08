@@ -322,6 +322,7 @@ fn lir_fields(
 }
 
 fn c_field_names(definition: &str) -> BTreeSet<String> {
+    // The ABI checks header fields; close_output points to the caller's result storage.
     definition
         .lines()
         .filter_map(|line| {
@@ -329,7 +330,14 @@ fn c_field_names(definition: &str) -> BTreeSet<String> {
             let name = line.split_whitespace().last()?;
             (!matches!(
                 name,
-                "state" | "reserved" | "resume" | "epoch" | "holders" | "padding" | "cleanup"
+                "state"
+                    | "reserved"
+                    | "resume"
+                    | "epoch"
+                    | "holders"
+                    | "padding"
+                    | "cleanup"
+                    | "close_output"
             ))
             .then(|| name.to_string())
         })
@@ -679,7 +687,7 @@ fn every_corpus_coroutine_field_matches_live_values_at_suspension() {
             );
             assert!(
                 c_body.contains(if function.is_generator {
-                    "memset((unsigned char*)frame + 32"
+                    "memset((unsigned char*)frame + 40"
                 } else {
                     "memset((unsigned char*)frame + sizeof frame->state"
                 }),
@@ -880,7 +888,8 @@ fn hand_built_native_storage_rejects_extra_and_missing_roots() {
 
 fn payload_offset(function: &l::Function) -> u32 {
     if function.is_generator {
-        32
+        // The generator ABI places the payload after its 40-byte header.
+        40
     } else {
         COROUTINE_PAYLOAD_OFFSET
     }

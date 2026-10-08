@@ -42,6 +42,7 @@ pub(super) fn structure(statements: Vec<Stmt>, next_switch_id: &mut usize) -> Ve
                 let body = structure(rest.collect(), next_switch_id);
                 out.push(Stmt::Using {
                     bindings: vec![binding],
+                    finalizer: None,
                     body,
                     pos,
                 });
@@ -87,7 +88,7 @@ fn nested(statement: Stmt, ids: &mut usize) -> Stmt {
         } => Stmt::For {
             init,
             cond,
-            step,
+            step: structure(step, ids),
             body: structure(body, ids),
             pos,
         },
@@ -106,6 +107,21 @@ fn nested(statement: Stmt, ids: &mut usize) -> Stmt {
             body: structure(body, ids),
             pos,
         },
+        Stmt::GeneratorForOf {
+            name,
+            ty,
+            mutable,
+            subject,
+            body,
+            pos,
+        } => Stmt::GeneratorForOf {
+            name,
+            ty,
+            mutable,
+            subject,
+            body: structure(body, ids),
+            pos,
+        },
         Stmt::Block(body) => Stmt::Block(structure(body, ids)),
         Stmt::Try {
             body,
@@ -121,10 +137,12 @@ fn nested(statement: Stmt, ids: &mut usize) -> Stmt {
         Stmt::Using {
             bindings,
             body,
+            finalizer,
             pos,
         } => Stmt::Using {
             bindings,
             body: structure(body, ids),
+            finalizer: finalizer.map(|body| structure(body, ids)),
             pos,
         },
         Stmt::Switch { disc, cases, pos } => {
@@ -219,6 +237,7 @@ fn switch(disc: Expr, cases: Vec<SwitchCase>, pos: Pos, ids: &mut usize) -> Vec<
             let pos = first.pos.clone();
             out.push(Stmt::Using {
                 bindings,
+                finalizer: None,
                 body: vec![switch],
                 pos,
             });
@@ -316,7 +335,8 @@ mod tests {
         let [Stmt::Expr(_), Stmt::Let { name: a, .. }, Stmt::Using {
             bindings: outer,
             body: outer_body,
-            ..
+            finalizer: _,
+            pos: _,
         }] = body.as_slice()
         else {
             panic!("print, let, node: {body:?}");
@@ -328,7 +348,8 @@ mod tests {
         let [Stmt::Let { name: b, .. }, Stmt::Using {
             bindings: inner,
             body: inner_body,
-            ..
+            finalizer: _,
+            pos: _,
         }] = outer_body.as_slice()
         else {
             panic!("let, node: {outer_body:?}");
@@ -361,7 +382,12 @@ mod tests {
         let node = body
             .iter()
             .find_map(|statement| match statement {
-                Stmt::Using { bindings, body, .. } => Some((bindings, body)),
+                Stmt::Using {
+                    bindings,
+                    body,
+                    finalizer: _,
+                    pos: _,
+                } => Some((bindings, body)),
                 _ => None,
             })
             .expect("the switch node");
@@ -374,7 +400,14 @@ mod tests {
                 .as_deref()
                 .is_some_and(|active| active.starts_with("[[using.active#")));
         }
-        assert!(matches!(node_body.as_slice(), [Stmt::Switch { .. }]));
+        assert!(matches!(
+            node_body.as_slice(),
+            [Stmt::Switch {
+                disc: _,
+                cases: _,
+                pos: _
+            }]
+        ));
         assert!(
             matches!(body.last(), Some(Stmt::Expr(_))),
             "the statement after the switch is outside the node"
@@ -392,7 +425,14 @@ mod tests {
         );
         assert!(matches!(
             body.as_slice(),
-            [Stmt::Let { .. }, Stmt::Switch { .. }]
+            [
+                Stmt::Let { .. },
+                Stmt::Switch {
+                    disc: _,
+                    cases: _,
+                    pos: _
+                }
+            ]
         ));
         let mut ids = 0;
         assert_eq!(super::structure(body.clone(), &mut ids), body);

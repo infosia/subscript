@@ -226,8 +226,15 @@ fn index_signature_updates_in_for_clauses_use_statement_position() {
         .iter()
         .filter_map(|statement| match statement {
             hir::Stmt::For {
-                step: Some(step), ..
-            } => Some(step),
+                step,
+                init: _,
+                cond: _,
+                body: _,
+                pos: _,
+            } => match step.as_slice() {
+                [hir::Stmt::Expr(expr)] => Some(expr),
+                _ => None,
+            },
             _ => None,
         })
         .collect::<Vec<_>>();

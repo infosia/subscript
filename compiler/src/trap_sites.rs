@@ -107,7 +107,10 @@ impl Analyzer {
                 self.ranges.remove(name);
             }
             hir::Stmt::If {
-                cond, then, els, ..
+                cond,
+                then,
+                els,
+                pos: _,
             } => {
                 self.expr(cond);
                 self.scoped_stmts(then);
@@ -115,7 +118,7 @@ impl Analyzer {
                     self.scoped_stmts(els);
                 }
             }
-            hir::Stmt::While { cond, body, .. } => {
+            hir::Stmt::While { cond, body, pos: _ } => {
                 self.expr(cond);
                 self.scoped_stmts(body);
             }
@@ -124,14 +127,21 @@ impl Analyzer {
                 cond,
                 step,
                 body,
-                ..
+                pos: _,
             } => {
                 let saved = self.ranges.clone();
                 if let Some(init) = init {
                     self.stmt(init);
                 }
-                let proof =
-                    self.induction_interval(init.as_deref(), cond.as_ref(), step.as_ref(), body);
+                let proof = self.induction_interval(
+                    init.as_deref(),
+                    cond.as_ref(),
+                    match step.as_slice() {
+                        [hir::Stmt::Expr(expr)] => Some(expr),
+                        _ => None,
+                    },
+                    body,
+                );
                 if let Some((name, range)) = proof {
                     self.ranges.insert(name, range);
                 }
@@ -139,16 +149,33 @@ impl Analyzer {
                     self.expr(cond);
                 }
                 self.scoped_stmts(body);
-                if let Some(step) = step {
-                    self.expr(step);
-                }
+                self.scoped_stmts(step);
                 self.ranges = saved;
             }
-            hir::Stmt::ForOf { subject, body, .. } => {
+            hir::Stmt::ForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                kind: _,
+                pos: _,
+            }
+            | hir::Stmt::GeneratorForOf {
+                subject,
+                body,
+                name: _,
+                ty: _,
+                mutable: _,
+                pos: _,
+            } => {
                 self.expr(subject);
                 self.scoped_stmts(body);
             }
-            hir::Stmt::Switch { disc, cases, .. } => {
+            hir::Stmt::Switch {
+                disc,
+                cases,
+                pos: _,
+            } => {
                 self.expr(disc);
                 for case in cases {
                     if let Some(test) = &mut case.test {

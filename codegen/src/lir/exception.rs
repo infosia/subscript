@@ -59,7 +59,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         || self.bindings[binding.0].ty == l::ValueType::Data(Type::TaskGroup)
                 })
             });
-            let returning = self.exit_return.clone();
+            let returning = (self.handlers.len() <= self.exit_return_depth)
+                .then(|| self.exit_return.clone())
+                .flatten();
             let edge = if owns || returning.is_some() {
                 let source = self.current;
                 let snapshot = self.binding_snapshot();

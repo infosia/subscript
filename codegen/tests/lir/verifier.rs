@@ -156,6 +156,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
             ],
             liveness: lir::Liveness {
                 generator_cleanup: Vec::new(),
+                generator_close: Vec::new(),
                 live_ins: vec![Vec::new(); 2],
                 value_origins: vec![lir::ValueId(0), lir::ValueId(1)],
             },

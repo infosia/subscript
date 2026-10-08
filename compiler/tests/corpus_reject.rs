@@ -349,7 +349,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         15,
     ),
-    ("r233-finally.ts", RuleCode::S010, 12),
     ("r236-caught-binding-use.ts", RuleCode::S010, 11),
     ("r237-catch-annotation.ts", RuleCode::S010, 10),
     ("r238-instanceof-non-error.ts", RuleCode::S100, 13),

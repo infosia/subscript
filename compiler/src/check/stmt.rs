@@ -27,41 +27,6 @@ pub(super) fn root_of(key: &str) -> &str {
     key.split('.').next().unwrap_or(key)
 }
 
-pub(super) fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::Stmt]) {
-    for statement in statements {
-        match statement {
-            hir::Stmt::Continue(pos) => {
-                let mut replacement = step.to_vec();
-                replacement.push(hir::Stmt::Continue(pos.clone()));
-                *statement = hir::Stmt::Block(replacement);
-            }
-            hir::Stmt::If { then, els, .. } => {
-                insert_for_step_before_continues(then, step);
-                if let Some(els) = els {
-                    insert_for_step_before_continues(els, step);
-                }
-            }
-            hir::Stmt::Switch { cases, .. } => {
-                for case in cases {
-                    insert_for_step_before_continues(&mut case.body, step);
-                }
-            }
-            hir::Stmt::Block(body) => insert_for_step_before_continues(body, step),
-            hir::Stmt::Try { body, handler, .. } => {
-                insert_for_step_before_continues(body, step);
-                insert_for_step_before_continues(handler, step);
-            }
-            hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {}
-            hir::Stmt::Let { .. }
-            | hir::Stmt::Expr(_)
-            | hir::Stmt::Return { .. }
-            | hir::Stmt::Break(_)
-            | hir::Stmt::Throw { .. } => {}
-            hir::Stmt::Using { body, .. } => insert_for_step_before_continues(body, step),
-        }
-    }
-}
-
 impl<'p> Checker<'p> {
     /// Checks one statement into `out`. Returns true when the statement
     /// always terminates the enclosing flow (return/break/continue).
@@ -898,7 +863,7 @@ impl<'p> Checker<'p> {
         fx.loop_depth += 1;
         fx.loop_break_facts
             .push((fx.scopes.len(), Vec::new(), Vec::new()));
-        let (mut body, terminates) = self.check_branch(&f.body, fx);
+        let (body, terminates) = self.check_branch(&f.body, fx);
         let mut update_edges = fx
             .loop_break_facts
             .last()
@@ -930,13 +895,8 @@ impl<'p> Checker<'p> {
         Self::join_loop_exits(fx, false_exit);
         fx.pop_scope();
 
-        let step = step_statements.as_deref().and_then(|statements| {
-            let [hir::Stmt::Expr(expression)] = statements else {
-                return None;
-            };
-            Some(expression.clone())
-        });
-        if cond_prefix.is_empty() && (f.update.is_none() || step.is_some()) {
+        let step = step_statements.unwrap_or_default();
+        if cond_prefix.is_empty() {
             out.push(hir::Stmt::For {
                 init,
                 cond,
@@ -947,9 +907,6 @@ impl<'p> Checker<'p> {
             return;
         }
 
-        let step_statements = step_statements.unwrap_or_default();
-        insert_for_step_before_continues(&mut body, &step_statements);
-        body.extend(step_statements);
         let cond = cond.unwrap_or_else(|| hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Bool(true),
@@ -980,7 +937,13 @@ impl<'p> Checker<'p> {
         if let Some(init) = init {
             block.push(*init);
         }
-        block.push(hir::Stmt::While { cond, body, pos });
+        block.push(hir::Stmt::For {
+            init: None,
+            cond: Some(cond),
+            step,
+            body,
+            pos,
+        });
         out.push(hir::Stmt::Block(block));
     }
 
@@ -1089,6 +1052,18 @@ impl<'p> Checker<'p> {
             prologue
         };
 
+        if generator {
+            out.push(hir::Stmt::GeneratorForOf {
+                name,
+                ty: elem_ty,
+                mutable,
+                subject,
+                body,
+                pos,
+            });
+            return;
+        }
+
         let id = self.next_for_of_id;
         self.next_for_of_id += 1;
         let subject_name = format!("[[for.of#{id}.subject]]");
@@ -1108,87 +1083,13 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         };
 
-        let loop_stmt = if generator {
-            let step_name = format!("[[for.of#{id}.step]]");
-            let step_ty = Type::iter_result(elem_ty.clone());
-            let next = hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Call {
-                    callee: hir::Callee::Method {
-                        recv: Box::new(subject_local),
-                        name: hir::Symbol::from_full_text("next"),
-                    },
-                    args: Vec::new(),
-                },
-                ty: step_ty.clone(),
-                pos: pos.clone(),
-            };
-            let step_local = || hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Local(step_name.clone(), step_ty.clone(), false),
-                ty: step_ty.clone(),
-                pos: pos.clone(),
-            };
-            let mut driven_body = vec![
-                hir::Stmt::Let {
-                    name: step_name.clone(),
-                    ty: step_ty.clone(),
-                    mutable: false,
-                    dispose: false,
-                    init: next,
-                    pos: pos.clone(),
-                },
-                hir::Stmt::If {
-                    cond: hir::Expr {
-                        pending_work: None,
-                        kind: ExprKind::Field {
-                            obj: Box::new(step_local()),
-                            name: "done".to_string(),
-                        },
-                        ty: Type::Bool,
-                        pos: pos.clone(),
-                    },
-                    then: vec![hir::Stmt::Break(pos.clone())],
-                    els: None,
-                    pos: pos.clone(),
-                },
-                hir::Stmt::Let {
-                    name,
-                    ty: elem_ty.clone(),
-                    mutable,
-                    dispose: false,
-                    init: hir::Expr {
-                        pending_work: None,
-                        kind: ExprKind::Field {
-                            obj: Box::new(step_local()),
-                            name: "value".to_string(),
-                        },
-                        ty: elem_ty,
-                        pos: binding_pos,
-                    },
-                    pos: pos.clone(),
-                },
-            ];
-            driven_body.push(hir::Stmt::Block(body));
-            hir::Stmt::While {
-                cond: hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Bool(true),
-                    ty: Type::Bool,
-                    pos: pos.clone(),
-                },
-                body: driven_body,
-                pos: pos.clone(),
-            }
-        } else {
-            hir::Stmt::ForOf {
-                name,
-                ty: elem_ty,
-                subject: subject_local,
-                kind: kind.expect("non-generator `for…of` has a fused kind"),
-                body,
-                pos: pos.clone(),
-            }
+        let loop_stmt = hir::Stmt::ForOf {
+            name,
+            ty: elem_ty,
+            subject: subject_local,
+            kind: kind.expect("non-generator `for…of` has a fused kind"),
+            body,
+            pos: pos.clone(),
         };
         out.push(hir::Stmt::Block(vec![subject_let, loop_stmt]));
     }

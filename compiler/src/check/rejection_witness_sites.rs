@@ -253,7 +253,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::ErrorCallWithoutNew,
     RejectionSite::CatchBindingUnnarrowedUse,
     RejectionSite::ThrowOperandNotErrorFamily,
-    RejectionSite::FinallyClause,
     RejectionSite::CatchBindingPattern,
     RejectionSite::CatchBindingPatternWithoutAny,
     RejectionSite::CatchBindingAnnotation,

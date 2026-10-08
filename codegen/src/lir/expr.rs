@@ -510,6 +510,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     &expr.pos,
                 )?;
                 self.enter_block(successor)?;
+                self.lower_generator_close_dispatch(&expr.pos)?;
                 None
             }
             K::AsyncSuspend => {

@@ -95,6 +95,13 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
         | K::Zero
         | K::Throw
         | K::CatchEntry
+        | K::ExceptionMessage
+        | K::ExceptionPosition
+        | K::ExceptionRestore
+        | K::FinalizerEnter(_)
+        | K::GeneratorFinalizer(_)
+        | K::GeneratorClose
+        | K::GeneratorIsClosing
         | K::ExceptionPark
         | K::ExceptionResume
         | K::TaskGroup(_)

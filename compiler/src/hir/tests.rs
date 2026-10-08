@@ -338,7 +338,7 @@ fn stmt_children_yield_every_child() {
             Stmt::For {
                 init: Some(Box::new(child_stmt(1))),
                 cond: Some(child_expr(2)),
-                step: Some(child_expr(3)),
+                step: vec![Stmt::Expr(child_expr(3))],
                 body: vec![child_stmt(4)],
                 pos: pos.clone(),
             },
@@ -395,9 +395,10 @@ fn stmt_children_yield_every_child() {
                     pos.clone(),
                 )],
                 body: vec![child_stmt(1), child_stmt(2)],
+                finalizer: Some(vec![child_stmt(3)]),
                 pos,
             },
-            vec![1, 2],
+            vec![1, 2, 3],
         ),
     ];
     for (stmt, expected) in cases {

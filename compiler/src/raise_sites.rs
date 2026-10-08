@@ -262,8 +262,16 @@ impl Module {
             // A hook that raises on a normal exit leaves the scope with
             // an exception (`compiler.md` §115.5 rule 3). A hook that
             // raises on the exception edge traps (rule 7).
-            Stmt::Using { bindings, body, .. } => {
+            Stmt::Using {
+                bindings,
+                body,
+                finalizer,
+                pos: _,
+            } => {
                 return self.statements_can_raise(body)
+                    || finalizer
+                        .as_ref()
+                        .is_some_and(|body| self.statements_can_raise(body))
                     || bindings
                         .iter()
                         .any(|binding| self.statement_can_raise(&binding.hook()));
@@ -271,15 +279,54 @@ impl Module {
             Stmt::Let { .. }
             | Stmt::Expr(_)
             | Stmt::Return { .. }
-            | Stmt::If { .. }
-            | Stmt::While { .. }
-            | Stmt::For { .. }
-            | Stmt::ForOf { .. }
-            | Stmt::Switch { .. }
+            | Stmt::If {
+                cond: _,
+                then: _,
+                els: _,
+                pos: _,
+            }
+            | Stmt::While {
+                cond: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::For {
+                init: _,
+                cond: _,
+                step: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::ForOf {
+                name: _,
+                ty: _,
+                subject: _,
+                kind: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::GeneratorForOf {
+                name: _,
+                ty: _,
+                mutable: _,
+                subject: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::Switch {
+                disc: _,
+                cases: _,
+                pos: _,
+            }
             | Stmt::Break(_)
             | Stmt::Continue(_)
             | Stmt::Block(_)
-            | Stmt::Try { .. } => {}
+            | Stmt::Try {
+                body: _,
+                binding: _,
+                handler: _,
+                pos: _,
+            } => {}
         }
         statement.children().into_iter().any(|child| match child {
             crate::hir::HirChild::Expr(child) => self.expression_can_raise(child),
@@ -571,7 +618,15 @@ mod tests {
         let loud = function(&module, "loudHook");
         assert!(matches!(
             loud.body.as_slice(),
-            [crate::hir::Stmt::Let { .. }, crate::hir::Stmt::Using { .. }]
+            [
+                crate::hir::Stmt::Let { .. },
+                crate::hir::Stmt::Using {
+                    bindings: _,
+                    body: _,
+                    finalizer: _,
+                    pos: _
+                }
+            ]
         ));
         assert!(module.statements_can_raise(&loud.body[1..]));
     }
