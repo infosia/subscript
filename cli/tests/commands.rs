@@ -1075,3 +1075,60 @@ int main(void) {
     eprintln!("host API CLI and ship control: {:?}", started.elapsed());
     Ok(())
 }
+
+#[path = "../../compiler/tests/support/tsc.rs"]
+mod tsc;
+
+// Cost: sixteen CLI checks and one TypeScript batch. No native build.
+// Keep mutable-class-fix: mutable capture guidance says "use a class with a field".
+// Keep generic-direct-fix: the generic value message says "call it directly".
+// Keep async-this-class: receiver guidance says "a class field with an async method".
+#[test]
+fn listed_diagnostic_remedies_pass_cli_and_typescript() -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let directory = TestDir::new()?;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("repository root")?;
+    let mut files = vec![root.join("prelude/lang.d.ts")];
+    for (name, source) in [
+        ("group-fix.ts", "async function values(): Promise<void> { const g = new TaskGroup(); await g.join(); }\nexport function main(): void {}"),
+        ("handle-fix.ts", "async function value(n: i32): Promise<i32> { return n; } async function probe(): Promise<void> { const f = async () => await value(7); print(`${await f()}`); }\nexport function main(): void {}"),
+        ("mutable-copy-fix.ts", "function f(): void { let n: i32 = 1; const copy = n; const job = async (): Promise<i32> => copy; }\nexport function main(): void {}"),
+        ("mutable-class-fix.ts", "class Job { n: i32; constructor(n: i32) { this.n = n; } async run(): Promise<i32> { return this.n; } } function f(): void { let n: i32 = 1; const job = new Job(n); }\nexport function main(): void {}"),
+        ("await-indirect-fix.ts", "async function probe(): Promise<void> { (() : i32 => 1)(); }\nexport function main(): void {}"),
+        ("generic-fix.ts", "function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply((x: i32): i32 => id<i32>(x), 3); }"),
+        ("generic-direct-fix.ts", "function id<T>(x: T): T { return x; } export function main(): void { id<i32>(3); }"),
+        ("date-fix.ts", "export function main(): void { const d = new Date(0); const g = (): i64 => d.getTime(); g(); }"),
+        ("function-map-fix.ts", "function id(x: i32): i32 { return x; } export function main(): void { const fs: ((x: i32) => i32)[] = []; for (const x of [1]) { fs.push(id); } }"),
+        ("promise-then-fix.ts", "async function leaf(): Promise<i32> { return 1; } function cb(v: i32): void {} async function probe(): Promise<void> { const h = leaf(); const v = await h; cb(v); }\nexport function main(): void {}"),
+        ("promise-catch-callback-fix.ts", "async function leaf(): Promise<i32> { return 1; } function cb(e: Error): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } catch (e) { if (e instanceof Error) { cb(e); } } }\nexport function main(): void {}"),
+        ("async-this-copy.ts", "class C { n: i32 = 1; f(): void { const self = this; const job = async (): Promise<i32> => self.n; } }\nexport function main(): void {}"),
+        ("async-this-class.ts", "class Job { owner: C; constructor(owner: C) { this.owner = owner; } async run(): Promise<i32> { return this.owner.n; } } class C { n: i32 = 1; async f(): Promise<i32> { const job = new Job(this); return await job.run(); } }\nexport function main(): void {}"),
+        ("async-map-fix.ts", "class Job { n: i32; constructor(n: i32) { this.n = n; } async run(): Promise<i32> { return this.n; } } async function probe(): Promise<void> { const hs: Promise<i32>[] = []; for (const v of [1]) { const job = new Job(v); hs.push(job.run()); } await Promise.all(hs); }\nexport function main(): void {}"),
+        ("handle-return-example.ts", "async function f(h: Promise<i32>): Promise<i32> { return await h; }\nexport function main(): void {}"),
+        ("promise-finally-callback-fix.ts", "async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }\nexport function main(): void {}"),
+    ] {
+        let file = directory.write(name, source.as_bytes())?;
+        let result = output(subscript().arg("check").arg(&file))?;
+        assert_code(&result, 0);
+        assert!(String::from_utf8_lossy(&result.stderr).contains("no errors"), "{result:?}");
+        files.push(file);
+    }
+    let config = directory.write("tsconfig.json", tsc::tsconfig(&files).as_bytes())?;
+    let result = output(
+        Command::new(tsc::tsc_binary(root))
+            .arg("--project")
+            .arg(config),
+    )?;
+    assert_code(&result, 0);
+    assert!(
+        result.stdout.is_empty() && result.stderr.is_empty(),
+        "{result:?}"
+    );
+    eprintln!(
+        "s182 remedy cost: {:.3} ms",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(())
+}

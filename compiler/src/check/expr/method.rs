@@ -920,15 +920,21 @@ impl<'p> Checker<'p> {
                             && self.arr_elem_kind(&u).is_none()
                         {
                             let u_n = self.type_name(&u);
-                            self.reject_subset(
+                            let mut diagnostic = crate::check::rejection::diagnostic(
                                 RejectionSite::ArrayMapResult,
                                 format!(
-                                    "`map` produces a `{}[]`; `{}` is outside the \
+                                    "`map` produces a `{}`; `{}` is outside the \
                                      supported element kinds (Q22)",
-                                    u_n, u_n
+                                    self.type_name(&Type::array(u.clone())),
+                                    u_n
                                 ),
                                 cb.pos.clone(),
                             );
+                            if matches!(self.apparent_type(&u), Type::Func(_)) {
+                                diagnostic.example =
+                                    Some(&crate::check::diagnostic_text::FUNCTION_MAP);
+                            }
+                            self.diags.push(diagnostic);
                             return self.err_expr(pos);
                         }
                         Type::array(u)
@@ -1770,7 +1776,7 @@ impl<'p> Checker<'p> {
                     &function.ret,
                 ) && self.apparent_type(&function.ret).counted_type().is_some()
                 {
-                    self.reject_subset(
+                    let mut diagnostic = crate::check::rejection::diagnostic(
                         RejectionSite::ArrayMapResult,
                         counted_method_message(
                             &self.apparent_type(&function.ret),
@@ -1778,6 +1784,12 @@ impl<'p> Checker<'p> {
                         ),
                         checked.pos.clone(),
                     );
+                    if method == "map"
+                        && matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_))
+                    {
+                        diagnostic.example = Some(&crate::check::diagnostic_text::ASYNC_MAP);
+                    }
+                    self.diags.push(diagnostic);
                     return self.err_expr(checked.pos);
                 }
                 if let Some(parameter) = function.params.iter().find(|parameter| {

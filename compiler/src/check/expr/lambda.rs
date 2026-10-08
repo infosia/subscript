@@ -333,9 +333,10 @@ impl<'p> Checker<'p> {
                         if a.is_async {
                             let expected = match self.apparent_type(&checked.ty) {
                                 Type::AsyncHandle(inner) => *inner,
-                                other => other,
+                                _ => checked.ty.clone(),
                             };
                             self.require_return_assignable(&checked, &expected, fx);
+                            ret = Some(expected);
                         }
                     }
                     if matches!(

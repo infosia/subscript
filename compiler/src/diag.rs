@@ -189,6 +189,8 @@ pub struct Diagnostic {
     pub divergence: Option<Divergence>,
     /// A form-specific example that replaces the generic divergence example.
     pub example: Option<&'static crate::divergence::DivergenceEntry>,
+    /// A site-specific rule that replaces the rule-code explanation.
+    pub rule: Option<&'static str>,
     /// True when import or export resolution owns this failure.
     pub resolution: bool,
     /// A form-specific instruction that accompanies the diagnostic.
@@ -205,6 +207,7 @@ impl Diagnostic {
             pos,
             divergence: None,
             example: None,
+            rule: None,
             resolution: false,
             note: None,
         }

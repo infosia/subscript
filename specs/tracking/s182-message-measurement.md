@@ -854,3 +854,78 @@ CLI: accepted. TypeScript: accepted.
 Its `ArrayMapResult` witness list includes §171 and §172 forms. The shared fragment test still measures the Number example.
 
 No located assertion requires the class, handle push, or Promise.all example.
+
+
+## Implementation
+
+The implementation changes the listed diagnostic text and the §175 test name. Examples use fixed entries at their emission sites.
+
+No message selects an example. The §154 witnesses and the language acceptance rules stay unchanged.
+
+An inferred async expression body retains its intended `Promise<inner>` callable result after a rejected handle return.
+
+Inference unwraps the apparent type only when it is an async handle; otherwise, it retains the written type. The `T extends Base` parameter and const-capture controls both preserve `Promise<T>`. A `T extends Promise<i32>` expression-body control rejects implicit handle adoption with one return error in the CLI; TypeScript accepts it. Its downstream await retains `i32` without a cascade.
+
+The template consumer reports only the return error. The string assignment reports that error and its independent type mismatch.
+
+TypeScript reports TS2322 for the string assignment.
+
+The generator, mutable capture, and receiver capture diagnostics carry their proposed rule text.
+
+Date guidance cites `stdlib.md §3` and `collisions.md C24 row 12`.
+
+The type printer writes `((i32) => i32)[]` for the function-array map result.
+
+The then, catch, and finally examples preserve their callbacks. The async-map example constructs and awaits a handle array.
+
+The generated language reference includes the listed examples. No reject header quotes a changed message. No accept `.expected` file changes.
+
+### Suggested-form results
+
+Every row uses the TypeScript options and prelude stated above. Accepted means exit 0 with no errors.
+
+| Suggested form | CLI | TypeScript |
+|---|---|---|
+| `group-fix.ts` | accepted | accepted |
+| `handle-fix.ts` | accepted | accepted |
+| `mutable-copy-fix.ts` | accepted | accepted |
+| `mutable-class-fix.ts` | accepted | accepted |
+| `await-indirect-fix.ts` | accepted | accepted |
+| `generic-fix.ts` | accepted | accepted |
+| `generic-direct-fix.ts` | accepted | accepted |
+| `date-fix.ts` | accepted | accepted |
+| `function-map-fix.ts` | accepted | accepted |
+| `promise-then-fix.ts` | accepted | accepted |
+| `promise-catch-callback-fix.ts` | accepted | accepted |
+| `promise-finally-callback-fix.ts` | accepted | accepted |
+| `async-this-copy.ts` | accepted | accepted |
+| `async-this-class.ts` | accepted | accepted |
+| `async-map-fix.ts` | accepted | accepted |
+| Existing explicit-await return example | accepted | accepted |
+
+The finally replacement (`promise-finally-callback-fix.ts`) is:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }
+export function main(): void {}
+```
+
+### New test costs
+
+The measurements include each test's first checker initialization. The remedies share one TypeScript batch. Both compiler tests live in the existing `async_function_values` binary; there is no additional test binary to link or launch.
+
+| Test | Cost (ms) | Work |
+|---|---:|---|
+| `listed_diagnostics_render_the_contract_text` | 4.770 | Twelve checker calls and rendered text comparisons |
+| `rejected_handle_body_keeps_the_intended_consumer_type` | 3.976 (previous four-call measurement) | Five checker calls; template and string consumers, two `T extends Base` accepted controls, and one `T extends Promise<i32>` rejected control |
+| `listed_diagnostic_remedies_pass_cli_and_typescript` | 1290.013 | Sixteen CLI checks and one TypeScript batch |
+
+The text test reads each message, rule, TypeScript example, subscript example, and reason.
+
+The consumer test preserves a real downstream type error. The remedy test proves the suggested forms pass both checkers.
+
+The finally replacement awaits the handle inside try and calls the callback inside finally (§180).
+
+The indirect-await example uses the same i32 lambda on both sides. Its subscript form omits await.
+
+The remedy controls retain `mutable-class-fix` because the mutable capture message names a class field, `generic-direct-fix` because the generic value message names a direct call, and `async-this-class` because the receiver message names a class field with an async method. The unmentioned `await-handle-fix` and `loop-fix` forms are removed.

@@ -299,8 +299,8 @@ pub(super) const AWAIT_SYNCHRONOUS_METHOD: DivergenceEntry = DivergenceEntry {
 
 pub(super) const AWAIT_INDIRECT_CALL: DivergenceEntry = DivergenceEntry {
     ts: " async function probe(): Promise<void> { await (() : i32 => 1)(); }\nexport function main(): void {}",
-    subscript: "no equivalent; await a call that returns a handle",
-    why: "The call returns an integer, so it supplies no completion for an await.",
+    subscript: "async function probe(): Promise<void> { (() : i32 => 1)(); }\nexport function main(): void {}",
+    why: "The call returns a synchronous value. It supplies no async completion for an await.",
     collision: "compiler.md §167",
 };
 

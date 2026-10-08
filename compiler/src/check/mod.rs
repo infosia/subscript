@@ -11,6 +11,7 @@ use crate::check::rejection::{diagnostic, RejectionSite};
 mod assignment_flow;
 #[cfg(test)]
 mod assignment_narrowing;
+pub(crate) mod diagnostic_text;
 mod host_entries;
 mod identity;
 mod init_effects;

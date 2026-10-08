@@ -138,7 +138,9 @@ pub fn render_diagnostics(files: &[SourceFile], diagnostics: &[Diagnostic]) -> S
             code: diagnostic.code.as_str(),
             message: &diagnostic.message,
             pos: &diagnostic.pos,
-            explanation: diagnostic.code.explanation(),
+            explanation: diagnostic
+                .rule
+                .unwrap_or_else(|| diagnostic.code.explanation()),
             divergence: diagnostic.divergence,
             note: diagnostic.note,
             example: diagnostic.example,

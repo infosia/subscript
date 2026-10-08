@@ -1,5 +1,7 @@
 //! Async body facts and capture boundaries (§167).
-use subscript_compiler::{check_program, hir::ExprKind, RuleCode, SourceFile, Type};
+use subscript_compiler::{
+    check_program, hir::ExprKind, render_diagnostics, RuleCode, SourceFile, Type,
+};
 
 #[test]
 fn deferred_initializers_keep_body_and_callable_results_with_synchronous_control() {
@@ -67,7 +69,7 @@ fn local_parameter_and_receiver_captures_name_the_binding_with_clean_controls() 
             .any(|diagnostic| diagnostic.code == RuleCode::S009
                 && diagnostic.message.contains(&format!("`{name}`"))
                 && diagnostic.message.contains(if name == "this" {
-                    "an async arrow captures nothing"
+                    "copy the receiver into a const"
                 } else {
                     "copy it into a `const` first, or use a class with a field"
                 })));
@@ -145,7 +147,7 @@ fn nested_receiver_capture_rejects_with_synchronous_controls() {
                     .any(|diagnostic| {
                         diagnostic.code == RuleCode::S009
                             && diagnostic.message
-                                == "async arrow captures `this`; an async arrow captures nothing"
+                                == "an async arrow cannot capture `this` directly; copy the receiver into a const or use a class field with an async method"
                     }));
             } else {
                 checked.expect("synchronous receiver capture checks");
@@ -176,4 +178,88 @@ fn owned_async_captures_keep_borrowed_transitive_and_map_restrictions() {
         check_program(&[SourceFile::new("map.ts", map)]).expect_err("counted callback rejects");
     assert!(errors.iter().any(|error| error.code == RuleCode::S014));
     assert!(!errors.iter().any(|error| error.code == RuleCode::S009));
+}
+
+// Cost: twelve checker calls and renders; no subprocess or native build.
+#[test]
+fn listed_diagnostics_render_the_contract_text() {
+    let started = std::time::Instant::now();
+    for (source, message, rule, ts, replacement, reason) in [
+        ("function* values(): Generator<i32> { new TaskGroup(); yield 1; }\nexport function main(): void {}", "TaskGroup is not allowed in a generator body", "A generator body cannot use a TaskGroup because a dropped iterator has no scope exit.", "function* values(): Generator<i32> { new TaskGroup(); yield 1; }\nexport function main(): void {}", "async function values(): Promise<void> { const g = new TaskGroup(); await g.join(); }\nexport function main(): void {}", "A dropped generator does not execute a lexical scope exit. Put the group in an async function and await its join. (collisions.md C24)"),
+        ("async function value(n: i32): Promise<i32> { return n; } async function probe(): Promise<void> { const f = async () => value(7); print(`${await f()}`); }\nexport function main(): void {}", "type mismatch: the return value expects `i32`, got `Promise<i32>`", "Constructs outside the decided language surface are rejected.", "async function f(h: Promise<i32>): Promise<i32> { return h; }", "async function f(h: Promise<i32>): Promise<i32> { return await h; }", "An async return carries its fulfilled value. The language has no implicit handle adoption. (compiler.md §167)"),
+        ("function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }\nexport function main(): void {}", "async arrow captures mutable `n`; copy it into a `const` first, or use a class with a field", "An async arrow can own const captures. Copy a mutable value into a const or use a class field.", "function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }", "function f(): void { let n: i32 = 1; const copy = n; const job = async (): Promise<i32> => copy; }\nexport function main(): void {}", "An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field. (collisions.md C24)"),
+        ("async function probe(): Promise<void> { await ((): string => \"x\")(); }\nexport function main(): void {}", "await requires a call that returns an async handle", "Constructs outside the decided language surface are rejected.", " async function probe(): Promise<void> { await (() : i32 => 1)(); }\nexport function main(): void {}", "async function probe(): Promise<void> { (() : i32 => 1)(); }\nexport function main(): void {}", "The call returns a synchronous value. It supplies no async completion for an await. (compiler.md §167)"),
+        ("function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply(id, 3); }", "generic function `id` has no first-class value; call it directly or use a lambda", "Constructs outside the decided language surface are rejected.", "function id<T>(x:T):T{return x;} function apply<T>(f:(x:T)=>T,x:T):T{return f(x);} export function main():void { apply(id,3); }", "function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply((x: i32): i32 => id<i32>(x), 3); }", "Generic function values require instantiation outside the admitted inference surface. (compiler.md §149.1)"),
+        ("export function main(): void { const d = new Date(0); const g = d.getTime; }", "`getTime` may only be called, not read as a value (Q20)", "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected.", "export function main(): void { const d = new Date(0); const g = d.getTime; }", "export function main(): void { const d = new Date(0); const g = (): i64 => d.getTime(); g(); }", "A Date method lowers to a direct operation. Use a lambda that calls the method on the Date value. (stdlib.md §3; collisions.md C24 row 12)"),
+        ("function id(x: i32): i32 { return x; } export function main(): void { [1].map((x: i32): ((x: i32) => i32) => id); }", "`map` produces a `((i32) => i32)[]`; `(i32) => i32` is outside the supported element kinds (Q22)", "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected.", "function id(x: i32): i32 { return x; } export function main(): void { [1].map((x: i32): ((x: i32) => i32) => id); }", "function id(x: i32): i32 { return x; } export function main(): void { const fs: ((x: i32) => i32)[] = []; for (const x of [1]) { fs.push(id); } }", "map does not support a function result. Use a typed array and push each function in a for-of loop. (stdlib.md §9)"),
+        ("function cb(v: i32): void {} async function probe(h: Promise<i32>): Promise<void> { h.then(cb); await h; }\nexport function main(): void {}", "Promise combinator `.then(...)` is not in the language", "Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.", "function cb(v: i32): void {} async function probe(h: Promise<i32>): Promise<void> { h.then(cb); await h; }\nexport function main(): void {}", "async function leaf(): Promise<i32> { return 1; } function cb(v: i32): void {} async function probe(): Promise<void> { const h = leaf(); const v = await h; cb(v); }\nexport function main(): void {}", "A handle has no then method. In an async function, await the handle and call the callback with its value. (collisions.md C8)"),
+        ("function cb(e: Error): void {} async function probe(h: Promise<i32>): Promise<void> { h.catch(cb); await h; }\nexport function main(): void {}", "Promise combinator `.catch(...)` is not in the language", "Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.", "function cb(e: Error): void {} async function probe(h: Promise<i32>): Promise<void> { h.catch(cb); await h; }\nexport function main(): void {}", "async function leaf(): Promise<i32> { return 1; } function cb(e: Error): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } catch (e) { if (e instanceof Error) { cb(e); } } }\nexport function main(): void {}", "A handle has no catch method. In an async function, await it inside try and handle the error inside catch. (collisions.md C8)"),
+        ("class C { n: i32 = 1; f(): void { const job = async (): Promise<i32> => this.n; } }\nexport function main(): void {}", "an async arrow cannot capture `this` directly; copy the receiver into a const or use a class field with an async method", "An async arrow owns const captures. A direct this capture remains outside the accepted surface.", "class C { n: i32 = 1; f(): void { const job = async (): Promise<i32> => this.n; } }\nexport function main(): void {}", "class C { n: i32 = 1; f(): void { const self = this; const job = async (): Promise<i32> => self.n; } }\nexport function main(): void {}", "The receiver must appear as an explicit const capture or a class field. (collisions.md C24)"),
+        ("async function probe(): Promise<void> { const hs = [1].map(async (v: i32): Promise<i32> => v); await Promise.all(hs); }\nexport function main(): void {}", "`map` cannot carry a counted callback result (§171)", "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected.", "async function probe(): Promise<void> { const hs = [1].map(async (v: i32): Promise<i32> => v); await Promise.all(hs); }\nexport function main(): void {}", "class Job { n: i32; constructor(n: i32) { this.n = n; } async run(): Promise<i32> { return this.n; } } async function probe(): Promise<void> { const hs: Promise<i32>[] = []; for (const v of [1]) { const job = new Job(v); hs.push(job.run()); } await Promise.all(hs); }\nexport function main(): void {}", "map cannot transfer a counted callback result. Use a for-of loop, push each handle, and await the handle array. (compiler.md §171)"),
+        ("function cb(): void {} async function probe(h: Promise<i32>): Promise<void> { h.finally(cb); await h; }\nexport function main(): void {}", "Promise combinator `.finally(...)` is not in the language", "Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.", "function cb(): void {} async function probe(h: Promise<i32>): Promise<void> { h.finally(cb); await h; }\nexport function main(): void {}", "async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }\nexport function main(): void {}", "A handle has no finally method. In an async function, await it inside try and call the callback inside finally. (collisions.md C8; compiler.md §180)"),
+    ] {
+        let files = [SourceFile::entry("main.ts", source)];
+        let diagnostics = check_program(&files).expect_err("listed form rejects");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].message, message);
+        let rendered = render_diagnostics(&files, &diagnostics);
+        for expected in [format!("= rule: {rule}"), format!("= why: {reason}")] {
+            assert!(rendered.contains(&expected), "{rendered}");
+        }
+        for (heading, text) in [("TypeScript accepts", ts), ("subscript", replacement)] {
+            let expected = format!("= {heading}:\n{}", text.lines().map(|line| format!("  |   {line}\n")).collect::<String>());
+            assert!(rendered.contains(&expected), "{rendered}");
+        }
+    }
+    eprintln!(
+        "s182 text cost: {:.3} ms",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
+}
+
+// Cost: five checker calls; rejected consumers and constrained-generic controls.
+#[test]
+fn rejected_handle_body_keeps_the_intended_consumer_type() {
+    let started = std::time::Instant::now();
+    for (consumer, count) in [
+        ("print(`${await f()}`);", 1),
+        ("const s: string = await f();", 2),
+    ] {
+        let source = format!("async function value(n: i32): Promise<i32> {{ return n; }} async function probe(): Promise<void> {{ const f = async () => value(7); {consumer} }} export function main(): void {{}}");
+        let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
+            .expect_err("handle body rejects");
+        assert_eq!(diagnostics.len(), count, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].message,
+            "type mismatch: the return value expects `i32`, got `Promise<i32>`"
+        );
+        if count == 2 {
+            assert!(
+                diagnostics[1]
+                    .message
+                    .contains("expects `string`, got `i32`"),
+                "{diagnostics:?}"
+            );
+        }
+    }
+    for body in [
+        "const g = async (v: T) => v; const y: T = await g(x); return y;",
+        "const copy: T = x; const g = async () => copy; const typed: () => Promise<T> = g; const y: T = await typed(); return y;",
+    ] {
+        let source = format!("class Base {{ n: i32 = 1; }} async function f<T extends Base>(x: T): Promise<T> {{ {body} }} export async function main(): Promise<void> {{ const b = await f<Base>(new Base()); print(`${{b.n}}`); }}");
+        check_program(&[SourceFile::entry("main.ts", source)])
+            .expect("constrained generic retains its written return type");
+    }
+    let source = "async function f<T extends Promise<i32>>(x: T): Promise<void> { const g = async (v: T) => v; const n: i32 = await g(x); print(`${n}`); } export function main(): void {}";
+    let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
+        .expect_err("a Promise-constrained generic body rejects implicit handle adoption");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(
+        diagnostics[0].message,
+        "type mismatch: the return value expects `i32`, got `T`"
+    );
+    eprintln!(
+        "s182 cascade cost: {:.3} ms",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
 }

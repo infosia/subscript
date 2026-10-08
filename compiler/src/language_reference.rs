@@ -376,6 +376,48 @@ pub fn render_language_reference(repository_root: &Path) -> io::Result<String> {
         )?;
     }
 
+    writeln!(out, "\n## Listed diagnostic examples (§182)").expect("write to String");
+    for (name, entry) in [
+        (
+            "TaskGroup in a generator body",
+            crate::check::diagnostic_text::GROUP,
+        ),
+        ("Date method value", crate::check::diagnostic_text::DATE),
+        (
+            "Function array map result",
+            crate::check::diagnostic_text::FUNCTION_MAP,
+        ),
+        (
+            "Async array map result",
+            crate::check::diagnostic_text::ASYNC_MAP,
+        ),
+        ("Promise.then", crate::check::diagnostic_text::THEN),
+        ("Promise.catch", crate::check::diagnostic_text::CATCH),
+        ("Promise.finally", crate::check::diagnostic_text::FINALLY),
+        (
+            "Async receiver capture",
+            crate::check::diagnostic_text::RECEIVER,
+        ),
+        (
+            "Async handle return",
+            crate::divergence::Divergence::AsyncReturnHandle.entry(),
+        ),
+        (
+            "Mutable async capture",
+            crate::divergence::Divergence::AsyncArrowCapture.entry(),
+        ),
+        (
+            "Await of a synchronous call",
+            crate::divergence::Divergence::AwaitIndirectCall.entry(),
+        ),
+        (
+            "Generic function value",
+            crate::divergence::Divergence::GenericFunctionValue.entry(),
+        ),
+    ] {
+        writeln!(out, "\n### {name}\n\nTypeScript:\n\n```typescript\n{}\n```\n\nsubscript:\n\n```typescript\n{}\n```\n\n{} ({})", entry.ts, entry.subscript, entry.why, entry.collision).expect("write to String");
+    }
+
     writeln!(out, "\n## Warning rules").expect("write to String");
     writeln!(
         out,

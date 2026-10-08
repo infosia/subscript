@@ -61,7 +61,7 @@ fn a_lambda_carries_the_blocks_of_its_captured_carriers() {
 }
 
 #[test]
-fn each_loop_iteration_owns_its_counted_bindings() {
+fn each_loop_iteration_limits_its_counted_captures_to_its_block() {
     for scope in [
         "for (let i: i32 = 0; i < 2; i++)",
         "while (false)",

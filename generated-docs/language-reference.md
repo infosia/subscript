@@ -382,6 +382,215 @@ declare function read(): Promise<i32>;
 // pin: 09a1a889
 ```
 
+## Listed diagnostic examples (§182)
+
+### TaskGroup in a generator body
+
+TypeScript:
+
+```typescript
+function* values(): Generator<i32> { new TaskGroup(); yield 1; }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+async function values(): Promise<void> { const g = new TaskGroup(); await g.join(); }
+export function main(): void {}
+```
+
+A dropped generator does not execute a lexical scope exit. Put the group in an async function and await its join. (collisions.md C24)
+
+### Date method value
+
+TypeScript:
+
+```typescript
+export function main(): void { const d = new Date(0); const g = d.getTime; }
+```
+
+subscript:
+
+```typescript
+export function main(): void { const d = new Date(0); const g = (): i64 => d.getTime(); g(); }
+```
+
+A Date method lowers to a direct operation. Use a lambda that calls the method on the Date value. (stdlib.md §3; collisions.md C24 row 12)
+
+### Function array map result
+
+TypeScript:
+
+```typescript
+function id(x: i32): i32 { return x; } export function main(): void { [1].map((x: i32): ((x: i32) => i32) => id); }
+```
+
+subscript:
+
+```typescript
+function id(x: i32): i32 { return x; } export function main(): void { const fs: ((x: i32) => i32)[] = []; for (const x of [1]) { fs.push(id); } }
+```
+
+map does not support a function result. Use a typed array and push each function in a for-of loop. (stdlib.md §9)
+
+### Async array map result
+
+TypeScript:
+
+```typescript
+async function probe(): Promise<void> { const hs = [1].map(async (v: i32): Promise<i32> => v); await Promise.all(hs); }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+class Job { n: i32; constructor(n: i32) { this.n = n; } async run(): Promise<i32> { return this.n; } } async function probe(): Promise<void> { const hs: Promise<i32>[] = []; for (const v of [1]) { const job = new Job(v); hs.push(job.run()); } await Promise.all(hs); }
+export function main(): void {}
+```
+
+map cannot transfer a counted callback result. Use a for-of loop, push each handle, and await the handle array. (compiler.md §171)
+
+### Promise.then
+
+TypeScript:
+
+```typescript
+function cb(v: i32): void {} async function probe(h: Promise<i32>): Promise<void> { h.then(cb); await h; }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; } function cb(v: i32): void {} async function probe(): Promise<void> { const h = leaf(); const v = await h; cb(v); }
+export function main(): void {}
+```
+
+A handle has no then method. In an async function, await the handle and call the callback with its value. (collisions.md C8)
+
+### Promise.catch
+
+TypeScript:
+
+```typescript
+function cb(e: Error): void {} async function probe(h: Promise<i32>): Promise<void> { h.catch(cb); await h; }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; } function cb(e: Error): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } catch (e) { if (e instanceof Error) { cb(e); } } }
+export function main(): void {}
+```
+
+A handle has no catch method. In an async function, await it inside try and handle the error inside catch. (collisions.md C8)
+
+### Promise.finally
+
+TypeScript:
+
+```typescript
+function cb(): void {} async function probe(h: Promise<i32>): Promise<void> { h.finally(cb); await h; }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }
+export function main(): void {}
+```
+
+A handle has no finally method. In an async function, await it inside try and call the callback inside finally. (collisions.md C8; compiler.md §180)
+
+### Async receiver capture
+
+TypeScript:
+
+```typescript
+class C { n: i32 = 1; f(): void { const job = async (): Promise<i32> => this.n; } }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+class C { n: i32 = 1; f(): void { const self = this; const job = async (): Promise<i32> => self.n; } }
+export function main(): void {}
+```
+
+The receiver must appear as an explicit const capture or a class field. (collisions.md C24)
+
+### Async handle return
+
+TypeScript:
+
+```typescript
+async function f(h: Promise<i32>): Promise<i32> { return h; }
+```
+
+subscript:
+
+```typescript
+async function f(h: Promise<i32>): Promise<i32> { return await h; }
+```
+
+An async return carries its fulfilled value. The language has no implicit handle adoption. (compiler.md §167)
+
+### Mutable async capture
+
+TypeScript:
+
+```typescript
+function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }
+```
+
+subscript:
+
+```typescript
+function f(): void { let n: i32 = 1; const copy = n; const job = async (): Promise<i32> => copy; }
+export function main(): void {}
+```
+
+An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field. (C24)
+
+### Await of a synchronous call
+
+TypeScript:
+
+```typescript
+ async function probe(): Promise<void> { await (() : i32 => 1)(); }
+export function main(): void {}
+```
+
+subscript:
+
+```typescript
+async function probe(): Promise<void> { (() : i32 => 1)(); }
+export function main(): void {}
+```
+
+The call returns a synchronous value. It supplies no async completion for an await. (compiler.md §167)
+
+### Generic function value
+
+TypeScript:
+
+```typescript
+function id<T>(x:T):T{return x;} function apply<T>(f:(x:T)=>T,x:T):T{return f(x);} export function main():void { apply(id,3); }
+```
+
+subscript:
+
+```typescript
+function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply((x: i32): i32 => id<i32>(x), 3); }
+```
+
+Generic function values require instantiation outside the admitted inference surface. (compiler.md §149.1)
+
 ## Warning rules
 
 Warnings do not change acceptance unless the CLI is run with `--deny-warnings`. Each excerpt comes from the first `(file, code, line)` pin in `compiler/tests/corpus_warn.rs`.

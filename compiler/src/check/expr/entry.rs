@@ -271,11 +271,10 @@ impl<'p> Checker<'p> {
                     .last()
                     .is_some_and(|frame| frame.is_lambda && frame.is_async)
                 {
-                    self.reject_subset(
-                        RejectionSite::AsyncArrowCapture,
-                        "async arrow captures `this`; an async arrow captures nothing",
-                        pos.clone(),
-                    );
+                    self.diags
+                        .push(crate::check::rejection::async_receiver_diagnostic(
+                            pos.clone(),
+                        ));
                     return self.err_expr(pos);
                 }
                 if fx.descriptor_default.is_some() {

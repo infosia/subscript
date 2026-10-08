@@ -384,7 +384,7 @@ pub(super) const TEMPLATEINTERPOLATIONKINDFORM: DivergenceEntry = DivergenceEntr
 
 pub(super) const GENERICFUNCTIONVALUE: DivergenceEntry = DivergenceEntry {
     ts: "function id<T>(x:T):T{return x;} function apply<T>(f:(x:T)=>T,x:T):T{return f(x);} export function main():void { apply(id,3); }",
-    subscript: "no equivalent; call the function directly or use a lambda",
+    subscript: "function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply((x: i32): i32 => id<i32>(x), 3); }",
     why: "Generic function values require instantiation outside the admitted inference surface.",
     collision: "compiler.md §149.1",
 };
@@ -618,7 +618,7 @@ pub(super) const THISINPARAMETERDEFAULTARROW: DivergenceEntry = DivergenceEntry 
 /// C24 row 36 requires immutable async captures.
 pub(super) const ASYNC_ARROW_CAPTURE: DivergenceEntry = DivergenceEntry {
     ts: "function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }",
-    subscript: "function f(): void { const job = async (n: i32): Promise<i32> => n; }",
+    subscript: "function f(): void { let n: i32 = 1; const copy = n; const job = async (): Promise<i32> => copy; }\nexport function main(): void {}",
     why: "An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field.",
     collision: "C24",
 };

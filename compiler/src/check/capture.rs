@@ -468,11 +468,7 @@ impl<'a> Analysis<'a> {
         self.solve();
         let mut diagnostics = Vec::new();
         for pos in &self.async_receivers {
-            diagnostics.push(diagnostic(
-                RejectionSite::AsyncArrowCapture,
-                "async arrow captures `this`; an async arrow captures nothing",
-                (*pos).clone(),
-            ));
+            diagnostics.push(super::rejection::async_receiver_diagnostic((*pos).clone()));
         }
         for (kind, e) in &self.escapes {
             if self.fact(e) {

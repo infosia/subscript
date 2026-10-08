@@ -1678,7 +1678,7 @@ rejection_classes! {
 
 #[path = "rejection_diagnostic.rs"]
 mod emission;
-pub(crate) use emission::{diagnostic, RejectionClass};
+pub(crate) use emission::{async_receiver_diagnostic, diagnostic, RejectionClass};
 #[path = "rejection_failure.rs"]
 mod failure;
 pub(crate) use failure::RejectionFailure;

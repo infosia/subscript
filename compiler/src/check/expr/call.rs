@@ -827,11 +827,18 @@ impl<'p> Checker<'p> {
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
         if matches!(name.as_str(), "then" | "catch" | "finally") {
-            self.reject_subset(
+            let mut diagnostic = crate::check::rejection::diagnostic(
                 RejectionSite::PromiseCombinatorCall,
                 format!("Promise combinator `.{name}(...)` is not in the language"),
                 prop_pos.clone(),
             );
+            diagnostic.example = match name.as_str() {
+                "then" => Some(&crate::check::diagnostic_text::THEN),
+                "catch" => Some(&crate::check::diagnostic_text::CATCH),
+                "finally" => Some(&crate::check::diagnostic_text::FINALLY),
+                _ => None,
+            };
+            self.diags.push(diagnostic);
             return self.err_expr(pos);
         }
         if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
