@@ -54,7 +54,8 @@ function (§92).
 4. An async arrow result annotation that is not `Promise<T>` is rejected
    with S100. `tsc` rejects it (TS1064). This site is `TscRejects`.
 5. An async arrow that captures a local, a parameter, or `this` is
-   rejected with S009. The message names the captured binding and
+   rejected with S009. *(Narrowed 2026-10-09 by §181: a `const` capture is
+   accepted.)* The message names the captured binding and
    states that an async arrow captures nothing. A module global, a named
    function, and a class are not captures. The site is `Diverges`
    (`collisions.md` C24 row 36).
