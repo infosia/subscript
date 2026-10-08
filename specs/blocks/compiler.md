@@ -224,3 +224,4 @@ Every section, with its status:
 | §180 | A `finally` block runs on each exit | active | [`s180-a-finally-block-runs-on-each-exit.md`](compiler/s180-a-finally-block-runs-on-each-exit.md) |
 | §181 | An async arrow owns its captures | active | [`s181-an-async-arrow-owns-its-captures.md`](compiler/s181-an-async-arrow-owns-its-captures.md) |
 | §182 | A diagnostic shows the form it rejects | active | [`s182-a-diagnostic-shows-the-form-it-rejects.md`](compiler/s182-a-diagnostic-shows-the-form-it-rejects.md) |
+| §183 | A host-facing definition has its declared type | active | [`s183-a-host-facing-definition-has-its-declared-type.md`](compiler/s183-a-host-facing-definition-has-its-declared-type.md) |

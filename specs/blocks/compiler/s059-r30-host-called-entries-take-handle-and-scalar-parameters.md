@@ -37,6 +37,9 @@ Measurements at the pin, on this host:
 2. For every host-callable export, the ship tier emits
    `void subscript_export_<name>(subscript_rt_context* ctx, ...)`
    with the same parameter C types as the internal function.
+   *(Corrected 2026-10-09 by §183: each parameter has the C type of
+   its boundary kind record, which `program.h` declares; the wrapper
+   converts it to the internal type.)*
 3. The dev session gains
    `call_export_with(name, &[EntryArg]) -> Result<(), RunError>`.
    `EntryArg` covers opaque handles and the boundary scalars. An

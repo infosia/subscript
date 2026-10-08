@@ -34,6 +34,8 @@ entries agree in both tiers.
    binder (`map_use`), the dev JIT native signature, the C emitter, and
    the layout builder each read that record. None of them derives
    these facts again from another type.
+   *(Corrected 2026-10-09 by §183: the export wrapper definition read
+   `bool` as `int32_t`; it reads the record too.)*
 2. **Caller extension (N).** The dev JIT extends each integer argument
    narrower than 32 bits, and a `bool` argument, as the target C ABI
    requires the caller to do (signed for signed types, unsigned for
