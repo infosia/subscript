@@ -24,10 +24,7 @@ program, the current text, and the evidence for each):
 | 9 | S009 for `this` in an async arrow; S014 for `map(async …)` | the message says an async arrow captures nothing; the examples show a mutable number, not a receiver, and no handle-array form |
 | 7 | a test name in §175 | "owns" names the opposite of what the test checks |
 
-§157.3 item 1 is fixed at HEAD (§173.1 rule 5). The current §154
-total tests compare the message text and run the example fragments,
-but they do not check that the TypeScript example of a site reaches
-that site, or that the subscript example is accepted.
+§157.3 item 1 is fixed at HEAD (§173.1 rule 5).
 
 ### 182.1 Rules
 
@@ -35,48 +32,17 @@ that site, or that the subscript example is accepted.
    examples that the note proposes for it, and the §175 test takes the
    proposed name. A suggested form in a diagnostic is a form that the
    CLI and `tsc` accept.
-2. **Examples come from the site.** The TypeScript example of a
-   rejection site is derived from that site's own §154 witness program,
-   which the §154 tests already show reaches that site; a hand-written
-   TypeScript example that a test does not tie to its site is removed.
-   The subscript side of a site is one of two kinds, stated in the site
-   table: a program, or guidance text. A gate test checks every site:
-   `tsc` gives the TypeScript example the result that the site records
-   (accepts for a divergence site, rejects for a site that §154 marks
-   as a `tsc` rejection), the checker rejects it at that site (the
-   first diagnostic), and the checker and `tsc` accept each
-   program-kind subscript example. A site that no program reaches
-   first, because the form it needs always meets an earlier guard (for
-   example `super()` needs `extends`), is marked shadowed in the site
-   table with the guarding site; the test checks that the witness's
-   first diagnostic is at that guarding site and that a later
-   diagnostic is at the shadowed site. A site with no witness has one, or
-   the site table marks it unreachable with the reason, and the §154
-   index agrees. Guidance text is not run. The test
-   reads the site table, so a new site is checked with no test change.
-2a. **An example fits the form the user wrote.** A site can cover
-   several forms; its example entries are keyed by the selector that
-   the diagnostic message matches. A diagnostic shows the entry whose
-   selector its message matches, and no example when no entry matches:
-   no fallback to another form's entry. A subscript program applies to
-   the form of its entry's witness only; a line that names other forms
-   (a shared generic example) is removed. A total gate test runs every
-   §154 witness of every site: the first diagnostic's selected entry,
-   if any, derives from a witness whose diagnostic matches the same
-   selector.
-3. Every site that rule 2 reports is fixed in this section.
-4. No language rule changes: the accepted and rejected programs stay
+2. Examples stay keyed as at `93453f87`: one example set for each
+   site or divergence entry. Item 1 of 182.4 records why this section
+   does not key them by form.
+3. No language rule changes: the accepted and rejected programs stay
    the same.
 
 ### 182.2 Acceptance
 
-1. Each listed diagnostic: a test reads its new text.
-2. Rule 2's test, with a firing control: a site whose TypeScript
-   example is changed (in the test, not in the table) to a program
-   that another site rejects makes the test fail; a program-kind
-   subscript example that the checker rejects makes it fail. State its cost
-   (core principle 15).
-3. Goldens: the generated docs (the language reference shows the
+1. Each listed diagnostic: a test reads its new text, and the CLI and
+   `tsc` accept each suggested form in it.
+2. Goldens: the generated docs (the language reference shows the
    diagnostics) and the reject entries whose `expected-error` line
    quotes a changed message move. No `.expected` output of an accept
    entry moves.
@@ -85,3 +51,34 @@ that site, or that the subscript example is accepted.
 
 §143.3 item 2, §149.3 item 2, §153.3 item 2, §157.3 item 1 (closed by
 §173), §167.3 items 1 and 3, §170.3 item 3, §175.4 item 3: closed.
+
+### 182.4 Open
+
+1. **An example does not identify the form the user wrote.** One site
+   covers several forms, and its examples fit one of them. A prototype
+   at `80902350` (reverted) derived each TypeScript example from the
+   site's §154 witness and selected the example by the diagnostic
+   message. Its first total check found 543 sites where an example
+   does not fit: 248 TypeScript examples reach another site
+   first, and 340 subscript examples are guidance text, not programs.
+   The prototype brought the total check to 0 sites, but its
+   verification review found that the message does not identify the
+   form: 207 groups of witnesses share one message (`x **= 3`,
+   `export *`, `extends`, `keyof`, `entries()`), and a message that
+   quotes a user name matches no selector, so it shows no example.
+   The prototype also embedded 587,595 bytes of witness text; its debug
+   CLI median was 18.6 ms for a rejected file and 3.9 ms for an
+   accepted file.
+   A fix needs a form identity that each checker rejection site
+   carries; the message is not one.
+
+2. **Sibling forms of two listed sites keep the site example.**
+   `[1].flatMap((v: i32) => [work()])` reports that `flatMap` cannot
+   carry a counted callback result and shows the `toFixed` example. A
+   `map` callback that returns a nullable function prints the correct
+   element type, but shows the same example: the function-array entry
+   matches only a non-nullable function type. Item 1 is the class.
+3. **`.then`, `.catch`, and `.finally` are rejected on any receiver.**
+   `class C { then(): void {} } new C().then();` reports "Promise
+   combinator `.then(...)`" with the handle example. The receiver test
+   is missing at `93453f87` too.
