@@ -6,6 +6,8 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+#[path = "lir_facts/async_environments.rs"]
+mod async_environments;
 #[path = "lir_facts/boundary.rs"]
 mod boundary;
 #[path = "lir_facts/iteration.rs"]
@@ -42,7 +44,8 @@ pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
 }
 
 fn compare_declaration_entities(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
-    if hir.classes.len() != lir.classes.len() {
+    let environments = async_environments::compare(hir, lir, findings);
+    if hir.classes.len() + environments != lir.classes.len() {
         findings.push(format!(
             "<module>: class table has {} entities for {} HIR declarations",
             lir.classes.len(),
@@ -571,10 +574,15 @@ fn collect_trap_expression(
     walk_expr(hir, expression, &mut |node| nodes.push(node));
     for node in nodes {
         // An async lambda's callable allocates its frame at invocation (§167 rule 13).
-        if matches!(node.kind, hir::ExprKind::Lambda { is_async: true, .. }) {
+        if let hir::ExprKind::Lambda {
+            is_async: true,
+            captures,
+            ..
+        } = &node.kind
+        {
             *expected
                 .entry(trap_key(&node.pos, "Allocation".into()))
-                .or_default() += 1;
+                .or_default() += 1 + usize::from(!captures.is_empty());
         }
         lifetime::expression(node, hir, expected);
         if !matches!(&node.kind, hir::ExprKind::Template(parts) if parts.is_empty()) {
@@ -1394,7 +1402,12 @@ fn instruction_arity(
                     target
                         .parameters
                         .iter()
-                        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
+                        .filter(|parameter| {
+                            matches!(
+                                parameter.kind,
+                                l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+                            )
+                        })
                         .count()
                 })
                 .unwrap_or(usize::MAX);

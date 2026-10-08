@@ -615,11 +615,11 @@ pub(super) const THISINPARAMETERDEFAULTARROW: DivergenceEntry = DivergenceEntry 
     collision: "C5", // compiler.md §157 rule 4
 };
 
-/// C24 row 36 keeps async environments empty.
+/// C24 row 36 requires immutable async captures.
 pub(super) const ASYNC_ARROW_CAPTURE: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { const n: i32 = 1; const job = async (): Promise<i32> => n; }",
+    ts: "function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }",
     subscript: "function f(): void { const job = async (n: i32): Promise<i32> => n; }",
-    why: "An async callable uses a null environment. It has no retained capture storage.",
+    why: "An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field.",
     collision: "C24",
 };
 

@@ -128,6 +128,7 @@ impl<'m> Emitter<'m> {
     pub(super) fn has_closure_environments(&self) -> bool {
         self.module.functions.iter().any(|function| {
             function.kind == l::FunctionKind::Lambda
+                && !function.is_async
                 && capture_parameters(function).next().is_some()
         })
     }
@@ -510,7 +511,7 @@ impl<'m> Emitter<'m> {
         }
         let mut closure_environment_types = Vec::new();
         for function in &self.module.functions {
-            if matches!(function.kind, l::FunctionKind::Lambda) {
+            if matches!(function.kind, l::FunctionKind::Lambda) && !function.is_async {
                 let captures = capture_parameters(function).collect::<Vec<_>>();
                 if !captures.is_empty() {
                     closure_environment_types.push(function.id);
@@ -831,6 +832,25 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "{};", self.wrapper_signature(function)?);
             }
         }
+        let borrowed = self
+            .module
+            .functions
+            .iter()
+            .filter(|function| {
+                !function.is_async
+                    && function
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.kind == l::ParameterKind::Capture)
+            })
+            .map(|function| format!("value.code == (void*)&sub_f{}", function.id.0))
+            .collect::<Vec<_>>();
+        let predicate = if borrowed.is_empty() {
+            "0".into()
+        } else {
+            borrowed.join(" || ")
+        };
+        let _ = writeln!(out, "static uint8_t sub_borrowed_environment(SubFn value) {{ (void)value; return {predicate}; }}");
         out.push_str("void subscript_init(subscript_rt_context* ctx);\n");
         out.push_str("void subscript_kick_async_exports(subscript_rt_context* ctx);\n\n");
         Ok(())
@@ -847,7 +867,10 @@ impl<'m> Emitter<'m> {
             parameters.push("void* environment".to_string());
         }
         for parameter in &function.parameters {
-            if parameter.kind == l::ParameterKind::Capture {
+            if matches!(
+                parameter.kind,
+                l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+            ) {
                 continue;
             }
             let ty = &function.values[parameter.value.0 as usize].ty;
@@ -1022,12 +1045,20 @@ impl<'m> Emitter<'m> {
             let _ = writeln!(out, "    {register};");
         }
         for parameter in &function.parameters {
-            if parameter.kind != l::ParameterKind::Capture {
+            if parameter.kind == l::ParameterKind::OwnedEnvironment {
+                let _ = writeln!(out, "    frame->p{} = environment;", parameter.value.0);
+            }
+        }
+        for parameter in &function.parameters {
+            if !matches!(
+                parameter.kind,
+                l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+            ) {
                 if self.has_closure_environments()
                     && matches!(&function.values[parameter.value.0 as usize].ty, l::ValueType::Data(ty) if ty.function_type().is_some())
                 {
                     let value = parameter.value.0;
-                    let _ = writeln!(out, "    if (a{value}.env != NULL) {{ memcpy(&frame->env_v{value}, a{value}.env, sizeof(SubEnvStorage)); a{value}.env = &frame->env_v{value}; }}");
+                    let _ = writeln!(out, "    if (a{value}.env != NULL && sub_borrowed_environment(a{value})) {{ memcpy(&frame->env_v{value}, a{value}.env, sizeof(SubEnvStorage)); a{value}.env = &frame->env_v{value}; }}");
                 }
                 let _ = writeln!(
                     out,
@@ -1100,7 +1131,18 @@ impl<'m> Emitter<'m> {
         out.push_str("void subscript_init(subscript_rt_context* ctx) {\n");
         let _ = writeln!(out, "    if ({init_call} == NULL) return;");
         for global in &self.module.globals {
-            if type_contains_managed(&self.layouts, &global.ty)? {
+            let rooted = type_contains_managed(&self.layouts, &global.ty)?;
+            let bytes = if rooted {
+                self.layouts.size_align(&global.ty)?.0
+            } else {
+                0
+            };
+            root_storage::verify_function_storage(
+                &self.layouts,
+                &l::ValueType::Data(global.ty.clone()),
+                bytes,
+            )?;
+            if rooted {
                 let call = self.runtime_call(
                     "void",
                     "subscript_rt_root_add",

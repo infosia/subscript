@@ -399,7 +399,7 @@ ArrayOfTypeArgumentCount	a-s010	S100	`Array.of<T>` takes exactly one type argume
 MapCopyTypeArgumentCount	a-s011	S100	`new Map` takes exactly 2 type argument(s)
 MapCopyNullableSource	a-s012	S011	`Map<i32, i32> | null` may be null here; narrow with a null check first
 AsyncArrowFunction	r-s167-generic	S100	generic async arrows are not in the decided surface
-AsyncArrowCapture	s167-capture	S009	async arrow captures `n`; an async arrow captures nothing
+AsyncArrowCapture	s167-capture	S009	async arrow captures mutable `n`; copy it into a `const` first, or use a class with a field
 AsyncArrowResultAnnotation	s167-result	S100	an async arrow result annotation must be Promise<T>
 LambdaReturnCoverage	a-s106	S100	not all paths return a value
 RegexLiteralUnicodeSetsFlag	a-s107	S100	the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, "v")`

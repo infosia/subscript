@@ -45,7 +45,7 @@ fn deferred_initializers_keep_body_and_callable_results_with_synchronous_control
 fn local_parameter_and_receiver_captures_name_the_binding_with_clean_controls() {
     for (captured, clean, name) in [
         (
-            "function f(): void { const n: i32 = 7; const job = async (): Promise<i32> => n; }",
+            "function f(): void { let n: i32 = 7; const job = async (): Promise<i32> => n; }",
             "function f(): void { const n: i32 = 7; const job = (): i32 => n; }",
             "n",
         ),
@@ -66,9 +66,11 @@ fn local_parameter_and_receiver_captures_name_the_binding_with_clean_controls() 
             .iter()
             .any(|diagnostic| diagnostic.code == RuleCode::S009
                 && diagnostic.message.contains(&format!("`{name}`"))
-                && diagnostic
-                    .message
-                    .contains("an async arrow captures nothing")));
+                && diagnostic.message.contains(if name == "this" {
+                    "an async arrow captures nothing"
+                } else {
+                    "copy it into a `const` first, or use a class with a field"
+                })));
         check_program(&[SourceFile::new("control.ts", clean)]).expect("clean control checks");
     }
 }
@@ -150,4 +152,28 @@ fn nested_receiver_capture_rejects_with_synchronous_controls() {
             }
         }
     }
+}
+
+// Cost: four checker calls; no native build.
+#[test]
+fn owned_async_captures_keep_borrowed_transitive_and_map_restrictions() {
+    let accepted = "async function value(): Promise<i32> { return 7; }
+        function make(): () => Promise<i32> { const h = value(); return async (): Promise<i32> => { return await h; }; }";
+    check_program(&[SourceFile::new("owned.ts", accepted)]).expect("owned counted capture escapes");
+    let borrowed = "function make(): () => Promise<i32> { const n: i32 = 7; const g = (): i32 => n; return async (): Promise<i32> => { await Context.suspend(); return g(); }; }";
+    let errors = check_program(&[SourceFile::new("borrowed.ts", borrowed)])
+        .expect_err("transitive borrowed capture rejects");
+    assert!(errors.iter().any(|error| error.code == RuleCode::S009));
+    let started = "function start(): Promise<i32> { const n: i32 = 7; const g = (): i32 => n; const f = async (): Promise<i32> => { await Context.suspend(); return g(); }; return f(); }";
+    let errors = check_program(&[SourceFile::new("started.ts", started)])
+        .expect_err("started frame cannot retain a borrowed environment");
+    assert!(errors
+        .iter()
+        .any(|error| error.code == RuleCode::S009
+            && error.message.contains("owned async environment")));
+    let map = "export function main(): void { const base: i32 = 7; const ids: i32[] = [1, 2]; const jobs = ids.map(async (id: i32): Promise<i32> => id + base); }";
+    let errors =
+        check_program(&[SourceFile::new("map.ts", map)]).expect_err("counted callback rejects");
+    assert!(errors.iter().any(|error| error.code == RuleCode::S014));
+    assert!(!errors.iter().any(|error| error.code == RuleCode::S009));
 }

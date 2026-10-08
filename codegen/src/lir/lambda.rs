@@ -23,7 +23,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         captures: &[hir::Capture],
         expr: &hir::Expr,
     ) -> Result<(l::FunctionId, l::Operand), LowerError> {
-        let capture_values = captures
+        let mut capture_values = captures
             .iter()
             .map(|capture| {
                 let binding = self.lookup_binding(&capture.name, &expr.pos)?;
@@ -65,12 +65,78 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             body: body.to_vec(),
             pos: expr.pos.clone(),
         };
+        let mut lowered_captures = captures.to_vec();
+        if is_async && !captures.is_empty() {
+            let class = ClassId(self.lowering.classes.len());
+            let first_field = self
+                .lowering
+                .classes
+                .iter()
+                .map(|class| class.fields.len())
+                .sum::<usize>() as u32;
+            let fields = captures
+                .iter()
+                .enumerate()
+                .map(|(index, capture)| l::Field {
+                    id: l::FieldId(first_field + index as u32),
+                    source_name: capture.name.clone(),
+                    ty: capture.ty.clone(),
+                    is_defaulted: false,
+                    is_absence_capable: false,
+                    foreign_provenance: None,
+                    pos: expr.pos.clone(),
+                })
+                .collect();
+            self.lowering.classes.push(l::Class {
+                id: class,
+                source_name: format!("<async environment {}>", id.0),
+                is_value: false,
+                is_descriptor: false,
+                is_boundary: false,
+                copies_boundary_bytes: false,
+                boundary_header: None,
+                is_embedded_header: false,
+                callback_lifetime: subscript_compiler::types::CallbackLifetime::Context,
+                alignment: None,
+                fields,
+                field_releases: Vec::new(),
+                constructor: None,
+                methods: Vec::new(),
+                index_signature: None,
+                pos: expr.pos.clone(),
+            });
+            self.lowering
+                .handle_classes
+                .push(subscript_compiler::types::HandleClass::Reference);
+            let environment = self
+                .emit(
+                    l::InstructionKind::AllocateClass(class),
+                    Vec::new(),
+                    Some(l::ValueType::Data(Type::Class(class))),
+                    false,
+                    vec![l::Trap {
+                        kind: l::TrapKind::Allocation,
+                        pos: expr.pos.clone(),
+                    }],
+                    expr.pos.clone(),
+                )?
+                .ok_or_else(|| self.error(&expr.pos, "async environment has no value"))?;
+            for (index, value) in capture_values.into_iter().enumerate() {
+                self.store_class_field(class, index, environment.clone(), value, &expr.pos)?;
+            }
+            capture_values = vec![environment];
+            // The body builder reads each captured binding from this class.
+            let mut environment_capture = captures[0].clone();
+            environment_capture.name = "<owned environment>".into();
+            environment_capture.ty = Type::Class(class);
+            lowered_captures.insert(0, environment_capture);
+        }
         self.lowering.lower_function_input(
             id,
             function,
             l::FunctionKind::Lambda,
             None,
-            captures.to_vec(),
+            lowered_captures,
         )?;
         let closure = self
             .emit(

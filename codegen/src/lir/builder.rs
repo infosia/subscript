@@ -70,13 +70,66 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             )?;
             builder.this_value = Some(operand);
         }
-        for capture in captures {
-            builder.add_parameter(
-                capture.name,
-                l::ValueType::Data(capture.ty),
-                l::ParameterKind::Capture,
-                builder.function.pos.clone(),
-            )?;
+        let mut captures = captures.into_iter();
+        if builder.function.is_async {
+            if let Some(environment) = captures.next() {
+                let Type::Class(class) = environment.ty else {
+                    return Err(builder.error(
+                        &builder.function.pos,
+                        "async capture has no owned environment",
+                    ));
+                };
+                let pos = builder.function.pos.clone();
+                let object = builder.add_parameter(
+                    environment.name,
+                    l::ValueType::Data(Type::Class(class)),
+                    l::ParameterKind::OwnedEnvironment,
+                    pos.clone(),
+                )?;
+                for (index, capture) in captures.enumerate() {
+                    let field = builder.lowering.classes[class.0].fields[index].id;
+                    let address = builder
+                        .emit(
+                            l::InstructionKind::AddressOfField(l::FieldRef::Class(field)),
+                            vec![object.clone()],
+                            Some(l::ValueType::Address(l::AddressType {
+                                pointee: capture.ty.clone(),
+                                array_base: None,
+                            })),
+                            false,
+                            Vec::new(),
+                            pos.clone(),
+                        )?
+                        .ok_or_else(|| builder.error(&pos, "capture field has no address"))?;
+                    let value = builder
+                        .emit(
+                            l::InstructionKind::LoadAddress,
+                            vec![address],
+                            Some(l::ValueType::Data(capture.ty.clone())),
+                            false,
+                            Vec::new(),
+                            pos.clone(),
+                        )?
+                        .ok_or_else(|| builder.error(&pos, "capture field has no value"))?;
+                    builder.declare_binding(
+                        capture.name,
+                        l::ValueType::Data(capture.ty),
+                        false,
+                        value,
+                        pos.clone(),
+                        Some(hir::AsyncCopySite::Binding),
+                    )?;
+                }
+            }
+        } else {
+            for capture in captures {
+                builder.add_parameter(
+                    capture.name,
+                    l::ValueType::Data(capture.ty),
+                    l::ParameterKind::Capture,
+                    builder.function.pos.clone(),
+                )?;
+            }
         }
         for parameter in builder.function.params.clone() {
             builder.add_parameter(

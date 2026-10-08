@@ -1572,7 +1572,21 @@ fn lower_lir_module_with_positions<M: Module>(
                 } else {
                     function.return_type.clone()
                 };
-                let signature = ml.make_sig(&parameters, &result, !function.is_async, false)?;
+                let mut creator_parameters = parameters.clone();
+                if let Some(environment) = function
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.kind == lir::ParameterKind::OwnedEnvironment)
+                {
+                    let lir::ValueType::Data(ty) =
+                        &function.values[environment.value.0 as usize].ty
+                    else {
+                        return Err(internal("owned environment is not data"));
+                    };
+                    creator_parameters.insert(0, ty.clone());
+                }
+                let signature =
+                    ml.make_sig(&creator_parameters, &result, !function.is_async, false)?;
                 decl(
                     &mut ml,
                     FnKey::LirFunction(function.id),

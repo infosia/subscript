@@ -833,10 +833,29 @@ pub(super) fn verify_instruction_contract(
                 target
                     .parameters
                     .iter()
-                    .take_while(|parameter| parameter.kind == l::ParameterKind::Capture)
+                    .take_while(|parameter| {
+                        matches!(
+                            parameter.kind,
+                            l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+                        )
+                    })
                     .count()
             });
+            let captures_match = module
+                .functions
+                .get(target.0 as usize)
+                .is_some_and(|target| {
+                    crate::lir_types::capture_parameters(target)
+                        .zip(&operand_types)
+                        .all(|(parameter, actual)| {
+                            target
+                                .values
+                                .get(parameter.value.0 as usize)
+                                .is_some_and(|value| &value.ty == actual)
+                        })
+                });
             if capture_count != Some(operand_types.len())
+                || !captures_match
                 || !matches!(result_type, Some(l::ValueType::Data(Type::Func(_))))
             {
                 bad("closure signature is invalid", errors);

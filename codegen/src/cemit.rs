@@ -1193,9 +1193,9 @@ mod tests {
             ),
             (l::ValueType::Data(Type::Inbox(Box::new(Type::I32))), 0),
             (l::ValueType::Data(Type::Outbox(Box::new(Type::I32))), 0),
-            (l::ValueType::Data(function()), 0),
+            (l::ValueType::Data(function()), 2),
             (l::ValueType::Data(reference), 1),
-            (l::ValueType::Data(Type::Nullable(Box::new(function()))), 0),
+            (l::ValueType::Data(Type::Nullable(Box::new(function()))), 2),
             (l::ValueType::Data(Type::Nullable(Box::new(boundary))), 1),
         ];
         let iterator_kinds = [

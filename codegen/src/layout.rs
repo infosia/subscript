@@ -1025,6 +1025,20 @@ mod tests {
     #[test]
     fn managed_interior_and_word_counts() {
         let layouts = layouts_of("export function main(): void {}\n");
+        let function = Type::Func(Box::new(subscript_compiler::FuncType {
+            params: Vec::new(),
+            ret: Type::I32,
+        }));
+        for ty in [function.clone(), Type::Nullable(Box::new(function.clone()))] {
+            assert!(!is_managed(&layouts, &ty).expect("the pair is not an allocation"));
+            assert!(has_managed_interior(&layouts, &ty).expect("environment word"));
+            assert_eq!(managed_words(&layouts, &ty).expect("pair root range"), 2);
+        }
+        assert_eq!(
+            managed_words(&layouts, &Type::FixedArray(Box::new(function), 3))
+                .expect("function elements"),
+            6
+        );
         let fixed_str = Type::FixedArray(Box::new(Type::Str), 3);
         assert!(has_managed_interior(&layouts, &fixed_str).expect("interior"));
         assert_eq!(managed_words(&layouts, &fixed_str).expect("words"), 3);

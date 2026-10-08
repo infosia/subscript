@@ -8954,7 +8954,7 @@ END FILE
 END PROGRAM
 PROGRAM	s167-capture			0
 FILE	E	target/s154/forms/s167-capture/main.ts
-export function main(): void { const n: i32 = 1; const f = async (): Promise<i32> => n; }
+export function main(): void { let n: i32 = 1; const f = async (): Promise<i32> => n; }
 END FILE
 END PROGRAM
 PROGRAM	s167-result	TS1064		0

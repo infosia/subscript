@@ -139,10 +139,12 @@ pub(crate) fn explicit_parameters(function: &l::Function) -> impl Iterator<Item 
 }
 
 pub(crate) fn capture_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
+    function.parameters.iter().filter(|parameter| {
+        matches!(
+            parameter.kind,
+            l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+        )
+    })
 }
 
 pub(crate) fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {

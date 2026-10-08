@@ -100,11 +100,11 @@ pub enum HandleKind {
     Inbox,
     /// A worker-side outbox endpoint.
     Outbox,
-    /// A bare function pair.
+    /// A function pair whose environment word can hold a managed allocation.
     Func,
     /// A reference-class allocation.
     ReferenceClass,
-    /// A nullable function pair with no allocation (compiler.md §122).
+    /// A nullable function pair with a managed environment word (compiler.md §122).
     NullableFunc,
     /// The managed box for a nullable boundary value class.
     BoundaryBox,
@@ -186,7 +186,7 @@ impl HandleKind {
     /// Can the stored representation expose managed handles to the marker?
     #[must_use]
     pub fn contains_managed(self) -> bool {
-        self.is_collector_managed()
+        self.is_collector_managed() || matches!(self, Self::Func | Self::NullableFunc)
     }
 }
 
@@ -1262,9 +1262,9 @@ mod tests {
             (HandleKind::Worker, false, true, false, false, false),
             (HandleKind::Inbox, false, true, false, false, false),
             (HandleKind::Outbox, false, true, false, false, false),
-            (HandleKind::Func, false, true, false, false, false),
+            (HandleKind::Func, false, true, false, false, true),
             (HandleKind::ReferenceClass, true, true, true, true, true),
-            (HandleKind::NullableFunc, false, true, false, false, false),
+            (HandleKind::NullableFunc, false, true, false, false, true),
             (HandleKind::BoundaryBox, true, true, false, true, true),
         ];
         for (kind, managed, nullable, identity, lifetime, contains) in cases {

@@ -617,6 +617,7 @@ fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(
             l::ValueType::Iterator(_) => 4,
             l::ValueType::Address(_) => 0,
         };
+        root_storage::verify_function_storage(&body.ml.layouts, &local.ty, managed * 8)?;
         if managed == 0 {
             local_offsets.push(None);
         } else {
@@ -1535,10 +1536,15 @@ fn initialize_module_globals<M: Module>(
         .globals
         .iter()
         .map(|global| {
-            managed_words(&ml.layouts, &global.ty)
-                .map(|words| (global.id, global.source_name.clone(), words))
+            let words = managed_words(&ml.layouts, &global.ty)?;
+            root_storage::verify_function_storage(
+                &ml.layouts,
+                &l::ValueType::Data(global.ty.clone()),
+                words * 8,
+            )?;
+            Ok((global.id, global.source_name.clone(), words))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, String>>()?;
     for (id, source_name, words) in roots {
         if words == 0 {
             continue;

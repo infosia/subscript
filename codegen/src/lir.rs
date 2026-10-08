@@ -122,7 +122,7 @@ pub fn lower_module_for_reload(
     reload: bool,
 ) -> Result<l::Module, LowerError> {
     let mut lowered = Lowering::new(module, reload)?.run()?;
-    let layouts = crate::layout::Layouts::build(module).map_err(|message| LowerError {
+    let layouts = crate::layout::Layouts::build_lir(&lowered).map_err(|message| LowerError {
         pos: Pos::new("<module>", 1, 1),
         message,
     })?;

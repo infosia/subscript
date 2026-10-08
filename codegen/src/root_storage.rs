@@ -669,6 +669,39 @@ pub(crate) fn managed_value_words(layouts: &Layouts, ty: &l::ValueType) -> Resul
     }
 }
 
+/// Compare the managed storage layout with the bytes in a native root registration.
+/// Root registrations exist in native storage plans, not in LIR.
+pub(crate) fn verify_function_storage(
+    layouts: &Layouts,
+    ty: &l::ValueType,
+    rooted_bytes: u32,
+) -> Result<(), String> {
+    let required_bytes = managed_value_words(layouts, ty)? * 8;
+    if rooted_bytes < required_bytes {
+        return Err(internal(
+            "function-value storage has no complete environment root",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_function_values(
+    function: &l::Function,
+    layouts: &Layouts,
+    plan: &RootStoragePlan,
+) -> Result<(), String> {
+    for value in &function.values {
+        let bytes = plan
+            .value_slots
+            .get(value.id.0 as usize)
+            .and_then(|slot| *slot)
+            .and_then(|slot| plan.slots.get(slot))
+            .map_or(0, |slot| slot.words * 8);
+        verify_function_storage(layouts, &value.ty, bytes)?;
+    }
+    Ok(())
+}
+
 fn occupied_slots(
     value_slots: &[Option<usize>],
     values: impl IntoIterator<Item = l::ValueId>,
@@ -797,16 +830,15 @@ pub(crate) fn plan_with_interference(
             .copied()
             .collect();
     }
-    Ok((
-        RootStoragePlan {
-            slots,
-            value_slots,
-            clear_at_block_entry,
-            clear_after_instruction,
-            words,
-        },
-        interference,
-    ))
+    let plan = RootStoragePlan {
+        slots,
+        value_slots,
+        clear_at_block_entry,
+        clear_after_instruction,
+        words,
+    };
+    verify_function_values(function, layouts, &plan)?;
+    Ok((plan, interference))
 }
 
 #[cfg(test)]
@@ -814,6 +846,81 @@ mod tests {
     use subscript_compiler::{ClassId, Pos};
 
     use super::*;
+
+    // Cost: one checker/lowering call, no native build.
+    #[test]
+    fn function_value_storage_without_a_root_rejects() {
+        let source = [subscript_compiler::SourceFile::new("function-root.ts",
+            "export function main(): void { const n: i32 = 41; const f = async (): Promise<i32> => n + 1; }")];
+        let hir = subscript_compiler::check_program(&source).expect("checked fixture");
+        let module = crate::lir::lower_module(&hir).expect("LIR");
+        let function = module
+            .functions
+            .iter()
+            .find(|f| f.source_name == "main")
+            .expect("main");
+        // This native form has LIR function-value storage and no root registration.
+        let absent = RootStoragePlan {
+            slots: Vec::new(),
+            value_slots: vec![None; function.values.len()],
+            clear_at_block_entry: Vec::new(),
+            clear_after_instruction: Vec::new(),
+            words: 0,
+        };
+        let layouts = Layouts::build_lir(&module).expect("layouts");
+        assert!(verify_function_values(function, &layouts, &absent)
+            .expect_err("missing root")
+            .contains("function-value storage has no complete environment root"));
+        verify_function_values(
+            function,
+            &layouts,
+            &plan(function, &layouts).expect("registered form"),
+        )
+        .expect("valid registration");
+    }
+
+    // Cost: one checker/lowering call, no native build.
+    #[test]
+    fn fixed_array_function_storage_without_roots_rejects() {
+        let source = [subscript_compiler::SourceFile::new(
+            "array-root.ts",
+            "export function main(): void { const f = async (): Promise<i32> => 42; }",
+        )];
+        let hir = subscript_compiler::check_program(&source).expect("checked fixture");
+        let module = crate::lir::lower_module(&hir).expect("LIR");
+        let ty = module
+            .functions
+            .iter()
+            .flat_map(|function| &function.values)
+            .find_map(|value| match &value.ty {
+                l::ValueType::Data(ty) if ty.function_type().is_some() => Some(ty.clone()),
+                _ => None,
+            })
+            .expect("function pair type");
+        let function = function(
+            vec![value(
+                0,
+                l::ValueType::Data(Type::FixedArray(Box::new(ty), 3)),
+            )],
+            vec![return_block(0, Vec::new())],
+        );
+        // This native form has only fixed-array storage and no root registration.
+        let absent = RootStoragePlan {
+            slots: Vec::new(),
+            value_slots: vec![None],
+            clear_at_block_entry: Vec::new(),
+            clear_after_instruction: Vec::new(),
+            words: 0,
+        };
+        let layouts = Layouts::build_lir(&module).expect("layouts");
+        assert!(verify_function_values(&function, &layouts, &absent)
+            .expect_err("missing fixed-array roots")
+            .contains("function-value storage has no complete environment root"));
+        let registered = plan(&function, &layouts).expect("registered form");
+        assert_eq!(registered.words, 6);
+        verify_function_values(&function, &layouts, &registered)
+            .expect("complete fixed-array registration");
+    }
 
     fn pos() -> Pos {
         Pos::new("root-storage.ts", 1, 1)

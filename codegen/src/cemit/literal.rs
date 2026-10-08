@@ -538,6 +538,18 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             );
             return Ok(());
         }
+        if target
+            .parameters
+            .iter()
+            .any(|parameter| parameter.kind == l::ParameterKind::OwnedEnvironment)
+        {
+            let _ = writeln!(
+                out,
+                "    {destination} = (SubFn){{ (void*)&sub_w{}, {} }};",
+                function.0, operands[0]
+            );
+            return Ok(());
+        }
         let result_id = instruction
             .result
             .ok_or_else(|| internal("closure has no id"))?;

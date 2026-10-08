@@ -249,14 +249,14 @@ impl<'p> Checker<'p> {
                 .rev()
                 .take(crossed)
                 .any(|frame| frame.is_lambda && frame.is_async);
-            if async_capture {
+            if async_capture && local.mutable {
                 self.reject_subset(
                     RejectionSite::AsyncArrowCapture,
-                    format!("async arrow captures `{name}`; an async arrow captures nothing"),
+                    format!("async arrow captures mutable `{name}`; copy it into a `const` first, or use a class with a field"),
                     pos.clone(),
                 );
             }
-            if !async_capture && self.is_context_affine_type(&local.ty) {
+            if self.is_context_affine_type(&local.ty) {
                 self.reject_subset(RejectionSite::ContextAffineCapture, format!(
                         "lambda captures Context-affine `{name}`; Worker, Inbox, and Outbox values may not be captured"
                     ), pos.clone());

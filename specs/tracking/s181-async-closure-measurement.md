@@ -516,3 +516,224 @@ async function loops(){const fs=[];for(let i=0;i<3;i++)fs.push(async()=>{await 0
 async function tdz(){let f;{f=async()=>n;try{await f()}catch(e){print('tdz '+e.name)}let n=4;print('initialized '+await f())}}
 shared().then(boxed).then(loops).then(tdz);
 ```
+
+
+## Implementation
+
+### Checked captures and shared form
+
+An async arrow accepts immutable captures and rejects mutable captures with S009.
+The mutable diagnostic says: "copy it into a `const` first, or use a class with a field".
+A capture of `this` stays S009.
+An owned async environment cannot store a transitive borrowed synchronous closure (§118).
+The checker rejects both an escaped arrow and a started handle that retains such a closure.
+Direct counted captures bypass §175; transitive borrowed capture facts retain their block restrictions.
+A counted `map` callback result stays S014.
+
+Each capturing async arrow creates a hidden reference class in LIR.
+The class has one field per captured binding, with ordinary class layout and counted-field release descriptions.
+Counted field stores acquire counts through the existing class store operations.
+The callable pair holds the code and the allocated environment pointer.
+`OwnedEnvironment` identifies the frame parameter in LIR.
+JIT, C AOT, and interpreter frame parameters root that pointer through completion.
+Async callable wrappers pass the environment to their creators.
+Borrowed synchronous closure storage still uses byte relocation; owned environments keep their allocation pointers.
+The interpreter packs the same function-id and environment-pointer pair in fields and arrays.
+Explicit collection releases unreachable environments and their counted fields.
+
+### Corpus and independent checks
+
+At `a16ba016`, a353 failed with S009 for captured `base`, `h`, `n`, `b`, and `s`.
+The pin diagnostic read: "async arrow captures `base`; an async arrow captures nothing".
+At that pin, r398 failed at line 9 with the old S009 message for `n`.
+TypeScript 5.9.2 accepts both entries.
+Node v24.18.0 matches all ten output lines of a353.
+The Node shim supplies a completed Context suspension and a collection operation with no output.
+That comparison checks output; the three-tier count test checks collection.
+
+C24 row 36 names `a336`, `a353`, `r379`, and `r398`.
+The existing r379 now captures a mutable binding.
+The new a353 covers direct, held, passed, field, loop, handle, reference, and string captures.
+Its synchronous starter returns a handle after the callable local exits.
+The arrow then suspends, collects, and reads its captured handle.
+
+The independent HIR/LIR witness compares hidden class fields against HIR captures, ownership releases, and allocation sites.
+The text golden adds only a353; other corpus text remains byte-identical.
+The document generator updates the corpus index and language reference.
+No existing `.expected` file changes.
+
+The collection test creates 20 and 100 environments with completed captured handles.
+After collection, the unreachable cases report zero tasks in each tier.
+The reachable controls report 20 and 100 tasks in each tier.
+The four cases take 2.11 seconds in total, with four interpreter runs, four JIT sessions, and four C builds.
+The new corpus comparison uses one execution per tier.
+The new verifier case uses one checker/lowering call and no native build.
+The checker ownership cases use four checker calls and no native build.
+The reload cases use four JIT sessions; the layout-changing cases take 0.19 seconds in total.
+An old value runs its old body after reload, including a changed capture layout and collection before its call.
+A suspended call traps with `StaleCoroutine`; the no-reload control prints `8`.
+
+### Integrated release cost
+
+Each standalone binary runs alone with at least three warmups, a 200-millisecond warmup floor, and eleven timed samples.
+The table gives each run median and the lowest median of three runs.
+Each span includes a fresh Context, initialization, execution, checkpoints, and Context release.
+Compilation stays outside the span.
+The creation-and-call inputs match the appendix workloads and print `50005000`.
+Both forms report one checkpoint, zero unfinished tasks, 10,001 live allocations, and 160,016 live payload bytes before release.
+No threshold applies.
+
+| Form | Run 1, ns | Run 2, ns | Run 3, ns | Best median, ns | Best / 10,000 |
+|---|---:|---:|---:|---:|---:|
+| Integrated async arrow | 731,000 | 727,000 | 785,000 | 727,000 | 72.7 ns |
+| Handwritten class | 851,000 | 837,000 | 950,000 | 837,000 | 83.7 ns |
+
+The measured arrow/class ratio is 0.8686.
+The body has no internal await; these numbers do not measure a suspended body.
+
+The first implementation measures the §94 workloads before the function-value root change, against `f561804d`.
+Each binary uses the same timing driver and the same warmup and sample counts.
+
+| Workload | Implementation run medians, ns | Pin run medians, ns | Best implementation / best pin |
+|---|---|---|---:|
+| settled-awaits | 13,200,000 / 13,228,000 / 13,149,000 | 13,187,000 / 13,096,000 / 13,287,000 | 1.0040 |
+| held-handles | 3,846,000 / 3,840,000 / 3,838,000 | 3,874,000 / 3,881,000 / 3,859,000 | 0.9946 |
+| deep-chains | 9,282,000 / 9,295,000 / 9,282,000 | 9,293,000 / 9,459,000 / 9,253,000 | 1.0031 |
+
+## Implementation: function-value roots
+
+`HandleKind::Func` and `HandleKind::NullableFunc` expose a managed environment word through `contains_managed()`.
+They remain pairs, rather than allocation handles.
+The common layout derives a two-word root range from their 16-byte C layout.
+The collector scans the environment word and ignores a code word that does not name a Context allocation.
+Value-class fields, fixed-array elements, and iterator results inherit this fact through the common containment description.
+
+The fact reaches these native root registration sites:
+
+- `root_storage::plan_with_interference`: SSA temporaries, block parameters, and synchronous function parameters.
+- JIT `initialize_storage`: activation-local shadow ranges and temporary shadow ranges.
+- JIT `initialize_global_roots`: module-global root ranges.
+- C `Body::new` and `emit_declarations`: activation locals and temporary shadow frames.
+- C `emit_init`: module-global root ranges.
+- JIT `plan_coroutine` and C `emit_frame_type`: parameter, local, and suspension storage within collector-scanned coroutine payloads.
+- Runtime class, array, and Map payload scans: stored function pairs retain their environment allocations.
+
+Root registrations exist in native storage plans, after LIR.
+`verify_function_storage` compares the LIR function type against the byte range of a native root registration.
+The comparison requires both words of the pair.
+The shared shadow-value plan checks every function-value temporary and parameter.
+Each native tier also checks its activation-local and module-global registrations.
+The negative test constructs a native plan with function-value storage and no root slots.
+It reports `function-value storage has no complete environment root`.
+The valid control accepts the complete plan.
+The existing independent frame check compares LIR parameters, locals, and suspension operands against C fields and Cranelift stores.
+The earlier `OwnedEnvironment` parameter-kind check is removed.
+
+Each holder test runs one interpreter execution, one JIT session, and one C build.
+Each stores a scalar-capture arrow and a reference-capture arrow.
+Collection precedes 100 allocations of four-byte `J` objects and eight-byte `K` objects.
+Those sizes match the scalar and reference environment payloads.
+Each test prints `42`, then `42`.
+The async-local test suspends before collection.
+The reference factory returns before collection, so its local cannot retain the captured object.
+
+The scratch control removes the managed function-kind fact and disables the new registration check.
+It retains the owned-environment implementation and both native lowerings.
+The interpreter passes all six holders.
+The native results are:
+
+| Holder | Fixed JIT and C AOT | Scratch JIT and C AOT |
+|---|---|---|
+| Synchronous local | `42`, `42` | `1001`, then SIGSEGV |
+| Async local across await | `42`, `42` | `1001`, then SIGSEGV |
+| Synchronous parameter | `42`, `42` | `1001`, then SIGSEGV |
+| Module global | `42`, `42` | `1001`, then SIGSEGV |
+| Field | `42`, `42` | `42`, `42` |
+| Array element | `42`, `42` | `42`, `42` |
+
+Fields and arrays already expose the environment through their conservative payload scans.
+Their unchanged scratch results are controls; they are not new failures.
+A separate mixed-environment test copies borrowed and owned arrows across suspension and collection.
+It prints `42`, then `42`, in all three tiers.
+
+The borrowed-environment predicate remains necessary: a root does not convert borrowed stack bytes into an owned allocation.
+The largest accept source is `a204-static-long-string.ts`, at 130,516 bytes.
+Its emitted C contains 353,416 bytes, including an 80-byte constant borrowed-environment helper.
+This module contains no capturing synchronous lambda and no owned environment.
+Both native tiers add zero code-identity comparisons for this entry.
+The optimized C object has 65,531 text bytes with the helper and without it.
+The object contains no borrowed-environment helper symbol.
+These sizes do not measure a module with many mixed closure sites.
+The owned-environment corpus entry `a353` has 1,895 source bytes and 84,588 emitted C bytes.
+It also contains an 80-byte constant helper, with zero code-identity comparisons.
+Its C object has 11,851 text bytes with the helper and without it.
+The mixed-environment test covers the branch that selects borrowed byte copies instead of owned allocation pointers.
+
+### Root-change release measurements
+
+Each release driver runs alone, after all crate tests and builds finish.
+Each subject discards at least three warmups and 200 milliseconds of measured execution.
+Each run then measures eleven samples and reports their median.
+The comparison uses the lowest median from three runs, against `f561804d`.
+The pin checkout matches all 573 tracked compiler, codegen, runtime, boundary, and benchmark source files checked against that revision.
+Compilation and linking stay outside the measured span.
+The ten ordinary workloads time execution only; the three async workloads time a fresh Context through release.
+
+| Async workload | Root-change medians, ns | Pin medians, ns | Best ratio |
+|---|---|---|---:|
+| settled-awaits | 13,166,000 / 13,040,000 / 13,270,000 | 13,256,000 / 13,093,000 / 13,145,000 | 0.9960 |
+| held-handles | 3,855,000 / 3,821,000 / 3,879,000 | 3,834,000 / 3,850,000 / 3,837,000 | 0.9966 |
+| deep-chains | 9,361,000 / 9,284,000 / 9,337,000 | 9,255,000 / 9,292,000 / 9,260,000 | 1.0031 |
+
+| Ordinary workload | Tier | Root-change medians, ms | Pin medians, ms | Best ratio |
+|---|---|---|---|---:|
+| fib-recursive | ship | 3.730 / 3.737 / 3.726 | 3.724 / 3.730 / 3.723 | 1.0008 |
+| fib-recursive | jit | 8.128 / 8.123 / 8.122 | 8.125 / 8.134 / 8.140 | 0.9996 |
+| fib-loop | ship | 30.922 / 30.941 / 30.058 | 30.114 / 30.115 / 30.084 | 0.9991 |
+| fib-loop | jit | 73.003 / 73.269 / 73.272 | 73.280 / 73.347 / 73.113 | 0.9985 |
+| mandelbrot | ship | 124.583 / 124.327 / 124.454 | 124.426 / 124.353 / 124.598 | 0.9998 |
+| mandelbrot | jit | 133.162 / 133.131 / 133.331 | 129.775 / 129.676 / 129.547 | 1.0277 |
+| primes | ship | 21.135 / 21.158 / 21.105 | 21.121 / 21.141 / 21.147 | 0.9992 |
+| primes | jit | 31.793 / 31.816 / 31.820 | 31.795 / 31.807 / 31.814 | 0.9999 |
+| sort | ship | 18.112 / 18.080 / 18.073 | 18.099 / 18.072 / 18.063 | 1.0006 |
+| sort | jit | 34.490 / 34.487 / 34.507 | 34.518 / 34.448 / 34.524 | 1.0011 |
+| tree | ship | 101.740 / 111.468 / 101.696 | 101.716 / 101.833 / 101.901 | 0.9998 |
+| tree | jit | 406.701 / 402.032 / 402.335 | 404.545 / 404.531 / 408.375 | 0.9938 |
+| queen | ship | 25.898 / 25.692 / 25.762 | 25.761 / 25.767 / 25.755 | 0.9976 |
+| queen | jit | 35.695 / 35.683 / 35.621 | 35.675 / 35.790 / 35.858 | 0.9985 |
+| particles | ship | 74.437 / 74.402 / 74.464 | 74.405 / 74.428 / 74.440 | 1.0000 |
+| particles | jit | 446.769 / 453.154 / 453.554 | 443.408 / 444.212 / 441.944 | 1.0109 |
+| callbacks | ship | 36.946 / 36.950 / 41.749 | 36.858 / 36.908 / 36.933 | 1.0024 |
+| callbacks | jit | 256.782 / 256.803 / 256.724 | 257.795 / 257.806 / 257.815 | 0.9958 |
+| collect | ship | 35.022 / 34.738 / 34.908 | 35.294 / 34.970 / 35.253 | 0.9934 |
+| collect | jit | 114.350 / 114.600 / 113.520 | 114.449 / 114.619 / 112.995 | 1.0046 |
+
+All measured workloads preserve their checksums.
+The cross-language driver reports no excessive interquartile spread in any run.
+No performance threshold applies to this comparison.
+
+### Root-change checks
+
+| Check | Measured result |
+|---|---|
+| Compiler and codegen crate suites, with corpus comparisons in all three tiers | 1,998 passed; two existing performance tests ignored |
+| Final async function-value suite | 18 passed |
+| Missing-root native-form test | Passed, with a valid registration control |
+| `cargo fmt --check` | Exit 0 |
+| `cargo clippy --workspace --all-targets` | Exit 0; existing warnings at unchanged sites |
+| `cargo build --offline --locked --workspace --all-targets` | Exit 0; no warning line |
+
+## Implementation: reload predicate
+
+The dev JIT decides that a function value carries a borrowed environment only when its code word equals the code address of a synchronous function with a `Capture` parameter in the current generation.
+The decision does not depend on whether the current generation has an owned-environment function.
+An old async arrow value that survives a reload (rule 7) therefore keeps its owned environment word; no store copies it into shadow or frame bytes.
+The C emitter uses the same code-word comparison.
+
+`old_owned_arrow_survives_reload_without_current_owned_environment` (`codegen/tests/async_function_values.rs`) installs an async arrow that captures a reference object and suspends, then reloads a module that keeps a capturing synchronous lambda and has no capturing async arrow.
+It prints `42` after allocations that follow the reload.
+The same-shape controls (no reload; a new module that also has a capturing async arrow; a new module with no capturing synchronous lambda) print `42`.
+Before the predicate change, the reload case failed and the controls passed.
+
+`verify_function_storage` (`codegen/src/root_storage.rs`) now compares each storage type with the number of managed words that the shared layout counts for it, so a `FixedArray` of function values needs a root registration for every element pair.
+A negative test builds a `FixedArray` of function values with no root slots and reads the message.

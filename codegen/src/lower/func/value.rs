@@ -74,6 +74,37 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(self.address_offset(base, i64::from(offset)))
     }
 
+    fn borrowed_closure_environment(
+        &mut self,
+        code: Value,
+        environment: Value,
+    ) -> Result<Value, String> {
+        let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
+        let mut borrowed = self.builder.ins().iconst(types::I8, 0);
+        let functions = self
+            .ml
+            .lir
+            .functions
+            .iter()
+            .filter(|function| {
+                !function.is_async
+                    && function
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.kind == l::ParameterKind::Capture)
+            })
+            .map(|function| function.id)
+            .collect::<Vec<_>>();
+        for function in functions {
+            let id = self.ml.func_id(&FnKey::LirFunction(function))?;
+            let reference = self.ml.module.declare_func_in_func(id, self.builder.func);
+            let address = self.builder.ins().func_addr(types::I64, reference);
+            let matches = self.builder.ins().icmp(IntCC::Equal, code, address);
+            borrowed = self.builder.ins().bor(borrowed, matches);
+        }
+        Ok(self.builder.ins().band(present, borrowed))
+    }
+
     pub(super) fn relocate_closure_environment(
         &mut self,
         code: Value,
@@ -87,7 +118,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let absent = self.builder.create_block();
         let done = self.builder.create_block();
         self.builder.append_block_param(done, types::I64);
-        let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
+        let present = self.borrowed_closure_environment(code, environment)?;
         let branch = self.builder.ins().brif(present, copy, &[], absent, &[]);
         #[cfg(test)]
         let source_location = self.builder.func.srcloc(branch);
@@ -286,7 +317,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         {
             let (code, environment) = self.expect_pair(value)?;
             let destination = self.closure_environment_address(id)?;
-            let present = self.builder.ins().icmp_imm(IntCC::NotEqual, environment, 0);
+            let present = self.borrowed_closure_environment(code, environment)?;
             let environment = self.builder.ins().select(present, destination, environment);
             return Ok(RV::Pair(code, environment));
         }

@@ -199,3 +199,178 @@ fn handle_expression_body_rejects_with_explicit_await_order_control() {
         }
     }
 }
+
+// Cost: one interpreter execution, one JIT session, and one C build.
+#[test]
+fn owned_capture_corpus_matches_three_tiers() {
+    compare(
+        include_str!("../../corpus/accept/a353-async-arrow-captures.ts"),
+        include_bytes!("../../corpus/accept/a353-async-arrow-captures.expected"),
+    );
+}
+
+// Cost: two JIT sessions for each reload policy and its control.
+#[test]
+fn owned_arrow_suspended_across_reload_and_old_value_keep_module_identity() {
+    let source = "class Box { job: () => Promise<i32> = async (): Promise<i32> => 0; }
+        const box = new Box();
+        export function install(): void { const n: i32 = 7; box.job = async (): Promise<i32> => { await Context.suspend(); return n + 1; }; }
+        export async function main(): Promise<void> { Context.collect(); print(`${await box.job()}`); }";
+    for suspended in [false, true] {
+        for reload in [false, true] {
+            let mut session = ReloadSession::new(&files(source)).expect("session");
+            session.call_export("install").expect("install old value");
+            if suspended {
+                session.call_main().expect("suspend");
+            }
+            if reload {
+                session
+                    .reload(&files(
+                        &source
+                            .replace(
+                                "const n: i32 = 7; box.job",
+                                "const n: i32 = 7; const extra: string = \"layout\"; box.job",
+                            )
+                            .replace("n + 1", "n + 9 + extra.length"),
+                    ))
+                    .expect("reload");
+            }
+            if !suspended {
+                session.call_main().expect("call old value");
+            }
+            if suspended && reload {
+                match session.async_step() {
+                    Err(RunError::Trap(trap)) => assert_eq!(trap.rule, TrapKind::StaleCoroutine),
+                    other => panic!("expected stale frame: {other:?}"),
+                }
+            } else {
+                while session.async_pending() != 0 {
+                    session.async_step().expect("checkpoint");
+                }
+                assert_eq!(session.take_output(), b"8\n");
+            }
+        }
+    }
+}
+
+// Cost: one interpreter run, one JIT session, and one C build per holder.
+fn collect_held_arrow(holder: &str) {
+    let prefix = "class J { v: i32 = 0; }
+        class K { v: i64 = 0; }
+        class Jobs { f: () => Promise<i32> = async (): Promise<i32> => 0; }
+        function scalar(): () => Promise<i32> { const n: i32 = 41; return async (): Promise<i32> => n + 1; }
+        function reference(): () => Promise<i32> { const r = new J(); r.v = 41; return async (): Promise<i32> => r.v + 1; }
+        function churn(): void { Context.collect(); const junk: J[] = []; const wide: K[] = [];
+            for (let i: i32 = 0; i < 100; i++) { const j = new J(); j.v = 1000 + i; junk.push(j);
+                const k = new K(); k.v = 2000; wide.push(k); } }";
+    let body = match holder {
+        "sync_local" => "function hold(f: () => Promise<i32>): Promise<i32> { const local = f; churn(); return local(); }
+            export async function main(): Promise<void> { const h = hold(scalar()); print(`${await h}`); const k = hold(reference()); print(`${await k}`); }",
+        "async_local" => "export async function main(): Promise<void> { const f = scalar(); await Context.suspend(); churn(); print(`${await f()}`);
+            const g = reference(); await Context.suspend(); churn(); print(`${await g()}`); }",
+        "sync_parameter" => "function hold(f: () => Promise<i32>): Promise<i32> { churn(); return f(); }
+            export async function main(): Promise<void> { const h = hold(scalar()); print(`${await h}`); const k = hold(reference()); print(`${await k}`); }",
+        "global" => "let job: () => Promise<i32> = async (): Promise<i32> => 0;
+            function install(ref: boolean): void { job = ref ? reference() : scalar(); }
+            export async function main(): Promise<void> { install(false); churn(); print(`${await job()}`); install(true); churn(); print(`${await job()}`); }",
+        "field" => "function hold(ref: boolean): Jobs { const box = new Jobs(); box.f = ref ? reference() : scalar(); return box; }
+            export async function main(): Promise<void> { const a = hold(false); churn(); print(`${await a.f()}`); const b = hold(true); churn(); print(`${await b.f()}`); }",
+        "array" => "function hold(ref: boolean): (() => Promise<i32>)[] { return [ref ? reference() : scalar()]; }
+            export async function main(): Promise<void> { const a = hold(false); churn(); print(`${await a[0]()}`); const b = hold(true); churn(); print(`${await b[0]()}`); }",
+        _ => panic!("unknown holder"),
+    };
+    compare(&format!("{prefix}\n{body}"), b"42\n42\n");
+}
+
+#[test]
+fn function_environment_survives_sync_local_collection() {
+    collect_held_arrow("sync_local");
+}
+#[test]
+fn function_environment_survives_async_local_collection() {
+    collect_held_arrow("async_local");
+}
+#[test]
+fn function_environment_survives_sync_parameter_collection() {
+    collect_held_arrow("sync_parameter");
+}
+#[test]
+fn function_environment_survives_global_collection() {
+    collect_held_arrow("global");
+}
+#[test]
+fn function_environment_survives_field_collection() {
+    collect_held_arrow("field");
+}
+#[test]
+fn function_environment_survives_array_collection() {
+    collect_held_arrow("array");
+}
+
+// Cost: one interpreter run, one JIT session, and one C build.
+#[test]
+fn borrowed_and_owned_environments_keep_distinct_storage() {
+    compare(
+        "async function value(n: i32): Promise<i32> { return n; }
+        export async function main(): Promise<void> {
+            const n: i32 = 42;
+            const borrowed = (): Promise<i32> => value(n);
+            const owned = async (): Promise<i32> => n;
+            const a = borrowed; const b = owned;
+            await Context.suspend(); Context.collect();
+            print(`${await a()}`); print(`${await b()}`);
+        }",
+        b"42\n42\n",
+    );
+}
+
+// Cost: four JIT sessions for the reload cases and their controls.
+#[test]
+fn old_owned_arrow_survives_reload_without_current_owned_environment() {
+    let source = "class Cell { value: i32 = 42; }
+        class Jobs { job: () => Promise<i32> = fallback; }
+        const jobs = new Jobs();
+        async function fallback(): Promise<i32> { return 0; }
+        export function install(): void {
+            const cell = new Cell();
+            jobs.job = async (): Promise<i32> => { await Context.suspend(); return cell.value; };
+        }
+        function churn(): void {
+            for (let i: i32 = 0; i < 100; i++) { const cell = new Cell(); cell.value = i; }
+        }
+        async function invoke(job: () => Promise<i32>): Promise<i32> { return await job(); }
+        export async function main(): Promise<void> {
+            const delta: i32 = 0;
+            const sync = (): i32 => delta;
+            const job = sync() === 0 ? jobs.job : fallback;
+            const handle = invoke(job);
+            churn();
+            print(`${await handle}`);
+        }";
+    let old_install = "const cell = new Cell();\n            jobs.job = async (): Promise<i32> => { await Context.suspend(); return cell.value; };";
+    for owned_in_new in [true, false] {
+        for reload in [false, true] {
+            let mut session = ReloadSession::new(&files(source)).expect("session");
+            session
+                .call_export("install")
+                .expect("install old owned value");
+            if reload {
+                let replacement = if owned_in_new {
+                    source.replace("return cell.value;", "return cell.value + 1;")
+                } else {
+                    source.replace(old_install, "jobs.job = fallback;")
+                };
+                session.reload(&files(&replacement)).expect("body reload");
+            }
+            session.call_main().expect("call old owned value");
+            while session.async_pending() != 0 {
+                session.async_step().expect("resume old owned value");
+            }
+            assert_eq!(
+                session.take_output(),
+                b"42\n",
+                "reload={reload}, owned_in_new={owned_in_new}"
+            );
+        }
+    }
+}

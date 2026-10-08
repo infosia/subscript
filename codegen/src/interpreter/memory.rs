@@ -753,12 +753,21 @@ impl Interpreter<'_> {
                 let Value::Callable(callable) = value else {
                     return Err(type_error("callable", value));
                 };
-                if !callable.captures.is_empty() {
-                    return Err(self.invalid(None, "a stored function must not capture"));
-                }
-                // compiler.md §118: stored function values have no captured environment.
+                let environment = match callable.captures.as_slice() {
+                    [] => 0,
+                    [Value::Handle(pointer)]
+                        if self.function(callable.function)?.parameters.iter().any(
+                            |parameter| parameter.kind == l::ParameterKind::OwnedEnvironment,
+                        ) =>
+                    {
+                        *pointer as usize as u64
+                    }
+                    _ => {
+                        return Err(self.invalid(None, "a stored function must own its environment"))
+                    }
+                };
                 out[..8].copy_from_slice(&(callable.function.0 as u64 + 1).to_ne_bytes());
-                out[8..16].fill(0);
+                out[8..16].copy_from_slice(&environment.to_ne_bytes());
             }
             Type::Void | Type::Error => {}
             _ => return Err(self.invalid(None, format!("packing {ty:?} is not defined"))),
@@ -876,9 +885,14 @@ impl Interpreter<'_> {
                     .ok_or_else(|| self.invalid(None, "invalid packed function id"))?;
                 let function = l::FunctionId(index);
                 self.function(function)?;
+                let environment = u64::from_ne_bytes(bytes[8..16].try_into().unwrap_or([0; 8]));
                 Value::Callable(Rc::new(Callable {
                     function,
-                    captures: Vec::new(),
+                    captures: if environment == 0 {
+                        Vec::new()
+                    } else {
+                        vec![Value::Handle(environment as usize as *mut u8)]
+                    },
                 }))
             }
             Type::Void | Type::Error => Value::Void,

@@ -39822,6 +39822,725 @@ fn f6 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     -> Branch(BlockTarget { block: BlockId(52), arguments: [], ownership: [] })
   b52 Some("try.join"):
     -> Return { value: None, pos: Pos { file: "main.ts", line: 23, col: 17 } }
+===== a353-async-arrow-captures =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "Box" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:9:7
+  field d3 "n": I32 defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:9:13
+  field d4 "f": Func(FuncType { params: [], ret: AsyncHandle(I32) }) defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:9:25
+class c2 "<async environment 8>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:10:72
+  field d5 "base": I32 defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:10:72
+class c3 "<async environment 9>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:11:76
+  field d6 "h": AsyncHandle(I32) defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:11:76
+  release offset=0 Counted(Handle)
+class c4 "<async environment 10>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:15:26
+  field d7 "base": I32 defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:15:26
+class c5 "<async environment 11>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:16:13
+  field d8 "base": I32 defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:16:13
+class c6 "<async environment 12>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:21:64
+  field d9 "n": I32 defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:21:64
+class c7 "<async environment 13>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:24:36
+  field d10 "b": Class(ClassId(1)) defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:24:36
+class c8 "<async environment 14>" value=false descriptor=false boundary=false align=None @ a353-async-arrow-captures.ts:26:43
+  field d11 "s": Str defaulted=false absence=false foreign=None @ a353-async-arrow-captures.ts:26:43
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "value" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:6:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 6, col: 16 } }]
+  param %0 "n": Data(I32) kind=Explicit storage=None @ a353-async-arrow-captures.ts:6:22
+  value %0: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 6, col: 46 } }
+fn f2 "later" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:7:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 16 } }]
+  can-raise
+  param %0 "f": Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) kind=Explicit storage=None @ a353-async-arrow-captures.ts:7:22
+  value %0: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) name=Some("f")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) name=Some("f")
+  b0 Some("entry"):
+    %1: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:7:67
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(1)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 67 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 67 } }] }
+  b1(%2: Data(I32), %5: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) }))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:7:67
+    %3: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })), Data(I32)], return_type: Some(Data(AsyncHandle(I32))) })(%5, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 96 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 96 } }] @ a353-async-arrow-captures.ts:7:96
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 90 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 90 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 90 } }] }
+  b2(%4: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 90 } }] @ a353-async-arrow-captures.ts:7:90
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 7, col: 83 } }
+fn f3 "zero" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 8, col: 16 } }]
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a353-async-arrow-captures.ts", line: 8, col: 39 } }
+fn f4 "make" kind=Free exported=false generator=false async=false -> Class(ClassId(1)) entry=b0 @ a353-async-arrow-captures.ts:10:10
+  value %0: Data(Class(ClassId(1))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %3: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) name=None
+  value %4: Data(Class(ClassId(2))) name=None
+  value %5: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %6: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %7: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 55 } }] @ a353-async-arrow-captures.ts:10:55
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) @ a353-async-arrow-captures.ts:9:13
+    StoreAddress(%1, Integer(7):I32) @ a353-async-arrow-captures.ts:9:13
+    %2: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = FunctionRef(FunctionId(3))() @ a353-async-arrow-captures.ts:9:49
+    %3: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) @ a353-async-arrow-captures.ts:9:25
+    StoreAddress(%3, %2) @ a353-async-arrow-captures.ts:9:25
+    %4: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 72 } }] @ a353-async-arrow-captures.ts:10:72
+    %5: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(5)))(%4) @ a353-async-arrow-captures.ts:10:72
+    StoreAddress(%5, Integer(7):I32) @ a353-async-arrow-captures.ts:10:72
+    %6: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(8))(%4) @ a353-async-arrow-captures.ts:10:72
+    %7: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 66 } }] @ a353-async-arrow-captures.ts:10:68
+    StoreAddress(%7, %6) @ a353-async-arrow-captures.ts:10:68
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 132 } }
+fn f5 "capturedHandle" kind=Free exported=false generator=false async=false -> Func(FuncType { params: [], ret: AsyncHandle(I32) }) entry=b0 @ a353-async-arrow-captures.ts:11:10
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(Class(ClassId(3))) name=None
+  value %2: Address(AddressType { pointee: AsyncHandle(I32), array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 59 } }] @ a353-async-arrow-captures.ts:11:59
+    %1: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 76 } }] @ a353-async-arrow-captures.ts:11:76
+    %2: Address(AddressType { pointee: AsyncHandle(I32), array_base: None }) = AddressOfField(Class(FieldId(6)))(%1) @ a353-async-arrow-captures.ts:11:76
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 76 } }] @ a353-async-arrow-captures.ts:11:76
+    StoreAddress(%2, %0) @ a353-async-arrow-captures.ts:11:76
+    %3: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(9))(%1) @ a353-async-arrow-captures.ts:11:76
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 69 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 69 } }] @ a353-async-arrow-captures.ts:11:69
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 69 } }
+fn f6 "startCapturedHandle" kind=Free exported=false generator=false async=false -> AsyncHandle(I32) entry=b0 @ a353-async-arrow-captures.ts:12:10
+  can-raise
+  value %0: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: Some(Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))) })() traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 12, col: 55 } }] @ a353-async-arrow-captures.ts:12:55
+    %1: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))], return_type: Some(Data(AsyncHandle(I32))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 12, col: 55 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 12, col: 55 } }] @ a353-async-arrow-captures.ts:12:55
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 12, col: 48 } }
+fn f7 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a353-async-arrow-captures.ts:13:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }]
+  can-raise
+  value %0: Data(Class(ClassId(4))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) name=None
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Class(ClassId(5))) name=None
+  value %7: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %8: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) name=None
+  value %9: Data(AsyncHandle(I32)) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Class(ClassId(1))) name=None
+  value %15: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %16: Data(AsyncHandle(I32)) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Array(Func(FuncType { params: [], ret: AsyncHandle(I32) }))) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(Bool) name=None
+  value %24: Data(Class(ClassId(6))) name=None
+  value %25: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %26: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(I32) name=None
+  value %29: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) name=None
+  value %30: Data(I32) name=None
+  value %31: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(I32) name=None
+  value %34: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(Bool) name=None
+  value %38: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %39: Data(AsyncHandle(I32)) name=None
+  value %40: Data(I32) name=None
+  value %41: Data(Str) name=None
+  value %42: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) name=None
+  value %43: Data(I32) name=None
+  value %44: Data(AsyncHandle(I32)) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(Str) name=None
+  value %47: Data(Class(ClassId(1))) name=None
+  value %48: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %49: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %50: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) name=None
+  value %51: Data(Class(ClassId(7))) name=None
+  value %52: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %53: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) name=None
+  value %54: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %55: Data(AsyncHandle(I32)) name=None
+  value %56: Data(I32) name=None
+  value %57: Data(Str) name=None
+  value %58: Data(Str) name=None
+  value %59: Data(Class(ClassId(8))) name=None
+  value %60: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %61: Data(Func(FuncType { params: [], ret: AsyncHandle(Str) })) name=None
+  value %62: Data(AsyncHandle(Str)) name=None
+  value %63: Data(Str) name=None
+  value %64: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) name=None
+  value %65: Data(AsyncHandle(I32)) name=None
+  value %66: Data(AsyncHandle(I32)) name=None
+  value %67: Data(AsyncHandle(I32)) name=None
+  value %68: Data(AsyncHandle(I32)) name=None
+  value %69: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) name=None
+  value %70: Data(I32) name=None
+  value %71: Data(I32) name=None
+  value %72: Data(AsyncHandle(I32)) name=None
+  value %73: Data(AsyncHandle(I32)) name=None
+  value %74: Data(AsyncHandle(I32)) name=None
+  value %75: Data(AsyncHandle(I32)) name=None
+  value %76: Data(AsyncHandle(I32)) name=None
+  value %77: Data(AsyncHandle(I32)) name=None
+  value %78: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(4))) = AllocateClass(ClassId(4))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 26 } }] @ a353-async-arrow-captures.ts:15:26
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(7)))(%0) @ a353-async-arrow-captures.ts:15:26
+    StoreAddress(%1, Integer(7):I32) @ a353-async-arrow-captures.ts:15:26
+    %2: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(10))(%0) @ a353-async-arrow-captures.ts:15:26
+    %3: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })), Data(I32)], return_type: Some(Data(AsyncHandle(I32))) })(%2, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 25 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 25 } }] @ a353-async-arrow-captures.ts:15:25
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 19 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 19 } }] }
+  b1(%4: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 19 } }] @ a353-async-arrow-captures.ts:15:19
+    %5: Data(Str) = Template([Text("direct "), Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 9 } }] @ a353-async-arrow-captures.ts:15:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a353-async-arrow-captures.ts:15:3
+    %6: Data(Class(ClassId(5))) = AllocateClass(ClassId(5))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 16, col: 13 } }] @ a353-async-arrow-captures.ts:16:13
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(8)))(%6) @ a353-async-arrow-captures.ts:16:13
+    StoreAddress(%7, Integer(7):I32) @ a353-async-arrow-captures.ts:16:13
+    %8: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(11))(%6) @ a353-async-arrow-captures.ts:16:13
+    %9: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })), Data(I32)], return_type: Some(Data(AsyncHandle(I32))) })(%8, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 13 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 13 } }] @ a353-async-arrow-captures.ts:17:13
+    -> Suspend { kind: AsyncHandle { handle: ValueId(9), owned: false }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 }, successor: BlockId(2), resume_value: Some(ValueId(10)), arguments: [Value(ValueId(8)), Value(ValueId(9))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }] }
+  b2(%10: Data(I32), %64: Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) })), %65: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }] @ a353-async-arrow-captures.ts:17:33
+    %11: Data(Str) = Template([Text("held "), Operand { index: 0, format: I32 }])(%10) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 25 } }] @ a353-async-arrow-captures.ts:17:25
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%11) @ a353-async-arrow-captures.ts:17:19
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(I32) }))], return_type: Some(Data(I32)) }, operands: [ValueId(64)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 }, successor: BlockId(4), resume_value: Some(ValueId(12)), arguments: [Value(ValueId(65))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }] }
+  b3 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:17:33
+    AsyncHandleRelease(%65) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }] @ a353-async-arrow-captures.ts:17:33
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }] @ a353-async-arrow-captures.ts:17:33
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 17, col: 33 } }
+  b4(%12: Data(I32), %66: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(5))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }] @ a353-async-arrow-captures.ts:18:18
+    %13: Data(Str) = Template([Text("later "), Operand { index: 0, format: I32 }])(%12) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 9 } }] @ a353-async-arrow-captures.ts:18:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a353-async-arrow-captures.ts:18:3
+    %14: Data(Class(ClassId(1))) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(Class(ClassId(1)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 15 } }] @ a353-async-arrow-captures.ts:19:15
+    %15: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = LoadField(Class(FieldId(4)))(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }] @ a353-async-arrow-captures.ts:19:48
+    %16: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))], return_type: Some(Data(AsyncHandle(I32))) })(%15) traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }, Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }] @ a353-async-arrow-captures.ts:19:44
+    -> Suspend { kind: AsyncHandle { handle: ValueId(16), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 }, successor: BlockId(7), resume_value: Some(ValueId(17)), arguments: [Value(ValueId(66))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }] }
+  b5 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:18:18
+    AsyncHandleRelease(%66) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }] @ a353-async-arrow-captures.ts:18:18
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }] @ a353-async-arrow-captures.ts:18:18
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 18, col: 18 } }
+  b6 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:19:44
+    AsyncHandleRelease(%66) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }] @ a353-async-arrow-captures.ts:19:44
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }] @ a353-async-arrow-captures.ts:19:44
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 44 } }
+  b7(%17: Data(I32), %67: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }] @ a353-async-arrow-captures.ts:19:38
+    %18: Data(Str) = Template([Text("field "), Operand { index: 0, format: I32 }])(%17) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 29 } }] @ a353-async-arrow-captures.ts:19:29
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) @ a353-async-arrow-captures.ts:19:23
+    %19: Data(Array(Func(FuncType { params: [], ret: AsyncHandle(I32) }))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 20, col: 38 } }] @ a353-async-arrow-captures.ts:20:38
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false] })
+  b8 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:19:38
+    AsyncHandleRelease(%67) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }] @ a353-async-arrow-captures.ts:19:38
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }] @ a353-async-arrow-captures.ts:19:38
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 19, col: 38 } }
+  b9(%20: Data(I32)) Some("for.cond"):
+    %23: Data(Bool) = Binary(Lt)(%20, Integer(3):I32) @ a353-async-arrow-captures.ts:21:24
+    -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(12), arguments: [Value(ValueId(20))], ownership: [false] } }
+  b10 Some("for.body"):
+    %24: Data(Class(ClassId(6))) = AllocateClass(ClassId(6))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 64 } }] @ a353-async-arrow-captures.ts:21:64
+    %25: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(9)))(%24) @ a353-async-arrow-captures.ts:21:64
+    StoreAddress(%25, %20) @ a353-async-arrow-captures.ts:21:64
+    %26: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(12))(%24) @ a353-async-arrow-captures.ts:21:64
+    %27: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Func(FuncType { params: [], ret: AsyncHandle(I32) }))), Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))], return_type: Some(Data(I32)) })(%19, %26) invalidates=[ValueId(19)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 56 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 56 } }] @ a353-async-arrow-captures.ts:21:56
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [Value(ValueId(20))], ownership: [false] })
+  b11(%21: Data(I32)) Some("for.step"):
+    %28: Data(I32) = Binary(Add)(%21, Integer(1):I32) @ a353-async-arrow-captures.ts:21:31
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(28))], ownership: [false] })
+  b12(%22: Data(I32)) Some("for.exit"):
+    %29: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%19) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 21 } }] @ a353-async-arrow-captures.ts:22:3
+    %30: Data(I32) = IteratorBound(%29) @ a353-async-arrow-captures.ts:22:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(29)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(30)), Value(ValueId(67))], ownership: [false, false, false, false] })
+  b13(%31: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }), %32: Data(I32), %33: Data(I32), %78: Data(AsyncHandle(I32))) Some("for-of.cond"):
+    %37: Data(Bool) = IteratorHasNext(%31, %32, %33) @ a353-async-arrow-captures.ts:22:3
+    -> ConditionalBranch { condition: Value(ValueId(37)), then_target: BlockTarget { block: BlockId(14), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(16), arguments: [], ownership: [] } }
+  b14 Some("for-of.body"):
+    %38: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = IteratorValue(%31, %32, %33) @ a353-async-arrow-captures.ts:22:3
+    %39: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))], return_type: Some(Data(AsyncHandle(I32))) })(%38) invalidates=[ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }, Trap { kind: Raise(Handler(BlockId(17))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }] @ a353-async-arrow-captures.ts:22:47
+    -> Suspend { kind: AsyncHandle { handle: ValueId(39), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 }, successor: BlockId(18), resume_value: Some(ValueId(40)), arguments: [Value(ValueId(78)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33))], ownership: [false, false, false, false], invalidates: [ValueId(19)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }] }
+  b15(%34: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }), %35: Data(I32), %36: Data(I32)) Some("for-of.step"):
+    %42: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }) = IteratorAdvance(%34, %35, %36) @ a353-async-arrow-captures.ts:22:3
+    %43: Data(I32) = Binary(Add)(%35, Integer(1):I32) @ a353-async-arrow-captures.ts:22:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(42)), Value(ValueId(43)), Value(ValueId(36)), Value(ValueId(68))], ownership: [false, false, false, false] })
+  b16 Some("for-of.exit"):
+    %44: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: Some(Data(AsyncHandle(I32))) })() invalidates=[ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }, Trap { kind: Raise(Handler(BlockId(20))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }] @ a353-async-arrow-captures.ts:23:19
+    -> Suspend { kind: AsyncHandle { handle: ValueId(44), owned: false }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 }, successor: BlockId(21), resume_value: Some(ValueId(45)), arguments: [Value(ValueId(78)), Value(ValueId(44))], ownership: [false, false], invalidates: [ValueId(19)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }] }
+  b17 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:22:47
+    AsyncHandleRelease(%78) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }] @ a353-async-arrow-captures.ts:22:47
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }] @ a353-async-arrow-captures.ts:22:47
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 47 } }
+  b18(%40: Data(I32), %68: Data(AsyncHandle(I32)), %69: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [], ret: AsyncHandle(I32) }) }), %70: Data(I32), %71: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(19))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }] @ a353-async-arrow-captures.ts:22:41
+    %41: Data(Str) = Template([Text("loop "), Operand { index: 0, format: I32 }])(%40) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 33 } }] @ a353-async-arrow-captures.ts:22:33
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%41) invalidates=[ValueId(19)] @ a353-async-arrow-captures.ts:22:27
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71))], ownership: [false, false, false] })
+  b19 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:22:41
+    AsyncHandleRelease(%68) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }] @ a353-async-arrow-captures.ts:22:41
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }] @ a353-async-arrow-captures.ts:22:41
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 22, col: 41 } }
+  b20 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:23:19
+    AsyncHandleRelease(%78) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }] @ a353-async-arrow-captures.ts:23:19
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }] @ a353-async-arrow-captures.ts:23:19
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 19 } }
+  b21(%45: Data(I32), %72: Data(AsyncHandle(I32)), %73: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(22))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }] @ a353-async-arrow-captures.ts:23:58
+    %46: Data(Str) = Template([Text("handle "), Operand { index: 0, format: I32 }])(%45) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 48 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 48 } }] @ a353-async-arrow-captures.ts:23:48
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%46) invalidates=[ValueId(19)] @ a353-async-arrow-captures.ts:23:42
+    %47: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 13 } }] @ a353-async-arrow-captures.ts:24:13
+    %48: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%47) @ a353-async-arrow-captures.ts:9:13
+    StoreAddress(%48, Integer(7):I32) @ a353-async-arrow-captures.ts:9:13
+    %49: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = FunctionRef(FunctionId(3))() @ a353-async-arrow-captures.ts:9:49
+    %50: Address(AddressType { pointee: Func(FuncType { params: [], ret: AsyncHandle(I32) }), array_base: None }) = AddressOfField(Class(FieldId(4)))(%47) @ a353-async-arrow-captures.ts:9:25
+    StoreAddress(%50, %49) @ a353-async-arrow-captures.ts:9:25
+    %51: Data(Class(ClassId(7))) = AllocateClass(ClassId(7))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 36 } }] @ a353-async-arrow-captures.ts:24:36
+    %52: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(10)))(%51) @ a353-async-arrow-captures.ts:24:36
+    StoreAddress(%52, %47) @ a353-async-arrow-captures.ts:24:36
+    %53: Data(Func(FuncType { params: [], ret: AsyncHandle(I32) })) = MakeClosure(FunctionId(13))(%51) @ a353-async-arrow-captures.ts:24:36
+    %54: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%47) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 95 } }] @ a353-async-arrow-captures.ts:24:97
+    StoreAddress(%54, Integer(8):I32) @ a353-async-arrow-captures.ts:24:97
+    %55: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(I32) }))], return_type: Some(Data(AsyncHandle(I32))) })(%53) invalidates=[ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }, Trap { kind: Raise(Handler(BlockId(23))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }] @ a353-async-arrow-captures.ts:25:28
+    -> Suspend { kind: AsyncHandle { handle: ValueId(55), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 }, successor: BlockId(24), resume_value: Some(ValueId(56)), arguments: [Value(ValueId(72)), Value(ValueId(73))], ownership: [false, false], invalidates: [ValueId(19)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }] }
+  b22 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:23:58
+    AsyncHandleRelease(%73) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }] @ a353-async-arrow-captures.ts:23:58
+    AsyncHandleRelease(%72) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }] @ a353-async-arrow-captures.ts:23:58
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }] @ a353-async-arrow-captures.ts:23:58
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 23, col: 58 } }
+  b23 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:25:28
+    AsyncHandleRelease(%73) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }] @ a353-async-arrow-captures.ts:25:28
+    AsyncHandleRelease(%72) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }] @ a353-async-arrow-captures.ts:25:28
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }] @ a353-async-arrow-captures.ts:25:28
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 28 } }
+  b24(%56: Data(I32), %74: Data(AsyncHandle(I32)), %75: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(25))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }] @ a353-async-arrow-captures.ts:25:22
+    %57: Data(Str) = Template([Text("reference "), Operand { index: 0, format: I32 }])(%56) traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 9 } }] @ a353-async-arrow-captures.ts:25:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%57) invalidates=[ValueId(19)] @ a353-async-arrow-captures.ts:25:3
+    %58: Data(Str) = StringLiteral("seven")() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 21 } }] @ a353-async-arrow-captures.ts:26:21
+    %59: Data(Class(ClassId(8))) = AllocateClass(ClassId(8))() traps=[Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 43 } }] @ a353-async-arrow-captures.ts:26:43
+    %60: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(11)))(%59) @ a353-async-arrow-captures.ts:26:43
+    StoreAddress(%60, %58) @ a353-async-arrow-captures.ts:26:43
+    %61: Data(Func(FuncType { params: [], ret: AsyncHandle(Str) })) = MakeClosure(FunctionId(14))(%59) @ a353-async-arrow-captures.ts:26:43
+    %62: Data(AsyncHandle(Str)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(Str) }))], return_type: Some(Data(AsyncHandle(Str))) })(%61) invalidates=[ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }, Trap { kind: Raise(Handler(BlockId(26))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }] @ a353-async-arrow-captures.ts:26:115
+    -> Suspend { kind: AsyncHandle { handle: ValueId(62), owned: true }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 }, successor: BlockId(27), resume_value: Some(ValueId(63)), arguments: [Value(ValueId(74)), Value(ValueId(75))], ownership: [false, false], invalidates: [ValueId(19)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }] }
+  b25 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:25:22
+    AsyncHandleRelease(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }] @ a353-async-arrow-captures.ts:25:22
+    AsyncHandleRelease(%74) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }] @ a353-async-arrow-captures.ts:25:22
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }] @ a353-async-arrow-captures.ts:25:22
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 25, col: 22 } }
+  b26 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:26:115
+    AsyncHandleRelease(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }] @ a353-async-arrow-captures.ts:26:115
+    AsyncHandleRelease(%74) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }] @ a353-async-arrow-captures.ts:26:115
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }] @ a353-async-arrow-captures.ts:26:115
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 115 } }
+  b27(%63: Data(Str), %76: Data(AsyncHandle(I32)), %77: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(28))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }] @ a353-async-arrow-captures.ts:26:109
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%63) invalidates=[ValueId(19)] @ a353-async-arrow-captures.ts:26:103
+    AsyncHandleRelease(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }] @ a353-async-arrow-captures.ts:13:23
+    AsyncHandleRelease(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }] @ a353-async-arrow-captures.ts:13:23
+    -> Return { value: None, pos: Pos { file: "a353-async-arrow-captures.ts", line: 13, col: 23 } }
+  b28 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:26:109
+    AsyncHandleRelease(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }] @ a353-async-arrow-captures.ts:26:109
+    AsyncHandleRelease(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }] @ a353-async-arrow-captures.ts:26:109
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }] @ a353-async-arrow-captures.ts:26:109
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 109 } }
+fn f8 "<lambda a353-async-arrow-captures.ts:10:72>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:10:72
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 72 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(2))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:10:72
+  value %0: Data(Class(ClassId(2))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) @ a353-async-arrow-captures.ts:10:72
+    %2: Data(I32) = LoadAddress(%1) @ a353-async-arrow-captures.ts:10:72
+    %3: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:10:100
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(3)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 100 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 100 } }] }
+  b1(%4: Data(I32), %5: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:10:100
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 10, col: 116 } }
+fn f9 "<lambda a353-async-arrow-captures.ts:11:76>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:11:76
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 76 } }]
+  can-raise
+  param %0 "<owned environment>": Data(Class(ClassId(3))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:11:76
+  value %0: Data(Class(ClassId(3))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: AsyncHandle(I32), array_base: None }) name=None
+  value %2: Data(AsyncHandle(I32)) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(AsyncHandle(I32)) name=None
+  value %5: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: AsyncHandle(I32), array_base: None }) = AddressOfField(Class(FieldId(6)))(%0) @ a353-async-arrow-captures.ts:11:76
+    %2: Data(AsyncHandle(I32)) = LoadAddress(%1) @ a353-async-arrow-captures.ts:11:76
+    AsyncHandleRetain(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 76 } }] @ a353-async-arrow-captures.ts:11:76
+    -> Suspend { kind: Async, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 104 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [] }
+  b1(%4: Data(AsyncHandle(I32))) Some("async.resume"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 129 } }] @ a353-async-arrow-captures.ts:11:129
+    -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: false }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 }, successor: BlockId(2), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(4))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }] }
+  b2(%3: Data(I32), %5: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }] @ a353-async-arrow-captures.ts:11:155
+    AsyncHandleRelease(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 148 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 148 } }] @ a353-async-arrow-captures.ts:11:148
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 148 } }
+  b3 Some("release.landing"):
+    ExceptionPark() @ a353-async-arrow-captures.ts:11:155
+    AsyncHandleRelease(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }, Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }] @ a353-async-arrow-captures.ts:11:155
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }] @ a353-async-arrow-captures.ts:11:155
+    -> Unreachable { pos: Pos { file: "a353-async-arrow-captures.ts", line: 11, col: 155 } }
+fn f10 "<lambda a353-async-arrow-captures.ts:15:26>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:15:26
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 26 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(4))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:15:26
+  param %3 "n": Data(I32) kind=Explicit storage=None @ a353-async-arrow-captures.ts:15:26
+  value %0: Data(Class(ClassId(4))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=Some("n")
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(7)))(%0) @ a353-async-arrow-captures.ts:15:26
+    %2: Data(I32) = LoadAddress(%1) @ a353-async-arrow-captures.ts:15:26
+    %4: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:15:60
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(4)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 60 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(2)), Value(ValueId(3))], ownership: [false, false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 60 } }] }
+  b1(%5: Data(I32), %7: Data(I32), %8: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:15:60
+    %6: Data(I32) = Binary(Add)(%8, %7) @ a353-async-arrow-captures.ts:15:83
+    -> Return { value: Some(Value(ValueId(6))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 15, col: 76 } }
+fn f11 "<lambda a353-async-arrow-captures.ts:16:13>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:16:13
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 16, col: 13 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(5))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:16:13
+  param %3 "n": Data(I32) kind=Explicit storage=None @ a353-async-arrow-captures.ts:16:13
+  value %0: Data(Class(ClassId(5))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=Some("n")
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=Some("n")
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a353-async-arrow-captures.ts:16:13
+    %2: Data(I32) = LoadAddress(%1) @ a353-async-arrow-captures.ts:16:13
+    %4: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:16:47
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(4)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 16, col: 47 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(2)), Value(ValueId(3))], ownership: [false, false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 16, col: 47 } }] }
+  b1(%5: Data(I32), %7: Data(I32), %8: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:16:47
+    %6: Data(I32) = Binary(Add)(%8, %7) @ a353-async-arrow-captures.ts:16:70
+    -> Return { value: Some(Value(ValueId(6))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 16, col: 63 } }
+fn f12 "<lambda a353-async-arrow-captures.ts:21:64>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:21:64
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 64 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(6))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:21:64
+  value %0: Data(Class(ClassId(6))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(9)))(%0) @ a353-async-arrow-captures.ts:21:64
+    %2: Data(I32) = LoadAddress(%1) @ a353-async-arrow-captures.ts:21:64
+    %3: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:21:92
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(3)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 92 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 92 } }] }
+  b1(%4: Data(I32), %5: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:21:92
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 21, col: 108 } }
+fn f13 "<lambda a353-async-arrow-captures.ts:24:36>" kind=Lambda exported=false generator=false async=true -> I32 entry=b0 @ a353-async-arrow-captures.ts:24:36
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 36 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(7))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:24:36
+  value %0: Data(Class(ClassId(7))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %2: Data(Class(ClassId(1))) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Class(ClassId(1))) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(10)))(%0) @ a353-async-arrow-captures.ts:24:36
+    %2: Data(Class(ClassId(1))) = LoadAddress(%1) @ a353-async-arrow-captures.ts:24:36
+    %3: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:24:64
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(3)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 64 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 64 } }] }
+  b1(%4: Data(I32), %6: Data(Class(ClassId(1)))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:24:64
+    %5: Data(I32) = LoadField(Class(FieldId(3)))(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 87 } }] @ a353-async-arrow-captures.ts:24:89
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 24, col: 80 } }
+fn f14 "<lambda a353-async-arrow-captures.ts:26:43>" kind=Lambda exported=false generator=false async=true -> Str entry=b0 @ a353-async-arrow-captures.ts:26:43
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 43 } }]
+  param %0 "<owned environment>": Data(Class(ClassId(8))) kind=OwnedEnvironment storage=None @ a353-async-arrow-captures.ts:26:43
+  value %0: Data(Class(ClassId(8))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(11)))(%0) @ a353-async-arrow-captures.ts:26:43
+    %2: Data(Str) = LoadAddress(%1) @ a353-async-arrow-captures.ts:26:43
+    %3: Data(I32) = Copy(Integer(0):I32) @ a353-async-arrow-captures.ts:26:74
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) }, operands: [ValueId(3)] }, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 74 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 74 } }] }
+  b1(%4: Data(I32), %5: Data(Str)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a353-async-arrow-captures.ts:26:74
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a353-async-arrow-captures.ts", line: 26, col: 90 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

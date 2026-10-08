@@ -85,6 +85,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
+        for local in &function.locals {
+            if local.storage == l::LocalStorageClass::Activation {
+                let bytes = if rooted_locals.contains(&local.id) {
+                    match &local.ty {
+                        l::ValueType::Data(ty) => emitter.layouts.size_align(ty)?.0,
+                        l::ValueType::Iterator(_) => 32,
+                        l::ValueType::Address(_) => 0,
+                    }
+                } else {
+                    0
+                };
+                root_storage::verify_function_storage(&emitter.layouts, &local.ty, bytes)?;
+            }
+        }
         let (removable_edge_copies, mut elided_values) =
             removable_block_parameter_copies(function, &index);
         if coroutine {
@@ -238,7 +252,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let _ = writeln!(out, "    SubFn {temporary} = {source};");
         let _ = writeln!(
             out,
-            "    if ({temporary}.env != NULL) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }} else {{ memset({environment}, 0, sizeof(SubEnvStorage)); }}"
+            "    if ({temporary}.env != NULL && sub_borrowed_environment({temporary})) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }} else {{ memset({environment}, 0, sizeof(SubEnvStorage)); }}"
         );
         self.assign(out, Some(self.value(id)), &temporary)
     }
@@ -250,7 +264,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let _ = writeln!(out, "    SubEnvStorage {environment} = {{0}};");
         let _ = writeln!(
             out,
-            "    if ({temporary}.env != NULL) {{ memcpy(&{environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = &{environment}; }}"
+            "    if ({temporary}.env != NULL && sub_borrowed_environment({temporary})) {{ memcpy(&{environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = &{environment}; }}"
         );
         temporary
     }
@@ -442,6 +456,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .is_none()
             {
                 let source = match parameter.kind {
+                    l::ParameterKind::OwnedEnvironment => "environment".into(),
                     l::ParameterKind::Capture => format!(
                         "((SubEnv{}*)environment)->c{}",
                         self.function.id.0, parameter.value.0
@@ -493,6 +508,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         self.function.parameters.iter().find_map(|parameter| {
             (self.value_storage[parameter.value.0 as usize] == value).then(|| {
                 match parameter.kind {
+                    l::ParameterKind::OwnedEnvironment => "environment".into(),
                     l::ParameterKind::Capture => format!(
                         "((SubEnv{}*)environment)->c{}",
                         self.function.id.0, parameter.value.0

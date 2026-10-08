@@ -236,7 +236,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(allocated)
     }
 
-    fn store_class_field(
+    pub(super) fn store_class_field(
         &mut self,
         class: ClassId,
         index: usize,
@@ -246,17 +246,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     ) -> Result<(), LowerError> {
         let definition = self
             .lowering
-            .hir
             .classes
             .get(class.0)
             .and_then(|class| class.fields.get(index))
+            .cloned()
             .ok_or_else(|| self.error(pos, "class field index is missing"))?;
-        let field = self
-            .lowering
-            .fields
-            .get(&(class.0, definition.name.clone()))
-            .copied()
-            .ok_or_else(|| self.error(pos, "class field id is missing"))?;
+        let field = definition.id;
         let value = self.coerce_operand(value, l::ValueType::Data(definition.ty.clone()), pos)?;
         let base_type = self.operand_type(&object, pos)?;
         let array_base = match base_type {

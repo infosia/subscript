@@ -37,6 +37,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if target
+            .parameters
+            .iter()
+            .any(|parameter| parameter.kind == l::ParameterKind::OwnedEnvironment)
+        {
+            let environment = self.expect_scalar(operands[0])?;
+            let id = self.ml.func_id(&FnKey::LirWrapper(function))?;
+            let reference = self.ml.module.declare_func_in_func(id, self.builder.func);
+            let code = self.builder.ins().func_addr(types::I64, reference);
+            return Ok(RV::Pair(code, environment));
+        }
         let mut offset = 0u32;
         let mut align = 1u32;
         let mut fields = Vec::with_capacity(captures.len());

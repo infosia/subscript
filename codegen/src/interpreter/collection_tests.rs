@@ -470,3 +470,32 @@ fn unfinished_loop_call_collect_preserves_a_live_previous_result() {
         b"step 0\nstep 1\nkept\n"
     );
 }
+
+// Cost: four interpreter runs, four JIT sessions, and four C builds.
+#[test]
+fn owned_async_environments_release_counted_fields_with_reachable_controls() {
+    for count in [20, 100] {
+        for reachable in [false, true] {
+            let keep = if reachable { "jobs.push(f);" } else { "" };
+            let source = format!("const jobs: (() => Promise<i32>)[] = [];
+                async function value(): Promise<i32> {{ return 7; }}
+                async function produce(): Promise<void> {{
+                    for (let i: i32 = 0; i < {count}; i++) {{
+                        const h = value(); await h;
+                        const f = async (): Promise<i32> => {{ await Context.suspend(); return await h; }};
+                        {keep}
+                    }}
+                }}
+                export async function main(): Promise<void> {{ await produce(); Context.collect(); }}");
+            let started = std::time::Instant::now();
+            let (output, interpreter, jit, c) = measured("s181-owned-counts", &source);
+            assert!(output.is_empty());
+            let expected = if reachable { count } else { 0 };
+            assert_eq!((interpreter, jit, c), (expected, expected, expected));
+            println!(
+                "s181 count={count} reachable={reachable}: {:?}",
+                started.elapsed()
+            );
+        }
+    }
+}

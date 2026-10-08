@@ -529,6 +529,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r377-promise-all-void-value.ts", RuleCode::S013, 11),
     ("r378-promise-all-non-handle-array.ts", RuleCode::S013, 10),
     ("r379-async-arrow-capture.ts", RuleCode::S009, 10),
+    ("r398-async-arrow-captures-let.ts", RuleCode::S009, 9),
     ("r380-dropped-indirect-async-handle.ts", RuleCode::S013, 11),
     ("r381-async-arrow-result-annotation.ts", RuleCode::S100, 9),
     ("r373-indexed-read-after-null-check.ts", RuleCode::S011, 11),

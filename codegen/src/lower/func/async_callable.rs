@@ -18,6 +18,13 @@ pub(crate) fn define_async_callable<M: Module>(
         let incoming = builder.block_params(entry).to_vec();
         let ctx = incoming[0];
         let mut arguments = vec![ctx];
+        if function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.kind == l::ParameterKind::OwnedEnvironment)
+        {
+            arguments.push(incoming[1]);
+        }
         arguments.extend_from_slice(&incoming[2..incoming.len() - 1]);
         let pos_id = *incoming
             .last()

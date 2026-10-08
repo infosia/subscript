@@ -168,11 +168,23 @@ impl Walk<'_> {
     }
 
     fn expression(&mut self, expr: &hir::Expr) {
-        if let hir::ExprKind::Lambda { params, body, .. } = &expr.kind {
+        if let hir::ExprKind::Lambda {
+            params,
+            body,
+            captures,
+            is_async,
+            ..
+        } = &expr.kind
+        {
             let hooks = std::mem::take(&mut self.hooks);
             let controls = std::mem::take(&mut self.controls);
             let state = (self.owners, self.caught);
-            self.owners = params.iter().filter(|p| owned(&p.ty)).count();
+            self.owners = params.iter().filter(|p| owned(&p.ty)).count()
+                + if *is_async {
+                    captures.iter().filter(|capture| owned(&capture.ty)).count()
+                } else {
+                    0
+                };
             self.caught = 0;
             self.sequence(body);
             (self.owners, self.caught) = state;

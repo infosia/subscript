@@ -17,7 +17,7 @@ struct Analysis<'a> {
     calls: Vec<(String, &'a hir::Param, &'a Expr)>,
     escaping: HashSet<usize>,
     capture_bindings: HashMap<usize, Vec<usize>>,
-    async_captures: Vec<(&'a str, &'a crate::Pos)>,
+    async_receivers: Vec<&'a crate::Pos>,
     infer: bool,
     block: usize,
     block_parents: Vec<Option<usize>>,
@@ -204,15 +204,15 @@ impl<'a> Analysis<'a> {
                 ..
             } => {
                 if *is_async {
-                    self.async_captures.extend(
-                        captures
-                            .iter()
-                            .map(|capture| (capture.name.as_str(), &e.pos)),
-                    );
+                    // A heap field cannot retain a borrowed synchronous environment (§118).
+                    self.escapes.push(("owned async environment".into(), e));
+                }
+                if *is_async && captures.iter().any(|capture| capture.name == "this") {
+                    self.async_receivers.push(&e.pos);
                 }
                 for capture in captures {
                     if let Some(id) = env.get(&capture.name) {
-                        if capture.ty.counted_type().is_some() {
+                        if !*is_async && capture.ty.counted_type().is_some() {
                             self.locals[*id].counted = true;
                             self.counted_capture = true;
                         }
@@ -447,13 +447,15 @@ impl<'a> Analysis<'a> {
                 .bindings
                 .get(&(e as *const Expr as usize))
                 .map_or(!self.infer, |id| self.facts[*id]),
-            E::Lambda { captures, .. } => {
-                if self.infer {
+            E::Lambda {
+                captures, is_async, ..
+            } => {
+                if self.infer || *is_async {
                     self.capture_bindings
                         .get(&(e as *const Expr as usize))
                         .is_some_and(|ids| ids.iter().any(|id| self.facts[*id]))
                 } else {
-                    !captures.is_empty()
+                    !*is_async && !captures.is_empty()
                 }
             }
             _ => self
@@ -465,10 +467,10 @@ impl<'a> Analysis<'a> {
         self.infer_parameters();
         self.solve();
         let mut diagnostics = Vec::new();
-        for (name, pos) in &self.async_captures {
+        for pos in &self.async_receivers {
             diagnostics.push(diagnostic(
                 RejectionSite::AsyncArrowCapture,
-                format!("async arrow captures `{name}`; an async arrow captures nothing"),
+                "async arrow captures `this`; an async arrow captures nothing",
                 (*pos).clone(),
             ));
         }
@@ -514,7 +516,7 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
         calls: vec![],
         escaping: HashSet::new(),
         capture_bindings: HashMap::new(),
-        async_captures: Vec::new(),
+        async_receivers: Vec::new(),
         infer: false,
         block: 0,
         block_parents: vec![None],
