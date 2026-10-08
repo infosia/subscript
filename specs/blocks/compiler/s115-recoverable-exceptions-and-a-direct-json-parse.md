@@ -94,6 +94,7 @@ word is nonzero.
    because the language has no `any`. Every other annotation is
    TS1196.
 2. `finally` fails with S010 and a message that names `finally`.
+   *(Removed 2026-10-08 by §180: `finally` is accepted.)*
 3. A `try` block that holds `await` or `yield` fails with S010 and a
    message that names the suspension. The rule reads the `try` block
    only. A `catch` block can hold a suspension.

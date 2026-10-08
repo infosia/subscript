@@ -221,3 +221,4 @@ Every section, with its status:
 | §177 | Bookkeeping cost stays linear | active | [`s177-bookkeeping-cost-stays-linear.md`](compiler/s177-bookkeeping-cost-stays-linear.md) |
 | §178 | A host operation completes a promise | active | [`s178-a-host-operation-completes-a-promise.md`](compiler/s178-a-host-operation-completes-a-promise.md) |
 | §179 | A boundary value has its C ABI form | active | [`s179-a-boundary-value-has-its-c-abi-form.md`](compiler/s179-a-boundary-value-has-its-c-abi-form.md) |
+| §180 | A `finally` block runs on each exit | active | [`s180-a-finally-block-runs-on-each-exit.md`](compiler/s180-a-finally-block-runs-on-each-exit.md) |
