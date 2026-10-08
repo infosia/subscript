@@ -146,7 +146,7 @@ XMM0/XMM1): the dev JIT models no float return register on **any** ABI —
 the AAPCS64 and Win64 HFA-return cases are the same loud error — so this is
 a shared, accepted follow-up, not a Linux-specific gap. An INTEGER-class
 SysV return (RAX, then RDX) and a MEMORY return (hidden pointer, like the
-other ABIs) are implemented.
+other ABIs) are implemented. §179 rule 5 replaces the floating-point return error on each ABI.
 
 Two SysV argument shapes stay a **loud error**, each a silent-mis-marshal
 risk the differential gate cannot see (no corpus entry exercises them):

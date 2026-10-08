@@ -57,8 +57,8 @@ and §116 exception delivery do not apply to it.
    script layout equals its C layout, or `void`. A struct has that
    layout when each field is a boundary scalar or such a struct: a
    string-view field, an absorbed `(pointer, count)` descriptor, a
-   pointer, a callback, a `bool` field, and a `@subscript-cenum` alias
-   are not (178.3 item 4). A
+   pointer, a callback, and a `@subscript-cenum` alias are not. A
+   `bool` field is admitted (§179 rule 8). A
    boundary struct that another mirror declares (§48) is not in this
    section. The
    completion copies the C bytes, so a struct of another layout cannot
@@ -158,6 +158,8 @@ and §116 exception delivery do not apply to it.
    other `.expected` golden moves.
 
 ### 178.3 Open
+
+Items 1–4 are closed by §179.
 
 The class-fix review found boundary defects that are older than this
 section and are not in its surface (no completion result or endpoint

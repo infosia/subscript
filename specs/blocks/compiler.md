@@ -220,3 +220,4 @@ Every section, with its status:
 | §176 | A dropped generator releases its frame | active | [`s176-a-dropped-generator-releases-its-frame.md`](compiler/s176-a-dropped-generator-releases-its-frame.md) |
 | §177 | Bookkeeping cost stays linear | active | [`s177-bookkeeping-cost-stays-linear.md`](compiler/s177-bookkeeping-cost-stays-linear.md) |
 | §178 | A host operation completes a promise | active | [`s178-a-host-operation-completes-a-promise.md`](compiler/s178-a-host-operation-completes-a-promise.md) |
+| §179 | A boundary value has its C ABI form | active | [`s179-a-boundary-value-has-its-c-abi-form.md`](compiler/s179-a-boundary-value-has-its-c-abi-form.md) |
