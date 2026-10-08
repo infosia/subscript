@@ -1187,25 +1187,37 @@ impl<'m> Emitter<'m> {
                 let _ = writeln!(out, "    {kick};\n}}");
             } else {
                 let parameters = explicit_parameters(&function).collect::<Vec<_>>();
+                if parameters.len() != entry.signature.parameters.len() {
+                    return Err(internal(
+                        "host wrapper parameter count differs from its signature",
+                    ));
+                }
                 let declaration = parameters
                     .iter()
-                    .map(|parameter| {
-                        let ty = &function.values[parameter.value.0 as usize].ty;
-                        Ok(format!("{} a{}", self.value_ctype(ty)?, parameter.value.0))
+                    .zip(&entry.signature.parameters)
+                    .map(|(parameter, ty)| {
+                        Ok(format!("{} a{}", self.ctype(ty)?, parameter.value.0))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
                 let separator = if declaration.is_empty() { "" } else { ", " };
-                let args = parameters
-                    .iter()
-                    .map(|parameter| format!("a{}", parameter.value.0))
-                    .collect::<Vec<_>>();
-                let argument_separator = if args.is_empty() { "" } else { ", " };
                 let _ = writeln!(
                     out,
                     "void subscript_export_{name}(subscript_rt_context* ctx{separator}{}) {{",
                     declaration.join(", ")
                 );
                 self.emit_host_entry_validations(out, &function, &parameters)?;
+                let mut args = Vec::new();
+                for (parameter, boundary_ty) in parameters.iter().zip(&entry.signature.parameters) {
+                    let id = parameter.value.0;
+                    let local_ty = self.value_ctype(&function.values[id as usize].ty)?;
+                    if local_ty == self.ctype(boundary_ty)? {
+                        args.push(format!("a{id}"));
+                    } else {
+                        let _ = writeln!(out, "    {local_ty} c{id} = a{id};");
+                        args.push(format!("c{id}"));
+                    }
+                }
+                let argument_separator = if args.is_empty() { "" } else { ", " };
                 let _ = writeln!(
                     out,
                     "    sub_f{}(ctx{argument_separator}{});\n}}",

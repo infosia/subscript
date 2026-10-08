@@ -31,7 +31,15 @@ fn c11_optimized_flags_carry_the_posix_feature_test_only_for_unix_on_linux() {
     add_c11_optimized_flags(&mut msvc, CCompilerStyle::Msvc);
     assert_eq!(
         msvc.get_args().collect::<Vec<_>>(),
-        ["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]
+        [
+            "/nologo",
+            "/std:c11",
+            "/O2",
+            "/utf-8",
+            "/fp:strict",
+            "/we4028",
+            "/we4029"
+        ]
     );
 }
 
@@ -185,11 +193,19 @@ fn public_toolchain_api_carries_the_ship_contract() -> Result<(), String> {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     assert_eq!(
-        &msvc_args[..5],
-        ["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]
+        &msvc_args[..7],
+        [
+            "/nologo",
+            "/std:c11",
+            "/O2",
+            "/utf-8",
+            "/fp:strict",
+            "/we4028",
+            "/we4029"
+        ]
     );
-    assert!(msvc_args[5].starts_with("/Fo:objects"));
-    assert_eq!(&msvc_args[6..], ["/Fe:program.exe", "-link"]);
+    assert!(msvc_args[7].starts_with("/Fo:objects"));
+    assert_eq!(&msvc_args[8..], ["/Fe:program.exe", "-link"]);
     assert_eq!(
         include_directory_arg(CCompilerStyle::Msvc, Path::new("include")),
         OsString::from("/Iinclude")

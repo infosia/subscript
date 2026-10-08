@@ -514,8 +514,9 @@ C symbol. A function is host-callable when three things hold:
 
 For every host-callable export the ship tier emits
 `void subscript_export_<name>(subscript_rt_context* ctx, ...)`, with the
-same parameter C types the internal function uses. The parameter C
-types, measured from the emitted C:
+parameter C types from the boundary kind record. The wrapper converts
+each parameter to the internal C type the function body uses. The types,
+measured from the emitted C:
 
 | subscript type | C parameter type |
 |---|---|
@@ -525,7 +526,7 @@ types, measured from the emitted C:
 | `i64` / `u64` | `int64_t` / `uint64_t` |
 | `f16` | `uint16_t` (the binary16 bits) |
 | `f32` / `f64` | `float` / `double` |
-| `boolean` | `int32_t` |
+| `boolean` | `bool` |
 | opaque handle | `void*` |
 | wire-mapped alias | `int32_t` |
 
@@ -551,8 +552,9 @@ export function main(): void {
 emits this wrapper:
 
 ```c
-void subscript_export_step(subscript_rt_context* ctx, int32_t a0, float a1, int32_t a2) {
-    sub_f0(ctx, a0, a1, a2);
+void subscript_export_step(subscript_rt_context* ctx, int32_t a0, float a1, bool a2) {
+    int32_t c2 = a2;
+    sub_f1(ctx, a0, a1, c2);
 }
 ```
 

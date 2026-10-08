@@ -508,13 +508,22 @@ fn msvc_object_directory_arg(directory: &Path) -> OsString {
 /// `1.0 / 0.0` (infinity) at compile time — which `/fp:precise` rejects
 /// with error C2124 — deferring it to a runtime infinity instead. It is
 /// at least as conservative as `/fp:precise`, so the byte-exact
-/// differential is preserved.
+/// differential is preserved. `/we4028` and `/we4029` make prototype
+/// parameter type and count mismatches errors (§183).
 ///
 /// The Unix arm carries the POSIX feature test on Linux (compiler.md §11b).
 /// The macro comes from the command line because glibc selects its feature set at the unit's first libc header.
 pub fn add_c11_optimized_flags(command: &mut Command, style: CCompilerStyle) {
     if style.is_msvc() {
-        command.args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]);
+        command.args([
+            "/nologo",
+            "/std:c11",
+            "/O2",
+            "/utf-8",
+            "/fp:strict",
+            "/we4028",
+            "/we4029",
+        ]);
     } else {
         command.args(["-std=c11", "-O2", "-fwrapv", "-ffp-contract=off"]);
         command.args(posix_feature_arguments());

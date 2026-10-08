@@ -857,7 +857,15 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
         let mut exe_arg = OsString::from("/Fe:");
         exe_arg.push(exe_path.as_os_str());
         command
-            .args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"])
+            .args([
+                "/nologo",
+                "/std:c11",
+                "/O2",
+                "/utf-8",
+                "/fp:strict",
+                "/we4028",
+                "/we4029",
+            ])
             .arg(object_dir_arg)
             .arg(&src_path)
             .arg(&entry_path)
