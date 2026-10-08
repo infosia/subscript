@@ -295,6 +295,14 @@ it in the section's open list. It does not block the phase, and it does not
 start a fix round. The review labels each finding "realistic" or
 "contrived".
 
+**At the end of every phase, account for each task that is still
+running.** A phase is not COMPLETE while one has no stated reason. List
+each background shell, monitor, scheduled job, subagent, and coding-agent
+job that this session started. For each one, state what it waits for
+and who reads its result. If no reader exists, stop
+it. Stop a coding-agent job with its own cancel command: stopping the
+forwarding shell leaves the job running.
+
 ## Privacy / repo hygiene
 
 - No credentials, signing material, or device-specific secrets committed.
