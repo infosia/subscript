@@ -95,7 +95,7 @@ that throws inside a finalizer during an exception exit traps (kind
    a same-shape control with one finalizer).
 3. Cost: measure and record the interpreter corpus and the benchmark
    workloads against the pin (release, best of three, each binary
-   alone, with the stray-process check clean). Attribute a growth only
+   alone, with no other load on the host). Attribute a growth only
    when it is outside the run-to-run spread that
    `specs/blocks/benchmarks.md` records, or when a code cause is in
    sight.
