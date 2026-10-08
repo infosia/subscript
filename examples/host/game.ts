@@ -21,8 +21,8 @@ function emptyTransform(): EngineTransform {
 }
 
 // Setup phase: read the frame record, then write the world's starting state.
-// Q12: the host supplies frame state through accessors because exported
-// entries are zero-argument and void.
+// Q12: this host stages its frame state behind accessors. An export can
+// also take boundary scalars and handles (compiler.md §59).
 export function init(): void {
   const world: EngineWorld = engineFrameWorld();
   const fixedStep: f32 = engineFrameFixedStep();

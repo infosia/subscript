@@ -1,7 +1,7 @@
 // example: e05-errors
 // teaches: Throw and catch the Error family, catch JSON.parse failures, return result-shaped values, and tell an exception from a trap.
-// differs-from-typescript: C6 throws only Error, SyntaxError, and TypeError objects, rejects finally, and a trap is not catchable.
-// see: corpus/accept/a18-error-handling.ts, corpus/accept/a250-throw-catch.ts, corpus/accept/a251-exception-propagation.ts, corpus/accept/a255-json-parse-direct.ts, corpus/trap/t02-statements-after-fault.ts, corpus/trap/t61-uncaught-exception.ts, corpus/reject/r11-throw.ts, corpus/reject/r233-finally.ts, corpus/reject/r236-caught-binding-use.ts, collisions.md C6, collisions.md Q28, compiler.md §115, compiler.md §19.3
+// differs-from-typescript: C6 throws only Error-family objects, runs finally on each exit but not on a trap, and a trap is not catchable.
+// see: corpus/accept/a18-error-handling.ts, corpus/accept/a250-throw-catch.ts, corpus/accept/a251-exception-propagation.ts, corpus/accept/a255-json-parse-direct.ts, corpus/trap/t02-statements-after-fault.ts, corpus/trap/t61-uncaught-exception.ts, corpus/reject/r11-throw.ts, corpus/accept/a349-finally-exits-and-completions.ts, corpus/reject/r236-caught-binding-use.ts, collisions.md C6, collisions.md Q28, compiler.md §115, compiler.md §19.3
 
 // Failure has three forms here: an exception that a handler catches, a
 // result value that the caller inspects, and a trap that the host observes.
@@ -28,8 +28,8 @@ function divide(numerator: f64, denominator: f64): DivisionResult {
   return new DivisionResult(true, numerator / denominator);
 }
 
-// compiler.md §115.2: `throw` takes an Error, SyntaxError, or TypeError
-// object. `throw "text"` is S010; corpus/reject/r11-throw.ts pins it.
+// compiler.md §115.2 and stdlib.md §19: `throw` takes an object of the
+// Error family. `throw "text"` is S010; corpus/reject/r11-throw.ts pins it.
 function ratio(numerator: f64, denominator: f64): f64 {
   if (denominator == 0.0) {
     throw new Error("division by zero");
@@ -48,7 +48,8 @@ export function main(): void {
   // Section two: an exception leaves `ratio` and every statement after the
   // raise site, up to the nearest handler (compiler.md §115.3 rule 6).
   // The catch binding has two uses: `instanceof` and `throw` (rule 4).
-  // `finally` is S010; corpus/reject/r233-finally.ts pins it.
+  // A `finally` block runs on each exit (compiler.md §180);
+  // corpus/accept/a349-finally-exits-and-completions.ts pins it.
   try {
     print(`ratio=${ratio(21.0, 3.0)}`);
     print(`ratio=${ratio(1.0, 0.0)}`);

@@ -169,8 +169,9 @@ exact output, so the example's output stays pinned.
 `call_export_with(name, args)` calls an export that takes parameters
 (`compiler.md` §59, §61).
 
-An export is **host-callable** under three conditions: it is
-synchronous, it returns `void`, and every parameter is a boundary
+An export is **host-callable** under two conditions: it is
+synchronous and returns `void`, or it is `async` with no parameter and
+returns `Promise<void>`; and every parameter is a boundary
 scalar (a sized numeric or `boolean`), an opaque handle, or a
 wire-mapped (`CEnum`) string alias. `EntryArg` covers exactly those.
 
@@ -533,12 +534,13 @@ let emitted = emit_c_files(&files, Path::new("out"), "program", true)?;
 ```
 
 The fourth argument requests the generated host entry. With `true`
-the call writes three files:
+the call writes four files:
 
 | File | Contents |
 |---|---|
 | `out/program.c` | The program translation unit |
 | `out/program.alloc.h` | The allocation-metadata header |
+| `out/program.h` | The checked host entry declarations |
 | `out/entry.c` | The generated `main`: it creates the Context, runs the initializer, calls the entry, and releases the Context |
 
 Pass `false` when your own `main` drives the Context. The call then
@@ -617,7 +619,7 @@ artifact is C either way.
   Each record gives `task_id`, `awaited_task_id`, `state`, `kind`, `function_pos_id`, and `await_pos_id`.
   `function_pos` and `await_pos` give the resolved file, line, and column beside their tier-local ids.
   Position id zero gives an empty file and zero line and column.
-  Kinds are invocation (1) and aggregate (2).
+  Kinds are invocation (1), aggregate (2), group join (3), and host operation (4).
   `create_pos` names the call site; host kicks and aggregates have no script site.
   `reserved` is always 0. A prefix trap reports STOPPED immediately.
   States are READY (1), PARKED (2), WAITING (3), ACTIVE (4), COMPLETE (5), and STOPPED (6).
@@ -634,7 +636,7 @@ artifact is C either way.
   `first_difference(&other)` names the first declaration that
   differs, which is how the refusal message gets its name.
 - **Watching files** is host logic, not language surface: the CLI's
-  reload state machine is 212 lines over `ReloadSession`
+  reload state machine is 216 lines over `ReloadSession`
   (`cli/src/watch.rs`), and reads as a reference implementation.
   Polling and terminal I/O stay in the command loop.
 

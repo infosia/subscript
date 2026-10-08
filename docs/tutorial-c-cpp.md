@@ -192,7 +192,7 @@ after ready jobs, then drain the ready queue in first-in, first-out order
 Jobs that join the ready queue during the drain run in that step.
 Frames that park during the drain wait for the next step.
 `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
-(§94.2). A local, an array, or a field can hold an async handle.
+(§94.2). A local, an array, a field, or a global can hold an async handle.
 Copies retain the frame; releases decrement its reference count and free
 it at zero (§70.3). No background scheduler or implicit collection runs (see the
 [TypeScript tutorial](tutorial-typescript.md#asyncawait-without-a-scheduler)).
@@ -217,8 +217,10 @@ The callback receives `const subscript_rt_async_task_info*`. The record pointer 
 The visit runs no script, changes no state, and allocates no Context memory. A null visitor returns zero.
 Records arrive in `task_id` order. Context-local ids start at one and are never reused.
 The record gives `task_id`, `awaited_task_id`, `state`, `kind`, `function_pos_id`, and `await_pos_id`.
-Kinds are invocation (1) and aggregate (2).
+Kinds are invocation (1), aggregate (2), group join (3), and host operation (4).
 The `create_pos_id` names the call site; host kicks and aggregates report 0.
+A host operation reports its call site as `create_pos_id`, and zero function and await positions.
+A waiting invocation can name a host operation: it waits for your completion call.
 The `reserved` field is always 0. A prefix trap reports STOPPED immediately.
 
 States are READY (1), PARKED (2), WAITING (3), ACTIVE (4), COMPLETE (5), and STOPPED (6).
@@ -618,7 +620,7 @@ class. An exported `async` function with a parameter is rejected
 outright:
 
 ```text
-error[S100]: exported async function `warm` must have the host entry signature `(): Promise<void>`
+error[S100]: entry export `warm`: async host entries cannot have parameters; target `warm` in `warm.ts`
 ```
 
 **A wire-mapped alias parameter validates before the body runs.** A
@@ -841,6 +843,14 @@ An opaque handle is a branded interface. A length-carrying string view
 is `string`. A (pointer, count) descriptor is `T[]`. A struct is your
 struct, at your offsets: layout identity is asserted by `offsetof`
 tests against the platform C compiler, not claimed.
+
+A C function that completes later takes a `subscript_rt_completion` as
+its last parameter and returns `void`. Name it with `subscript bind
+--completion <function>=<result>`. The mirror then declares it without
+the endpoint parameter, with the result `Promise<T>`, and the script
+awaits it. The host completes the operation later with
+`subscript_rt_complete_value`, `subscript_rt_complete_void`, or
+`subscript_rt_complete_error` (§178).
 
 The frontend is libclang, so it parses real C — preprocessor,
 attributes, typedefs, nested structs, function-pointer typedefs, enums,

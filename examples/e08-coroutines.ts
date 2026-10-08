@@ -1,7 +1,7 @@
 // example: e08-coroutines
 // teaches: Advance a function* coroutine once per frame and observe each suspended value.
 // differs-from-typescript: C8/Q34 provide host-driven coroutines and poll-driven async; no event loop or Promise objects.
-// see: corpus/accept/a20-coroutine-generator.ts, corpus/accept/a79-for-of-generator.ts, corpus/reject/r14-async.ts, collisions.md C8, compiler.md §7
+// see: corpus/accept/a20-coroutine-generator.ts, corpus/accept/a79-for-of-generator.ts, corpus/accept/a93-async-chain.ts, collisions.md C8, compiler.md §7
 
 // A coroutine keeps its position between calls. A host-owned frame loop needs
 // that shape: one step per frame, and no loop of its own inside the script.
@@ -35,7 +35,6 @@ export function main(): void {
     }
   }
 
-  // Rejected alternative: async function is S013, "`async` requires an
-  // event loop; the language has none (use coroutines)";
-  // corpus/reject/r14-async.ts pins it.
+  // An async function is the other suspension form: the host steps it
+  // (compiler.md §94); corpus/accept/a93-async-chain.ts pins it.
 }

@@ -26,7 +26,7 @@ program type-checks under stock `tsc --strict`.
 | `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
 | Garbage collection | `Context.free`, `Context.collect`, `using`; nothing runs unbidden |
-| `throw` / `try` | `Error`, `SyntaxError`, and `TypeError` only, no `finally`; faults are traps, which no `catch` stops |
+| `throw` / `try` | The seven `Error`-family classes only; `finally` runs on each exit; faults are traps, which no `catch` or `finally` stops |
 | Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
 | A program with a top level | Exported entry points the host calls |
@@ -404,11 +404,15 @@ CI.
 ## Exceptions, result values, and traps
 
 `throw`, `try`, and `catch` are in the language, with a narrower
-surface than in JavaScript. A thrown value is an `Error`, a
-`SyntaxError`, or a `TypeError`. The catch binding has two uses:
-`instanceof`, which narrows it to the class, and `throw`, which
-rethrows it. `finally` is rejected. A `try` block can hold `await`
-or `yield` (§116.1 rule 7). `throw 42` and `catch (e: any)` are
+surface than in JavaScript. A thrown value is an object of the
+`Error` family: `Error`, `SyntaxError`, `TypeError`, `RangeError`,
+`ReferenceError`, `EvalError`, or `URIError`. The catch binding has two
+uses: `instanceof`, which narrows it to the class, and `throw`, which
+rethrows it. A `finally` block runs once on each exit of its `try` and
+`catch` blocks; a `return` or `throw` in it replaces the earlier
+completion, as in JavaScript. A trap runs no `finally` block (§180). A
+`try` block and a `finally` block can hold `await` or `yield` (§116.1
+rule 7, §180). `throw 42` and `catch (e: any)` are
 rejected with `S010`.
 
 `JSON.parse<T>` returns a `T`. Malformed text raises `SyntaxError`
@@ -509,13 +513,17 @@ after 3 steps: 30
 These forms are awaitable: `Context.suspend()`, a direct call of an
 `async` function or `async` instance method, and a handle that an
 earlier call produced. A call through a function value that returns a handle is also awaitable (§167).
-A named async function is a value. An async arrow that captures nothing is accepted (§167 rule 2).
-An async arrow cannot capture a local, a parameter, or `this` (§167 rule 5).
+`Promise.all` over an array of handles, `TaskGroup.join()`, and a call
+of a host completion function are awaitable too (§166, §170, §178).
+A named async function is a value. An async arrow can capture a `const`
+local of an enclosing function; the arrow can then be stored, returned,
+and called later (§181). A captured `let`, `var`, parameter, or `this`
+is rejected with `S009`: copy the value into a `const` first.
 A local, an array, a field, or a global can hold
 a handle (§70.3 rule 2a). A handle can pass to another function.
 Every handle a program creates must have
-one awaited completion. `new Promise`, `.then`, `Promise.all`, and the
-other statics do not exist.
+one awaited completion. `new Promise`, `.then`, `.catch`, `.finally`,
+and the statics other than `Promise.all` do not exist.
 
 An async call runs the callee to its first await at the call. A callee
 that never awaits completes at the call, and its handle carries the
@@ -570,12 +578,15 @@ That is JavaScript's order for the same program, and this language
 reaches it without an event loop: the queue advances only inside the
 host's step.
 
-Two consequences follow. A host step has no work budget, so a chain of
-completed awaits that never ends keeps one step from returning;
+Two consequences follow. The unbudgeted host step has no work budget,
+so a chain of completed awaits that never ends keeps it from returning;
 `Context.suspend()` is the boundary a program uses to hand control back.
+The budgeted step (`subscript_rt_ctx_async_step_budget`, §168) returns
+after a stated number of dispatches.
 And a host that sees no pending work has not proved that every call
-finished: `subscript_rt_ctx_async_unfinished` reports invocations that
-are still waiting on something nothing will complete.
+finished: `subscript_rt_ctx_async_unfinished` counts the started
+invocations with no completion, and the host operations that the host
+did not complete yet (§178 rule 11).
 
 An exception that leaves an async body completes its handle; the call
 returns that handle (§116.1 rule 1).
@@ -970,8 +981,8 @@ pinned corpus example, is in
 | S006 | `extends` on a value class |
 | S007 | Bare `number` |
 | S008 | A numeric literal that does not fit its context |
-| S009 | A capturing lambda that escapes its defining function |
-| S010 | An exception form outside the decided surface: a non-Error `throw`, `finally`, `catch (e: any)` |
+| S009 | A synchronous capturing lambda that escapes its defining function or the block of a counted capture; an async arrow that captures a `let`, `var`, parameter, or `this`; a `TaskGroup` outside one `const` local |
+| S010 | An exception form outside the decided surface: a `throw` of a value outside the `Error` family, `catch (e: any)` |
 | S011 | Unions beyond `Ref \| null`, and unnarrowed access |
 | S012 | `undefined` |
 | S013 | The `Promise` object surface, and an async handle never awaited |
