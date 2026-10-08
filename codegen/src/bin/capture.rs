@@ -11,6 +11,10 @@
 //! Interop entries additionally use `--features capture-interop`, which
 //! links the synthetic native fixture into this capture process only.
 
+#[path = "../../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -106,44 +110,6 @@ extern "C" {
     fn subRequestMarkLiveBytes();
     fn subRequestLiveBytesFellBy();
     fn subRequestReleaseAndRefire();
-}
-
-fn references_interop(source: &str) -> bool {
-    const TOKENS: &[&str] = &[
-        "subDevice",
-        "subChainPayloadValue",
-        "subSlice",
-        "SubDrawList",
-        "subDrawListTotal",
-        "SUB_ACCESS",
-        "subAccessMatches",
-        "subBulk",
-        "SUB_STAGE",
-        "subStageMatches",
-        "subFutureMake",
-        "subStatsMake",
-        "SubQueryStatus",
-        "SubWaitEntry",
-        "subBoundaryString",
-        "subProbeTexture",
-        "subProbePipelineLayout",
-        "subProbeBindGroupEntry",
-        "subProbeComputePipeline",
-        "subProbeRenderPipeline",
-        "subProbeProgrammableStage",
-        "subProbeFullRenderPipeline",
-        "subProbeBreadthRenderPipeline",
-        "subProbeWideRenderPipeline",
-        "subProbeQueueSubmit",
-        "subProbeSetBindGroup",
-        "subByValue",
-        "subHostOwnedState",
-        "subWireMode",
-        "subBindTone",
-        "subRequest",
-        "SubRequestInfo",
-    ];
-    TOKENS.iter().any(|token| source.contains(token))
 }
 
 #[cfg(all(feature = "capture-interop", not(all(windows, target_env = "msvc"))))]
@@ -543,46 +509,14 @@ fn main() -> ExitCode {
         }
     };
 
-    let wire_enum = sources.iter().any(|source| {
-        ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
-            .iter()
-            .any(|token| source.source.contains(token))
-    });
-    let interop = sources
+    let text = sources
         .iter()
-        .any(|source| references_interop(&source.source));
-    if interop {
-        let mirror = accept.join("../interop/interop.generated.d.ts");
-        let text = match fs::read_to_string(&mirror) {
-            Ok(text) => text,
-            Err(e) => {
-                eprintln!("capture: read {}: {e}", mirror.display());
-                return ExitCode::from(2);
-            }
-        };
-        sources.insert(0, SourceFile::ambient("interop.generated.d.ts", text));
-    }
-    if wire_enum {
-        let mirror = accept.join("../interop/wire-enum.generated.d.ts");
-        let text = match fs::read_to_string(&mirror) {
-            Ok(text) => text,
-            Err(e) => {
-                eprintln!("capture: read {}: {e}", mirror.display());
-                return ExitCode::from(2);
-            }
-        };
-        sources.insert(0, SourceFile::ambient("wire-enum.generated.d.ts", text));
-
-        let aliases = accept.join("../interop/wire-enum-aliases.d.ts");
-        let text = match fs::read_to_string(&aliases) {
-            Ok(text) => text,
-            Err(e) => {
-                eprintln!("capture: read {}: {e}", aliases.display());
-                return ExitCode::from(2);
-            }
-        };
-        sources.insert(0, SourceFile::ambient("wire-enum-aliases.d.ts", text));
-    }
+        .map(|source| source.source.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mirrors = interop::mirrors_for(&text, SourceFile::ambient);
+    let interop = !mirrors.is_empty();
+    sources.splice(0..0, mirrors);
 
     let result = if id == "a140-wire-entry-param" {
         capture_wire_entry_param(&sources)

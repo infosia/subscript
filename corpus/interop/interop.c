@@ -1701,3 +1701,8 @@ void subRequestReleaseAndRefire(SubDevice device) {
      * fire finds it and traps (§111 rule 14, the certain case). */
     callback(subRequestMessage(1), registration, NULL);
 }
+
+/* The completion fixture uses the Context adopted by callback registration. */
+subscript_rt_context *subCompletionDeviceContext(SubDevice device) {
+    return device == NULL ? NULL : device->req_ctx;
+}

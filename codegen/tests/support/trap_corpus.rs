@@ -1,5 +1,7 @@
 //! Discovery for the runtime-trap corpus category.
 
+use crate::corpus::interop;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -58,39 +60,8 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
     let path = trap.join(format!("{id}.ts"));
     let text = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read trap entry {}: {e}", path.display()));
-    let mut sources = vec![SourceFile::new(format!("{id}.ts"), text)];
-    // The two narrowing probes receive their only checker-permitted
-    // `object | null` values through the generated host-boundary mirror.
-    // Keep the mirror ambient (not a second checked module), exactly as
-    // the accept-corpus interop entries do.
-    if sources[0].source.contains("SubCallbackInfo")
-        || sources[0].source.contains("SubRequestInfo")
-        || sources[0].source.contains("SGPUProbeBlendState")
-    {
-        let mirror = trap
-            .parent()
-            .expect("corpus/trap has a corpus parent")
-            .join("interop/interop.generated.d.ts");
-        let text = fs::read_to_string(&mirror)
-            .unwrap_or_else(|e| panic!("read trap ambient mirror {}: {e}", mirror.display()));
-        sources.insert(0, SourceFile::ambient("interop.generated.d.ts", text));
-    }
-    if sources[0].source.contains("SubWireMode") {
-        let mirror = trap
-            .parent()
-            .expect("corpus/trap has a corpus parent")
-            .join("interop/wire-enum.generated.d.ts");
-        let text = fs::read_to_string(&mirror)
-            .unwrap_or_else(|e| panic!("read trap ambient mirror {}: {e}", mirror.display()));
-        sources.insert(0, SourceFile::ambient("wire-enum.generated.d.ts", text));
-        let aliases = trap
-            .parent()
-            .expect("corpus/trap has a corpus parent")
-            .join("interop/wire-enum-aliases.d.ts");
-        let text = fs::read_to_string(&aliases)
-            .unwrap_or_else(|e| panic!("read trap ambient aliases {}: {e}", aliases.display()));
-        sources.insert(0, SourceFile::ambient("wire-enum-aliases.d.ts", text));
-    }
+    let mut sources = interop::mirrors_for(&text, SourceFile::ambient);
+    sources.push(SourceFile::new(format!("{id}.ts"), text));
     sources
 }
 

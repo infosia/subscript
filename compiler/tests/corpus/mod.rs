@@ -1,47 +1,10 @@
 //! Shared corpus-test helpers.
 
-/// Returns true when source text names the generated interop mirror.
-pub fn references_interop(source: &str) -> bool {
-    const TOKENS: &[&str] = &[
-        "subDevice",
-        "subChainPayloadValue",
-        "subSlice",
-        "SubDrawList",
-        "subDrawListTotal",
-        "SUB_ACCESS",
-        "SubLogCallback",
-        "subAccessMatches",
-        "subBulk",
-        "subBoundaryString",
-        "subProbeTexture",
-        "subProbeComputePipeline",
-        "subProbeRenderPipeline",
-        "subProbeProgrammableStage",
-        "subProbeFullRenderPipeline",
-        "SGPUProbeColorTargetState",
-        "subProbeBreadthRenderPipeline",
-        "subProbeWideRenderPipeline",
-        "subProbeQueueSubmit",
-        "subProbeSetBindGroup",
-        "SUB_STAGE",
-        "subStageMatches",
-        "subFutureMake",
-        "subStatsMake",
-        "SubQueryStatus",
-        "SubWaitEntry",
-        "subByValue",
-        "subHostOwnedState",
-        "subWireMode",
-        "subBindTone",
-        "subProbePipelineLayout",
-        "subProbeBindGroupEntry",
-    ];
-    TOKENS.iter().any(|token| source.contains(token))
-}
-
 #[path = "../../../codegen/tests/corpus/mod.rs"]
 #[allow(dead_code)]
 mod directory_corpus;
+
+pub(crate) use directory_corpus::interop;
 
 /// All directory programs, in stable order.
 #[allow(dead_code)]

@@ -202,9 +202,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 *index += explicit_offset;
             }
         }
+        let completion = matches!(callee, hir::Callee::Foreign(name) if self.lowering.hir.foreign_fns.iter().any(|f| f.name == *name && f.completion_result.is_some()));
         let call_traps = convert_traps(&sites)
             .into_iter()
-            .filter(|trap| trap.kind != l::TrapKind::Allocation)
+            .filter(|trap| completion || trap.kind != l::TrapKind::Allocation)
             .collect();
         let temporaries = operands
             .iter()
@@ -226,8 +227,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 is_async_owner_type(&ty).then(|| (operand.clone(), ty))
             })
             .collect::<Vec<_>>();
+        let instruction_kind = if let l::CallTargetKind::Foreign(id) = target.kind {
+            if completion {
+                self.host_completion_kind(id, expr)?
+            } else {
+                l::InstructionKind::Call(target)
+            }
+        } else {
+            l::InstructionKind::Call(target)
+        };
         let mut result = self.emit_store_instruction(
-            l::InstructionKind::Call(target),
+            instruction_kind,
             operands,
             stored,
             (return_type, true),

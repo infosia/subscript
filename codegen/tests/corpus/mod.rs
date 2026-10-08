@@ -6,6 +6,10 @@
 //! names an entry, so adding a corpus entry or a golden changes no test
 //! code (`specs/blocks/compiler.md` §2).
 
+#[path = "../../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+pub(crate) mod interop;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,117 +20,9 @@ pub fn corpus_accept() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept")
 }
 
-/// The committed ambient mirror (`corpus/interop/interop.generated.d.ts`),
-/// generated from the pinned synthetic header. Interop entries (a25+) are
-/// written against these global ambient declarations exactly as the
-/// language prelude, so the gate ingests it as an ambient source for any
-/// entry that uses it (`specs/blocks/compiler.md` §12.4). The corpus gate
-/// supplies the fixture's [`subscript_codegen::NativeLibrary`] beside this
-/// mirror for entries that use it.
-fn interop_mirror() -> SourceFile {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/interop.generated.d.ts");
-    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    SourceFile::ambient("interop.generated.d.ts", text)
-}
-
-/// The second generated mirror. It references `SubDevice` from
-/// [`interop_mirror`] through `@subscript-external` and intentionally
-/// declares no local copy of that handle.
-fn external_device_mirror() -> SourceFile {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/external-device.generated.d.ts");
-    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    SourceFile::ambient("external-device.generated.d.ts", text)
-}
-
-/// The bind-generated mirror for the synthetic wire-enum fixture.
-fn wire_enum_mirror() -> SourceFile {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/wire-enum.generated.d.ts");
-    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    SourceFile::ambient("wire-enum.generated.d.ts", text)
-}
-
-/// Hand-authored ambient wire tables referenced by [`wire_enum_mirror`].
-fn wire_enum_aliases() -> SourceFile {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/wire-enum-aliases.d.ts");
-    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    SourceFile::ambient("wire-enum-aliases.d.ts", text)
-}
-
-/// True when any of `sources` names a foreign function, boundary struct,
-/// or flag member of the synthetic interop header. A false negative is not
-/// silent: the entry then fails to check with an unresolved `Sub…`
-/// identifier, failing the gate loudly rather than skipping — a false
-/// positive would only add unused ambient declarations.
-fn uses_interop_mirror(sources: &[SourceFile]) -> bool {
-    sources.iter().any(|s| references_interop(&s.source))
-}
-
-fn uses_external_device_mirror(sources: &[SourceFile]) -> bool {
-    sources
-        .iter()
-        .any(|source| source.source.contains("subExternalDevice"))
-}
-
-/// Interop-mirror name fragments: the device/slice APIs plus the
-/// embedded-array struct, flag member, and untyped-facade shapes.
+/// True when the source names a declaration from a committed interop mirror.
 pub(crate) fn references_interop(src: &str) -> bool {
-    const TOKENS: &[&str] = &[
-        "subDevice",
-        "subChainPayloadValue",
-        "SubChain",
-        "subSlice",
-        "SubDrawList",
-        "subDrawListTotal",
-        "SUB_ACCESS",
-        "SubLogCallback",
-        "subAccessMatches",
-        "subBulk",
-        // Async/Future shapes (compiler.md §14).
-        "SUB_STAGE",
-        "subStageMatches",
-        "subFutureMake",
-        "subStatsMake",
-        "SubQueryStatus",
-        // Composed async capstone (compiler.md §14.4/§14.5).
-        "SubWaitEntry",
-        // String-view field inside a pointer-passed boundary struct.
-        "subBoundaryString",
-        // Texture descriptor: nested aggregate plus struct enum pair.
-        "subProbeTexture",
-        // Opaque-handle pair and nullable aggregate fields.
-        "subProbePipelineLayout",
-        "subProbeBindGroupEntry",
-        "subProbeComputePipeline",
-        "subProbeRenderPipeline",
-        "subProbeProgrammableStage",
-        // Recursive lowering through struct-pointer members.
-        "subProbeFullRenderPipeline",
-        "SGPUProbeColorTargetState",
-        // Two simultaneous reach-through pointer members.
-        "subProbeBreadthRenderPipeline",
-        // Wide descriptor breadth and depth combined.
-        "subProbeWideRenderPipeline",
-        // Registered-handle pairs at parameter position.
-        "subProbeQueueSubmit",
-        // Nullable registered handles at parameter position.
-        "subProbeSetBindGroup",
-        // By-value register-image packing (compiler.md §47).
-        "subByValue",
-        "SubByValue",
-        // Host-owned state (compiler.md §49).
-        "subHostOwnedState",
-        // Wire-mapped literal-union boundary crossings.
-        "subWireMode",
-        "subBindTone",
-        // Callback registrations with an explicit end (compiler.md §111).
-        "subRequest",
-        "SubRequestInfo",
-    ];
-    TOKENS.iter().any(|t| src.contains(t))
+    !interop::mirrors_for(src, |_, _| ()).is_empty()
 }
 
 /// Every entry id present in `accept`, single- and multi-file.
@@ -217,26 +113,24 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         vec![SourceFile::new(format!("{id}.ts"), text)]
     };
-    // Interop entries (a25+) resolve the synthetic-header mirrors as an
-    // ambient surface. Insert the external mirror first, then its owner at
-    // index zero, so both language ingestion and emitted C includes see
-    // interop.h before external-device.h.
-    let uses_external = uses_external_device_mirror(&sources);
-    let uses_wire_enum = sources.iter().any(|source| {
-        ["subWireMode", "SubWireMode", "subBindTone", "SubBindTone"]
-            .iter()
-            .any(|token| source.source.contains(token))
-    });
-    let uses_interop = uses_interop_mirror(&sources) || uses_external;
-    if uses_external {
-        sources.insert(0, external_device_mirror());
+    if sources.len() == 1
+        && sources[0]
+            .source
+            .lines()
+            .any(|line| line == "// corpus-ambient: yes")
+    {
+        sources[0].dts = true;
+        sources[0].entry = false;
+        sources.push(SourceFile::entry(
+            "main.ts",
+            "export function main(): void {}",
+        ));
     }
-    if uses_interop {
-        sources.insert(0, interop_mirror());
-    }
-    if uses_wire_enum {
-        sources.insert(0, wire_enum_mirror());
-        sources.insert(0, wire_enum_aliases());
-    }
+    let text = sources
+        .iter()
+        .map(|source| source.source.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    sources.splice(0..0, interop::mirrors_for(&text, SourceFile::ambient));
     sources
 }

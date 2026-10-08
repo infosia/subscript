@@ -22,6 +22,8 @@
 #[path = "../../codegen/tests/corpus/mod.rs"]
 mod corpus;
 
+use corpus::interop;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -173,16 +175,9 @@ fn rendered_rejections(root: &Path) -> Vec<(String, String)> {
             .any(|diagnostic| diagnostic.code == RuleCode::S016)
         {
             let mut mirrored = files.clone();
-            for mirror in [
-                "interop.generated.d.ts",
-                "external-device.generated.d.ts",
-                "wire-enum.generated.d.ts",
-                "wire-enum-aliases.d.ts",
-            ] {
-                if !mirrored.iter().any(|file| file.name == mirror) {
-                    let source =
-                        fs::read_to_string(root.join("corpus/interop").join(mirror)).unwrap();
-                    mirrored.insert(0, subscript_compiler::SourceFile::ambient(mirror, source));
+            for mirror in interop::mirrors(subscript_compiler::SourceFile::ambient) {
+                if !mirrored.iter().any(|file| file.name == mirror.name) {
+                    mirrored.insert(0, mirror);
                 }
             }
             let start = std::time::Instant::now();

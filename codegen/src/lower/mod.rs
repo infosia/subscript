@@ -126,6 +126,7 @@ pub(crate) struct RtFns {
     pub async_register: FuncId,
     pub async_register_counted: FuncId,
     pub async_all: FuncId,
+    pub async_host_operation: FuncId,
     pub task_group: FuncId,
     pub async_park: FuncId,
     pub async_await: FuncId,
@@ -989,7 +990,16 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I32, I64, I64, I32],
             Some(I64),
         )?,
-        async_all: mk("subscript_rt_async_all", &[I64, I64, I64, I32], Some(I64))?,
+        async_host_operation: mk(
+            "subscript_rt_async_host_operation",
+            &[I64, I64, I32, I32, I64, I64],
+            Some(I64),
+        )?,
+        async_all: mk(
+            "subscript_rt_async_all",
+            &[I64, I64, I64, I64, I32],
+            Some(I64),
+        )?,
         async_register: mk(
             "subscript_rt_async_register_uncounted",
             &[I64, I64, I64],

@@ -65,6 +65,11 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    (
+        "r397-foreign-promise-without-completion.ts",
+        RuleCode::S100,
+        10,
+    ),
     ("r396-counted-capture-direct.ts", RuleCode::S009, 11),
     ("r396-counted-capture-copy.ts", RuleCode::S009, 11),
     ("r396-counted-capture-transitive.ts", RuleCode::S009, 11),
@@ -1614,5 +1619,18 @@ fn abstract_property_read_keeps_one_diagnostic() {
     assert_eq!(
         diagnostics[0].divergence,
         Some(subscript_compiler::divergence::Divergence::AbstractMember)
+    );
+}
+
+#[test]
+fn foreign_promise_rejection_names_the_missing_completion_directive() {
+    let sources = reject_sources(
+        &corpus_dir().join("reject"),
+        "r397-foreign-promise-without-completion.ts",
+    );
+    let diagnostics = check_entry(&sources);
+    assert_eq!(
+        diagnostics[0].message,
+        "foreign function `read` returns Promise<T> without a `@subscript-c-completion` directive"
     );
 }

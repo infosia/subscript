@@ -11,6 +11,8 @@ use std::path::PathBuf;
 #[path = "../../clang_resolver.rs"]
 mod clang_resolver;
 
+mod cases;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let directory = manifest.join("../../../corpus/interop");
@@ -18,6 +20,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let header = directory.join("interop.h");
     let external_source = directory.join("external-device.c");
     let external_header = directory.join("external-device.h");
+    let completion_source = directory.join("host-completion.c");
+    println!("cargo:rerun-if-changed={}", completion_source.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        directory.join("host-completion.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        directory.join("abi-pressure.c").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        directory.join("abi-pressure.h").display()
+    );
     let wire_source = directory.join("wire-enum.c");
     let wire_header = directory.join("wire-enum.h");
 
@@ -37,12 +53,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let out = PathBuf::from(std::env::var("OUT_DIR")?);
+    println!("cargo:rerun-if-changed=cases.rs");
+    cases::generate(&out)?;
     let mut build = cc::Build::new();
     #[cfg(unix)]
     build.compiler(clang_resolver::resolve_capable_clang()?);
     build
         .define("SUBSCRIPT_INTEROP_LIBRARY_ONLY", None)
+        .file(out.join("class-sweep.c"))
+        .file(out.join("class-results.c"))
+        .include(&out)
         .file(&source)
+        .file(&completion_source)
+        .file(directory.join("abi-pressure.c"))
         .file(&external_source)
         .file(&wire_source)
         .include(&directory)

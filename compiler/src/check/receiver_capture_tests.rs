@@ -70,10 +70,7 @@ fn capture_escape_has_clean_controls() {
         accept(&source.replace(body, control));
     }
     let source = "class C { n:i32=1; install():void { new SubCallbackInfo((message, userdata, userparam):void=>{print(`${this.n}`);}, null, null); } } export function main():void{}";
-    let mirror = SourceFile::ambient(
-        "interop.generated.d.ts",
-        include_str!("../../../corpus/interop/interop.generated.d.ts"),
-    );
+    let mirror = crate::test_interop::mirror("interop.generated.d.ts", SourceFile::ambient);
     let diagnostics = check_program(&[mirror.clone(), SourceFile::entry("main.ts", source)])
         .expect_err("C callback capture");
     assert!(diagnostics

@@ -4,6 +4,10 @@
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_codegen::{
     interpreter::interpret, lir::lower_module, run_c_aot, run_c_aot_with_native_libraries, run_jit,
     run_jit_with_native_libraries, NativeLibrary,
@@ -54,10 +58,7 @@ fn nullable_map_values_and_field_reads_keep_their_evaluation_order() {
 #[cfg(not(all(windows, target_env = "msvc")))]
 fn mirror_program(source: &str) -> Vec<SourceFile> {
     vec![
-        SourceFile::ambient(
-            "interop.generated.d.ts",
-            include_str!("../../corpus/interop/interop.generated.d.ts"),
-        ),
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
         SourceFile::new("test.ts", source),
     ]
 }

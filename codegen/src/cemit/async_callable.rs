@@ -28,7 +28,7 @@ impl<'m> Emitter<'m> {
             let _ = writeln!(
                 out,
                 "    {} value = {{0}};",
-                self.ctype(&function.return_type)?
+                self.completion_ctype(&function.return_type)?
             );
             ("&value".to_string(), "sizeof(value)".to_string())
         };

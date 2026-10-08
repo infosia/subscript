@@ -557,24 +557,7 @@ fn every_corpus_coroutine_field_matches_live_values_at_suspension() {
     let mut functions = 0;
     let mut suspensions = 0;
     for (directory, id) in entries {
-        let mut sources = corpus::entry_sources(&directory, &id);
-        if sources
-            .iter()
-            .any(|source| !source.dts && source.source.contains("SGPUProbeBlendState"))
-            && !sources
-                .iter()
-                .any(|source| source.name == "interop.generated.d.ts")
-        {
-            sources.push(subscript_compiler::SourceFile::ambient(
-                "interop.generated.d.ts",
-                std::fs::read_to_string(
-                    root.parent()
-                        .expect("corpus root")
-                        .join("interop/interop.generated.d.ts"),
-                )
-                .expect("trap ambient mirror"),
-            ));
-        }
+        let sources = corpus::entry_sources(&directory, &id);
         let hir = subscript_compiler::check_program(&sources)
             .unwrap_or_else(|error| panic!("{id}: {error:?}"));
         let lir = crate::lir::lower_module(&hir).expect("corpus LIR");

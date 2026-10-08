@@ -121,6 +121,12 @@ enum AggregateArgPlan {
     Hfa(Vec<(u32, types::Type)>),
     /// One register argument per image, read from the aggregate's bytes.
     Images(Vec<EightbyteImage>),
+    /// AAPCS64: exhaust the required register bank, then pass the whole stack image.
+    StackImages {
+        padding: usize,
+        padding_type: types::Type,
+        images: Vec<EightbyteImage>,
+    },
     /// The address of a caller copy is the argument.
     Indirect,
     /// SysV MEMORY class: the caller copy occupies `stack_size` bytes, rounded to whole eightbytes.

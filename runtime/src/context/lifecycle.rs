@@ -27,7 +27,8 @@ impl Context {
     }
 
     pub(super) fn with_tier(ship_arena: bool) -> Box<Context> {
-        Box::new(Context {
+        let context_id = super::host_operation::next_context_id();
+        let mut context = Box::new(Context {
             trap_flag: 0,
             reload_epoch: 0,
             fn_table: std::ptr::null(),
@@ -42,6 +43,9 @@ impl Context {
             active_async_frames: Vec::new(),
             async_frames: HashMap::default(),
             next_async_task_id: 1,
+            context_id,
+            next_host_operation_id: 1,
+            host_operations: HashMap::new(),
             task_groups: HashMap::new(),
             live_bytes_counter: 0,
             allocations: HashMap::new(),
@@ -89,7 +93,11 @@ impl Context {
             large: HashMap::new(),
             #[cfg(test)]
             stats: Default::default(),
-        })
+        });
+        if context_id == 0 {
+            context.trap(TrapKind::Internal, "Context id exhausted", 0);
+        }
+        context
     }
 
     /// Creates the dedicated Context owned by one runtime worker.

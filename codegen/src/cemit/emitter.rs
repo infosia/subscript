@@ -262,6 +262,15 @@ impl<'m> Emitter<'m> {
         })
     }
 
+    /// The cached result uses the data layout, rather than the SSA local type.
+    pub(super) fn completion_ctype(&self, ty: &Type) -> Result<String, String> {
+        if *ty == Type::Bool {
+            Ok("uint8_t".into())
+        } else {
+            self.ctype(ty)
+        }
+    }
+
     pub(super) fn value_ctype(&self, ty: &l::ValueType) -> Result<String, String> {
         match ty {
             l::ValueType::Data(ty) => self.ctype(ty),
@@ -924,7 +933,10 @@ impl<'m> Emitter<'m> {
             let result_size = if function.return_type == Type::Void {
                 "0u".to_string()
             } else {
-                format!("(uint64_t)sizeof({})", self.ctype(&function.return_type)?)
+                format!(
+                    "(uint64_t)sizeof({})",
+                    self.completion_ctype(&function.return_type)?
+                )
             };
             let description = if function.return_type.counted_type().is_some() {
                 let bytes = crate::counted::description(&self.layouts, &function.return_type)?;

@@ -1,5 +1,9 @@
 //! Shared-read guards, local copies, boundary places, and disposal order (compiler.md §124).
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
 use subscript_compiler::{check_program, SourceFile};
 
@@ -104,7 +108,7 @@ fn narrowed_boundary_field_and_global_stores_keep_the_box() {
         ("let b: SGPUProbeBlendState | null = new SGPUProbeBlendState(1, 2);", "b"),
     ] {
         let files = [
-            SourceFile::ambient("interop.generated.d.ts", include_str!("../../corpus/interop/interop.generated.d.ts")),
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
             SourceFile::new("test.ts", format!("{declaration}\nexport function main(): void {{ if ({path} !== null) {{ {path}.colorOperation = 9; print(`${{{path}.colorOperation}}`); }} }}")),
         ];
         let module = lower_module(&check_program(&files).expect("checked boundary store"))
@@ -241,7 +245,7 @@ fn as_cast_null_traps_keep_their_runtime_identity() {
     use subscript_codegen::interpreter::InterpretError;
     use subscript_runtime::TrapKind;
     let files = [
-        SourceFile::ambient("interop.generated.d.ts", include_str!("../../corpus/interop/interop.generated.d.ts")),
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
         SourceFile::new("test.ts", "class Cell { v: i32 = 7; } export function main(): void { const info = new SubCallbackInfo((message, userdata, userparam) => {}, null, null); const value = info.userdata as Cell; print(`${value.v}`); }")
     ];
     let module = lower_module(&check_program(&files).expect("checked cast")).expect("valid cast");

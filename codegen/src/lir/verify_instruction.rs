@@ -488,6 +488,9 @@ pub(super) fn verify_instruction_contract(
                 bad("aggregate signature is invalid", errors);
             }
         }
+        l::InstructionKind::HostCompletion { .. } => {
+            super::completion::verify_host_completion(module, function, instruction, errors);
+        }
         l::InstructionKind::AsyncHandleCreate(target) => {
             let declared = match target.kind {
                 l::CallTargetKind::Function(id) => declared_function(module, id),

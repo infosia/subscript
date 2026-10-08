@@ -9,6 +9,10 @@
 //! rule codes (S001–S013, S100) and TS positions. Loaders can use
 //! [`parse_import_specifiers`] to discover imports with the same parser.
 
+#[cfg(test)]
+#[path = "../tests/corpus/interop.rs"]
+mod test_interop;
+
 use crate::check::rejection::{diagnostic, RejectionSite};
 pub mod api_reference;
 pub mod diag;

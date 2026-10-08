@@ -225,6 +225,7 @@ struct BindArguments {
     /// Aggregates named by `--explicit-callback-lifetime`, in the order
     /// the command line gives them (cli.md §10.1, compiler.md §111 rule 1).
     explicit_callback_lifetimes: Vec<String>,
+    completions: Vec<(String, String)>,
 }
 
 fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failure> {
@@ -248,6 +249,9 @@ fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failu
     let mut options = subscript_bindgen::BindOptions::new();
     for aggregate in parsed.explicit_callback_lifetimes {
         options = options.with_explicit_callback_lifetime(aggregate);
+    }
+    for (function, result) in parsed.completions {
+        options = options.with_completion(function, result);
     }
     let mirror = subscript_bindgen::generate_with_options(&source, include_spelling, &options)
         .map_err(|error| Failure::program(error.to_string()))?;
@@ -275,6 +279,16 @@ fn parse_bind_arguments(args: &[OsString]) -> Result<BindArguments, Failure> {
             Some("-o") => {
                 let value = path_value(args, &mut index, "-o")?;
                 set_once(&mut parsed.output, value, "-o")?;
+            }
+            Some("--completion") => {
+                let value = string_value(args, &mut index, "--completion")?;
+                let (function, result) = value
+                    .split_once('=')
+                    .filter(|(function, result)| !function.is_empty() && !result.is_empty())
+                    .ok_or_else(|| Failure::usage("--completion requires <function>=<result>"))?;
+                parsed
+                    .completions
+                    .push((function.to_string(), result.to_string()));
             }
             Some("--explicit-callback-lifetime") => {
                 let value = string_value(args, &mut index, "--explicit-callback-lifetime")?;

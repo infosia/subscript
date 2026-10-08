@@ -364,21 +364,22 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r395-array-length-store.ts`](../corpus/reject/r395-array-length-store.ts), line 10.
+Pinned corpus: [`corpus/reject/r397-foreign-promise-without-completion.ts`](../corpus/reject/r397-foreign-promise-without-completion.ts), line 10.
 
 Header guidance:
 
 ```text
+// corpus-ambient: yes
 // tsc: accepts
-// expected-error: S100: only `xs.length = 0` as a statement is accepted
+// expected-error: S100: foreign function `read` returns Promise<T> without a `@subscript-c-completion` directive
 ```
 
 ```ts
-export function main(): void {
-  const xs: i32[] = [1];
-  xs.length = 2;
-  xs.length -= 1;
-  const n = (xs.length = 0);
+
+// @subscript-c-header include="host.h"
+declare function read(): Promise<i32>;
+
+// pin: 09a1a889
 ```
 
 ## Warning rules

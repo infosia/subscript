@@ -1,6 +1,10 @@
 //! Stages 2 and 3 gate for compiler.md section 69: Node checks comparable
 //! output, and the collision table indexes its corpus evidence.
 
+#[path = "corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -592,8 +596,7 @@ fn every_accept_entry_has_a_total_js_claim_and_comparable_output_matches() {
         .collect();
     let prelude =
         fs::read_to_string(root.join("prelude/lang.d.ts")).expect("read prelude/lang.d.ts");
-    let mirror = fs::read_to_string(root.join("corpus/interop/interop.generated.d.ts"))
-        .expect("read fixture mirror");
+    let mirror = interop::mirrors(|_, text| text).join("\n");
     for name in &shim_names {
         assert!(
             prelude_has_global(&prelude, name) || prelude_has_global(&mirror, name),

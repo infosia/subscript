@@ -103,6 +103,9 @@ pub fn print_module(module: &lir::Module) -> String {
             foreign.id.0, foreign.source_name, foreign.return_type, foreign.include, foreign.pos
         )
         .unwrap();
+        if let Some((c, result)) = &foreign.completion_result {
+            let _ = writeln!(&mut out, "  completion result={result:?} c={c:?}");
+        }
         for parameter in &foreign.parameters {
             writeln!(
                 &mut out,

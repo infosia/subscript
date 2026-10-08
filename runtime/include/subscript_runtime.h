@@ -5,6 +5,7 @@
 #define SUBSCRIPT_RUNTIME_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* Recommended freed-handle diagnostics retention budget. The runtime does
  * not treat this value specially. */
@@ -127,6 +128,46 @@ typedef void (*subscript_rt_worker_entry)(subscript_rt_context* ctx, subscript_r
 /* The program header declares the entry module's checked host API. */
 void subscript_init(subscript_rt_context* ctx);
 
+/**
+ * A host completion endpoint. Neither word is a native pointer.
+ */
+typedef struct subscript_rt_completion {
+/**
+ * Process-unique subscript_rt_context identity; zero identifies no subscript_rt_context.
+ */
+    uint64_t context_id;
+/**
+ * Operation identity within one subscript_rt_context; zero identifies no operation.
+ */
+    uint64_t operation_id;
+} subscript_rt_completion;
+
+/**
+ * The result of a host completion attempt (§178 rule 7).
+ */
+typedef enum subscript_rt_completion_status {
+/**
+ * The source accepted the completion. Read the subscript_rt_context trap state after this result.
+ */
+    SUBSCRIPT_RT_COMPLETION_OK = 0,
+/**
+ * The endpoint belongs to another subscript_rt_context or an ended source.
+ */
+    SUBSCRIPT_RT_COMPLETION_STALE = 1,
+/**
+ * The live source already holds its first completion.
+ */
+    SUBSCRIPT_RT_COMPLETION_DUPLICATE = 2,
+/**
+ * The supplied result kind or size differs from the source.
+ */
+    SUBSCRIPT_RT_COMPLETION_MISMATCH = 3,
+/**
+ * The subscript_rt_context holds a trap. The source does not change.
+ */
+    SUBSCRIPT_RT_COMPLETION_TRAPPED = 4,
+} subscript_rt_completion_status;
+
 typedef struct subscript_rt_async_step_report {
     uint64_t dispatched;
     uint64_t pending;
@@ -152,6 +193,32 @@ typedef struct subscript_rt_async_task_info {
  */
 typedef void (*subscript_rt_async_task_visitor)(void* userdata, const subscript_rt_async_task_info* info);
 
+/**
+ * Completes a source with an Error at its creation position (§178).
+ * The call queues waiters without script execution. Allocation failure returns TRAPPED.
+ * It checks TRAPPED, STALE, then DUPLICATE. A last unobserved release traps 29 and returns OK.
+ *
+ * # Safety
+ * The subscript_rt_context is live on its owner thread. For a pending source, message holds length readable bytes.
+ * The `message` contains UTF-8 bytes. The runtime copies these bytes.
+ */
+subscript_rt_completion_status subscript_rt_complete_error(subscript_rt_context* ctx, subscript_rt_completion endpoint, const char* message, size_t length);
+/**
+ * Completes a value source (§178). The call copies bytes and queues waiters without script execution.
+ * It checks TRAPPED, STALE, DUPLICATE, then MISMATCH. Allocation failure returns TRAPPED.
+ *
+ * # Safety
+ * The subscript_rt_context is live on its owner thread. On a matching pending source, value holds size readable bytes.
+ */
+subscript_rt_completion_status subscript_rt_complete_value(subscript_rt_context* ctx, subscript_rt_completion endpoint, const void* value, size_t size);
+/**
+ * Completes a void source (§178). The call queues waiters without script execution.
+ * It checks TRAPPED, STALE, DUPLICATE, then MISMATCH.
+ *
+ * # Safety
+ * The subscript_rt_context is live on its owner thread, including during a script-to-host call.
+ */
+subscript_rt_completion_status subscript_rt_complete_void(subscript_rt_context* ctx, subscript_rt_completion endpoint);
 /**
  * Returns the work a host checkpoint can advance: runnable continuations
  * and aggregate reactions, plus frames that wait for the next checkpoint.
@@ -186,7 +253,7 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
  */
 subscript_rt_async_step_report subscript_rt_ctx_async_step_budget(subscript_rt_context* ctx, uint64_t max_dispatches);
 /**
- * Returns the number of started invocations without a completion.
+ * Returns the number of started invocations without a completion, plus pending host operations.
  *
  * # Safety
  *

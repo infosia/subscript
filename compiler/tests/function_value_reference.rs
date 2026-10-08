@@ -1,5 +1,9 @@
 //! Map rejection reasons and function field flow (compiler.md §123).
 
+#[path = "corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_compiler::{check_program, RuleCode, SourceFile};
 
 #[test]
@@ -21,10 +25,7 @@ fn map_get_reasons_distinguish_scalars_from_non_nullable_types() {
     ] {
         let source = |operation: &str| {
             vec![
-                SourceFile::ambient(
-                    "interop.generated.d.ts",
-                    include_str!("../../corpus/interop/interop.generated.d.ts"),
-                ),
+                interop::mirror("interop.generated.d.ts", SourceFile::ambient),
                 SourceFile::new(
                     "test.ts",
                     format!(

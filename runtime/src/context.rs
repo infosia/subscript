@@ -630,6 +630,9 @@ pub struct Context {
     // Registered frame addresses use the same pointer hash as callback registrations.
     pub(crate) async_frames: HashMap<usize, AsyncFrameMeta, BuildHasherDefault<AddressHasher>>,
     next_async_task_id: u64,
+    context_id: u64,
+    next_host_operation_id: u64,
+    host_operations: HashMap<u64, usize>,
     pub(crate) counted_maps: HashMap<usize, Vec<u8>>,
     task_groups: HashMap<usize, task_group::Group>,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.
@@ -797,7 +800,9 @@ mod tests;
 
 #[path = "context/async_scheduler.rs"]
 mod async_scheduler;
+mod host_operation;
 mod task_group;
+pub use host_operation::{CompletionEndpoint, CompletionStatus};
 #[cfg(test)]
 #[path = "context/task_group_tests.rs"]
 mod task_group_tests;

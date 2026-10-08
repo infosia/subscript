@@ -492,6 +492,19 @@ impl Interpreter<'_> {
                 };
                 Some(self.async_all(jobs, element, &instruction.pos)?)
             }
+            l::InstructionKind::HostCompletion { function, .. } => {
+                let foreign = self
+                    .module
+                    .foreign_functions
+                    .get(function.0 as usize)
+                    .map_or_else(
+                        || format!("foreign function {}", function.0),
+                        |f| f.source_name.clone(),
+                    );
+                return Err(InterpretError::Unsupported {
+                    reason: format!("{foreign} requires a native library"),
+                });
+            }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let value = self.invoke_target(
                     target,

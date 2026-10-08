@@ -5,6 +5,10 @@
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_codegen::{
     interpreter::interpret, lir::lower_module, run_c_aot_with_native_libraries,
     run_jit_with_native_libraries,
@@ -56,10 +60,7 @@ fn foreign_callback_rejects_early_read_and_runs_after_global() {
     let definitions = "class Foo { v: i32 = 1; }";
     let global = "const late: Foo = new Foo();";
     let block = "{ const chain: SubChainHeader = new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_BASE, null); const device: SubDevice = subDeviceCreate(chain); const info: SubCallbackInfo = new SubCallbackInfo((message, userdata1, userdata2) => { print(`f ${late.v}`); }, null, null); subDeviceSetLogger(device, info); subDeviceRelease(device); }";
-    let mirror = SourceFile::ambient(
-        "interop.generated.d.ts",
-        include_str!("../../corpus/interop/interop.generated.d.ts"),
-    );
+    let mirror = interop::mirror("interop.generated.d.ts", SourceFile::ambient);
     let sources = |body: String| [mirror.clone(), SourceFile::entry("main.ts", body)];
     rejected(
         &sources(format!(
@@ -233,10 +234,7 @@ fn a_later_lambda_is_not_followed_by_an_earlier_call() {
 
 #[test]
 fn a_registered_callback_remains_available_at_a_later_host_call() {
-    let mirror = SourceFile::ambient(
-        "interop.generated.d.ts",
-        include_str!("../../corpus/interop/interop.generated.d.ts"),
-    );
+    let mirror = interop::mirror("interop.generated.d.ts", SourceFile::ambient);
     let files = [mirror, SourceFile::entry("main.ts", "class Foo { v: i32 = 1; } const chain: SubChainHeader = new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_BASE, null); const device: SubDevice = subDeviceCreate(chain); const info: SubCallbackInfo = new SubCallbackInfo((message, userdata1, userdata2) => { print(`${late.v}`); }, null, null); subDeviceSetLogger(device, info); subDevicePoll(1); const late: Foo = new Foo(); export function main(): void { subDeviceRelease(device); }")];
     let errors = check_program(&files).expect_err("registered callback reads late");
     assert_eq!(errors.len(), 2, "{errors:?}");

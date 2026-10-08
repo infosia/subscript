@@ -101,7 +101,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 *function,
                 operands,
                 parameter_types,
-                target.return_type.as_ref(),
+                (target.return_type.as_ref(), None),
                 traps,
                 pos,
             )?,
@@ -646,13 +646,53 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let handle = self
                     .call_runtime(
                         self.ml.rt.async_all,
-                        &[self.ctx, jobs, size, position],
+                        &[self.ctx, jobs, size, size, position],
                         true,
                     )?
                     .ok_or_else(|| internal("aggregate call has no result"))?;
                 for trap in &instruction.traps {
                     self.emit_trap(trap, TrapOperand::Pending)?;
                 }
+                Some(RV::Scalar(handle))
+            }
+            l::InstructionKind::HostCompletion {
+                function,
+                result_size,
+                is_void,
+                error_metadata,
+            } => {
+                let endpoint = self.stack_slot(16, 8);
+                let metadata = self.stack_slot(48, 8);
+                for (index, word) in error_metadata.iter().enumerate() {
+                    let word = self.builder.ins().iconst(types::I64, *word as i64);
+                    self.builder
+                        .ins()
+                        .store(flags(), word, metadata, (index * 8) as i32);
+                }
+                let size = self.builder.ins().iconst(types::I64, *result_size as i64);
+                let void = self.iconst(types::I32, i64::from(*is_void));
+                let position = self.position_id(&instruction.pos);
+                let position = self.iconst(types::I32, position);
+                let handle = self
+                    .call_runtime(
+                        self.ml.rt.async_host_operation,
+                        &[self.ctx, size, void, position, metadata, endpoint],
+                        true,
+                    )?
+                    .ok_or_else(|| internal("host source call has no result"))?;
+                for trap in &instruction.traps {
+                    if trap.kind == l::TrapKind::Allocation {
+                        self.emit_trap(trap, TrapOperand::Pending)?;
+                    }
+                }
+                self.foreign_call(
+                    *function,
+                    &operands,
+                    &operand_types,
+                    (None, Some(endpoint)),
+                    &instruction.traps,
+                    &instruction.pos,
+                )?;
                 Some(RV::Scalar(handle))
             }
             l::InstructionKind::AsyncHandleCreate(target) => {

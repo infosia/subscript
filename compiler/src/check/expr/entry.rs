@@ -678,7 +678,9 @@ impl<'p> Checker<'p> {
             },
             _ => true,
         };
-        if indirect {
+        let completion = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref())
+            && self.foreign_defs.iter().any(|f| f.name == id.sym.as_ref() && f.completion_result.is_some()));
+        if indirect || completion {
             let handle = self.check_expr(operand, None, fx);
             if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
                 let origins = self.expr_async_origins(&handle, fx);

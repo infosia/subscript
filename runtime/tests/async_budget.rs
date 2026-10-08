@@ -204,7 +204,7 @@ fn aggregate_trap_stays_pending_until_clearance() {
     unsafe {
         ctx.array_push(jobs, (&input as *const *mut u8).cast(), 0);
     }
-    let all = unsafe { ctx.async_all(jobs, 0, 0) };
+    let all = unsafe { ctx.async_all(jobs, 0, 0, 0) };
     unsafe {
         ctx.async_release(all, 0);
     }

@@ -14,6 +14,7 @@ mod address_taken;
 mod array_ownership;
 mod builder;
 mod call;
+mod completion;
 mod construct;
 mod defaults;
 mod exception;
@@ -1666,6 +1667,7 @@ mod verifier_tests {
             None,
         );
         module.foreign_functions.push(l::ForeignFunction {
+            completion_result: None,
             id: l::ForeignFunctionId(0),
             source_name: "consume".to_string(),
             parameters: vec![l::ForeignParameter {

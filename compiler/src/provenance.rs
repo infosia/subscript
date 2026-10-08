@@ -34,6 +34,7 @@ pub(crate) enum Parameter {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Mirror {
     pub header: Option<Record<String>>,
+    pub completions: HashMap<String, Record<String>>,
     pub parameters: HashMap<(String, String), Record<Parameter>>,
     pub callbacks: HashMap<String, Record<String>>,
     /// Boundary aggregates that take the explicit callback lifetime
@@ -60,6 +61,34 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
         let parsed = parse_line(body)
             .map_err(|reason| malformed(reason.site, name, line_number, trimmed, reason.message))?;
         match parsed {
+            Parsed::Completion { function, result } => {
+                if function.is_empty() || result.is_empty() {
+                    return Err(malformed(
+                        RejectionSite::ProvenanceUnexpectedKey,
+                        name,
+                        line_number,
+                        trimmed,
+                        "completion fields must be non-empty",
+                    ));
+                }
+                if mirror.completions.contains_key(&function) {
+                    return Err(duplicate(
+                        RejectionSite::ForeignReturnProvenance,
+                        name,
+                        line_number,
+                        trimmed,
+                        "completion function",
+                    ));
+                }
+                mirror.completions.insert(
+                    function,
+                    Record {
+                        value: result,
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
             Parsed::Header(include) => {
                 if include.is_empty()
                     || include.contains(['/', '\\'])
@@ -342,6 +371,10 @@ fn duplicate(site: RejectionSite, name: &str, line: u32, raw: &str, kind: &str) 
 }
 
 enum Parsed {
+    Completion {
+        function: String,
+        result: String,
+    },
     Header(String),
     Descriptor {
         function: String,
@@ -374,6 +407,10 @@ fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
     let mut cursor = Cursor::new(body);
     let kind = cursor.token()?;
     let parsed = match kind {
+        "completion" => Parsed::Completion {
+            function: cursor.string("function")?,
+            result: cursor.string("result")?,
+        },
         "header" => Parsed::Header(cursor.string("include")?),
         "descriptor" => Parsed::Descriptor {
             function: cursor.string("function")?,

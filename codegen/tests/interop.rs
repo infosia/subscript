@@ -23,6 +23,10 @@
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_codegen::{
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
     run_jit, run_jit_with_freed_handle_diagnostics_and_native_libraries,
@@ -31,16 +35,13 @@ use subscript_codegen::{
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
 
-/// The committed ambient mirror, ingested as a global `.d.ts` surface.
-const MIRROR: &str = include_str!("../../corpus/interop/interop.generated.d.ts");
-
 /// Runs `program` under both tiers, asserts byte-identical output, and
 /// returns those bytes. A divergence is a hard failure (the cross-tier
 /// equivalence the ship=C decision rests on), never papered over.
 fn both_tiers(program: &str) -> Vec<u8> {
     let files = || {
         vec![
-            SourceFile::ambient("interop.generated.d.ts", MIRROR),
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
             SourceFile::new("prog.ts", program),
         ]
     };
@@ -273,7 +274,7 @@ fn callback_userdata_rooting_corpus_survives_collect_on_both_tiers() {
 fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
     let files = || {
         vec![
-            SourceFile::ambient("interop.generated.d.ts", MIRROR),
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
             SourceFile::new(
                 "t46-callback-userdata-freed.ts",
                 include_str!("../../corpus/trap/t46-callback-userdata-freed.ts"),

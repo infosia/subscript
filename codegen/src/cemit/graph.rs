@@ -389,6 +389,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 } else {
                     format!("sizeof({})", self.emitter.ctype(element)?)
                 };
+                let result_size = if **element == Type::Void {
+                    "0u".to_string()
+                } else {
+                    format!("sizeof({})", self.emitter.completion_ctype(element)?)
+                };
                 let position = self.emitter.pos_id(&instruction.pos);
                 let call = self.emitter.runtime_call(
                     "void*",
@@ -397,17 +402,84 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         "void*".into(),
                         "const void*".into(),
                         "uint64_t".into(),
+                        "uint64_t".into(),
                         "uint32_t".into(),
                     ],
                     &[
                         "ctx".into(),
                         operands[0].clone(),
+                        result_size,
                         size,
                         format!("{position}u"),
                     ],
                 );
                 self.assign(out, result, &call)?;
                 self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
+            l::InstructionKind::HostCompletion {
+                function,
+                result_size,
+                is_void,
+                error_metadata,
+            } => {
+                let endpoint = self.fresh();
+                let metadata = self.fresh();
+                let error = self
+                    .emitter
+                    .module
+                    .classes
+                    .iter()
+                    .find(|c| c.source_name == "Error")
+                    .ok_or_else(|| internal("host completion Error class is missing"))?;
+                let error_type = self.emitter.class_name(error.id);
+                let offset = |name: &str| -> Result<String, String> {
+                    let field = error
+                        .fields
+                        .iter()
+                        .find(|f| f.source_name == name)
+                        .ok_or_else(|| internal("host completion Error field is missing"))?;
+                    Ok(format!("offsetof({error_type}, d{})", field.id.0))
+                };
+                let words = format!(
+                    "sizeof({error_type}), UINT64_C({}), {}, {}, {}, UINT64_C({})",
+                    error_metadata[1],
+                    offset(subscript_compiler::hir::ERROR_KIND_FIELD)?,
+                    offset("name")?,
+                    offset("message")?,
+                    error_metadata[5]
+                );
+                let _ = writeln!(out, "    subscript_rt_completion {endpoint};\n    const uint64_t {metadata}[6] = {{ {words} }};");
+                let position = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_async_host_operation",
+                    &[
+                        "void*".into(),
+                        "uint64_t".into(),
+                        "uint32_t".into(),
+                        "uint32_t".into(),
+                        "const uint64_t*".into(),
+                        "subscript_rt_completion*".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        format!("UINT64_C({result_size})"),
+                        format!("{}u", u32::from(*is_void)),
+                        format!("{position}u"),
+                        metadata,
+                        format!("&{endpoint}"),
+                    ],
+                );
+                self.assign(out, result, &call)?;
+                self.emit_pending_check(out);
+                self.emit_foreign_call(
+                    out,
+                    instruction,
+                    *function,
+                    &operands,
+                    &operand_types,
+                    (None, Some(endpoint)),
+                )
             }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let function = match target.kind {
@@ -432,7 +504,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let _ = writeln!(
                         out,
                         "    {} {value} = {};",
-                        self.emitter.value_ctype(ty)?,
+                        self.emitter.completion_ctype(data_type(ty)?)?,
                         self.emitter.zero(ty)?
                     );
                     (format!("&{value}"), format!("sizeof({value})"))

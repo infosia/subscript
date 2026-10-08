@@ -2,6 +2,10 @@
 //! (compiler.md §12.2): the using program is accepted, and a
 //! boundary-rule violation is rejected with its S-code.
 
+#[path = "corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -12,15 +16,11 @@ fn interop_dir() -> PathBuf {
 }
 
 fn mirror() -> SourceFile {
-    let text = fs::read_to_string(interop_dir().join("interop.generated.d.ts"))
-        .expect("read generated mirror");
-    SourceFile::ambient("interop.generated.d.ts", text)
+    interop::mirror("interop.generated.d.ts", SourceFile::ambient)
 }
 
 fn external_mirror() -> SourceFile {
-    let text = fs::read_to_string(interop_dir().join("external-device.generated.d.ts"))
-        .expect("read generated external mirror");
-    SourceFile::ambient("external-device.generated.d.ts", text)
+    interop::mirror("external-device.generated.d.ts", SourceFile::ambient)
 }
 
 /// Checks the mirror plus a program snippet.

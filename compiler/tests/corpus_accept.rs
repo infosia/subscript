@@ -5,6 +5,8 @@
 #[path = "corpus/mod.rs"]
 mod corpus;
 
+use corpus::interop;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -12,39 +14,6 @@ use subscript_compiler::{check_program, hir, SourceFile, Type};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
-}
-
-/// The committed ambient mirror generated from the pinned synthetic
-/// header. Interop entries (a25+) are written against these global
-/// ambient declarations exactly as the language prelude, so the checker
-/// gate ingests it as an ambient source for any entry that uses it
-/// (`specs/blocks/compiler.md` §12.4).
-fn interop_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/interop.generated.d.ts");
-    let source =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    SourceFile::ambient("interop.generated.d.ts", source)
-}
-
-fn external_device_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/external-device.generated.d.ts");
-    let source =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    SourceFile::ambient("external-device.generated.d.ts", source)
-}
-
-fn wire_enum_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/wire-enum.generated.d.ts");
-    let source =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    SourceFile::ambient("wire-enum.generated.d.ts", source)
-}
-
-fn wire_enum_aliases() -> SourceFile {
-    let path = corpus_dir().join("interop/wire-enum-aliases.d.ts");
-    let source =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    SourceFile::ambient("wire-enum-aliases.d.ts", source)
 }
 
 fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
@@ -59,34 +28,12 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     if let Some(entry) = sources.first_mut() {
         entry.entry = true;
     }
-    // Interop entries name a foreign function, boundary struct, or flag
-    // member of the synthetic header (§12 device/slice APIs plus the §13.2
-    // shapes); prepend the mirror ambient surface so those names resolve. A
-    // false negative is not silent — the entry then fails to check with an
-    // unresolved identifier.
-    let uses_external = sources
+    let text = sources
         .iter()
-        .any(|source| source.source.contains("subExternalDevice"));
-    let uses_wire_enum = sources.iter().any(|source| {
-        source.source.contains("subWireMode")
-            || source.source.contains("SubWireMode")
-            || source.source.contains("subBindTone")
-            || source.source.contains("SubBindTone")
-    });
-    let uses_interop = uses_external
-        || sources
-            .iter()
-            .any(|source| corpus::references_interop(&source.source));
-    if uses_external {
-        sources.insert(0, external_device_mirror());
-    }
-    if uses_interop {
-        sources.insert(0, interop_mirror());
-    }
-    if uses_wire_enum {
-        sources.insert(0, wire_enum_mirror());
-        sources.insert(0, wire_enum_aliases());
-    }
+        .map(|source| source.source.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    sources.splice(0..0, interop::mirrors_for(&text, SourceFile::ambient));
     match check_program(&sources) {
         Ok(module) => module,
         Err(diags) => {

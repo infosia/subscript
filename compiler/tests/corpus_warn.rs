@@ -3,6 +3,8 @@
 #[path = "corpus/mod.rs"]
 mod corpus;
 
+use corpus::interop;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -45,53 +47,10 @@ fn read_source(path: &Path, name: impl Into<String>) -> SourceFile {
     SourceFile::new(name, source)
 }
 
-fn interop_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/interop.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient("interop.generated.d.ts", source)
-}
-
-fn external_device_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/external-device.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient("external-device.generated.d.ts", source)
-}
-
-fn wire_enum_mirror() -> SourceFile {
-    let path = corpus_dir().join("interop/wire-enum.generated.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient("wire-enum.generated.d.ts", source)
-}
-
-fn wire_enum_aliases() -> SourceFile {
-    let path = corpus_dir().join("interop/wire-enum-aliases.d.ts");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient("wire-enum-aliases.d.ts", source)
-}
-
 fn accept_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     let source =
         fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    let mut files = Vec::new();
-    let uses_external = source.contains("subExternalDevice");
-    let uses_wire_enum = source.contains("subWireMode")
-        || source.contains("SubWireMode")
-        || source.contains("subBindTone")
-        || source.contains("SubBindTone");
-    if uses_external || corpus::references_interop(&source) {
-        files.push(interop_mirror());
-    }
-    if uses_external {
-        files.push(external_device_mirror());
-    }
-    if uses_wire_enum {
-        files.push(wire_enum_mirror());
-        files.push(wire_enum_aliases());
-    }
+    let mut files = interop::mirrors_for(&source, SourceFile::ambient);
     files.push(SourceFile::new(name, source));
     files
 }

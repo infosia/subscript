@@ -301,15 +301,16 @@ pub unsafe extern "C" fn subscript_rt_async_result_counted(
 /// Creates an aggregate handle from an array snapshot (§166).
 ///
 /// # Safety
-/// Shared contract; `jobs` is a live handle array with non-counted results of `elem_size` bytes.
+/// Shared contract; `jobs` is a live handle array with non-counted results of `result_size` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_async_all(
     ctx: *mut Context,
     jobs: *const u8,
+    result_size: u64,
     elem_size: u64,
     pos_id: u32,
 ) -> *mut u8 {
-    unsafe { (&mut *ctx).async_all(jobs, elem_size as usize, pos_id) }
+    unsafe { (&mut *ctx).async_all(jobs, result_size as usize, elem_size as usize, pos_id) }
 }
 
 /// Starts a called async invocation and exposes ACTIVE during its body (§169).
@@ -361,4 +362,36 @@ pub unsafe extern "C" fn subscript_rt_task_group(
             std::ptr::null_mut()
         }
     }
+}
+
+/// Creates a host operation and writes its endpoint (§178).
+/// Error metadata contains six native u64 words: payload size, class id, kind offset,
+/// name offset, message offset, and Error kind tag. The generated caller verifies the Error class.
+/// A null result reports a Context trap and leaves the endpoint unchanged.
+///
+/// # Safety
+/// The Context and endpoint are writable. Error metadata is readable and matches the verified Error class.
+/// The value result size matches its boundary representation. A void source has size zero.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_host_operation(
+    ctx: *mut Context,
+    result_size: u64,
+    is_void: u32,
+    pos_id: u32,
+    error_metadata: *const u64,
+    endpoint: *mut crate::context::CompletionEndpoint,
+) -> *mut u8 {
+    let ctx = unsafe { &mut *ctx };
+    let Ok(size) = usize::try_from(result_size) else {
+        ctx.trap(
+            crate::TrapKind::AllocationFailure,
+            "host result size exceeds address space",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    let layout = crate::exception::host_error::HostErrorLayout(unsafe {
+        error_metadata.cast::<[u64; 6]>().read()
+    });
+    unsafe { ctx.host_operation_new(size, is_void != 0, pos_id, layout, &mut *endpoint) }
 }

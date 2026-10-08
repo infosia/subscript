@@ -51,6 +51,16 @@ impl<'p> Checker<'p> {
             self.foreign_mirror_ids.insert(file, id);
         }
 
+        for (name, record) in &parsed.provenance.completions {
+            if !functions.contains_key(name) {
+                self.reject_subset(
+                    RejectionSite::ForeignReturnProvenance,
+                    format!("completion directive names nonexistent foreign function `{name}`"),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                );
+            }
+        }
+
         for ((function_name, parameter_name), record) in &parsed.provenance.parameters {
             let exists = functions.get(function_name).is_some_and(|function| {
                 function.params.iter().any(|parameter| {
@@ -120,6 +130,150 @@ impl<'p> Checker<'p> {
         for (message, pos) in lifetime_errors {
             self.reject_subset(RejectionSite::MirrorLifetimeTargetMissing, message, pos);
         }
+    }
+
+    /// Checks the selected C result against the resolved mirror signature.
+    pub(super) fn check_completion_result(
+        &mut self,
+        file: usize,
+        name: &str,
+        ret: &Type,
+        pos: Pos,
+    ) -> Option<String> {
+        let ret = self.apparent_type(ret);
+        let record = self.prog.files[file]
+            .provenance
+            .completions
+            .get(name)
+            .cloned();
+        let Some(record) = record else {
+            if matches!(ret, Type::AsyncHandle(_)) {
+                self.reject_subset(RejectionSite::ForeignReturnProvenance,
+                    format!("foreign function `{name}` returns Promise<T> without a `@subscript-c-completion` directive"), pos);
+            }
+            return None;
+        };
+        let scalar = match record.value.as_str() {
+            "void" => Some(Type::Void),
+            "int8_t" | "signed char" => Some(Type::I8),
+            "uint8_t" | "unsigned char" => Some(Type::U8),
+            "int16_t" | "short" | "short int" | "signed short" | "signed short int" => {
+                Some(Type::I16)
+            }
+            "uint16_t" | "unsigned short" | "unsigned short int" => Some(Type::U16),
+            "int32_t" | "int" | "signed int" => Some(Type::I32),
+            "uint32_t" | "unsigned int" => Some(Type::U32),
+            "int64_t" | "long long" | "long long int" => Some(Type::I64),
+            "uint64_t" | "unsigned long long" | "unsigned long long int" | "size_t" => {
+                Some(Type::U64)
+            }
+            "_Float16" => Some(Type::F16),
+            "float" => Some(Type::F32),
+            "double" => Some(Type::F64),
+            "bool" | "_Bool" => Some(Type::Bool),
+            _ => self
+                .type_aliases
+                .get(&record.value)
+                .cloned()
+                .or_else(|| {
+                    let alias = self.prog.files[file]
+                        .provenance
+                        .cenums
+                        .get(&record.value)
+                        .map_or(record.value.as_str(), |r| r.value.as_str());
+                    match self.peek_scope_item(alias) {
+                        Some(ScopeItem::StringAlias(id)) => Some(Type::StringAlias(id)),
+                        Some(ScopeItem::Enum(id)) => Some(Type::Enum(id)),
+                        _ => None,
+                    }
+                })
+                .or_else(|| {
+                    self.class_ids
+                        .get(&self.declaration_symbol(file, &record.value))
+                        .copied()
+                        .map(Type::Class)
+                }),
+        };
+        if let Some(ty) = scalar.as_ref() {
+            if let Type::Class(id) = self.apparent_type(ty) {
+                if let Some((class, field)) =
+                    self.completion_struct_field_error(id, &mut HashSet::new())
+                {
+                    self.reject_subset(RejectionSite::ForeignReturnProvenance,
+                    format!("completion function `{name}` struct `{class}` field `{field}` is outside §178 rule 6"), pos);
+                    return None;
+                }
+            }
+        }
+        let supported = |ty: &Type| match self.apparent_type(ty) {
+            Type::Void
+            | Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::Bool
+            | Type::Enum(_) => true,
+            Type::StringAlias(_) => false,
+            Type::Class(id) => self
+                .completion_struct_field_error(id, &mut HashSet::new())
+                .is_none(),
+            _ => false,
+        };
+        let valid = record.value != "subscript_rt_completion"
+            && matches!(ret, Type::AsyncHandle(value) if scalar.as_ref().is_some_and(|ty| ty == value.as_ref() && supported(ty)));
+        if !valid {
+            self.reject_subset(RejectionSite::ForeignReturnProvenance,
+                format!("completion function `{name}` must return Promise<T> matching supported C result `{}`", record.value), pos);
+            return None;
+        }
+        Some(record.value)
+    }
+
+    /// Derives completion layout eligibility from resolved class fields.
+    fn completion_struct_field_error(
+        &self,
+        id: crate::ClassId,
+        visiting: &mut HashSet<crate::ClassId>,
+    ) -> Option<(String, String)> {
+        let class = &self.classes[id.0];
+        if !self.boundary_classes.contains(&id) || !class.is_value || !visiting.insert(id) {
+            return Some((class.name.clone(), "<layout>".into()));
+        }
+        for field in &class.fields {
+            let supported = match self.apparent_type(&field.ty) {
+                Type::I8
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+                | Type::F16
+                | Type::F32
+                | Type::F64
+                | Type::Enum(_) => true,
+                Type::Class(nested) => {
+                    if let Some(error) = self.completion_struct_field_error(nested, visiting) {
+                        return Some(error);
+                    }
+                    true
+                }
+                _ => false,
+            };
+            if !supported {
+                return Some((class.name.clone(), field.name.clone()));
+            }
+        }
+        visiting.remove(&id);
+        None
     }
 
     /// Converts parameter provenance into the consumer-ready HIR shape and

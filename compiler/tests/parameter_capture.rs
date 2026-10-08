@@ -1,4 +1,8 @@
 //! Whole-program escape contracts (compiler.md §118).
+#[path = "corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_compiler::{check_program, hir, RuleCode, SourceFile};
 
 fn check(source: &str) -> Result<hir::Module, Vec<subscript_compiler::Diagnostic>> {
@@ -99,10 +103,7 @@ fn held_async_argument() {
 fn c_callback_slot() {
     let source = "export function main(): void { const value: i32 = 5; const info = new SubCallbackInfo((message, userdata, userparam): void => { print(`${value}`); }, null, null); }";
     let diagnostics = check_program(&[
-        SourceFile::ambient(
-            "interop.generated.d.ts",
-            include_str!("../../corpus/interop/interop.generated.d.ts"),
-        ),
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
         SourceFile::new("capture.ts", source),
     ])
     .expect_err("the callback slot stores its lambda");

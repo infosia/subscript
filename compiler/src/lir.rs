@@ -205,6 +205,8 @@ pub struct Global {
 /// Boundary type information attached to the exact occurrence that uses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ForeignTypeProvenance {
+    /// Trailing by-value runtime host completion endpoint.
+    CompletionEndpoint,
     /// A by-value descriptor aggregate.
     Descriptor {
         /// C aggregate spelling.
@@ -236,6 +238,8 @@ pub enum ForeignTypeProvenance {
 /// One foreign C-ABI declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForeignFunction {
+    /// C result spelling and script result type of a completion source.
+    pub completion_result: Option<(String, Type)>,
     /// Module-unique id.
     pub id: ForeignFunctionId,
     /// Source/C spelling retained as an attribute and link key.
@@ -674,6 +678,17 @@ pub enum InstructionKind {
     AsyncHandleCreate(CallTarget),
     /// Creates an aggregate over one handle array. Its result is `Promise<T[]>` (§166).
     AsyncAll,
+    /// Create a host source and call its C function with the endpoint.
+    HostCompletion {
+        /// Foreign C function with a trailing endpoint parameter.
+        function: ForeignFunctionId,
+        /// Target-layout result payload size.
+        result_size: u64,
+        /// Whether the source completes without a value.
+        is_void: bool,
+        /// Error payload size, class id, kind/name/message offsets, and kind tag.
+        error_metadata: [u64; 6],
+    },
     /// Runtime group operation; release marks the lexical exit (§170).
     TaskGroup(crate::hir::TaskGroupOperation),
     /// Increment one async frame's non-atomic owner count.
@@ -740,6 +755,7 @@ impl InstructionKind {
                 | Self::ArraySpreadLiteral(_)
                 | Self::Call(_)
                 | Self::TaskGroup(crate::hir::TaskGroupOperation::Join)
+                | Self::HostCompletion { .. }
                 | Self::AsyncAll
                 | Self::AsyncHandleCreate(_)
                 | Self::AsyncHandleRetain

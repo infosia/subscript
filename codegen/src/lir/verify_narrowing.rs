@@ -81,6 +81,7 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
         | K::Template(_)
         | K::MakeClosure(_)
         | K::Call(_)
+        | K::HostCompletion { .. }
         | K::AsyncHandleCreate(_)
         | K::AsyncHandleRetain
         | K::AsyncHandleRelease

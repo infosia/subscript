@@ -4,6 +4,10 @@
 //! The option reaches the binder on both output paths, and a rejected
 //! selection exits 1 and writes no mirror.
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,9 +74,7 @@ fn header() -> PathBuf {
 /// `SubCallbackInfo` is declared before `SubRequestInfo`, so its
 /// directive precedes the one the committed mirror carries.
 fn committed_mirror_with_the_directive() -> Result<Vec<u8>, String> {
-    let committed =
-        std::fs::read_to_string(workspace_root().join("corpus/interop/interop.generated.d.ts"))
-            .map_err(|error| format!("read committed mirror: {error}"))?;
+    let committed = interop::mirror("interop.generated.d.ts", |_, text| text);
     let at = committed
         .find(CALLBACK_RECORD)
         .ok_or("the committed mirror carries the callback record")?

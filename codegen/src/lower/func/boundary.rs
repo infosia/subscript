@@ -1,7 +1,7 @@
 //! Foreign calls and the boundary-struct marshalling.
 
 use super::abi::{
-    ensure_sysv_argument_register_capacity, is_pure_hfa_leaves, plan_aggregate_arg,
+    ensure_sysv_argument_register_capacity, is_pure_hfa_leaves, plan_aggregate_arg_for_signature,
     plan_sysv_struct_return,
 };
 use super::*;
@@ -13,10 +13,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         id: l::ForeignFunctionId,
         operands: &[RV],
         parameter_types: &[l::ValueType],
-        return_type: Option<&l::ValueType>,
+        return_info: (Option<&l::ValueType>, Option<Value>),
         traps: &[l::Trap],
         pos: &Pos,
     ) -> Result<RV, String> {
+        let (return_type, endpoint) = return_info;
         let declaration = self
             .ml
             .lir
@@ -27,6 +28,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let operand_count = declaration
             .parameters
             .iter()
+            .filter(|parameter| {
+                parameter.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
+            })
             .map(|parameter| usize::from(matches!(parameter.ty, Type::Array(_))) + 1)
             .sum::<usize>();
         if operands.len() != operand_count || parameter_types.len() != operand_count {
@@ -68,6 +72,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let mut writebacks = Vec::new();
         let mut cursor = 0usize;
         for parameter in &declaration.parameters {
+            if parameter.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint) {
+                let address = endpoint.ok_or_else(|| internal("completion endpoint is missing"))?;
+                self.push_boundary_aggregate(
+                    &mut signature,
+                    &mut arguments,
+                    address,
+                    16,
+                    8,
+                    &BoundaryLeaves {
+                        leaves: vec![(0, types::I64), (8, types::I64)],
+                        f16_offsets: vec![],
+                    },
+                )?;
+                continue;
+            }
             let (value, array_snapshot) = if let Type::Array(element) = &parameter.ty {
                 let data_ty = parameter_types
                     .get(cursor)
@@ -388,11 +407,36 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                  §12.3a); target {triple} is unsupported"
             ))
         })?;
-        match plan_aggregate_arg(abi, &components.leaves, size)? {
+        match plan_aggregate_arg_for_signature(abi, &components.leaves, size, signature)? {
             AggregateArgPlan::Hfa(hfa) => {
                 for (offset, ty) in hfa {
                     let value = self.builder.ins().load(ty, flags(), address, offset as i32);
                     self.push_foreign_argument(signature, arguments, ty, value);
+                }
+            }
+            AggregateArgPlan::StackImages {
+                padding,
+                padding_type,
+                images,
+            } => {
+                for _ in 0..padding {
+                    let zero = if padding_type.is_float() {
+                        self.builder.ins().f64const(0.0)
+                    } else {
+                        self.builder.ins().iconst(padding_type, 0)
+                    };
+                    self.push_foreign_argument(signature, arguments, padding_type, zero);
+                }
+                let image_size = round_up_layout(size.max(1), 8, "boundary aggregate image")?;
+                let copy = self.stack_slot(image_size, align.max(8));
+                self.zero_bytes(copy, image_size, align.max(8));
+                self.copy_bytes(copy, address, size, align.max(1));
+                for image in images {
+                    let value =
+                        self.builder
+                            .ins()
+                            .load(image.ty, flags(), copy, image.offset as i32);
+                    self.push_foreign_argument(signature, arguments, image.ty, value);
                 }
             }
             AggregateArgPlan::Images(images) => {

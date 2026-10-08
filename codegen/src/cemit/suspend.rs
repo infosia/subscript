@@ -224,7 +224,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let _ = writeln!(
                 out,
                 "    {} {value} = {};",
-                self.emitter.value_ctype(ty)?,
+                self.emitter.completion_ctype(data_type(ty)?)?,
                 self.emitter.zero(ty)?
             );
             (format!("&{value}"), format!("sizeof({value})"))
@@ -348,15 +348,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         else {
             return Err(internal("child resume on non-call suspend"));
         };
-        let (output, size) = if let Some(value) = resume_value {
-            (
-                format!("&{}", self.value(*value)),
-                format!("sizeof({})", self.value(*value)),
-            )
-        } else {
-            ("NULL".into(), "0u".into())
-        };
-        self.emit_completion_read(out, block, &output, &size)?;
+        self.emit_resume_completion(out, block, *resume_value)?;
         self.restore_suspend_arguments(out, block)?;
         let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
         let _ = writeln!(out, "    goto b{};", successor.0);
@@ -377,18 +369,34 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         else {
             return Err(internal("held async resume on non-handle suspend"));
         };
-        let (output, size) = if let Some(value) = resume_value {
-            (
-                format!("&{}", self.value(*value)),
-                format!("sizeof({})", self.value(*value)),
-            )
-        } else {
-            ("NULL".into(), "0u".into())
-        };
-        self.emit_completion_read(out, block, &output, &size)?;
+        self.emit_resume_completion(out, block, *resume_value)?;
         self.restore_suspend_arguments(out, block)?;
         let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
         let _ = writeln!(out, "    goto b{};", successor.0);
+        Ok(())
+    }
+
+    fn emit_resume_completion(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+        resume_value: Option<l::ValueId>,
+    ) -> Result<(), String> {
+        if let Some(value) = resume_value {
+            let ty = data_type(self.value_type(value)?)?;
+            let ctype = self.emitter.completion_ctype(ty)?;
+            let buffer = self.fresh();
+            let _ = writeln!(out, "    {ctype} {buffer} = {{0}};");
+            self.emit_completion_read(
+                out,
+                block,
+                &format!("&{buffer}"),
+                &format!("sizeof({buffer})"),
+            )?;
+            let _ = writeln!(out, "    {} = {buffer};", self.value(value));
+        } else {
+            self.emit_completion_read(out, block, "NULL", "0u")?;
+        }
         Ok(())
     }
 

@@ -4,6 +4,10 @@
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use subscript_codegen::{
     interpreter::interpret, lir::lower_module, run_c_aot_with_native_libraries,
     run_jit_with_native_libraries,
@@ -38,10 +42,7 @@ fn a_direct_body_can_call_a_host_to_initialize_a_global() {
 
 fn host_program(source: &str, expected: &[u8]) {
     let files = [
-        SourceFile::ambient(
-            "interop.generated.d.ts",
-            include_str!("../../corpus/interop/interop.generated.d.ts"),
-        ),
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
         SourceFile::entry("main.ts", source),
     ];
     check_program(&files).expect("host initializer has no prior function value");

@@ -35730,6 +35730,1164 @@ fn f6 "<module initializer>" kind=ModuleInitializer exported=false generator=fal
     %0: Data(Array(AsyncHandle(I32))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a346-dropped-generator-frame.ts", line: 8, col: 32 } }] @ a346-dropped-generator-frame.ts:8:32
     StoreGlobal(GlobalId(0))(%0) @ a346-dropped-generator-frame.ts:8:5
     -> Return { value: None, pos: Pos { file: "a346-dropped-generator-frame.ts", line: 8, col: 5 } }
+===== a347-host-operation-completes =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "SubChainHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:42:15
+  field d3 "sType": Enum(EnumId(0)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:43:3
+  field d4 "next": Nullable(Class(ClassId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:44:3
+class c2 "SubChainExtA" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:48:15
+  field d5 "header": Class(ClassId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:49:3
+  field d6 "intensity": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:50:3
+  field d7 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:51:3
+class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:55:15
+  field d8 "header": Class(ClassId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:56:3
+  field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:57:3
+  field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:58:3
+class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:66:15
+  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:67:3
+  field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:68:3
+  field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:69:3
+class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:73:15
+  field d14 "basis": FixedArray(F32, 16) defaulted=false absence=false foreign=None @ interop.generated.d.ts:74:3
+  field d15 "bone": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:75:3
+  field d16 "weight": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:76:3
+  field d17 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:77:3
+class c6 "SubSample" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:81:15
+  field d18 "a": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:82:3
+  field d19 "b": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:83:3
+  field d20 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:84:3
+  field d21 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:85:3
+class c7 "SubDevice" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:89:11
+class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:111:15
+  field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:112:3
+  field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:113:3
+class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:121:15
+  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:122:3
+  field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:123:3
+class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15
+  field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:131:3
+  field d27 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
+class c11 "SubVec3" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:136:15
+  field d28 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:137:3
+  field d29 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:138:3
+  field d30 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:139:3
+class c12 "SubVec4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:143:15
+  field d31 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:144:3
+  field d32 "y": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:145:3
+  field d33 "z": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:146:3
+  field d34 "w": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:147:3
+class c13 "SubRect" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:151:15
+  field d35 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:152:3
+  field d36 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:153:3
+  field d37 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:154:3
+  field d38 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:155:3
+class c14 "SubRange" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:159:15
+  field d39 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:160:3
+  field d40 "size": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:161:3
+class c15 "SubColor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:165:15
+  field d41 "r": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:166:3
+  field d42 "g": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:167:3
+  field d43 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:168:3
+  field d44 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:169:3
+class c16 "SubTimings" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:173:15
+  field d45 "cpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:174:3
+  field d46 "gpu": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:175:3
+  field d47 "frame": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
+class c17 "SubMixed" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:180:15
+  field d48 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:181:3
+  field d49 "id": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:182:3
+  field d50 "visible": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:183:3
+  field d51 "ratio": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:184:3
+class c18 "SubPadB" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:188:15
+  field d52 "head": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:189:3
+  field d53 "mid": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:190:3
+  field d54 "tail": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:191:3
+class c19 "SubNarrowPacket" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:195:15
+  field d55 "kind": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:196:3
+  field d56 "delta": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:197:3
+  field d57 "weight": F16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:198:3
+  field d58 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:199:3
+  field d59 "bias": I8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:200:3
+  field d60 "count": U16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:201:3
+  field d61 "scale": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:202:3
+class c20 "SubExtent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:206:15
+  field d62 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:207:3
+  field d63 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:208:3
+  field d64 "depth": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:209:3
+class c21 "SubImageInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:213:15
+  field d65 "extent": Class(ClassId(20)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:214:3
+  field d66 "mipLevels": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:215:3
+  field d67 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:216:3
+class c22 "SubBounds" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:220:15
+  field d68 "min": Class(ClassId(11)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:221:3
+  field d69 "max": Class(ClassId(11)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:222:3
+class c23 "SubViewport" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:226:15
+  field d70 "rect": Class(ClassId(13)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:227:3
+  field d71 "depth": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:228:3
+class c24 "SubNodeInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:232:15
+  field d72 "bounds": Class(ClassId(22)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:233:3
+  field d73 "id": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:234:3
+  field d74 "tint": Class(ClassId(15)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:235:3
+class c25 "SubChainExtC" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:239:15
+  field d75 "header": Class(ClassId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:240:3
+  field d76 "offset": Class(ClassId(11)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:241:3
+  field d77 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:242:3
+class c26 "SubChainExtD" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:246:15
+  field d78 "header": Class(ClassId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:247:3
+  field d79 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:248:3
+  field d80 "level": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:249:3
+  field d81 "active": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:250:3
+class c27 "SubEventHeader" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:254:15
+  field d82 "kind": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:255:3
+  field d83 "next": Nullable(Class(ClassId(27))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:256:3
+class c28 "SubEventKey" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:260:15
+  field d84 "header": Class(ClassId(27)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:261:3
+  field d85 "code": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:262:3
+  field d86 "pressed": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:263:3
+class c29 "SubEventMove" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:267:15
+  field d87 "header": Class(ClassId(27)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:268:3
+  field d88 "dx": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:269:3
+  field d89 "dy": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:270:3
+class c30 "SubPassInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:274:15
+  field d90 "access": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:275:3
+  field d91 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:276:3
+  field d92 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:277:3
+class c31 "SubResourceDesc" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:281:15
+  field d93 "usage": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:282:3
+  field d94 "range": Class(ClassId(14)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:283:3
+  field d95 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:284:3
+class c32 "SubCommandBuffer" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:288:15
+  field d96 "queue": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:289:3
+  field d97 "commands": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:290:3
+class c33 "SubFuture" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:297:15
+  field d98 "id": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:298:3
+class c34 "SubStats" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:302:15
+  field d99 "submitted": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:303:3
+  field d100 "completed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:304:3
+  field d101 "pending": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:305:3
+class c35 "SubQueryStatus" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:312:15
+  field d102 "future": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:313:3
+  field d103 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:314:3
+class c36 "SubWaitEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:320:15
+  field d104 "future": Class(ClassId(33)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:321:3
+  field d105 "completed": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:322:3
+class c37 "SubBoundaryStringRecord" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:332:15
+  field d106 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:333:3
+  field d107 "handle": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:334:3
+  field d108 "enabled": Bool defaulted=false absence=false foreign=None @ interop.generated.d.ts:335:3
+  field d109 "serial": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:336:3
+  field d110 "generation": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:337:3
+class c38 "SGPUProbeExtent3D" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:350:15
+  field d111 "width": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:351:3
+  field d112 "height": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:352:3
+  field d113 "depthOrArrayLayers": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:353:3
+class c39 "SGPUProbeTextureDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:357:15
+  field d114 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:358:3
+  field d115 "extent": Class(ClassId(38)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:359:3
+  field d116 "viewFormats": Array(Enum(EnumId(1))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:360:3
+  field d117 "format": Enum(EnumId(1)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:361:3
+  field d118 "mipLevelCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:362:3
+  field d119 "sampleCount": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:363:3
+  field d120 "dimension": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:364:3
+  field d121 "usage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:365:3
+class c40 "SubProbePipelineLayoutDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:372:15
+  field d122 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:373:3
+  field d123 "bindGroupLayouts": Array(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:374:3
+class c41 "SubProbeBindGroupEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:380:15
+  field d124 "binding": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:381:3
+  field d125 "buffer": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:382:3
+  field d126 "sampler": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:383:3
+  field d127 "textureView": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:384:3
+class c42 "SGPUProbeComputeState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:391:15
+  field d128 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:392:3
+  field d129 "workgroupX": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:393:3
+  field d130 "workgroupY": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:394:3
+  field d131 "constantSeed": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:395:3
+class c43 "SGPUProbeComputePipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:399:15
+  field d132 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:400:3
+  field d133 "compute": Class(ClassId(42)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:401:3
+  field d134 "flags": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:402:3
+class c44 "SGPUProbeVertexAttribute" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:408:15
+  field d135 "shaderLocation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:409:3
+  field d136 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:410:3
+  field d137 "offset": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:411:3
+class c45 "SGPUProbeVertexBufferLayout" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:415:15
+  field d138 "arrayStride": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:416:3
+  field d139 "stepMode": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:417:3
+  field d140 "attributes": Array(Class(ClassId(44))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:418:3
+class c46 "SGPUProbeVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:422:15
+  field d141 "moduleId": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:423:3
+  field d142 "buffers": Array(Class(ClassId(45))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:424:3
+class c47 "SGPUProbeRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:428:15
+  field d143 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:429:3
+  field d144 "vertex": Class(ClassId(46)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:430:3
+  field d145 "primitive": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:431:3
+class c48 "SGPUProbeConstantEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:437:15
+  field d146 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:438:3
+  field d147 "value": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:439:3
+class c49 "SGPUProbeProgrammableStage" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:443:15
+  field d148 "constants": Array(Class(ClassId(48))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:444:3
+  field d149 "stage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:445:3
+class c50 "SGPUProbeBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:451:15
+  field d150 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:452:3
+  field d151 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:453:3
+class c51 "SGPUProbeColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:457:15
+  field d152 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:458:3
+  field d153 "blend": Nullable(Class(ClassId(50))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:459:3
+  field d154 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:460:3
+class c52 "SGPUProbeFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:464:15
+  field d155 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:465:3
+  field d156 "constants": Array(Class(ClassId(48))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:466:3
+  field d157 "targets": Array(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:467:3
+class c53 "SGPUProbeFullRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:471:15
+  field d158 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:472:3
+  field d159 "fragment": Nullable(Class(ClassId(52))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:473:3
+class c54 "SGPUProbeHandleFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:479:15
+  field d160 "module": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:480:3
+  field d161 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:481:3
+  field d162 "constants": Array(Class(ClassId(48))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:482:3
+  field d163 "targets": Array(Class(ClassId(51))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:483:3
+class c55 "SGPUProbeHandleRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:487:15
+  field d164 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:488:3
+  field d165 "fragment": Nullable(Class(ClassId(54))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:489:3
+class c56 "SGPUProbeNestedBlendComponent" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:495:15
+  field d166 "operation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:496:3
+  field d167 "srcFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:497:3
+  field d168 "dstFactor": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:498:3
+class c57 "SGPUProbeNestedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:502:15
+  field d169 "color": Class(ClassId(56)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:503:3
+  field d170 "alpha": Class(ClassId(56)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:504:3
+class c58 "SGPUProbeNestedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:508:15
+  field d171 "format": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:509:3
+  field d172 "blend": Nullable(Class(ClassId(57))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:510:3
+  field d173 "writeMask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:511:3
+class c59 "SGPUProbeNestedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:515:15
+  field d174 "module": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:516:3
+  field d175 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:517:3
+  field d176 "constants": Array(Class(ClassId(48))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:518:3
+  field d177 "targets": Array(Class(ClassId(58))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:519:3
+class c60 "SGPUProbeNestedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:523:15
+  field d178 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:524:3
+  field d179 "fragment": Nullable(Class(ClassId(59))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:525:3
+class c61 "SGPUProbeUnmarkedBlendState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:536:15
+  field d180 "colorOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:537:3
+  field d181 "alphaOperation": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:538:3
+class c62 "SGPUProbeUnmarkedColorTargetState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:542:15
+  field d182 "format": Enum(EnumId(2)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:543:3
+  field d183 "blend": Nullable(Class(ClassId(61))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:544:3
+  field d184 "writeMask": U64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:545:3
+class c63 "SGPUProbeUnmarkedFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:549:15
+  field d185 "module": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:550:3
+  field d186 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:551:3
+  field d187 "constants": Array(Class(ClassId(48))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:552:3
+  field d188 "targets": Array(Class(ClassId(62))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:553:3
+class c64 "SGPUProbeUnmarkedRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:557:15
+  field d189 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:558:3
+  field d190 "fragment": Nullable(Class(ClassId(63))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:559:3
+class c65 "SGPUProbeBreadthNestedState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:565:15
+  field d191 "first": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:566:3
+  field d192 "second": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:567:3
+class c66 "SGPUProbeBreadthDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:571:15
+  field d193 "limits": Class(ClassId(65)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:572:3
+  field d194 "biases": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:573:3
+class c67 "SGPUProbeBreadthFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:577:15
+  field d195 "stage": Class(ClassId(65)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:578:3
+  field d196 "constants": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:579:3
+class c68 "SGPUProbeBreadthPrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:583:15
+  field d197 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:584:3
+  field d198 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:585:3
+class c69 "SGPUProbeBreadthRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:589:15
+  field d199 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:590:3
+  field d200 "depthStencil": Nullable(Class(ClassId(66))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:591:3
+  field d201 "primitive": Class(ClassId(68)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:592:3
+  field d202 "fragment": Nullable(Class(ClassId(67))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:593:3
+class c70 "SGPUProbeWidePairEntry" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:599:15
+  field d203 "key": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:600:3
+  field d204 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:601:3
+class c71 "SGPUProbeWideVertexState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:605:15
+  field d205 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:606:3
+  field d206 "buffers": Array(Class(ClassId(70))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:607:3
+class c72 "SGPUProbeWidePrimitiveState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:611:15
+  field d207 "topology": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:612:3
+  field d208 "stripIndexFormat": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:613:3
+class c73 "SGPUProbeWideMultisampleState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:617:15
+  field d209 "count": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:618:3
+  field d210 "mask": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:619:3
+  field d211 "alphaToCoverage": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:620:3
+class c74 "SGPUProbeWidePayload" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:624:15
+  field d212 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:625:3
+  field d213 "values": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:626:3
+class c75 "SGPUProbeWidePointerElement" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:630:15
+  field d214 "kind": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:631:3
+  field d215 "payload": Nullable(Class(ClassId(74))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:632:3
+class c76 "SGPUProbeWideDepthStencilState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:636:15
+  field d216 "constants": Array(Class(ClassId(70))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:637:3
+  field d217 "elements": Array(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:638:3
+class c77 "SGPUProbeWideFragmentState" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:642:15
+  field d218 "module": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:643:3
+  field d219 "entryPoint": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:644:3
+  field d220 "constants": Array(Class(ClassId(70))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:645:3
+  field d221 "elements": Array(Class(ClassId(75))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:646:3
+class c78 "SGPUProbeWideRenderPipelineDescriptor" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:650:15
+  field d222 "label": Str defaulted=false absence=false foreign=None @ interop.generated.d.ts:651:3
+  field d223 "layout": Nullable(Class(ClassId(7))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:652:3
+  field d224 "vertex": Class(ClassId(71)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:653:3
+  field d225 "primitive": Class(ClassId(72)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:654:3
+  field d226 "depthStencil": Nullable(Class(ClassId(76))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:655:3
+  field d227 "multisample": Class(ClassId(73)) defaulted=false absence=false foreign=None @ interop.generated.d.ts:656:3
+  field d228 "fragment": Nullable(Class(ClassId(77))) defaulted=false absence=false foreign=None @ interop.generated.d.ts:657:3
+class c79 "SubByValueI32One" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:665:15
+  field d229 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:666:3
+class c80 "SubByValueI32Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:670:15
+  field d230 "x": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:671:3
+  field d231 "y": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:672:3
+class c81 "SubByValueI32Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:676:15
+  field d232 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:677:3
+  field d233 "b": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:678:3
+  field d234 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:679:3
+class c82 "SubByValueI16I16I32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:683:15
+  field d235 "a": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:684:3
+  field d236 "b": I16 defaulted=false absence=false foreign=None @ interop.generated.d.ts:685:3
+  field d237 "c": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:686:3
+class c83 "SubByValueU8Four" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:690:15
+  field d238 "a": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:691:3
+  field d239 "b": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:692:3
+  field d240 "c": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:693:3
+  field d241 "d": U8 defaulted=false absence=false foreign=None @ interop.generated.d.ts:694:3
+class c84 "SubByValueI64Pair" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:698:15
+  field d242 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:699:3
+  field d243 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:700:3
+class c85 "SubByValueF32Hfa2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:704:15
+  field d244 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:705:3
+  field d245 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:706:3
+class c86 "SubByValueF32Hfa4" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:710:15
+  field d246 "a": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:711:3
+  field d247 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:712:3
+  field d248 "c": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:713:3
+  field d249 "d": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:714:3
+class c87 "SubByValueI32F32" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:718:15
+  field d250 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:719:3
+  field d251 "b": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:720:3
+class c88 "SubByValueI32I64" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:724:15
+  field d252 "a": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:725:3
+  field d253 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:726:3
+class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:730:15
+  field d254 "a": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:731:3
+  field d255 "b": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:732:3
+  field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:733:3
+class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:749:11
+class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:756:15 callback-lifetime=explicit
+  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:757:3
+  field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:758:3
+  field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:759:3
+class c92 "SubCompletionValue" value=true descriptor=false boundary=true align=None @ host-completion.generated.d.ts:23:15
+  field d260 "x": I32 defaulted=false absence=false foreign=None @ host-completion.generated.d.ts:24:3
+  field d261 "y": I32 defaulted=false absence=false foreign=None @ host-completion.generated.d.ts:25:3
+enum e0 "SubChainKind" [("SUB_CHAIN_KIND_BASE", 0), ("SUB_CHAIN_KIND_EXT_A", 1), ("SUB_CHAIN_KIND_EXT_B", 2)] @ interop.generated.d.ts:36:14
+enum e1 "SGPUProbeFormat" [("SGPU_PROBE_FORMAT_RGBA8", 11), ("SGPU_PROBE_FORMAT_BGRA8", 29), ("SGPU_PROBE_FORMAT_DEPTH24", 47)] @ interop.generated.d.ts:344:14
+enum e2 "SGPUProbeUnmarkedTextureFormat" [("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_RGBA8", 101), ("SGPU_PROBE_UNMARKED_TEXTURE_FORMAT_BGRA8", 202)] @ interop.generated.d.ts:531:14
+foreign x0 "subChainPayloadValue" -> I32 include="interop.h" @ interop.generated.d.ts:62:18
+  param "chain": Nullable(Class(ClassId(1))) foreign=None @ interop.generated.d.ts:62:39
+foreign x1 "subDeviceCreate" -> Class(ClassId(7)) include="interop.h" @ interop.generated.d.ts:93:18
+  param "chain": Nullable(Class(ClassId(1))) foreign=None @ interop.generated.d.ts:93:34
+foreign x2 "subDeviceRetain" -> Void include="interop.h" @ interop.generated.d.ts:94:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:94:34
+foreign x3 "subDeviceRelease" -> Void include="interop.h" @ interop.generated.d.ts:95:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:95:35
+foreign x4 "subDeviceSubmit" -> Void include="interop.h" @ interop.generated.d.ts:96:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:96:34
+  param "commands": Array(U32) foreign=Some(Descriptor { aggregate: "SubBufferView", element: "uint32_t", element_const: true }) @ interop.generated.d.ts:96:53
+foreign x5 "subDeviceSetLogger" -> Void include="interop.h" @ interop.generated.d.ts:97:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:97:37
+  param "logger": Class(ClassId(4)) foreign=None @ interop.generated.d.ts:97:56
+foreign x6 "subDeviceSetLabel" -> Void include="interop.h" @ interop.generated.d.ts:98:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:98:36
+  param "label": Str foreign=Some(StringView { aggregate: "SubStringView" }) @ interop.generated.d.ts:98:55
+foreign x7 "subDevicePoll" -> I32 include="interop.h" @ interop.generated.d.ts:99:18
+  param "attempt": I32 foreign=None @ interop.generated.d.ts:99:32
+foreign x8 "subSliceChecksumF32" -> I32 include="interop.h" @ interop.generated.d.ts:100:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:100:38
+foreign x9 "subSliceChecksumI32" -> I32 include="interop.h" @ interop.generated.d.ts:101:18
+  param "data": Array(I32) foreign=Some(Descriptor { aggregate: "SubSliceI32", element: "int32_t", element_const: true }) @ interop.generated.d.ts:101:38
+foreign x10 "subSliceChecksumF64" -> I32 include="interop.h" @ interop.generated.d.ts:102:18
+  param "data": Array(F64) foreign=Some(Descriptor { aggregate: "SubSliceF64", element: "double", element_const: true }) @ interop.generated.d.ts:102:38
+foreign x11 "subSliceChecksumI64" -> I32 include="interop.h" @ interop.generated.d.ts:103:18
+  param "data": Array(I64) foreign=Some(Descriptor { aggregate: "SubSliceI64", element: "int64_t", element_const: true }) @ interop.generated.d.ts:103:38
+foreign x12 "subSliceChecksumU8" -> I32 include="interop.h" @ interop.generated.d.ts:104:18
+  param "data": Array(U8) foreign=Some(Descriptor { aggregate: "SubSliceU8", element: "uint8_t", element_const: true }) @ interop.generated.d.ts:104:37
+foreign x13 "subSliceChecksumI8" -> I32 include="interop.h" @ interop.generated.d.ts:105:18
+  param "data": Array(I8) foreign=Some(Descriptor { aggregate: "SubSliceI8", element: "int8_t", element_const: true }) @ interop.generated.d.ts:105:37
+foreign x14 "subSliceChecksumU16" -> I32 include="interop.h" @ interop.generated.d.ts:106:18
+  param "data": Array(U16) foreign=Some(Descriptor { aggregate: "SubSliceU16", element: "uint16_t", element_const: true }) @ interop.generated.d.ts:106:38
+foreign x15 "subSliceChecksumI16" -> I32 include="interop.h" @ interop.generated.d.ts:107:18
+  param "data": Array(I16) foreign=Some(Descriptor { aggregate: "SubSliceI16", element: "int16_t", element_const: true }) @ interop.generated.d.ts:107:38
+foreign x16 "subSliceChecksumF16" -> I32 include="interop.h" @ interop.generated.d.ts:108:18
+  param "data": Array(F16) foreign=Some(Descriptor { aggregate: "SubSliceF16", element: "SubFloat16", element_const: true }) @ interop.generated.d.ts:108:38
+foreign x17 "subAccessMatches" -> I32 include="interop.h" @ interop.generated.d.ts:109:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:109:35
+  param "required": U64 foreign=None @ interop.generated.d.ts:109:52
+foreign x18 "subDrawListTotal" -> I32 include="interop.h" @ interop.generated.d.ts:117:18
+  param "list": Class(ClassId(8)) foreign=None @ interop.generated.d.ts:117:35
+foreign x19 "subBulkConsume" -> I32 include="interop.h" @ interop.generated.d.ts:118:18
+  param "data": Nullable(Object) foreign=None @ interop.generated.d.ts:118:33
+  param "size": U64 foreign=None @ interop.generated.d.ts:118:54
+foreign x20 "subBulkConsumeF32" -> I32 include="interop.h" @ interop.generated.d.ts:119:18
+  param "data": Array(F32) foreign=Some(Descriptor { aggregate: "SubSliceF32", element: "float", element_const: true }) @ interop.generated.d.ts:119:36
+foreign x21 "subDeviceOnComplete" -> Void include="interop.h" @ interop.generated.d.ts:127:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:127:38
+  param "info": Class(ClassId(9)) foreign=None @ interop.generated.d.ts:127:57
+foreign x22 "subDevicePump" -> Void include="interop.h" @ interop.generated.d.ts:128:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:128:32
+foreign x23 "subCommandBufferTotal" -> I32 include="interop.h" @ interop.generated.d.ts:294:18
+  param "buf": Class(ClassId(32)) foreign=None @ interop.generated.d.ts:294:40
+foreign x24 "subStageMatches" -> I32 include="interop.h" @ interop.generated.d.ts:295:18
+  param "mask": U64 foreign=None @ interop.generated.d.ts:295:34
+  param "required": U64 foreign=None @ interop.generated.d.ts:295:55
+foreign x25 "subFutureMake" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:309:18
+  param "request": U32 foreign=None @ interop.generated.d.ts:309:32
+foreign x26 "subStatsMake" -> Class(ClassId(34)) include="interop.h" @ interop.generated.d.ts:310:18
+  param "base": U32 foreign=None @ interop.generated.d.ts:310:31
+foreign x27 "subDeviceQuery" -> Void include="interop.h" @ interop.generated.d.ts:318:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:318:33
+  param "request": U32 foreign=None @ interop.generated.d.ts:318:52
+  param "status": Nullable(Class(ClassId(35))) foreign=None @ interop.generated.d.ts:318:66
+foreign x28 "subDeviceKickAsync" -> Class(ClassId(33)) include="interop.h" @ interop.generated.d.ts:326:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:326:37
+  param "request": U32 foreign=None @ interop.generated.d.ts:326:56
+  param "info": Class(ClassId(4)) foreign=None @ interop.generated.d.ts:326:70
+foreign x29 "subDeviceWait" -> Void include="interop.h" @ interop.generated.d.ts:327:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:327:32
+  param "waits": Array(Class(ClassId(36))) foreign=Some(Descriptor { aggregate: "SubWaitList", element: "SubWaitEntry", element_const: false }) @ interop.generated.d.ts:327:51
+foreign x30 "subDeviceSumBytes" -> U32 include="interop.h" @ interop.generated.d.ts:328:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: true }) @ interop.generated.d.ts:328:36
+foreign x31 "subDeviceFillBytes" -> Void include="interop.h" @ interop.generated.d.ts:329:18
+  param "data": Array(U8) foreign=Some(ScalarPair { element: "uint8_t", element_const: false }) @ interop.generated.d.ts:329:37
+foreign x32 "subDeviceFillShorts" -> Void include="interop.h" @ interop.generated.d.ts:330:18
+  param "data": Array(U16) foreign=Some(ScalarPair { element: "uint16_t", element_const: false }) @ interop.generated.d.ts:330:38
+foreign x33 "subBoundaryStringCheck" -> U64 include="interop.h" @ interop.generated.d.ts:341:18
+  param "record": Nullable(Class(ClassId(37))) foreign=None @ interop.generated.d.ts:341:41
+  param "selector": U32 foreign=None @ interop.generated.d.ts:341:81
+foreign x34 "subBoundaryStringFill" -> Void include="interop.h" @ interop.generated.d.ts:342:18
+  param "record": Nullable(Class(ClassId(37))) foreign=None @ interop.generated.d.ts:342:40
+  param "emptyLabel": Bool foreign=None @ interop.generated.d.ts:342:80
+foreign x35 "subProbeTextureDescriptorCheck" -> U64 include="interop.h" @ interop.generated.d.ts:369:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:369:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:369:96
+foreign x36 "subProbeTextureDescriptorFill" -> Void include="interop.h" @ interop.generated.d.ts:370:18
+  param "descriptor": Nullable(Class(ClassId(39))) foreign=None @ interop.generated.d.ts:370:48
+foreign x37 "subProbePipelineLayoutCheck" -> U64 include="interop.h" @ interop.generated.d.ts:378:18
+  param "descriptor": Nullable(Class(ClassId(40))) foreign=None @ interop.generated.d.ts:378:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:378:99
+foreign x38 "subProbeBindGroupEntryCheck" -> U32 include="interop.h" @ interop.generated.d.ts:388:18
+  param "entry": Nullable(Class(ClassId(41))) foreign=None @ interop.generated.d.ts:388:46
+foreign x39 "subProbeBindGroupEntryFill" -> Void include="interop.h" @ interop.generated.d.ts:389:18
+  param "entry": Nullable(Class(ClassId(41))) foreign=None @ interop.generated.d.ts:389:45
+  param "selected": U32 foreign=None @ interop.generated.d.ts:389:83
+  param "handle": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:389:98
+foreign x40 "subProbeComputePipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:406:18
+  param "descriptor": Nullable(Class(ClassId(43))) foreign=None @ interop.generated.d.ts:406:47
+  param "selector": U32 foreign=None @ interop.generated.d.ts:406:102
+foreign x41 "subProbeRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:435:18
+  param "descriptor": Nullable(Class(ClassId(47))) foreign=None @ interop.generated.d.ts:435:46
+  param "selector": U32 foreign=None @ interop.generated.d.ts:435:100
+foreign x42 "subProbeProgrammableStageCheck" -> U64 include="interop.h" @ interop.generated.d.ts:449:18
+  param "stage": Nullable(Class(ClassId(49))) foreign=None @ interop.generated.d.ts:449:49
+  param "selector": U32 foreign=None @ interop.generated.d.ts:449:91
+foreign x43 "subProbeFullRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:477:18
+  param "descriptor": Nullable(Class(ClassId(53))) foreign=None @ interop.generated.d.ts:477:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:477:108
+foreign x44 "subProbeFullRenderPipelineWithHandleCheck" -> U64 include="interop.h" @ interop.generated.d.ts:493:18
+  param "descriptor": Nullable(Class(ClassId(55))) foreign=None @ interop.generated.d.ts:493:60
+  param "selector": U32 foreign=None @ interop.generated.d.ts:493:120
+foreign x45 "subProbeFullRenderPipelineWithNestedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:529:18
+  param "descriptor": Nullable(Class(ClassId(60))) foreign=None @ interop.generated.d.ts:529:65
+  param "selector": U32 foreign=None @ interop.generated.d.ts:529:125
+foreign x46 "subProbeFullRenderPipelineWithUnmarkedBlendCheck" -> U64 include="interop.h" @ interop.generated.d.ts:563:18
+  param "descriptor": Nullable(Class(ClassId(64))) foreign=None @ interop.generated.d.ts:563:67
+  param "selector": U32 foreign=None @ interop.generated.d.ts:563:129
+foreign x47 "subProbeBreadthRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:597:18
+  param "descriptor": Nullable(Class(ClassId(69))) foreign=None @ interop.generated.d.ts:597:53
+  param "selector": U32 foreign=None @ interop.generated.d.ts:597:114
+foreign x48 "subProbeWideRenderPipelineCheck" -> U64 include="interop.h" @ interop.generated.d.ts:661:18
+  param "descriptor": Nullable(Class(ClassId(78))) foreign=None @ interop.generated.d.ts:661:50
+  param "selector": U32 foreign=None @ interop.generated.d.ts:661:108
+foreign x49 "subProbeQueueSubmitCheck" -> U64 include="interop.h" @ interop.generated.d.ts:662:18
+  param "queue": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:662:43
+  param "commands": Array(Class(ClassId(7))) foreign=Some(ScalarPair { element: "SubDevice", element_const: true }) @ interop.generated.d.ts:662:61
+  param "selector": U32 foreign=None @ interop.generated.d.ts:662:84
+foreign x50 "subProbeSetBindGroupCheck" -> U32 include="interop.h" @ interop.generated.d.ts:663:18
+  param "encoder": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:663:44
+  param "group": Nullable(Class(ClassId(7))) foreign=None @ interop.generated.d.ts:663:64
+foreign x51 "subByValueI32OneReport" -> Void include="interop.h" @ interop.generated.d.ts:737:18
+  param "report": Nullable(Class(ClassId(79))) foreign=None @ interop.generated.d.ts:737:41
+  param "value": Class(ClassId(79)) foreign=None @ interop.generated.d.ts:737:74
+foreign x52 "subByValueI32PairReport" -> Void include="interop.h" @ interop.generated.d.ts:738:18
+  param "report": Nullable(Class(ClassId(80))) foreign=None @ interop.generated.d.ts:738:42
+  param "value": Class(ClassId(80)) foreign=None @ interop.generated.d.ts:738:76
+foreign x53 "subByValueI32TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:739:18
+  param "report": Nullable(Class(ClassId(81))) foreign=None @ interop.generated.d.ts:739:44
+  param "value": Class(ClassId(81)) foreign=None @ interop.generated.d.ts:739:80
+foreign x54 "subByValueI16I16I32Report" -> Void include="interop.h" @ interop.generated.d.ts:740:18
+  param "report": Nullable(Class(ClassId(82))) foreign=None @ interop.generated.d.ts:740:44
+  param "value": Class(ClassId(82)) foreign=None @ interop.generated.d.ts:740:80
+foreign x55 "subByValueU8FourReport" -> Void include="interop.h" @ interop.generated.d.ts:741:18
+  param "report": Nullable(Class(ClassId(83))) foreign=None @ interop.generated.d.ts:741:41
+  param "value": Class(ClassId(83)) foreign=None @ interop.generated.d.ts:741:74
+foreign x56 "subByValueI64PairReport" -> Void include="interop.h" @ interop.generated.d.ts:742:18
+  param "report": Nullable(Class(ClassId(84))) foreign=None @ interop.generated.d.ts:742:42
+  param "value": Class(ClassId(84)) foreign=None @ interop.generated.d.ts:742:76
+foreign x57 "subByValueF32Hfa2Report" -> Void include="interop.h" @ interop.generated.d.ts:743:18
+  param "report": Nullable(Class(ClassId(85))) foreign=None @ interop.generated.d.ts:743:42
+  param "value": Class(ClassId(85)) foreign=None @ interop.generated.d.ts:743:76
+foreign x58 "subByValueF32Hfa4Report" -> Void include="interop.h" @ interop.generated.d.ts:744:18
+  param "report": Nullable(Class(ClassId(86))) foreign=None @ interop.generated.d.ts:744:42
+  param "value": Class(ClassId(86)) foreign=None @ interop.generated.d.ts:744:76
+foreign x59 "subByValueI32F32Report" -> Void include="interop.h" @ interop.generated.d.ts:745:18
+  param "report": Nullable(Class(ClassId(87))) foreign=None @ interop.generated.d.ts:745:41
+  param "value": Class(ClassId(87)) foreign=None @ interop.generated.d.ts:745:74
+foreign x60 "subByValueI32I64Report" -> Void include="interop.h" @ interop.generated.d.ts:746:18
+  param "report": Nullable(Class(ClassId(88))) foreign=None @ interop.generated.d.ts:746:41
+  param "value": Class(ClassId(88)) foreign=None @ interop.generated.d.ts:746:74
+foreign x61 "subByValueI64TripleReport" -> Void include="interop.h" @ interop.generated.d.ts:747:18
+  param "report": Nullable(Class(ClassId(89))) foreign=None @ interop.generated.d.ts:747:44
+  param "value": Class(ClassId(89)) foreign=None @ interop.generated.d.ts:747:80
+foreign x62 "subHostOwnedStateBorrow" -> Class(ClassId(90)) include="interop.h" @ interop.generated.d.ts:753:18
+foreign x63 "subHostOwnedStateAdvance" -> I32 include="interop.h" @ interop.generated.d.ts:754:18
+  param "state": Class(ClassId(90)) foreign=None @ interop.generated.d.ts:754:43
+foreign x64 "subRequestStart" -> I32 include="interop.h" @ interop.generated.d.ts:763:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:763:34
+  param "payload": U32 foreign=None @ interop.generated.d.ts:763:53
+  param "immediate": I32 foreign=None @ interop.generated.d.ts:763:67
+  param "info": Class(ClassId(91)) foreign=None @ interop.generated.d.ts:763:83
+foreign x65 "subRequestSubscribe" -> I32 include="interop.h" @ interop.generated.d.ts:764:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:764:38
+  param "info": Class(ClassId(91)) foreign=None @ interop.generated.d.ts:764:57
+foreign x66 "subRequestNotify" -> Void include="interop.h" @ interop.generated.d.ts:765:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:765:35
+  param "payload": U32 foreign=None @ interop.generated.d.ts:765:54
+foreign x67 "subRequestUnsubscribe" -> Void include="interop.h" @ interop.generated.d.ts:766:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:766:40
+foreign x68 "subRequestPump" -> Void include="interop.h" @ interop.generated.d.ts:767:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:767:33
+foreign x69 "subRequestReleaseActive" -> Void include="interop.h" @ interop.generated.d.ts:768:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:768:42
+foreign x70 "subRequestReleaseCount" -> I32 include="interop.h" @ interop.generated.d.ts:769:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:769:41
+foreign x71 "subRequestMarkLiveBytes" -> Void include="interop.h" @ interop.generated.d.ts:770:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:770:42
+foreign x72 "subRequestLiveBytesFellBy" -> I32 include="interop.h" @ interop.generated.d.ts:771:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:771:44
+  param "atLeast": U32 foreign=None @ interop.generated.d.ts:771:63
+foreign x73 "subRequestReleaseAndRefire" -> Void include="interop.h" @ interop.generated.d.ts:772:18
+  param "device": Class(ClassId(7)) foreign=None @ interop.generated.d.ts:772:45
+foreign x74 "subCompletionI32" -> Void include="host-completion.h" @ host-completion.generated.d.ts:29:18
+  completion result=I32 c="int32_t"
+  param "device": Class(ClassId(7)) foreign=None @ host-completion.generated.d.ts:29:35
+  param "request": I32 foreign=None @ host-completion.generated.d.ts:29:54
+  param "endpoint": Void foreign=Some(CompletionEndpoint) @ host-completion.generated.d.ts:29:18
+foreign x75 "subCompletionStruct" -> Void include="host-completion.h" @ host-completion.generated.d.ts:30:18
+  completion result=Class(ClassId(92)) c="SubCompletionValue"
+  param "device": Class(ClassId(7)) foreign=None @ host-completion.generated.d.ts:30:38
+  param "request": I32 foreign=None @ host-completion.generated.d.ts:30:57
+  param "endpoint": Void foreign=Some(CompletionEndpoint) @ host-completion.generated.d.ts:30:18
+foreign x76 "subCompletionVoid" -> Void include="host-completion.h" @ host-completion.generated.d.ts:31:18
+  completion result=Void c="void"
+  param "device": Class(ClassId(7)) foreign=None @ host-completion.generated.d.ts:31:36
+  param "request": I32 foreign=None @ host-completion.generated.d.ts:31:55
+  param "endpoint": Void foreign=Some(CompletionEndpoint) @ host-completion.generated.d.ts:31:18
+foreign x77 "subCompletionImmediate" -> Void include="host-completion.h" @ host-completion.generated.d.ts:32:18
+  completion result=I32 c="int32_t"
+  param "device": Class(ClassId(7)) foreign=None @ host-completion.generated.d.ts:32:41
+  param "value": I32 foreign=None @ host-completion.generated.d.ts:32:60
+  param "endpoint": Void foreign=Some(CompletionEndpoint) @ host-completion.generated.d.ts:32:18
+foreign x78 "subCompletionSeven" -> Void include="host-completion.h" @ host-completion.generated.d.ts:33:18
+  completion result=I32 c="int32_t"
+  param "a": I32 foreign=None @ host-completion.generated.d.ts:33:37
+  param "b": I32 foreign=None @ host-completion.generated.d.ts:33:45
+  param "c": I32 foreign=None @ host-completion.generated.d.ts:33:53
+  param "d": I32 foreign=None @ host-completion.generated.d.ts:33:61
+  param "e": I32 foreign=None @ host-completion.generated.d.ts:33:69
+  param "f": I32 foreign=None @ host-completion.generated.d.ts:33:77
+  param "g": I32 foreign=None @ host-completion.generated.d.ts:33:85
+  param "endpoint": Void foreign=Some(CompletionEndpoint) @ host-completion.generated.d.ts:33:18
+foreign x79 "subCompletionPump" -> I32 include="host-completion.h" @ host-completion.generated.d.ts:34:18
+  param "device": Class(ClassId(7)) foreign=None @ host-completion.generated.d.ts:34:36
+  param "request": I32 foreign=None @ host-completion.generated.d.ts:34:55
+  param "fail": I32 foreign=None @ host-completion.generated.d.ts:34:69
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "read" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a347-host-operation-completes.ts:9:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 16 } }]
+  can-raise
+  param %0 "job": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a347-host-operation-completes.ts:9:21
+  value %0: Data(AsyncHandle(I32)) name=Some("job")
+  value %1: Data(I32) name=None
+  value %2: Data(AsyncHandle(I32)) name=Some("job")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }] }
+  b1(%1: Data(I32), %2: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }] @ a347-host-operation-completes.ts:9:63
+    AsyncHandleRelease(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 56 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 56 } }] @ a347-host-operation-completes.ts:9:56
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 56 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:9:63
+    AsyncHandleRelease(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }] @ a347-host-operation-completes.ts:9:63
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }] @ a347-host-operation-completes.ts:9:63
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 9, col: 63 } }
+fn f2 "fail" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a347-host-operation-completes.ts:10:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 10, col: 16 } }]
+  can-raise
+  param %0 "job": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a347-host-operation-completes.ts:10:21
+  value %0: Data(AsyncHandle(I32)) name=Some("job")
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(AsyncHandle(I32)) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Class(ClassId(0))) name=None
+  value %6: Data(U32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(AsyncHandle(I32)) name=None
+  value %10: Data(AsyncHandle(I32)) name=None
+  value %11: Data(AsyncHandle(I32)) name=Some("job")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 11, col: 18 }, successor: BlockId(2), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 11, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 11, col: 18 } }] }
+  b1(%1: Data(Class(ClassId(0))), %2: Data(AsyncHandle(I32))) Some("catch"):
+    %6: Data(U32) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 12, col: 9 } }] @ a347-host-operation-completes.ts:12:9
+    %7: Data(Bool) = Binary(Lt)(%6, Integer(7):U32) @ a347-host-operation-completes.ts:12:9
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b2(%3: Data(I32), %11: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a347-host-operation-completes.ts", line: 11, col: 18 } }] @ a347-host-operation-completes.ts:11:18
+    %4: Data(Str) = Template([Operand { index: 0, format: I32 }])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 11, col: 18 } }] @ a347-host-operation-completes.ts:11:15
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a347-host-operation-completes.ts:11:9
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(11))], ownership: [true] })
+  b3 Some("catch.landing"):
+    %5: Data(Class(ClassId(0))) = CatchEntry() @ a347-host-operation-completes.ts:11:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(11))], ownership: [false, true] })
+  b4 Some("if.then"):
+    %8: Data(Str) = LoadField(Class(FieldId(2)))(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 12, col: 41 } }] @ a347-host-operation-completes.ts:12:47
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a347-host-operation-completes.ts:12:35
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(2))], ownership: [true] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(2))], ownership: [true] })
+  b6(%9: Data(AsyncHandle(I32))) Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(9))], ownership: [true] })
+  b7(%10: Data(AsyncHandle(I32))) Some("try.join"):
+    AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 10, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 10, col: 16 } }] @ a347-host-operation-completes.ts:10:16
+    -> Return { value: None, pos: Pos { file: "a347-host-operation-completes.ts", line: 10, col: 16 } }
+fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a347-host-operation-completes.ts:15:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }]
+  can-raise
+  value %0: Data(Nullable(Class(ClassId(1)))) name=None
+  value %1: Data(Class(ClassId(7))) name=None
+  value %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) name=None
+  value %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) name=None
+  value %5: Data(Nullable(Object)) name=None
+  value %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) name=None
+  value %7: Data(Nullable(Object)) name=None
+  value %8: Address(AddressType { pointee: Nullable(Object), array_base: None }) name=None
+  value %9: Data(Class(ClassId(91))) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(AsyncHandle(I32)) name=None
+  value %12: Data(AsyncHandle(I32)) name=None
+  value %13: Data(AsyncHandle(I32)) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(AsyncHandle(I32)) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(Str) name=None
+  value %23: Data(AsyncHandle(I32)) name=None
+  value %24: Data(AsyncHandle(I32)) name=None
+  value %25: Data(Array(AsyncHandle(I32))) name=None
+  value %26: Data(AsyncHandle(Array(I32))) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(I32) name=None
+  value %29: Data(Array(I32)) name=None
+  value %30: Address(AddressType { pointee: I32, array_base: Some(ValueId(29)) }) name=None
+  value %31: Data(I32) name=None
+  value %32: Address(AddressType { pointee: I32, array_base: Some(ValueId(29)) }) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(Str) name=None
+  value %35: Data(AsyncHandle(I32)) name=None
+  value %36: Data(AsyncHandle(Void)) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(AsyncHandle(Class(ClassId(92)))) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Class(ClassId(92))) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(Str) name=None
+  value %44: Data(AsyncHandle(Void)) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(Str) name=None
+  value %47: Data(Class(ClassId(7))) name=None
+  value %48: Data(AsyncHandle(I32)) name=None
+  value %49: Data(AsyncHandle(I32)) name=None
+  value %50: Data(AsyncHandle(I32)) name=None
+  value %51: Data(Class(ClassId(7))) name=None
+  value %52: Data(AsyncHandle(I32)) name=None
+  value %53: Data(AsyncHandle(I32)) name=None
+  value %54: Data(AsyncHandle(I32)) name=None
+  value %55: Data(I32) name=None
+  value %56: Data(Class(ClassId(7))) name=None
+  value %57: Data(AsyncHandle(I32)) name=None
+  value %58: Data(AsyncHandle(I32)) name=None
+  value %59: Data(AsyncHandle(I32)) name=None
+  value %60: Data(I32) name=None
+  value %61: Data(I32) name=None
+  value %62: Data(Class(ClassId(7))) name=None
+  value %63: Data(AsyncHandle(I32)) name=None
+  value %64: Data(AsyncHandle(I32)) name=None
+  value %65: Data(AsyncHandle(I32)) name=None
+  value %66: Data(Class(ClassId(7))) name=None
+  value %67: Data(AsyncHandle(I32)) name=None
+  value %68: Data(AsyncHandle(I32)) name=None
+  value %69: Data(AsyncHandle(I32)) name=None
+  value %70: Data(AsyncHandle(I32)) name=None
+  value %71: Data(AsyncHandle(I32)) name=None
+  value %72: Data(AsyncHandle(Array(I32))) name=None
+  value %73: Data(Class(ClassId(7))) name=None
+  value %74: Data(AsyncHandle(I32)) name=None
+  value %75: Data(AsyncHandle(I32)) name=None
+  value %76: Data(AsyncHandle(I32)) name=None
+  value %77: Data(AsyncHandle(I32)) name=None
+  value %78: Data(AsyncHandle(I32)) name=None
+  value %79: Data(AsyncHandle(Array(I32))) name=None
+  value %80: Data(AsyncHandle(I32)) name=None
+  value %81: Data(AsyncHandle(Void)) name=None
+  value %82: Data(Class(ClassId(7))) name=None
+  value %83: Data(AsyncHandle(I32)) name=None
+  value %84: Data(AsyncHandle(I32)) name=None
+  value %85: Data(AsyncHandle(I32)) name=None
+  value %86: Data(AsyncHandle(I32)) name=None
+  value %87: Data(AsyncHandle(I32)) name=None
+  value %88: Data(AsyncHandle(Array(I32))) name=None
+  value %89: Data(AsyncHandle(I32)) name=None
+  value %90: Data(AsyncHandle(Void)) name=None
+  value %91: Data(AsyncHandle(Class(ClassId(92)))) name=None
+  value %92: Data(Class(ClassId(7))) name=None
+  value %93: Data(AsyncHandle(I32)) name=None
+  value %94: Data(AsyncHandle(I32)) name=None
+  value %95: Data(AsyncHandle(I32)) name=None
+  value %96: Data(AsyncHandle(I32)) name=None
+  value %97: Data(AsyncHandle(I32)) name=None
+  value %98: Data(AsyncHandle(Array(I32))) name=None
+  value %99: Data(AsyncHandle(I32)) name=None
+  value %100: Data(AsyncHandle(Void)) name=None
+  value %101: Data(AsyncHandle(Class(ClassId(92)))) name=None
+  value %102: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(Nullable(Class(ClassId(1)))) = Coerce(Null:Null) @ interop.generated.d.ts:93:34
+    %1: Data(Class(ClassId(7))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(Class(ClassId(7)))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 16, col: 18 } }] @ a347-host-operation-completes.ts:16:18
+    %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) = AllocateClass(ClassId(91))() @ a347-host-operation-completes.ts:17:33
+    %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) = MakeClosure(FunctionId(4))() @ a347-host-operation-completes.ts:17:52
+    %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(257)))(%2) @ a347-host-operation-completes.ts:17:52
+    StoreAddress(%4, %3) @ a347-host-operation-completes.ts:17:52
+    %5: Data(Nullable(Object)) = Coerce(Null:Null) @ a347-host-operation-completes.ts:17:75
+    %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) = AddressOfField(Class(FieldId(258)))(%2) @ a347-host-operation-completes.ts:17:75
+    StoreAddress(%6, %5) @ a347-host-operation-completes.ts:17:75
+    %7: Data(Nullable(Object)) = Coerce(Null:Null) @ a347-host-operation-completes.ts:17:81
+    %8: Address(AddressType { pointee: Nullable(Object), array_base: None }) = AddressOfField(Class(FieldId(259)))(%2) @ a347-host-operation-completes.ts:17:81
+    StoreAddress(%8, %7) @ a347-host-operation-completes.ts:17:81
+    %9: Data(Class(ClassId(91))) = LoadAddress(%2) @ a347-host-operation-completes.ts:17:33
+    %10: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(64)), parameter_types: [Data(Class(ClassId(7))), Data(U32), Data(I32), Data(Class(ClassId(91)))], return_type: Some(Data(I32)) })(%1, Integer(0):U32, Integer(1):I32, %9) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 17, col: 3 } }] @ a347-host-operation-completes.ts:17:3
+    %11: Data(AsyncHandle(I32)) = HostCompletion { function: ForeignFunctionId(74), result_size: 4, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%1, Integer(11):I32) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 18, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 18, col: 15 } }] @ a347-host-operation-completes.ts:18:15
+    AsyncHandleRetain(%11) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 19, col: 22 } }] @ a347-host-operation-completes.ts:19:22
+    %12: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(AsyncHandle(I32))], return_type: Some(Data(I32)) })(%11) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 19, col: 17 } }] @ a347-host-operation-completes.ts:19:17
+    AsyncHandleRetain(%11) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 20, col: 23 } }] @ a347-host-operation-completes.ts:20:23
+    %13: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(AsyncHandle(I32))], return_type: Some(Data(I32)) })(%11) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 20, col: 18 } }] @ a347-host-operation-completes.ts:20:18
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 21, col: 3 } }] @ a347-host-operation-completes.ts:21:3
+    %14: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%1, Integer(11):I32, Integer(0):I32) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 22, col: 19 } }] @ a347-host-operation-completes.ts:22:19
+    %15: Data(Str) = Template([Text("status "), Operand { index: 0, format: I32 }])(%14) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 22, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 22, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 22, col: 9 } }] @ a347-host-operation-completes.ts:22:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) @ a347-host-operation-completes.ts:22:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(12), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 }, successor: BlockId(1), resume_value: Some(ValueId(16)), arguments: [Value(ValueId(1)), Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(13))], ownership: [false, false, false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] }
+  b1(%16: Data(I32), %47: Data(Class(ClassId(7))), %48: Data(AsyncHandle(I32)), %49: Data(AsyncHandle(I32)), %50: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] @ a347-host-operation-completes.ts:23:12
+    -> Suspend { kind: AsyncHandle { handle: ValueId(50), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 }, successor: BlockId(3), resume_value: Some(ValueId(17)), arguments: [Value(ValueId(47)), Value(ValueId(48)), Value(ValueId(49)), Value(ValueId(50)), Value(ValueId(16))], ownership: [false, false, false, false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:23:12
+    AsyncHandleRelease(%50) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] @ a347-host-operation-completes.ts:23:12
+    AsyncHandleRelease(%49) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] @ a347-host-operation-completes.ts:23:12
+    AsyncHandleRelease(%48) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] @ a347-host-operation-completes.ts:23:12
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }] @ a347-host-operation-completes.ts:23:12
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }
+  b3(%17: Data(I32), %51: Data(Class(ClassId(7))), %52: Data(AsyncHandle(I32)), %53: Data(AsyncHandle(I32)), %54: Data(AsyncHandle(I32)), %55: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] @ a347-host-operation-completes.ts:23:27
+    -> Suspend { kind: AsyncHandle { handle: ValueId(52), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 }, successor: BlockId(5), resume_value: Some(ValueId(18)), arguments: [Value(ValueId(51)), Value(ValueId(52)), Value(ValueId(53)), Value(ValueId(54)), Value(ValueId(55)), Value(ValueId(17))], ownership: [false, false, false, false, false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] }
+  b4 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:23:27
+    AsyncHandleRelease(%54) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] @ a347-host-operation-completes.ts:23:27
+    AsyncHandleRelease(%53) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] @ a347-host-operation-completes.ts:23:27
+    AsyncHandleRelease(%52) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] @ a347-host-operation-completes.ts:23:27
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }] @ a347-host-operation-completes.ts:23:27
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }
+  b5(%18: Data(I32), %56: Data(Class(ClassId(7))), %57: Data(AsyncHandle(I32)), %58: Data(AsyncHandle(I32)), %59: Data(AsyncHandle(I32)), %60: Data(I32), %61: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] @ a347-host-operation-completes.ts:23:43
+    %19: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%60, %61, %18) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 9 } }] @ a347-host-operation-completes.ts:23:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) @ a347-host-operation-completes.ts:23:3
+    %20: Data(AsyncHandle(I32)) = HostCompletion { function: ForeignFunctionId(77), result_size: 4, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%56, Integer(22):I32) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 18 } }] @ a347-host-operation-completes.ts:24:18
+    -> Suspend { kind: AsyncHandle { handle: ValueId(20), owned: true }, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 }, successor: BlockId(7), resume_value: Some(ValueId(21)), arguments: [Value(ValueId(56)), Value(ValueId(57)), Value(ValueId(58)), Value(ValueId(59))], ownership: [false, false, false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] }
+  b6 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:23:43
+    AsyncHandleRelease(%59) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] @ a347-host-operation-completes.ts:23:43
+    AsyncHandleRelease(%58) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] @ a347-host-operation-completes.ts:23:43
+    AsyncHandleRelease(%57) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] @ a347-host-operation-completes.ts:23:43
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }] @ a347-host-operation-completes.ts:23:43
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 23, col: 43 } }
+  b7(%21: Data(I32), %62: Data(Class(ClassId(7))), %63: Data(AsyncHandle(I32)), %64: Data(AsyncHandle(I32)), %65: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:12
+    %22: Data(Str) = Template([Operand { index: 0, format: I32 }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a347-host-operation-completes.ts:24:3
+    %23: Data(AsyncHandle(I32)) = HostCompletion { function: ForeignFunctionId(74), result_size: 4, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%62, Integer(31):I32) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 25, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 25, col: 13 } }] @ a347-host-operation-completes.ts:25:13
+    %24: Data(AsyncHandle(I32)) = HostCompletion { function: ForeignFunctionId(74), result_size: 4, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%62, Integer(32):I32) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 26, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 26, col: 13 } }] @ a347-host-operation-completes.ts:26:13
+    AsyncHandleRetain(%23) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 28 } }] @ a347-host-operation-completes.ts:27:28
+    AsyncHandleRetain(%24) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 31 } }] @ a347-host-operation-completes.ts:27:31
+    %25: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%23, %24) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 31 } }] @ a347-host-operation-completes.ts:27:27
+    %26: Data(AsyncHandle(Array(I32))) = AsyncAll(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 15 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 15 } }] @ a347-host-operation-completes.ts:27:15
+    AsyncHandleArrayRelease(%25) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 27 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 27, col: 27 } }] @ a347-host-operation-completes.ts:27:27
+    %27: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%62, Integer(31):I32, Integer(0):I32) invalidates=[ValueId(25)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 28, col: 3 } }] @ a347-host-operation-completes.ts:28:3
+    %28: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%62, Integer(32):I32, Integer(0):I32) invalidates=[ValueId(25)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 29, col: 3 } }] @ a347-host-operation-completes.ts:29:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(26), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 }, successor: BlockId(9), resume_value: Some(ValueId(29)), arguments: [Value(ValueId(62)), Value(ValueId(63)), Value(ValueId(64)), Value(ValueId(65)), Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(26))], ownership: [false, false, false, false, false, false, false], invalidates: [ValueId(25), ValueId(29)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] }
+  b8 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:24:12
+    AsyncHandleRelease(%65) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:12
+    AsyncHandleRelease(%64) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:12
+    AsyncHandleRelease(%63) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:12
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }] @ a347-host-operation-completes.ts:24:12
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 24, col: 12 } }
+  b9(%29: Data(Array(I32)), %66: Data(Class(ClassId(7))), %67: Data(AsyncHandle(I32)), %68: Data(AsyncHandle(I32)), %69: Data(AsyncHandle(I32)), %70: Data(AsyncHandle(I32)), %71: Data(AsyncHandle(I32)), %72: Data(AsyncHandle(Array(I32)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(10))), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    %30: Address(AddressType { pointee: I32, array_base: Some(ValueId(29)) }) = AddressOfIndex { checked: true }(%29, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 12 } }, Trap { kind: IndexRead, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 12 } }] @ a347-host-operation-completes.ts:31:12
+    %31: Data(I32) = LoadAddress(%30) @ a347-host-operation-completes.ts:31:12
+    %32: Address(AddressType { pointee: I32, array_base: Some(ValueId(29)) }) = AddressOfIndex { checked: true }(%29, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 25 } }, Trap { kind: IndexRead, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 25 } }] @ a347-host-operation-completes.ts:31:25
+    %33: Data(I32) = LoadAddress(%32) @ a347-host-operation-completes.ts:31:25
+    %34: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%31, %33) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 31, col: 9 } }] @ a347-host-operation-completes.ts:31:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%34) invalidates=[ValueId(25), ValueId(29)] @ a347-host-operation-completes.ts:31:3
+    %35: Data(AsyncHandle(I32)) = HostCompletion { function: ForeignFunctionId(74), result_size: 4, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%66, Integer(40):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 32, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 32, col: 15 } }] @ a347-host-operation-completes.ts:32:15
+    AsyncHandleRetain(%35) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 33, col: 23 } }] @ a347-host-operation-completes.ts:33:23
+    %36: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(AsyncHandle(I32))], return_type: None })(%35) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 33, col: 18 } }] @ a347-host-operation-completes.ts:33:18
+    %37: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%66, Integer(40):I32, Integer(1):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 34, col: 3 } }] @ a347-host-operation-completes.ts:34:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(36), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 }, successor: BlockId(11), resume_value: None, arguments: [Value(ValueId(66)), Value(ValueId(67)), Value(ValueId(68)), Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71)), Value(ValueId(72)), Value(ValueId(35)), Value(ValueId(36))], ownership: [false, false, false, false, false, false, false, false, false], invalidates: [ValueId(25), ValueId(29)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] }
+  b10 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%72) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%71) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%70) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%69) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%68) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    AsyncHandleRelease(%67) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }] @ a347-host-operation-completes.ts:30:18
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 30, col: 18 } }
+  b11(%73: Data(Class(ClassId(7))), %74: Data(AsyncHandle(I32)), %75: Data(AsyncHandle(I32)), %76: Data(AsyncHandle(I32)), %77: Data(AsyncHandle(I32)), %78: Data(AsyncHandle(I32)), %79: Data(AsyncHandle(Array(I32))), %80: Data(AsyncHandle(I32)), %81: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(12))), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    %38: Data(AsyncHandle(Class(ClassId(92)))) = HostCompletion { function: ForeignFunctionId(75), result_size: 8, is_void: false, error_metadata: [24, 0, 0, 8, 16, 0] }(%73, Integer(50):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 36, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 36, col: 16 } }] @ a347-host-operation-completes.ts:36:16
+    %39: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%73, Integer(50):I32, Integer(0):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 37, col: 3 } }] @ a347-host-operation-completes.ts:37:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(38), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 }, successor: BlockId(13), resume_value: Some(ValueId(40)), arguments: [Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79)), Value(ValueId(80)), Value(ValueId(81)), Value(ValueId(38))], ownership: [false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(25), ValueId(29)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] }
+  b12 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%80) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%79) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%78) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    AsyncHandleRelease(%74) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }] @ a347-host-operation-completes.ts:35:3
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 35, col: 3 } }
+  b13(%40: Data(Class(ClassId(92))), %82: Data(Class(ClassId(7))), %83: Data(AsyncHandle(I32)), %84: Data(AsyncHandle(I32)), %85: Data(AsyncHandle(I32)), %86: Data(AsyncHandle(I32)), %87: Data(AsyncHandle(I32)), %88: Data(AsyncHandle(Array(I32))), %89: Data(AsyncHandle(I32)), %90: Data(AsyncHandle(Void)), %91: Data(AsyncHandle(Class(ClassId(92))))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(14))), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    %41: Data(I32) = LoadField(Class(FieldId(260)))(%40) @ a347-host-operation-completes.ts:39:18
+    %42: Data(I32) = LoadField(Class(FieldId(261)))(%40) @ a347-host-operation-completes.ts:39:29
+    %43: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%41, %42) traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 39, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 39, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 39, col: 9 } }] @ a347-host-operation-completes.ts:39:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%43) invalidates=[ValueId(25), ValueId(29)] @ a347-host-operation-completes.ts:39:3
+    %44: Data(AsyncHandle(Void)) = HostCompletion { function: ForeignFunctionId(76), result_size: 0, is_void: true, error_metadata: [24, 0, 0, 8, 16, 0] }(%82, Integer(60):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 40, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 40, col: 17 } }] @ a347-host-operation-completes.ts:40:17
+    %45: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(79)), parameter_types: [Data(Class(ClassId(7))), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%82, Integer(60):I32, Integer(0):I32) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 41, col: 3 } }] @ a347-host-operation-completes.ts:41:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(44), owned: false }, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 }, successor: BlockId(15), resume_value: None, arguments: [Value(ValueId(82)), Value(ValueId(83)), Value(ValueId(84)), Value(ValueId(85)), Value(ValueId(86)), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(89)), Value(ValueId(90)), Value(ValueId(91)), Value(ValueId(44))], ownership: [false, false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(25), ValueId(29)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] }
+  b14 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%91) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%90) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%89) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%88) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%87) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%86) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%85) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%84) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    AsyncHandleRelease(%83) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }] @ a347-host-operation-completes.ts:38:17
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 38, col: 17 } }
+  b15(%92: Data(Class(ClassId(7))), %93: Data(AsyncHandle(I32)), %94: Data(AsyncHandle(I32)), %95: Data(AsyncHandle(I32)), %96: Data(AsyncHandle(I32)), %97: Data(AsyncHandle(I32)), %98: Data(AsyncHandle(Array(I32))), %99: Data(AsyncHandle(I32)), %100: Data(AsyncHandle(Void)), %101: Data(AsyncHandle(Class(ClassId(92)))), %102: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(16))), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    %46: Data(Str) = StringLiteral("void")() traps=[Trap { kind: Allocation, pos: Pos { file: "a347-host-operation-completes.ts", line: 43, col: 9 } }] @ a347-host-operation-completes.ts:43:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%46) invalidates=[ValueId(25), ValueId(29)] @ a347-host-operation-completes.ts:43:3
+    Call(CallTarget { kind: Foreign(ForeignFunctionId(3)), parameter_types: [Data(Class(ClassId(7)))], return_type: None })(%92) invalidates=[ValueId(25), ValueId(29)] traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 44, col: 3 } }] @ a347-host-operation-completes.ts:44:3
+    AsyncHandleRelease(%102) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%101) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%100) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%99) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%98) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%97) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%96) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%95) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%94) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    AsyncHandleRelease(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }] @ a347-host-operation-completes.ts:15:23
+    -> Return { value: None, pos: Pos { file: "a347-host-operation-completes.ts", line: 15, col: 23 } }
+  b16 Some("release.landing"):
+    ExceptionPark() @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%102) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%101) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%100) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%99) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%98) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%97) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%96) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%95) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%94) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    AsyncHandleRelease(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }] @ a347-host-operation-completes.ts:42:3
+    -> Unreachable { pos: Pos { file: "a347-host-operation-completes.ts", line: 42, col: 3 } }
+fn f4 "<lambda a347-host-operation-completes.ts:17:52>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a347-host-operation-completes.ts:17:52
+  param %0 "message": Data(Str) kind=Explicit storage=None @ a347-host-operation-completes.ts:17:52
+  param %1 "a": Data(Nullable(Object)) kind=Explicit storage=None @ a347-host-operation-completes.ts:17:52
+  param %2 "b": Data(Nullable(Object)) kind=Explicit storage=None @ a347-host-operation-completes.ts:17:52
+  value %0: Data(Str) name=Some("message")
+  value %1: Data(Nullable(Object)) name=Some("a")
+  value %2: Data(Nullable(Object)) name=Some("b")
+  b0 Some("entry"):
+    -> Return { value: None, pos: Pos { file: "a347-host-operation-completes.ts", line: 17, col: 52 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

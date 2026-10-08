@@ -21,8 +21,10 @@ use crate::context::{
     AllocationVisitor, AsyncStepReport, AsyncTaskVisitor, Context, DiagnosticsObserver,
     PrintObserver, TrapObserver,
 };
+use crate::context::{CompletionEndpoint, CompletionStatus};
 use crate::trap::TrapKind;
 use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
+use std::ffi::c_void;
 
 /// A `(ptr, len)` string view, ABI-identical to the synthetic header's
 /// `SubStringView` (`{ const char*; size_t; }`) and to the language's
@@ -722,7 +724,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_pending(ctx: *const Context) -> 
     unsafe { &*ctx }.async_pending() as u64
 }
 
-/// Returns the number of started invocations without a completion.
+/// Returns the number of started invocations without a completion, plus pending host operations.
 ///
 /// # Safety
 ///
@@ -858,4 +860,49 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_async_tasks(
     userdata: *mut std::ffi::c_void,
 ) -> u64 {
     unsafe { (&*ctx).visit_async_tasks(visitor, userdata) }
+}
+
+/// Completes a value source (§178). The call copies bytes and queues waiters without script execution.
+/// It checks TRAPPED, STALE, DUPLICATE, then MISMATCH. Allocation failure returns TRAPPED.
+///
+/// # Safety
+/// The Context is live on its owner thread. On a matching pending source, value holds size readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_complete_value(
+    ctx: *mut Context,
+    endpoint: CompletionEndpoint,
+    value: *const c_void,
+    size: usize,
+) -> CompletionStatus {
+    unsafe { (&mut *ctx).host_complete_value(endpoint, value.cast(), size, false) }
+}
+
+/// Completes a void source (§178). The call queues waiters without script execution.
+/// It checks TRAPPED, STALE, DUPLICATE, then MISMATCH.
+///
+/// # Safety
+/// The Context is live on its owner thread, including during a script-to-host call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_complete_void(
+    ctx: *mut Context,
+    endpoint: CompletionEndpoint,
+) -> CompletionStatus {
+    unsafe { (&mut *ctx).host_complete_value(endpoint, std::ptr::null(), 0, true) }
+}
+
+/// Completes a source with an Error at its creation position (§178).
+/// The call queues waiters without script execution. Allocation failure returns TRAPPED.
+/// It checks TRAPPED, STALE, then DUPLICATE. A last unobserved release traps 29 and returns OK.
+///
+/// # Safety
+/// The Context is live on its owner thread. For a pending source, message holds length readable bytes.
+#[no_mangle]
+/// The `message` contains UTF-8 bytes. The runtime copies these bytes.
+pub unsafe extern "C" fn subscript_rt_complete_error(
+    ctx: *mut Context,
+    endpoint: CompletionEndpoint,
+    message: *const std::ffi::c_char,
+    length: usize,
+) -> CompletionStatus {
+    unsafe { (&mut *ctx).host_complete_error(endpoint, message.cast(), length) }
 }

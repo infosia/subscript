@@ -153,6 +153,7 @@ fn read_operands(
             .enumerate()
             .filter_map(|(index, spread)| spread.is_some().then_some(index))
             .collect(),
+        HostCompletion { .. } => vec![],
         Call(target) | AsyncHandleCreate(target) => {
             call_reads(module, target, instruction.operands.len())?
         }

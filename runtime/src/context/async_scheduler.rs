@@ -9,7 +9,7 @@ pub struct AsyncStepReport {
     pub dispatched: u64,
     /// Ready jobs plus parked registrations at return.
     pub pending: u64,
-    /// Registered invocations without a cached completion at return.
+    /// Registered invocations and host operations without a cached completion at return.
     pub unfinished: u64,
     /// One when the budget ends with a job still ready; otherwise zero.
     pub budget_exhausted: u64,
@@ -25,7 +25,7 @@ pub(crate) struct AsyncFrameMeta {
     pub(crate) completion: Option<crate::exception::Completion>,
     // The fulfilled-value size the scheduler supplies when it resumes this
     // frame, and the continuations registered on it (§94.1 rule 5).
-    result_size: usize,
+    pub(super) result_size: usize,
     pub(crate) waiters: Vec<AsyncJob>,
     // compiler.md §116.1 rule 5: a host-kicked export root has no script
     // holder, so an exception that leaves it settles into a trap.
@@ -89,6 +89,7 @@ pub(super) enum RuntimeTask {
     Aggregate(Aggregate),
     GroupJoin(usize),
     CountedInvocation(usize),
+    HostOperation(super::host_operation::HostOperation),
 }
 impl AsyncKind {
     pub(super) fn aggregate(&self) -> Option<&Aggregate> {
@@ -116,6 +117,7 @@ impl AsyncKind {
                 RuntimeTask::Aggregate(_) => 2,
                 RuntimeTask::GroupJoin(_) => 3,
                 RuntimeTask::CountedInvocation(_) => 1,
+                RuntimeTask::HostOperation(_) => 4,
             },
         }
     }
@@ -124,6 +126,7 @@ pub(super) struct Aggregate {
     inputs: Vec<Option<*mut u8>>,
     result: *mut u8,
     remaining: usize,
+    result_size: usize,
     elem_size: usize,
     reported: bool,
 }
@@ -260,14 +263,14 @@ impl Context {
         self.async_parked.len()
     }
 
-    /// The number of registered async invocations without a cached
-    /// completion (`compiler.md` §94.2). A host reads it beside
+    /// The number of registered invocations and host operations without a cached
+    /// completion (§94.2 and §178). A host reads it beside
     /// `async_pending` to tell quiescence from blocked work.
     #[must_use]
     pub fn async_unfinished(&self) -> usize {
         self.async_frames
             .values()
-            .filter(|meta| meta.completion.is_none() && meta.kind.task_kind() == 1)
+            .filter(|meta| meta.completion.is_none() && matches!(meta.kind.task_kind(), 1 | 4))
             .count()
     }
 
@@ -363,6 +366,7 @@ impl Context {
                     .is_some_and(|state| state.remaining != 0),
             ),
             RuntimeTask::CountedInvocation(_) => (None, false),
+            RuntimeTask::HostOperation(_) => (None, false),
         };
         if keep {
             return match meta.completion.as_ref() {
@@ -373,6 +377,11 @@ impl Context {
             };
         }
         let meta = self.async_frames.remove(&(frame as usize))?;
+        if let AsyncKind::Runtime(task) = &meta.kind {
+            if let RuntimeTask::HostOperation(source) = task.as_ref() {
+                self.host_operations.remove(&source.operation_id);
+            }
+        }
         self.delete(frame as usize, pos_id);
         if let Some(group) = group {
             self.task_group_join_released(group);
@@ -700,8 +709,15 @@ impl Context {
     ///
     /// # Safety
     /// `jobs` is a live array of registered handles in this Context.
-    /// Each input has the same fulfilled representation of `elem_size` bytes.
-    pub unsafe fn async_all(&mut self, jobs: *const u8, elem_size: usize, pos_id: u32) -> *mut u8 {
+    /// Each input records `result_size` bytes. The array uses `elem_size` bytes.
+    /// Equal sizes copy directly; one-byte booleans can expand to four-byte elements.
+    pub unsafe fn async_all(
+        &mut self,
+        jobs: *const u8,
+        result_size: usize,
+        elem_size: usize,
+        pos_id: u32,
+    ) -> *mut u8 {
         if !self.require_live_handle(jobs as usize, pos_id) {
             return std::ptr::null_mut();
         }
@@ -734,6 +750,7 @@ impl Context {
                 inputs: inputs.clone(),
                 result,
                 remaining,
+                result_size,
                 elem_size,
                 reported: false,
             })));
@@ -771,6 +788,7 @@ impl Context {
             return;
         };
         let result = state.result;
+        let result_size = state.result_size;
         let elem_size = state.elem_size;
         state.remaining -= 1;
         let last = state.remaining == 0;
@@ -787,18 +805,25 @@ impl Context {
             });
         match completion {
             Some(crate::exception::Completion::Value(bytes)) => {
-                if bytes.len() != elem_size {
+                if bytes.len() != result_size
+                    || self
+                        .async_frames
+                        .get(&(input as usize))
+                        .is_none_or(|m| m.result_size != result_size)
+                    || (result_size != elem_size && !(result_size == 1 && elem_size == 4))
+                {
                     self.async_missing_completion(0);
                     return;
                 }
                 if fulfilled && elem_size != 0 {
                     let data = unsafe { (*(result as *mut ArrayHeader)).data };
                     unsafe {
-                        std::ptr::copy_nonoverlapping(
-                            bytes.as_ptr(),
-                            data.add(index * elem_size),
-                            elem_size,
-                        );
+                        let destination = data.add(index * elem_size);
+                        if result_size == elem_size {
+                            std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, result_size);
+                        } else {
+                            destination.cast::<i32>().write(i32::from(bytes[0] != 0));
+                        }
                     }
                 }
                 if last && fulfilled {

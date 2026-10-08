@@ -56,7 +56,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 if self.coroutine {
                     if self.function.is_async {
                         if let Some(value) = value {
-                            let ty = self.emitter.ctype(&self.function.return_type)?;
+                            let ty = self.emitter.completion_ctype(&self.function.return_type)?;
                             let _ = writeln!(out, "    *(({ty}*)coroutine_out) = {value};");
                         }
                     }

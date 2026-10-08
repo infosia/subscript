@@ -21,6 +21,8 @@ mod pool;
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
+use corpus::interop;
+
 use subscript_codegen::{run_jit, EntryArg, ReloadError, ReloadSession, RunError};
 use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
@@ -889,13 +891,9 @@ export function fire(): void {{
 
 /// The mirror plus one live source, for a session that calls the fixture.
 fn interop_files(text: &str) -> Vec<SourceFile> {
-    let mirror = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../corpus/interop/interop.generated.d.ts");
-    let ambient = std::fs::read_to_string(&mirror).expect("read the committed mirror");
-    vec![
-        SourceFile::ambient("interop.generated.d.ts", ambient),
-        SourceFile::new("live.ts", text.to_string()),
-    ]
+    let mut files = interop::mirrors_for(text, SourceFile::ambient);
+    files.push(SourceFile::new("live.ts", text));
+    files
 }
 
 /// §111 rule 13: a registration that is open across a hot reload calls
@@ -1308,4 +1306,55 @@ export async function g(): Promise<void> {
             assert_eq!(output(&mut session), "resumed\n");
         }
     }
+}
+
+/// A completed source keeps its identity; its old waiting frame traps on resume.
+#[test]
+fn host_completion_waiter_across_reload_traps_before_script_effects() {
+    let Some(fixture) = native_fixture::fixture() else {
+        return;
+    };
+    let text = r#"
+let device: SubDevice = subDeviceCreate(null);
+export function setup(): void {
+  subRequestStart(device, 0, 1, new SubRequestInfo((message, a, b) => {}, null, null));
+}
+export async function wait(): Promise<void> {
+  print(`${await subCompletionI32(device, 91)}`);
+}
+export function complete(): void { print(`status ${subCompletionPump(device, 91, 0)}`); }
+export function main(): void {}
+"#;
+    let mut control =
+        ReloadSession::new_with_native_libraries(&interop_files(text), &[fixture.library()])
+            .expect("control session");
+    control.call_export("setup").expect("control setup");
+    control.call_export("wait").expect("control waiter");
+    control.call_export("complete").expect("control completion");
+    control.async_step().expect("control resume");
+    assert_eq!(control.take_output(), b"status 0\n91\n");
+    drop(control);
+    let files = interop_files;
+    let mut session = ReloadSession::new_with_native_libraries(&files(text), &[fixture.library()])
+        .expect("session");
+    session.call_export("setup").expect("adopt Context");
+    session.call_export("wait").expect("park waiter");
+    session
+        .reload(&files(
+            &text.replace("print(`${await", "print(`new ${await"),
+        ))
+        .expect("reload");
+    session
+        .call_export("complete")
+        .expect("complete the surviving source");
+    assert_eq!(session.take_output(), b"status 0\n");
+    let error = session.async_step().expect_err("the old waiter must trap");
+    match error {
+        RunError::Trap(trap) => {
+            assert_eq!(trap.rule, TrapKind::StaleCoroutine);
+            assert_eq!(trap.message, "stale coroutine after reload");
+        }
+        other => panic!("expected stale frame trap: {other:?}"),
+    }
+    assert!(session.take_output().is_empty());
 }

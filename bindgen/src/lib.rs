@@ -45,6 +45,8 @@
 //!   in function-free headers are rejected;
 //! - every other struct → a boundary `declare class` (C-layout value
 //!   struct whose fields may carry the boundary types above);
+//! - an explicitly selected completion function (§178) → `Promise<T>`,
+//!   with its trailing runtime endpoint omitted and its C result in provenance;
 //! - each C function → an ambient `declare function` with the mapped
 //!   signature.
 //!
@@ -68,6 +70,7 @@
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
 //! // @subscript-c-callback typedef="EngineEventCallback"
 //! // @subscript-c-callback-lifetime aggregate="EngineEventInfo"
+//! // @subscript-c-completion function="engineRead" result="int32_t"
 //! ```
 //!
 //! The callback-lifetime record names one boundary aggregate that takes
@@ -94,11 +97,12 @@
 //! consumer must not reconstruct a C name from a language type.
 //!
 //! The generator names no external project; every type it recognizes is
-//! synthetic (`Sub`-prefixed) or a standard C scalar. It depends only on
+//! a declared boundary type, a standard C scalar, or the runtime endpoint. It depends only on
 //! `std`. Errors are returned as `Result`, never panics.
 
 mod callback_lifetime;
 mod clangfe;
+mod completion;
 mod cparse;
 mod emit;
 
@@ -115,6 +119,8 @@ pub struct BindOptions {
     /// Aggregates that take the explicit callback lifetime, in selection
     /// order (`specs/blocks/compiler.md` §111 rule 1).
     pub explicit_callback_lifetimes: Vec<String>,
+    /// Function names and C result spellings selected by `--completion` (§178).
+    pub completions: Vec<(String, String)>,
 }
 
 impl BindOptions {
@@ -122,6 +128,19 @@ impl BindOptions {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Adds one completion function and its C result spelling (§178 rules 4–6).
+    ///
+    /// The binder rejects a function that it receives two times.
+    #[must_use]
+    pub fn with_completion(
+        mut self,
+        function: impl Into<String>,
+        result: impl Into<String>,
+    ) -> Self {
+        self.completions.push((function.into(), result.into()));
+        self
     }
 
     /// Adds one aggregate to the explicit-lifetime selection.
@@ -179,6 +198,7 @@ pub fn generate_for_header(header: &str, include_spelling: &str) -> Result<Strin
 /// [`generate_for_header`], or when one selected explicit-lifetime
 /// aggregate is absent from the header, is absorbed into a boundary type,
 /// carries no callback field, or is selected two times.
+/// Also rejects completion selections that violate §178 rules 4–6.
 pub fn generate_with_options(
     header: &str,
     include_spelling: &str,
@@ -197,5 +217,6 @@ pub fn generate_with_options(
         &parsed,
         include_spelling,
         &options.explicit_callback_lifetimes,
+        &options.completions,
     )
 }

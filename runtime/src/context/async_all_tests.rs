@@ -49,7 +49,7 @@ fn snapshot_duplicates_counts_and_completed_registration() {
         complete(&mut ctx, a, 7);
         let array = jobs(&mut ctx, &[a, b]);
         // SAFETY: the input array holds registered four-byte result handles.
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         assert_eq!(unsafe { ctx.async_count(a) }, if duplicate { 3 } else { 2 });
         assert_eq!(ctx.async_ready_len(), if duplicate { 2 } else { 1 });
         assert_eq!(ctx.async_unfinished(), usize::from(!duplicate));
@@ -103,7 +103,7 @@ fn empty_and_void_aggregates_complete_only_at_the_required_boundary() {
                 std::slice::from_ref(&input)
             },
         );
-        let all = unsafe { ctx.async_all(array, 0, 0) };
+        let all = unsafe { ctx.async_all(array, 0, 0, 0) };
         assert_eq!(ctx.async_pending(), count);
         assert_eq!(ctx.async_unfinished(), 0);
         assert_eq!(
@@ -162,7 +162,7 @@ fn aggregate_reactions_and_frame_continuations_share_one_fifo() {
         if !aggregate_first {
             unsafe { ctx.async_await(observer, input, 0) };
         }
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         unsafe { (*observer.cast::<Observer>()).observed = all };
         if aggregate_first {
             unsafe { ctx.async_await(observer, input, 0) };
@@ -196,7 +196,7 @@ fn first_failure_follows_reaction_order_and_later_failures_stay_observed() {
         let a = input(&mut ctx, 4);
         let b = input(&mut ctx, 4);
         let array = jobs(&mut ctx, &[a, b]);
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         let (first, later) = if reverse { (b, a) } else { (a, b) };
         fail(&mut ctx, first, "first", 31);
         unsafe { ctx.async_step() };
@@ -230,7 +230,7 @@ fn last_holder_traps_only_for_an_unobserved_aggregate_failure() {
         let mut ctx = Context::new();
         let input = input(&mut ctx, 4);
         let array = jobs(&mut ctx, &[input]);
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         fail(&mut ctx, input, "failure", 41);
         unsafe { ctx.async_step() };
         if observed {
@@ -256,7 +256,14 @@ fn collection_preserves_unread_inputs_partial_results_and_cached_results() {
         let a = input(&mut ctx, std::mem::size_of::<*mut u8>());
         let b = input(&mut ctx, std::mem::size_of::<*mut u8>());
         let array = jobs(&mut ctx, &[a, b]);
-        let all = unsafe { ctx.async_all(array, std::mem::size_of::<*mut u8>(), 0) };
+        let all = unsafe {
+            ctx.async_all(
+                array,
+                std::mem::size_of::<*mut u8>(),
+                std::mem::size_of::<*mut u8>(),
+                0,
+            )
+        };
         let object = ctx.alloc(16, 1, 0);
         unsafe {
             object.cast::<i32>().write(17);
@@ -306,7 +313,7 @@ fn an_unfinished_input_keeps_the_aggregate_alive_after_last_release() {
         let mut ctx = Context::new();
         let input = input(&mut ctx, 4);
         let array = jobs(&mut ctx, &[input]);
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         unsafe {
             ctx.async_release(all, 0);
             ctx.async_release(input, 0);
@@ -332,7 +339,7 @@ fn cleared_aggregate_trap_does_not_report_again_for_a_later_input() {
         let b = input(&mut ctx, 4);
         let array = jobs(&mut ctx, &[a, b]);
         // SAFETY: both inputs are registered four-byte result handles.
-        let all = unsafe { ctx.async_all(array, 4, 0) };
+        let all = unsafe { ctx.async_all(array, 4, 4, 0) };
         fail(&mut ctx, a, "first", 51);
         // SAFETY: the queued reaction has the registered input completion.
         unsafe { ctx.async_step() };
@@ -366,9 +373,9 @@ fn ffi_and_context_calls_use_the_same_aggregate_protocol() {
         // SAFETY: the Context is exclusive and the input array is live.
         let all = unsafe {
             if ffi_call {
-                crate::ffi::subscript_rt_async_all(&mut *ctx, array, 4, 0)
+                crate::ffi::subscript_rt_async_all(&mut *ctx, array, 4, 4, 0)
             } else {
-                ctx.async_all(array, 4, 0)
+                ctx.async_all(array, 4, 4, 0)
             }
         };
         assert_eq!(ctx.async_pending(), 1);
@@ -383,5 +390,40 @@ fn ffi_and_context_calls_use_the_same_aggregate_protocol() {
             ctx.async_release(input, 0);
         }
         assert!(ctx.async_frames.is_empty());
+    }
+}
+
+#[test]
+fn boolean_input_size_and_array_element_size_are_separate() {
+    for (input_size, elem_size, valid) in [(1, 1, true), (1, 4, true), (4, 4, false)] {
+        let mut ctx = Context::new();
+        let inputs = [input(&mut ctx, 1), input(&mut ctx, 1)];
+        for (frame, value) in inputs.into_iter().zip([1u8, 0]) {
+            // SAFETY: each frame records one byte and the value has one readable byte.
+            unsafe { ctx.async_complete(frame, &value, 1) };
+        }
+        let array = jobs(&mut ctx, &inputs);
+        // SAFETY: the array holds live, non-counted boolean handles.
+        let all = unsafe { ctx.async_all(array, input_size, elem_size, 0) };
+        unsafe { ctx.async_step() };
+        assert_eq!(ctx.trapped(), !valid);
+        if valid {
+            let output = result(&mut ctx, all);
+            let data = unsafe { ctx.array_data(output) };
+            if elem_size == 1 {
+                assert_eq!(unsafe { std::slice::from_raw_parts(data, 2) }, &[1, 0]);
+            } else {
+                assert_eq!(
+                    unsafe { std::slice::from_raw_parts(data.cast::<i32>(), 2) },
+                    &[1, 0]
+                );
+            }
+            unsafe {
+                ctx.async_release(all, 0);
+                for frame in inputs {
+                    ctx.async_release(frame, 0);
+                }
+            }
+        }
     }
 }

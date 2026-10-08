@@ -279,6 +279,8 @@ pub enum ForeignTypeProvenance {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct ForeignFn {
+    /// Selected C result spelling for a host completion source.
+    pub completion_result: Option<String>,
     /// C symbol name (also the in-language call name).
     pub name: String,
     /// Parameters, in order, with their mapped boundary types.

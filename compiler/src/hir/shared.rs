@@ -1,4 +1,5 @@
 //! Shared path classification (compiler.md §124).
+
 use super::*;
 
 impl Expr {
@@ -210,9 +211,9 @@ mod tests {
             hir::{Expr, ExprKind, TrapSite},
             types::Type,
         };
-        let files = [SourceFile::ambient(
+        let files = [crate::test_interop::mirror(
             "interop.generated.d.ts",
-            include_str!("../../../corpus/interop/interop.generated.d.ts"),
+            SourceFile::ambient,
         )];
         let module = check_program(&files).expect("boundary declarations");
         let class = |name: &str| {

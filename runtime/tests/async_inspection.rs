@@ -125,7 +125,7 @@ fn aggregate_waiting_and_complete_control() {
         unsafe {
             ctx.array_push(jobs, (&a as *const *mut u8).cast(), 0);
         }
-        let all = unsafe { ctx.async_all(jobs, 0, 17) };
+        let all = unsafe { ctx.async_all(jobs, 0, 0, 17) };
         let info = tasks(&ctx)[1];
         assert_eq!((info.create_pos_id, info.reserved), (0, 0));
         assert_eq!(

@@ -343,7 +343,11 @@ impl<'p> Checker<'p> {
             &pos,
             name,
         );
-        hir::Expr {
+        let completion = self
+            .foreign_defs
+            .iter()
+            .any(|f| f.name == name && f.completion_result.is_some());
+        let value = hir::Expr {
             pending_work: None,
             kind: ExprKind::Call {
                 callee: Callee::Foreign(name.to_string()),
@@ -351,6 +355,11 @@ impl<'p> Checker<'p> {
             },
             ty: sig.ret,
             pos,
+        };
+        if completion {
+            self.track_async_call_result(value, fx)
+        } else {
+            value
         }
     }
 

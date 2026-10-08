@@ -10,6 +10,9 @@
 //! byte-equality is the real invariant, so these need no committed
 //! golden.
 
+#[allow(dead_code)]
+mod corpus;
+
 #[path = "support/cemit_function.rs"]
 mod cemit_function;
 #[path = "support/native_fixture.rs"]
@@ -169,6 +172,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         }
         "t97-counted-field-collect" => (TrapKind::UncaughtException, 19, 3),
         "t98-counted-field-task-order" => (TrapKind::UncaughtException, 20, 3),
+        "t108-host-operation-dropped-error" => (TrapKind::UncaughtException, 12, 15),
         "t107-collected-task-order" => (TrapKind::UncaughtException, 23, 3),
         "t101-unused-coroutine-parameter" => (TrapKind::UncaughtException, 19, 79),
         "t102-generator-parameter" => (TrapKind::UncaughtException, 24, 5),
@@ -855,6 +859,7 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
                 }
                 "t105-dropped-generator-break" | "t106-dropped-generator-local" | "t94-counted-map-delete" | "t95-counted-map-clear" | "t96-counted-map-replace" | "t99-loop-result-collect" | "t100-conditional-await-collect" | "t101-unused-coroutine-parameter" | "t102-generator-parameter" | "t103-unstarted-generator-parameter" | "t104-coroutine-closure-environment" => Some("Error: lost"),
                 "t97-counted-field-collect" | "t98-counted-field-task-order" | "t107-collected-task-order" => Some("Error: first"),
+                "t108-host-operation-dropped-error" => Some("Error: host failure"),
                 "t83-unobserved-aggregate-exception" => Some("Error: aggregate dropped"),
         "t82-worker-trap-site" => Some(
                     "worker trapped with index-out-of-bounds: index 5 out of bounds for array length 1",

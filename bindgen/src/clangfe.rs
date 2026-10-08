@@ -146,6 +146,8 @@ pub struct CEnumMapping {
 /// The `source` is presented to libclang as an in-memory (unsaved) file,
 /// so no temporary file is written; system/builtin headers such as
 /// `<stdint.h>` resolve from libclang's own resource directory.
+/// An undeclared `subscript_rt_completion` gets a private forward typedef.
+/// Other unknown types remain errors unless an external directive selects them.
 ///
 /// # Errors
 ///
@@ -166,12 +168,12 @@ pub fn parse(source: &str) -> Result<Parsed, ParseError> {
         // the external spelling at each use site. The synthetic declarations
         // are removed below and therefore can never reach mirror emission.
         let (mut parsed, injected) = if externals.is_empty() {
-            (parse_inner(source)?, false)
+            (parse_with_completion(source)?, false)
         } else {
-            match parse_inner(source) {
+            match parse_with_completion(source) {
                 Ok(parsed) => (parsed, false),
                 Err(_) => (
-                    parse_inner(&source_with_external_preamble(source, &externals))?,
+                    parse_with_completion(&source_with_external_preamble(source, &externals))?,
                     true,
                 ),
             }
@@ -759,6 +761,29 @@ const DEFAULT_LIBCLANG_DIRS: &[&str] = &[
 fn dir_has_libclang(dir: &str) -> bool {
     const NAMES: &[&str] = &["libclang.dylib", "libclang.so", "libclang.dll"];
     NAMES.iter().any(|n| Path::new(dir).join(n).exists())
+}
+
+/// Resolves an undeclared runtime endpoint without accepting other unknown types.
+unsafe fn parse_with_completion(source: &str) -> Result<Parsed, ParseError> {
+    match parse_inner(source) {
+        Err(error)
+            if error
+                .0
+                .contains("unknown type name 'subscript_rt_completion'") =>
+        {
+            let mut parsed = parse_inner(&format!(
+                "typedef struct __subscript_completion subscript_rt_completion;\n{source}"
+            ))?;
+            parsed
+                .decls
+                .retain(|decl| decl_type_name(decl) != Some(crate::completion::ENDPOINT));
+            parsed
+                .local_type_definitions
+                .retain(|name| name != crate::completion::ENDPOINT);
+            Ok(parsed)
+        }
+        result => result,
+    }
 }
 
 /// The unsafe core: builds a translation unit and walks it. Callers must

@@ -52,6 +52,10 @@ impl<'p> Checker<'p> {
                         }
                     }
                     if Self::contains_string_alias(&sig.ret)
+                        && !self.prog.files[file]
+                            .provenance
+                            .completions
+                            .contains_key(&name)
                         && !matches!(sig.ret, Type::StringAlias(_))
                     {
                         self.reject_subset(RejectionSite::WireAliasNestedForeignReturn, "wire-mapped aliases are supported only as direct foreign-function returns", pos.clone());
@@ -90,6 +94,8 @@ impl<'p> Checker<'p> {
                             pos: parameter_pos,
                         });
                     }
+                    let completion_result =
+                        self.check_completion_result(file, &name, &sig.ret, pos.clone());
                     let unsupported_return = match &sig.ret {
                         Type::Str => Some("a string view"),
                         Type::Array(_) => Some("an array descriptor"),
@@ -121,6 +127,7 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     self.foreign_defs.push(hir::ForeignFn {
+                        completion_result,
                         name: name.clone(),
                         params,
                         ret: sig.ret.clone(),

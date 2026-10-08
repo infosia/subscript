@@ -4,6 +4,10 @@
 
 #![cfg(not(all(windows, target_env = "msvc")))]
 
+#[path = "../../compiler/tests/corpus/interop.rs"]
+#[allow(dead_code)]
+mod interop;
+
 use std::fmt::Write as _;
 
 #[path = "support/native_fixture.rs"]
@@ -12,7 +16,6 @@ mod native_fixture;
 use subscript_codegen::{run_c_aot_with_native_libraries, run_jit_with_native_libraries};
 use subscript_compiler::SourceFile;
 
-const MIRROR: &str = include_str!("../../corpus/interop/interop.generated.d.ts");
 const EXPECTED: &[u8] = b"16\n1\n301\n302\n1\n101\n102\n2\n103\n104\n201\n202\n2\n203\n204\n";
 const PADDING_COUNTS: [usize; 6] = [20, 40, 60, 80, 100, 120];
 
@@ -59,7 +62,7 @@ fn program(padding: usize) -> String {
 
 fn files(padding: usize) -> [SourceFile; 2] {
     [
-        SourceFile::ambient("interop.generated.d.ts", MIRROR),
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
         SourceFile::new("boundary-module-invariance.ts", program(padding)),
     ]
 }

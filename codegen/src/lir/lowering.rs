@@ -585,23 +585,44 @@ impl<'a> Lowering<'a> {
                             function.name
                         ),
                     })?;
+                let completion_result = function.completion_result.as_ref().and_then(|c| {
+                    if let Type::AsyncHandle(value) = &function.ret {
+                        Some((c.clone(), (**value).clone()))
+                    } else {
+                        None
+                    }
+                });
+                let mut parameters: Vec<_> = function
+                    .params
+                    .iter()
+                    .map(|parameter| l::ForeignParameter {
+                        source_name: parameter.name.clone(),
+                        ty: parameter.ty.clone(),
+                        foreign_provenance: parameter
+                            .foreign_provenance
+                            .as_ref()
+                            .map(convert_provenance),
+                        pos: parameter.pos.clone(),
+                    })
+                    .collect();
+                if completion_result.is_some() {
+                    parameters.push(l::ForeignParameter {
+                        source_name: "endpoint".into(),
+                        ty: Type::Void,
+                        foreign_provenance: Some(l::ForeignTypeProvenance::CompletionEndpoint),
+                        pos: function.pos.clone(),
+                    });
+                }
                 Ok(l::ForeignFunction {
+                    completion_result,
                     id: l::ForeignFunctionId(index as u32),
                     source_name: function.name.clone(),
-                    parameters: function
-                        .params
-                        .iter()
-                        .map(|parameter| l::ForeignParameter {
-                            source_name: parameter.name.clone(),
-                            ty: parameter.ty.clone(),
-                            foreign_provenance: parameter
-                                .foreign_provenance
-                                .as_ref()
-                                .map(convert_provenance),
-                            pos: parameter.pos.clone(),
-                        })
-                        .collect(),
-                    return_type: function.ret.clone(),
+                    parameters,
+                    return_type: if function.completion_result.is_some() {
+                        Type::Void
+                    } else {
+                        function.ret.clone()
+                    },
                     include,
                     pos: function.pos.clone(),
                 })

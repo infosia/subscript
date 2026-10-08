@@ -91,9 +91,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 self.consume_runtime_traps(out, &instruction.traps, true, false)
             }
-            l::CallTargetKind::Foreign(function) => {
-                self.emit_foreign_call(out, instruction, *function, operands, operand_types, result)
-            }
+            l::CallTargetKind::Foreign(function) => self.emit_foreign_call(
+                out,
+                instruction,
+                *function,
+                operands,
+                operand_types,
+                (result, None),
+            ),
             l::CallTargetKind::Intrinsic(intrinsic) => self.emit_intrinsic(
                 out,
                 instruction,
@@ -132,15 +137,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    fn emit_foreign_call(
+    pub(super) fn emit_foreign_call(
         &mut self,
         out: &mut String,
         instruction: &l::Instruction,
         function: l::ForeignFunctionId,
         operands: &[String],
         operand_types: &[l::ValueType],
-        result: Option<String>,
+        output: (Option<String>, Option<String>),
     ) -> Result<(), String> {
+        let (result, endpoint) = output;
         let declaration = self
             .emitter
             .module
@@ -182,6 +188,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let mut boundary_writebacks = Vec::new();
         let mut cursor = 0usize;
         for parameter in &declaration.parameters {
+            if parameter.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint) {
+                arguments.push(
+                    endpoint
+                        .clone()
+                        .ok_or_else(|| internal("completion endpoint is missing"))?,
+                );
+                continue;
+            }
             if let Type::Array(element) = &parameter.ty {
                 let data = operands.get(cursor).ok_or_else(|| {
                     internal(format!(

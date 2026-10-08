@@ -17,6 +17,8 @@
 //! exception (§115.5 rule 7). A parked exception keeps its object, its
 //! report text, and its position, and it is a collection root (rule 8).
 
+pub(crate) mod host_error;
+
 use crate::context::Context;
 use crate::trap::TrapKind;
 

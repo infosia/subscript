@@ -388,6 +388,8 @@ mod lifetime_sites {
     }
 }
 
+use corpus::interop;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -401,12 +403,6 @@ fn read_source(path: &Path, name: impl Into<String>) -> SourceFile {
     let source =
         fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     SourceFile::new(name, source)
-}
-
-fn read_ambient(path: &Path, name: &str) -> SourceFile {
-    let source =
-        fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SourceFile::ambient(name, source)
 }
 
 fn checked_module(label: &str, files: Vec<SourceFile>) -> hir::Module {
@@ -424,50 +420,10 @@ fn checked_module(label: &str, files: Vec<SourceFile>) -> hir::Module {
 }
 
 fn corpus_sources(name: &str, path: &Path) -> Vec<SourceFile> {
-    let corpus_dir = repository_root().join("corpus");
     let source =
         fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    let uses_external = source.contains("subExternalDevice");
-    let uses_wire_enum = source.contains("subWireMode")
-        || source.contains("SubWireMode")
-        || source.contains("subBindTone")
-        || source.contains("SubBindTone");
-    let uses_interop = uses_external || corpus::references_interop(&source);
-    let mut files = vec![SourceFile::new(name, source)];
-    if uses_external {
-        files.insert(
-            0,
-            read_ambient(
-                &corpus_dir.join("interop/external-device.generated.d.ts"),
-                "external-device.generated.d.ts",
-            ),
-        );
-    }
-    if uses_interop {
-        files.insert(
-            0,
-            read_ambient(
-                &corpus_dir.join("interop/interop.generated.d.ts"),
-                "interop.generated.d.ts",
-            ),
-        );
-    }
-    if uses_wire_enum {
-        files.insert(
-            0,
-            read_ambient(
-                &corpus_dir.join("interop/wire-enum.generated.d.ts"),
-                "wire-enum.generated.d.ts",
-            ),
-        );
-        files.insert(
-            0,
-            read_ambient(
-                &corpus_dir.join("interop/wire-enum-aliases.d.ts"),
-                "wire-enum-aliases.d.ts",
-            ),
-        );
-    }
+    let mut files = interop::mirrors_for(&source, SourceFile::ambient);
+    files.push(SourceFile::new(name, source));
     files
 }
 

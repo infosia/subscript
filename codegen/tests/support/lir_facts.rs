@@ -1016,6 +1016,7 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
                 if matches!(
                     &instruction.kind,
                     l::InstructionKind::Call(_)
+                        | l::InstructionKind::HostCompletion { .. }
                         | l::InstructionKind::AsyncHandleCreate(_)
                         | l::InstructionKind::SetFromSource(_)
                         | l::InstructionKind::MapFromSource
@@ -1321,6 +1322,20 @@ fn instruction_arity(
                 .unwrap_or(usize::MAX);
             Arity::Exact(captures)
         }
+        K::HostCompletion { function, .. } => Arity::Exact(
+            lir.foreign_functions
+                .get(function.0 as usize)
+                .map_or(usize::MAX, |f| {
+                    f.parameters
+                        .iter()
+                        .filter(|p| {
+                            p.foreign_provenance
+                                != Some(l::ForeignTypeProvenance::CompletionEndpoint)
+                        })
+                        .map(|p| if matches!(p.ty, Type::Array(_)) { 2 } else { 1 })
+                        .sum()
+                }),
+        ),
         K::Call(target) | K::AsyncHandleCreate(target) => Arity::MatchesPayload(
             if matches!(
                 target.kind,

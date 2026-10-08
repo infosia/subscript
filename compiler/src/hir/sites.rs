@@ -353,6 +353,13 @@ impl Expr {
                     );
                 }
                 if let Callee::Foreign(name) = callee {
+                    if module
+                        .foreign_fns
+                        .iter()
+                        .any(|f| f.name == *name && f.completion_result.is_some())
+                    {
+                        sites.push(allocation(&self.pos));
+                    }
                     let wire_alias = module
                         .foreign_fns
                         .iter()

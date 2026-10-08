@@ -4,6 +4,8 @@
 //! definitions. Unsupported Rust types fail generation instead of
 //! producing an ABI guess.
 
+const HOST_OPERATION_SOURCE: &str = include_str!("context/host_operation.rs");
+
 const FFI_SOURCE: &str = include_str!("ffi.rs");
 const TASK_SOURCE: &str = include_str!("context/async_inspection.rs");
 const CONTEXT_SOURCE: &str = include_str!("context.rs");
@@ -81,6 +83,7 @@ pub fn render() -> Result<String, String> {
         "pub unsafe extern \"C\" fn subscript_rt_ctx_visit_async_tasks",
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
+    functions.extend(parse_functions(FFI_SOURCE, "subscript_rt_complete_")?);
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     // §111 rule 5a. The registration reader is host API, and its name
     // carries no `subscript_rt_ctx_` prefix, so the generator names it.
@@ -103,7 +106,7 @@ pub fn render() -> Result<String, String> {
     out.push_str(" */\n");
     out.push_str("#ifndef SUBSCRIPT_RUNTIME_H\n");
     out.push_str("#define SUBSCRIPT_RUNTIME_H\n\n");
-    out.push_str("#include <stdint.h>\n\n");
+    out.push_str("#include <stdint.h>\n#include <stddef.h>\n\n");
     out.push_str("/* Recommended freed-handle diagnostics retention budget. The runtime does\n");
     out.push_str(" * not treat this value specially. */\n");
     out.push_str(&format!(
@@ -196,6 +199,43 @@ pub fn render() -> Result<String, String> {
     out.push_str(&c_function("subscript_init", &entry)?);
     out.push_str(";\n\n");
 
+    push_comment(
+        &mut out,
+        &docs_for(HOST_OPERATION_SOURCE, "pub struct CompletionEndpoint")?,
+    );
+    out.push_str("typedef struct subscript_rt_completion {\n");
+    for field in ["context_id", "operation_id"] {
+        push_comment(
+            &mut out,
+            &docs_for(HOST_OPERATION_SOURCE, &format!("pub {field}:"))?,
+        );
+        out.push_str(&format!("    uint64_t {field};\n"));
+    }
+    out.push_str("} subscript_rt_completion;\n\n");
+    push_comment(
+        &mut out,
+        &docs_for(HOST_OPERATION_SOURCE, "pub enum CompletionStatus")?,
+    );
+    out.push_str("typedef enum subscript_rt_completion_status {\n");
+    use crate::context::CompletionStatus;
+    for (rust, c, value) in [
+        ("Ok", "OK", CompletionStatus::Ok),
+        ("Stale", "STALE", CompletionStatus::Stale),
+        ("Duplicate", "DUPLICATE", CompletionStatus::Duplicate),
+        ("Mismatch", "MISMATCH", CompletionStatus::Mismatch),
+        ("Trapped", "TRAPPED", CompletionStatus::Trapped),
+    ] {
+        push_comment(
+            &mut out,
+            &docs_for(HOST_OPERATION_SOURCE, &format!("{rust} ="))?,
+        );
+        out.push_str(&format!(
+            "    SUBSCRIPT_RT_COMPLETION_{c} = {},\n",
+            value as u32
+        ));
+    }
+    out.push_str("} subscript_rt_completion_status;\n\n");
+
     out.push_str("typedef struct subscript_rt_async_step_report {\n");
     for field in ["dispatched", "pending", "unfinished", "budget_exhausted"] {
         out.push_str(&format!("    uint64_t {field};\n"));
@@ -227,6 +267,10 @@ pub fn render() -> Result<String, String> {
     out.push_str(";\n\n");
 
     for function in &functions {
+        if function.name.starts_with("subscript_rt_complete_") {
+            let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
+            push_comment(&mut out, &docs_for(FFI_SOURCE, &declaration)?);
+        }
         if function.name == "subscript_rt_ctx_visit_async_tasks" {
             push_comment(&mut out, &task_visit_docs);
         }
@@ -470,6 +514,11 @@ fn normalize_type(ty: &str) -> String {
 fn c_type(rust: &str) -> Result<&'static str, String> {
     match rust {
         "()" => Ok("void"),
+        "usize" => Ok("size_t"),
+        "CompletionEndpoint" => Ok("subscript_rt_completion"),
+        "CompletionStatus" => Ok("subscript_rt_completion_status"),
+        "*const c_void" => Ok("const void*"),
+        "*const std::ffi::c_char" => Ok("const char*"),
         "i32" => Ok("int32_t"),
         "i64" => Ok("int64_t"),
         "u32" => Ok("uint32_t"),

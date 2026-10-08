@@ -36,6 +36,32 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn subPressureEndpoint0();
+    fn subPressureEndpoint1();
+    fn subPressureEndpoint2();
+    fn subPressureEndpoint3();
+    fn subPressureEndpoint4();
+    fn subPressureEndpoint5();
+    fn subPressureEndpoint6();
+    fn subPressureEndpoint7();
+    fn subPressureEndpoint8();
+    fn subPressureValue0();
+    fn subPressureValue1();
+    fn subPressureValue2();
+    fn subPressureValue3();
+    fn subPressureValue4();
+    fn subPressureValue5();
+    fn subPressureValue6();
+    fn subPressureValue7();
+    fn subPressureValue8();
+    fn subPressureNarrow8();
+    fn subPressureNarrow9();
+    fn subCompletionSeven();
+    fn subCompletionI32();
+    fn subCompletionStruct();
+    fn subCompletionVoid();
+    fn subCompletionImmediate();
+    fn subCompletionPump();
     fn subChainPayloadValue();
     fn subDeviceCreate();
     fn subDeviceRetain();
@@ -194,6 +220,65 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                ("subPressureNarrow8".into(), subPressureNarrow8 as *const u8),
+                ("subPressureNarrow9".into(), subPressureNarrow9 as *const u8),
+                ("subCompletionSeven".into(), subCompletionSeven as *const u8),
+                (
+                    "subPressureEndpoint0".into(),
+                    subPressureEndpoint0 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint1".into(),
+                    subPressureEndpoint1 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint2".into(),
+                    subPressureEndpoint2 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint3".into(),
+                    subPressureEndpoint3 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint4".into(),
+                    subPressureEndpoint4 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint5".into(),
+                    subPressureEndpoint5 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint6".into(),
+                    subPressureEndpoint6 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint7".into(),
+                    subPressureEndpoint7 as *const u8,
+                ),
+                (
+                    "subPressureEndpoint8".into(),
+                    subPressureEndpoint8 as *const u8,
+                ),
+                ("subPressureValue0".into(), subPressureValue0 as *const u8),
+                ("subPressureValue1".into(), subPressureValue1 as *const u8),
+                ("subPressureValue2".into(), subPressureValue2 as *const u8),
+                ("subPressureValue3".into(), subPressureValue3 as *const u8),
+                ("subPressureValue4".into(), subPressureValue4 as *const u8),
+                ("subPressureValue5".into(), subPressureValue5 as *const u8),
+                ("subPressureValue6".into(), subPressureValue6 as *const u8),
+                ("subPressureValue7".into(), subPressureValue7 as *const u8),
+                ("subPressureValue8".into(), subPressureValue8 as *const u8),
+                ("subCompletionI32".into(), subCompletionI32 as *const u8),
+                (
+                    "subCompletionStruct".into(),
+                    subCompletionStruct as *const u8,
+                ),
+                ("subCompletionVoid".into(), subCompletionVoid as *const u8),
+                (
+                    "subCompletionImmediate".into(),
+                    subCompletionImmediate as *const u8,
+                ),
+                ("subCompletionPump".into(), subCompletionPump as *const u8),
                 (
                     "subChainPayloadValue".to_string(),
                     subChainPayloadValue as *const u8,
@@ -513,6 +598,8 @@ impl Fixture {
                     vec![directory.clone()],
                     vec![
                         directory.join("interop.c"),
+                        directory.join("host-completion.c"),
+                        directory.join("abi-pressure.c"),
                         directory.join("external-device.c"),
                         directory.join("wire-enum.c"),
                     ],

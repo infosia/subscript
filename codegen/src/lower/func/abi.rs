@@ -117,6 +117,106 @@ pub(super) fn plan_aggregate_arg(
     })
 }
 
+/// Plans the endpoint with the platform composite register-pressure fallback.
+#[cfg(test)]
+pub(super) fn plan_completion_endpoint_arg(
+    abi: AggregateAbi,
+    signature: &Signature,
+) -> Result<AggregateArgPlan, String> {
+    plan_aggregate_arg_for_signature(abi, &[(0, types::I64), (8, types::I64)], 16, signature)
+}
+
+/// Applies register pressure to the platform composite plan.
+pub(super) fn plan_aggregate_arg_for_signature(
+    abi: AggregateAbi,
+    leaves: &[(u32, types::Type)],
+    total: u32,
+    signature: &Signature,
+) -> Result<AggregateArgPlan, String> {
+    let plan = plan_aggregate_arg(abi, leaves, total)?;
+    if abi == AggregateAbi::Aapcs64 {
+        return Aapcs64Arguments::from_signature(signature).allocate(plan, total, signature);
+    }
+    if let AggregateArgPlan::Images(images) = &plan {
+        if abi == AggregateAbi::SysV
+            && ensure_sysv_argument_register_capacity(signature, images, &[]).is_err()
+        {
+            return Ok(AggregateArgPlan::Memory {
+                stack_size: round_up_layout(total.max(1), 8, "boundary aggregate stack copy")?,
+            });
+        }
+    }
+    Ok(plan)
+}
+
+/// AAPCS64 Stage C has independent general and SIMD argument cursors.
+/// The signature includes scalars, indirect pointers, images, and skipped registers.
+struct Aapcs64Arguments {
+    ngrn: usize,
+    nsrn: usize,
+}
+
+impl Aapcs64Arguments {
+    fn from_signature(signature: &Signature) -> Self {
+        let mut state = Self { ngrn: 0, nsrn: 0 };
+        for parameter in &signature.params {
+            if parameter.purpose == ArgumentPurpose::StructReturn {
+                continue;
+            }
+            if parameter.value_type.is_float() {
+                state.nsrn = (state.nsrn + 1).min(8);
+            } else {
+                state.ngrn = (state.ngrn + 1).min(8);
+            }
+        }
+        state
+    }
+
+    fn allocate(
+        self,
+        plan: AggregateArgPlan,
+        total: u32,
+        signature: &Signature,
+    ) -> Result<AggregateArgPlan, String> {
+        let (padding, padding_type, images) = match &plan {
+            AggregateArgPlan::Hfa(leaves) if leaves.len() > 8 - self.nsrn => {
+                // C.12 exhausts SIMD registers without consuming general registers.
+                // Apple packs stack leaves naturally; base AAPCS64 uses eightbyte slots.
+                let images =
+                    if signature.call_conv == cranelift_codegen::isa::CallConv::AppleAarch64 {
+                        leaves
+                            .iter()
+                            .map(|(offset, ty)| EightbyteImage {
+                                offset: *offset,
+                                class: RegisterClass::Sse,
+                                ty: *ty,
+                            })
+                            .collect()
+                    } else {
+                        (0..total.div_ceil(8))
+                            .map(|i| EightbyteImage {
+                                offset: i * 8,
+                                class: RegisterClass::Sse,
+                                ty: types::F64,
+                            })
+                            .collect()
+                    };
+                (8 - self.nsrn, types::F64, images)
+            }
+            AggregateArgPlan::Images(images) if images.len() > 8 - self.ngrn => {
+                // C.13 exhausts general registers and passes the entire composite on stack.
+                (8 - self.ngrn, types::I64, images.clone())
+            }
+            _ => return Ok(plan),
+        };
+        Ok(AggregateArgPlan::StackImages {
+            padding,
+            padding_type,
+            images,
+        })
+    }
+}
+
 /// Whether any `f16` leaf falls inside a register-class image. `f16` is
 /// storage-only here (`specs/blocks/compiler.md` §16.2), so its register
 /// image has no verified rule.
@@ -128,9 +228,7 @@ fn sysv_images_contain_f16(images: &[EightbyteImage], f16_offsets: &[u32]) -> bo
     })
 }
 
-/// Confirms the SysV argument registers this aggregate needs are free. If
-/// they are not, the C ABI reverts the aggregate to MEMORY, which this
-/// marshaler does not build; the call fails loud instead.
+/// Checks whether the SysV aggregate fits the remaining argument registers.
 pub(super) fn ensure_sysv_argument_register_capacity(
     signature: &Signature,
     images: &[EightbyteImage],
@@ -367,6 +465,109 @@ mod aggregate_abi_tests {
             .expect("a wide return is MEMORY class"),
             None
         );
+    }
+
+    #[test]
+    fn completion_endpoint_uses_target_abi_and_sysv_stack_fallback() {
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+        for _ in 0..4 {
+            signature.params.push(AbiParam::new(types::I64));
+        }
+        for abi in [AggregateAbi::SysV, AggregateAbi::Aapcs64] {
+            assert!(
+                matches!(plan_completion_endpoint_arg(abi, &signature).expect("endpoint plan"), AggregateArgPlan::Images(images) if images.len() == 2)
+            );
+        }
+        assert!(matches!(
+            plan_completion_endpoint_arg(AggregateAbi::Win64, &signature).expect("endpoint plan"),
+            AggregateArgPlan::Indirect
+        ));
+        signature.params.push(AbiParam::new(types::I64));
+        assert!(matches!(
+            plan_completion_endpoint_arg(AggregateAbi::SysV, &signature).expect("endpoint plan"),
+            AggregateArgPlan::Memory { stack_size: 16 }
+        ));
+    }
+
+    #[test]
+    fn aapcs64_c13_places_the_whole_composite_on_the_stack() {
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::AppleAarch64);
+        for count in 0..=8 {
+            let plan =
+                plan_completion_endpoint_arg(AggregateAbi::Aapcs64, &signature).expect("plan");
+            if count <= 6 {
+                assert!(matches!(plan, AggregateArgPlan::Images(_)));
+            } else {
+                assert!(
+                    matches!(plan, AggregateArgPlan::StackImages { padding, images, .. } if padding == 8 - count && images.len() == 2)
+                );
+            }
+            assert!(matches!(
+                plan_completion_endpoint_arg(AggregateAbi::Win64, &signature).expect("Win64"),
+                AggregateArgPlan::Indirect
+            ));
+            let sysv = plan_completion_endpoint_arg(AggregateAbi::SysV, &signature).expect("SysV");
+            if count <= 4 {
+                assert!(matches!(sysv, AggregateArgPlan::Images(_)));
+            } else {
+                assert_eq!(sysv, AggregateArgPlan::Memory { stack_size: 16 });
+            }
+            signature.params.push(AbiParam::new(types::I32));
+        }
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::AppleAarch64);
+        signature
+            .params
+            .extend((0..8).map(|_| AbiParam::new(types::I32)));
+        assert!(matches!(
+            plan_aggregate_arg_for_signature(AggregateAbi::Aapcs64,
+                &[(0, types::I32), (4, types::I32), (8, types::I32)], 12, &signature).expect("stack composite rounding"),
+            AggregateArgPlan::StackImages { padding: 0, images, .. } if images.len() == 2 && images.iter().all(|i| i.ty == types::I64)
+        ));
+    }
+
+    #[test]
+    fn float_pressure_shapes_follow_sysv_and_win64_rules() {
+        let f32x4 = [
+            (0, types::F32),
+            (4, types::F32),
+            (8, types::F32),
+            (12, types::F32),
+        ];
+        let f64x2 = [(0, types::F64), (8, types::F64)];
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+        signature
+            .params
+            .extend((0..5).map(|_| AbiParam::new(types::F32)));
+        let plan = plan_aggregate_arg_for_signature(AggregateAbi::SysV, &f32x4, 16, &signature)
+            .expect("SysV");
+        assert!(matches!(plan, AggregateArgPlan::Images(images) if images.len() == 2));
+        signature.params.clear();
+        signature
+            .params
+            .extend((0..7).map(|_| AbiParam::new(types::F64)));
+        assert_eq!(
+            plan_aggregate_arg_for_signature(AggregateAbi::SysV, &f64x2, 16, &signature)
+                .expect("SysV"),
+            AggregateArgPlan::Memory { stack_size: 16 }
+        );
+        // SysV reverts the aggregate allocation. The following double retains xmm7.
+        signature.params.push(AbiParam::special(
+            types::I64,
+            ArgumentPurpose::StructArgument(16),
+        ));
+        ensure_sysv_argument_register_capacity(
+            &signature,
+            &[image(0, RegisterClass::Sse, types::F64)],
+            &[],
+        )
+        .expect("following double");
+        for leaves in [&f32x4[..], &f64x2[..]] {
+            assert_eq!(
+                plan_aggregate_arg_for_signature(AggregateAbi::Win64, leaves, 16, &signature)
+                    .expect("Win64"),
+                AggregateArgPlan::Indirect
+            );
+        }
     }
 
     #[test]
