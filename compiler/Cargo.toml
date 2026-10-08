@@ -5,6 +5,7 @@ edition = "2021"
 description = "Semantic checker and typed HIR for the subscript language (plan phase P1)."
 
 [dependencies]
+subscript-boundary = { path = "../boundary" }
 # swc_common 5.0.1 imports `serde::__private`, which later serde 1.x releases
 # removed; the pin keeps the resolved serde at a version that still has it.
 serde = "=1.0.219"

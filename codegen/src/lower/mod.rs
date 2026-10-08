@@ -1206,6 +1206,8 @@ pub(crate) fn dev_flags() -> Result<cranelift_codegen::settings::Flags, String> 
     let mut fb = cranelift_codegen::settings::builder();
     fb.set("opt_level", "speed")
         .and_then(|()| fb.set("is_pic", "false"))
+        // LLVM defines the half SIMD carrier on Win64; MSVC has no half scalar ABI.
+        .and_then(|()| fb.set("enable_llvm_abi_extensions", "true"))
         .and_then(|()| fb.set("enable_probestack", "true"))
         .and_then(|()| fb.set("probestack_strategy", "inline"))
         .map_err(|e| internal(format!("settings: {e}")))?;

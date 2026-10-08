@@ -543,6 +543,8 @@ impl<'a> Lowering<'a> {
                     is_value: class.is_value,
                     is_descriptor: class.is_descriptor,
                     is_boundary: class.is_boundary,
+                    copies_boundary_bytes: false,
+                    boundary_header: class.boundary_header.clone(),
                     is_embedded_header: boundary_class_is_embedded_header(
                         self.hir,
                         ClassId(class_index),

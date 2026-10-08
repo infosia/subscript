@@ -186,14 +186,6 @@ pub(super) fn verify_host_completion(
             errors,
         );
     }
-    if let Type::Class(id) = ty {
-        if let Some((class, field)) = completion_bool_field(module, *id, &mut Vec::new()) {
-            bad(
-                &format!("completion function `{}` struct `{class}` field `{field}` is outside §178 rule 6", foreign.source_name),
-                errors,
-            );
-        }
-    }
     let Ok(layouts) = crate::layout::Layouts::build_lir(module) else {
         bad("host completion target layout is invalid", errors);
         return;
@@ -234,50 +226,13 @@ pub(super) fn verify_host_completion(
     }
 }
 
-// Resolve fields independently of the instruction's recorded result size.
-fn completion_bool_field(
-    module: &l::Module,
-    id: subscript_compiler::ClassId,
-    visiting: &mut Vec<subscript_compiler::ClassId>,
-) -> Option<(String, String)> {
-    let class = module.classes.get(id.0)?;
-    if visiting.contains(&id) {
-        return None;
-    }
-    visiting.push(id);
-    for field in &class.fields {
-        match &field.ty {
-            Type::Bool => return Some((class.source_name.clone(), field.source_name.clone())),
-            Type::Class(nested) => {
-                if let Some(error) = completion_bool_field(module, *nested, visiting) {
-                    return Some(error);
-                }
-            }
-            _ => {}
-        }
-    }
-    visiting.pop();
-    None
-}
-
 // The directive selects C scalar sizes independently of the script layout table.
 // Named typedefs use their resolved C boundary kinds; structs use their mirror fields.
 fn c_result_layout(c: &str, ty: &Type, module: &hir::Module) -> Result<(u32, u32), String> {
-    let scalar = match c {
-        "void" => Some((0, 1)),
-        "bool" | "_Bool" | "int8_t" | "uint8_t" | "signed char" | "unsigned char" => Some((1, 1)),
-        "int16_t" | "uint16_t" | "short" | "short int" | "signed short" | "signed short int"
-        | "unsigned short" | "unsigned short int" | "_Float16" => Some((2, 2)),
-        "int32_t" | "uint32_t" | "int" | "signed int" | "unsigned int" | "float" => Some((4, 4)),
-        "int64_t"
-        | "uint64_t"
-        | "long long"
-        | "long long int"
-        | "unsigned long long"
-        | "unsigned long long int"
-        | "size_t"
-        | "double" => Some((8, 8)),
-        _ => None,
+    let scalar = if c == "void" {
+        Some((0, 1))
+    } else {
+        subscript_boundary::c_kind(c).map(|kind| (kind.size, kind.align))
     };
     if let Some(layout) = scalar {
         return Ok(layout);
@@ -307,12 +262,11 @@ fn c_boundary_layout(
     module: &hir::Module,
     visiting: &mut Vec<usize>,
 ) -> Result<(u32, u32), String> {
+    if let Some(kind) = subscript_compiler::types::boundary_kind(ty) {
+        return Ok((kind.size, kind.align));
+    }
     Ok(match ty {
         Type::Void => (0, 1),
-        Type::Bool | Type::I8 | Type::U8 => (1, 1),
-        Type::I16 | Type::U16 | Type::F16 => (2, 2),
-        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) => (4, 4),
-        Type::I64 | Type::U64 | Type::F64 => (8, 8),
         Type::Class(id) => {
             let class = module
                 .classes

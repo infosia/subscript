@@ -24,6 +24,8 @@ fn wrong_offset_or_omitted_counted_field_fails_and_a_complete_description_passes
             is_value: false,
             is_descriptor: false,
             is_boundary: false,
+            copies_boundary_bytes: false,
+            boundary_header: None,
             is_embedded_header: false,
             callback_lifetime: subscript_compiler::types::CallbackLifetime::Context,
             alignment: None,

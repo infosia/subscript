@@ -94,6 +94,10 @@ pub struct Class {
     pub is_descriptor: bool,
     /// Whether the declaration came from a boundary mirror.
     pub is_boundary: bool,
+    /// Whether the tiers copy the boundary storage without field conversion.
+    pub copies_boundary_bytes: bool,
+    /// C header identity supplied by the boundary mirror.
+    pub boundary_header: Option<String>,
     /// Whether this boundary value class is an intrusive embedded header.
     pub is_embedded_header: bool,
     /// The lifetime of the callback registrations this boundary class

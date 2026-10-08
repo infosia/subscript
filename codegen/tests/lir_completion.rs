@@ -305,31 +305,42 @@ fn verifier_rejects_wire_alias_completion_results() {
 }
 
 #[test]
-fn verifier_rejects_completion_struct_bool_fields_at_every_depth() {
+fn verifier_accepts_completion_struct_bool_fields_at_every_depth() {
+    // Isolated warm Apple arm64 cost: 0.04 s, excluding the Rust build.
+    let mirror = MIRROR.replace("x: i32", "x: boolean");
     let hir = check_program(&[
-        SourceFile::ambient("completion.d.ts", format!("{MIRROR}\ndeclare class Outer {{ inner: Pair; }}\n// @subscript-c-completion function=\"nested\" result=\"Outer\"\ndeclare function nested(): Promise<Outer>;\n")),
+        SourceFile::ambient("completion.d.ts", format!("{mirror}\ndeclare class Outer {{ inner: Pair; }}\n// @subscript-c-completion function=\"nested\" result=\"Outer\"\ndeclare function nested(): Promise<Outer>;\n")),
         SourceFile::new("completion.ts", "export async function main(): Promise<void> { await pair(); await nested(); }"),
-    ]).expect("checker");
-    let valid = lower_module(&hir).expect("lower");
-    verify_module(&valid).expect("same-shape control");
-    let mut invalid = valid;
-    // Construct a resolved bool field. Keep the completion instruction facts unchanged.
-    invalid
+    ]).expect("checker admits bool leaves");
+    let module = lower_module(&hir).expect("lower");
+    verify_module(&module).expect("bool leaves at both depths");
+}
+
+#[test]
+fn verifier_rejects_compared_boundary_class_with_empty_header_identity() {
+    // Isolated Apple arm64 cost: 0.006413 s, excluding the Rust build.
+    // Cost: one small script lowering and one verifier pass; no native compilation.
+    let hir = check_program(&[SourceFile::new(
+        "missing-header.ts",
+        "@ValueType class OnlyValue { a: boolean; b: boolean; constructor(a: boolean, b: boolean) { this.a = a; this.b = b; } } export function main(): void {}",
+    )]).expect("script value class");
+    let mut module = lower_module(&hir).expect("script class lowering");
+    let index = module
         .classes
-        .iter_mut()
-        .find(|c| c.source_name == "Pair")
-        .expect("Pair")
-        .fields[0]
-        .ty = Type::Bool;
-    let errors = verify_module(&invalid).expect_err("bool field");
-    for name in ["pair", "nested"] {
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.message.contains(&format!("function `{name}`"))
-                    && e.message.contains("struct `Pair`")
-                    && e.message.contains("field `x`")),
-            "{errors:?}"
-        );
-    }
+        .iter()
+        .position(|class| class.source_name == "OnlyValue")
+        .expect("class index");
+    // Construct a boundary declaration without provenance from the script layout.
+    module.classes[index] = lir::Class {
+        is_boundary: true,
+        boundary_header: Some(String::new()),
+        copies_boundary_bytes: true,
+        ..module.classes[index].clone()
+    };
+    let errors = verify_module(&module).expect_err("missing boundary header");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(
+        errors[0].message,
+        format!("boundary class {index} has no header identity for host layout comparison")
+    );
 }

@@ -318,6 +318,8 @@ pub struct ClassDef {
     /// `Struct | null` field). Always `false` for ordinary value classes,
     /// which carry a real [`ClassDef::ctor`].
     pub is_boundary: bool,
+    /// C header identity supplied by the boundary mirror.
+    pub boundary_header: Option<String>,
     /// The lifetime of the callback registrations this boundary class
     /// creates (§111 rule 2). The checker sets it from the mirror's
     /// `@subscript-c-callback-lifetime` record. Every other class carries

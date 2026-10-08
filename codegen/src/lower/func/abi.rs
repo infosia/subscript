@@ -2,15 +2,18 @@
 
 use super::*;
 
-/// Whether the leaves form a Homogeneous Floating-point Aggregate (AAPCS
-/// 6.4.2 / Win64): 1 to 4 leaves, all of one fundamental float type. Such
-/// an aggregate travels in SIMD registers, so the integer-image path must
-/// not marshal it.
+/// Whether AAPCS64 classifies one to four identical floating-point leaves as an HFA.
 pub(super) fn is_pure_hfa_leaves(leaves: &[(u32, types::Type)]) -> bool {
     if !matches!(leaves.len(), 1..=4) {
         return false;
     }
-    leaves.iter().all(|(_, ty)| *ty == types::F32) || leaves.iter().all(|(_, ty)| *ty == types::F64)
+    let class = leaves
+        .first()
+        .and_then(|(_, ty)| crate::layout::boundary_hfa_class(*ty));
+    class.is_some()
+        && leaves
+            .iter()
+            .all(|(_, ty)| crate::layout::boundary_hfa_class(*ty) == class)
 }
 
 /// Whether a leaf crosses an eightbyte boundary or sits off its natural
@@ -96,7 +99,7 @@ pub(super) fn plan_aggregate_arg(
                     let all_float = !inside.is_empty()
                         && inside
                             .iter()
-                            .all(|(_, ty)| matches!(*ty, types::F32 | types::F64));
+                            .all(|(_, ty)| crate::layout::boundary_hfa_class(*ty).is_some());
                     if all_float {
                         EightbyteImage {
                             offset,
@@ -139,7 +142,7 @@ pub(super) fn plan_aggregate_arg_for_signature(
     }
     if let AggregateArgPlan::Images(images) = &plan {
         if abi == AggregateAbi::SysV
-            && ensure_sysv_argument_register_capacity(signature, images, &[]).is_err()
+            && ensure_sysv_argument_register_capacity(signature, images).is_err()
         {
             return Ok(AggregateArgPlan::Memory {
                 stack_size: round_up_layout(total.max(1), 8, "boundary aggregate stack copy")?,
@@ -217,29 +220,11 @@ impl Aapcs64Arguments {
     }
 }
 
-/// Whether any `f16` leaf falls inside a register-class image. `f16` is
-/// storage-only here (`specs/blocks/compiler.md` §16.2), so its register
-/// image has no verified rule.
-fn sysv_images_contain_f16(images: &[EightbyteImage], f16_offsets: &[u32]) -> bool {
-    f16_offsets.iter().any(|offset| {
-        images
-            .iter()
-            .any(|image| *offset >= image.offset && *offset < image.offset + 8)
-    })
-}
-
 /// Checks whether the SysV aggregate fits the remaining argument registers.
 pub(super) fn ensure_sysv_argument_register_capacity(
     signature: &Signature,
     images: &[EightbyteImage],
-    f16_offsets: &[u32],
 ) -> Result<(), String> {
-    if sysv_images_contain_f16(images, f16_offsets) {
-        return Err(internal(
-            "SysV by-value struct with an f16 field in a register-class eightbyte is not \
-             supported; f16 is storage-only (compiler.md §16.2)",
-        ));
-    }
     let mut used_integer = 0usize;
     let mut used_sse = 0usize;
     for parameter in &signature.params {
@@ -277,26 +262,9 @@ pub(super) fn ensure_sysv_argument_register_capacity(
 pub(super) fn plan_sysv_struct_return(
     leaves: &[(u32, types::Type)],
     size: u32,
-    f16_offsets: &[u32],
 ) -> Result<Option<Vec<EightbyteImage>>, String> {
     match plan_aggregate_arg(AggregateAbi::SysV, leaves, size)? {
-        AggregateArgPlan::Images(images) => {
-            if sysv_images_contain_f16(&images, f16_offsets) {
-                return Err(internal(
-                    "foreign call returning a SysV by-value struct with an f16 field in a \
-                     register-class eightbyte is not supported; f16 is storage-only \
-                     (compiler.md §16.2)",
-                ));
-            }
-            if images.iter().any(|image| image.class == RegisterClass::Sse) {
-                return Err(internal(
-                    "foreign call returning a SysV SSE-class boundary struct by value is not \
-                     supported in the dev JIT: the float return register path is not modeled \
-                     (compiler.md §12.3a — fail loud, never a silent mis-marshal)",
-                ));
-            }
-            Ok(Some(images))
-        }
+        AggregateArgPlan::Images(images) => Ok(Some(images)),
         AggregateArgPlan::Memory { .. } => Ok(None),
         other => Err(internal(format!(
             "SysV struct-return planner produced {other:?}"
@@ -445,24 +413,23 @@ mod aggregate_abi_tests {
     }
 
     #[test]
-    fn a_sysv_sse_class_return_and_an_f16_image_both_fail_loud() {
+    fn sysv_float_returns_use_typed_eightbyte_images() {
         let sse = [(0, types::F64), (8, types::F64)];
-        let error = plan_sysv_struct_return(&sse, 16, &[])
-            .expect_err("an SSE-class return has no modeled float return register");
-        assert!(error.contains("SSE-class"), "{error}");
-
-        let f16 = [(0, types::I16), (8, types::I64)];
-        let error = plan_sysv_struct_return(&f16, 16, &[0])
-            .expect_err("f16 is storage-only, so it has no register image");
-        assert!(error.contains("f16"), "{error}");
-
         assert_eq!(
-            plan_sysv_struct_return(
-                &[(0, types::I64), (8, types::I64), (16, types::I64)],
-                24,
-                &[]
-            )
-            .expect("a wide return is MEMORY class"),
+            plan_sysv_struct_return(&sse, 16).expect("SSE return"),
+            Some(vec![
+                image(0, RegisterClass::Sse, types::F64),
+                image(8, RegisterClass::Sse, types::F64)
+            ])
+        );
+        let half = [(0, types::F16), (2, types::F16)];
+        assert_eq!(
+            plan_sysv_struct_return(&half, 4).expect("half return"),
+            Some(vec![image(0, RegisterClass::Sse, types::F64)])
+        );
+        assert_eq!(
+            plan_sysv_struct_return(&[(0, types::F64), (8, types::F64), (16, types::F64)], 24,)
+                .expect("MEMORY return"),
             None
         );
     }
@@ -558,7 +525,6 @@ mod aggregate_abi_tests {
         ensure_sysv_argument_register_capacity(
             &signature,
             &[image(0, RegisterClass::Sse, types::F64)],
-            &[],
         )
         .expect("following double");
         for leaves in [&f32x4[..], &f64x2[..]] {
@@ -577,7 +543,7 @@ mod aggregate_abi_tests {
             signature.params.push(AbiParam::new(types::I64));
         }
         let images = [image(0, RegisterClass::Integer, types::I64)];
-        let error = ensure_sysv_argument_register_capacity(&signature, &images, &[])
+        let error = ensure_sysv_argument_register_capacity(&signature, &images)
             .expect_err("no integer argument register is free");
         assert!(error.contains("register pressure"), "{error}");
     }

@@ -1059,6 +1059,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .ok_or_else(|| internal("Context.FromBytes has no source range"))?;
                 let output = self.stack_slot(size, align);
                 self.copy_bytes(output, range, size, 1);
+                for offset in self.ml.layouts.bool_offsets(ty)? {
+                    let byte =
+                        self.builder
+                            .ins()
+                            .load(types::I8, MemFlags::new(), output, offset as i32);
+                    let canonical = self.builder.ins().icmp_imm(IntCC::NotEqual, byte, 0);
+                    self.builder
+                        .ins()
+                        .store(MemFlags::new(), canonical, output, offset as i32);
+                }
                 Ok(RV::Aggregate(output))
             }
             other => Err(internal(format!("unknown Context byte intrinsic {other}"))),

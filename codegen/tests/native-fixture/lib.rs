@@ -16,6 +16,12 @@ mod class_cases {
     pub const CLASS_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/class-script.ts"));
     /// ABI sweep size.
     pub const CLASS_COUNT: &str = include_str!(concat!(env!("OUT_DIR"), "/class-count.txt"));
+    /// Gate boundary mirror.
+    pub const GATE_MIRROR: &str = include_str!(concat!(env!("OUT_DIR"), "/gate-mirror.d.ts"));
+    /// Gate boundary module.
+    pub const GATE_SCRIPT: &str = include_str!(concat!(env!("OUT_DIR"), "/gate-script.ts"));
+    /// Gate check count.
+    pub const GATE_COUNT: &str = include_str!(concat!(env!("OUT_DIR"), "/gate-count.txt"));
     /// Result sweep mirror.
     pub const RESULT_MIRROR: &str = include_str!(concat!(env!("OUT_DIR"), "/result-mirror.d.ts"));
     /// Result sweep script.

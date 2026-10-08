@@ -36,6 +36,14 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn subBoundaryNarrow();
+    fn subBoundaryHalfCheck();
+    fn subBoundaryHalfReturn();
+    fn subBoundaryHalf2Check();
+    fn subBoundaryHalf2Return();
+    fn subBoundaryFloat2Return();
+    fn subBoundaryBoolReturn();
+    fn subBoundaryScriptSize();
     fn subPressureEndpoint0();
     fn subPressureEndpoint1();
     fn subPressureEndpoint2();
@@ -210,6 +218,16 @@ impl Fixture {
 
     /// Returns the native-library inputs for the committed interop fixture.
     pub fn library(&self) -> NativeLibrary {
+        self.library_inputs(false)
+    }
+
+    /// Uses the build-time archive when the program needs no export-dependent host driver.
+    #[allow(dead_code)] // Corpus-only test targets use the source-backed host drivers.
+    pub fn archive_library(&self) -> NativeLibrary {
+        self.library_inputs(true)
+    }
+
+    fn library_inputs(&self, archive: bool) -> NativeLibrary {
         #[cfg(all(windows, target_env = "msvc"))]
         {
             match self.unavailable {}
@@ -220,6 +238,35 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                ("subBoundaryNarrow".into(), subBoundaryNarrow as *const u8),
+                (
+                    "subBoundaryHalfCheck".into(),
+                    subBoundaryHalfCheck as *const u8,
+                ),
+                (
+                    "subBoundaryHalfReturn".into(),
+                    subBoundaryHalfReturn as *const u8,
+                ),
+                (
+                    "subBoundaryHalf2Check".into(),
+                    subBoundaryHalf2Check as *const u8,
+                ),
+                (
+                    "subBoundaryHalf2Return".into(),
+                    subBoundaryHalf2Return as *const u8,
+                ),
+                (
+                    "subBoundaryFloat2Return".into(),
+                    subBoundaryFloat2Return as *const u8,
+                ),
+                (
+                    "subBoundaryBoolReturn".into(),
+                    subBoundaryBoolReturn as *const u8,
+                ),
+                (
+                    "subBoundaryScriptSize".into(),
+                    subBoundaryScriptSize as *const u8,
+                ),
                 ("subPressureNarrow8".into(), subPressureNarrow8 as *const u8),
                 ("subPressureNarrow9".into(), subPressureNarrow9 as *const u8),
                 ("subCompletionSeven".into(), subCompletionSeven as *const u8),
@@ -596,13 +643,19 @@ impl Fixture {
             unsafe {
                 NativeLibrary::new(
                     vec![directory.clone()],
-                    vec![
-                        directory.join("interop.c"),
-                        directory.join("host-completion.c"),
-                        directory.join("abi-pressure.c"),
-                        directory.join("external-device.c"),
-                        directory.join("wire-enum.c"),
-                    ],
+                    if archive {
+                        vec![PathBuf::from(subscript_interop_fixture::CLASS_DIRECTORY)
+                            .join("libsubscript_interop_fixture.a")]
+                    } else {
+                        vec![
+                            directory.join("interop.c"),
+                            directory.join("host-completion.c"),
+                            directory.join("abi-pressure.c"),
+                            directory.join("external-device.c"),
+                            directory.join("wire-enum.c"),
+                            directory.join("boundary-values.c"),
+                        ]
+                    },
                     symbols,
                 )
             }

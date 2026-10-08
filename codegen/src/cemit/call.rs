@@ -224,7 +224,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let (data, count) = match element.as_ref() {
                     Type::Class(class)
                         if self.emitter.is_value_class(*class)?
-                            && boundary_class_requires_build(self.emitter.module, *class)? =>
+                            && !crate::lir::copies_boundary_bytes(
+                                self.emitter.module,
+                                &Type::Class(*class),
+                            ) =>
                     {
                         self.marshal_boundary_array(out, *class, data, count, boundary_position)?
                     }
@@ -305,6 +308,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         let call = format!("{}({})", declaration.source_name, arguments.join(", "));
         match &declaration.return_type {
+            ty if subscript_compiler::types::boundary_kind(ty)
+                .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half) =>
+            {
+                self.assign(out, result.clone(), &format!("subscript_half_bits({call})"))?
+            }
             Type::Void => {
                 let _ = writeln!(out, "    {call};");
             }

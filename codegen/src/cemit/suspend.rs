@@ -383,8 +383,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         resume_value: Option<l::ValueId>,
     ) -> Result<(), String> {
         if let Some(value) = resume_value {
-            let ty = data_type(self.value_type(value)?)?;
-            let ctype = self.emitter.completion_ctype(ty)?;
+            let ty = data_type(self.value_type(value)?)?.clone();
+            let ctype = self.emitter.completion_ctype(&ty)?;
             let buffer = self.fresh();
             let _ = writeln!(out, "    {ctype} {buffer} = {{0}};");
             self.emit_completion_read(
@@ -392,10 +392,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 block,
                 &format!("&{buffer}"),
                 &format!("sizeof({buffer})"),
+                Some(&ty),
             )?;
             let _ = writeln!(out, "    {} = {buffer};", self.value(value));
         } else {
-            self.emit_completion_read(out, block, "NULL", "0u")?;
+            self.emit_completion_read(out, block, "NULL", "0u", None)?;
         }
         Ok(())
     }
@@ -412,6 +413,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         block: &l::BasicBlock,
         output: &str,
         size: &str,
+        ty: Option<&Type>,
     ) -> Result<(), String> {
         let l::Terminator::Suspend { pos, successor, .. } = &block.terminator else {
             return Err(internal("completion read on a non-suspend block"));
@@ -459,6 +461,44 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             &["ctx".into(), format!("{pos}u")],
         );
         let _ = writeln!(out, "    if (!{done}) {{ {missing}; goto unwind; }}");
+        if let Some(ty) = ty {
+            if let Type::Array(element) = ty {
+                let offsets = self.emitter.layouts.bool_offsets(element)?;
+                if !offsets.is_empty() {
+                    let array = format!("*(void**)({output})");
+                    let length = self.emitter.runtime_call(
+                        "int32_t",
+                        "subscript_rt_array_len",
+                        &["void*".into(), "const void*".into()],
+                        &["ctx".into(), array.clone()],
+                    );
+                    let data = self.emitter.runtime_call(
+                        "const void*",
+                        "subscript_rt_array_data",
+                        &["void*".into(), "const void*".into()],
+                        &["ctx".into(), array],
+                    );
+                    let index = self.fresh();
+                    let bytes = self.fresh();
+                    let count = self.fresh();
+                    let stride = self.emitter.layouts.stride(element)?;
+                    let _ = writeln!(out, "    unsigned char* {bytes} = (unsigned char*)({data}); int32_t {count} = {length};");
+                    let _ = writeln!(
+                        out,
+                        "    for (int32_t {index} = 0; {index} < {count}; {index}++) {{"
+                    );
+                    for offset in offsets {
+                        let byte = format!("{bytes}[(size_t){index} * {stride}u + {offset}u]");
+                        let _ = writeln!(out, "        {byte} = ({byte} != 0u);");
+                    }
+                    out.push_str("    }\n");
+                }
+            }
+            for offset in self.emitter.layouts.bool_offsets(ty)? {
+                let byte = format!("((unsigned char*)({output}))[{offset}]");
+                let _ = writeln!(out, "    {byte} = ({byte} != 0u);");
+            }
+        }
         // compiler.md §116.1 rule 4a: release the registration's handle count.
         self.emit_async_count(out, &handle, Some((pos, &[])))?;
         Ok(())

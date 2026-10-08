@@ -115,6 +115,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                 );
                 let _ = writeln!(out, "    void* {range} = {call};\n    if (*(const uint32_t*)ctx != 0u) goto unwind;\n    memcpy(&{destination}, {range}, sizeof({ctype}));");
+                for offset in self.emitter.layouts.bool_offsets(ty)? {
+                    let _ = writeln!(out, "    ((unsigned char*)&{destination})[{offset}] = ((const unsigned char*){range})[{offset}] != 0;");
+                }
             }
             other => return Err(internal(format!("unknown Context byte intrinsic {other}"))),
         }

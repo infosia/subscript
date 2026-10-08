@@ -21,9 +21,8 @@ use subscript_runtime::TrapKind;
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
-    boundary_class_contains_pointer, boundary_class_needs_scratch, boundary_class_requires_build,
-    capture_parameters, data_type, explicit_parameters, foreign_parameter_type_matches,
-    is_userdata_slot, operand_type, runtime_trap_kind, value_type,
+    boundary_class_contains_pointer, capture_parameters, data_type, explicit_parameters,
+    foreign_parameter_type_matches, is_userdata_slot, operand_type, runtime_trap_kind, value_type,
 };
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
@@ -59,13 +58,12 @@ enum RV {
     Aggregate(Value),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum StructRet {
     Sret(Value),
     Registers {
         slot: Value,
-        count: u32,
-        ty: types::Type,
+        images: Vec<(u32, types::Type)>,
     },
 }
 
@@ -133,13 +131,10 @@ enum AggregateArgPlan {
     Memory { stack_size: u32 },
 }
 
-/// The C-layout leaves of one by-value boundary aggregate, with the byte
-/// offsets of its `f16` fields listed apart: `f16` is storage-only
-/// (`specs/blocks/compiler.md` §16.2) and has no verified register image.
+/// The native C-layout leaves of one by-value boundary aggregate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BoundaryLeaves {
     leaves: Vec<(u32, types::Type)>,
-    f16_offsets: Vec<u32>,
 }
 
 impl BoundaryLeaves {
@@ -148,7 +143,6 @@ impl BoundaryLeaves {
     fn descriptor() -> Self {
         Self {
             leaves: vec![(0, types::I64), (8, types::I64)],
-            f16_offsets: Vec::new(),
         }
     }
 }

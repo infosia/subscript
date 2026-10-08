@@ -12,6 +12,7 @@ description = "The Cranelift development JIT and C-emitting ship tier for subscr
 capture-interop = []
 
 [dependencies]
+subscript-boundary = { path = "../boundary" }
 subscript-compiler = { path = "../compiler" }
 subscript-runtime = { path = "../runtime" }
 cranelift-codegen = "=0.125.4"

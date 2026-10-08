@@ -1762,27 +1762,7 @@ fn is_plain_char(base: &str) -> bool {
 /// long`/`unsigned long long` (64-bit everywhere) are width-stable and
 /// mapped.
 pub(super) fn lang_scalar(base: &str) -> Option<&'static str> {
-    Some(match base {
-        "bool" => "boolean",
-        "float" => "f32",
-        "double" => "f64",
-        "_Float16" => "f16",
-        "int8_t" | "signed char" => "i8",
-        "uint8_t" | "unsigned char" => "u8",
-        "int16_t" | "short" | "short int" | "signed short" | "signed short int" => "i16",
-        "uint16_t" | "unsigned short" | "unsigned short int" => "u16",
-        "int32_t" => "i32",
-        "uint32_t" => "u32",
-        "int64_t" => "i64",
-        "uint64_t" => "u64",
-        "size_t" => "u64",
-        // Width-stable raw C builtins.
-        "int" => "i32",
-        "unsigned int" => "u32",
-        "long long" => "i64",
-        "unsigned long long" => "u64",
-        _ => return None,
-    })
+    subscript_boundary::c_kind(base).map(|kind| kind.language)
 }
 
 #[cfg(test)]

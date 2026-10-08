@@ -13,6 +13,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         writebacks: &mut Vec<BoundaryPtrWriteback>,
     ) -> Result<String, String> {
         match ty {
+            ty if subscript_compiler::types::boundary_kind(ty)
+                .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half) =>
+            {
+                Ok(format!("subscript_half_native({value})"))
+            }
             Type::Str => {
                 let Some(l::ForeignTypeProvenance::StringView { aggregate }) = provenance else {
                     return Err(internal(
@@ -44,7 +49,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     unreachable!()
                 };
                 let (argument, writeback) =
-                    self.marshal_boundary_pointer(out, *class, value, position, false)?;
+                    self.marshal_boundary_pointer(out, *class, value, position)?;
                 if let Some(writeback) = writeback {
                     writebacks.push(writeback);
                 }
@@ -74,6 +79,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let field = &definition.fields[index];
             let access = format!("{temporary}.d{}", field.id.0);
             match &field.ty {
+                ty if subscript_compiler::types::boundary_kind(ty)
+                    .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half) =>
+                {
+                    parts.push(format!("subscript_half_native({access})"));
+                    index += 1;
+                }
                 Type::Func(_) => {
                     let Some(l::ForeignTypeProvenance::Callback { typedef_name }) =
                         field.foreign_provenance.as_ref()
@@ -165,10 +176,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let (data, count) = match element.as_ref() {
                         Type::Class(element_class)
                             if self.emitter.is_value_class(*element_class)?
-                                && boundary_class_requires_build(
+                                && !crate::lir::copies_boundary_bytes(
                                     self.emitter.module,
-                                    *element_class,
-                                )? =>
+                                    &Type::Class(*element_class),
+                                ) =>
                         {
                             self.marshal_boundary_array(
                                 out,
@@ -209,16 +220,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let Type::Class(nested) = inner.as_ref() else {
                         unreachable!()
                     };
-                    let force_rebuild = !self.emitter.class(*nested)?.is_embedded_header;
                     parts.push(
-                        self.marshal_boundary_pointer(
-                            out,
-                            *nested,
-                            &access,
-                            position,
-                            force_rebuild,
-                        )?
-                        .0,
+                        self.marshal_boundary_pointer(out, *nested, &access, position)?
+                            .0,
                     );
                     index += 1;
                 }
@@ -241,12 +245,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         class: ClassId,
         pointer: &str,
         position: u32,
-        force_rebuild: bool,
     ) -> Result<(String, Option<BoundaryPtrWriteback>), String> {
-        if self.emitter.class(class)?.is_embedded_header
-            || (!boundary_class_needs_scratch(self.emitter.module, class)?
-                && !(force_rebuild && boundary_class_requires_build(self.emitter.module, class)?))
-        {
+        if self.emitter.copies_boundary_bytes(&Type::Class(class))? {
             return Ok((
                 format!("(({}*)({pointer}))", self.emitter.class(class)?.source_name),
                 None,
@@ -344,6 +344,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let language = format!("{}->d{}", writeback.source, field.id.0);
             let header = format!("{}->{}", writeback.scratch, field.source_name);
             match &field.ty {
+                ty if subscript_compiler::types::boundary_kind(ty)
+                    .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half) =>
+                {
+                    let _ = writeln!(out, "        {language} = subscript_half_bits({header});");
+                }
                 Type::Array(_) | Type::Func(_) => {}
                 Type::Nullable(inner) if matches!(inner.as_ref(), Type::Class(class) if self.emitter.is_value_class(*class)?) =>
                     {}
@@ -369,11 +374,21 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let _ = writeln!(out, "        {language} = {value};");
                 }
                 Type::Class(nested) if self.emitter.is_value_class(*nested)? => {
-                    if !boundary_class_needs_scratch(self.emitter.module, *nested)? {
+                    if self.emitter.copies_boundary_bytes(&Type::Class(*nested))? {
                         let _ = writeln!(
                             out,
                             "        memcpy(&{language}, &{header}, sizeof {language});"
                         );
+                    } else {
+                        self.emit_boundary_writeback(
+                            out,
+                            BoundaryPtrWriteback {
+                                class: *nested,
+                                source: format!("(&{language})"),
+                                scratch: format!("(&{header})"),
+                            },
+                            position,
+                        )?;
                     }
                 }
                 _ => {

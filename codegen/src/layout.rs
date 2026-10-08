@@ -24,6 +24,36 @@ use subscript_compiler::Type;
 
 use crate::lower::internal;
 
+/// Projects the shared record onto a native Cranelift register type.
+fn boundary_register_type(kind: &subscript_boundary::Kind) -> Option<types::Type> {
+    match kind.carrier {
+        subscript_boundary::Carrier::General => {
+            types::Type::int(u16::try_from(kind.size * 8).ok()?)
+        }
+        subscript_boundary::Carrier::Simd => match kind.size {
+            2 => Some(types::F16),
+            4 => Some(types::F32),
+            8 => Some(types::F64),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Maps a semantic boundary type to its native register type.
+pub(crate) fn native_boundary_type(ty: &Type) -> Option<types::Type> {
+    boundary_register_type(subscript_compiler::types::boundary_kind(ty)?)
+}
+
+/// Reads the HFA leaf class of a native register type from the shared records.
+pub(crate) fn boundary_hfa_class(native: types::Type) -> Option<subscript_boundary::Leaf> {
+    subscript_boundary::KINDS.iter().find_map(|kind| {
+        (kind.leaf != subscript_boundary::Leaf::Integer
+            && boundary_register_type(kind) == Some(native))
+        .then_some(kind.leaf)
+    })
+}
+
 /// How a language type is represented in generated code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Repr {
@@ -466,6 +496,50 @@ impl Layouts {
         round_up(s, a)
     }
 
+    /// Returns every bool byte offset, including nested values and fixed arrays.
+    pub(crate) fn bool_offsets(&self, ty: &Type) -> Result<Vec<u32>, String> {
+        let mut offsets = Vec::new();
+        self.collect_bool_offsets(ty, 0, &mut offsets)?;
+        Ok(offsets)
+    }
+
+    fn collect_bool_offsets(
+        &self,
+        ty: &Type,
+        base: u32,
+        offsets: &mut Vec<u32>,
+    ) -> Result<(), String> {
+        match ty {
+            Type::Bool => offsets.push(base),
+            Type::Class(id) if self.class(id.0)?.is_value => {
+                let layout = self.class(id.0)?;
+                if layout.field_types.len() != layout.field_offsets.len() {
+                    return Err(internal("bool layout field count differs"));
+                }
+                for (ty, offset) in layout.field_types.iter().zip(&layout.field_offsets) {
+                    self.collect_bool_offsets(
+                        ty,
+                        checked_add_size(base, *offset, "bool field offset")?,
+                        offsets,
+                    )?;
+                }
+            }
+            Type::FixedArray(element, count) => {
+                let stride = self.stride(element)?;
+                for index in 0..*count {
+                    let offset = checked_mul_size(index, stride, "bool array offset")?;
+                    self.collect_bool_offsets(
+                        element,
+                        checked_add_size(base, offset, "bool element offset")?,
+                        offsets,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     /// Returns each padding range for `ty` from these precomputed layouts.
     pub(crate) fn padding_ranges(&self, ty: &Type) -> Result<Vec<Range<u32>>, String> {
         let mut ranges = Vec::new();
@@ -524,21 +598,18 @@ impl Layouts {
 
     /// The runtime representation of a type.
     pub fn repr(&self, ty: &Type) -> Result<Repr, String> {
+        if let Some(native) = native_boundary_type(ty) {
+            return Ok(Repr::Scalar(if native == types::F16 {
+                types::I16
+            } else {
+                native
+            }));
+        }
         if ty.function_type().is_some() {
             return Ok(Repr::Pair);
         }
         Ok(match ty {
             Type::Void => Repr::None,
-            Type::Bool => Repr::Scalar(types::I8),
-            Type::I8 | Type::U8 => Repr::Scalar(types::I8),
-            Type::I16 | Type::U16 | Type::F16 => Repr::Scalar(types::I16),
-            Type::I32 | Type::U32 | Type::Enum(_) | Type::StringAlias(_) => {
-                Repr::Scalar(types::I32)
-            }
-            // Date erases to i64 epoch milliseconds (stdlib.md §3).
-            Type::I64 | Type::U64 | Type::Date => Repr::Scalar(types::I64),
-            Type::F32 => Repr::Scalar(types::F32),
-            Type::F64 => Repr::Scalar(types::F64),
             Type::Str
             | Type::RegExp
             | Type::TaskGroup

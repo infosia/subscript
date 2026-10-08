@@ -617,6 +617,61 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let unwind = self.unwind_block();
         self.builder.ins().jump(unwind, &[]);
         self.builder.switch_to_block(completed);
+        if let Some((address, ty, _)) = output {
+            if let Type::Array(element) = ty {
+                let offsets = self.ml.layouts.bool_offsets(element)?;
+                if !offsets.is_empty() {
+                    let array = self.builder.ins().load(types::I64, flags(), *address, 0);
+                    let length = self
+                        .call_runtime(self.ml.rt.array_len, &[self.ctx, array], false)?
+                        .ok_or_else(|| internal("completion array length is missing"))?;
+                    let data = self
+                        .call_runtime(self.ml.rt.array_data, &[self.ctx, array], false)?
+                        .ok_or_else(|| internal("completion array data is missing"))?;
+                    let stride = self.ml.layouts.stride(element)?;
+                    let condition = self.builder.create_block();
+                    let body = self.builder.create_block();
+                    let done = self.builder.create_block();
+                    self.builder.append_block_param(condition, types::I32);
+                    let zero = self.iconst(types::I32, 0);
+                    self.builder.ins().jump(condition, &[BlockArg::Value(zero)]);
+                    self.builder.switch_to_block(condition);
+                    let index = self.builder.block_params(condition)[0];
+                    let more = self
+                        .builder
+                        .ins()
+                        .icmp(IntCC::UnsignedLessThan, index, length);
+                    self.builder.ins().brif(more, body, &[], done, &[]);
+                    self.builder.switch_to_block(body);
+                    let index64 = self.builder.ins().uextend(types::I64, index);
+                    let offset = self.builder.ins().imul_imm(index64, i64::from(stride));
+                    let item = self.builder.ins().iadd(data, offset);
+                    for offset in offsets {
+                        let byte = self
+                            .builder
+                            .ins()
+                            .load(types::I8, flags(), item, offset as i32);
+                        let canonical = self.builder.ins().icmp_imm(IntCC::NotEqual, byte, 0);
+                        self.builder
+                            .ins()
+                            .store(flags(), canonical, item, offset as i32);
+                    }
+                    let next = self.builder.ins().iadd_imm(index, 1);
+                    self.builder.ins().jump(condition, &[BlockArg::Value(next)]);
+                    self.builder.switch_to_block(done);
+                }
+            }
+            for offset in self.ml.layouts.bool_offsets(ty)? {
+                let byte = self
+                    .builder
+                    .ins()
+                    .load(types::I8, flags(), *address, offset as i32);
+                let canonical = self.builder.ins().icmp_imm(IntCC::NotEqual, byte, 0);
+                self.builder
+                    .ins()
+                    .store(flags(), canonical, *address, offset as i32);
+            }
+        }
         // compiler.md §116.1 rule 4a: release the registration's handle count.
         self.async_count(handle, Some((pos, &[])))?;
         Ok(())

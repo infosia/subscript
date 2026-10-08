@@ -1,0 +1,6 @@
+[package]
+name = "subscript-boundary"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Shared C ABI boundary kind facts."

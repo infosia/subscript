@@ -136,14 +136,7 @@ fn validate_struct(
     for field in fields {
         let scalar = lang_scalar(&field.base).is_some()
             || matches!(registry.get(&field.base), Some(Kind::Alias | Kind::Enum));
-        if lang_scalar(&field.base) == Some("boolean")
-            || parsed.aliases.iter().any(|alias| {
-                alias.name == field.base
-                    && lang_scalar(&alias.underlying)
-                        .or_else(|| alias.chain.iter().find_map(|base| lang_scalar(base)))
-                        == Some("boolean")
-            })
-            || field.pointer
+        if field.pointer
             || field.array_len.is_some()
             || field.nullable
             || (!scalar && !matches!(registry.get(&field.base), Some(Kind::Boundary)))

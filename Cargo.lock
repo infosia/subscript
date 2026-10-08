@@ -966,7 +966,12 @@ name = "subscript-bindgen"
 version = "0.1.0"
 dependencies = [
  "clang-sys",
+ "subscript-boundary",
 ]
+
+[[package]]
+name = "subscript-boundary"
+version = "0.1.0"
 
 [[package]]
 name = "subscript-cli"
@@ -989,6 +994,7 @@ dependencies = [
  "cranelift-native",
  "libc",
  "subscript-archive-fixture",
+ "subscript-boundary",
  "subscript-compiler",
  "subscript-interop-fixture",
  "subscript-runtime",
@@ -1001,6 +1007,7 @@ version = "0.1.0"
 dependencies = [
  "regress",
  "serde",
+ "subscript-boundary",
  "swc_common",
  "swc_ecma_ast",
  "swc_ecma_parser",

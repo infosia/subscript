@@ -34,6 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cargo:rerun-if-changed={}",
         directory.join("abi-pressure.h").display()
     );
+    let boundary_source = directory.join("boundary-values.c");
+    println!("cargo:rerun-if-changed={}", boundary_source.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        directory.join("boundary-values.h").display()
+    );
     let wire_source = directory.join("wire-enum.c");
     let wire_header = directory.join("wire-enum.h");
 
@@ -66,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include(&out)
         .file(&source)
         .file(&completion_source)
+        .file(&boundary_source)
         .file(directory.join("abi-pressure.c"))
         .file(&external_source)
         .file(&wire_source)

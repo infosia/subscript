@@ -451,6 +451,27 @@ pub struct FuncType {
     pub ret: Type,
 }
 
+/// Returns the shared fundamental C boundary kind of a semantic type.
+#[must_use]
+pub fn boundary_kind(ty: &Type) -> Option<&'static subscript_boundary::Kind> {
+    let language = match ty {
+        Type::I8 => "i8",
+        Type::U8 => "u8",
+        Type::I16 => "i16",
+        Type::U16 => "u16",
+        Type::I32 | Type::Enum(_) | Type::StringAlias(_) => "i32",
+        Type::U32 => "u32",
+        Type::I64 | Type::Date => "i64",
+        Type::U64 => "u64",
+        Type::Bool => "boolean",
+        Type::F16 => "f16",
+        Type::F32 => "f32",
+        Type::F64 => "f64",
+        _ => return None,
+    };
+    subscript_boundary::language_kind(language)
+}
+
 /// C-ABI size and alignment of every type whose in-memory layout does
 /// not depend on a class definition or nested aggregate.
 ///
@@ -458,14 +479,13 @@ pub struct FuncType {
 /// scalar layout agreement structural rather than test-only.
 #[must_use]
 pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
+    if let Some(kind) = boundary_kind(ty) {
+        return Some((kind.size, kind.align));
+    }
     if ty.function_type().is_some() {
         return Some((16, 8));
     }
     Some(match ty {
-        Type::Bool | Type::I8 | Type::U8 => (1, 1),
-        Type::I16 | Type::U16 | Type::F16 => (2, 2),
-        Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) | Type::StringAlias(_) => (4, 4),
-        Type::I64 | Type::U64 | Type::F64 | Type::Date => (8, 8),
         Type::Str
         | Type::RegExp
         | Type::TaskGroup
@@ -486,7 +506,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         | Type::TypeParameter(_)
         | Type::GenericNumber
         | Type::GenericUnion(_) => (0, 1),
-        Type::Class(_) | Type::FixedArray(..) | Type::IterResult(_) => return None,
+        _ => return None,
     })
 }
 

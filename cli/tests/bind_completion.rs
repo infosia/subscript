@@ -188,32 +188,35 @@ typedef struct { ByteFields inner; } NestedBytes;
         ("CallbackField", "typedef void (*Callback)(int32_t); typedef struct { Callback value; int32_t extra; } CallbackField;", "// @subscript-c-callback typedef=\"Callback\"\ntype Callback = (x: i32) => void; declare class CallbackField { value: Callback; extra: i32; }", "CallbackField"),
         ("WireField", "typedef int32_t Wire; /* @subscript-cenum Wire ScriptWire */ typedef struct { Wire value; } WireField;", "// @subscript-c-cenum typedef=\"Wire\" alias=\"ScriptWire\"\ntype ScriptWire = CEnum<{ idle: 0; active: 1 }>; declare class WireField { value: ScriptWire; }", "WireField"),
         ("NestedView", "typedef struct { const char *data; size_t length; } View; typedef struct { View inner; } NestedView;", "declare class View { data: string; } declare class NestedView { inner: View; }", "NestedView"),
-        ("BoolPair", "typedef struct { bool a; bool b; } BoolPair;", "declare class BoolPair { a: boolean; b: boolean; }", "BoolPair"),
-        ("BoolPadded", "typedef struct { bool a; int32_t b; bool c; } BoolPadded;", "declare class BoolPadded { a: boolean; b: i32; c: boolean; }", "BoolPadded"),
-        ("AliasBool", "typedef bool Flag; typedef struct { Flag leaf; } AliasBool;", "type Flag = boolean; declare class AliasBool { leaf: Flag; }", "AliasBool"),
-        ("NestedBool", "typedef struct { bool leaf; } BoolLeaf; typedef struct { BoolLeaf inner; } NestedBool;", "declare class BoolLeaf { leaf: boolean; } declare class NestedBool { inner: BoolLeaf; }", "NestedBool"),
         ("Absent", "", "type Absent = string;", "Absent"),
         ("subscript_rt_completion", "", "declare class subscript_rt_completion { context_id: u64; operation_id: u64; }", "subscript_rt_completion"),
     ] {
         let header = format!("#include <stddef.h>\n{types}\n{declarations}\nvoid read(subscript_rt_completion endpoint);");
-        let binder_error = generate_with_options(&header, "host.h", &BindOptions::new().with_completion("read", result)).expect_err(result);
+        generate_with_options(&header, "host.h", &BindOptions::new().with_completion("read", result)).expect_err(result);
         let mirror = format!("// @subscript-c-header include=\"host.h\"\n// @subscript-c-completion function=\"read\" result=\"{result}\"\n{mirror_declarations}\ndeclare function read(): Promise<{script_type}>;");
         let errors = check_program(&[
             SourceFile::ambient("host.d.ts", mirror),
             SourceFile::new("main.ts", "export async function main(): Promise<void> { await read(); }"),
         ]).expect_err(result);
         assert!(errors.iter().any(|error| error.code == RuleCode::S100), "{result}: {errors:?}");
-        if let Some((class, field)) = match result {
-            "BoolPair" => Some(("BoolPair", "a")),
-            "BoolPadded" => Some(("BoolPadded", "a")),
-            "NestedBool" => Some(("BoolLeaf", "leaf")),
-            "AliasBool" => Some(("AliasBool", "leaf")),
-            _ => None,
-        } {
-            for fragment in ["function `read`".to_string(), format!("struct `{class}`"), format!("field `{field}`")] {
-                assert!(binder_error.0.contains(&fragment), "{binder_error:?}");
-                assert!(errors.iter().any(|error| error.message.contains(&fragment)), "{errors:?}");
-            }
+    }
+}
+
+#[test]
+fn completion_bool_struct_shapes_are_admitted() {
+    // Isolated warm Apple arm64 cost: 0.07 s, excluding the Rust build.
+    use subscript_bindgen::{generate_with_options, BindOptions};
+    use subscript_compiler::{check_program, SourceFile};
+    for (result, declarations, mirror_declarations, script_type) in [
+        ("BoolPair", "typedef struct { bool a; bool b; } BoolPair;", "declare class BoolPair { a: boolean; b: boolean; }", "BoolPair"),
+        ("BoolPadded", "typedef struct { bool a; int32_t b; bool c; } BoolPadded;", "declare class BoolPadded { a: boolean; b: i32; c: boolean; }", "BoolPadded"),
+        ("AliasBool", "typedef bool Flag; typedef struct { Flag leaf; } AliasBool;", "type Flag = boolean; declare class AliasBool { leaf: Flag; }", "AliasBool"),
+        ("NestedBool", "typedef struct { bool leaf; } BoolLeaf; typedef struct { BoolLeaf inner; } NestedBool;", "declare class BoolLeaf { leaf: boolean; } declare class NestedBool { inner: BoolLeaf; }", "NestedBool"),
+] {
+        let header = format!("#include <stdint.h>\n#include <stdbool.h>\n{declarations}\nvoid read(subscript_rt_completion endpoint);");
+        let generated = generate_with_options(&header, "host.h", &BindOptions::new().with_completion("read", result)).expect(result);
+        for mirror in [generated, format!("// @subscript-c-header include=\"host.h\"\n// @subscript-c-completion function=\"read\" result=\"{result}\"\n{mirror_declarations}\ndeclare function read(): Promise<{script_type}>;")] {
+            check_program(&[SourceFile::ambient("host.d.ts", mirror), SourceFile::new("main.ts", "export async function main(): Promise<void> { await read(); }")]).unwrap_or_else(|errors| panic!("{result}: {errors:?}"));
         }
     }
 }

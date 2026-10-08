@@ -138,6 +138,14 @@ pub fn lower_module_for_reload(
             .map(|(field, offset)| (*offset, l::CountAction::for_type(&field.ty)))
             .collect();
     }
+    let boundary_copies = lowered
+        .classes
+        .iter()
+        .map(|class| derive_boundary_byte_copy(&lowered, &Type::Class(class.id)))
+        .collect::<Vec<_>>();
+    for (class, copies) in lowered.classes.iter_mut().zip(boundary_copies) {
+        class.copies_boundary_bytes = copies;
+    }
     unroll::run(&mut lowered);
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
@@ -162,6 +170,56 @@ pub fn lower_module_for_reload(
     Ok(lowered)
 }
 
+// Rule 7 compares only classes whose fields use the C byte layout.
+pub(crate) fn copies_boundary_bytes(module: &l::Module, ty: &Type) -> bool {
+    match ty {
+        Type::Class(id) => module
+            .classes
+            .get(id.0)
+            .is_some_and(|class| class.copies_boundary_bytes),
+        _ => false,
+    }
+}
+
+fn derive_boundary_byte_copy(module: &l::Module, ty: &Type) -> bool {
+    if !matches!(ty, Type::Class(id) if module.classes.get(id.0).is_some_and(|class| class.is_value))
+    {
+        return false;
+    }
+    fn visit(module: &l::Module, ty: &Type, active: &mut Vec<ClassId>) -> bool {
+        if subscript_compiler::types::boundary_kind(ty).is_some() || *ty == Type::Object {
+            return true;
+        }
+        if let Type::Nullable(inner) = ty {
+            return matches!(inner.as_ref(), Type::Object)
+                || matches!(inner.as_ref(), Type::Class(id) if module.classes.get(id.0).is_some_and(|class| !class.is_value || (class.is_boundary && class.is_embedded_header)));
+        }
+        if let Type::FixedArray(element, _) = ty {
+            return visit(module, element, active);
+        }
+        let Type::Class(id) = ty else {
+            return false;
+        };
+        let Some(class) = module.classes.get(id.0) else {
+            return false;
+        };
+        if !class.is_value {
+            return true;
+        }
+        if !class.is_boundary || active.contains(id) {
+            return false;
+        }
+        active.push(*id);
+        let result = class
+            .fields
+            .iter()
+            .all(|field| field.foreign_provenance.is_none() && visit(module, &field.ty, active));
+        active.pop();
+        result
+    }
+    visit(module, ty, &mut Vec::new())
+}
+
 /// Verifies every function in an LIR module and returns all findings.
 ///
 /// The checks cover single definitions, dominance, terminator shape, address
@@ -180,6 +238,20 @@ pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
         });
     }
     for class in &module.classes {
+        if class.boundary_header.is_some()
+            && copies_boundary_bytes(module, &Type::Class(class.id))
+            && class
+                .boundary_header
+                .as_ref()
+                .is_none_or(|header| header.is_empty())
+        {
+            errors.push(VerifyError {
+                message: format!(
+                    "boundary class {} has no header identity for host layout comparison",
+                    class.id.0
+                ),
+            });
+        }
         let Ok(layouts) = &layouts else {
             continue;
         };

@@ -268,42 +268,6 @@ fn boundary_class(module: &l::Module, class: ClassId) -> Result<&l::Class, Strin
         .ok_or_else(|| format!("internal error: boundary class {} is missing", class.0))
 }
 
-fn boundary_type_needs_scratch_inner(
-    module: &l::Module,
-    ty: &Type,
-    visiting: &mut HashSet<ClassId>,
-) -> Result<bool, String> {
-    match ty {
-        Type::Str | Type::Array(_) => Ok(true),
-        Type::Nullable(inner) => boundary_type_needs_scratch_inner(module, inner, visiting),
-        Type::Class(class) => boundary_class_needs_scratch_inner(module, *class, visiting),
-        _ => Ok(false),
-    }
-}
-
-fn boundary_class_needs_scratch_inner(
-    module: &l::Module,
-    class: ClassId,
-    visiting: &mut HashSet<ClassId>,
-) -> Result<bool, String> {
-    let definition = boundary_class(module, class)?;
-    if !definition.is_value || !visiting.insert(class) {
-        return Ok(false);
-    }
-    let result = definition.fields.iter().try_fold(false, |found, field| {
-        Ok(found || boundary_type_needs_scratch_inner(module, &field.ty, visiting)?)
-    });
-    visiting.remove(&class);
-    result
-}
-
-pub(crate) fn boundary_class_needs_scratch(
-    module: &l::Module,
-    class: ClassId,
-) -> Result<bool, String> {
-    boundary_class_needs_scratch_inner(module, class, &mut HashSet::new())
-}
-
 fn boundary_class_contains_pointer_inner(
     module: &l::Module,
     class: ClassId,
@@ -345,26 +309,18 @@ pub(crate) fn boundary_class_contains_pointer(
     boundary_class_contains_pointer_inner(module, class, &mut HashSet::new())
 }
 
-pub(crate) fn boundary_class_requires_build(
-    module: &l::Module,
-    class: ClassId,
-) -> Result<bool, String> {
-    Ok(boundary_class_needs_scratch(module, class)?
-        || boundary_class_contains_pointer(module, class)?)
-}
-
 pub(crate) fn boundary_type_requires_build(module: &l::Module, ty: &Type) -> Result<bool, String> {
     match ty {
         Type::Array(element) => match element.as_ref() {
-            Type::Class(class) if lir_class_is_value(module, *class) => {
-                boundary_class_requires_build(module, *class)
-            }
+            Type::Class(class) if lir_class_is_value(module, *class) => Ok(
+                !crate::lir::copies_boundary_bytes(module, &Type::Class(*class)),
+            ),
             _ => Ok(false),
         },
         Type::Nullable(inner) => boundary_type_requires_build(module, inner),
-        Type::Class(class) if lir_class_is_value(module, *class) => {
-            boundary_class_requires_build(module, *class)
-        }
+        Type::Class(class) if lir_class_is_value(module, *class) => Ok(
+            !crate::lir::copies_boundary_bytes(module, &Type::Class(*class)),
+        ),
         _ => Ok(false),
     }
 }

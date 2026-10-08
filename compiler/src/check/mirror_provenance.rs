@@ -3,7 +3,7 @@ use crate::check::rejection::RejectionSite;
 
 impl<'p> Checker<'p> {
     /// Validates record targets in one ambient mirror and assigns its HIR
-    /// header identity when it contributes foreign functions.
+    /// header identity for foreign functions and boundary classes.
     pub(super) fn collect_mirror_provenance(&mut self, file: usize) {
         let parsed = &self.prog.files[file];
         let mut functions = HashMap::new();
@@ -27,7 +27,7 @@ impl<'p> Checker<'p> {
             }
         }
 
-        if !functions.is_empty() {
+        if !functions.is_empty() || (!classes.is_empty() && parsed.provenance.header.is_some()) {
             let include = match &parsed.provenance.header {
                 Some(record) => record.value.clone(),
                 None => {
@@ -153,24 +153,23 @@ impl<'p> Checker<'p> {
             }
             return None;
         };
-        let scalar = match record.value.as_str() {
-            "void" => Some(Type::Void),
-            "int8_t" | "signed char" => Some(Type::I8),
-            "uint8_t" | "unsigned char" => Some(Type::U8),
-            "int16_t" | "short" | "short int" | "signed short" | "signed short int" => {
-                Some(Type::I16)
-            }
-            "uint16_t" | "unsigned short" | "unsigned short int" => Some(Type::U16),
-            "int32_t" | "int" | "signed int" => Some(Type::I32),
-            "uint32_t" | "unsigned int" => Some(Type::U32),
-            "int64_t" | "long long" | "long long int" => Some(Type::I64),
-            "uint64_t" | "unsigned long long" | "unsigned long long int" | "size_t" => {
-                Some(Type::U64)
-            }
-            "_Float16" => Some(Type::F16),
-            "float" => Some(Type::F32),
-            "double" => Some(Type::F64),
-            "bool" | "_Bool" => Some(Type::Bool),
+        let scalar = match subscript_boundary::c_kind(&record.value)
+            .map(|kind| kind.language)
+            .or_else(|| (record.value == "void").then_some("void"))
+        {
+            Some("void") => Some(Type::Void),
+            Some("i8") => Some(Type::I8),
+            Some("u8") => Some(Type::U8),
+            Some("i16") => Some(Type::I16),
+            Some("u16") => Some(Type::U16),
+            Some("i32") => Some(Type::I32),
+            Some("u32") => Some(Type::U32),
+            Some("i64") => Some(Type::I64),
+            Some("u64") => Some(Type::U64),
+            Some("f16") => Some(Type::F16),
+            Some("f32") => Some(Type::F32),
+            Some("f64") => Some(Type::F64),
+            Some("boolean") => Some(Type::Bool),
             _ => self
                 .type_aliases
                 .get(&record.value)
@@ -248,7 +247,8 @@ impl<'p> Checker<'p> {
         }
         for field in &class.fields {
             let supported = match self.apparent_type(&field.ty) {
-                Type::I8
+                Type::Bool
+                | Type::I8
                 | Type::U8
                 | Type::I16
                 | Type::U16

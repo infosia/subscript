@@ -52,8 +52,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             _ => None,
         };
         let mut arguments = Vec::new();
-        if let Some(StructRet::Sret(slot)) = struct_return {
-            arguments.push(slot);
+        if let Some(StructRet::Sret(slot)) = &struct_return {
+            arguments.push(*slot);
         }
         let needs_scratch_scope = declaration.parameters.iter().any(|parameter| {
             matches!(
@@ -82,7 +82,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     8,
                     &BoundaryLeaves {
                         leaves: vec![(0, types::I64), (8, types::I64)],
-                        f16_offsets: vec![],
                     },
                 )?;
                 continue;
@@ -145,7 +144,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
         match return_repr {
             Repr::None | Repr::Agg { .. } => {}
-            Repr::Scalar(repr) => signature.returns.push(AbiParam::new(repr)),
+            Repr::Scalar(repr) => signature.returns.push(AbiParam::new(
+                return_ty
+                    .and_then(crate::layout::native_boundary_type)
+                    .unwrap_or(repr),
+            )),
             Repr::Pair => return Err(internal("foreign function returns a function pair")),
         }
         let function =
@@ -194,9 +197,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(match return_repr {
             Repr::None => RV::None,
             Repr::Scalar(_) => {
-                let result = *results
+                let mut result = *results
                     .first()
                     .ok_or_else(|| internal("foreign scalar call has no result"))?;
+                if return_ty.is_some_and(|ty| {
+                    subscript_compiler::types::boundary_kind(ty)
+                        .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half)
+                }) {
+                    result = self.builder.ins().bitcast(
+                        types::I16,
+                        cranelift_codegen::ir::MemFlags::new(),
+                        result,
+                    );
+                }
                 if let Some(Type::StringAlias(alias)) = return_ty {
                     let trap = traps
                         .iter()
@@ -283,13 +296,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn boundary_c_field(&self, ty: &Type) -> Result<(u32, u32), String> {
+        if let Some(kind) = subscript_compiler::types::boundary_kind(ty) {
+            return Ok((kind.size, kind.align));
+        }
         Ok(match ty {
             Type::Func(_) | Type::Object | Type::Nullable(_) => (8, 8),
             Type::Str | Type::Array(_) => (16, 8),
-            Type::I8 | Type::U8 | Type::Bool => (1, 1),
-            Type::I16 | Type::U16 | Type::F16 => (2, 2),
-            Type::I32 | Type::U32 | Type::F32 | Type::Enum(_) | Type::StringAlias(_) => (4, 4),
-            Type::I64 | Type::U64 | Type::F64 => (8, 8),
             Type::Class(id) if self.is_value_class(ty) => {
                 let (_, size, align) = self.boundary_c_layout(id.0)?;
                 (size, align)
@@ -320,8 +332,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok((offsets, size, align))
     }
 
-    /// The C-layout leaves of a boundary class, and the byte offsets of its
-    /// `f16` fields. The walk is total over every field type
+    /// The native C-layout leaves of a boundary class.
+    /// The walk is total over every field type
     /// `boundary_c_field` sizes, so a leaf list is never partial: an
     /// absorbed callback is one pointer leaf, and a string or array
     /// descriptor is two.
@@ -331,7 +343,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             class: usize,
             base: u32,
             leaves: &mut Vec<(u32, types::Type)>,
-            f16_offsets: &mut Vec<u32>,
         ) -> Result<(), String> {
             let definition = body
                 .ml
@@ -344,25 +355,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let offset = checked_layout_add(base, offset, "boundary leaf offset")?;
                 match &field.ty {
                     Type::Class(inner) if body.is_value_class(&field.ty) => {
-                        collect(body, inner.0, offset, leaves, f16_offsets)?;
+                        collect(body, inner.0, offset, leaves)?;
                     }
                     Type::Str | Type::Array(_) => {
                         leaves.push((offset, types::I64));
                         let second = checked_layout_add(offset, 8, "boundary leaf offset")?;
                         leaves.push((second, types::I64));
                     }
-                    Type::F16 => {
-                        f16_offsets.push(offset);
-                        leaves.push((offset, types::I16));
+                    ty if crate::layout::native_boundary_type(ty).is_some() => {
+                        let native = crate::layout::native_boundary_type(ty)
+                            .ok_or_else(|| internal("boundary leaf kind is missing"))?;
+                        leaves.push((offset, native));
                     }
-                    Type::F32 => leaves.push((offset, types::F32)),
-                    Type::F64 => leaves.push((offset, types::F64)),
-                    Type::Bool | Type::I8 | Type::U8 => leaves.push((offset, types::I8)),
-                    Type::I16 | Type::U16 => leaves.push((offset, types::I16)),
-                    Type::I32 | Type::U32 | Type::Enum(_) | Type::StringAlias(_) => {
-                        leaves.push((offset, types::I32))
-                    }
-                    Type::I64 | Type::U64 => leaves.push((offset, types::I64)),
                     Type::Func(_)
                     | Type::Object
                     | Type::Nullable(_)
@@ -378,12 +382,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
 
         let mut leaves = Vec::new();
-        let mut f16_offsets = Vec::new();
-        collect(self, class, 0, &mut leaves, &mut f16_offsets)?;
-        Ok(BoundaryLeaves {
-            leaves,
-            f16_offsets,
-        })
+        collect(self, class, 0, &mut leaves)?;
+        Ok(BoundaryLeaves { leaves })
     }
 
     /// Passes a by-value boundary aggregate the way the platform C ABI
@@ -441,11 +441,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             AggregateArgPlan::Images(images) => {
                 if abi == AggregateAbi::SysV {
-                    ensure_sysv_argument_register_capacity(
-                        signature,
-                        &images,
-                        &components.f16_offsets,
-                    )?;
+                    ensure_sysv_argument_register_capacity(signature, &images)?;
                 }
                 // Every image is read from a zero-filled copy, so a trailing
                 // partial eightbyte carries defined bytes.
@@ -500,13 +496,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             ))
         })?;
         let components = self.boundary_leaf_components(class.0)?;
-        // An HFA return travels in SIMD registers on every supported ABI,
-        // and the dev JIT models no float return register.
-        if is_pure_hfa_leaves(&components.leaves) {
-            return Err(internal(format!(
-                "foreign homogeneous floating-point aggregate return is unsupported at {pos}"
-            )));
-        }
         let definition = self
             .ml
             .lir
@@ -523,27 +512,36 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             ));
         }
         let registers = match abi {
-            AggregateAbi::Aapcs64 => (size <= 16).then(|| (size.div_ceil(8), types::I64)),
+            AggregateAbi::Aapcs64 if is_pure_hfa_leaves(&components.leaves) => {
+                Some(components.leaves.clone())
+            }
+            AggregateAbi::Aapcs64 => {
+                (size <= 16).then(|| (0..size.div_ceil(8)).map(|i| (i * 8, types::I64)).collect())
+            }
             AggregateAbi::Win64 => match size {
-                1 => Some((1, types::I8)),
-                2 => Some((1, types::I16)),
-                4 => Some((1, types::I32)),
-                8 => Some((1, types::I64)),
+                1 => Some(vec![(0, types::I8)]),
+                2 => Some(vec![(0, types::I16)]),
+                4 => Some(vec![(0, types::I32)]),
+                8 => Some(vec![(0, types::I64)]),
                 _ => None,
             },
             AggregateAbi::SysV => {
-                plan_sysv_struct_return(&components.leaves, size, &components.f16_offsets)?
-                    .map(|images| (images.len() as u32, types::I64))
+                plan_sysv_struct_return(&components.leaves, size)?.map(|images| {
+                    images
+                        .into_iter()
+                        .map(|image| (image.offset, image.ty))
+                        .collect()
+                })
             }
         };
-        if let Some((count, ty)) = registers {
-            for _ in 0..count {
-                signature.returns.push(AbiParam::new(ty));
+        if let Some(images) = registers {
+            for (_, ty) in &images {
+                signature.returns.push(AbiParam::new(*ty));
             }
-            let image_bytes = checked_layout_mul(count, ty.bytes(), "struct-return image")?;
-            let slot_size = round_up_layout(size.max(image_bytes), 8, "struct-return slot")?;
+            let slot_size = round_up_layout(size, 8, "struct-return slot")?;
             let slot = self.stack_slot(slot_size, align.max(8));
-            Ok(StructRet::Registers { slot, count, ty })
+            self.zero_bytes(slot, slot_size, align.max(8));
+            Ok(StructRet::Registers { slot, images })
         } else {
             let slot = self.stack_slot(size, align);
             signature
@@ -560,15 +558,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<Value, String> {
         match plan {
             StructRet::Sret(slot) => Ok(slot),
-            StructRet::Registers { slot, count, ty } => {
-                if results.len() != count as usize {
+            StructRet::Registers { slot, images } => {
+                if results.len() != images.len() {
                     return Err(internal("foreign struct-return register count mismatch"));
                 }
-                let stride = ty.bytes() as usize;
-                for (index, value) in results.iter().enumerate() {
+                for ((offset, _), value) in images.iter().zip(results) {
                     self.builder
                         .ins()
-                        .store(flags(), *value, slot, (index * stride) as i32);
+                        .store(flags(), *value, slot, *offset as i32);
                 }
                 Ok(slot)
             }
@@ -629,7 +626,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let data = match &**element {
                     Type::Class(class)
                         if self.is_value_class(element)
-                            && boundary_class_requires_build(self.ml.lir, *class)? =>
+                            && !crate::lir::copies_boundary_bytes(
+                                self.ml.lir,
+                                &Type::Class(*class),
+                            ) =>
                     {
                         self.marshal_boundary_array(
                             class.0,
@@ -684,14 +684,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let class = self
                     .boundary_pointer_class(ty)
                     .ok_or_else(|| internal("boundary pointer class is missing"))?;
-                if !self
-                    .ml
-                    .lir
-                    .classes
-                    .get(class)
-                    .is_some_and(|class| class.is_embedded_header)
-                    && boundary_class_needs_scratch(self.ml.lir, ClassId(class))?
-                {
+                if !crate::lir::copies_boundary_bytes(self.ml.lir, &Type::Class(ClassId(class))) {
                     let (pointer, writeback) =
                         self.marshal_boundary_pointer(class, source, scratch_mark, pos)?;
                     self.push_foreign_argument(signature, arguments, types::I64, pointer);
@@ -704,8 +697,27 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             ty => match self.ml.layouts.repr(ty)? {
                 Repr::None => Ok(()),
                 Repr::Scalar(repr) => {
-                    let value = self.expect_scalar(value)?;
-                    self.push_foreign_argument(signature, arguments, repr, value);
+                    let mut value = self.expect_scalar(value)?;
+                    let native = crate::layout::native_boundary_type(ty).unwrap_or(repr);
+                    if subscript_compiler::types::boundary_kind(ty)
+                        .is_some_and(|kind| kind.leaf == subscript_boundary::Leaf::Half)
+                    {
+                        value = self.builder.ins().bitcast(
+                            native,
+                            cranelift_codegen::ir::MemFlags::new(),
+                            value,
+                        );
+                    }
+                    let parameter = AbiParam::new(native);
+                    let parameter = match subscript_compiler::types::boundary_kind(ty)
+                        .map(|kind| kind.extension)
+                    {
+                        Some(subscript_boundary::Extension::Signed) => parameter.sext(),
+                        Some(subscript_boundary::Extension::Unsigned) => parameter.uext(),
+                        _ => parameter,
+                    };
+                    signature.params.push(parameter);
+                    arguments.push(value);
                     Ok(())
                 }
                 other => Err(internal(format!(
@@ -968,7 +980,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let data = match &**element {
                         Type::Class(element_class)
                             if self.is_value_class(element)
-                                && boundary_class_requires_build(self.ml.lir, *element_class)? =>
+                                && !crate::lir::copies_boundary_bytes(
+                                    self.ml.lir,
+                                    &Type::Class(*element_class),
+                                ) =>
                         {
                             self.marshal_boundary_array(
                                 element_class.0,
@@ -998,13 +1013,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
-                    if self
-                        .ml
-                        .lir
-                        .classes
-                        .get(child_class)
-                        .is_some_and(|class| class.is_embedded_header)
-                    {
+                    if crate::lir::copies_boundary_bytes(
+                        self.ml.lir,
+                        &Type::Class(ClassId(child_class)),
+                    ) {
                         self.builder
                             .ins()
                             .store(flags(), source_pointer, destination, c_offset);
@@ -1052,7 +1064,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 Type::Class(inner) if self.is_value_class(&field.ty) => {
                     let source = self.address_offset(source, i64::from(language_offset));
                     let destination = self.address_offset(destination, i64::from(c_offset));
-                    if boundary_class_requires_build(self.ml.lir, *inner)? {
+                    if !crate::lir::copies_boundary_bytes(self.ml.lir, &Type::Class(*inner)) {
                         self.populate_boundary_value(
                             inner.0,
                             source,
@@ -1189,12 +1201,24 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 Type::Array(_) | Type::Nullable(_) | Type::Func(_) => {}
                 Type::Class(inner) if self.is_value_class(&field.ty) => {
-                    if !boundary_class_requires_build(self.ml.lir, *inner)? {
+                    if crate::lir::copies_boundary_bytes(self.ml.lir, &Type::Class(*inner)) {
                         let layout = self.ml.layouts.class(inner.0)?.clone();
                         let source = self.address_offset(writeback.scratch, i64::from(c_offset));
                         let destination =
                             self.address_offset(writeback.source, i64::from(language_offset));
                         self.copy_bytes(destination, source, layout.size, layout.align);
+                    } else {
+                        let scratch = self.address_offset(writeback.scratch, i64::from(c_offset));
+                        let source =
+                            self.address_offset(writeback.source, i64::from(language_offset));
+                        self.write_back_boundary_pointer(
+                            BoundaryPtrWriteback {
+                                class: inner.0,
+                                source,
+                                scratch,
+                            },
+                            pos,
+                        )?;
                     }
                 }
                 ty => {

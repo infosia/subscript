@@ -32,6 +32,9 @@ pub fn print_module(module: &lir::Module) -> String {
         if class.callback_lifetime == CallbackLifetime::Explicit {
             write!(&mut out, " callback-lifetime=explicit").unwrap();
         }
+        if let Some(header) = &class.boundary_header {
+            write!(&mut out, " header={header:?}").unwrap();
+        }
         writeln!(&mut out).unwrap();
         if let Some(index) = &class.index_signature {
             writeln!(

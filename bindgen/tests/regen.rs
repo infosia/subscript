@@ -272,3 +272,17 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(!m.to_lowercase().contains("vulkan"));
     assert!(!m.to_lowercase().contains("webgpu"));
 }
+
+#[test]
+fn boundary_values_mirror_is_byte_identical_to_regeneration() {
+    // Isolated Apple arm64 cost: 0.026 s; one libclang parse checks the generated corpus mirror.
+    let generated = subscript_bindgen::generate_for_header(
+        include_str!("../../corpus/interop/boundary-values.h"),
+        "boundary-values.h",
+    )
+    .expect("generate boundary mirror");
+    assert_eq!(
+        generated,
+        include_str!("../../corpus/interop/boundary-values.generated.d.ts")
+    );
+}

@@ -435,6 +435,7 @@ impl<'p> Checker<'p> {
             alignment_override,
             is_descriptor,
             is_boundary: false,
+            boundary_header: None,
             // §111 rule 1: the Context lifetime is the value of every
             // class that no mirror directive selects.
             callback_lifetime: crate::types::CallbackLifetime::Context,
@@ -944,6 +945,10 @@ impl<'p> Checker<'p> {
         );
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
+        self.classes[id.0].boundary_header = self
+            .foreign_mirror_ids
+            .get(&file)
+            .map(|mirror| self.foreign_mirrors[mirror.0].include.clone());
         // §111 rule 2: the form carries the selection. The checker reads
         // it from the mirror's own directive.
         if self.prog.files[file]

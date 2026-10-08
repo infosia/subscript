@@ -29,8 +29,8 @@ mod interop;
 
 use subscript_codegen::{
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
-    run_jit, run_jit_with_freed_handle_diagnostics_and_native_libraries,
-    run_jit_with_native_libraries, RunError,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_native_libraries,
+    RunError,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -393,39 +393,6 @@ fn boundary_struct_field_initializers_run_left_to_right() {
 fn boundary_struct_new_arguments_survive_suspension() {
     let program = "async function av(label: string, value: i32): Promise<i32> {\n  print(`av:${label}`);\n  await Context.suspend();\n  return value;\n}\nexport async function main(): Promise<void> {\n  const rect: SubRect = new SubRect(1, await av(\"rect-y\", 2), 3 as u32, 4 as u32);\n  print(`rect=${rect.x},${rect.y},${rect.width},${rect.height}`);\n}\n";
     assert_eq!(both_tiers(program), b"av:rect-y\nrect=1,2,3,4\n");
-}
-
-/// §14.2 HFA guard: a foreign call returning a pure Homogeneous
-/// Floating-point Aggregate by value (all-f32 / all-f64, 1–4 members) is
-/// returned in SIMD registers, which the dev-JIT register-return path does
-/// not model. It must fail LOUD at lowering rather than silently mis-marshal
-/// against ship-C (compiler.md §12.3a / §2). Verified on the AAPCS64 gate
-/// machine (a supported by-value-aggregate ABI, so the arch-gate is passed
-/// and the HFA guard is what fires).
-#[test]
-fn hfa_float_struct_return_fails_loud() {
-    const HFA_MIRROR: &str = "\
-// @subscript-c-header include=\"hfa.h\"
-declare class SubVec2f {
-  x: f32;
-  y: f32;
-  constructor(x: f32, y: f32);
-}
-declare function subVec2Make(seed: u32): SubVec2f;
-";
-    let files = vec![
-        SourceFile::ambient("hfa.d.ts", HFA_MIRROR),
-        SourceFile::new(
-            "prog.ts",
-            "export function main(): void {\n  const v: SubVec2f = subVec2Make(1);\n  print(`${v.x}`);\n}\n",
-        ),
-    ];
-    let err = run_jit(&files).expect_err("HFA return must fail loud, not silently mis-marshal");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("homogeneous floating-point aggregate"),
-        "expected the HFA guard to fire; got: {msg}"
-    );
 }
 
 // ----- §111.2 the host adapter of the fixture -----

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "benchmarks",
     "bindgen",
+    "boundary",
     "cli",
     "compiler",
     "runtime",
