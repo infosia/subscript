@@ -230,6 +230,7 @@ impl Fixture {
     fn library_inputs(&self, archive: bool) -> NativeLibrary {
         #[cfg(all(windows, target_env = "msvc"))]
         {
+            let _ = archive;
             match self.unavailable {}
         }
         #[cfg(not(all(windows, target_env = "msvc")))]

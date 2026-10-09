@@ -695,7 +695,12 @@ fn every_value_shape_test_uses_the_apparent_type() {
     let mut inventory = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for path in paths {
-        let file = path.strip_prefix(&root).unwrap().to_str().unwrap();
+        let file = path
+            .strip_prefix(&root)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .replace('\\', "/");
         let source = fs::read_to_string(&path).unwrap();
         let sites = scan_with_helpers(&source, &helpers);
         let mut raw = HashMap::<&str, Vec<&Site>>::new();

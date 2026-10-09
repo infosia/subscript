@@ -298,8 +298,8 @@ fn host_entry_owns_the_guard_and_rejects_invalid_bodies() {
     assert!(host.contains(
         "#ifdef _WIN32\n#include <stdio.h>\n#include <fcntl.h>\n#include <io.h>\n#endif"
     ));
-    assert!(host.contains("#ifdef _WIN32\n    (void)_setmode(_fileno(stdout), _O_BINARY);\n#endif"));
-    assert_eq!(host.matches("_setmode").count(), 1);
+    assert!(host.contains("#ifdef _WIN32\n    (void)_setmode(_fileno(stdout), _O_BINARY);\n    (void)_setmode(_fileno(stderr), _O_BINARY);\n#endif"));
+    assert_eq!(host.matches("_setmode").count(), 2);
     assert!(host.ends_with(" return 0; }"));
 }
 
@@ -330,7 +330,7 @@ fn c_definitions_share_recognition_and_compile() {
             "{signature}"
         );
         let host = host_entry(&body, &test_header()).expect("recognized definition");
-        assert_eq!(host.matches("_setmode").count(), 1);
+        assert_eq!(host.matches("_setmode").count(), 2);
         // Compile both the bypass and the helper result with the selected host compiler.
         for source in [&body, &host] {
             let path = directory.0.join("host.c");

@@ -227,6 +227,7 @@ int main(void) {
     let compiler = crate::host_c_compiler().unwrap();
     let mut command = compiler.command();
     crate::add_c11_optimized_flags(&mut command, compiler.style());
+    crate::add_object_directory(&mut command, &dir, compiler.style());
     command
         .arg(dir.join("program.c"))
         .arg(crate::runtime_staticlib_path().unwrap())

@@ -217,7 +217,11 @@ fn emitted_mirror_type_checks_with_stock_tsc_and_project_prelude() {
         std::env::var_os("TSC")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| {
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../node_modules/.bin/tsc")
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
+                    "../node_modules/.bin/tsc.cmd"
+                } else {
+                    "../node_modules/.bin/tsc"
+                })
             }),
     )
     .args([

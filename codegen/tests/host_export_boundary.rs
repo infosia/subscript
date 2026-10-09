@@ -94,6 +94,9 @@ fn compile(directory: &Scratch, syntax_only: bool) -> Output {
     add_object_directory(&mut command, &directory.0, compiler.style());
     command.arg(directory.0.join("program.c"));
     if syntax_only {
+        if compiler.style().is_msvc() {
+            command.arg("/we4028");
+        }
         command.arg(if compiler.style().is_msvc() {
             "/Zs"
         } else {
@@ -250,7 +253,11 @@ CALLS
         control.language
     );
     assert!(
-        diagnostic.contains(&format!("subscript_export_take_{}", control.language)),
+        if host_c_compiler().unwrap().style().is_msvc() {
+            diagnostic.contains("C4028")
+        } else {
+            diagnostic.contains(&format!("subscript_export_take_{}", control.language))
+        },
         "{} control lacks the export diagnostic: {diagnostic}",
         control.language
     );

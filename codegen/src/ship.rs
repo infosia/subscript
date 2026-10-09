@@ -130,8 +130,8 @@ pub const HOST_HEADER_C: &str = include_str!("../../runtime/include/subscript_ru
 /// Prefixes a test host body with its generated program header.
 /// Supply the `host_header` field from the emitted program.
 ///
-/// The Windows guard keeps stdout in binary mode for byte-exact sink comparisons
-/// (compiler.md §11c and §100.2). Other hosts retain their stdout mode.
+/// The Windows guard keeps stdout and stderr in binary mode for byte-exact sink
+/// and report comparisons (compiler.md §11c and §100.2). Other hosts retain their modes.
 ///
 /// # Errors
 ///
@@ -146,6 +146,7 @@ pub fn host_entry(body: &str, program_header: &str) -> Result<String, String> {
         "{}\n\
          #ifdef _WIN32\n\
          \x20   (void)_setmode(_fileno(stdout), _O_BINARY);\n\
+         \x20   (void)_setmode(_fileno(stderr), _O_BINARY);\n\
          #endif\n{}",
         &body[..start],
         &body[start..],

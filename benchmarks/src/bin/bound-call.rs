@@ -23,9 +23,9 @@ use std::process::{Command, ExitCode};
 
 #[cfg(unix)]
 use subscript_codegen::{
-    add_c11_optimized_flags, add_executable_output, emit_c, host_c_compiler, host_entry,
-    include_directory_arg, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    HostCCompiler, AOT_ENTRY_C,
+    add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c, host_c_compiler,
+    host_entry, include_directory_arg, runtime_staticlib_path, runtime_system_libraries,
+    tool_output_report, HostCCompiler, AOT_ENTRY_C,
 };
 #[cfg(unix)]
 use subscript_compiler::{check_program, SourceFile};
@@ -569,6 +569,7 @@ fn link_sources(
 ) -> Result<(), Fail> {
     let mut command = compiler.command();
     add_c11_optimized_flags(&mut command, compiler.style());
+    add_object_directory(&mut command, work, compiler.style());
     command.arg(include_directory_arg(compiler.style(), manifest));
     command.args(sources);
     command.arg(backend_object);
