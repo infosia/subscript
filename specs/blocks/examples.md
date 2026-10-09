@@ -206,9 +206,17 @@ the C ABI.
    (§18.2c), and the host's choice among the three coherent responses
    (§18.1b) — the example takes one and says why;
 4. draining the script's stdout sink with `subscript_rt_ctx_stdout`;
-5. the memory accounting the host actually gets — `live_bytes` /
-   `live_allocations` around an explicit `Context.collect()` (§18.2d), which is
-   how "no implicit GC" becomes visible to a host rather than a claim.
+5. the memory accounting the host actually gets — `live_allocations`
+   before and after the host's per-frame collection of item 6
+   (§18.2d), which is how "no implicit GC" becomes visible to a host
+   rather than a claim;
+6. the recommended release pattern: the host calls
+   `subscript_rt_ctx_collect` once per frame, after the frame's script
+   calls and outside the enter/exit bracket (§18.2d). The script
+   writes no release code for per-frame garbage. The golden shows the
+   live allocation count stays bounded across frames.
+   *(Added 2026-10-09, owner decision: the tutorials state this pattern,
+   and the capstone shows it.)*
 
 **The host prints integers; the script prints floats.** The capstone's
 golden must not depend on a libc's float formatting, and it does not have
