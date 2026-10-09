@@ -893,6 +893,35 @@ and
 and the capstone [`examples/host/game.ts`](../examples/host/game.ts)
 for the whole pattern in use.
 
+#### How long a host object stays valid
+
+A handle that your C API returns follows the same rules as a handle
+parameter (`compiler.md` §142):
+
+1. The handle transfers no ownership. The script can copy it, keep it
+   in any object, closure, or module global, and use it later.
+2. You keep the object valid while any script code of that Context can
+   use the handle. A script object that holds the handle keeps nothing
+   alive on your side. The runtime does not detect a use after you
+   destroy the object.
+3. The simplest policy is the Context-scoped lifetime. Keep the object
+   until the Context and all its script activity, pending async work
+   included, have ended. Destroy it after `subscript_rt_ctx_release`.
+
+To destroy an object earlier, select one protocol and own it:
+
+| Pattern | Your obligation |
+|---|---|
+| Explicit detach | Tell the script to drop every copy, then destroy the object after that point. |
+| Reference counting | Give the script explicit retain and release calls. A handle copy does not retain. |
+| ID with a generation | Pass an ID. Validate it at each call, and reject a stale generation. |
+
+[`specs/blocks/examples.md`](../specs/blocks/examples.md) §5b gives
+where each pattern fits. A `string` that the script passes to you is a
+view, valid only during the call; copy it to keep it (§28). The
+[TypeScript tutorial](tutorial-typescript.md#values-that-come-from-the-host)
+gives the script's view of each value that comes from the host.
+
 #### Round-tripping script objects through the host
 
 A host can hold references to script-side objects and hand them back

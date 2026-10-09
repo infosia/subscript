@@ -1034,6 +1034,54 @@ from the host's declared API, is
 [`examples/host/game.ts`](../examples/host/game.ts). The calling side
 is step 6 of the [C/C++ tutorial](tutorial-c-cpp.md).
 
+### Values that come from the host
+
+A value comes from the host as an entry parameter, as a foreign-call
+result, or as a completion. Each kind has one owner and one release
+rule. The section numbers refer to
+[`specs/blocks/compiler.md`](../specs/blocks/compiler.md).
+
+| Value | Owner | What the script does |
+|---|---|---|
+| A host handle: an entry parameter or a foreign-call result | The host. No ownership moves (§142 rule 1). | Copies it, keeps it in any object, closure, or module global, and uses it in a later call. It cannot free the host object. |
+| A scalar, or a struct with the C layout | The script, as a copy | Reads a copy by value, as a `@ValueType` value, with no Context allocation. A completion copies the C bytes (§178 rule 7). A `V \| null` struct is a box, not a by-value copy (§124 rule 1). |
+| A `string` or `u8[]` that a completion or the file module delivers | The Context. The completion copies the host bytes into a new value (§184 rule 2, §185 rule 4). | Uses it as any string or array. `Context.collect()` or the Context release frees it. |
+| A `string` field of a struct that the host fills | The Context. The read copies the bytes of the C string view into a new string (§28 rule 3). | Same as the row above. |
+| The handle of an async host call (`Promise<T>`) | Counted. The script holders and the host operation each hold a count (§178 rule 2). | Awaits it at least once (§70). It is freed after the last holder releases it and the host completes it (§178 rule 8). |
+
+The host keeps the object of a handle valid while script code of the
+Context can use the handle (§142 rule 2). The default is the
+Context-scoped lifetime: the object stays valid until the Context and
+its pending async work end (§142 rule 3). A host that destroys an
+object earlier gives the script a protocol to follow: an explicit
+detach point, explicit retain and release calls, or an ID with a
+generation that the host validates
+([`specs/blocks/examples.md`](../specs/blocks/examples.md) §5b).
+
+Common mistakes, each from the rules above:
+
+- A script object that holds a host handle does not keep the host
+  object alive. Only the host decides when the object ends.
+- The language and the runtime do not detect a use of a handle after
+  the host destroys its object (§142 rule 2).
+- A `null` store into one global is not a detach. A copy can remain in
+  another object, a closure, or pending async work (`examples.md` §5b).
+- A copied `string` or `u8[]` does not change when the host buffer
+  changes. The host reads its buffer only during the completion call
+  (§184 rule 2).
+- A `string` that the script passes to the host is a view of the
+  script bytes. It is valid only during the call, so a host that keeps
+  it copies it (§28 rule 2).
+- `Context.collect()` does not end a pending host operation. The
+  operation roots its waiters until the host completes it (§178 rule
+  10).
+- A dropped handle does not cancel a host operation. If the host then
+  completes it with an `Error` that no `await` observed, the Context
+  traps (§178 rule 8).
+
+[Memory is explicit](#memory-is-explicit) has the release table for
+every value that the script allocates.
+
 ## Strings are UTF-8
 
 A JavaScript string is a sequence of UTF-16 code units. Here a string
