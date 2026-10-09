@@ -322,16 +322,44 @@ Numeric `enum` also exists, and it lowers to a C enum.
 ## Memory is explicit
 
 No collector runs on its own. This is a design invariant, not a
-setting:
+setting. Each value follows one of two release rules:
 
-- `new` allocates a reference class in the **Context**, the arena the
-  host creates and releases.
-- `Context.free(value)` releases one allocation at once.
+- **Counted values.** A handle (`Promise<T>`) and a generator own a
+  suspended frame. A dynamic array of such values is also counted, at
+  any depth (§171 rule 1). The compiler counts the holders of a
+  counted value. When its last holder releases it, the value is freed
+  at once, with no collection (§70 rule 3, §171 rule 4, §176 rule 3).
+- **Context memory.** Every other allocation is in the **Context**,
+  the arena the host creates and releases. This includes the
+  allocations that the compiler makes where the source has no `new`.
+  Context memory stays until `Context.free`, `Context.collect()`, or
+  the Context release.
+
+The two operations on Context memory:
+
+- `Context.free(value)` releases one reference object at once.
 - `Context.collect()` collects what script references no longer reach,
   and it runs only where you write it.
-- A program that frees nothing is **correct**. It holds more memory
-  until the host releases the Context. Dropping the last reference
-  frees nothing by itself.
+
+Dropping the last reference to Context memory frees nothing by itself.
+Dropping the last holder of a counted value releases it.
+
+| Value | Who allocates it | What releases it |
+|---|---|---|
+| A reference object, `Map`, or `Set` | The program, with `new` | `Context.free`, `Context.collect()`, or the Context release |
+| A string or an array of uncounted values | The compiler and the runtime: an array literal, a concatenation, a template, a method result | `Context.collect()` or the Context release |
+| The capture environment of an async arrow (§181) or of a `then`/`catch`/`finally` callback (§186 rule 4) | The compiler, at each evaluation of a capturing lambda | `Context.collect()` after no held value and no live frame reaches it, or the Context release |
+| The captures of another synchronous lambda | The compiler, in the frame of the defining function | The exit of that frame (§118) |
+| A handle, including the handle of `then`, `catch`, or `finally` | An async call or one of those forms | The release by its last holder; an unfinished frame is freed when it finishes (§70, §172 rule 6) |
+| A generator | A generator call | The release by its last holder (§176) |
+| A dynamic array of handles or generators | An array literal, a spread, or an array method | The release by its last holder, which releases each element (§171 rule 4) |
+| A counted value in a class field or a `Map` value | A field store or `Map.set` | `Context.free` of the holder, or the `Context.collect()` that reclaims it; also a replacing store, `Map.delete`, or `Map.clear` (§172) |
+
+A program that never collects is **correct**. It holds more memory
+until the host releases the Context. Each capturing callback allocates
+one environment. So a host that runs many capturing callbacks in each
+step collects at a step boundary: the script calls `Context.collect()`,
+or the host calls `subscript_rt_ctx_collect`.
 
 ```ts
 class Frame {
@@ -589,6 +617,9 @@ A callback lambda can capture a `const`. A callback parameter has the
 value type of the handle, or `Error` in a rejection callback; another
 parameter type is rejected. A `catch` callback returns the
 value type of its handle; another result type is rejected with `S013`.
+Each capturing async arrow or callback of these forms allocates an
+environment that stays until a collection; the handle is counted
+([Memory is explicit](#memory-is-explicit)).
 The callbacks run in the order that `node` gives:
 
 ```ts
@@ -1212,6 +1243,9 @@ Every handle needs one `await` (S013), so collect the handles in an
 array or a `TaskGroup` and await them.
 A synchronous `then` or `catch` callback can capture a `const` local
 (§186). A capture of a `let`, a `var`, or `this` is S009.
+A capturing callback allocates an environment that waits for a
+collection, and each handle is counted
+([Memory is explicit](#memory-is-explicit)).
 To update `this`, use a class method: the async method awaits the read
 and then updates the fields.
 
