@@ -140,13 +140,21 @@ The emitted C carries it on the first member, so `sizeof` and
 `_Alignof` are the C compiler's answer, not the language's:
 
 ```c
-typedef struct SubC0 SubC0;
-struct SubC0 {
-    _Alignas(16) float d0;
-    float d1;
-    float d2;
+typedef struct SubC1 SubC1;
+struct SubC1 {
+    _Alignas(16) float d3;
+    float d4;
+    float d5;
 };
+_Static_assert(sizeof(SubC1) == 16, "value class size");
+_Static_assert(_Alignof(SubC1) == 16, "value class alignment");
+_Static_assert(offsetof(SubC1, d3) == 0, "value class field offset");
+_Static_assert(offsetof(SubC1, d4) == 4, "value class field offset");
+_Static_assert(offsetof(SubC1, d5) == 8, "value class field offset");
 ```
+
+The emitter writes `_Static_assert` lines that compare `sizeof`, `_Alignof`, and each
+`offsetof`, so a layout that differs fails the C build (§179 rule 7).
 
 ### 4. Null is a checked union, not a segfault
 

@@ -415,6 +415,36 @@ completion, as in JavaScript. A trap runs no `finally` block (§180). A
 rule 7, §180). `throw 42` and `catch (e: any)` are
 rejected with `S010`.
 
+The finalizer completes its `await` before the function returns from the catch block:
+
+```ts
+async function recover(): Promise<i32> {
+  try {
+    throw new Error("retry");
+  } catch (e) {
+    if (e instanceof Error) {
+      print(`caught ${e.message}`);
+    }
+    return 7;
+  } finally {
+    print("cleanup start");
+    await Context.suspend();
+    print("cleanup end");
+  }
+}
+
+export async function main(): Promise<void> {
+  print(`result=${await recover()}`);
+}
+```
+
+```text
+caught retry
+cleanup start
+cleanup end
+result=7
+```
+
 `JSON.parse<T>` returns a `T`. Malformed text raises `SyntaxError`
 with the UTF-8 byte offset of the first byte the parser cannot accept.
 A document that does not match `T` raises `TypeError`:
@@ -519,6 +549,35 @@ A named async function is a value. An async arrow can capture a `const`
 local of an enclosing function; the arrow can then be stored, returned,
 and called later (§181). A captured `let`, `var`, parameter, or `this`
 is rejected with `S009`: copy the value into a `const` first.
+
+The returned object holds the arrow after `makeJob` returns:
+
+```ts
+class Job {
+  run: () => Promise<i32>;
+  constructor(run: () => Promise<i32>) {
+    this.run = run;
+  }
+}
+
+function makeJob(): Job {
+  const base: i32 = 7;
+  return new Job(async (): Promise<i32> => {
+    await Context.suspend();
+    return base;
+  });
+}
+
+export async function main(): Promise<void> {
+  const job: Job = makeJob();
+  print(`result=${await job.run()}`);
+}
+```
+
+```text
+result=7
+```
+
 A local, an array, a field, or a global can hold
 a handle (§70.3 rule 2a). A handle can pass to another function.
 Every handle a program creates must have
@@ -747,6 +806,34 @@ export function main(): void {
 position=2
 position=6
 position=12
+```
+
+An early `break` closes the generator and runs the finalizer around its current
+`yield` (§180 rule 7):
+
+```ts
+function* values(): Generator<i32> {
+  try {
+    yield 1;
+    yield 2;
+  } finally {
+    print("generator cleanup");
+  }
+}
+
+export function main(): void {
+  for (const value of values()) {
+    print(`value=${value}`);
+    break;
+  }
+  print("loop end");
+}
+```
+
+```text
+value=1
+generator cleanup
+loop end
 ```
 
 `Generator<T>.next()` gives the explicit form, with `done` and `value`

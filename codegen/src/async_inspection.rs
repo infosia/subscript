@@ -11,7 +11,7 @@ pub struct AsyncTaskInfo {
     pub awaited_task_id: u64,
     /// READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
     pub state: u32,
-    /// Invocation=1, aggregate=2.
+    /// Invocation=1, aggregate=2, group join=3, host operation=4.
     pub kind: u32,
     /// Tier-local function allocation position id.
     pub function_pos_id: u32,
