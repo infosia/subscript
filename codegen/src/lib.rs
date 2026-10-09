@@ -46,7 +46,7 @@ mod root_storage;
 mod ship;
 
 pub use cemit::CProgram;
-pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
+pub use emit_files::{emit_c_files, emit_c_files_with_options, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_configured, jit_bench_with_warmup_floor, jit_compile_time, run_jit,
     run_jit_configured, run_jit_with_alloc_failure,
@@ -71,6 +71,10 @@ pub use ship::{
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
 pub struct RunConfig<'a> {
+    /// Standard modules enabled by this build.
+    pub enabled_modules: &'a [&'a str],
+    /// Development-tier file provider copied before module initialization.
+    pub file_provider: Option<subscript_runtime::ffi::FileProvider>,
     /// Native libraries available to foreign calls.
     pub native_libraries: &'a [NativeLibrary],
     /// Object-level Context allocation number to reject.
@@ -79,6 +83,10 @@ pub struct RunConfig<'a> {
     pub freed_handle_diagnostics: bool,
     /// Requests post-run Context accounting from the development tier.
     pub memory_accounting: bool,
+    /// Shipping-tier hook called after Context creation and before the
+    /// module initializer. A host sets Context options here, such as a
+    /// file provider (§185 rule 3).
+    pub pre_init_hook: Option<&'a str>,
     /// Shipping-tier hook called after initialization and before the entry.
     pub pre_entry_hook: Option<&'a str>,
     /// Shipping-tier hook called after the run and before Context release.
@@ -86,6 +94,23 @@ pub struct RunConfig<'a> {
 }
 
 impl<'a> RunConfig<'a> {
+    /// Enables the named standard modules for checking and execution.
+    #[must_use]
+    pub fn with_enabled_modules(mut self, modules: &'a [&'a str]) -> Self {
+        self.enabled_modules = modules;
+        self
+    }
+
+    pub(crate) fn check_options(self) -> subscript_compiler::CheckOptions {
+        let mut options = subscript_compiler::CheckOptions::default();
+        options.enabled_modules = self
+            .enabled_modules
+            .iter()
+            .map(|m| (*m).to_owned())
+            .collect();
+        options
+    }
+
     /// Makes `libraries` available to foreign calls.
     #[must_use]
     pub fn with_native_libraries(mut self, libraries: &'a [NativeLibrary]) -> Self {

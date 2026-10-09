@@ -6,6 +6,7 @@
 
 const HOST_OPERATION_SOURCE: &str = include_str!("context/host_operation.rs");
 
+const FILE_SOURCE: &str = include_str!("ffi/files.rs");
 const FFI_SOURCE: &str = include_str!("ffi.rs");
 const TASK_SOURCE: &str = include_str!("context/async_inspection.rs");
 const CONTEXT_SOURCE: &str = include_str!("context.rs");
@@ -84,6 +85,7 @@ pub fn render() -> Result<String, String> {
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.extend(parse_functions(FFI_SOURCE, "subscript_rt_complete_")?);
+    functions.extend(parse_functions(FILE_SOURCE, "subscript_rt_ctx_")?);
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     // §111 rule 5a. The registration reader is host API, and its name
     // carries no `subscript_rt_ctx_` prefix, so the generator names it.
@@ -237,6 +239,38 @@ pub fn render() -> Result<String, String> {
         ));
     }
     out.push_str("} subscript_rt_completion_status;\n\n");
+    for (rust, c) in [
+        ("FileReadCallback", "subscript_rt_file_read"),
+        ("FileWriteCallback", "subscript_rt_file_write"),
+    ] {
+        let f = parse_fn_type(FILE_SOURCE, rust)?;
+        let params = f
+            .params
+            .iter()
+            .map(|(_, ty)| c_type(ty).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?
+            .join(", ");
+        push_comment(
+            &mut out,
+            &docs_for(FILE_SOURCE, &format!("pub type {rust}"))?,
+        );
+        out.push_str(&format!("typedef void (*{c})({params});\n"));
+    }
+    push_comment(&mut out, &docs_for(FILE_SOURCE, "pub struct FileProvider")?);
+    out.push_str("typedef struct subscript_rt_file_provider {\n");
+    for (field, c) in [
+        ("size", "size_t"),
+        ("userdata", "void*"),
+        ("read", "subscript_rt_file_read"),
+        ("write", "subscript_rt_file_write"),
+    ] {
+        out.push_str("    /**\n");
+        for line in docs_for(FILE_SOURCE, &format!("pub {field}:"))? {
+            out.push_str(&format!("     * {line}\n"));
+        }
+        out.push_str(&format!("     */\n    {c} {field};\n"));
+    }
+    out.push_str("} subscript_rt_file_provider;\n\n");
 
     out.push_str("typedef struct subscript_rt_async_step_report {\n");
     for field in ["dispatched", "pending", "unfinished", "budget_exhausted"] {
@@ -281,6 +315,10 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_print_observer" {
             push_comment(&mut out, &print_observer_setter_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_file_provider" {
+            let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
+            push_comment(&mut out, &docs_for(FILE_SOURCE, &declaration)?);
         }
         if function.name == "subscript_rt_ctx_set_diagnostics_observer" {
             push_comment(&mut out, &diagnostics_observer_setter_docs);
@@ -517,6 +555,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
     match rust {
         "()" => Ok("void"),
         "usize" => Ok("size_t"),
+        "*const FileProvider" => Ok("const subscript_rt_file_provider*"),
         "CompletionEndpoint" => Ok("subscript_rt_completion"),
         "CompletionStatus" => Ok("subscript_rt_completion_status"),
         "*const c_void" => Ok("const void*"),
@@ -702,6 +741,51 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
             16
         );
         assert_eq!(std::mem::size_of::<WorkerMessageDescriptor>(), 24);
+    }
+
+    #[test]
+    fn generated_file_provider_matches_the_rust_c_layout() {
+        use crate::ffi::FileProvider;
+        let header = render().expect("render host header");
+        let fields = [
+            "    size_t size;\n",
+            "    void* userdata;\n",
+            "    subscript_rt_file_read read;\n",
+            "    subscript_rt_file_write write;\n",
+            "} subscript_rt_file_provider;",
+        ];
+        let start = header
+            .find("typedef struct subscript_rt_file_provider {\n")
+            .expect("provider struct");
+        let mut at = start;
+        for field in fields {
+            let found = header[at..].find(field).expect(field);
+            at += found + field.len();
+        }
+        let pointer = std::mem::size_of::<usize>();
+        assert_eq!(std::mem::offset_of!(FileProvider, size), 0);
+        assert_eq!(std::mem::offset_of!(FileProvider, userdata), pointer);
+        assert_eq!(std::mem::offset_of!(FileProvider, read), 2 * pointer);
+        assert_eq!(std::mem::offset_of!(FileProvider, write), 3 * pointer);
+        assert_eq!(std::mem::size_of::<FileProvider>(), 4 * pointer);
+    }
+
+    #[test]
+    fn generated_host_header_documents_the_file_provider_contract() {
+        let header = render().expect("render host header");
+        let setter = header
+            .find("void subscript_rt_ctx_set_file_provider(")
+            .expect("setter");
+        let comment = &header[header[..setter].rfind("/**").expect("setter comment")..setter];
+        for text in [
+            "A null pointer removes the provider.",
+            "smaller than the current record disables the provider.",
+            "Copies the provider record onto the",
+            "before `subscript_init`",
+        ] {
+            assert!(comment.contains(text), "{text}");
+        }
+        assert!(header.contains("`data` can be NULL when `data_length` is 0."));
     }
 
     #[test]

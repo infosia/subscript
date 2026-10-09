@@ -1089,6 +1089,26 @@ most existing TypeScript code will not compile here. The ecosystem is
 written against the patterns this list rejects. That is structural.
 subscript uses TypeScript's syntax and tooling, not its ecosystem.
 
+## Host-enabled files
+
+The host enables whole-file I/O with `--enable-module node:fs/promises`.
+The host installs a file provider before module initialization.
+This fragment reads UTF-8 text:
+
+```ts
+// enable-module: node:fs/promises
+import { readFile } from "node:fs/promises";
+async function readMessage(path: string): Promise<string> {
+  return await readFile(path, "utf8");
+}
+```
+
+`readFile(path)` returns `u8[]`. `writeFile(path, data)` accepts a string or `u8[]`.
+A missing provider or a file failure reaches `await` as an `Error`.
+A Worker Context has no provider, so a file call in a Worker completes with that `Error`.
+The host interprets paths and completes requests on the Context owner thread.
+C25 records the differences from Node.js.
+
 ## Tooling
 
 Accepted programs are valid TypeScript, so `tsc` and tsserver work on

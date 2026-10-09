@@ -10,7 +10,8 @@ use corpus::interop;
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{check_program, hir, SourceFile, Type};
+use corpus::check_program;
+use subscript_compiler::{hir, SourceFile, Type};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")

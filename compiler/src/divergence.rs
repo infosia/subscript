@@ -21,6 +21,19 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// A build that does not enable the standard file module rejects its import.
+    FileModuleDisabled,
+    /// A file read encoding is the literal `"utf8"`, not a `string` value.
+    FileModuleEncoding,
+    /// File write data is a `u8[]` value, not an array of another number type.
+    FileModuleNumberArray,
+    /// A file path or text is a `string` value, not a string-literal union alias.
+    FileModuleStringAlias,
+    /// The standard file module is imported with named specifiers only.
+    FileModuleImportForm,
+    /// A standard file function is called directly, not held as a value.
+    FileModuleFunctionValue,
+
     /// Only a literal zero length store statement clears a dynamic array.
     ArrayLengthStore,
     /// An abstract property has no implementation without class inheritance.
@@ -1015,6 +1028,12 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::FileModuleDisabled,
+        Divergence::FileModuleEncoding,
+        Divergence::FileModuleNumberArray,
+        Divergence::FileModuleStringAlias,
+        Divergence::FileModuleImportForm,
+        Divergence::FileModuleFunctionValue,
         Divergence::ArrayLengthStore,
         Divergence::AbstractMember,
         Divergence::NestedNominalClass,

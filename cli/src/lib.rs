@@ -15,13 +15,12 @@ use std::time::{Duration, SystemTime};
 use program_loader::load_program;
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
 use subscript_codegen::{
-    add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c_files,
-    host_c_compiler, include_directory_arg, run_jit, runtime_system_libraries, CCompilerStyle,
-    EmitCFilesError, RunError,
+    add_c11_optimized_flags, add_executable_output, add_object_directory,
+    emit_c_files_with_options, host_c_compiler, include_directory_arg, run_jit_configured,
+    runtime_system_libraries, CCompilerStyle, EmitCFilesError, RunError,
 };
 use subscript_compiler::{
-    check_program, check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile,
-    Warning,
+    check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile, Warning,
 };
 use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
@@ -116,6 +115,7 @@ fn usage() -> &'static str {
 
 #[derive(Debug, Default)]
 struct SourceArguments {
+    enabled_modules: Vec<String>,
     source: Option<PathBuf>,
     mirrors: Vec<PathBuf>,
     deny_warnings: bool,
@@ -127,7 +127,7 @@ fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Fail
         .source
         .as_ref()
         .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
-    let (files, warnings) = load_and_check(source, &parsed.mirrors)?;
+    let (files, warnings) = load_and_check(source, &parsed.mirrors, &parsed.enabled_modules)?;
     if warnings.is_empty() {
         writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
             .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
@@ -152,6 +152,7 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
             }
+            Some("--enable-module") => parsed.enabled_modules.push(module_value(args, &mut index)?),
             Some("--mirror") => {
                 parsed
                     .mirrors
@@ -178,6 +179,7 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
 fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
     let mut source = None;
     let mut mirrors = Vec::new();
+    let mut enabled_modules = Vec::new();
     let mut output = None;
     let mut write_entry = true;
     let mut deny_warnings = false;
@@ -188,6 +190,7 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
             }
+            Some("--enable-module") => enabled_modules.push(module_value(args, &mut index)?),
             Some("--mirror") => mirrors.push(path_value(args, &mut index, "--mirror")?),
             Some("-o") => set_once(&mut output, path_value(args, &mut index, "-o")?, "-o")?,
             Some("--no-entry") => write_entry = false,
@@ -206,16 +209,22 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
     }
     let source = source.ok_or_else(|| Failure::usage("emit requires <file.ts>"))?;
     let output = output.ok_or_else(|| Failure::usage("emit requires -o <dir>"))?;
-    let (files, warnings) = load_and_check(&source, &mirrors)?;
+    let (files, warnings) = load_and_check(&source, &mirrors, &enabled_modules)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
             return Ok(PROGRAM_ERROR);
         }
     }
-    emit_c_files(&files, &output, "program", write_entry)
-        .map(|_| SUCCESS)
-        .map_err(|error| map_emit_error(error, &files))
+    emit_c_files_with_options(
+        &files,
+        &output,
+        "program",
+        write_entry,
+        &module_options(&enabled_modules),
+    )
+    .map(|_| SUCCESS)
+    .map_err(|error| map_emit_error(error, &files))
 }
 
 #[derive(Debug, Default)]
@@ -384,6 +393,7 @@ fn parse_style(value: &str) -> Result<CCompilerStyle, Failure> {
 
 #[derive(Debug, Default)]
 struct BuildArguments {
+    enabled_modules: Vec<String>,
     source: Option<PathBuf>,
     mirrors: Vec<PathBuf>,
     hosts: Vec<PathBuf>,
@@ -420,7 +430,8 @@ fn build_command<O: Write, E: Write>(
         || source.parent().unwrap_or(&current).join("subscript-build"),
         |path| absolute(&path, &current),
     );
-    let (files, warnings) = load_and_check(&source_given, &parsed.mirrors)?;
+    let (files, warnings) =
+        load_and_check(&source_given, &parsed.mirrors, &parsed.enabled_modules)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if parsed.deny_warnings {
@@ -428,15 +439,25 @@ fn build_command<O: Write, E: Write>(
         }
     }
     if hosts.is_empty() {
-        let module = check_program(&files).map_err(|diagnostics| rejection(&files, diagnostics))?;
+        let module = subscript_compiler::check_program_with(
+            &files,
+            &module_options(&parsed.enabled_modules),
+        )
+        .map_err(|diagnostics| rejection(&files, diagnostics))?;
         module
             .runner_main()
             .map_err(|diagnostic| rejection(&files, vec![diagnostic]))?;
     }
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
-    let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
-        .map_err(|error| map_emit_error(error, &files))?;
+    let emitted = emit_c_files_with_options(
+        &files,
+        &output,
+        "program",
+        hosts.is_empty(),
+        &module_options(&parsed.enabled_modules),
+    )
+    .map_err(|error| map_emit_error(error, &files))?;
     let executable = executable_path(&output, &source)?;
     compile_build(
         &emitted.source,
@@ -463,6 +484,7 @@ fn parse_build_arguments(args: &[OsString]) -> Result<BuildArguments, Failure> {
                 let value = path_value(args, &mut index, "--source")?;
                 set_once(&mut parsed.source, value, "--source")?;
             }
+            Some("--enable-module") => parsed.enabled_modules.push(module_value(args, &mut index)?),
             Some("--mirror") => parsed
                 .mirrors
                 .push(path_value(args, &mut index, "--mirror")?),
@@ -601,12 +623,16 @@ fn run_command<O: Write, E: Write>(
     let mut source = None;
     let mut deny_warnings = false;
     let mut watch = false;
-    for arg in args {
+    let mut enabled_modules = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
         match arg.to_str() {
             Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
             }
+            Some("--enable-module") => enabled_modules.push(module_value(args, &mut index)?),
             Some("--watch") if !watch => watch = true,
             Some("--watch") => {
                 return Err(Failure::usage("--watch may be supplied only once"));
@@ -617,22 +643,27 @@ fn run_command<O: Write, E: Write>(
             _ if source.is_none() => source = Some(PathBuf::from(arg)),
             _ => return Err(Failure::usage("run requires exactly one <file.ts>")),
         }
+        index += 1;
     }
     let source = source.ok_or_else(|| Failure::usage("run requires exactly one <file.ts>"))?;
     if watch {
-        return run_watch(&source, deny_warnings, stdout, stderr);
+        return run_watch(&source, deny_warnings, enabled_modules, stdout, stderr);
     }
-    let (files, warnings) = load_and_check(&source, &[])?;
+    let (files, warnings) = load_and_check(&source, &[], &enabled_modules)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
             return Ok(PROGRAM_ERROR);
         }
     }
-    match run_jit(&files) {
+    let modules: Vec<_> = enabled_modules.iter().map(String::as_str).collect();
+    match run_jit_configured(
+        &files,
+        subscript_codegen::RunConfig::default().with_enabled_modules(&modules),
+    ) {
         Ok(output) => {
             stdout
-                .write_all(&output)
+                .write_all(&output.stdout)
                 .map_err(|error| Failure::usage(format!("write program stdout: {error}")))?;
             Ok(SUCCESS)
         }
@@ -767,10 +798,11 @@ fn initial_watch_load(
 fn run_watch<O: Write, E: Write>(
     source: &Path,
     deny_warnings: bool,
+    enabled_modules: Vec<String>,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
-    let mut session = WatchSession::new(deny_warnings);
+    let mut session = WatchSession::new_with_modules(deny_warnings, enabled_modules);
     let (mut watched, initial) = initial_watch_load(source, |path| load_program(path, &[]))?;
     match initial {
         Ok(initial_files) => {
@@ -898,8 +930,11 @@ fn rejection(files: &[SourceFile], diagnostics: Vec<Diagnostic>) -> Failure {
     Failure::rejection(render_diagnostics(files, &diagnostics))
 }
 
-fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
-    match check_program(files) {
+fn accepted_warnings(
+    files: &[SourceFile],
+    enabled_modules: &[String],
+) -> Result<Vec<Warning>, Failure> {
+    match subscript_compiler::check_program_with(files, &module_options(enabled_modules)) {
         Ok(module) => Ok(check_warnings(&module)),
         Err(diagnostics) => Err(rejection(files, diagnostics)),
     }
@@ -909,9 +944,10 @@ fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
 fn load_and_check(
     source: &Path,
     mirrors: &[PathBuf],
+    enabled_modules: &[String],
 ) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
     let files = load_program(source, mirrors)?;
-    let warnings = accepted_warnings(&files)?;
+    let warnings = accepted_warnings(&files, enabled_modules)?;
     Ok((files, warnings))
 }
 
@@ -974,6 +1010,21 @@ fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
     if !paths.contains(&path) {
         paths.push(path);
     }
+}
+
+fn module_options(modules: &[String]) -> subscript_compiler::CheckOptions {
+    let mut options = subscript_compiler::CheckOptions::default();
+    options.enabled_modules = modules.to_vec();
+    options
+}
+fn module_value(args: &[OsString], index: &mut usize) -> Result<String, Failure> {
+    let value = path_value(args, index, "--enable-module")?;
+    if value != Path::new("node:fs/promises") {
+        return Err(Failure::usage(
+            "the enabled standard module must be node:fs/promises",
+        ));
+    }
+    Ok("node:fs/promises".into())
 }
 
 #[cfg(test)]

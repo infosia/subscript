@@ -126,3 +126,11 @@ declare interface Array<T> {
   findLastIndex(predicate: (value: T, index: i32) => boolean): i32;
 }
 declare interface String { at(index: i32): string; }
+
+/** Whole-file operations enabled by the host build (§185). */
+declare module "node:fs/promises" {
+  export function readFile(path: string, encoding: "utf8"): Promise<string>;
+  export function readFile(path: string): Promise<u8[]>;
+  export function writeFile(path: string, data: string): Promise<void>;
+  export function writeFile(path: string, data: u8[]): Promise<void>;
+}

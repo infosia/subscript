@@ -866,3 +866,103 @@ The stock tsc controls use the compiler options stated in section 1 and TypeScri
 Each control uses `tsc --project` with a config that lists the prelude and the candidate inputs explicitly.
 The prototype config lists the prelude, its C mirror, `files.ts`, and `main.ts`.
 The source program and its declarations use the same inputs for check-time and runtime enablement controls.
+
+## Implementation
+
+Red pin: `4fd0a713`. At the pin, the five CLI witnesses failed (0 passed, 5 failed, 0.01 s).
+
+| Witness | Red result |
+|---|---|
+| `a355`, CLI check and native runs with the option | Exit 2: `--enable-module` is unknown; no script runs |
+| `a355`, checker without the option | S100: the imported module is not in the program files |
+| `r399` | S100: the diagnostic does not name the enable option |
+| `r400`, `r401`, CLI checks with the option | Exit 2: the option is unknown; expected exit 1 with the accepted forms |
+| No-provider dev JIT test | Exit 2: the option is unknown; expected a caught provider `Error` |
+
+`tsc` accepts `a355` and `r399`, gives TS2345 on `r400`, and gives TS2305 on `r401`.
+Each corpus entry cites C25 and carries the Red pin.
+
+### Form
+
+The HIR carries a standard callee with one of four operations.
+The LIR `HostCompletion` carries a target: `Foreign(id)` or `Standard(operation)`.
+The verifier compares the result kind and the operands with the operation.
+Both native tiers create the source, then call `subscript_rt_file_operation`.
+That entry reads the Context provider, or completes the source with `missing file provider`.
+The CLI passes `--enable-module` through check, emit, build, run, and watch.
+
+The rejection program carries `enable-module=` options. A program with no key enables no module.
+A site has one `tsc` class, so the sites follow the measured `tsc` result.
+Each `Diverges` site carries its own divergence block (C25).
+
+| Site | Class | Witnesses (`tsc`) |
+|---|---|---|
+| `FileModuleDisabled` | Diverges | `s185-disabled` (accepts) |
+| `FileModuleArguments` | TscRejects | `s185-options` (TS2345), `s185-literal` (TS2345), `s185-bool-data` (TS2769), `s185-number-path` (TS2345) |
+| `FileModuleEncoding` | Diverges | `s185-encoding` (accepts), `s185-encoding-string` (TS2345) |
+| `FileModuleNumberArray` | Diverges | `s185-i32-data`, `s185-f64-data` (both accept) |
+| `FileModuleStringAlias` | Diverges | `s185-alias-path`, `s185-alias-data` (both accept) |
+| `FileModuleMember` | TscRejects | `s185-member` (TS2305) |
+| `FileModuleImportForm` | Diverges | `s185-namespace`, `s185-default`, `s185-bare`, `s185-reexport` (all accept) |
+| `FileModuleFunctionValue` | Diverges | `s185-function-value` (accepts) |
+
+`FileModuleEncoding` is a string expression other than the literal `"utf8"`.
+`tsc` accepts it only when its type is the literal `"utf8"`; the checker carries no literal string type.
+A `string`-typed encoding variable therefore renders the divergence block, where `tsc` gives TS2345.
+An unknown name in `CheckOptions::enabled_modules` is the `EnabledModuleUnknown` input guard.
+
+### Provider installation per tier
+
+| Tier | Installation |
+|---|---|
+| Dev JIT | `RunConfig.file_provider` is copied to the Context before the module initializer |
+| C AOT | `RunConfig.pre_init_hook` names a C function; the generated entry calls it after Context creation and before `subscript_init` |
+| CLI generated entry | No provider; a file call completes with the rule 5 `Error` |
+
+The C AOT runner refuses `RunConfig.file_provider`, because a C executable cannot call a Rust callback.
+The dev JIT refuses the three C hooks.
+`ReloadSession::new_configured` refuses every option except enabled modules, native libraries, and the file provider.
+The corpus harness links `corpus/interop/files.c` and names `subscript_test_files_setup` as the pre-init hook.
+Each test provider owns a scratch directory and defers the `pending.txt` read until the next write callback.
+A module-initializer read sees the provider in both tiers. With the hook after `subscript_init`, the same read completes with the rule 5 `Error`.
+A Worker Context has no provider; a read on it completes with the rule 5 `Error`, also when the parent has a provider.
+
+### Goldens
+
+`a355` gives its golden in the dev JIT and C AOT in the golden sweep.
+The LIR text golden adds the `a355` block.
+It also changes 14 existing `HostCompletion` lines from `function: ForeignFunctionId(n)` to `target: Foreign(ForeignFunctionId(n))`.
+No `.expected` file other than `a355` changes.
+
+### Test cost
+
+Debug build, warm, `finished in` of two runs.
+
+| Test file | Tests | Cost | C AOT builds |
+|---|---:|---|---|
+| `codegen/tests/file_module.rs` | 8 | 0.95–0.97 s | three: the pre-init hook, its post-init control, and the no-provider run |
+| `runtime/tests/file_provider.rs` | 5 (1 ignored) | 0.00 s | none |
+| `cli/tests/file_module.rs` | 8 | 0.96–1.26 s | one: `build --run` |
+
+The golden sweep runs `a355` in both tiers, so `codegen/tests/file_module.rs` does not run it again.
+The release-only failure of `the_rust_setter_installs_removes_and_refuses_a_short_record` was a test defect: its helper held a `&mut Request` across the callback that writes through the userdata pointer, so release code read the cleared path; the helper now takes the one raw userdata pointer.
+
+### One MiB cost
+
+Driver: `one_mib_file_operation_cost` in `runtime/tests/file_provider.rs` (ignored; run it with `--release -- --ignored`).
+Each sample times one `subscript_rt_file_operation` call on a fresh Context and source, 11 samples.
+The time includes dispatch, the Rust provider file I/O, and the completion.
+The fixture is 1,048,576 ASCII `a` bytes.
+
+| Context | Operation | Median, µs | Minimum, µs |
+|---|---|---:|---:|
+| dev | read text | 113.834 | 108.333 |
+| dev | read bytes | 77.500 | 71.250 |
+| dev | write text | 337.291 | 233.916 |
+| dev | write bytes | 135.125 | 123.875 |
+| ship | read text | 96.667 | 92.792 |
+| ship | read bytes | 61.709 | 60.583 |
+| ship | write text | 330.500 | 159.125 |
+| ship | write bytes | 129.083 | 117.416 |
+
+The §5 prototype rows for a file read with completion are 141.542–147.083 µs (text) and 86.792–90.500 µs (bytes).

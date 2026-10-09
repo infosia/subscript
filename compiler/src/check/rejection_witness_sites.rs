@@ -3,6 +3,14 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::FileModuleDisabled,
+    RejectionSite::FileModuleArguments,
+    RejectionSite::FileModuleEncoding,
+    RejectionSite::FileModuleNumberArray,
+    RejectionSite::FileModuleStringAlias,
+    RejectionSite::FileModuleMember,
+    RejectionSite::FileModuleImportForm,
+    RejectionSite::FileModuleFunctionValue,
     RejectionSite::ErrorMemberOutsideSurface,
     RejectionSite::NestedNominalClass,
     RejectionSite::AbstractMember,
@@ -83,6 +91,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::SetCallbackArgumentCount,
     RejectionSite::DescriptorRequiredMemberMissing,
     RejectionSite::SourceFilesEmpty,
+    RejectionSite::EnabledModuleUnknown,
     RejectionSite::ParserLoneSurrogateEscape,
     RejectionSite::ParserSyntaxError,
     RejectionSite::ClassAlignmentBelowNatural,

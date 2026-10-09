@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program, Diagnostic, SourceFile};
+use subscript_compiler::{Diagnostic, SourceFile};
 
 use crate::{emit_c, emit_c_without_main, AOT_ENTRY_C};
 
@@ -91,12 +91,33 @@ pub fn emit_c_files(
     label: &str,
     write_entry: bool,
 ) -> Result<EmittedCFiles, EmitCFilesError> {
+    emit_c_files_with_options(
+        files,
+        out_dir,
+        label,
+        write_entry,
+        &subscript_compiler::CheckOptions::default(),
+    )
+}
+
+/// Emits a program with explicit standard-module build options.
+///
+/// # Errors
+/// Returns the same failures as emit_c_files.
+pub fn emit_c_files_with_options(
+    files: &[SourceFile],
+    out_dir: &Path,
+    label: &str,
+    write_entry: bool,
+    options: &subscript_compiler::CheckOptions,
+) -> Result<EmittedCFiles, EmitCFilesError> {
     std::fs::create_dir_all(out_dir).map_err(|source| EmitCFilesError::Io {
         action: "create",
         path: out_dir.to_path_buf(),
         source,
     })?;
-    let hir = check_program(files).map_err(EmitCFilesError::Diagnostics)?;
+    let hir = subscript_compiler::check_program_with(files, options)
+        .map_err(EmitCFilesError::Diagnostics)?;
     let program = if write_entry {
         hir.runner_main()
             .map_err(|diagnostic| EmitCFilesError::Diagnostics(vec![diagnostic]))?;
@@ -153,6 +174,7 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), EmitCFilesError> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use subscript_compiler::check_program;
 
     struct TestDir(PathBuf);
 
@@ -222,6 +244,27 @@ mod tests {
             assert!(!text.contains("#include \"program.h\""));
         }
         assert_eq!(labeled.source_len, source.len());
+        Ok(())
+    }
+
+    #[test]
+    fn emit_with_options_applies_the_enabled_modules() -> Result<(), String> {
+        let directory = TestDir::new()?;
+        let files = [SourceFile::entry(
+            "main.ts",
+            "import { readFile } from 'node:fs/promises';\n\
+             export async function main(): Promise<void> { print(await readFile('a', 'utf8')); }\n",
+        )];
+        let mut options = subscript_compiler::CheckOptions::default();
+        options.enabled_modules.push("node:fs/promises".to_owned());
+        let written = emit_c_files_with_options(&files, &directory.0, "program", true, &options)
+            .map_err(|e| e.to_string())?;
+        let source = std::fs::read_to_string(&written.source).map_err(|e| e.to_string())?;
+        assert!(source.contains("subscript_rt_file_operation"));
+        // The firing control: the default options reject the import.
+        let error = emit_c_files(&files, &directory.0, "program", true)
+            .expect_err("the disabled module must be rejected");
+        assert!(matches!(error, EmitCFilesError::Diagnostics(_)));
         Ok(())
     }
 

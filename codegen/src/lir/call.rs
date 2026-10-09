@@ -48,6 +48,22 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 return self.lower_static_array_callback(*operation, args, expr);
             }
         }
+        if let hir::Callee::Standard(operation) = callee {
+            let mut operands = Vec::new();
+            for argument in args {
+                operands.push(self.require_expr(argument)?);
+            }
+            let kind =
+                self.host_completion_kind(l::HostCompletionTarget::Standard(*operation), expr)?;
+            return self.emit(
+                kind,
+                operands,
+                Some(l::ValueType::Data(expr.ty.clone())),
+                true,
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
+                expr.pos.clone(),
+            );
+        }
         if matches!(
             callee,
             hir::Callee::Map(hir::MapFn::ForEach) | hir::Callee::Set(hir::SetFn::ForEach)
@@ -229,7 +245,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .collect::<Vec<_>>();
         let instruction_kind = if let l::CallTargetKind::Foreign(id) = target.kind {
             if completion {
-                self.host_completion_kind(id, expr)?
+                self.host_completion_kind(l::HostCompletionTarget::Foreign(id), expr)?
             } else {
                 l::InstructionKind::Call(target)
             }
@@ -371,6 +387,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .collect::<Vec<_>>()
         };
         match callee {
+            hir::Callee::Standard(_) => {
+                Err(self.error(&expr.pos, "standard operation bypassed completion lowering"))
+            }
             hir::Callee::Func(name) => {
                 let function = self
                     .lowering
@@ -451,6 +470,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expr: &hir::Expr,
     ) -> Result<CallResolution, LowerError> {
         match callee {
+            hir::Callee::Standard(_) => {
+                Err(self.error(&expr.pos, "standard operation bypassed completion lowering"))
+            }
             hir::Callee::Func(name) => {
                 let record = self
                     .lowering

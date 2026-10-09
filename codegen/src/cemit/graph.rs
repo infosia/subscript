@@ -529,7 +529,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
             l::InstructionKind::HostCompletion {
-                function,
+                target,
                 result_size,
                 result_kind,
                 error_metadata,
@@ -584,14 +584,45 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 self.assign(out, result, &call)?;
                 self.emit_pending_check(out);
-                self.emit_foreign_call(
-                    out,
-                    instruction,
-                    *function,
-                    &operands,
-                    &operand_types,
-                    (None, Some(endpoint)),
-                )
+                match target {
+                    l::HostCompletionTarget::Foreign(function) => self.emit_foreign_call(
+                        out,
+                        instruction,
+                        *function,
+                        &operands,
+                        &operand_types,
+                        (None, Some(endpoint)),
+                    ),
+                    l::HostCompletionTarget::Standard(operation) => {
+                        let path = operands
+                            .first()
+                            .ok_or_else(|| internal("standard file operation has no path"))?;
+                        let data = operands.get(1).cloned().unwrap_or_else(|| "NULL".into());
+                        let call = self.emitter.runtime_call(
+                            "void",
+                            "subscript_rt_file_operation",
+                            &[
+                                "void*".into(),
+                                "uint32_t".into(),
+                                "const uint8_t*".into(),
+                                "const uint8_t*".into(),
+                                "const subscript_rt_completion*".into(),
+                            ],
+                            &[
+                                "ctx".into(),
+                                format!("{}u", *operation as u32),
+                                format!("(const uint8_t*)({path})"),
+                                format!("(const uint8_t*)({data})"),
+                                format!("&{endpoint}"),
+                            ],
+                        );
+                        let _ = writeln!(out, "    {call};");
+                        self.consume_runtime_traps(out, &instruction.traps, true, true)
+                    }
+                    other => Err(internal(format!(
+                        "host completion target {other:?} is invalid"
+                    ))),
+                }
             }
             l::InstructionKind::AsyncHandleCreate(target) => {
                 let function = match target.kind {

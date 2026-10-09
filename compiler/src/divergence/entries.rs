@@ -9,6 +9,42 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::FileModuleDisabled => DivergenceEntry {
+                ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
+                subscript: "no equivalent; enable node:fs/promises in the build and provide the host file callbacks",
+                why: "The host enables file access and supplies the I/O, so a build names each standard module that it enables.",
+                collision: "C25",
+            },
+            Divergence::FileModuleEncoding => DivergenceEntry {
+                ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const encoding = \"utf8\"; await readFile(\"text.txt\", encoding); }",
+                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
+                why: "The checker has no literal string type, so only the literal \"utf8\" argument selects the text read.",
+                collision: "C25",
+            },
+            Divergence::FileModuleNumberArray => DivergenceEntry {
+                ts: "import {writeFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const data: i32[] = [1, 2]; await writeFile(\"data.bin\", data); }",
+                subscript: "import {writeFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const data: u8[] = [1, 2]; await writeFile(\"data.bin\", data); }",
+                why: "The prelude declares every number type as number, but the bytes write takes the u8[] layout only.",
+                collision: "C25",
+            },
+            Divergence::FileModuleStringAlias => DivergenceEntry {
+                ts: "import {readFile} from \"node:fs/promises\"; type Name = \"a.txt\" | \"b.txt\"; export async function main(): Promise<void> { const name: Name = \"a.txt\"; await readFile(name, \"utf8\"); }",
+                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const name: string = \"a.txt\"; await readFile(name, \"utf8\"); }",
+                why: "A string-literal union alias value is an integer tag at run time, so it has no string for the host.",
+                collision: "C25",
+            },
+            Divergence::FileModuleImportForm => DivergenceEntry {
+                ts: "import * as Files from \"node:fs/promises\"; export async function main(): Promise<void> { await Files.readFile(\"text.txt\", \"utf8\"); }",
+                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
+                why: "The checker resolves each file call at its named import, so a namespace, default, bare import, or re-export has no form.",
+                collision: "C25",
+            },
+            Divergence::FileModuleFunctionValue => DivergenceEntry {
+                ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const read = readFile; await read(\"text.txt\", \"utf8\"); }",
+                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
+                why: "Each file call resolves to one host operation by its arguments, so a file function has no value form.",
+                collision: "C25",
+            },
             Divergence::CaptureOutlivesBlock => DivergenceEntry {
                 ts: "async function work(): Promise<i32> { return 7; } export function main(): void { let f: () => Promise<i32> = work; { const h = work(); f = () => h; } }",
                 subscript: "async function work(): Promise<i32> { return 7; } export function main(): void { { const h = work(); let f: () => Promise<i32> = () => h; } }",

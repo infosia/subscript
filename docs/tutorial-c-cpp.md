@@ -1553,3 +1553,34 @@ binds your header goes through `subscript build` (Step 7).
   workers.
 - [`runtime/include/subscript_runtime.h`](../runtime/include/subscript_runtime.h)
   — the generated header itself; every function is documented.
+
+## The file provider
+
+Enable `node:fs/promises` when you check or build the script.
+Before `subscript_init`, copy your provider onto the Context:
+
+```c
+subscript_rt_file_provider provider = {
+    sizeof(subscript_rt_file_provider), host_state, host_read, host_write
+};
+subscript_rt_ctx_set_file_provider(ctx, &provider);
+```
+
+The generated header declares `subscript_rt_file_read` and `subscript_rt_file_write` callback types.
+Each callback receives the Context, userdata, UTF-8 path bytes and length, the result form, and a completion endpoint.
+The write callback also receives the data bytes and length.
+Form 0 is text. Form 1 is bytes.
+Borrowed path and data bytes expire when the callback returns. Copy them before a deferred completion.
+Complete each read with `subscript_rt_complete_string` or `subscript_rt_complete_bytes`.
+Complete each write with `subscript_rt_complete_void`.
+Use `subscript_rt_complete_error` for failures.
+If a text completion returns `INVALID_UTF8` or `TOO_LARGE`, complete the still-pending source with an Error.
+Call each completion on the Context owner thread. Stop delivery before Context destruction.
+A null provider disables new requests. Existing requests keep their endpoints.
+With no provider, a call completes with the catchable Error `missing file provider`.
+A Worker Context has no provider: the provider runs on the Context owner thread, and a Worker runs on its own thread.
+The entry that `subscript run` and `subscript build` generate installs no provider.
+A host with its own `main` sets the provider before `subscript_init`.
+
+For the Rust development tier, set `RunConfig.enabled_modules` and `RunConfig.file_provider` before `ReloadSession::new_configured`.
+The session copies the provider before the module initializer runs.

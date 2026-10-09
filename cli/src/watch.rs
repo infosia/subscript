@@ -6,7 +6,7 @@
 //! the runner main and async roots after a start or accepted swap.
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
-use subscript_compiler::{check_program, check_warnings, Diagnostic, SourceFile, Warning};
+use subscript_compiler::{check_warnings, Diagnostic, SourceFile, Warning};
 
 /// The output and optional trap from one watched program call.
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +86,7 @@ pub struct WatchSession {
     session: Option<ReloadSession>,
     last_sources: Option<Vec<SourceFile>>,
     deny_warnings: bool,
+    enabled_modules: Vec<String>,
 }
 
 impl WatchSession {
@@ -96,6 +97,16 @@ impl WatchSession {
             session: None,
             last_sources: None,
             deny_warnings,
+            enabled_modules: Vec::new(),
+        }
+    }
+
+    /// Creates a watch state with standard modules enabled for every generation.
+    #[must_use]
+    pub fn new_with_modules(deny_warnings: bool, enabled_modules: Vec<String>) -> Self {
+        Self {
+            enabled_modules,
+            ..Self::new(deny_warnings)
         }
     }
 
@@ -118,7 +129,9 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
-        let checked = check_program(files).and_then(|module| {
+        let mut options = subscript_compiler::CheckOptions::default();
+        options.enabled_modules = self.enabled_modules.clone();
+        let checked = subscript_compiler::check_program_with(files, &options).and_then(|module| {
             module
                 .runner_main()
                 .map_err(|diagnostic| vec![diagnostic])?;
@@ -139,7 +152,11 @@ impl WatchSession {
     }
 
     fn start(&mut self, files: &[SourceFile], warnings: Vec<Warning>) -> WatchStep {
-        match ReloadSession::new_capturing_initializer_trap(files) {
+        let modules: Vec<_> = self.enabled_modules.iter().map(String::as_str).collect();
+        match ReloadSession::new_capturing_initializer_trap_configured(
+            files,
+            subscript_codegen::RunConfig::default().with_enabled_modules(&modules),
+        ) {
             Ok((mut session, Some(trap))) => {
                 // The initializer output is available in `trap.stdout`.
                 let _ = session.take_output();

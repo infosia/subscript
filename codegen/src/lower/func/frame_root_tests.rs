@@ -4,7 +4,7 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-// This test uses only the source discovery functions of the shared corpus helper.
+// This test uses the source discovery and build-option functions of the shared corpus helper.
 #[allow(dead_code)]
 #[path = "../../../tests/corpus/mod.rs"]
 mod corpus;
@@ -566,8 +566,7 @@ fn every_corpus_coroutine_field_matches_live_values_at_suspension() {
     let mut suspensions = 0;
     for (directory, id) in entries {
         let sources = corpus::entry_sources(&directory, &id);
-        let hir = subscript_compiler::check_program(&sources)
-            .unwrap_or_else(|error| panic!("{id}: {error:?}"));
+        let hir = corpus::check_program(&sources).unwrap_or_else(|error| panic!("{id}: {error:?}"));
         let lir = crate::lir::lower_module(&hir).expect("corpus LIR");
         if !lir
             .functions

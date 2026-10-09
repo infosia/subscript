@@ -473,6 +473,17 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(pos)
             }
+            Some(ScopeItem::StandardFile(_)) => {
+                self.reject_subset(
+                    RejectionSite::FileModuleFunctionValue,
+                    format!(
+                        "`{name}` from node:fs/promises can only be called; {}",
+                        crate::check::file_module::FORMS
+                    ),
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
             Some(ScopeItem::Foreign(_)) => {
                 self.reject_subset(
                     RejectionSite::ForeignFunctionValue,

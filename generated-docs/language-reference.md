@@ -364,22 +364,22 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r397-foreign-promise-without-completion.ts`](../corpus/reject/r397-foreign-promise-without-completion.ts), line 10.
+Pinned corpus: [`corpus/reject/r399-file-module-disabled.ts`](../corpus/reject/r399-file-module-disabled.ts), line 8.
 
 Header guidance:
 
 ```text
-// corpus-ambient: yes
 // tsc: accepts
-// expected-error: S100: foreign function `read` returns Promise<T> without a `@subscript-c-completion` directive
+// js-comparable: no C25: The host must enable the module at build time.
+// expected-error: S100, --enable-module node:fs/promises
 ```
 
 ```ts
-
-// @subscript-c-header include="host.h"
-declare function read(): Promise<i32>;
-
-// pin: 09a1a889
+// js-comparable: no C25: The host must enable the module at build time.
+// expected-error: S100, --enable-module node:fs/promises
+import { readFile } from "node:fs/promises";
+export async function main(): Promise<void> {
+  print(await readFile("text.txt", "utf8"));
 ```
 
 ## Listed diagnostic examples (§182)

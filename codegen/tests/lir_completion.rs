@@ -59,7 +59,7 @@ fn completion_form_carries_scalar_struct_void_layout_and_error_metadata() {
     assert_eq!(calls.len(), 3);
     for (function_body, instruction) in calls {
         let lir::InstructionKind::HostCompletion {
-            function,
+            target: lir::HostCompletionTarget::Foreign(function),
             result_size,
             result_kind,
             error_metadata,
@@ -191,7 +191,7 @@ fn verifier_checks_result_kind_metadata_and_operands() {
                 matches!(
                     i.kind,
                     lir::InstructionKind::HostCompletion {
-                        function: lir::ForeignFunctionId(0),
+                        target: lir::HostCompletionTarget::Foreign(lir::ForeignFunctionId(0)),
                         ..
                     }
                 )

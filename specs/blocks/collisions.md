@@ -737,6 +737,22 @@ Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable
 with no initializer, §158).
 
+### C25. `node:fs/promises` is a narrowed surface
+
+`import { readFile, writeFile } from "node:fs/promises"` takes four
+forms (`compiler.md` §185 rule 1), and the host does the I/O. `node`
+differs in four ways:
+
+1. `readFile(path)` gives `u8[]` here and a `Buffer` under `node`.
+2. An `Error` from the host carries a message and no `code`
+   (`ENOENT` and so on).
+3. `readFile(path, "utf8")` of bytes that are not UTF-8 is an `Error`
+   here; `node` replaces each invalid sequence with U+FFFD.
+4. Another member, another argument form (an options object, another
+   encoding), and a default or namespace import are rejected here.
+
+Accept: `a355`. Reject: `r399`, `r400`, `r401`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

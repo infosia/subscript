@@ -9,7 +9,8 @@ mod corpus;
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{check_program, render_diagnostics, RuleCode, SourceFile};
+use corpus::check_program;
+use subscript_compiler::{render_diagnostics, RuleCode, SourceFile};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
@@ -65,6 +66,9 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r399-file-module-disabled.ts", RuleCode::S100, 8),
+    ("r400-file-module-options-object.ts", RuleCode::S100, 11),
+    ("r401-file-module-other-member.ts", RuleCode::S100, 9),
     (
         "r397-foreign-promise-without-completion.ts",
         RuleCode::S100,

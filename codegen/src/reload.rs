@@ -64,7 +64,7 @@ use std::ffi::c_void;
 
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
-use subscript_compiler::{check_program, hir, Diagnostic, SourceFile, Type};
+use subscript_compiler::{hir, Diagnostic, SourceFile, Type};
 use subscript_runtime::Context;
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
@@ -619,6 +619,7 @@ pub struct ReloadSession {
     decls: DeclarationHash,
     runner_error: Option<subscript_compiler::Diagnostic>,
     native_libraries: Vec<NativeLibrary>,
+    check_options: subscript_compiler::CheckOptions,
 }
 
 /// One compiled generation: the module plus what the driver needs from
@@ -897,7 +898,63 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        let hirm = check_program(files).map_err(RunError::Rejected)?;
+        Self::build_configured(
+            files,
+            crate::RunConfig {
+                native_libraries: libraries,
+                ..crate::RunConfig::default()
+            },
+        )
+    }
+
+    /// Builds a session with enabled modules and a provider installed before initialization.
+    ///
+    /// # Errors
+    /// Returns the same failures as new_with_native_libraries.
+    /// [`RunError::Internal`] when `config` sets an option other than
+    /// `enabled_modules`, `native_libraries`, and `file_provider`.
+    pub fn new_configured(
+        files: &[SourceFile],
+        config: crate::RunConfig<'_>,
+    ) -> Result<Self, RunError> {
+        let (session, trap) = Self::build_configured(files, config)?;
+        match trap {
+            Some(trap) => Err(RunError::Trap(trap)),
+            None => Ok(session),
+        }
+    }
+
+    /// Captures an initializer trap with explicit standard-module configuration.
+    ///
+    /// # Errors
+    /// Returns the same build failures as new_capturing_initializer_trap.
+    pub fn new_capturing_initializer_trap_configured(
+        files: &[SourceFile],
+        config: crate::RunConfig<'_>,
+    ) -> Result<(Self, Option<TrapReport>), RunError> {
+        Self::build_configured(files, config)
+    }
+
+    fn build_configured(
+        files: &[SourceFile],
+        config: crate::RunConfig<'_>,
+    ) -> Result<(Self, Option<TrapReport>), RunError> {
+        if config.pre_init_hook.is_some()
+            || config.pre_entry_hook.is_some()
+            || config.post_run_hook.is_some()
+            || config.fail_alloc_after.is_some()
+            || config.freed_handle_diagnostics
+            || config.memory_accounting
+        {
+            return Err(RunError::Internal(internal(
+                "a reload session applies only enabled modules, native libraries, \
+                 and a file provider",
+            )));
+        }
+        let libraries = config.native_libraries;
+        let check_options = config.check_options();
+        let hirm = subscript_compiler::check_program_with(files, &check_options)
+            .map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm, libraries, PositionTable::new())?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
@@ -919,7 +976,11 @@ impl ReloadSession {
             decls,
             runner_error: hirm.runner_main().err(),
             native_libraries: libraries.to_vec(),
+            check_options,
         };
+        unsafe {
+            session.ctx.set_file_provider(config.file_provider);
+        }
         session.ctx.set_fn_table(session.table.as_ptr());
         session.ctx.set_globals(session.globals.ptr);
         let init_slot = gen
@@ -1176,7 +1237,8 @@ impl ReloadSession {
         if self.ctx.has_live_workers() {
             return Err(ReloadError::LiveWorkers);
         }
-        let hirm = check_program(files).map_err(ReloadError::Rejected)?;
+        let hirm = subscript_compiler::check_program_with(files, &self.check_options)
+            .map_err(ReloadError::Rejected)?;
         let decls = declaration_hash(&hirm);
         if decls != self.decls {
             return Err(ReloadError::DeclarationChanged {
@@ -1277,7 +1339,7 @@ mod tests {
     }
 
     fn hash_of(text: &str) -> DeclarationHash {
-        let m = check_program(&src(text)).expect("checks");
+        let m = subscript_compiler::check_program(&src(text)).expect("checks");
         declaration_hash(&m)
     }
 

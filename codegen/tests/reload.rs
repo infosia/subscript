@@ -22,9 +22,13 @@ mod pool;
 mod trap_corpus;
 
 use corpus::interop;
+#[allow(dead_code)]
+#[path = "support/files.rs"]
+mod file_fixture;
 
+use corpus::check_program;
 use subscript_codegen::{run_jit, EntryArg, ReloadError, ReloadSession, RunError};
-use subscript_compiler::{check_program, SourceFile};
+use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
 
 fn files(text: &str) -> Vec<SourceFile> {
@@ -708,7 +712,15 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
     } else {
         Vec::new()
     };
-    let mut session = match ReloadSession::new_with_native_libraries(sources, &libraries) {
+    // Only an entry that enables a module gets a scratch provider directory.
+    let mut files_fixture = None;
+    let mut config = if corpus::check_options(sources).enabled_modules.is_empty() {
+        subscript_codegen::RunConfig::default()
+    } else {
+        files_fixture.insert(file_fixture::Fixture::new()).config()
+    };
+    config.native_libraries = &libraries;
+    let mut session = match ReloadSession::new_configured(sources, config) {
         Ok(s) => s,
         Err(e) => {
             failures.push(format!("{id}: session failed: {e}"));

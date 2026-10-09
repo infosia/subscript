@@ -176,6 +176,40 @@ typedef enum subscript_rt_completion_status {
     SUBSCRIPT_RT_COMPLETION_TOO_LARGE = 6,
 } subscript_rt_completion_status;
 
+/**
+ * Starts a read; borrowed path bytes expire when this callback returns.
+ * Form 0 requests UTF-8 text; form 1 requests bytes. Complete the endpoint once on the owner thread.
+ */
+typedef void (*subscript_rt_file_read)(subscript_rt_context*, void*, const uint8_t*, size_t, uint32_t, subscript_rt_completion);
+/**
+ * Starts a write; borrowed path and data bytes expire when this callback returns.
+ * Form 0 supplies UTF-8 text; form 1 supplies bytes. Complete the endpoint once on the owner thread.
+ * `data` can be NULL when `data_length` is 0.
+ */
+typedef void (*subscript_rt_file_write)(subscript_rt_context*, void*, const uint8_t*, size_t, const uint8_t*, size_t, uint32_t, subscript_rt_completion);
+/**
+ * Host callbacks for the enabled file module (§185).
+ */
+typedef struct subscript_rt_file_provider {
+    /**
+     * Size of this provider record in bytes; a smaller size disables the provider.
+     */
+    size_t size;
+    /**
+     * Host state that remains valid while the provider is installed.
+     */
+    void* userdata;
+    /**
+     * Optional read callback; an absent callback completes with an Error.
+     */
+    subscript_rt_file_read read;
+    /**
+     * Optional write callback; an absent callback completes with an Error.
+     * Its `data` can be NULL when `data_length` is 0.
+     */
+    subscript_rt_file_write write;
+} subscript_rt_file_provider;
+
 typedef struct subscript_rt_async_step_report {
     uint64_t dispatched;
     uint64_t pending;
@@ -382,6 +416,19 @@ void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint
  * must be callable with `userdata` and obey the no-re-entry rule above.
  */
 void subscript_rt_ctx_set_diagnostics_observer(subscript_rt_context* ctx, subscript_rt_diagnostics_observer observer, void* userdata);
+/**
+ * Copies the provider record onto the subscript_rt_context; the runtime keeps no pointer to it.
+ * A null pointer removes the provider.
+ * A record whose `size` is smaller than the current record disables the provider.
+ * Set the provider before `subscript_init`, so that the module initializer sees it.
+ * Replacing or removing a provider does not cancel pending requests.
+ * A Worker has no provider: it runs on its own thread.
+ *
+ * # Safety
+ * The subscript_rt_context is live and owner-thread access is exclusive. A non-null provider points to a readable size field.
+ * If its size is sufficient, the full record and callbacks must satisfy subscript_rt_context::set_file_provider.
+ */
+void subscript_rt_ctx_set_file_provider(subscript_rt_context* ctx, const subscript_rt_file_provider* provider);
 /**
  * Enables or disables freed-handle diagnostics for this subscript_rt_context.
  *

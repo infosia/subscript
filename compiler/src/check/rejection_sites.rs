@@ -5,6 +5,15 @@ use crate::divergence::Divergence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RejectionSite {
+    FileModuleDisabled,
+    FileModuleArguments,
+    FileModuleEncoding,
+    FileModuleNumberArray,
+    FileModuleStringAlias,
+    FileModuleMember,
+    FileModuleImportForm,
+    FileModuleFunctionValue,
+
     ErrorMemberOutsideSurface,
     NestedNominalClass,
     AbstractMember,
@@ -114,6 +123,7 @@ pub(crate) enum RejectionSite {
     BindingPatternNonIterableSource,
 
     SourceFilesEmpty,
+    EnabledModuleUnknown,
     ParserLoneSurrogateEscape,
     ParserSyntaxError,
     ClassAlignmentBelowNatural,

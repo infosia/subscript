@@ -352,6 +352,9 @@ impl Expr {
                             .map(|(_, argument)| allocation(&argument.pos)),
                     );
                 }
+                if matches!(callee, Callee::Standard(_)) {
+                    sites.push(allocation(&self.pos));
+                }
                 if let Callee::Foreign(name) = callee {
                     if module
                         .foreign_fns

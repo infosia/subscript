@@ -656,7 +656,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 Some(RV::Scalar(handle))
             }
             l::InstructionKind::HostCompletion {
-                function,
+                target,
                 result_size,
                 result_kind,
                 error_metadata,
@@ -685,14 +685,46 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.emit_trap(trap, TrapOperand::Pending)?;
                     }
                 }
-                self.foreign_call(
-                    *function,
-                    &operands,
-                    &operand_types,
-                    (None, Some(endpoint)),
-                    &instruction.traps,
-                    &instruction.pos,
-                )?;
+                match target {
+                    l::HostCompletionTarget::Foreign(function) => {
+                        self.foreign_call(
+                            *function,
+                            &operands,
+                            &operand_types,
+                            (None, Some(endpoint)),
+                            &instruction.traps,
+                            &instruction.pos,
+                        )?;
+                    }
+                    l::HostCompletionTarget::Standard(operation) => {
+                        let path = self.expect_scalar(
+                            *operands
+                                .first()
+                                .ok_or_else(|| internal("standard file operation has no path"))?,
+                        )?;
+                        let data = if let Some(value) = operands.get(1) {
+                            self.expect_scalar(*value)?
+                        } else {
+                            self.iconst(types::I64, 0)
+                        };
+                        let operation = self.iconst(types::I32, *operation as i64);
+                        self.call_runtime(
+                            self.ml.rt.file_operation,
+                            &[self.ctx, operation, path, data, endpoint],
+                            true,
+                        )?;
+                        for trap in &instruction.traps {
+                            if trap.kind == l::TrapKind::Call {
+                                self.emit_trap(trap, TrapOperand::Pending)?;
+                            }
+                        }
+                    }
+                    other => {
+                        return Err(internal(format!(
+                            "host completion target {other:?} is invalid"
+                        )))
+                    }
+                }
                 Some(RV::Scalar(handle))
             }
             l::InstructionKind::AsyncHandleCreate(target) => {

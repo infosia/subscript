@@ -642,6 +642,16 @@ pub enum NarrowOrigin {
     Local,
 }
 
+/// The operation that receives a newly created completion endpoint.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostCompletionTarget {
+    /// A bound C function with a trailing endpoint parameter.
+    Foreign(ForeignFunctionId),
+    /// A standard operation completed by a Context provider.
+    Standard(crate::hir::StandardHostOperation),
+}
+
 /// Closed instruction set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstructionKind {
@@ -727,8 +737,8 @@ pub enum InstructionKind {
     AsyncAll,
     /// Create a host source and call its C function with the endpoint.
     HostCompletion {
-        /// Foreign C function with a trailing endpoint parameter.
-        function: ForeignFunctionId,
+        /// Checked completion target.
+        target: HostCompletionTarget,
         /// Target-layout result payload size.
         result_size: u64,
         /// Result kind: value=0, void=1, string=2, bytes=3 (§184).

@@ -13,6 +13,14 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::FileModuleDisabled => (RuleCode::S100, Diverges(Divergence::FileModuleDisabled)),
+    Self::FileModuleEncoding => (RuleCode::S100, Diverges(Divergence::FileModuleEncoding)),
+    Self::FileModuleNumberArray => (RuleCode::S100, Diverges(Divergence::FileModuleNumberArray)),
+    Self::FileModuleStringAlias => (RuleCode::S100, Diverges(Divergence::FileModuleStringAlias)),
+    Self::FileModuleImportForm => (RuleCode::S100, Diverges(Divergence::FileModuleImportForm)),
+    Self::FileModuleFunctionValue => (RuleCode::S100, Diverges(Divergence::FileModuleFunctionValue)),
+    Self::FileModuleArguments | Self::FileModuleMember => (RuleCode::S100, TscRejects),
+
     Self::ErrorMemberOutsideSurface => (RuleCode::S018, Diverges(Divergence::ErrorMemberOutsideSurface)),
     Self::NestedNominalClass => (RuleCode::S100, Diverges(Divergence::NestedNominalClass)),
     Self::AbstractMember => (RuleCode::S100, Diverges(Divergence::AbstractMember)),
@@ -210,6 +218,7 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::PatternSourceShape))
     }
     Self::SourceFilesEmpty => (RuleCode::S100, TscRejects),
+    Self::EnabledModuleUnknown => (RuleCode::S100, TscRejects),
     Self::ParserLoneSurrogateEscape => {
         (RuleCode::S100, Diverges(Divergence::LoneSurrogateEscape))
     }

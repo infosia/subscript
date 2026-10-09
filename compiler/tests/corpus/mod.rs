@@ -4,6 +4,8 @@
 #[allow(dead_code)]
 mod directory_corpus;
 
+#[allow(unused_imports)]
+pub(crate) use directory_corpus::check_program;
 pub(crate) use directory_corpus::interop;
 
 /// All directory programs, in stable order.

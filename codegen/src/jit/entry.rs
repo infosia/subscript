@@ -34,6 +34,7 @@ pub(super) struct CompletedRun {
 /// What one dev-tier entry run needs beyond the finalized code.
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct EntryOptions {
+    pub(super) file_provider: Option<subscript_runtime::ffi::FileProvider>,
     /// Object-level Context allocation number to reject.
     pub(super) fail_alloc_after: Option<u64>,
     /// Enables retained freed-handle diagnostics.
@@ -55,6 +56,7 @@ pub(super) fn execute_entry(
     write_through: Option<File>,
 ) -> Result<CompletedRun, RunError> {
     let EntryOptions {
+        file_provider,
         fail_alloc_after,
         freed_handle_diagnostics,
     } = options;
@@ -67,6 +69,9 @@ pub(super) fn execute_entry(
 
     let needs_panic_stdout_fallback = write_through.is_none();
     let mut ctx = Context::new();
+    unsafe {
+        ctx.set_file_provider(file_provider);
+    }
     let mut stdout = Box::new(CapturedStdout {
         bytes: Vec::new(),
         write_through,

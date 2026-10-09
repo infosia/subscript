@@ -239,6 +239,7 @@ fn run_with_effects(
         })
     }).then(|| prog.clone());
     let mut ck = Checker {
+        enabled_modules: options.enabled_modules.clone(),
         task_group_type: false,
         task_group_local: false,
         task_group_parameters: false,

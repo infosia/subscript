@@ -12,6 +12,7 @@ mod assignment_flow;
 #[cfg(test)]
 mod assignment_narrowing;
 pub(crate) mod diagnostic_text;
+mod file_module;
 mod host_entries;
 mod identity;
 mod init_effects;
@@ -463,6 +464,8 @@ pub(crate) struct GenericClass {
 /// What a top-level name refers to inside one file's scope.
 #[derive(Debug, Clone)]
 pub(crate) enum ScopeItem {
+    /// A named file-module member; true selects writeFile.
+    StandardFile(bool),
     Poisoned,
     /// A static qualifier with its source module identity and import spelling.
     Namespace {
@@ -1177,6 +1180,7 @@ impl FnCtx {
 
 /// The checker.
 pub(crate) struct Checker<'p> {
+    pub enabled_modules: Vec<String>,
     task_group_type: bool,
     task_group_local: bool,
     task_group_parameters: bool,

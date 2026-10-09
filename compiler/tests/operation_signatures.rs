@@ -393,7 +393,8 @@ use corpus::interop;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program, hir, ClassId, Pos, SourceFile, Type};
+use corpus::check_program;
+use subscript_compiler::{hir, ClassId, Pos, SourceFile, Type};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")

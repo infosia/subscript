@@ -16,7 +16,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use subscript_compiler::{check_program, SourceFile};
+use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
@@ -734,10 +734,16 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 
 /// Runs the shipping tier with one complete option record.
 ///
+/// `pre_init_hook`, when present, names a C function called after Context
+/// creation and before `subscript_init`; a host sets a file provider there
+/// (§185 rule 3). The other hooks are as in
+/// [`run_c_aot_with_native_libraries_and_host_hooks`].
+///
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`]. A request for
-/// development-tier memory accounting produces [`RunError::Internal`].
+/// development-tier memory accounting or a Rust file provider produces
+/// [`RunError::Internal`].
 pub fn run_c_aot_configured(
     files: &[SourceFile],
     config: RunConfig<'_>,
@@ -875,21 +881,23 @@ fn validate_host_hook_name(name: &str) -> Result<(), RunError> {
 }
 
 fn aot_entry_with_host_hooks(
+    pre_init_hook: Option<&str>,
     pre_entry_hook: Option<&str>,
     post_run_hook: Option<&str>,
 ) -> Result<String, RunError> {
-    for hook in [pre_entry_hook, post_run_hook].into_iter().flatten() {
+    let hooks = [pre_init_hook, pre_entry_hook, post_run_hook];
+    for hook in hooks.into_iter().flatten() {
         validate_host_hook_name(hook)?;
     }
-    if pre_entry_hook.is_none() && post_run_hook.is_none() {
+    if hooks.iter().all(Option::is_none) {
         return Ok(AOT_ENTRY_C.to_string());
     }
 
     const DECLARATION_ANCHOR: &str =
         "extern void subscript_kick_async_exports(subscript_rt_context *ctx);";
-    const PRE_ENTRY_ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
+    const INIT_ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
     const POST_RUN_ANCHOR: &str = "    uint64_t len = 0;";
-    for anchor in [DECLARATION_ANCHOR, PRE_ENTRY_ANCHOR, POST_RUN_ANCHOR] {
+    for anchor in [DECLARATION_ANCHOR, INIT_ANCHOR, POST_RUN_ANCHOR] {
         if !AOT_ENTRY_C.contains(anchor) {
             return Err(RunError::Internal(internal(
                 "AOT entry host-hook anchor moved",
@@ -897,12 +905,13 @@ fn aot_entry_with_host_hooks(
         }
     }
 
+    let mut declared: Vec<&str> = Vec::new();
     let mut declarations = String::new();
-    if let Some(hook) = pre_entry_hook {
-        declarations.push_str(&format!("\nextern void {hook}(subscript_rt_context *ctx);"));
-    }
-    if let Some(hook) = post_run_hook.filter(|hook| Some(*hook) != pre_entry_hook) {
-        declarations.push_str(&format!("\nextern void {hook}(subscript_rt_context *ctx);"));
+    for hook in hooks.into_iter().flatten() {
+        if !declared.contains(&hook) {
+            declared.push(hook);
+            declarations.push_str(&format!("\nextern void {hook}(subscript_rt_context *ctx);"));
+        }
     }
 
     let mut entry = AOT_ENTRY_C.replacen(
@@ -910,13 +919,15 @@ fn aot_entry_with_host_hooks(
         &format!("{DECLARATION_ANCHOR}{declarations}"),
         1,
     );
-    if let Some(hook) = pre_entry_hook {
-        entry = entry.replacen(
-            PRE_ENTRY_ANCHOR,
-            &format!("{PRE_ENTRY_ANCHOR}\n    {hook}(ctx);"),
-            1,
-        );
+    let mut init = String::new();
+    if let Some(hook) = pre_init_hook {
+        init.push_str(&format!("    {hook}(ctx);\n"));
     }
+    init.push_str(INIT_ANCHOR);
+    if let Some(hook) = pre_entry_hook {
+        init.push_str(&format!("\n    {hook}(ctx);"));
+    }
+    entry = entry.replacen(INIT_ANCHOR, &init, 1);
     if let Some(hook) = post_run_hook {
         entry = entry.replacen(
             POST_RUN_ANCHOR,
@@ -959,11 +970,20 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         native_libraries: libraries,
         fail_alloc_after,
         freed_handle_diagnostics,
+        pre_init_hook,
         pre_entry_hook,
         post_run_hook,
+        file_provider,
         ..
     } = config;
-    let hir = check_program(files).map_err(RunError::Rejected)?;
+    if file_provider.is_some() {
+        return Err(RunError::Internal(internal(
+            "a Rust file provider is a development-tier option; \
+             the shipping tier installs a provider through `pre_init_hook`",
+        )));
+    }
+    let hir = subscript_compiler::check_program_with(files, &config.check_options())
+        .map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|error| RunError::Internal(internal(error)))?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
@@ -977,7 +997,7 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
     write_file(&src_path, program.source.as_bytes())?;
     write_file(&dir.path.join("program.h"), program.host_header.as_bytes())?;
     let anchor = "    call_script_entry(ctx, subscript_init);";
-    let mut entry = aot_entry_with_host_hooks(pre_entry_hook, post_run_hook)?;
+    let mut entry = aot_entry_with_host_hooks(pre_init_hook, pre_entry_hook, post_run_hook)?;
     if !entry.contains(anchor) {
         return Err(RunError::Internal(internal(
             "AOT entry Context-configuration anchor moved",

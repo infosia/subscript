@@ -633,6 +633,7 @@ pub struct Context {
     context_id: u64,
     next_host_operation_id: u64,
     host_operations: HashMap<u64, usize>,
+    pub(crate) file_provider: Option<crate::ffi::FileProvider>,
     pub(crate) counted_maps: HashMap<usize, Vec<u8>>,
     task_groups: HashMap<usize, task_group::Group>,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.

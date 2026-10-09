@@ -20,6 +20,7 @@ mod verifier;
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
+use corpus::check_program;
 use subscript_codegen::interpreter::interpret;
 use subscript_codegen::lir::{lower_module, verify_module};
 use subscript_codegen::run_jit_with_memory_accounting_and_native_libraries;
@@ -29,8 +30,8 @@ use subscript_compiler::lir::{
     Terminator, TrapKind, ValueType,
 };
 use subscript_compiler::lir_text::print_module;
+use subscript_compiler::SourceFile;
 use subscript_compiler::Type;
-use subscript_compiler::{check_program, SourceFile};
 
 use snapshot::print_snapshot_module;
 

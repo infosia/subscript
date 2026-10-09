@@ -6,7 +6,7 @@ use subscript_runtime::context::completion_kind;
 impl FunctionBuilder<'_, '_> {
     pub(super) fn host_completion_kind(
         &self,
-        function: l::ForeignFunctionId,
+        target: l::HostCompletionTarget,
         expr: &hir::Expr,
     ) -> Result<l::InstructionKind, LowerError> {
         let Type::AsyncHandle(result) = &expr.ty else {
@@ -14,15 +14,59 @@ impl FunctionBuilder<'_, '_> {
         };
         let layouts = crate::layout::Layouts::build(self.lowering.hir)
             .map_err(|message| self.error(&expr.pos, message))?;
-        let c_result = self
-            .lowering
-            .hir
-            .foreign_fns
-            .get(function.0 as usize)
-            .and_then(|f| f.completion_result.as_deref())
-            .ok_or_else(|| self.error(&expr.pos, "host completion C result is missing"))?;
-        let (size, _) = c_result_layout(c_result, result, self.lowering.hir)
-            .map_err(|message| self.error(&expr.pos, message))?;
+        let (size, result_kind) = match target {
+            l::HostCompletionTarget::Foreign(function) => {
+                let c_result = self
+                    .lowering
+                    .hir
+                    .foreign_fns
+                    .get(function.0 as usize)
+                    .and_then(|f| f.completion_result.as_deref())
+                    .ok_or_else(|| self.error(&expr.pos, "host completion C result is missing"))?;
+                let (size, _) = c_result_layout(c_result, result, self.lowering.hir)
+                    .map_err(|message| self.error(&expr.pos, message))?;
+                (
+                    size,
+                    match c_result {
+                        "void" => completion_kind::VOID,
+                        "string" => completion_kind::STRING,
+                        "u8[]" => completion_kind::BYTES,
+                        _ => completion_kind::VALUE,
+                    },
+                )
+            }
+            l::HostCompletionTarget::Standard(operation) => {
+                if **result != operation.result() {
+                    return Err(
+                        self.error(&expr.pos, "standard operation result disagrees with HIR")
+                    );
+                }
+                let (size, _) = layouts
+                    .size_align(result)
+                    .map_err(|e| self.error(&expr.pos, e))?;
+                (
+                    size,
+                    match operation {
+                        hir::StandardHostOperation::ReadText => completion_kind::STRING,
+                        hir::StandardHostOperation::ReadBytes => completion_kind::BYTES,
+                        hir::StandardHostOperation::WriteText
+                        | hir::StandardHostOperation::WriteBytes => completion_kind::VOID,
+                        other => {
+                            return Err(self.error(
+                                &expr.pos,
+                                format!("standard operation {other:?} has no completion kind"),
+                            ))
+                        }
+                    },
+                )
+            }
+            other => {
+                return Err(self.error(
+                    &expr.pos,
+                    format!("host completion target {other:?} is invalid"),
+                ))
+            }
+        };
         let (error_id, error) = self
             .lowering
             .hir
@@ -55,14 +99,9 @@ impl FunctionBuilder<'_, '_> {
                 })
         };
         Ok(l::InstructionKind::HostCompletion {
-            function,
+            target,
             result_size: u64::from(size),
-            result_kind: match c_result {
-                "void" => completion_kind::VOID,
-                "string" => completion_kind::STRING,
-                "u8[]" => completion_kind::BYTES,
-                _ => completion_kind::VALUE,
-            },
+            result_kind,
             error_metadata: [
                 u64::from(layout.size),
                 error_id as u64,
@@ -82,7 +121,7 @@ pub(super) fn verify_host_completion(
     errors: &mut Vec<VerifyError>,
 ) {
     let l::InstructionKind::HostCompletion {
-        function: id,
+        target,
         result_size,
         result_kind,
         error_metadata: metadata,
@@ -90,70 +129,106 @@ pub(super) fn verify_host_completion(
     else {
         return;
     };
-    let (id, result_size, result_kind) = (*id, *result_size, *result_kind);
+    let (result_size, result_kind) = (*result_size, *result_kind);
     let bad = |message: &str, errors: &mut Vec<VerifyError>| {
         errors.push(super::verify::finding(function, message));
     };
-    let Some(foreign) = module
-        .foreign_functions
-        .get(id.0 as usize)
-        .filter(|f| f.id == id)
-    else {
-        bad("host completion foreign function is missing", errors);
-        return;
+    let standard_type;
+    let ty = match target {
+        l::HostCompletionTarget::Foreign(id) => {
+            let id = *id;
+            let Some(foreign) = module
+                .foreign_functions
+                .get(id.0 as usize)
+                .filter(|f| f.id == id)
+            else {
+                bad("host completion foreign function is missing", errors);
+                return;
+            };
+            if foreign.parameters.last().is_none_or(|p| {
+                p.ty != Type::Void
+                    || p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
+            }) || foreign
+                .parameters
+                .iter()
+                .take(foreign.parameters.len().saturating_sub(1))
+                .any(|p| p.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint))
+                || foreign.return_type != Type::Void
+            {
+                bad("host completion foreign function requires a trailing by-value subscript_rt_completion parameter and a void C return", errors);
+            }
+            let declared: Vec<_> = foreign
+                .parameters
+                .iter()
+                .filter(|p| {
+                    p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
+                })
+                .flat_map(|p| match &p.ty {
+                    Type::Array(element) => vec![
+                        l::ValueType::Address(l::AddressType {
+                            pointee: (**element).clone(),
+                            array_base: None,
+                        }),
+                        l::ValueType::Data(Type::I32),
+                    ],
+                    ty => vec![l::ValueType::Data(ty.clone())],
+                })
+                .collect();
+            let actual: Vec<_> = instruction
+                .operands
+                .iter()
+                .filter_map(|o| super::verify::operand_type(function, o))
+                .collect();
+            if actual.len() != instruction.operands.len()
+                || !super::verify_instruction::declared_parameters_match(
+                    module,
+                    &l::CallTargetKind::Foreign(id),
+                    &actual,
+                    &declared,
+                )
+            {
+                bad(
+                    "host completion operand types disagree with the foreign declaration",
+                    errors,
+                );
+            }
+            let Some((_, ty)) = &foreign.completion_result else {
+                bad("host completion result declaration is missing", errors);
+                return;
+            };
+            ty
+        }
+        l::HostCompletionTarget::Standard(operation) => {
+            standard_type = operation.result();
+            let expected: Vec<_> = operation
+                .parameters()
+                .into_iter()
+                .map(l::ValueType::Data)
+                .collect();
+            let actual: Vec<_> = instruction
+                .operands
+                .iter()
+                .filter_map(|o| super::verify::operand_type(function, o))
+                .collect();
+            if actual.len() != instruction.operands.len() || actual != expected {
+                bad(
+                    "standard operation operand types disagree with its signature",
+                    errors,
+                );
+            }
+            &standard_type
+        }
+        other => {
+            bad(
+                &format!("host completion target {other:?} is invalid"),
+                errors,
+            );
+            return;
+        }
     };
-    if foreign.parameters.last().is_none_or(|p| {
-        p.ty != Type::Void
-            || p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
-    }) || foreign
-        .parameters
-        .iter()
-        .take(foreign.parameters.len().saturating_sub(1))
-        .any(|p| p.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint))
-        || foreign.return_type != Type::Void
-    {
-        bad("host completion foreign function requires a trailing by-value subscript_rt_completion parameter and a void C return", errors);
-    }
-    let declared: Vec<_> = foreign
-        .parameters
-        .iter()
-        .filter(|p| p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint))
-        .flat_map(|p| match &p.ty {
-            Type::Array(element) => vec![
-                l::ValueType::Address(l::AddressType {
-                    pointee: (**element).clone(),
-                    array_base: None,
-                }),
-                l::ValueType::Data(Type::I32),
-            ],
-            ty => vec![l::ValueType::Data(ty.clone())],
-        })
-        .collect();
-    let actual: Vec<_> = instruction
-        .operands
-        .iter()
-        .filter_map(|o| super::verify::operand_type(function, o))
-        .collect();
-    if actual.len() != instruction.operands.len()
-        || !super::verify_instruction::declared_parameters_match(
-            module,
-            &l::CallTargetKind::Foreign(id),
-            &actual,
-            &declared,
-        )
-    {
-        bad(
-            "host completion operand types disagree with the foreign declaration",
-            errors,
-        );
-    }
     let result = instruction
         .result
         .and_then(|v| super::verify::value_type(function, v));
-    let Some((_, ty)) = &foreign.completion_result else {
-        bad("host completion result declaration is missing", errors);
-        return;
-    };
     if result != Some(&l::ValueType::Data(Type::async_handle(ty.clone())))
         || result_kind
             != match ty {

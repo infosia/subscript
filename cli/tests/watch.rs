@@ -610,6 +610,71 @@ fn spawned_watch_preserves_stdout_before_each_trap() -> Result<(), String> {
     Ok(())
 }
 
+const NO_PROVIDER: &str = "import { readFile } from 'node:fs/promises';\n\
+export async function main(): Promise<void> {\n\
+  try { await readFile('absent.txt', 'utf8'); }\n\
+  catch (error) { if (error instanceof Error) { print(`${error.name}:${error.message}`); } }\n\
+}\n";
+
+/// The watch session checks and runs every generation with its enabled modules.
+#[test]
+fn a_watch_session_with_modules_enables_them_for_each_generation() -> Result<(), String> {
+    let sources = vec![SourceFile::entry("main.ts", NO_PROVIDER)];
+    let mut watch = WatchSession::new_with_modules(false, vec!["node:fs/promises".to_owned()]);
+    assert_eq!(
+        call_output(watch.step(&sources).outcome)?,
+        b"Error:missing file provider\n"
+    );
+    let edited = vec![SourceFile::entry(
+        "main.ts",
+        NO_PROVIDER.replace("absent.txt", "other.txt"),
+    )];
+    assert_eq!(
+        call_output(watch.step(&edited).outcome)?,
+        b"Error:missing file provider\n"
+    );
+    // The firing control: a session without the module rejects the import.
+    let mut control = WatchSession::new(false);
+    let step = control.step(&sources);
+    assert!(matches!(step.outcome, WatchOutcome::WaitingForFix));
+    assert!(step
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("--enable-module node:fs/promises")));
+    Ok(())
+}
+
+/// `run --watch` passes `--enable-module` to the watch session.
+#[test]
+fn spawned_watch_accepts_the_enable_module_option() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write("main.ts", NO_PROVIDER)?;
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args([
+                "run",
+                "--watch",
+                "--enable-module",
+                "node:fs/promises",
+                "main.ts",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?,
+    );
+    let (stdout, out_thread) = Capture::reader(child.0.stdout.take().ok_or("missing stdout")?);
+    let (stderr, err_thread) = Capture::reader(child.0.stderr.take().ok_or("missing stderr")?);
+    let result = stdout.wait_for_count(b"Error:missing file provider\n", 1);
+    drop(child);
+    out_thread.join().map_err(|_| "stdout reader")?;
+    err_thread.join().map_err(|_| "stderr reader")?;
+    result?;
+    assert_eq!(stderr.bytes()?, b"watch: started\n");
+    Ok(())
+}
+
 #[test]
 fn every_runner_path_reports_the_same_missing_main_diagnostic() -> Result<(), String> {
     let directory = TestDir::new()?;

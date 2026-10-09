@@ -316,7 +316,15 @@ fn excerpts_match_only_the_first_line_and_preserve_leading_whitespace() {
 }
 
 fn check_fragment(files: &[SourceFile], mirrors: &[SourceFile]) -> Result<(), String> {
-    let diagnostics = match check_program(files) {
+    let mut options = subscript_compiler::CheckOptions::default();
+    for source in files {
+        for line in source.source.lines() {
+            if let Some(module) = line.strip_prefix("// enable-module: ") {
+                options.enabled_modules.push(module.into());
+            }
+        }
+    }
+    let diagnostics = match subscript_compiler::check_program_with(files, &options) {
         Ok(_) => return Ok(()),
         Err(diagnostics) => diagnostics,
     };
@@ -329,7 +337,7 @@ fn check_fragment(files: &[SourceFile], mirrors: &[SourceFile]) -> Result<(), St
             tried.push(mirror.name.as_str());
             let mut candidate = files.to_vec();
             candidate.push(mirror.clone());
-            if check_program(&candidate).is_ok() {
+            if subscript_compiler::check_program_with(&candidate, &options).is_ok() {
                 return Ok(());
             }
         }
@@ -397,7 +405,7 @@ fn documentation_blocks() {
             "README.md" => 1,
             "docs/tutorial-c-cpp.md" => 12,
             "docs/tutorial-rust.md" => 3,
-            "docs/tutorial-typescript.md" => 25,
+            "docs/tutorial-typescript.md" => 26,
             _ => panic!("{file}: add the measured TypeScript fence count to the scope table"),
         };
         assert_eq!(

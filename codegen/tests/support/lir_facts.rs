@@ -793,7 +793,8 @@ fn declared_callee_parameters<'a>(
             };
             Some(declared_method(hir, *class, name, pos)?.params.as_slice())
         }
-        hir::Callee::Ambient(_)
+        hir::Callee::Standard(_)
+        | hir::Callee::Ambient(_)
         | hir::Callee::ContextBytes { .. }
         | hir::Callee::Math(_)
         | hir::Callee::Num(_)
@@ -1217,6 +1218,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
     let pos = &expr.pos;
     Ok(match &expr.kind {
         hir::ExprKind::Call { callee, args } => match callee {
+            hir::Callee::Standard(op) => Some(op.parameters().len()),
             hir::Callee::Ambient(hir::AmbientFn::Unreachable) => None,
             hir::Callee::Func(name) => Some(declared_function(hir, name, pos)?.params.len()),
             hir::Callee::Foreign(name) => Some(
@@ -1413,20 +1415,25 @@ fn instruction_arity(
                 .unwrap_or(usize::MAX);
             Arity::Exact(captures)
         }
-        K::HostCompletion { function, .. } => Arity::Exact(
-            lir.foreign_functions
-                .get(function.0 as usize)
-                .map_or(usize::MAX, |f| {
-                    f.parameters
-                        .iter()
-                        .filter(|p| {
-                            p.foreign_provenance
-                                != Some(l::ForeignTypeProvenance::CompletionEndpoint)
-                        })
-                        .map(|p| if matches!(p.ty, Type::Array(_)) { 2 } else { 1 })
-                        .sum()
-                }),
-        ),
+        K::HostCompletion { target, .. } => match target {
+            l::HostCompletionTarget::Standard(op) => Arity::Exact(op.parameters().len()),
+            // A missing foreign function gives an arity that no operand list meets.
+            l::HostCompletionTarget::Foreign(function) => Arity::Exact(
+                lir.foreign_functions
+                    .get(function.0 as usize)
+                    .map_or(usize::MAX, |f| {
+                        f.parameters
+                            .iter()
+                            .filter(|p| {
+                                p.foreign_provenance
+                                    != Some(l::ForeignTypeProvenance::CompletionEndpoint)
+                            })
+                            .map(|p| if matches!(p.ty, Type::Array(_)) { 2 } else { 1 })
+                            .sum()
+                    }),
+            ),
+            _ => Arity::Exact(usize::MAX),
+        },
         K::Call(target) | K::AsyncHandleCreate(target) => Arity::MatchesPayload(
             if matches!(
                 target.kind,

@@ -122,7 +122,10 @@ pub fn jit_bench_configured(
             "a benchmark subject needs at least one timed run",
         )));
     }
-    if config.pre_entry_hook.is_some() || config.post_run_hook.is_some() {
+    if config.pre_init_hook.is_some()
+        || config.pre_entry_hook.is_some()
+        || config.post_run_hook.is_some()
+    {
         return Err(RunError::Internal(internal(
             "host hooks are not available in the development tier",
         )));
@@ -137,6 +140,7 @@ pub fn jit_bench_configured(
     let (module, lowered) = compile_jit(files, config.native_libraries)?;
     let compile = started.elapsed();
     let options = EntryOptions {
+        file_provider: config.file_provider,
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
     };

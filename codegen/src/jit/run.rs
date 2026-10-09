@@ -4,7 +4,7 @@
 
 use subscript_compiler::SourceFile;
 
-use super::compile::compile_jit;
+use super::compile::compile_jit_with;
 use super::entry::{execute_entry, execute_entry_retained, memory_accounting, EntryOptions};
 use super::{JitMemoryAccounting, RunError};
 use crate::lower::internal;
@@ -42,13 +42,18 @@ pub fn run_jit_configured(
     files: &[SourceFile],
     config: RunConfig<'_>,
 ) -> Result<RunOutput, RunError> {
-    if config.pre_entry_hook.is_some() || config.post_run_hook.is_some() {
+    if config.pre_init_hook.is_some()
+        || config.pre_entry_hook.is_some()
+        || config.post_run_hook.is_some()
+    {
         return Err(RunError::Internal(internal(
             "host hooks are not available in the development tier",
         )));
     }
-    let (module, lowered) = compile_jit(files, config.native_libraries)?;
+    let (module, lowered) =
+        compile_jit_with(files, config.native_libraries, &config.check_options())?;
     let options = EntryOptions {
+        file_provider: config.file_provider,
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
     };

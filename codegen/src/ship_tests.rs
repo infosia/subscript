@@ -1,4 +1,5 @@
 use super::*;
+use subscript_compiler::check_program;
 
 #[test]
 fn posix_feature_arguments_match_the_host_contract() {
@@ -49,34 +50,37 @@ fn sources(src: &str) -> Vec<SourceFile> {
 
 #[test]
 fn aot_entry_without_host_hooks_is_byte_identical_to_the_standing_entry() {
-    let generated = aot_entry_with_host_hooks(None, None).expect("generate entry");
+    let generated = aot_entry_with_host_hooks(None, None, None).expect("generate entry");
     assert_eq!(generated.as_bytes(), AOT_ENTRY_C.as_bytes());
 }
 
 #[test]
 fn aot_entry_host_hooks_are_optional_and_independent() {
+    const INIT: &str = "fixture_pre_init";
     const PRE: &str = "fixture_pre_entry";
     const POST: &str = "fixture_post_run";
-    for (pre, post) in [
-        (None, None),
-        (Some(PRE), None),
-        (None, Some(POST)),
-        (Some(PRE), Some(POST)),
-    ] {
-        let entry = aot_entry_with_host_hooks(pre, post).expect("generate entry");
-        assert_eq!(
-            entry.contains(&format!("extern void {PRE}(")),
-            pre.is_some()
-        );
-        assert_eq!(entry.contains(&format!("    {PRE}(ctx);")), pre.is_some());
-        assert_eq!(
-            entry.contains(&format!("extern void {POST}(")),
-            post.is_some()
-        );
-        assert_eq!(entry.contains(&format!("    {POST}(ctx);")), post.is_some());
+    for mask in 0..8u8 {
+        let init = (mask & 1 != 0).then_some(INIT);
+        let pre = (mask & 2 != 0).then_some(PRE);
+        let post = (mask & 4 != 0).then_some(POST);
+        let entry = aot_entry_with_host_hooks(init, pre, post).expect("generate entry");
+        for (name, hook) in [(INIT, init), (PRE, pre), (POST, post)] {
+            assert_eq!(
+                entry.contains(&format!("extern void {name}(")),
+                hook.is_some()
+            );
+            assert_eq!(entry.contains(&format!("    {name}(ctx);")), hook.is_some());
+        }
     }
 
-    let entry = aot_entry_with_host_hooks(Some(PRE), Some(POST)).expect("generate entry");
+    let entry =
+        aot_entry_with_host_hooks(Some(INIT), Some(PRE), Some(POST)).expect("generate entry");
+    let created = entry
+        .find("    subscript_rt_ctx_set_print_observer(ctx,")
+        .expect("Context creation");
+    let pre_init = entry
+        .find("    fixture_pre_init(ctx);")
+        .expect("pre-init hook");
     let init = entry
         .find("    call_script_entry(ctx, subscript_init);")
         .expect("initializer call");
@@ -84,7 +88,7 @@ fn aot_entry_host_hooks_are_optional_and_independent() {
     let main_guard = entry
         .find("    if (subscript_rt_ctx_trap_kind(ctx) == 0) {")
         .expect("main trap guard");
-    assert!(init < pre && pre < main_guard);
+    assert!(created < pre_init && pre_init < init && init < pre && pre < main_guard);
 
     let pump = entry
         .find("    while (subscript_rt_ctx_trap_kind(ctx) == 0 &&")
@@ -98,11 +102,25 @@ fn aot_entry_host_hooks_are_optional_and_independent() {
 }
 
 #[test]
+fn aot_entry_declares_a_hook_named_twice_once() {
+    let entry = aot_entry_with_host_hooks(Some("same_hook"), Some("same_hook"), None)
+        .expect("generate entry");
+    assert_eq!(entry.matches("extern void same_hook(").count(), 1);
+    assert_eq!(entry.matches("    same_hook(ctx);").count(), 2);
+}
+
+#[test]
 fn aot_entry_rejects_non_identifier_host_hook_names() {
-    assert!(matches!(
-        aot_entry_with_host_hooks(Some("bad-hook"), None),
-        Err(RunError::Internal(message)) if message.contains("not a C identifier")
-    ));
+    for hooks in [
+        (Some("bad-hook"), None, None),
+        (None, Some("bad-hook"), None),
+        (None, None, Some("bad-hook")),
+    ] {
+        assert!(matches!(
+            aot_entry_with_host_hooks(hooks.0, hooks.1, hooks.2),
+            Err(RunError::Internal(message)) if message.contains("not a C identifier")
+        ));
+    }
 }
 
 /// Builds an `Output` with the two streams. [`tool_output_report`]

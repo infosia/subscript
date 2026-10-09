@@ -436,7 +436,7 @@ impl Context {
     pub fn async_is_stale(&self, frame: *const u8) -> bool {
         self.async_frames
             .get(&(frame as usize))
-            .is_some_and(|meta| meta.created_epoch != self.reload_epoch)
+            .is_some_and(|meta| meta.created_epoch != self.reload_epoch && !matches!(&meta.kind, AsyncKind::Runtime(task) if matches!(task.as_ref(), RuntimeTask::HostOperation(_))))
     }
 
     /// Caches the fulfilled representation after the first held await.

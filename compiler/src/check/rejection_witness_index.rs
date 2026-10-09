@@ -62,6 +62,14 @@ pub(super) fn witness_key(site: RejectionSite) -> (&'static str, Option<Divergen
 #[rustfmt::skip]
 pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
     match site {
+        RejectionSite::FileModuleDisabled => WitnessEntry::General { files: &["s185-disabled"], variant: Some(Divergence::FileModuleDisabled), reason: "" },
+        RejectionSite::FileModuleArguments => WitnessEntry::General { files: &["s185-options", "s185-literal", "s185-bool-data", "s185-number-path"], variant: None, reason: "" },
+        RejectionSite::FileModuleEncoding => WitnessEntry::General { files: &["s185-encoding", "s185-encoding-string"], variant: Some(Divergence::FileModuleEncoding), reason: "" },
+        RejectionSite::FileModuleNumberArray => WitnessEntry::General { files: &["s185-i32-data", "s185-f64-data"], variant: Some(Divergence::FileModuleNumberArray), reason: "" },
+        RejectionSite::FileModuleStringAlias => WitnessEntry::General { files: &["s185-alias-path", "s185-alias-data"], variant: Some(Divergence::FileModuleStringAlias), reason: "" },
+        RejectionSite::FileModuleMember => WitnessEntry::General { files: &["s185-member"], variant: None, reason: "" },
+        RejectionSite::FileModuleImportForm => WitnessEntry::General { files: &["s185-namespace", "s185-default", "s185-bare", "s185-reexport"], variant: Some(Divergence::FileModuleImportForm), reason: "" },
+        RejectionSite::FileModuleFunctionValue => WitnessEntry::General { files: &["s185-function-value"], variant: Some(Divergence::FileModuleFunctionValue), reason: "" },
         RejectionSite::ImmediatePendingLocalRead => WitnessEntry::General { files: &["s173-pending-immediate"], variant: None, reason: "" },
         RejectionSite::VoidExpressionNonVoidDestination => WitnessEntry::General { files: &["s173-void-annotated"], variant: None, reason: "" },
         RejectionSite::CatchBindingUnnarrowedProperty => WitnessEntry::General { files: &["s173-catch-optional-property-0", "s173-catch-optional-property-1", "s173-catch-optional-property-2", "s173-catch-optional-property-3", "s173-catch-property-arrow", "s173-catch-property-0", "s173-catch-property-1", "s173-catch-property-2", "s173-catch-property-3"], variant: None, reason: "" },
@@ -134,6 +142,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::SetCallbackArgumentCount => WitnessEntry::General { files: &["set-callback-argument-count"], variant: None, reason: "" },
         RejectionSite::DescriptorRequiredMemberMissing => WitnessEntry::General { files: &["a-s008"], variant: None, reason: "" },
 
+        RejectionSite::EnabledModuleUnknown => WitnessEntry::General { files: &[], variant: None, reason: "options.enabled_modules names another module; no source program reaches this input guard." },
         RejectionSite::SourceFilesEmpty => WitnessEntry::General { files: &[], variant: None, reason: "files.is_empty(); no source program reaches this input guard." },
         RejectionSite::ParserLoneSurrogateEscape => WitnessEntry::General { files: &["c-parse-surrogate"], variant: Some(Divergence::LoneSurrogateEscape), reason: "" },
         RejectionSite::ParserSyntaxError => WitnessEntry::General { files: &["a-s214", "a-s231", "parser-syntax-error", "parser-syntax-error-witness-2", "parser-syntax-error-witness-3", "parser-syntax-error-witness-4", "parser-syntax-error-witness-5", "parser-syntax-error-witness-6", "parser-syntax-error-witness-7", "parser-syntax-error-witness-8", "parser-syntax-error-witness-9", "parser-syntax-error-witness-10", "c-parse-identifier-surrogate", "c-parse-invalid", "WithStatement"], variant: None, reason: "" },

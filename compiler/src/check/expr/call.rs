@@ -126,6 +126,7 @@ impl<'p> Checker<'p> {
                 }
                 Some(ScopeItem::Func(f)) => checker.check_direct_call(&f, c, fx, pos),
                 Some(ScopeItem::Foreign(f)) => checker.check_foreign_call(&f, c, fx, pos),
+                Some(ScopeItem::StandardFile(write)) => checker.check_file_call(write, c, fx, pos),
                 Some(ScopeItem::GenericFunc(key)) => {
                     let (arguments, checked) = if let Some(type_args) = &c.type_args {
                         (checker.resolve_instance_arguments(type_args), None)

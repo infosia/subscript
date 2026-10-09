@@ -6,6 +6,8 @@
 //! generic template. A discovery HIR can contain [`Type::Error`] and one
 //! or more [`PoisonedImport`] records.
 
+mod standard_host;
+pub use standard_host::StandardHostOperation;
 mod names;
 pub use names::{declaration_label, source_name, Symbol};
 
@@ -1502,6 +1504,8 @@ pub enum ArrFmtKind {
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callee {
+    /// A standard operation completed by a Context provider.
+    Standard(StandardHostOperation),
     /// A module function by its checker-assigned declaration symbol.
     Func(Symbol),
     /// A foreign C-ABI function declared by an ambient mirror (§12.2);
@@ -1568,7 +1572,11 @@ impl Callee {
     /// answer to which checks an operation carries.
     fn has_call_site(&self) -> bool {
         match self {
-            Callee::Func(_) | Callee::Value(_) | Callee::Method { .. } | Callee::Foreign(_) => true,
+            Callee::Standard(_)
+            | Callee::Func(_)
+            | Callee::Value(_)
+            | Callee::Method { .. }
+            | Callee::Foreign(_) => true,
             Callee::Ambient(f) => f.can_trap(),
             Callee::ContextBytes { .. } => true,
             Callee::Math(f) => f.can_trap(),
@@ -1624,7 +1632,9 @@ pub fn operation_signature_target(
                 Some(&recv.ty),
             ));
         }
-        Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return None,
+        Callee::Standard(_) | Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => {
+            return None
+        }
     };
     Some((target, None))
 }

@@ -433,13 +433,16 @@ Ship tier, same crate:
 - `run_c_aot_with_alloc_failure`,
   `run_c_aot_with_freed_handle_diagnostics_and_native_libraries`, and
   `run_c_aot_configured` — the ship-tier forms of the same options.
-  `RunConfig::memory_accounting` is development-tier only and returns
-  `RunError::Internal` here.
+  `RunConfig::memory_accounting` and `RunConfig::file_provider` are
+  development-tier only and return `RunError::Internal` here.
 
-`RunConfig` holds `native_libraries`, `fail_alloc_after`,
-`freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`, and
-`post_run_hook`. `RunOutput` holds `stdout` and an optional
-`memory_accounting`.
+`RunConfig` holds `enabled_modules`, `file_provider`,
+`native_libraries`, `fail_alloc_after`, `freed_handle_diagnostics`,
+`memory_accounting`, `pre_init_hook`, `pre_entry_hook`, and
+`post_run_hook`. The three hooks are ship-tier C functions. The
+pre-init hook runs after the Context is created and before the module
+initializer, so it can set a file provider. `RunOutput` holds `stdout`
+and an optional `memory_accounting`.
 
 `NativeLibrary::new(include_directories, c_sources, symbols)` is
 `unsafe`: every symbol address must stay valid for every run that

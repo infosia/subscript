@@ -19,6 +19,10 @@ mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
 
+#[allow(dead_code)]
+#[path = "support/files.rs"]
+mod file_fixture;
+
 use subscript_codegen::{
     run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
     run_jit_with_native_libraries, NativeLibrary, RunError,
@@ -56,6 +60,18 @@ fn run_ship_corpus_entry(
     sources: &[subscript_compiler::SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
+    if sources
+        .iter()
+        .any(|f| f.source.lines().any(|l| l == "// file-provider: scratch"))
+    {
+        let fixture = file_fixture::Fixture::new();
+        let libs = [fixture.library()];
+        let mut config =
+            subscript_codegen::RunConfig::default().with_enabled_modules(&["node:fs/promises"]);
+        config.native_libraries = &libs;
+        config.pre_init_hook = Some("subscript_test_files_setup");
+        return subscript_codegen::run_c_aot_configured(sources, config).map(|o| o.stdout);
+    }
     let (pre_entry, post_run) = host_hooks(id);
     run_c_aot_with_native_libraries_and_host_hooks(sources, libraries, pre_entry, post_run)
 }
@@ -65,6 +81,13 @@ fn run_dev_corpus_entry(
     sources: &[subscript_compiler::SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
+    if sources
+        .iter()
+        .any(|f| f.source.lines().any(|l| l == "// file-provider: scratch"))
+    {
+        let mut fixture = file_fixture::Fixture::new();
+        return subscript_codegen::run_jit_configured(sources, fixture.config()).map(|o| o.stdout);
+    }
     if id == HOST_OWNED_STATE_ID {
         let fixture =
             native_fixture::fixture().expect("the caller excludes unavailable fixture entries");

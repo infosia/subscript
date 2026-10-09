@@ -87,7 +87,20 @@ impl Checker<'_> {
         }
         let unsupported_form =
             export.type_only || export.specifiers.iter().any(unsupported_export_specifier);
+        // A standard module has no export list to re-export (§185 rule 1).
+        let standard_source = export
+            .src
+            .as_ref()
+            .filter(|source| &*source.value == "node:fs/promises");
+        if let Some(source) = standard_source {
+            self.reject_subset(
+                RejectionSite::FileModuleImportForm,
+                super::file_module::FORMS,
+                self.pos(source.span),
+            );
+        }
         let missing_source = !unsupported_form
+            && standard_source.is_none()
             && export.src.as_ref().is_some_and(|source| {
                 let stem = normalize_module_specifier(&source.value);
                 !self.prog.files.iter().any(|file| file.stem == stem)
@@ -138,7 +151,11 @@ impl Checker<'_> {
                         "`{name}` was imported with `import type`; its re-export is a type-only export, outside the named module surface"
                     ), self.pos(named.orig.span()));
             }
-            let target = if unsupported_form || missing_source || type_only_local {
+            let target = if unsupported_form
+                || missing_source
+                || type_only_local
+                || standard_source.is_some()
+            {
                 ExportTarget::Declaration(ScopeItem::Poisoned)
             } else {
                 match &export.src {

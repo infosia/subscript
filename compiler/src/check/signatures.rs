@@ -206,6 +206,58 @@ impl<'p> Checker<'p> {
                     }
                 }
                 let raw = import.src.value.to_string();
+                if raw == "node:fs/promises" {
+                    let enabled = self.enabled_modules.iter().any(|m| m == &raw);
+                    if !enabled {
+                        self.file_error(
+                            RejectionSite::FileModuleDisabled,
+                            "enable this module with --enable-module node:fs/promises",
+                            self.pos(import.src.span),
+                        );
+                    }
+                    if import.specifiers.is_empty() {
+                        self.file_error(
+                            RejectionSite::FileModuleImportForm,
+                            super::file_module::FORMS,
+                            self.pos(import.src.span),
+                        );
+                    }
+                    for spec in &import.specifiers {
+                        if let ast::ImportSpecifier::Named(named) = spec {
+                            let local = named.local.sym.to_string();
+                            let imported = named
+                                .imported
+                                .as_ref()
+                                .map_or_else(|| local.clone(), |n| n.atom().to_string());
+                            let item = match imported.as_str() {
+                                "readFile" if enabled => ScopeItem::StandardFile(false),
+                                "writeFile" if enabled => ScopeItem::StandardFile(true),
+                                "readFile" | "writeFile" => ScopeItem::Poisoned,
+                                _ => {
+                                    self.file_error(
+                                        RejectionSite::FileModuleMember,
+                                        super::file_module::FORMS,
+                                        self.pos(spec.span()),
+                                    );
+                                    ScopeItem::Poisoned
+                                }
+                            };
+                            additions.push((
+                                local,
+                                item,
+                                self.pos(named.local.span),
+                                type_only_import(import, named),
+                            ));
+                        } else {
+                            self.file_error(
+                                RejectionSite::FileModuleImportForm,
+                                super::file_module::FORMS,
+                                self.pos(spec.span()),
+                            );
+                        }
+                    }
+                    continue;
+                }
                 let stem = normalize_module_specifier(&raw);
                 let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
                     let pos = self.pos(import.src.span);

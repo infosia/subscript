@@ -1,3 +1,48 @@
+PROGRAM	s185-encoding-string	TS2345		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { const encoding: string = "utf8"; await readFile("text.txt", encoding); }
+END FILE
+END PROGRAM
+PROGRAM	s185-bool-data	TS2769		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {writeFile} from "node:fs/promises"; export async function main(): Promise<void> { const data: boolean[] = [true]; await writeFile("data.bin", data); }
+END FILE
+END PROGRAM
+PROGRAM	s185-number-path	TS2345		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { await readFile(5, "utf8"); }
+END FILE
+END PROGRAM
+PROGRAM	s185-i32-data			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {writeFile} from "node:fs/promises"; export async function main(): Promise<void> { const data: i32[] = [1, 2]; await writeFile("data.bin", data); }
+END FILE
+END PROGRAM
+PROGRAM	s185-f64-data			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {writeFile} from "node:fs/promises"; export async function main(): Promise<void> { const data: f64[] = [1.5]; await writeFile("data.bin", data); }
+END FILE
+END PROGRAM
+PROGRAM	s185-alias-path			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; type Name = "a.txt" | "b.txt"; export async function main(): Promise<void> { const name: Name = "a.txt"; await readFile(name, "utf8"); }
+END FILE
+END PROGRAM
+PROGRAM	s185-alias-data			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {writeFile} from "node:fs/promises"; type Text = "x" | "y"; export async function main(): Promise<void> { const text: Text = "x"; await writeFile("text.txt", text); }
+END FILE
+END PROGRAM
+PROGRAM	s185-reexport			0	enable-module=node:fs/promises
+FILE	E	main.ts
+export {writeFile} from "node:fs/promises"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s185-function-value			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { const read = readFile; await read("text.txt", "utf8"); }
+END FILE
+END PROGRAM
 PROGRAM	a-control-prototype	TS2339		0
 FILE	E	target/s154/forms/a-control-prototype/main.ts
 class C {} export function main(): void { new C().prototype; }
@@ -9316,5 +9361,45 @@ END PROGRAM
 PROGRAM	s175-block			0
 FILE	E	target/s154/forms/s175-block/main.ts
 async function work(): Promise<i32> { return 7; } export function main(): void { let f: () => Promise<i32> = work; { const h = work(); f = () => h; } }
+END FILE
+END PROGRAM
+PROGRAM	s185-disabled			0
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { await readFile("text.txt", "utf8"); }
+END FILE
+END PROGRAM
+PROGRAM	s185-options	TS2345		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { await readFile("text.txt", {encoding:"utf8"}); }
+END FILE
+END PROGRAM
+PROGRAM	s185-encoding			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { const encoding = "utf8"; await readFile("text.txt", encoding); }
+END FILE
+END PROGRAM
+PROGRAM	s185-literal	TS2345		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { await readFile("text.txt", "latin1"); }
+END FILE
+END PROGRAM
+PROGRAM	s185-member	TS2305		0	enable-module=node:fs/promises
+FILE	E	main.ts
+import {stat} from "node:fs/promises"; export async function main(): Promise<void> { await stat("text.txt"); }
+END FILE
+END PROGRAM
+PROGRAM	s185-default			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import Files from "node:fs/promises"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s185-bare			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import "node:fs/promises"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s185-namespace			0	enable-module=node:fs/promises
+FILE	E	main.ts
+import * as Files from "node:fs/promises"; export function main(): void {}
 END FILE
 END PROGRAM

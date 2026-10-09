@@ -134,3 +134,24 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     sources.splice(0..0, interop::mirrors_for(&text, SourceFile::ambient));
     sources
 }
+
+/// Build options stated by a corpus entry, separate from production source semantics.
+#[allow(dead_code)]
+pub fn check_options(files: &[SourceFile]) -> subscript_compiler::CheckOptions {
+    let mut options = subscript_compiler::CheckOptions::default();
+    for source in files {
+        for line in source.source.lines() {
+            if let Some(module) = line.strip_prefix("// enable-module: ") {
+                options.enabled_modules.push(module.to_owned());
+            }
+        }
+    }
+    options
+}
+/// Checks a corpus entry with its explicit build options.
+#[allow(dead_code)]
+pub fn check_program(
+    files: &[SourceFile],
+) -> Result<subscript_compiler::hir::Module, Vec<subscript_compiler::Diagnostic>> {
+    subscript_compiler::check_program_with(files, &check_options(files))
+}

@@ -91,6 +91,19 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
         } else {
             Vec::new()
         },
+        // A fragment past the enable check runs in a build that enables the module.
+        enabled_modules: if matches!(
+            variant,
+            Divergence::FileModuleEncoding
+                | Divergence::FileModuleNumberArray
+                | Divergence::FileModuleStringAlias
+                | Divergence::FileModuleImportForm
+                | Divergence::FileModuleFunctionValue
+        ) {
+            vec!["node:fs/promises".to_owned()]
+        } else {
+            Vec::new()
+        },
         ..crate::CheckOptions::default()
     };
     let diagnostics = match crate::check_program_with(&files, &options) {
@@ -110,7 +123,11 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
     }
     if !subscript.starts_with("no equivalent; ") {
         let files = fragment_files(variant, subscript);
-        if let Err(diagnostics) = check_program(&files) {
+        let options = crate::CheckOptions {
+            enabled_modules: options.enabled_modules,
+            ..crate::CheckOptions::default()
+        };
+        if let Err(diagnostics) = crate::check_program_with(&files, &options) {
             failures.push(format!(
                 "{variant:?}: subscript fragment rejected: {}",
                 crate::render_diagnostics(&files, &diagnostics)
@@ -347,6 +364,7 @@ fn every_subset_rejection_carries_its_divergence() {
             files,
             poison: Vec::new(),
             runner: false,
+            enabled_modules: Vec::new(),
         };
         paths.extend(rejection_programs::write_tsc(&program, &temporary));
     }
@@ -945,6 +963,7 @@ fn accepted_first_diagnostic_without_block_fires_in_source_order() {
         files: vec![SourceFile::entry("main.ts", "")],
         poison: vec![],
         runner: false,
+        enabled_modules: Vec::new(),
     };
     let first = super::rejection::diagnostic(
         RejectionSite::NullableMember,

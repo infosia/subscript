@@ -46,6 +46,7 @@ impl Context {
             context_id,
             next_host_operation_id: 1,
             host_operations: HashMap::new(),
+            file_provider: None,
             task_groups: HashMap::new(),
             live_bytes_counter: 0,
             allocations: HashMap::new(),

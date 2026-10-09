@@ -58,10 +58,15 @@ pub fn repository_relative(root: &std::path::Path, absolute: &std::path::Path) -
     )
 }
 
+/// The standard module specifiers that `CheckOptions::enabled_modules` accepts.
+pub const STANDARD_MODULES: &[&str] = &["node:fs/promises"];
+
 /// Options that control program checking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Default)]
 pub struct CheckOptions {
+    /// Standard module specifiers enabled by this build.
+    pub enabled_modules: Vec<String>,
     /// Import specifiers to bind as poisoned when absent.
     pub poison_missing_modules: Vec<String>,
 }
@@ -142,8 +147,9 @@ pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic
 ///
 /// # Errors
 ///
-/// Returns the diagnostic list when the program parses with errors or
-/// violates any language rule.
+/// Returns the diagnostic list when the program parses with errors,
+/// violates any language rule, or `options.enabled_modules` names a module
+/// outside [`STANDARD_MODULES`].
 pub fn check_program_with(
     files: &[SourceFile],
     options: &CheckOptions,
@@ -154,6 +160,23 @@ pub fn check_program_with(
             "no source files given",
             Pos::new(String::new(), 1, 1),
         )]);
+    }
+    let unknown: Vec<_> = options
+        .enabled_modules
+        .iter()
+        .filter(|module| !STANDARD_MODULES.contains(&module.as_str()))
+        .map(|module| {
+            diagnostic(
+                RejectionSite::EnabledModuleUnknown,
+                format!(
+                    "unknown standard module `{module}`; the enabled standard module must be node:fs/promises"
+                ),
+                Pos::new(String::new(), 1, 1),
+            )
+        })
+        .collect();
+    if !unknown.is_empty() {
+        return Err(unknown);
     }
     swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
         let parsed = parse::parse_program(files)?;

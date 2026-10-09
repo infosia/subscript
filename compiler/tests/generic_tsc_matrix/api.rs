@@ -63,6 +63,11 @@ const OMITTED: &[&str] = &[
     "Outbox.constructor",
     "Worker.constructor",
     "ValueType",
+    // Each file function is an overload set, which `api.cjs` omits, and a
+    // cell program does not enable the module; the s185 rejection
+    // programs measure each argument position against tsc (§185 rule 5a).
+    "node:fs/promises.readFile",
+    "node:fs/promises.writeFile",
 ];
 
 fn omitted_names(text: &str) -> Vec<&str> {

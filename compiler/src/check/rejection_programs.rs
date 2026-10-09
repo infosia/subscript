@@ -8,6 +8,7 @@ pub(super) struct Program {
     pub(super) files: Vec<SourceFile>,
     pub(super) poison: Vec<String>,
     pub(super) runner: bool,
+    pub(super) enabled_modules: Vec<String>,
 }
 
 pub(super) fn programs() -> Vec<Program> {
@@ -44,6 +45,14 @@ pub(super) fn programs() -> Vec<Program> {
                     .map(str::to_owned)
                     .collect(),
                 runner: fields[4] == "1",
+                enabled_modules: fields
+                    .iter()
+                    .skip(5)
+                    .filter_map(|field| field.strip_prefix("enable-module="))
+                    .flat_map(|modules| modules.split(","))
+                    .filter(|module| !module.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
                 files,
             }
         })
@@ -53,6 +62,7 @@ pub(super) fn programs() -> Vec<Program> {
 pub(super) fn check(program: &Program) -> Vec<crate::Diagnostic> {
     let options = CheckOptions {
         poison_missing_modules: program.poison.clone(),
+        enabled_modules: program.enabled_modules.clone(),
         ..CheckOptions::default()
     };
     match crate::check_program_with(&program.files, &options) {

@@ -1,7 +1,7 @@
 //! Compilation of one dev-tier module and the call into a finalized entry.
 
 use cranelift_jit::{JITBuilder, JITModule};
-use subscript_compiler::{check_program, SourceFile};
+use subscript_compiler::SourceFile;
 use subscript_runtime::Context;
 
 use super::memory::install_reservation;
@@ -20,7 +20,19 @@ pub(super) fn compile_jit(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<(JITModule, Lowered), RunError> {
-    let hir = check_program(files).map_err(RunError::Rejected)?;
+    compile_jit_with(
+        files,
+        libraries,
+        &subscript_compiler::CheckOptions::default(),
+    )
+}
+
+pub(super) fn compile_jit_with(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+    options: &subscript_compiler::CheckOptions,
+) -> Result<(JITModule, Lowered), RunError> {
+    let hir = subscript_compiler::check_program_with(files, options).map_err(RunError::Rejected)?;
     hir.runner_main()
         .map_err(|diagnostic| RunError::Rejected(vec![diagnostic]))?;
 
