@@ -76,16 +76,14 @@ agent's role and follows the coding agent's rules.
   Forks are still cited by URL and pinned by commit — the rule against
   filesystem paths is unaffected.
 - **Being a standalone program runtime.** subscript is embedded by
-  construction: the host owns the main loop and calls exported functions,
-  and platform capabilities (files, sockets, devices) are the
-  host's to expose through its C ABI, not the language's to provide.
-  Threads are not on this list: the standard library provides Workers
-  (`specs/blocks/stdlib.md`, Q35), runtime-owned threads with
-  per-Context isolation and copy-only messaging; the host still owns
-  its main loop. The standard library grows in computation; reach into
-  the outside world does not. This is a division of responsibility,
-  not a capability ceiling — and not a statement about how broad the
-  language's own surface may become.
+  construction: the host owns the main loop and calls exported
+  functions. The standard library can provide modules that reach the
+  outside world (files, sockets, HTTP), as it provides Workers
+  (`specs/blocks/stdlib.md`, Q35). The present library covers
+  computation only; that is its present scope, not a limit of the
+  language. Each such module crosses the C ABI (invariant 4) and
+  delivers its results at a host step (§178, §184): no event loop and
+  no background scheduler run script code.
 
 ## Compiler and oracle
 

@@ -80,12 +80,11 @@ gaps to be closed later:
   no implicit `f64` `number`. The accepted subset is defined by an
   executable corpus, not by JavaScript's spec.
 - **Not a standalone program runtime.** subscript is embedded: the host
-  owns the main loop and calls exported functions, and platform
-  capabilities (files, sockets, devices, threads) come from the host
-  through its C ABI rather than from the language. The standard library
-  grows in *computation* — numbers, strings, collections — while access to
-  the outside world stays the host's to grant. That is a division of
-  responsibility, not a capability ceiling.
+  owns the main loop and calls exported functions. The present standard
+  library covers *computation* — numbers, strings, collections, and
+  Workers. That is its present scope, not a limit of the language: a
+  library that reaches files or the network crosses the C ABI, and its
+  async results arrive at a host step.
 - **Not a sandbox.** A script is first-party code, and the compiler
   spends its effort on early, precise diagnostics for honest mistakes
   rather than on containing hostile ones. A host that runs content it
