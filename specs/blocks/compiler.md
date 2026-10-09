@@ -226,3 +226,4 @@ Every section, with its status:
 | §182 | A diagnostic shows the form it rejects | active | [`s182-a-diagnostic-shows-the-form-it-rejects.md`](compiler/s182-a-diagnostic-shows-the-form-it-rejects.md) |
 | §183 | A host-facing definition has its declared type | active | [`s183-a-host-facing-definition-has-its-declared-type.md`](compiler/s183-a-host-facing-definition-has-its-declared-type.md) |
 | §184 | A completion returns a string or bytes | active | [`s184-a-completion-returns-a-string-or-bytes.md`](compiler/s184-a-completion-returns-a-string-or-bytes.md) |
+| §185 | A file module that the host enables | active | [`s185-a-file-module-that-the-host-enables.md`](compiler/s185-a-file-module-that-the-host-enables.md) |

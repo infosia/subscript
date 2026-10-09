@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 20, 2026-09-27 (Rev 20 adds §9.11 and §10.9, `Array.of` at fixed arity and `new Map(map)`; Rev 19 adds §8.10 and §9.10, `at`, reference-element `find`/`findLast`, `findLastIndex`, and `flatMap`; Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 21, 2026-10-09 (Rev 21 adds §20, the provisional default for modules that reach the outside world; Rev 20 adds §9.11 and §10.9, `Array.of` at fixed arity and `new Map(map)`; Rev 19 adds §8.10 and §9.10, `at`, reference-element `find`/`findLast`, `findLastIndex`, and `flatMap`; Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -2555,3 +2555,30 @@ call-stack representation with frames and source positions (node prints
 the frames of the run). `cause`: it needs an arbitrary payload and an
 absent-value model, and C7 provides no `undefined`. Reject entry
 `r389`.
+
+## 20. Modules that reach the outside world: the provisional default (2026-10-09)
+
+**Status: provisional.** This section is a starting default for the
+first outside-world modules. It is not a constraint on a later API.
+When a later API has a better form for its problem, that form
+replaces this default for that API, and the reason goes into the
+section that decides it (`CLAUDE.md` core principle 14 applies: this
+record is not a reason to refuse a better form).
+
+Default: an outside-world API takes the shape of the Node.js API that
+returns a `Promise`, with the same module specifier and function
+names, so a program runs under `node` too and `node` serves as the
+divergence detector. A form that needs an event loop, a callback, a
+synchronous host call, a stream, or an `EventEmitter` is not taken.
+Types narrow to this language's types (`Buffer` becomes `u8[]`), and
+each narrowing is a collision row.
+
+The host enables each such module, and the host does the I/O through
+the §178/§184 completion functions (`compiler.md` §185).
+
+Why: subscript runs inside applications, which address files by path;
+the browser file APIs assume an origin-private store with handles. The
+measurement of the alternatives is
+`specs/tracking/s185-file-module-measurement.md`; the comparison of
+the Node, File System Access, and File/Blob shapes is in `compiler.md`
+§185.

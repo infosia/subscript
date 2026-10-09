@@ -107,6 +107,8 @@ and §116 exception delivery do not apply to it.
     discards each pending source and runs no script code. The host
     must stop delivery before it destroys the Context: the endpoint
     does not make a freed Context pointer safe.
+    *(Corrected 2026-10-09 by §185: a frame created after a reload can
+    await a source created before it.)*
 11. **Inspection.** §169 reports a source as kind 4, `WAITING` before
     completion and `COMPLETE` after, with zero function and await
     positions and its creation position. `subscript_rt_ctx_async_unfinished`
