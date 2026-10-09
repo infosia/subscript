@@ -642,8 +642,10 @@ frame=2 paused
 frame=3 dt=0.25 total=4
 ```
 
-**A handle that you pass to a script transfers no ownership.** The
-script can copy it, keep it, and use it in a later call. You keep the
+**A handle that you give to a script transfers no ownership**, by any
+route: an entry parameter, a foreign-call result, or a field or element
+of a struct that you fill. The script can copy it, keep it, and use it
+in a later call. You keep the
 object valid while any script code of that Context can use the handle;
 a script object that holds the handle keeps nothing alive on your side
 (`compiler.md` §142).
@@ -923,8 +925,9 @@ for the whole pattern in use.
 
 #### How long a host object stays valid
 
-A handle that your C API returns follows the same rules as a handle
-parameter (`compiler.md` §142):
+A handle follows the same rules by every route that brings it to the
+script (`compiler.md` §142): an entry parameter, a foreign-call result,
+or a field or element of a struct that your C API returns or fills.
 
 1. The handle transfers no ownership. The script can copy it, keep it
    in any object, closure, or module global, and use it later.

@@ -207,8 +207,10 @@ internal lowering error: `setSpeed` argument 0 expects i32, got i64
 ```
 
 A handle crosses as `EntryArg::Handle(*mut c_void)`. A handle that
-you pass to a script transfers no ownership. The script can copy it,
-keep it, and use it in a later call. You keep the object valid while
+you give to a script transfers no ownership, by any route: an entry
+parameter, a foreign-call result, or a field or element of a struct
+that you fill. The script can copy it, keep it, and use it in a later
+call. You keep the object valid while
 any script code of that Context can use the handle; a script object
 that holds the handle keeps nothing alive on your side
 (`compiler.md` §142).

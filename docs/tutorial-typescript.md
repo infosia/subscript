@@ -1073,13 +1073,14 @@ is step 6 of the [C/C++ tutorial](tutorial-c-cpp.md).
 ### Values that come from the host
 
 A value comes from the host as an entry parameter, as a foreign-call
-result, or as a completion. Each kind has one owner and one release
+result, as a field of a struct that the host fills, or as a
+completion. Each kind has one owner and one release
 rule. The section numbers refer to
 [`specs/blocks/compiler.md`](../specs/blocks/compiler.md).
 
 | Value | Owner | What the script does |
 |---|---|---|
-| A host handle: an entry parameter or a foreign-call result | The host. No ownership moves (§142 rule 1). | Copies it, keeps it in any object, closure, or module global, and uses it in a later call. It cannot free the host object. |
+| A host handle, by any route: an entry parameter, a foreign-call result, or a field or element of a struct that the host fills | The host. No ownership moves (§142 rule 1). | Copies it, keeps it in any object, closure, or module global, and uses it in a later call. It cannot free the host object. |
 | A scalar, or a struct with the C layout | The script, as a copy | Reads a copy by value, as a `@ValueType` value, with no Context allocation. A completion copies the C bytes (§178 rule 7). A `V \| null` struct is a box, not a by-value copy (§124 rule 1). |
 | A `string` or `u8[]` that a completion or the file module delivers | The Context. The completion copies the host bytes into a new value (§184 rule 2, §185 rule 4). | Uses it as any string or array. A collection or the Context release frees it. |
 | A `string` field of a struct that the host fills | The Context. The read copies the bytes of the C string view into a new string (§28 rule 3). | Same as the row above. |

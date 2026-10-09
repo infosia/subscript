@@ -106,7 +106,9 @@ typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id, ui
  * `subscript_export_<name>` and this same C signature.
  *
  * compiler.md §142 rules 1 and 2:
- * A handle that the host passes to a script transfers no ownership.
+ * A handle value from the host transfers no ownership, by any route:
+ * an entry parameter, a foreign-call result, or a field or element of
+ * a value that the host fills.
  * The script can copy the handle, keep it, and use it in a later call.
  * The host keeps the object valid while any script code of that Context
  * can use the handle.
