@@ -158,6 +158,8 @@ impl<'p> Checker<'p> {
             .or_else(|| (record.value == "void").then_some("void"))
         {
             Some("void") => Some(Type::Void),
+            _ if record.value == "string" => Some(Type::Str),
+            _ if record.value == "u8[]" => Some(Type::Array(Box::new(Type::U8))),
             Some("i8") => Some(Type::I8),
             Some("u8") => Some(Type::U8),
             Some("i16") => Some(Type::I16),
@@ -205,6 +207,7 @@ impl<'p> Checker<'p> {
             }
         }
         let supported = |ty: &Type| match self.apparent_type(ty) {
+            Type::Str => record.value == "string",
             Type::Void
             | Type::I8
             | Type::U8
@@ -219,6 +222,9 @@ impl<'p> Checker<'p> {
             | Type::F64
             | Type::Bool
             | Type::Enum(_) => true,
+            Type::Array(element) => {
+                record.value == "u8[]" && self.apparent_type(&element) == Type::U8
+            }
             Type::StringAlias(_) => false,
             Type::Class(id) => self
                 .completion_struct_field_error(id, &mut HashSet::new())

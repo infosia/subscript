@@ -61,7 +61,7 @@ fn completion_form_carries_scalar_struct_void_layout_and_error_metadata() {
         let lir::InstructionKind::HostCompletion {
             function,
             result_size,
-            is_void,
+            result_kind,
             error_metadata,
         } = &instruction.kind
         else {
@@ -69,13 +69,13 @@ fn completion_form_carries_scalar_struct_void_layout_and_error_metadata() {
         };
         let foreign = &module.foreign_functions[function.0 as usize];
         let expected = match foreign.source_name.as_str() {
-            "read" => (4, false, 1),
-            "pair" => (16, false, 0),
-            "done" => (0, true, 0),
+            "read" => (4, 0, 1),
+            "pair" => (16, 0, 0),
+            "done" => (0, 1, 0),
             _ => unreachable!(),
         };
         assert_eq!(
-            (*result_size, *is_void, instruction.operands.len()),
+            (*result_size, *result_kind, instruction.operands.len()),
             expected
         );
         let error = module
@@ -173,7 +173,7 @@ fn stock_tsc_checks_lir_inputs_with_the_prelude() {
 }
 
 #[test]
-fn verifier_checks_void_flag_metadata_and_operands() {
+fn verifier_checks_result_kind_metadata_and_operands() {
     let valid = module();
     verify_module(&valid).expect("valid control");
     for (case, message) in [
@@ -198,13 +198,13 @@ fn verifier_checks_void_flag_metadata_and_operands() {
             })
             .expect("scalar form");
         if let lir::InstructionKind::HostCompletion {
-            is_void,
+            result_kind,
             error_metadata,
             ..
         } = &mut instruction.kind
         {
             match case {
-                1 => *is_void = true,
+                1 => *result_kind = 1,
                 2 => error_metadata[3] = 0,
                 3 => instruction.operands.clear(),
                 _ => unreachable!(),
@@ -343,4 +343,50 @@ fn verifier_rejects_compared_boundary_class_with_empty_header_identity() {
         errors[0].message,
         format!("boundary class {index} has no header identity for host layout comparison")
     );
+}
+
+#[test]
+fn verifier_compares_result_kind_with_independent_checked_declaration() {
+    // Change the declaration and the result type. Keep the source instruction kind unchanged.
+    for (old, new) in [
+        ("string", "u8[]"),
+        ("u8[]", "string"),
+        ("void", "string"),
+        ("int64_t", "string"),
+    ] {
+        let script_ty = |c| match c {
+            "string" => Type::Str,
+            "u8[]" => Type::Array(Box::new(Type::U8)),
+            "void" => Type::Void,
+            _ => Type::I64,
+        };
+        let hir = check_program(&[
+            SourceFile::ambient("kind.d.ts", format!("// @subscript-c-header include=\"kind.h\"\n// @subscript-c-completion function=\"read\" result=\"{old}\"\ndeclare function read(): Promise<{}>;", match old { "int64_t" => "i64", other => other })),
+            SourceFile::new("kind.ts", "export async function main(): Promise<void> { await read(); }"),
+        ]).expect("checked control");
+        let mut module = lower_module(&hir).expect("lower control");
+        verify_module(&module).expect("same-shape firing control");
+        module.foreign_functions[0].completion_result = Some((new.into(), script_ty(new)));
+        for function in &mut module.functions {
+            for block in &mut function.blocks {
+                for instruction in &mut block.instructions {
+                    if matches!(
+                        instruction.kind,
+                        lir::InstructionKind::HostCompletion { .. }
+                    ) {
+                        let result = instruction.result.expect("source result");
+                        function.values[result.0 as usize].ty =
+                            lir::ValueType::Data(Type::async_handle(script_ty(new)));
+                    }
+                }
+            }
+        }
+        let errors = verify_module(&module).expect_err("kind disagrees with checked result");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("host completion result is invalid")),
+            "{errors:?}"
+        );
+    }
 }

@@ -860,7 +860,12 @@ its last parameter and returns `void`. Name it with `subscript bind
 the endpoint parameter, with the result `Promise<T>`, and the script
 awaits it. The host completes the operation later with
 `subscript_rt_complete_value`, `subscript_rt_complete_void`, or
-`subscript_rt_complete_error` (§178).
+`subscript_rt_complete_error` (§178). For `string` and `u8[]` results, use
+`subscript_rt_complete_string` and `subscript_rt_complete_bytes` (§184).
+These functions copy the host buffer into a Context-owned value.
+`INVALID_UTF8` (5) rejects invalid text, including an Error message.
+`TOO_LARGE` (6) rejects a byte length above `i32::MAX`.
+Both statuses leave the source pending so that the host can retry.
 
 The frontend is libclang, so it parses real C — preprocessor,
 attributes, typedefs, nested structs, function-pointer typedefs, enums,

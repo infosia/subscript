@@ -166,6 +166,14 @@ typedef enum subscript_rt_completion_status {
  * The subscript_rt_context holds a trap. The source does not change.
  */
     SUBSCRIPT_RT_COMPLETION_TRAPPED = 4,
+/**
+ * The supplied text is not valid UTF-8. The source stays pending.
+ */
+    SUBSCRIPT_RT_COMPLETION_INVALID_UTF8 = 5,
+/**
+ * The byte length exceeds i32::MAX. The source stays pending.
+ */
+    SUBSCRIPT_RT_COMPLETION_TOO_LARGE = 6,
 } subscript_rt_completion_status;
 
 typedef struct subscript_rt_async_step_report {
@@ -194,15 +202,37 @@ typedef struct subscript_rt_async_task_info {
 typedef void (*subscript_rt_async_task_visitor)(void* userdata, const subscript_rt_async_task_info* info);
 
 /**
- * Completes a source with an Error at its creation position (§178).
- * The call queues waiters without script execution. Allocation failure returns TRAPPED.
- * It checks TRAPPED, STALE, then DUPLICATE. A last unobserved release traps 29 and returns OK.
+ * Completes a byte-array source with a subscript_rt_context-owned copy (§184).
+ * Checks TRAPPED, STALE, DUPLICATE, MISMATCH, then TOO_LARGE. The runtime accepts all byte values.
+ * Input errors leave the source pending. Allocation failure returns TRAPPED.
  *
  * # Safety
- * The subscript_rt_context is live on its owner thread. For a pending source, message holds length readable bytes.
- * The `message` contains UTF-8 bytes. The runtime copies these bytes.
+ * The subscript_rt_context is live on its owner thread. Nonzero length requires readable bytes during this call.
+ * A zero length accepts a null pointer.
+ */
+subscript_rt_completion_status subscript_rt_complete_bytes(subscript_rt_context* ctx, subscript_rt_completion endpoint, const uint8_t* bytes, size_t length);
+/**
+ * Completes a source with an Error at its creation position (§178).
+ * The runtime copies `message` bytes and returns INVALID_UTF8 if they are not valid UTF-8.
+ * The call queues waiters without script execution. Allocation failure returns TRAPPED.
+ * Checks TRAPPED, STALE, DUPLICATE, TOO_LARGE, then INVALID_UTF8. Input errors leave the source pending.
+ * A last unobserved release traps 29 and returns OK.
+ *
+ * # Safety
+ * The subscript_rt_context is live on its owner thread. Nonzero length requires readable message bytes during this call.
+ * A zero length accepts a null pointer.
  */
 subscript_rt_completion_status subscript_rt_complete_error(subscript_rt_context* ctx, subscript_rt_completion endpoint, const char* message, size_t length);
+/**
+ * Completes a string source with a subscript_rt_context-owned UTF-8 copy (§184).
+ * Checks TRAPPED, STALE, DUPLICATE, MISMATCH, TOO_LARGE, then INVALID_UTF8.
+ * Input errors leave the source pending. Allocation failure returns TRAPPED.
+ *
+ * # Safety
+ * The subscript_rt_context is live on its owner thread. Nonzero length requires readable bytes during this call.
+ * A zero length accepts a null pointer.
+ */
+subscript_rt_completion_status subscript_rt_complete_string(subscript_rt_context* ctx, subscript_rt_completion endpoint, const char* bytes, size_t length);
 /**
  * Completes a value source (§178). The call copies bytes and queues waiters without script execution.
  * It checks TRAPPED, STALE, DUPLICATE, then MISMATCH. Allocation failure returns TRAPPED.

@@ -1,6 +1,7 @@
 //! Host completion facts derived from the checked signature and target layout.
 
 use super::*;
+use subscript_runtime::context::completion_kind;
 
 impl FunctionBuilder<'_, '_> {
     pub(super) fn host_completion_kind(
@@ -56,13 +57,12 @@ impl FunctionBuilder<'_, '_> {
         Ok(l::InstructionKind::HostCompletion {
             function,
             result_size: u64::from(size),
-            is_void: self
-                .lowering
-                .hir
-                .foreign_fns
-                .get(function.0 as usize)
-                .and_then(|f| f.completion_result.as_deref())
-                == Some("void"),
+            result_kind: match c_result {
+                "void" => completion_kind::VOID,
+                "string" => completion_kind::STRING,
+                "u8[]" => completion_kind::BYTES,
+                _ => completion_kind::VALUE,
+            },
             error_metadata: [
                 u64::from(layout.size),
                 error_id as u64,
@@ -84,13 +84,13 @@ pub(super) fn verify_host_completion(
     let l::InstructionKind::HostCompletion {
         function: id,
         result_size,
-        is_void,
+        result_kind,
         error_metadata: metadata,
     } = &instruction.kind
     else {
         return;
     };
-    let (id, result_size, is_void) = (*id, *result_size, *is_void);
+    let (id, result_size, result_kind) = (*id, *result_size, *result_kind);
     let bad = |message: &str, errors: &mut Vec<VerifyError>| {
         errors.push(super::verify::finding(function, message));
     };
@@ -155,12 +155,19 @@ pub(super) fn verify_host_completion(
         return;
     };
     if result != Some(&l::ValueType::Data(Type::async_handle(ty.clone())))
-        || is_void != (*ty == Type::Void)
+        || result_kind
+            != match ty {
+                Type::Void => completion_kind::VOID,
+                Type::Str => completion_kind::STRING,
+                Type::Array(element) if **element == Type::U8 => completion_kind::BYTES,
+                _ => completion_kind::VALUE,
+            }
     {
         bad("host completion result is invalid", errors);
     }
     let supported = match ty {
-        Type::Void
+        Type::Str
+        | Type::Void
         | Type::Bool
         | Type::I8
         | Type::U8
@@ -174,6 +181,7 @@ pub(super) fn verify_host_completion(
         | Type::F32
         | Type::F64
         | Type::Enum(_) => true,
+        Type::Array(element) => **element == Type::U8,
         Type::Class(id) => module
             .classes
             .get(id.0)
@@ -229,7 +237,11 @@ pub(super) fn verify_host_completion(
 // The directive selects C scalar sizes independently of the script layout table.
 // Named typedefs use their resolved C boundary kinds; structs use their mirror fields.
 fn c_result_layout(c: &str, ty: &Type, module: &hir::Module) -> Result<(u32, u32), String> {
-    let scalar = if c == "void" {
+    let scalar = if matches!((c, ty), ("string", Type::Str))
+        || (c == "u8[]" && *ty == Type::Array(Box::new(Type::U8)))
+    {
+        Some((8, 8))
+    } else if c == "void" {
         Some((0, 1))
     } else {
         subscript_boundary::c_kind(c).map(|kind| (kind.size, kind.align))

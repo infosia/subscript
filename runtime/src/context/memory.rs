@@ -1136,6 +1136,7 @@ impl Context {
         }
         let data = self.alloc(len, CLASS_ARRAY_DATA, pos_id);
         if data.is_null() {
+            self.delete(handle as usize, pos_id);
             return std::ptr::null_mut();
         }
         // SAFETY: the new allocation has `len` writable bytes. The caller

@@ -731,8 +731,8 @@ pub enum InstructionKind {
         function: ForeignFunctionId,
         /// Target-layout result payload size.
         result_size: u64,
-        /// Whether the source completes without a value.
-        is_void: bool,
+        /// Result kind: value=0, void=1, string=2, bytes=3 (§184).
+        result_kind: u32,
         /// Error payload size, class id, kind/name/message offsets, and kind tag.
         error_metadata: [u64; 6],
     },

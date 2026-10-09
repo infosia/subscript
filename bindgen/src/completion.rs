@@ -64,8 +64,8 @@ pub(crate) fn select(
                 "completion function `{function}` must return `void`"
             )));
         }
-        let mirror = if result == "void" {
-            "void".to_string()
+        let mirror = if matches!(result.as_str(), "void" | "string" | "u8[]") {
+            result.clone()
         } else if let Some(scalar) = lang_scalar(result) {
             scalar.to_string()
         } else if result != ENDPOINT
@@ -78,7 +78,7 @@ pub(crate) fn select(
         } else {
             return Err(ParseError(format!(
                 "completion function `{function}` result `{result}` is outside §178 rule 6: \
-                 expected a mapped C scalar, a boundary class struct, or `void`"
+                 expected a mapped C scalar, a boundary class struct, `void`, `string`, or `u8[]`"
             )));
         };
         if matches!(registry.get(result), Some(Kind::Boundary)) {

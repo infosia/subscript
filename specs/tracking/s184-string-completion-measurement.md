@@ -551,3 +551,76 @@ Keep string-field completion structs rejected until that section defines and mea
 - The runtime probes pass in both allocator modes, with direct byte comparisons and source-count checks.
 - Every production prototype file and temporary test file is reverted or removed.
 - The final working tree contains only this measurement note. No commit was made.
+
+## Implementation
+
+At contract pin `da3d3133`, the binder rejects the `a354` header:
+
+```text
+subscript: bindgen: completion function `subCompletionText` result `string` is outside §178 rule 6: expected a mapped C scalar, a boundary class struct, or `void`
+```
+
+The pin binary rejects `a354` in both the dev checker and C emitter, with no stdout:
+
+```text
+error[S100]: completion function `subCompletionText` must return Promise<T> matching supported C result `string`
+error[S100]: completion function `subCompletionBytes` must return Promise<T> matching supported C result `u8[]`
+error[S100]: completion function `subCompletionTextError` must return Promise<T> matching supported C result `string`
+error: 6 error(s)
+```
+
+The other three diagnostics reject direct awaits of these undeclared completion sources.
+The generated mirror declares `Promise<string>` and `Promise<u8[]>`.
+The binder test for these result tokens fails at the pin with the same result-set rejection.
+
+The source, LIR instruction, and internal ABI carry `result_kind`: value=0, void=1, string=2, bytes=3.
+The lowering derives the kind from the completion directive result token.
+The LIR verifier compares that kind with the separately checked foreign result type.
+
+The new runtime tests exercise both allocator modes and all sixteen source/API kind pairs.
+Invalid input keeps the source count at two, publishes no result, and permits a valid retry.
+Every Context allocation failure point restores the pre-call live allocation count and byte count before return.
+The byte-array data failure releases its partial header immediately.
+A source roots its copied value across collection. Await and aggregate reads transfer the value to ordinary script roots.
+A dropped, unread value is released with its source.
+A size-zero discarded await leaves the copied value unread and releases it with the source.
+
+The release copy probe uses the section 6 workload: fresh Context and source, preallocated 1 MiB ASCII input, three calls per row.
+The timer covers validation, allocation, copy, cache publication, and producer release.
+A byte comparison follows each timed call. Source creation and collection remain outside the timer.
+
+| Allocator / result | Three samples, microseconds | Best of three, microseconds | Measurement best, microseconds |
+|---|---|---:|---:|
+| Dev / string | 108.458, 60.833, 56.125 | 56.125 | 140.875 |
+| Dev / `u8[]` | 23.000, 22.666, 22.791 | 22.666 | 31.958 |
+| Ship / string | 59.875, 56.375, 56.041 | 56.041 | 104.750 |
+| Ship / `u8[]` | 27.084, 23.208, 22.666 | 22.666 | 42.000 |
+
+These samples do not establish a throughput guarantee.
+
+The dev JIT and C AOT produce the committed `a354` output, byte for byte:
+
+```text
+hello:5:3:0:128:255
+hello:hello
+buffer failure
+empty:0:0
+```
+
+The original seven runtime gates take 0.16 seconds together, including 40,000 completions across both allocator modes.
+The seventeen binder completion tests take 0.22 seconds together.
+The eleven completion LIR tests take 0.21 seconds together.
+These elapsed test times exclude the Rust build.
+The copy-cost probe is excluded from the ordinary test set.
+The generated C header declares both functions and both new status values.
+The C tutorial and generated corpus index describe the new surface.
+The LIR text golden changes: `a347` instructions name the result kind, and `a354` adds its lowered module.
+No existing `.expected` output changes.
+
+The three added runtime tests use eight, four, and two sources, respectively, across both allocators.
+They use small buffers; injected allocation failure prevents a boundary-length buffer allocation or input read.
+Isolated test-binary elapsed times, including process startup and excluding the Rust build:
+
+- `discarded_await_releases_copied_buffers_with_observed_value_controls`: 0.008046 seconds.
+- `bytes_error_drop_traps_with_await_controls`: 0.003396 seconds.
+- `admitted_length_boundary_reaches_allocation_failure_without_reading_input`: 0.009798 seconds.

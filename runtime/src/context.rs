@@ -802,7 +802,7 @@ mod tests;
 mod async_scheduler;
 mod host_operation;
 mod task_group;
-pub use host_operation::{CompletionEndpoint, CompletionStatus};
+pub use host_operation::{completion_kind, CompletionEndpoint, CompletionStatus};
 #[cfg(test)]
 #[path = "context/task_group_tests.rs"]
 mod task_group_tests;

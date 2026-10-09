@@ -224,6 +224,8 @@ pub fn render() -> Result<String, String> {
         ("Duplicate", "DUPLICATE", CompletionStatus::Duplicate),
         ("Mismatch", "MISMATCH", CompletionStatus::Mismatch),
         ("Trapped", "TRAPPED", CompletionStatus::Trapped),
+        ("InvalidUtf8", "INVALID_UTF8", CompletionStatus::InvalidUtf8),
+        ("TooLarge", "TOO_LARGE", CompletionStatus::TooLarge),
     ] {
         push_comment(
             &mut out,

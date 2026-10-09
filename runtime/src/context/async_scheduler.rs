@@ -380,6 +380,24 @@ impl Context {
         if let AsyncKind::Runtime(task) = &meta.kind {
             if let RuntimeTask::HostOperation(source) = task.as_ref() {
                 self.host_operations.remove(&source.operation_id);
+                if matches!(
+                    source.result_kind,
+                    completion_kind::STRING | completion_kind::BYTES
+                ) && !source.value_observed
+                {
+                    if let Some(bytes) = meta.completion.as_ref().and_then(|c| c.value()) {
+                        // SAFETY: a buffer completion caches exactly one Context value pointer.
+                        let value = unsafe { bytes.as_ptr().cast::<usize>().read_unaligned() };
+                        if source.result_kind == completion_kind::BYTES {
+                            // SAFETY: a bytes source stores a live ArrayHeader.
+                            let data = unsafe { (*(value as *const ArrayHeader)).data };
+                            if !data.is_null() {
+                                self.delete(data as usize, pos_id);
+                            }
+                        }
+                        self.delete(value, pos_id);
+                    }
+                }
             }
         }
         self.delete(frame as usize, pos_id);
@@ -501,6 +519,13 @@ impl Context {
             // SAFETY: guaranteed by the caller; the slices do not overlap
             // because cached bytes are Context-owned storage.
             unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, size) };
+        }
+        if size != 0 {
+            if let AsyncKind::Runtime(task) = &mut meta.kind {
+                if let RuntimeTask::HostOperation(source) = task.as_mut() {
+                    source.value_observed = true;
+                }
+            }
         }
         true
     }
@@ -823,6 +848,15 @@ impl Context {
                             std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, result_size);
                         } else {
                             destination.cast::<i32>().write(i32::from(bytes[0] != 0));
+                        }
+                    }
+                }
+                if fulfilled && elem_size != 0 {
+                    if let Some(meta) = self.async_frames.get_mut(&(input as usize)) {
+                        if let AsyncKind::Runtime(task) = &mut meta.kind {
+                            if let RuntimeTask::HostOperation(source) = task.as_mut() {
+                                source.value_observed = true;
+                            }
                         }
                     }
                 }

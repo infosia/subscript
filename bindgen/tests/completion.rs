@@ -42,6 +42,8 @@ fn rejects(function: &str, selections: &BindOptions, message: &str) {
 fn scalar_struct_and_void_mirrors_carry_exact_provenance() {
     for (c, ts) in [
         ("int32_t", "i32"),
+        ("string", "string"),
+        ("u8[]", "u8[]"),
         ("SubValue", "SubValue"),
         ("void", "void"),
         ("double", "f64"),
@@ -136,7 +138,6 @@ fn invalid_results_are_rejected() {
         "SubHandle",
         "int32_t*",
         "const char *",
-        "string",
         "SubString",
         "SubArray",
         "SubPointer",
@@ -305,4 +306,22 @@ fn completion_rejects_callbacks_and_wire_aliases_with_scalar_controls() {
         .expect_err("wire result")
         .0
         .contains("outside §178 rule 6"));
+}
+
+#[test]
+fn committed_buffer_completion_mirror_matches_regeneration() {
+    let options = BindOptions::new()
+        .with_completion("subCompletionText", "string")
+        .with_completion("subCompletionBytes", "u8[]")
+        .with_completion("subCompletionTextError", "string");
+    let actual = generate_with_options(
+        include_str!("../../corpus/interop/host-buffer-completion.h"),
+        "host-buffer-completion.h",
+        &options,
+    )
+    .expect("generate buffer completion mirror");
+    assert_eq!(
+        actual,
+        include_str!("../../corpus/interop/host-buffer-completion.generated.d.ts")
+    );
 }

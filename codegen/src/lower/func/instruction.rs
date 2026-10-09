@@ -658,7 +658,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::InstructionKind::HostCompletion {
                 function,
                 result_size,
-                is_void,
+                result_kind,
                 error_metadata,
             } => {
                 let endpoint = self.stack_slot(16, 8);
@@ -670,13 +670,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .store(flags(), word, metadata, (index * 8) as i32);
                 }
                 let size = self.builder.ins().iconst(types::I64, *result_size as i64);
-                let void = self.iconst(types::I32, i64::from(*is_void));
+                let kind = self.iconst(types::I32, i64::from(*result_kind));
                 let position = self.position_id(&instruction.pos);
                 let position = self.iconst(types::I32, position);
                 let handle = self
                     .call_runtime(
                         self.ml.rt.async_host_operation,
-                        &[self.ctx, size, void, position, metadata, endpoint],
+                        &[self.ctx, size, kind, position, metadata, endpoint],
                         true,
                     )?
                     .ok_or_else(|| internal("host source call has no result"))?;

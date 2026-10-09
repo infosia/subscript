@@ -65,6 +65,9 @@ extern "C" {
     fn subPressureNarrow8();
     fn subPressureNarrow9();
     fn subCompletionSeven();
+    fn subCompletionText();
+    fn subCompletionBytes();
+    fn subCompletionTextError();
     fn subCompletionI32();
     fn subCompletionStruct();
     fn subCompletionVoid();
@@ -316,6 +319,12 @@ impl Fixture {
                 ("subPressureValue6".into(), subPressureValue6 as *const u8),
                 ("subPressureValue7".into(), subPressureValue7 as *const u8),
                 ("subPressureValue8".into(), subPressureValue8 as *const u8),
+                ("subCompletionText".into(), subCompletionText as *const u8),
+                ("subCompletionBytes".into(), subCompletionBytes as *const u8),
+                (
+                    "subCompletionTextError".into(),
+                    subCompletionTextError as *const u8,
+                ),
                 ("subCompletionI32".into(), subCompletionI32 as *const u8),
                 (
                     "subCompletionStruct".into(),
@@ -651,6 +660,7 @@ impl Fixture {
                         vec![
                             directory.join("interop.c"),
                             directory.join("host-completion.c"),
+                            directory.join("host-buffer-completion.c"),
                             directory.join("abi-pressure.c"),
                             directory.join("external-device.c"),
                             directory.join("wire-enum.c"),

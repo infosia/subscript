@@ -17,6 +17,7 @@
 //! the script ran under the emitted trap-check discipline, so a null
 //! result from a trapping function is never fed into another call.
 
+use crate::context::completion_kind;
 use crate::context::{
     AllocationVisitor, AsyncStepReport, AsyncTaskVisitor, Context, DiagnosticsObserver,
     PrintObserver, TrapObserver,
@@ -874,7 +875,7 @@ pub unsafe extern "C" fn subscript_rt_complete_value(
     value: *const c_void,
     size: usize,
 ) -> CompletionStatus {
-    unsafe { (&mut *ctx).host_complete_value(endpoint, value.cast(), size, false) }
+    unsafe { (&mut *ctx).host_complete_value(endpoint, value.cast(), size, completion_kind::VALUE) }
 }
 
 /// Completes a void source (§178). The call queues waiters without script execution.
@@ -887,17 +888,55 @@ pub unsafe extern "C" fn subscript_rt_complete_void(
     ctx: *mut Context,
     endpoint: CompletionEndpoint,
 ) -> CompletionStatus {
-    unsafe { (&mut *ctx).host_complete_value(endpoint, std::ptr::null(), 0, true) }
+    unsafe { (&mut *ctx).host_complete_value(endpoint, std::ptr::null(), 0, completion_kind::VOID) }
+}
+
+/// Completes a string source with a Context-owned UTF-8 copy (§184).
+/// Checks TRAPPED, STALE, DUPLICATE, MISMATCH, TOO_LARGE, then INVALID_UTF8.
+/// Input errors leave the source pending. Allocation failure returns TRAPPED.
+///
+/// # Safety
+/// The Context is live on its owner thread. Nonzero length requires readable bytes during this call.
+/// A zero length accepts a null pointer.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_complete_string(
+    ctx: *mut Context,
+    endpoint: CompletionEndpoint,
+    bytes: *const std::ffi::c_char,
+    length: usize,
+) -> CompletionStatus {
+    unsafe {
+        (&mut *ctx).host_complete_buffer(endpoint, bytes.cast(), length, completion_kind::STRING)
+    }
+}
+
+/// Completes a byte-array source with a Context-owned copy (§184).
+/// Checks TRAPPED, STALE, DUPLICATE, MISMATCH, then TOO_LARGE. The runtime accepts all byte values.
+/// Input errors leave the source pending. Allocation failure returns TRAPPED.
+///
+/// # Safety
+/// The Context is live on its owner thread. Nonzero length requires readable bytes during this call.
+/// A zero length accepts a null pointer.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_complete_bytes(
+    ctx: *mut Context,
+    endpoint: CompletionEndpoint,
+    bytes: *const u8,
+    length: usize,
+) -> CompletionStatus {
+    unsafe { (&mut *ctx).host_complete_buffer(endpoint, bytes, length, completion_kind::BYTES) }
 }
 
 /// Completes a source with an Error at its creation position (§178).
+/// The runtime copies `message` bytes and returns INVALID_UTF8 if they are not valid UTF-8.
 /// The call queues waiters without script execution. Allocation failure returns TRAPPED.
-/// It checks TRAPPED, STALE, then DUPLICATE. A last unobserved release traps 29 and returns OK.
+/// Checks TRAPPED, STALE, DUPLICATE, TOO_LARGE, then INVALID_UTF8. Input errors leave the source pending.
+/// A last unobserved release traps 29 and returns OK.
 ///
 /// # Safety
-/// The Context is live on its owner thread. For a pending source, message holds length readable bytes.
+/// The Context is live on its owner thread. Nonzero length requires readable message bytes during this call.
+/// A zero length accepts a null pointer.
 #[no_mangle]
-/// The `message` contains UTF-8 bytes. The runtime copies these bytes.
 pub unsafe extern "C" fn subscript_rt_complete_error(
     ctx: *mut Context,
     endpoint: CompletionEndpoint,

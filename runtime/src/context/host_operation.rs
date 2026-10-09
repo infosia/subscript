@@ -3,6 +3,18 @@ use super::*;
 use crate::exception::{host_error::HostErrorLayout, Completion, ExceptionCompletion};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Result-kind numbers shared by generated code and the runtime ABI.
+pub mod completion_kind {
+    /// Raw boundary value bytes.
+    pub const VALUE: u32 = 0;
+    /// No result bytes.
+    pub const VOID: u32 = 1;
+    /// A Context-owned string pointer.
+    pub const STRING: u32 = 2;
+    /// A Context-owned byte-array pointer.
+    pub const BYTES: u32 = 3;
+}
+
 /// A host completion endpoint. Neither word is a native pointer.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -28,11 +40,16 @@ pub enum CompletionStatus {
     Mismatch = 3,
     /// The Context holds a trap. The source does not change.
     Trapped = 4,
+    /// The supplied text is not valid UTF-8. The source stays pending.
+    InvalidUtf8 = 5,
+    /// The byte length exceeds i32::MAX. The source stays pending.
+    TooLarge = 6,
 }
 
 pub(super) struct HostOperation {
     pub(super) operation_id: u64,
-    is_void: bool,
+    pub(super) result_kind: u32,
+    pub(super) value_observed: bool,
     producer: bool,
     error_layout: HostErrorLayout,
 }
@@ -47,7 +64,7 @@ impl Context {
     pub(crate) fn host_operation_new(
         &mut self,
         size: usize,
-        is_void: bool,
+        result_kind: u32,
         pos_id: u32,
         error_layout: HostErrorLayout,
         endpoint: &mut CompletionEndpoint,
@@ -55,7 +72,16 @@ impl Context {
         if self.trapped() {
             return std::ptr::null_mut();
         }
-        if !error_layout.valid() || (is_void && size != 0) {
+        if !error_layout.valid()
+            || !match result_kind {
+                completion_kind::VALUE => true,
+                completion_kind::VOID => size == 0,
+                completion_kind::STRING | completion_kind::BYTES => {
+                    size == std::mem::size_of::<usize>()
+                }
+                _ => false,
+            }
+        {
             self.trap(
                 TrapKind::Internal,
                 "invalid host operation metadata",
@@ -93,7 +119,8 @@ impl Context {
         let task = unsafe {
             task_ptr.write(RuntimeTask::HostOperation(HostOperation {
                 operation_id,
-                is_void,
+                result_kind,
+                value_observed: false,
                 producer: true,
                 error_layout,
             }));
@@ -154,7 +181,7 @@ impl Context {
         endpoint: CompletionEndpoint,
         value: *const u8,
         size: usize,
-        is_void: bool,
+        result_kind: u32,
     ) -> CompletionStatus {
         let handle = match self.host_operation_lookup(endpoint) {
             Ok(h) => h,
@@ -169,7 +196,7 @@ impl Context {
         let RuntimeTask::HostOperation(source) = task.as_ref() else {
             return CompletionStatus::Stale;
         };
-        if source.is_void != is_void || meta.result_size != size {
+        if source.result_kind != result_kind || meta.result_size != size {
             return CompletionStatus::Mismatch;
         }
         let pos_id = meta.create_pos_id;
@@ -187,6 +214,68 @@ impl Context {
             bytes.extend_from_slice(unsafe { std::slice::from_raw_parts(value, size) });
         }
         self.host_operation_finish(handle, Completion::Value(bytes));
+        CompletionStatus::Ok
+    }
+
+    pub(crate) unsafe fn host_complete_buffer(
+        &mut self,
+        endpoint: CompletionEndpoint,
+        data: *const u8,
+        length: usize,
+        result_kind: u32,
+    ) -> CompletionStatus {
+        let handle = match self.host_operation_lookup(endpoint) {
+            Ok(h) => h,
+            Err(s) => return s,
+        };
+        let Some(meta) = self.async_frames.get(&handle) else {
+            return CompletionStatus::Stale;
+        };
+        let AsyncKind::Runtime(task) = &meta.kind else {
+            return CompletionStatus::Stale;
+        };
+        let RuntimeTask::HostOperation(source) = task.as_ref() else {
+            return CompletionStatus::Stale;
+        };
+        if source.result_kind != result_kind {
+            return CompletionStatus::Mismatch;
+        }
+        if length > i32::MAX as usize {
+            return CompletionStatus::TooLarge;
+        }
+        let bytes = if result_kind != completion_kind::STRING || length == 0 {
+            &[]
+        } else {
+            // SAFETY: the caller supplies readable bytes after the length check.
+            unsafe { std::slice::from_raw_parts(data, length) }
+        };
+        if result_kind == completion_kind::STRING && std::str::from_utf8(bytes).is_err() {
+            return CompletionStatus::InvalidUtf8;
+        }
+        let pos_id = meta.create_pos_id;
+        let mut result = Vec::new();
+        if result
+            .try_reserve_exact(std::mem::size_of::<usize>())
+            .is_err()
+        {
+            self.trap(
+                TrapKind::AllocationFailure,
+                "host completion allocation failed",
+                pos_id,
+            );
+            return CompletionStatus::Trapped;
+        }
+        let value = if result_kind == completion_kind::STRING {
+            self.alloc_str(bytes, pos_id)
+        } else {
+            // SAFETY: the length is checked, and the caller supplies readable bytes.
+            unsafe { self.array_from_bytes(data, length, pos_id) }
+        };
+        if value.is_null() {
+            return CompletionStatus::Trapped;
+        }
+        result.extend_from_slice(&(value as usize).to_ne_bytes());
+        self.host_operation_finish(handle, Completion::Value(result));
         CompletionStatus::Ok
     }
 
@@ -210,12 +299,18 @@ impl Context {
             return CompletionStatus::Stale;
         };
         let (layout, pos_id) = (source.error_layout, meta.create_pos_id);
+        if length > i32::MAX as usize {
+            return CompletionStatus::TooLarge;
+        }
         let bytes = if length == 0 {
             &[]
         } else {
             // SAFETY: the C caller supplies readable message bytes after successful validation.
             unsafe { std::slice::from_raw_parts(message, length) }
         };
+        if std::str::from_utf8(bytes).is_err() {
+            return CompletionStatus::InvalidUtf8;
+        }
         let Some(exception) = self.host_error(layout, bytes, pos_id) else {
             return CompletionStatus::Trapped;
         };

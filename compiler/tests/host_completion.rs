@@ -79,6 +79,8 @@ fn directives_reject_absent_duplicate_and_mismatched_results() {
 fn valid_mirrors() -> Vec<&'static str> {
     vec![
         "// @subscript-c-completion function=\"read\" result=\"void\"\ndeclare function read(): Promise<void>;",
+        "// @subscript-c-completion function=\"read\" result=\"string\"\ndeclare function read(): Promise<string>;",
+        "// @subscript-c-completion function=\"read\" result=\"u8[]\"\ndeclare function read(): Promise<u8[]>;",
         "// @subscript-c-completion function=\"read\" result=\"Pair\"\ndeclare class Pair { x: i32; y: f64; }\ndeclare function read(): Promise<Pair>;",
         "// @subscript-c-completion function=\"read\" result=\"Count\"\ntype Count = u32;\ndeclare function read(): Promise<Count>;",
         "// @subscript-c-completion function=\"read\" result=\"_Float16\"\ndeclare function read(): Promise<f16>;",

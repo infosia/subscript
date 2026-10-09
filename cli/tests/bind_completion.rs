@@ -159,6 +159,8 @@ typedef struct { ByteFields inner; } NestedBytes;
         "ByteFields",
         "NestedBytes",
         "void",
+        "string",
+        "u8[]",
     ] {
         let header = format!("{types}\nvoid read(subscript_rt_completion endpoint);");
         let mirror = generate_with_options(

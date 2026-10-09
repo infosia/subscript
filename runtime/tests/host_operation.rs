@@ -2,7 +2,8 @@
 //! Each test uses at most 24 sources and nine waiter dispatches. No compiler or external process runs.
 use std::ffi::{c_char, c_void};
 use subscript_runtime::context::{
-    AsyncResume, AsyncTaskInfo, CompletionEndpoint, CompletionStatus, CLASS_GENERATOR,
+    completion_kind, AsyncResume, AsyncTaskInfo, CompletionEndpoint, CompletionStatus,
+    CLASS_GENERATOR,
 };
 use subscript_runtime::ffi::*;
 use subscript_runtime::{Context, TrapKind};
@@ -26,13 +27,13 @@ fn metadata() -> [u64; 6] {
         0,
     ]
 }
-fn source(ctx: &mut Context, size: usize, is_void: bool) -> (*mut u8, CompletionEndpoint) {
+fn source(ctx: &mut Context, size: usize, result_kind: u32) -> (*mut u8, CompletionEndpoint) {
     let mut endpoint = CompletionEndpoint::default();
     let handle = unsafe {
         subscript_rt_async_host_operation(
             ctx,
             size as u64,
-            u32::from(is_void),
+            result_kind,
             POS,
             metadata().as_ptr(),
             &mut endpoint,
@@ -69,7 +70,11 @@ fn shaped_source(ctx: &mut Context, kind: Delivery) -> (*mut u8, CompletionEndpo
     source(
         ctx,
         if matches!(kind, Delivery::Void) { 0 } else { 4 },
-        matches!(kind, Delivery::Void),
+        if matches!(kind, Delivery::Void) {
+            completion_kind::VOID
+        } else {
+            completion_kind::VALUE
+        },
     )
 }
 fn read(ctx: &mut Context, handle: *mut u8) -> u32 {
@@ -172,12 +177,18 @@ fn statuses_context_identity_and_check_order() {
             CompletionStatus::Stale as u32,
             CompletionStatus::Duplicate as u32,
             CompletionStatus::Mismatch as u32,
-            CompletionStatus::Trapped as u32
+            CompletionStatus::Trapped as u32,
+            CompletionStatus::InvalidUtf8 as u32,
+            CompletionStatus::TooLarge as u32
         ],
-        [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4, 5, 6]
     );
     let header = subscript_runtime::host_header::render().unwrap();
     assert!(header.contains("subscript_rt_completion_status subscript_rt_complete_value(subscript_rt_context* ctx, subscript_rt_completion endpoint, const void* value, size_t size);"));
+    assert!(header.contains("subscript_rt_completion_status subscript_rt_complete_string(subscript_rt_context* ctx, subscript_rt_completion endpoint, const char* bytes, size_t length);"));
+    assert!(header.contains("subscript_rt_completion_status subscript_rt_complete_bytes(subscript_rt_context* ctx, subscript_rt_completion endpoint, const uint8_t* bytes, size_t length);"));
+    assert!(header.contains("SUBSCRIPT_RT_COMPLETION_INVALID_UTF8 = 5"));
+    assert!(header.contains("SUBSCRIPT_RT_COMPLETION_TOO_LARGE = 6"));
     assert!(header.contains("subscript_rt_completion_status subscript_rt_complete_void(subscript_rt_context* ctx, subscript_rt_completion endpoint);"));
     assert!(header.contains("subscript_rt_completion_status subscript_rt_complete_error(subscript_rt_context* ctx, subscript_rt_completion endpoint, const char* message, size_t length);"));
 }
@@ -185,7 +196,7 @@ fn statuses_context_identity_and_check_order() {
 #[test]
 fn each_mismatch_keeps_the_source_pending_with_ok_controls() {
     let mut ctx = Context::new();
-    let (value, endpoint) = source(&mut ctx, 4, false);
+    let (value, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
     assert_eq!(
         unsafe { subscript_rt_complete_value(&mut *ctx, endpoint, std::ptr::null(), 8) },
         CompletionStatus::Mismatch
@@ -201,7 +212,7 @@ fn each_mismatch_keeps_the_source_pending_with_ok_controls() {
         CompletionStatus::Ok
     );
     assert_eq!(read(&mut ctx, value), 37);
-    let (_, endpoint) = source(&mut ctx, 0, true);
+    let (_, endpoint) = source(&mut ctx, 0, completion_kind::VOID);
     assert_eq!(
         unsafe { subscript_rt_complete_value(&mut *ctx, endpoint, std::ptr::null(), 0) },
         CompletionStatus::Mismatch
@@ -210,7 +221,7 @@ fn each_mismatch_keeps_the_source_pending_with_ok_controls() {
         unsafe { deliver(&mut ctx, endpoint, Delivery::Void) },
         CompletionStatus::Ok
     );
-    let (empty, endpoint) = source(&mut ctx, 0, false);
+    let (empty, endpoint) = source(&mut ctx, 0, completion_kind::VALUE);
     assert_eq!(
         unsafe { subscript_rt_complete_void(&mut *ctx, endpoint) },
         CompletionStatus::Mismatch
@@ -274,7 +285,7 @@ fn waiter(ctx: &mut Context, source: *mut u8) -> *mut Waiter {
 fn before_after_shared_and_repeated_awaits_copy_cached_values() {
     for early in [false, true] {
         let mut ctx = Context::new();
-        let (handle, endpoint) = source(&mut ctx, 4, false);
+        let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         if early {
             assert_eq!(
                 unsafe { deliver(&mut ctx, endpoint, Delivery::Value) },
@@ -323,7 +334,7 @@ fn before_after_shared_and_repeated_awaits_copy_cached_values() {
 fn error_metadata_message_position_and_observed_drop_control() {
     for early in [false, true] {
         let mut ctx = Context::new();
-        let (handle, endpoint) = source(&mut ctx, 4, false);
+        let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         if early {
             assert_eq!(
                 unsafe { deliver(&mut ctx, endpoint, Delivery::Error) },
@@ -360,7 +371,7 @@ fn error_metadata_message_position_and_observed_drop_control() {
         assert!(!ctx.trapped());
     }
     let mut ctx = Context::new();
-    let (handle, endpoint) = source(&mut ctx, 4, false);
+    let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
     assert_eq!(
         unsafe { deliver(&mut ctx, endpoint, Delivery::Error) },
         CompletionStatus::Ok
@@ -413,7 +424,7 @@ fn producer_keeps_a_dropped_handle_until_value_or_unobserved_error() {
 fn active_script_completion_only_queues_and_collection_preserves_waiters() {
     for collect in [false, true] {
         let mut ctx = Context::new();
-        let (handle, endpoint) = source(&mut ctx, 4, false);
+        let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         let w = waiter(&mut ctx, handle);
         unsafe {
             ctx.async_release(handle, 0);
@@ -443,7 +454,7 @@ fn active_script_completion_only_queues_and_collection_preserves_waiters() {
 fn inspection_waiting_complete_and_pending_destruction_control() {
     for complete in [false, true] {
         let mut ctx = Context::new();
-        let (_, endpoint) = source(&mut ctx, 4, false);
+        let (_, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         assert_eq!(unsafe { subscript_rt_ctx_async_unfinished(&*ctx) }, 1);
         assert_eq!(unsafe { subscript_rt_ctx_async_pending(&*ctx) }, 0);
         let info = tasks(&ctx)[0];
@@ -486,7 +497,7 @@ fn source_and_error_allocation_failure_have_same_shape_ok_controls() {
             subscript_rt_async_host_operation(
                 &mut *ctx,
                 4,
-                0,
+                completion_kind::VALUE,
                 POS,
                 metadata().as_ptr(),
                 &mut endpoint,
@@ -506,7 +517,7 @@ fn source_and_error_allocation_failure_have_same_shape_ok_controls() {
     for allocation in 1..=3 {
         for fail in [false, true] {
             let mut ctx = Context::new();
-            let (handle, endpoint) = source(&mut ctx, 4, false);
+            let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
             ctx.fail_alloc_after(if fail { allocation } else { 0 });
             assert_eq!(
                 unsafe { deliver(&mut ctx, endpoint, Delivery::Error) },
@@ -535,7 +546,7 @@ fn destruction_with_a_pending_waiter_runs_no_script() {
     for complete in [false, true] {
         let mut calls = 0u32;
         let mut ctx = Context::new();
-        let (handle, endpoint) = source(&mut ctx, 4, false);
+        let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         let w = waiter(&mut ctx, handle);
         unsafe {
             (*w).external_calls = &mut calls;
@@ -599,7 +610,11 @@ fn boundary_struct_bytes_and_ship_collection_controls() {
             integer: -19,
             fraction: 2.5,
         };
-        let (handle, endpoint) = source(&mut ctx, std::mem::size_of::<Value>(), false);
+        let (handle, endpoint) = source(
+            &mut ctx,
+            std::mem::size_of::<Value>(),
+            completion_kind::VALUE,
+        );
         assert_eq!(
             unsafe {
                 subscript_rt_complete_value(
@@ -633,7 +648,7 @@ fn boundary_struct_bytes_and_ship_collection_controls() {
             unsafe { subscript_rt_complete_void(&mut *ctx, endpoint) },
             CompletionStatus::Stale
         );
-        let (handle, endpoint) = source(&mut ctx, 4, false);
+        let (handle, endpoint) = source(&mut ctx, 4, completion_kind::VALUE);
         let w = waiter(&mut ctx, handle);
         unsafe {
             ctx.async_release(handle, 0);

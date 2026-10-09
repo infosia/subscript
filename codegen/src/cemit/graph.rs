@@ -531,7 +531,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::HostCompletion {
                 function,
                 result_size,
-                is_void,
+                result_kind,
                 error_metadata,
             } => {
                 let endpoint = self.fresh();
@@ -576,7 +576,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     &[
                         "ctx".into(),
                         format!("UINT64_C({result_size})"),
-                        format!("{}u", u32::from(*is_void)),
+                        format!("{}u", *result_kind),
                         format!("{position}u"),
                         metadata,
                         format!("&{endpoint}"),

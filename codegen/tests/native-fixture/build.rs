@@ -20,6 +20,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let header = directory.join("interop.h");
     let external_source = directory.join("external-device.c");
     let external_header = directory.join("external-device.h");
+    let buffer_source = directory.join("host-buffer-completion.c");
+    println!("cargo:rerun-if-changed={}", buffer_source.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        directory.join("host-buffer-completion.h").display()
+    );
     let completion_source = directory.join("host-completion.c");
     println!("cargo:rerun-if-changed={}", completion_source.display());
     println!(
@@ -72,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .include(&out)
         .file(&source)
         .file(&completion_source)
+        .file(&buffer_source)
         .file(&boundary_source)
         .file(directory.join("abi-pressure.c"))
         .file(&external_source)

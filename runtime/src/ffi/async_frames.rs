@@ -371,12 +371,12 @@ pub unsafe extern "C" fn subscript_rt_task_group(
 ///
 /// # Safety
 /// The Context and endpoint are writable. Error metadata is readable and matches the verified Error class.
-/// The value result size matches its boundary representation. A void source has size zero.
+/// The result kind is value=0, void=1, string=2, or bytes=3. Void has size zero; string and bytes hold one pointer.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_async_host_operation(
     ctx: *mut Context,
     result_size: u64,
-    is_void: u32,
+    result_kind: u32,
     pos_id: u32,
     error_metadata: *const u64,
     endpoint: *mut crate::context::CompletionEndpoint,
@@ -393,5 +393,5 @@ pub unsafe extern "C" fn subscript_rt_async_host_operation(
     let layout = crate::exception::host_error::HostErrorLayout(unsafe {
         error_metadata.cast::<[u64; 6]>().read()
     });
-    unsafe { ctx.host_operation_new(size, is_void != 0, pos_id, layout, &mut *endpoint) }
+    unsafe { ctx.host_operation_new(size, result_kind, pos_id, layout, &mut *endpoint) }
 }
