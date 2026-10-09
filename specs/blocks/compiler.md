@@ -228,3 +228,4 @@ Every section, with its status:
 | §184 | A completion returns a string or bytes | active | [`s184-a-completion-returns-a-string-or-bytes.md`](compiler/s184-a-completion-returns-a-string-or-bytes.md) |
 | §185 | A file module that the host enables | active | [`s185-a-file-module-that-the-host-enables.md`](compiler/s185-a-file-module-that-the-host-enables.md) |
 | §186 | `then`, `catch`, and `finally` on a promise | active | [`s186-then-catch-and-finally-on-a-promise.md`](compiler/s186-then-catch-and-finally-on-a-promise.md) |
+| §187 | A field with no read lowering is not read | active | [`s187-a-field-with-no-read-lowering-is-not-read.md`](compiler/s187-a-field-with-no-read-lowering-is-not-read.md) |
