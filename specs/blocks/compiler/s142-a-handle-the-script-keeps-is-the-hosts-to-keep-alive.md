@@ -20,8 +20,13 @@ do not see the destruction of a host object.
 ### 142.1 Rules
 
 1. A handle is a copyable value that names a host object. A handle
-   that the host gives to a script, as an entry parameter or as a
-   foreign-call result, transfers no ownership. The script can copy it and keep it in any
+   value that the host produces transfers no ownership, by any route
+   that brings it to the script: an entry parameter, a foreign-call
+   result, a field of a struct that the host fills (a foreign-call
+   result, a completion result, a callback argument), or an element
+   of such a value. *(Amended 2026-10-09: the rule named only entry
+   parameters and foreign-call results, and a handle field had no
+   stated rule. The behaviour does not change.)* The script can copy it and keep it in any
    object, closure, or module global, and use it in a later call.
 2. The host keeps the named object valid for as long as any script
    code of that Context can use the handle. A script object that holds
@@ -47,8 +52,9 @@ do not see the destruction of a host object.
    the runtime header text, so the comment there appears once, from
    that copy. Rule 3's patterns live in `examples.md`, not in the
    headers. The tutorials (`docs/tutorial-rust.md`,
-   `docs/tutorial-c-cpp.md`) state rules 1 and 2 where they describe
-   handle parameters.
+   `docs/tutorial-c-cpp.md`, `docs/tutorial-typescript.md`) state
+   rules 1 and 2 where they describe handle values, for every route
+   of rule 1.
 
 ### 142.2 Acceptance
 
@@ -60,3 +66,7 @@ do not see the destruction of a host object.
    passes after regeneration through the generator.
 3. `examples.md` has a short subsection with the rule 3 patterns.
 4. No `.expected` golden moves.
+5. *(2026-10-09.)* The rule 1 amendment: the header comments of rule 5
+   and the tutorials name every route, or state the rule with no
+   route list. An accept entry stores a handle that a struct field
+   delivers and uses it in a later call, if no committed entry does.
