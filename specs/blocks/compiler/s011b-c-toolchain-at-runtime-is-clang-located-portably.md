@@ -39,7 +39,12 @@ clang link does not. (2) A committed host entry C that writes the sink to
 stdout sets that stream to binary mode (`_setmode(_fileno(stdout),
 _O_BINARY)`, `_WIN32`-guarded) so the MSVCRT text mode does not translate
 `\n` to `\r\n` and corrupt the byte-compared output; a no-op on every other
-platform.
+platform. The same guard sets stderr to binary mode
+(`_setmode(_fileno(stderr), _O_BINARY)`), because a test also compares
+the bytes that a host writes to stderr. *(Added 2026-10-09: on
+x86_64-pc-windows-msvc, the checkpoint reports and the async task
+snapshots that a host writes to stderr ended each line with `\r\n`, and
+the three-tier comparison failed.)*
 
 **Linux runtime system libraries (2026-08-09).** A manual clang link of the
 runtime staticlib on Linux must add the platform native system libraries

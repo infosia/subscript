@@ -31,8 +31,8 @@ constraint 2's structural exclusions.
 A test that compiles its own C host program, and then compares the
 captured sink against expected bytes, must obtain the host source from
 one shared helper. The helper prefixes the generated runtime header
-and inserts the `_WIN32`-guarded `_setmode(_fileno(stdout), _O_BINARY)`
-that §11c requires. No test writes that guard itself.
+and inserts the `_WIN32`-guarded `_setmode` calls for stdout and
+stderr that §11c requires. No test writes that guard itself.
 
 1. The helper is public in `subscript-codegen`, because an integration
    test cannot reach a private test-module item. The existing private
