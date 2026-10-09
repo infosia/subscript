@@ -66,7 +66,8 @@ and §116 exception delivery do not apply to it.
    each reject another result, and the checker accepts each result
    that the binder emits. Every result can complete
    with an `Error`. Opaque handles, strings, and reference types are
-   not in this section.
+   not in this section. *(Corrected 2026-10-09 by §184: `string` and
+   `u8[]` results are admitted.)*
 7. **Completion.** The runtime C API has three functions:
    - `subscript_rt_complete_value(ctx, endpoint, const void* value, size_t size)`
    - `subscript_rt_complete_void(ctx, endpoint)`
@@ -81,6 +82,10 @@ and §116 exception delivery do not apply to it.
    | `DUPLICATE` (2) | a live source that is completed | none; the first completion stays |
    | `MISMATCH` (3) | `size` differs from the result size, a value for a `void` source, or `void` for a value source | none |
    | `TRAPPED` (4) | the Context holds a trap | none |
+
+   *(Corrected 2026-10-09 by §184: `INVALID_UTF8` (5) and `TOO_LARGE`
+   (6) are added, and `subscript_rt_complete_error` checks its
+   message.)*
 
    A completion runs no script code. The host calls it on the Context
    owner thread. It can call it during a host call from the script
