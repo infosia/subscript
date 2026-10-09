@@ -42,7 +42,8 @@ see it.
    of the ship tier and of the tests make a definition that conflicts
    with its prototype an error on each supported compiler: Clang and
    GCC give an error by default; MSVC gives warning C4028 (parameter
-   type) and C4029 (parameter count) *(docs)*, so the flags add
+   type; measured on x86_64-pc-windows-msvc at `0fb07e33`) and C4029
+   (parameter count) *(docs)*, so the flags add
    `/we4028` and `/we4029`.
 3. **Each tier.** A host export with a parameter of each boundary
    scalar kind gives the same value in the dev JIT and C AOT.

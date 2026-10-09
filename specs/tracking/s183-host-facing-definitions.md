@@ -83,8 +83,11 @@ The test performs one C link, one host run, and one rejected C syntax check.
 The shared ship/test C flags and the separate C-emitting test helper's
 MSVC flags include `/we4028` and `/we4029`. MSVC documents C4028 for
 parameter type mismatches and C4029 for parameter count mismatches;
-these flags promote those warnings to errors. This MSVC behavior is from
-documentation, not a measurement; no Windows host was available.
+these flags promote those warnings to errors. The x86_64-pc-windows-msvc
+gate at `0fb07e33` measured C4028: the firing control's wrapper type change
+fails the syntax check with C4028 under `/we4028`. The MSVC diagnostic
+does not name the function, so the control on MSVC reads `C4028`.
+No test changes the parameter count, so C4029 is from documentation.
 
 Measured tutorial wrapper:
 
