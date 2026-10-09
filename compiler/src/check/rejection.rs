@@ -1306,6 +1306,11 @@ rejection_classes! {
     }
     Self::NonGenericStaticMethodTypeArguments => (RuleCode::S100, TscRejects),
     Self::PromiseCombinatorCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
+    Self::PromiseReactionArguments => (RuleCode::S013, TscRejects),
+    Self::PromiseReactionResult => (RuleCode::S013, Diverges(Divergence::PromiseReactionResult)),
+    Self::PromiseReactionParameter => (RuleCode::S100, Diverges(Divergence::PromiseReactionParameter)),
+    Self::PromiseVoidReactionParameter => (RuleCode::S100, Diverges(Divergence::PromiseVoidReactionParameter)),
+    Self::PromiseReactionSpread => (RuleCode::S013, Diverges(Divergence::ForOfSpreadCall)),
     Self::PromiseAllVoidValue => (RuleCode::S013, Diverges(Divergence::PromiseAllVoidValue)),
     Self::PromiseAllTypeArguments => (RuleCode::S013, Diverges(Divergence::PromiseAllTypeArguments)),
     Self::PromiseAllInput => (RuleCode::S013, Diverges(Divergence::PromiseAllInput)),
@@ -1687,7 +1692,9 @@ rejection_classes! {
 
 #[path = "rejection_diagnostic.rs"]
 mod emission;
-pub(crate) use emission::{async_receiver_diagnostic, diagnostic, RejectionClass};
+pub(crate) use emission::{
+    async_receiver_diagnostic, diagnostic, reaction_receiver_diagnostic, RejectionClass,
+};
 #[path = "rejection_failure.rs"]
 mod failure;
 pub(crate) use failure::RejectionFailure;

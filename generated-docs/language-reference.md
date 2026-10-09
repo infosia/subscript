@@ -457,54 +457,54 @@ map cannot transfer a counted callback result. Use a for-of loop, push each hand
 TypeScript:
 
 ```typescript
-function cb(v: i32): void {} async function probe(h: Promise<i32>): Promise<void> { h.then(cb); await h; }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().then(null, (e: Error): i32 => 0); }
 ```
 
 subscript:
 
 ```typescript
-async function leaf(): Promise<i32> { return 1; } function cb(v: i32): void {} async function probe(): Promise<void> { const h = leaf(); const v = await h; cb(v); }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().catch((e: Error): i32 => 0); const s: string = await leaf().then((x: i32): string => `${x}`); }
 ```
 
-A handle has no then method. In an async function, await the handle and call the callback with its value. (collisions.md C8)
+then takes a fulfillment callback and an optional rejection callback, and no type arguments. Use catch for a rejection callback alone. (collisions.md C8; compiler.md §186)
 
 ### Promise.catch
 
 TypeScript:
 
 ```typescript
-function cb(e: Error): void {} async function probe(h: Promise<i32>): Promise<void> { h.catch(cb); await h; }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().catch<i32>((e: Error): i32 => 0); }
 ```
 
 subscript:
 
 ```typescript
-async function leaf(): Promise<i32> { return 1; } function cb(e: Error): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } catch (e) { if (e instanceof Error) { cb(e); } } }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().catch((e: Error): i32 => 0); }
 ```
 
-A handle has no catch method. In an async function, await it inside try and handle the error inside catch. (collisions.md C8)
+catch takes one callback with an optional Error parameter, and no type arguments. (collisions.md C8; compiler.md §186)
 
 ### Promise.finally
 
 TypeScript:
 
 ```typescript
-function cb(): void {} async function probe(h: Promise<i32>): Promise<void> { h.finally(cb); await h; }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().finally(); }
 ```
 
 subscript:
 
 ```typescript
-async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }
-export function main(): void {}
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().finally((): void => {}); }
 ```
 
-A handle has no finally method. In an async function, await it inside try and call the callback inside finally. (collisions.md C8; compiler.md §180)
+finally takes one callback with no parameter, and no type arguments. (collisions.md C8; compiler.md §180, §186)
 
 ### Async receiver capture
 
@@ -523,6 +523,26 @@ export function main(): void {}
 ```
 
 The receiver must appear as an explicit const capture or a class field. (collisions.md C24)
+
+### Promise reaction receiver capture
+
+TypeScript:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; }
+class C { n: i32 = 5; async run(): Promise<i32> { return await leaf().then((v: i32): i32 => v + this.n); } }
+export async function main(): Promise<void> { print(`${await new C().run()}`); }
+```
+
+subscript:
+
+```typescript
+async function leaf(): Promise<i32> { return 1; }
+class C { n: i32 = 5; async run(): Promise<i32> { const n = this.n; return await leaf().then((v: i32): i32 => v + n); } }
+export async function main(): Promise<void> { print(`${await new C().run()}`); }
+```
+
+A reaction callback owns const captures. A direct this capture remains outside the accepted surface. (collisions.md C24; compiler.md §186)
 
 ### Async handle return
 
@@ -726,9 +746,9 @@ Corpus: [`corpus/accept/a116-exhaustive-switch-returns.ts`](../corpus/accept/a11
 
 ### Q34 async
 
-Q34/R13/R36/§70/§167/§170 admits `await Context.suspend()`, direct awaits of named async functions and async instance methods, and a held async handle awaited later. A named async function is a function value. A non-capturing async arrow is accepted. Each call returns a started handle. An async expression body follows the named async return rule: a handle body is rejected; use an explicit await (§167 rule 3). An async arrow owns its const captures in a reference environment (§181). Mutable captures and `this` stay rejected. Await accepts a call through a function value in a local, a parameter, a global, a field, or an array element. The named async function and reference class can be generic. Direct calls accept `await f(...)`, `await f<A>(...)`, `await recv.m(...)`, and `await recv.m<A>(...)` (§93). `Promise<T>` is the TypeScript-compatible annotation and storage view of that handle, not a Promise object: constructors, `then`, statics, and combinators do not exist. Locals, arrays, fields, and globals can hold handles (§70.3 rule 2a). A TaskGroup lives in one const local; a synchronous parameter borrows it. add moves one task count and registers a group reaction at the call. join closes the group and waits for every task, then reports the first failure in reaction order. The scope exit of an unjoined group traps with TaskGroup (33) if unfinished or failed tasks remain. Fields, arrays, results, assignments, and captures cannot hold groups (§170). A generator body cannot use a group: a dropped iterator has no scope exit. Handles can pass to another function. Every created handle must have at least one awaited completion. Copies retain the Context-owned frame, lexical exits release it, and `await` does not change ownership. Under §94 an async call runs its callee to that callee's first await or return, and every await suspends its caller, a completed handle included: the await registers a continuation and returns. A completion queues the continuations registered on it, in registration order. Only a host checkpoint runs those continuations, so there is no event loop and no autonomous scheduler. An exception that leaves an async body completes its handle with the Error object, report text, and last throw position (§116.1 rules 1–4). The call returns the handle without raising the exception. An await of that handle raises the same object with the same report text and position. Each later await raises it again without a copy. If no await raises the exception, the last holder's release traps with `TrapKind::UncaughtException` (29), that report text, and that position. An exception that leaves a host-callable async export traps with `TrapKind::UncaughtException` (29), because the export has no script holder (§116.1 rule 5).
+Q34/R13/R36/§70/§167/§170 admits `await Context.suspend()`, direct awaits of named async functions and async instance methods, and a held async handle awaited later. A named async function is a function value. A non-capturing async arrow is accepted. Each call returns a started handle. An async expression body follows the named async return rule: a handle body is rejected; use an explicit await (§167 rule 3). An async arrow owns its const captures in a reference environment (§181). Mutable captures and `this` stay rejected. Await accepts a call through a function value in a local, a parameter, a global, a field, or an array element. The named async function and reference class can be generic. Direct calls accept `await f(...)`, `await f<A>(...)`, `await recv.m(...)`, and `await recv.m<A>(...)` (§93). `Promise<T>` is the TypeScript-compatible annotation and storage view of that handle, not a Promise object: constructors and statics other than `Promise.all` do not exist. On a handle, `then(f)`, `then(f, r)`, `catch(r)`, and `finally(f)` create the handle of a compiler-supplied async helper. Their callbacks run in the `node` order, and a direct synchronous callback lambda owns its const captures (§186). A `catch` callback returns the handle value type. Locals, arrays, fields, and globals can hold handles (§70.3 rule 2a). A TaskGroup lives in one const local; a synchronous parameter borrows it. add moves one task count and registers a group reaction at the call. join closes the group and waits for every task, then reports the first failure in reaction order. The scope exit of an unjoined group traps with TaskGroup (33) if unfinished or failed tasks remain. Fields, arrays, results, assignments, and captures cannot hold groups (§170). A generator body cannot use a group: a dropped iterator has no scope exit. Handles can pass to another function. Every created handle must have at least one awaited completion. Copies retain the Context-owned frame, lexical exits release it, and `await` does not change ownership. Under §94 an async call runs its callee to that callee's first await or return, and every await suspends its caller, a completed handle included: the await registers a continuation and returns. A completion queues the continuations registered on it, in registration order. Only a host checkpoint runs those continuations, so there is no event loop and no autonomous scheduler. An exception that leaves an async body completes its handle with the Error object, report text, and last throw position (§116.1 rules 1–4). The call returns the handle without raising the exception. An await of that handle raises the same object with the same report text and position. Each later await raises it again without a copy. If no await raises the exception, the last holder's release traps with `TrapKind::UncaughtException` (29), that report text, and that position. An exception that leaves a host-callable async export traps with `TrapKind::UncaughtException` (29), because the export has no script holder (§116.1 rule 5).
 
-Corpus: [`corpus/accept/a93-async-chain.ts`](../corpus/accept/a93-async-chain.ts), [`corpus/accept/a94-async-two-roots.ts`](../corpus/accept/a94-async-two-roots.ts), [`corpus/accept/a95-interop-async-await.ts`](../corpus/accept/a95-interop-async-await.ts), [`corpus/accept/a110-async-method-receiver.ts`](../corpus/accept/a110-async-method-receiver.ts), [`corpus/accept/a111-interop-async-method-poll.ts`](../corpus/accept/a111-interop-async-method-poll.ts), [`corpus/accept/a143-async-generic/main.ts`](../corpus/accept/a143-async-generic/main.ts), [`corpus/accept/a181-operation-in-every-owner.ts`](../corpus/accept/a181-operation-in-every-owner.ts), [`corpus/accept/a336-async-function-values.ts`](../corpus/accept/a336-async-function-values.ts), [`corpus/accept/a337-task-group.ts`](../corpus/accept/a337-task-group.ts), [`corpus/reject/r383-unjoined-task-group.ts`](../corpus/reject/r383-unjoined-task-group.ts), [`corpus/reject/r384-async-task-group-result.ts`](../corpus/reject/r384-async-task-group-result.ts), [`corpus/reject/r385-task-group-field.ts`](../corpus/reject/r385-task-group-field.ts), [`corpus/reject/r386-task-group-generator-body.ts`](../corpus/reject/r386-task-group-generator-body.ts), [`corpus/trap/t84-dropped-unfinished-task-group.ts`](../corpus/trap/t84-dropped-unfinished-task-group.ts), [`corpus/trap/t85-dropped-failed-task-group.ts`](../corpus/trap/t85-dropped-failed-task-group.ts), [`corpus/trap/t86-add-to-closed-task-group.ts`](../corpus/trap/t86-add-to-closed-task-group.ts), [`corpus/reject/r379-async-arrow-capture.ts`](../corpus/reject/r379-async-arrow-capture.ts), [`corpus/reject/r380-dropped-indirect-async-handle.ts`](../corpus/reject/r380-dropped-indirect-async-handle.ts), [`corpus/reject/r381-async-arrow-result-annotation.ts`](../corpus/reject/r381-async-arrow-result-annotation.ts), [`corpus/reject/r382-async-arrow-handle-body.ts`](../corpus/reject/r382-async-arrow-handle-body.ts), [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-promise.ts), [`corpus/reject/r97-promise-combinator.ts`](../corpus/reject/r97-promise-combinator.ts), [`corpus/reject/r98-promise-static.ts`](../corpus/reject/r98-promise-static.ts), [`corpus/reject/r99-await-outside-async.ts`](../corpus/reject/r99-await-outside-async.ts), [`corpus/reject/r100-floating-async-call.ts`](../corpus/reject/r100-floating-async-call.ts), [`corpus/reject/r101-async-static-method.ts`](../corpus/reject/r101-async-static-method.ts), [`corpus/reject/r102-async-generator-method.ts`](../corpus/reject/r102-async-generator-method.ts), [`corpus/reject/r103-async-valuetype-method.ts`](../corpus/reject/r103-async-valuetype-method.ts), [`corpus/reject/r105-floating-async-method-call.ts`](../corpus/reject/r105-floating-async-method-call.ts).
+Corpus: [`corpus/accept/a93-async-chain.ts`](../corpus/accept/a93-async-chain.ts), [`corpus/accept/a94-async-two-roots.ts`](../corpus/accept/a94-async-two-roots.ts), [`corpus/accept/a95-interop-async-await.ts`](../corpus/accept/a95-interop-async-await.ts), [`corpus/accept/a110-async-method-receiver.ts`](../corpus/accept/a110-async-method-receiver.ts), [`corpus/accept/a111-interop-async-method-poll.ts`](../corpus/accept/a111-interop-async-method-poll.ts), [`corpus/accept/a143-async-generic/main.ts`](../corpus/accept/a143-async-generic/main.ts), [`corpus/accept/a181-operation-in-every-owner.ts`](../corpus/accept/a181-operation-in-every-owner.ts), [`corpus/accept/a336-async-function-values.ts`](../corpus/accept/a336-async-function-values.ts), [`corpus/accept/a337-task-group.ts`](../corpus/accept/a337-task-group.ts), [`corpus/accept/a357-promise-then-chains.ts`](../corpus/accept/a357-promise-then-chains.ts), [`corpus/accept/a358-promise-catch-finally.ts`](../corpus/accept/a358-promise-catch-finally.ts), [`corpus/accept/a359-promise-then-captures.ts`](../corpus/accept/a359-promise-then-captures.ts), [`corpus/reject/r404-catch-callback-type.ts`](../corpus/reject/r404-catch-callback-type.ts), [`corpus/reject/r383-unjoined-task-group.ts`](../corpus/reject/r383-unjoined-task-group.ts), [`corpus/reject/r384-async-task-group-result.ts`](../corpus/reject/r384-async-task-group-result.ts), [`corpus/reject/r385-task-group-field.ts`](../corpus/reject/r385-task-group-field.ts), [`corpus/reject/r386-task-group-generator-body.ts`](../corpus/reject/r386-task-group-generator-body.ts), [`corpus/trap/t84-dropped-unfinished-task-group.ts`](../corpus/trap/t84-dropped-unfinished-task-group.ts), [`corpus/trap/t85-dropped-failed-task-group.ts`](../corpus/trap/t85-dropped-failed-task-group.ts), [`corpus/trap/t86-add-to-closed-task-group.ts`](../corpus/trap/t86-add-to-closed-task-group.ts), [`corpus/reject/r379-async-arrow-capture.ts`](../corpus/reject/r379-async-arrow-capture.ts), [`corpus/reject/r380-dropped-indirect-async-handle.ts`](../corpus/reject/r380-dropped-indirect-async-handle.ts), [`corpus/reject/r381-async-arrow-result-annotation.ts`](../corpus/reject/r381-async-arrow-result-annotation.ts), [`corpus/reject/r382-async-arrow-handle-body.ts`](../corpus/reject/r382-async-arrow-handle-body.ts), [`corpus/reject/r96-new-promise.ts`](../corpus/reject/r96-new-promise.ts), [`corpus/reject/r97-promise-combinator.ts`](../corpus/reject/r97-promise-combinator.ts), [`corpus/reject/r98-promise-static.ts`](../corpus/reject/r98-promise-static.ts), [`corpus/reject/r99-await-outside-async.ts`](../corpus/reject/r99-await-outside-async.ts), [`corpus/reject/r100-floating-async-call.ts`](../corpus/reject/r100-floating-async-call.ts), [`corpus/reject/r101-async-static-method.ts`](../corpus/reject/r101-async-static-method.ts), [`corpus/reject/r102-async-generator-method.ts`](../corpus/reject/r102-async-generator-method.ts), [`corpus/reject/r103-async-valuetype-method.ts`](../corpus/reject/r103-async-valuetype-method.ts), [`corpus/reject/r105-floating-async-method-call.ts`](../corpus/reject/r105-floating-async-method-call.ts).
 
 ### Q35 workers
 

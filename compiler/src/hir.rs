@@ -1804,8 +1804,9 @@ pub enum ExprKind {
     ArraySpreadLit(Vec<ArrayLitElem>),
     /// Template literal (Q14 formatting at runtime).
     Template(Vec<TplPart>),
-    /// Lambda expression. Non-capturing lambdas are free function
-    /// values; capturing ones are stack-only and may not escape (C5).
+    /// Lambda expression. A non-capturing lambda is a free function
+    /// value. A capturing lambda borrows a stack environment and stays in
+    /// its defining function (C5), or it owns its environment.
     Lambda {
         /// The checker-assigned unit identity. Only the initializer scan reads it.
         id: LambdaId,
@@ -1813,6 +1814,12 @@ pub enum ExprKind {
         params: Vec<Param>,
         /// Whether this lambda has an async body.
         is_async: bool,
+        /// Whether each evaluation allocates an environment object that
+        /// owns the captures (`compiler.md` §181 rule 2). The checker sets
+        /// it for every async arrow and for a synchronous lambda that is a
+        /// direct callback of `then`, `catch`, or `finally` (§186 rule 4).
+        /// A lambda with no captures allocates nothing.
+        owns_environment: bool,
         /// Fulfilled body result; the expression type carries the callable result.
         ret: Type,
         /// Body statements (an expression body becomes a single

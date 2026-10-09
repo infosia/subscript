@@ -797,6 +797,31 @@ impl<'p> Checker<'p> {
                 }
                 let receiver = self.check_receiver(&member.obj, fx);
                 let receiver_type = self.apparent_type(&receiver.ty);
+                // §186 rule 5: `await h.then(...)` awaits the reaction handle.
+                if let (Type::AsyncHandle(_), ast::MemberProp::Ident(method)) =
+                    (&receiver_type, &member.prop)
+                {
+                    if matches!(method.sym.as_ref(), "then" | "catch" | "finally") {
+                        let handle = self.check_promise_reaction(
+                            receiver,
+                            method,
+                            call,
+                            fx,
+                            self.pos(call.span),
+                        );
+                        let Type::AsyncHandle(result) = self.apparent_type(&handle.ty) else {
+                            return self.err_expr(pos);
+                        };
+                        let origins = self.expr_async_origins(&handle, fx);
+                        fx.handle_async_origins(&origins);
+                        return hir::Expr {
+                            pending_work: None,
+                            kind: ExprKind::AsyncHandleAwait(Box::new(handle)),
+                            ty: *result,
+                            pos,
+                        };
+                    }
+                }
                 let field = match (&receiver_type, &member.prop) {
                     (Type::Class(class), ast::MemberProp::Ident(name)) => self.classes[class.0]
                         .fields

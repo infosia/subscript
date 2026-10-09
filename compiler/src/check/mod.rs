@@ -1186,6 +1186,9 @@ pub(crate) struct Checker<'p> {
     task_group_parameters: bool,
     deciding_type: bool,
     generic_callback_context: bool,
+    /// The contextual result type of the next lambda with no result
+    /// annotation; the body still decides the result (§186 rule 6).
+    lambda_result_hint: Option<Type>,
     initializer_call: Option<swc_common::Span>,
     active_call: Option<swc_common::Span>,
     function_value_decision: bool,

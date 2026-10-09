@@ -251,6 +251,7 @@ impl<'a> Lowering<'a> {
                 .or_else(|| self.hir.top_level.first().map(stmt_pos))
                 .unwrap_or_else(|| Pos::new("<module>", 1, 1));
             let function = FunctionInput {
+                owned_environment: false,
                 name: "<module initializer>".to_string(),
                 exported: false,
                 is_generator: false,

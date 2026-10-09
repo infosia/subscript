@@ -827,21 +827,6 @@ impl<'p> Checker<'p> {
         }
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
-        if matches!(name.as_str(), "then" | "catch" | "finally") {
-            let mut diagnostic = crate::check::rejection::diagnostic(
-                RejectionSite::PromiseCombinatorCall,
-                format!("Promise combinator `.{name}(...)` is not in the language"),
-                prop_pos.clone(),
-            );
-            diagnostic.example = match name.as_str() {
-                "then" => Some(&crate::check::diagnostic_text::THEN),
-                "catch" => Some(&crate::check::diagnostic_text::CATCH),
-                "finally" => Some(&crate::check::diagnostic_text::FINALLY),
-                _ => None,
-            };
-            self.diags.push(diagnostic);
-            return self.err_expr(pos);
-        }
         if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
             if name == "all" {
                 return self.check_promise_all(c, fx, pos);
@@ -938,6 +923,12 @@ impl<'p> Checker<'p> {
             return self.check_indirect_call(handled, c, fx, pos);
         }
         let recv = self.check_receiver(&m.obj, fx);
+        // §186 rule 5: the receiver type selects a reaction, not the name.
+        if matches!(name.as_str(), "then" | "catch" | "finally")
+            && matches!(self.apparent_type(&recv.ty), Type::AsyncHandle(_))
+        {
+            return self.check_promise_reaction(recv, prop, c, fx, pos);
+        }
         self.check_method_call_on(recv, prop, c, fx, pos)
     }
 

@@ -545,8 +545,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         {
             let _ = writeln!(
                 out,
-                "    {destination} = (SubFn){{ (void*)&sub_w{}, {} }};",
-                function.0, operands[0]
+                "    {destination} = (SubFn){{ (void*)&sub_{}{}, {} }};",
+                if target.is_async { "w" } else { "f" },
+                function.0,
+                operands[0]
             );
             return Ok(());
         }

@@ -447,7 +447,7 @@ ContextByteTargetKind	a-s043	S100	`Context.bytesOf<T>` cannot use `string`; it i
 ContextByteTargetLayout	a-s044	S100	`Context.bytesOf<T>` cannot use `FixedArray<string, 1>`; its storage type is not eligible; unsupported storage type is `string`
 ByteArgumentIdentity	a-s045	S100	type mismatch: `Context.bytesOf` expects exactly `FixedArray<i64, 1>`, got `FixedArray<i32, 1>`
 NonGenericStaticMethodTypeArguments	a-s046	S100	static method `C.f` is not generic
-PromiseCombinatorCall	a-s047	S013	Promise combinator `.then(...)` is not in the language
+AsyncHandleUnawaited	a-s047	S013	an async handle is dropped without any await of its completion
 PromiseStaticCall	a-s048	S013	Promise static `Promise.resolve(...)` is not in the language
 WorkerStaticObjectMethod	a-s049	S018	`Worker` has no static method `valueOf`
 GenericMethodTypeArgumentsMissing	a-s050	S100	generic method `id` requires explicit type arguments
@@ -1490,3 +1490,31 @@ FileModuleStringAlias	s185-alias-path	S100	accepted forms: readFile(path: string
 FileModuleStringAlias	s185-alias-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleImportForm	s185-reexport	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleFunctionValue	s185-function-value	S100	`readFile` from node:fs/promises can only be called; accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
+PromiseCombinatorCall	s186-then-no-callback	S013	`.then(...)` requires a callback
+PromiseCombinatorCall	s186-catch-no-callback	S013	`.catch(...)` requires a callback
+PromiseCombinatorCall	s186-then-type-arguments	S013	`.then(...)` takes no type arguments; the callback result gives the value type
+PromiseCombinatorCall	s186-then-null	S013	`.then(...)` takes no `null` callback; `.catch(r)` takes a rejection callback alone
+PromiseVoidReactionParameter	s186-void-then-parameter	S100	a `.then(...)` callback on `Promise<void>` takes no parameter; the language has no `void` parameter type
+PromiseReactionParameter	s186-catch-parameter-type	S100	a rejection callback parameter of `.catch(...)` must be `Error`; it is `string`
+PromiseReactionArguments	s186-then-three	S013	`.then(...)` takes a callback and an optional rejection callback
+PromiseReactionArguments	s186-then-not-function	S013	a `.then(...)` callback must be a function
+PromiseReactionArguments	s186-then-parameter-type	S013	a `.then(...)` callback parameter must be `i32`, the value type of the handle; it is `string`
+PromiseReactionArguments	s186-then-two-parameters	S013	a `.then(...)` callback takes at most one parameter, of type `i32`
+PromiseReactionArguments	s186-finally-parameter	S013	a `.finally(...)` callback takes no parameter
+PromiseReactionArguments	s186-catch-two-parameters	S013	a rejection callback of `.catch(...)` takes at most one parameter, of type `Error`
+PromiseReactionResult	s186-catch-string	S013	a `catch` callback must return `i32`, the value type of the handle; it returns `string`
+PromiseReactionResult	s186-catch-void	S013	a `catch` callback must return `i32`; a `void` callback is accepted only on `Promise<void>`
+PromiseReactionResult	s186-then-rejection-type	S013	a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `string`
+PromiseReactionResult	s186-finally-value	S013	a `finally` callback must be `() => void`; it is `() => i32`
+PromiseReactionSpread	s186-then-spread	S013	spread arguments require variadic parameters, which the language does not have
+AsyncHandleUnawaited	s186-dropped-then	S013	an async handle is dropped without any await of its completion
+PromiseReactionParameter	s186-then-nullable-parameter	S100	a `.then(...)` callback parameter must be `Foo`, the value type of the handle; it is `Foo | null`
+PromiseReactionParameter	s186-then-named-nullable	S100	a `.then(...)` callback parameter must be `Foo`, the value type of the handle; it is `Foo | null`
+PromiseReactionParameter	s186-then-number-parameter	S100	a `.then(...)` callback parameter must be `i32`, the value type of the handle; it is `i64`
+PromiseReactionParameter	s186-then-structural-parameter	S100	a `.then(...)` callback parameter must be `Foo`, the value type of the handle; it is `Bar`
+PromiseReactionParameter	s186-then-optional-parameter	S100	a `.then(...)` callback takes at most one parameter, of type `i32`; a function type has no optional parameter
+PromiseReactionParameter	s186-finally-optional-parameter	S100	a `.finally(...)` callback takes no parameter; a function type has no optional parameter
+PromiseReactionArguments	s186-void-then-annotated	S013	a `.then(...)` callback on `Promise<void>` takes no parameter
+PromiseReactionArguments	s186-void-then-named	S013	a `.then(...)` callback on `Promise<void>` takes no parameter
+PromiseReactionArguments	s186-then-nullable-value	S013	a `.then(...)` callback parameter must be `Foo | null`, the value type of the handle; it is `Foo`
+AsyncArrowCapture	s186-then-this	S009	a `.then(...)` callback cannot capture `this`; copy the needed field into a `const` first

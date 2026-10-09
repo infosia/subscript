@@ -1,0 +1,15 @@
+s2
+held 20
+adopt 101
+adopt chain 7
+void 3
+no value 9
+ignored four
+generator 3
+generator 4
+handle 2
+handle 3
+field 42
+all 6,8
+fan-out 1 11 21
+produced 5

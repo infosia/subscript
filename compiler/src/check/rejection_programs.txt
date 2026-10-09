@@ -9403,3 +9403,202 @@ FILE	E	main.ts
 import * as Files from "node:fs/promises"; export function main(): void {}
 END FILE
 END PROGRAM
+PROGRAM	s186-then-no-callback			0
+FILE	E	target/s154/forms/s186-then-no-callback/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then(); }
+END FILE
+END PROGRAM
+PROGRAM	s186-catch-no-callback			0
+FILE	E	target/s154/forms/s186-catch-no-callback/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().catch(); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-type-arguments			0
+FILE	E	target/s154/forms/s186-then-type-arguments/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then<string>((v: i32): string => `${v}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-null			0
+FILE	E	target/s154/forms/s186-then-null/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then(null, (e: Error): i32 => 0); }
+END FILE
+END PROGRAM
+PROGRAM	s186-void-then-parameter			0
+FILE	E	target/s154/forms/s186-void-then-parameter/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await g().then((v): i32 => 1); }
+END FILE
+END PROGRAM
+PROGRAM	s186-catch-parameter-type			0
+FILE	E	target/s154/forms/s186-catch-parameter-type/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().catch((e: string): i32 => 0); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-three	TS2554		0
+FILE	E	target/s154/forms/s186-then-three/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+function a(v: i32): i32 { return v; } function b(e: Error): i32 { return 0; } export async function main(): Promise<void> { await f().then(a, b, a); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-not-function	TS2345		0
+FILE	E	target/s154/forms/s186-then-not-function/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then(5); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-parameter-type	TS2345		0
+FILE	E	target/s154/forms/s186-then-parameter-type/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then((v: string): string => v); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-two-parameters	TS2345		0
+FILE	E	target/s154/forms/s186-then-two-parameters/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().then((a: i32, b: i32): i32 => a); }
+END FILE
+END PROGRAM
+PROGRAM	s186-finally-parameter	TS2345		0
+FILE	E	target/s154/forms/s186-finally-parameter/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().finally((x: i32): void => {}); }
+END FILE
+END PROGRAM
+PROGRAM	s186-catch-two-parameters	TS2345		0
+FILE	E	target/s154/forms/s186-catch-two-parameters/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().catch((e: Error, x: i32): i32 => 0); }
+END FILE
+END PROGRAM
+PROGRAM	s186-catch-string			0
+FILE	E	target/s154/forms/s186-catch-string/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const r = await f().catch((e: Error): string => e.message); }
+END FILE
+END PROGRAM
+PROGRAM	s186-catch-void			0
+FILE	E	target/s154/forms/s186-catch-void/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().catch((e: Error): void => { print(e.message); }); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-rejection-type			0
+FILE	E	target/s154/forms/s186-then-rejection-type/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const r = await f().then((v: i32): i32 => v, (e: Error): string => e.message); }
+END FILE
+END PROGRAM
+PROGRAM	s186-finally-value			0
+FILE	E	target/s154/forms/s186-finally-value/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().finally((): i32 => 5); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-spread			0
+FILE	E	target/s154/forms/s186-then-spread/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+function a(v: i32): i32 { return v; } export async function main(): Promise<void> { const cbs = [a]; await f().then(...cbs); }
+END FILE
+END PROGRAM
+PROGRAM	s186-dropped-then			0
+FILE	E	target/s154/forms/s186-dropped-then/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const h = f(); h.then((v: i32): i32 => v); await h; }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-nullable-parameter			0
+FILE	E	target/s154/forms/s186-then-nullable-parameter/main.ts
+class Foo { n: i32 = 1; }
+async function d(): Promise<Foo> { return new Foo(); }
+export async function main(): Promise<void> { const r: i32 = await d().then((b: Foo | null): i32 => b === null ? 0 : b.n); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-named-nullable			0
+FILE	E	target/s154/forms/s186-then-named-nullable/main.ts
+class Foo { n: i32 = 1; }
+async function d(): Promise<Foo> { return new Foo(); }
+function useMaybe(b: Foo | null): i32 { return b === null ? 0 : b.n; }
+export async function main(): Promise<void> { const r: i32 = await d().then(useMaybe); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-number-parameter			0
+FILE	E	target/s154/forms/s186-then-number-parameter/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const r: i64 = await f().then((v: i64): i64 => v); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-structural-parameter			0
+FILE	E	target/s154/forms/s186-then-structural-parameter/main.ts
+class Foo { n: i32 = 1; }
+class Bar { n: i32 = 2; }
+async function d(): Promise<Foo> { return new Foo(); }
+export async function main(): Promise<void> { const r: i32 = await d().then((b: Bar): i32 => b.n); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-optional-parameter			0
+FILE	E	target/s154/forms/s186-then-optional-parameter/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const r: i32 = await f().then((a: i32, b: i32 = 5): i32 => a + b); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-finally-optional-parameter			0
+FILE	E	target/s154/forms/s186-finally-optional-parameter/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { await f().finally((b: i32 = 5): void => {}); }
+END FILE
+END PROGRAM
+PROGRAM	s186-void-then-annotated	TS2345		0
+FILE	E	target/s154/forms/s186-void-then-annotated/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+export async function main(): Promise<void> { const r: i32 = await g().then((v: i32): i32 => 1); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-void-then-named	TS2345		0
+FILE	E	target/s154/forms/s186-void-then-named/main.ts
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+function useI32(x: i32): i32 { return x; }
+export async function main(): Promise<void> { const r: i32 = await g().then(useI32); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-nullable-value	TS2345		0
+FILE	E	target/s154/forms/s186-then-nullable-value/main.ts
+class Foo { n: i32 = 1; }
+async function dn(): Promise<Foo | null> { return null; }
+export async function main(): Promise<void> { const r: i32 = await dn().then((b: Foo): i32 => b.n); print(`${r}`); }
+END FILE
+END PROGRAM
+PROGRAM	s186-then-this			0
+FILE	E	target/s154/forms/s186-then-this/main.ts
+async function f(): Promise<i32> { return 1; }
+class C { n: i32 = 5; async run(): Promise<i32> { return await f().then((v: i32): i32 => v + this.n); } }
+export async function main(): Promise<void> { print(`${await new C().run()}`); }
+END FILE
+END PROGRAM

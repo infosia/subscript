@@ -71,12 +71,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             builder.this_value = Some(operand);
         }
         let mut captures = captures.into_iter();
-        if builder.function.is_async {
+        if builder.function.owned_environment {
             if let Some(environment) = captures.next() {
                 let Type::Class(class) = environment.ty else {
                     return Err(builder.error(
                         &builder.function.pos,
-                        "async capture has no owned environment",
+                        "an owned capture has no environment object",
                     ));
                 };
                 let pos = builder.function.pos.clone();

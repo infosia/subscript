@@ -30,24 +30,24 @@ pub(crate) const ASYNC_MAP: DivergenceEntry = DivergenceEntry {
 };
 
 pub(crate) const THEN: DivergenceEntry = DivergenceEntry {
-    ts: "function cb(v: i32): void {} async function probe(h: Promise<i32>): Promise<void> { h.then(cb); await h; }\nexport function main(): void {}",
-    subscript: "async function leaf(): Promise<i32> { return 1; } function cb(v: i32): void {} async function probe(): Promise<void> { const h = leaf(); const v = await h; cb(v); }\nexport function main(): void {}",
-    why: "A handle has no then method. In an async function, await the handle and call the callback with its value.",
-    collision: "collisions.md C8",
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().then(null, (e: Error): i32 => 0); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().catch((e: Error): i32 => 0); const s: string = await leaf().then((x: i32): string => `${x}`); }",
+    why: "then takes a fulfillment callback and an optional rejection callback, and no type arguments. Use catch for a rejection callback alone.",
+    collision: "collisions.md C8; compiler.md §186",
 };
 
 pub(crate) const CATCH: DivergenceEntry = DivergenceEntry {
-    ts: "function cb(e: Error): void {} async function probe(h: Promise<i32>): Promise<void> { h.catch(cb); await h; }\nexport function main(): void {}",
-    subscript: "async function leaf(): Promise<i32> { return 1; } function cb(e: Error): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } catch (e) { if (e instanceof Error) { cb(e); } } }\nexport function main(): void {}",
-    why: "A handle has no catch method. In an async function, await it inside try and handle the error inside catch.",
-    collision: "collisions.md C8",
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().catch<i32>((e: Error): i32 => 0); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().catch((e: Error): i32 => 0); }",
+    why: "catch takes one callback with an optional Error parameter, and no type arguments.",
+    collision: "collisions.md C8; compiler.md §186",
 };
 
 pub(crate) const FINALLY: DivergenceEntry = DivergenceEntry {
-    ts: "function cb(): void {} async function probe(h: Promise<i32>): Promise<void> { h.finally(cb); await h; }\nexport function main(): void {}",
-    subscript: "async function leaf(): Promise<i32> { return 1; } function cb(): void {} async function probe(): Promise<void> { const h = leaf(); try { await h; } finally { cb(); } }\nexport function main(): void {}",
-    why: "A handle has no finally method. In an async function, await it inside try and call the callback inside finally.",
-    collision: "collisions.md C8; compiler.md §180",
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().finally(); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const v: i32 = await leaf().finally((): void => {}); }",
+    why: "finally takes one callback with no parameter, and no type arguments.",
+    collision: "collisions.md C8; compiler.md §180, §186",
 };
 
 pub(crate) const RECEIVER: DivergenceEntry = DivergenceEntry {
@@ -56,6 +56,16 @@ pub(crate) const RECEIVER: DivergenceEntry = DivergenceEntry {
     why: "The receiver must appear as an explicit const capture or a class field.",
     collision: "collisions.md C24",
 };
+
+pub(crate) const REACTION_RECEIVER: DivergenceEntry = DivergenceEntry {
+    ts: "async function leaf(): Promise<i32> { return 1; }\nclass C { n: i32 = 5; async run(): Promise<i32> { return await leaf().then((v: i32): i32 => v + this.n); } }\nexport async function main(): Promise<void> { print(`${await new C().run()}`); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nclass C { n: i32 = 5; async run(): Promise<i32> { const n = this.n; return await leaf().then((v: i32): i32 => v + n); } }\nexport async function main(): Promise<void> { print(`${await new C().run()}`); }",
+    why: "A reaction callback owns const captures. A direct this capture remains outside the accepted surface.",
+    collision: "collisions.md C24; compiler.md §186",
+};
+
+pub(crate) const REACTION_RECEIVER_RULE: &str =
+    "A reaction callback owns const captures. Copy the needed field into a const.";
 
 pub(crate) const RECEIVER_MESSAGE: &str = "an async arrow cannot capture `this` directly; copy the receiver into a const or use a class field with an async method";
 pub(crate) const RECEIVER_RULE: &str = "An async arrow owns const captures. A direct this capture remains outside the accepted surface.";

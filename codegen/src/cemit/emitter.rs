@@ -129,7 +129,7 @@ impl<'m> Emitter<'m> {
         self.module.functions.iter().any(|function| {
             function.kind == l::FunctionKind::Lambda
                 && !function.is_async
-                && capture_parameters(function).next().is_some()
+                && borrowed_capture_parameters(function).next().is_some()
         })
     }
 
@@ -512,7 +512,7 @@ impl<'m> Emitter<'m> {
         let mut closure_environment_types = Vec::new();
         for function in &self.module.functions {
             if matches!(function.kind, l::FunctionKind::Lambda) && !function.is_async {
-                let captures = capture_parameters(function).collect::<Vec<_>>();
+                let captures = borrowed_capture_parameters(function).collect::<Vec<_>>();
                 if !captures.is_empty() {
                     closure_environment_types.push(function.id);
                     let _ = writeln!(out, "typedef struct SubEnv{} {{", function.id.0);

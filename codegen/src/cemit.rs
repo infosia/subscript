@@ -16,9 +16,10 @@ use subscript_runtime::TrapKind;
 use crate::layout::{is_unsigned, type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
-    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
-    boundary_type_requires_build, capture_parameters, data_type, explicit_parameters,
-    foreign_parameter_type_matches, is_userdata_slot, operand_type, runtime_trap_kind, value_type,
+    array_element_kind, array_format_kind, association_key_kind, borrowed_capture_parameters,
+    boundary_class_contains_pointer, boundary_type_requires_build, capture_parameters, data_type,
+    explicit_parameters, foreign_parameter_type_matches, is_userdata_slot, operand_type,
+    runtime_trap_kind, value_type,
 };
 use crate::position_table::PositionTable;
 use crate::root_storage::{self, RootStoragePlan};

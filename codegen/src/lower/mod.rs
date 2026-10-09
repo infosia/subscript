@@ -1579,11 +1579,11 @@ fn lower_lir_module_with_positions<M: Module>(
                     function.return_type.clone()
                 };
                 let mut creator_parameters = parameters.clone();
-                if let Some(environment) = function
-                    .parameters
-                    .iter()
-                    .find(|parameter| parameter.kind == lir::ParameterKind::OwnedEnvironment)
-                {
+                // A synchronous lambda receives its owned environment in the
+                // environment word; an async creator receives it as a parameter.
+                if let Some(environment) = function.parameters.iter().find(|parameter| {
+                    function.is_async && parameter.kind == lir::ParameterKind::OwnedEnvironment
+                }) {
                     let lir::ValueType::Data(ty) =
                         &function.values[environment.value.0 as usize].ty
                     else {

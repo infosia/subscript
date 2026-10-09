@@ -722,6 +722,7 @@ impl<'p> Checker<'p> {
                         &source,
                         params,
                         Some(result),
+                        None,
                         &mut deferred.frame,
                         value.pos.clone(),
                     );

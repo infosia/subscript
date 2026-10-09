@@ -1,11 +1,11 @@
-//! Owned async capture layouts follow the independent HIR capture list (§181).
+//! Owned capture layouts follow the independent HIR capture list (§181, §186 rule 4).
 use subscript_compiler::{hir, lir as l, Type};
 
 pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) -> usize {
     let mut environments = Vec::new();
     super::walk_module_expressions(hir, &mut |expr| {
         if let hir::ExprKind::Lambda {
-            is_async: true,
+            owns_environment: true,
             captures,
             ..
         } = &expr.kind
@@ -44,7 +44,7 @@ pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<Str
                 })
         }) {
             findings.push(format!(
-                "{}: async arrow drops its owned capture class layout or frame root",
+                "{}: an owning lambda drops its capture class layout or environment parameter",
                 expr.pos
             ));
         }

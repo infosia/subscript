@@ -348,6 +348,9 @@ struct FunctionRecord {
 
 #[derive(Clone)]
 struct FunctionInput {
+    /// The first capture is the environment object that owns the others
+    /// (`compiler.md` §181 rule 2, §186 rule 4).
+    owned_environment: bool,
     name: String,
     exported: bool,
     is_generator: bool,
@@ -365,6 +368,7 @@ impl From<hir::Function> for FunctionInput {
     fn from(function: hir::Function) -> Self {
         let creation_traps = function.trap_sites();
         Self {
+            owned_environment: false,
             name: function.name,
             exported: function.exported,
             is_generator: function.is_generator,

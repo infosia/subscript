@@ -436,7 +436,8 @@ pub enum ParameterKind {
     Receiver,
     /// Value copied into a lambda environment.
     Capture,
-    /// Owned reference environment rooted for the complete async frame lifetime.
+    /// Owned reference environment of a lambda (`compiler.md` §181 rule 2,
+    /// §186 rule 4). An async frame roots it for its complete lifetime.
     OwnedEnvironment,
 }
 

@@ -91,6 +91,13 @@ impl Divergence {
             Divergence::PromiseAllTypeArguments => super::promise_all::PROMISEALLTYPEARGUMENTS,
             Divergence::PromiseAllInput => super::promise_all::PROMISEALLINPUT,
             Divergence::PromiseAllCountedResult => super::promise_all::PROMISEALLCOUNTEDRESULT,
+            Divergence::PromiseReactionResult => super::promise_reaction::PROMISEREACTIONRESULT,
+            Divergence::PromiseReactionParameter => {
+                super::promise_reaction::PROMISEREACTIONPARAMETER
+            }
+            Divergence::PromiseVoidReactionParameter => {
+                super::promise_reaction::PROMISEVOIDREACTIONPARAMETER
+            }
 
             Divergence::FunctionValueOptionalArguments => {
                 super::type_flow::FUNCTION_VALUE_OPTIONAL_ARGUMENTS

@@ -1,0 +1,25 @@
+t1
+sync
+t2
+adopt 4
+finally 7
+t3
+awaiter 10
+then 3
+catch fail 6
+t4
+awaiter 11
+all 1,2
+then2 3
+t5
+main th
+t6
+main adopt 5
+t7
+main caught 6
+t8
+main finally 7
+t9
+t10
+t11
+t12

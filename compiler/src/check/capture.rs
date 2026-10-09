@@ -201,18 +201,24 @@ impl<'a> Analysis<'a> {
                 body,
                 captures,
                 is_async,
+                owns_environment,
                 ..
             } => {
-                if *is_async {
+                if *owns_environment {
                     // A heap field cannot retain a borrowed synchronous environment (§118).
-                    self.escapes.push(("owned async environment".into(), e));
+                    let kind = if *is_async {
+                        "owned async environment"
+                    } else {
+                        "owned callback environment"
+                    };
+                    self.escapes.push((kind.into(), e));
                 }
                 if *is_async && captures.iter().any(|capture| capture.name == "this") {
                     self.async_receivers.push(&e.pos);
                 }
                 for capture in captures {
                     if let Some(id) = env.get(&capture.name) {
-                        if !*is_async && capture.ty.counted_type().is_some() {
+                        if !*owns_environment && capture.ty.counted_type().is_some() {
                             self.locals[*id].counted = true;
                             self.counted_capture = true;
                         }
@@ -265,7 +271,16 @@ impl<'a> Analysis<'a> {
                 }
             }
             E::AsyncHandleCreate { args, .. } => {
-                for v in args {
+                // An owning lambda reports its own escape at its position.
+                for v in args.iter().filter(|v| {
+                    !matches!(
+                        v.kind,
+                        E::Lambda {
+                            owns_environment: true,
+                            ..
+                        }
+                    )
+                }) {
                     self.escapes.push(("held async argument".to_owned(), v));
                 }
             }
@@ -448,14 +463,16 @@ impl<'a> Analysis<'a> {
                 .get(&(e as *const Expr as usize))
                 .map_or(!self.infer, |id| self.facts[*id]),
             E::Lambda {
-                captures, is_async, ..
+                captures,
+                owns_environment,
+                ..
             } => {
-                if self.infer || *is_async {
+                if self.infer || *owns_environment {
                     self.capture_bindings
                         .get(&(e as *const Expr as usize))
                         .is_some_and(|ids| ids.iter().any(|id| self.facts[*id]))
                 } else {
-                    !*is_async && !captures.is_empty()
+                    !captures.is_empty()
                 }
             }
             _ => self

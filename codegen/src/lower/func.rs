@@ -1030,6 +1030,11 @@ pub(crate) fn define_function<M: Module>(
         if let Some(environment) = environment {
             let mut offset = 0u32;
             for parameter in capture_parameters(function) {
+                // An owned environment is the object itself (§186 rule 4).
+                if parameter.kind == l::ParameterKind::OwnedEnvironment {
+                    body.set_value(parameter.value, RV::Scalar(environment))?;
+                    continue;
+                }
                 let ty = body.value_type(parameter.value)?.clone();
                 let (size, align) = value_size_align(&body.ml.layouts, &ty)?;
                 offset = round_up_layout(offset, align.max(1), "closure capture load")?;

@@ -138,6 +138,17 @@ pub(crate) fn explicit_parameters(function: &l::Function) -> impl Iterator<Item 
         .filter(|parameter| parameter.kind == l::ParameterKind::Explicit)
 }
 
+/// The captures that a lambda borrows from a stack environment. A lambda
+/// that owns its environment has none (`compiler.md` §181, §186 rule 4).
+pub(crate) fn borrowed_capture_parameters(
+    function: &l::Function,
+) -> impl Iterator<Item = &l::Parameter> {
+    function
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
+}
+
 pub(crate) fn capture_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
     function.parameters.iter().filter(|parameter| {
         matches!(

@@ -40,10 +40,12 @@ impl<'a> Analysis<'a> {
                     blocks.extend(&self.capture_blocks[*id]);
                 }
             }
-            E::Lambda { is_async, .. } => {
+            E::Lambda {
+                owns_environment, ..
+            } => {
                 if let Some(ids) = self.capture_bindings.get(&(e as *const Expr as usize)) {
                     for id in ids {
-                        if !*is_async && self.locals[*id].counted {
+                        if !*owns_environment && self.locals[*id].counted {
                             blocks.insert(*id);
                         }
                         blocks.extend(&self.capture_blocks[*id]);

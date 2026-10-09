@@ -35,6 +35,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let hir::ExprKind::Lambda {
             can_raise,
             is_async,
+            owns_environment,
             ..
         } = &expr.kind
         else {
@@ -42,8 +43,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         let can_raise = *can_raise;
         let is_async = *is_async;
+        // §181 rule 2 and §186 rule 4: an owning lambda allocates its environment.
+        let owned_environment = *owns_environment && !captures.is_empty();
         let id = self.lowering.allocate_function_id();
         let function = FunctionInput {
+            owned_environment,
             name: format!(
                 "<lambda {}:{}:{}>",
                 expr.pos.file, expr.pos.line, expr.pos.col
@@ -66,7 +70,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             pos: expr.pos.clone(),
         };
         let mut lowered_captures = captures.to_vec();
-        if is_async && !captures.is_empty() {
+        if owned_environment {
             let class = ClassId(self.lowering.classes.len());
             let first_field = self
                 .lowering
@@ -89,7 +93,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .collect();
             self.lowering.classes.push(l::Class {
                 id: class,
-                source_name: format!("<async environment {}>", id.0),
+                source_name: if is_async {
+                    format!("<async environment {}>", id.0)
+                } else {
+                    format!("<callback environment {}>", id.0)
+                },
                 is_value: false,
                 is_descriptor: false,
                 is_boundary: false,
@@ -120,7 +128,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     }],
                     expr.pos.clone(),
                 )?
-                .ok_or_else(|| self.error(&expr.pos, "async environment has no value"))?;
+                .ok_or_else(|| self.error(&expr.pos, "owned environment has no value"))?;
             for (index, value) in capture_values.into_iter().enumerate() {
                 self.store_class_field(class, index, environment.clone(), value, &expr.pos)?;
             }

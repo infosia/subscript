@@ -47,6 +47,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let generic_context = self.generic_callback_context;
+        let result_hint = self.lambda_result_hint.take();
         let value = self.with_expression_work(|checker| {
             if a.is_async && a.type_params.is_some() {
                 checker.reject_subset(
@@ -176,6 +177,7 @@ impl<'p> Checker<'p> {
                         id,
                         params: Vec::new(),
                         is_async: a.is_async,
+                        owns_environment: a.is_async,
                         ret: if a.is_async {
                             match checker.apparent_type(&result) {
                                 Type::AsyncHandle(t) => *t,
@@ -192,7 +194,7 @@ impl<'p> Checker<'p> {
                     pos,
                 };
             }
-            checker.check_lambda_body(a, params, ret, fx, pos)
+            checker.check_lambda_body(a, params, ret, result_hint.as_ref(), fx, pos)
         });
         self.generic_callback_context = generic_context;
         value
@@ -203,6 +205,7 @@ impl<'p> Checker<'p> {
         a: &ast::ArrowExpr,
         params: Vec<ParamSig>,
         mut ret: Option<Type>,
+        result_hint: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -325,7 +328,7 @@ impl<'p> Checker<'p> {
                         );
                         return out;
                     }
-                    let checked = self.check_expr(e, ret.as_ref(), fx);
+                    let checked = self.check_expr(e, ret.as_ref().or(result_hint), fx);
                     if let Some(ret) = &ret {
                         self.require_expr_assignable(&checked, &ret.clone(), fx, "the lambda body");
                     } else {
@@ -437,6 +440,7 @@ impl<'p> Checker<'p> {
                 id,
                 params: hir_params,
                 is_async: a.is_async,
+                owns_environment: a.is_async,
                 ret,
                 body,
                 captures,

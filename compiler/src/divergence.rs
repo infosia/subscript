@@ -54,6 +54,12 @@ pub enum Divergence {
     PromiseAllInput,
     /// An aggregate copies result bytes. An async handle or an array of async handles requires the counted store path.
     PromiseAllCountedResult,
+    /// A rejection or `finally` callback whose result is outside its accepted form; the language has no union result.
+    PromiseReactionResult,
+    /// A reaction callback parameter whose type is not the delivered type; function types have no variance.
+    PromiseReactionParameter,
+    /// A parameter on a callback of a `void` value; the language has no `void` parameter type.
+    PromiseVoidReactionParameter,
     /// An inferred function value has optional parameters only in TypeScript.
     FunctionValueOptionalArguments,
     /// A null check of an element changes no type (§163).
@@ -1452,6 +1458,9 @@ impl Divergence {
         Divergence::PromiseAllTypeArguments,
         Divergence::PromiseAllInput,
         Divergence::PromiseAllCountedResult,
+        Divergence::PromiseReactionResult,
+        Divergence::PromiseReactionParameter,
+        Divergence::PromiseVoidReactionParameter,
         Divergence::PromiseObject,
         Divergence::AwaitOutsideAsync,
         Divergence::AsyncFunctionShape,
@@ -1788,3 +1797,4 @@ mod tests {
 }
 
 mod promise_all;
+mod promise_reaction;

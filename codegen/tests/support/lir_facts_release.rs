@@ -132,6 +132,8 @@ fn block_releases(
         l::Terminator::Switch { arms, default, .. } => std::iter::once(default.block)
             .chain(arms.iter().map(|arm| arm.target.block))
             .collect(),
+        // A finalizer that awaits continues the exception path after the resume.
+        l::Terminator::Suspend { successor, .. } => vec![*successor],
         _ => Vec::new(),
     };
     let ranges: Vec<_> = targets
@@ -172,7 +174,7 @@ impl Walk<'_> {
             params,
             body,
             captures,
-            is_async,
+            owns_environment,
             ..
         } = &expr.kind
         {
@@ -180,7 +182,7 @@ impl Walk<'_> {
             let controls = std::mem::take(&mut self.controls);
             let state = (self.owners, self.caught);
             self.owners = params.iter().filter(|p| owned(&p.ty)).count()
-                + if *is_async {
+                + if *owns_environment {
                     captures.iter().filter(|capture| owned(&capture.ty)).count()
                 } else {
                     0
@@ -431,6 +433,60 @@ export async function main(): Promise<void> { const h = returning(true); await h
     assert!(
         findings.iter().any(
             |f| f.contains("exception edge releases 1 owned handles; lexical scopes require 2")
+        ),
+        "{findings:?}"
+    );
+}
+
+/// A `finally` block that awaits continues the exception path after its
+/// resume. The exception edge of the awaited receiver reaches the release
+/// only through the two suspensions; removing that release fires.
+// Cost: one checker call, one lowering, and two fact comparisons; no
+// native build.
+#[test]
+fn an_awaiting_finalizer_keeps_the_exception_path_release() {
+    let hir = subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+        "awaiting-finalizer.ts",
+        r#"async function turn(): Promise<void> {}
+async function fin(h: Promise<i32>, f: () => void): Promise<i32> {
+  try { return await h; } finally { f(); await turn(); await turn(); }
+}
+async function value(n: i32): Promise<i32> { await Context.suspend(); return n; }
+export async function main(): Promise<void> { print(`${await fin(value(4), (): void => {})}`); }
+"#,
+    )])
+    .expect("checks");
+    let mut lir = subscript_codegen::lir::lower_module(&hir).expect("lowers");
+    let mut findings = Vec::new();
+    compare(&hir, &lir, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    let function = lir
+        .functions
+        .iter_mut()
+        .find(|function| function.source_name == "fin")
+        .expect("fin");
+    let restored = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find(|instruction| instruction.kind == l::InstructionKind::ExceptionRestore)
+        .and_then(l::Instruction::raise_edge)
+        .and_then(|edge| match edge {
+            l::RaiseEdge::Handler(block) => Some(*block),
+            l::RaiseEdge::Propagate => None,
+        })
+        .expect("the finalizer restores the exception into a release landing");
+    let landing = &mut function.blocks[restored.0 as usize];
+    let release = landing
+        .instructions
+        .iter()
+        .position(|i| matches!(i.kind, l::InstructionKind::AsyncHandleRelease))
+        .expect("release");
+    landing.instructions.remove(release);
+    compare(&hir, &lir, &mut findings);
+    assert!(
+        findings.iter().any(
+            |f| f.contains("exception edge releases 0 owned handles; lexical scopes require 1")
         ),
         "{findings:?}"
     );

@@ -565,3 +565,345 @@ let t0 = tick;
 await now(1).then((v: i32): i32 => v + k);
 print(`capturing ${tick - t0}`);            // node 2, prototype 4
 ```
+
+## Implementation
+
+Red pin: `5875a70c`. A debug CLI built from the pin rejects each new
+entry at the check, so no tier runs it:
+
+| Entry | Pin result (`subscript check`, `run`, `build`: exit 1) |
+|---|---|
+| `a357-promise-then-chains` | 22 errors; the first is S013 "Promise combinator `.then(...)` is not in the language" at 11:61 |
+| `a358-promise-catch-finally` | 21 errors; the first is the same S013 at 12:20 |
+| `a359-promise-then-captures` | 8 errors; the first is the same S013 at 14:19 |
+| `a360-class-then-method` | 3 errors; the first is the same S013 at 14:5, on the class's own `then` |
+| `a361-promise-then-order` | 4 errors; the first is the same S013 at 22:6 |
+| `r402-dropped-then-handle` | S013 at 10:5 with the combinator message; the dropped-handle message is absent |
+| `r403-then-captures-let` | S013 at 10:20 with the combinator message; no S009 |
+| `r404-catch-callback-type` | S018 "type `Promise<i32>` has no async method `catch`" at 9:26; no divergence block |
+| `r97-promise-combinator` (rewritten) | S018 at 12:25 before S013; the reject table expects S013 first |
+
+At the pin, `codegen/tests/promise_reaction.rs` fails 4 of 4 tests, each at
+the check of its program. `compiler/tests/promise_reaction.rs` does not
+compile, because `hir::ExprKind::Lambda` has no `owns_environment`
+field. With that test removed, the other 3 tests fail; the `r402` test
+reads the combinator message where it expects the dropped-handle
+message. Each entry carries its pin lines.
+
+`tsc` accepts the five accept entries and the three reject entries.
+`node` prints each accept golden byte for byte.
+
+### Receiver dispatch
+
+`check_method_call` (`compiler/src/check/expr/call.rs`) and the `await`
+member path (`compiler/src/check/expr/entry.rs`) check the receiver
+first. If its apparent type is `Promise<T>` and the member is `then`,
+`catch`, or `finally`, `check_promise_reaction`
+(`compiler/src/check/expr/promise_reaction.rs`) checks the call. Any
+other receiver gives an ordinary method call (rule 5). The name-only
+rejection is gone. `await` of a class value stays S100.
+
+The call becomes `AsyncHandleCreate` of a helper with the receiver and
+the callbacks as its arguments. The receiver's obligations pass to the
+helper. The call registers its own origin, so S013 applies to the new
+handle (`r402`). In the `await` path the handle is awaited at once.
+
+### Helpers
+
+`compiler/src/check/expr/promise_reaction/helper.rs` builds one HIR
+async function for each key: the form, the callback shapes, the value
+type, and the callback types. The checker reuses the function at each
+call with the same key. Its name is `[[Promise.<form> <shapes>]]<T, U>`,
+for example `[[Promise.then (v) => handle]]<i32, i32>`. The keys live in
+the instance-symbol table, which the opaque generic check restores.
+
+A callback shape is its arity and its delivery. The arity is the number
+of parameters, zero or one. The delivery comes from the callback result
+type: `void`, `Promise<U>` (adoption), or a value `U`.
+
+| Form | Body |
+|---|---|
+| `then(f)`, arity 1 | deliver `f(await h)` |
+| `then(f)`, arity 0 | `await h;` and deliver `f()` |
+| `then(f, r)` | `let v: T; try { v = await h; } catch (e) { deliver r(e) }` and deliver `f(v)`; with `T` `void`, no `v` |
+| `catch(r)` | `try { return await h; } catch (e) { deliver r(e) }`; with `T` `void`, `await h;` |
+| `finally(f)` | `try { return await h; } finally { f(); await turn(); await turn(); }` |
+
+| Delivery | Statements |
+|---|---|
+| value | `return f(x);` |
+| `void` | `f(x); return;` |
+| adoption | `const p = f(x); await turn(); return await p;` |
+
+`[[Promise.turn]]` is an async function with an empty body. The checker
+builds it only for a key with an adoption or a `finally`. A catch body
+calls `r` with the binding and does not narrow it: the binding is the
+Error class.
+
+The helpers are not §119 helpers. Each one takes a callback parameter,
+which is a carrier type, and §119.1 rule 4 makes a carrier parameter an
+internal error at lowering. So each helper is an ordinary free function
+with a reload slot and an entry in the declaration hash. Measured on the
+dev JIT:
+
+| Body edit | Reload |
+|---|---|
+| A program with no reaction gains `then` with a new key | Refused: `DeclarationChanged` for the new helper |
+| A second `then` with an existing key | Accepted |
+| A callback body changes | Accepted; the new body runs |
+| A chain is suspended across the reload | The resume traps with `StaleCoroutine` (the no-reload control prints `2`) |
+| Two `then` calls with different keys change places (`then` to `i32` and `then` to `string`) | Refused: `DeclarationChanged` for `[[Promise.then (v) => value]]<i32, string>`, which was `<i32, i32>` |
+| A `then` call and a `catch` call change places | Refused: `DeclarationChanged` for `[[Promise.catch (e) => value]]<i32, i32>`, which was the `then` helper |
+| The callback result type of a `then` changes from `i32` to `string` | Refused: `DeclarationChanged` for `<i32, string>`, which was `<i32, i32>`; the same with a second `then` that already has the `<i32, string>` key |
+
+`declaration_hash` (`codegen/src/reload.rs`) reads the functions in
+module order. The checker appends a helper at the first call with its
+key, so a reorder of calls with different keys changes the hash, and a
+key change is refused. The running program keeps its code in each
+refused case.
+
+The helper statements take three positions of the first call with the
+key: the receiver position for `h` and its `await`, the callback argument
+position for a callback call and its delivery, and the method name
+position for the other statements.
+
+### Callback typing
+
+| Callback | Parameters | Result |
+|---|---|---|
+| `then` fulfillment | `T`, or none when `T` is `void` | from the body, with no context |
+| `then` rejection | `Error` | from the body, with `U` as the literal hint |
+| `catch` | `Error` | from the body, with `T` as the literal hint |
+| `finally` | none | from the body |
+
+A hint types a literal (`catch(e => 0)` on `Promise<f64>` gives `f64`),
+and the body still decides the result. A callback with fewer parameters
+gets the zero-arity call.
+
+Rejected forms and their sites:
+
+| Site | Class | Forms | Witnesses (`tsc`) |
+|---|---|---|---|
+| `PromiseCombinatorCall` | Diverges, `PromiseObject` | no callback; type arguments; a `null` callback | `s186-then-no-callback`, `s186-catch-no-callback`, `s186-then-type-arguments`, `s186-then-null` (all accept) |
+| `PromiseReactionParameter` (S100) | Diverges, `PromiseReactionParameter` (C24 row 25) | a parameter type that is not the delivered type, where `tsc` accepts; a parameter with a default after the delivered parameters | `s186-catch-parameter-type`, `s186-then-nullable-parameter`, `s186-then-named-nullable`, `s186-then-number-parameter`, `s186-then-structural-parameter`, `s186-then-optional-parameter`, `s186-finally-optional-parameter` (all accept) |
+| `PromiseVoidReactionParameter` (S100) | Diverges, `PromiseVoidReactionParameter` | a parameter on a `Promise<void>` fulfillment callback that `tsc` types as `void` | `s186-void-then-parameter` (accepts) |
+| `PromiseReactionArguments` | TscRejects | too many arguments; a non-function callback; a parameter type that `tsc` rejects; a required parameter after the parameters that `tsc` passes | `s186-then-three` (TS2554), `s186-then-not-function`, `s186-then-parameter-type`, `s186-then-two-parameters`, `s186-finally-parameter`, `s186-catch-two-parameters`, `s186-void-then-annotated`, `s186-void-then-named`, `s186-then-nullable-value` (TS2345) |
+| `PromiseReactionSpread` | Diverges, `ForOfSpreadCall` | a spread argument | `s186-then-spread` (accepts) |
+| `PromiseReactionResult` | Diverges, `PromiseReactionResult` | a `catch` result other than `T`; a `void` `catch` callback on a non-`void` handle; a `then` rejection result other than `U`; a `finally` result other than `void` | `s186-catch-string`, `s186-catch-void`, `s186-then-rejection-type`, `s186-finally-value` (all accept) |
+| `AsyncHandleUnawaited` | Diverges, `DroppedAsyncHandle` | a dropped reaction handle | `a-s047` (moved from `PromiseCombinatorCall`), `s186-dropped-then` |
+| `AsyncArrowCapture` (S009) | Diverges, `AsyncArrowCapture` | a synchronous callback that captures `this` | `s186-then-this` (accepts) |
+
+The §154 totality test measures every witness with stock `tsc` in one
+batch, and each class above agrees with that measurement.
+
+#### Each parameter mismatch reaches a measured site
+
+`tsc` types the callback parameters as `(value: T)` for a fulfillment
+callback (`T` is `void` on `Promise<void>`), `(reason: any)` for a
+rejection callback, and `()` for `finally`. The helper passes `T`
+(nothing on `Promise<void>`), `Error`, and nothing. The checker checks
+an arrow callback with the `tsc` parameter types as context, so an
+unannotated parameter on `Promise<void>` has the type `void`. Then one
+predicate classifies every callback whose parameters differ from the
+helper parameters:
+
+1. An arrow with a parameter that has no default and no `tsc`
+   parameter is reported before the checker reads its annotation:
+   `PromiseReactionArguments`. `tsc` gives TS2345 (measured:
+   `s186-then-two-parameters`, `s186-catch-two-parameters`,
+   `s186-finally-parameter`).
+2. Otherwise `tsc` accepts the callback when it requires at most the
+   `tsc` parameters (`function_value_required`, as for §164), and each
+   `tsc` parameter type is assignable to the callback parameter type
+   (`ts_nominal_assignable`, the predicate of the assignment sites; the
+   reason is `any`, so a rejection callback parameter always passes).
+3. If `tsc` accepts: a `Promise<void>` callback with a parameter is
+   `PromiseVoidReactionParameter`; any other is
+   `PromiseReactionParameter`, with the arity text for a defaulted
+   extra parameter and the type text otherwise.
+4. If `tsc` rejects: `PromiseReactionArguments`.
+
+A callback whose parameter or result type is already an error reports
+nothing more. A parameter type outside the language (`i32 | null`,
+`void`) is S011 or S100 at the annotation, before this site.
+
+Measured with stock `tsc` and the checker:
+
+| Callback | `tsc` | Site |
+|---|---|---|
+| `(b: Foo \| null): i32` on `Promise<Foo>`; the named `useMaybe(b: Foo \| null)`; a function value of that type | accepts | `PromiseReactionParameter` |
+| `(v: i64)` or `(v: f64)` on `Promise<i32>` | accepts | `PromiseReactionParameter` |
+| `(b: Bar)` on `Promise<Foo>`, `Bar` with the same public fields | accepts | `PromiseReactionParameter` |
+| `(a: i32, b: i32 = 5)` on `Promise<i32>`; the named `two(a: i32, b: i32 = 5)`; `finally((b: i32 = 5): void => {})`; `catch((e: Error, b: i32 = 5): i32 => 0)` | accepts | `PromiseReactionParameter` |
+| `(e: string)`, `(e: Error \| null)` as a rejection callback | accepts | `PromiseReactionParameter` |
+| `(v): i32` on `Promise<void>` | accepts | `PromiseVoidReactionParameter` |
+| `(v: i32)`, `useI32(x: i32)`, `one(b: i32 = 5)`, `(b: i32 = 5)` on `Promise<void>` | TS2345 | `PromiseReactionArguments` |
+| `(v: string)` on `Promise<i32>`; `(b: Foo)` on `Promise<Foo \| null>` | TS2345 | `PromiseReactionArguments` |
+| `(v: i32 \| null)` on `Promise<i32>` or `Promise<void>` | accepts on `Promise<i32>`, TS2345 on `Promise<void>` | S011 at the annotation, with a divergence |
+| `(v: void)` on `Promise<void>` | accepts | S100 at the annotation ("`void` is only allowed as a return …"), with a divergence |
+
+Correction: the first implementation classed the type mismatches of the
+first five rows as `PromiseReactionArguments` (TscRejects), and the
+annotated `Promise<void>` rows as `PromiseCombinatorCall` (Diverges).
+The `tsc` results above contradict both classes.
+
+#### A callback result `Promise<U> | null`
+
+`tsc` accepts each form below and gives `Promise<U | null>`. The checker
+has no type `Promise<U> | null`, so no callback reaches the helper with
+that result:
+
+| Form | Checker |
+|---|---|
+| `then((v: i32): Promise<i32> \| null => null)` | S011 "unions are limited to `Ref \| null`; `Promise<i32> \| null` is not a reference type union", with a divergence |
+| `then((v: Foo): Promise<Foo> \| null => null)` | the same S011 |
+| `then((v: i32) => v > 0 ? f() : null)` | S100 "conditional branches have no common type: `Promise<i32>` and `null`", with a divergence |
+| the same with `Promise<Foo>` | the same S100 |
+
+The rejection is sound; no change is made.
+
+The §182 examples `THEN`, `CATCH`, and `FINALLY` show a form of the
+`PromiseCombinatorCall` site and its accepted form: `then(null, r)`,
+`catch<i32>(r)`, and `finally()`. `r97` now pins `then(null, r)`.
+
+### Owned callback environments (rule 4)
+
+`hir::ExprKind::Lambda` carries `owns_environment`. The checker sets it
+for every async arrow, and for a synchronous lambda that is a direct
+callback argument of a reaction when no capture is `this`. A lambda
+held in a local first stays borrowed, and §118 rejects it at the held
+async argument (`value `f` may capture at held async argument`). A
+direct callback that captures `this` is S009 "a `.then(...)` callback
+cannot capture `this`; copy the needed field into a `const` first", with
+the example `REACTION_RECEIVER`, which copies the field into a `const`.
+A `let` capture keeps its S009 (`r403`). A direct callback that captures
+a borrowed lambda reports one S009, "may capture at owned callback
+environment"; the held async argument of an owning lambda records no
+second escape.
+
+| Stage | Change |
+|---|---|
+| Capture analysis (`compiler/src/check/capture.rs`, `capture/blocks.rs`) | An owning lambda is clean unless a captured value can capture; §175 counted-capture blocks apply only to a borrowing lambda |
+| LIR (`codegen/src/lir/lambda.rs`, `builder.rs`) | An owning lambda with captures allocates `<callback environment N>` (async: `<async environment N>`); `FunctionInput::owned_environment` selects the `OwnedEnvironment` parameter and the field loads |
+| Dev JIT (`lower/mod.rs`, `lower/func.rs`, `lower/func/builtin.rs`) | A synchronous owning lambda takes the environment object in the environment word; `make_closure` pairs the code of the function itself with that object |
+| C AOT (`cemit/literal.rs`, `cemit/emitter.rs`) | The pair is `(sub_fN, environment)`; `SubEnv` types and the borrowed-environment predicate read only borrowed captures |
+| Interpreter | No change: the callable holds the environment as its one capture |
+
+Each storage of the callable roots its environment word through the
+function-value roots of §181 rule 4. The helper frame holds the callable
+in its parameter slot until the frame completes.
+
+Rooting check and its firing control
+(`callback_environment_survives_collection_in_three_tiers_with_a_control_without_one`).
+The rooting program collects and allocates 100 objects of the
+environment size while the chain is pending, and expects `44 4`, `1`.
+The control emits the same program as C and stores the environment word
+of each function value pair as `env ^ 1`; each indirect call decodes it.
+The collector marks exact payload addresses only, so the stored word
+does not root the environment. Measured: the control prints `3 -2`, `1`:
+the environment block holds an allocated `Churn` (`a = -1`, `b.n = -2`).
+The same transform with `env ^ 0` prints `44 4`, `1`. The interpreter
+holds each value in an `Rc`, so its leg cannot fail and is an output
+check only. The dev JIT runs only from source, and no test entry takes
+a changed module, so its leg is an output check too.
+
+### Order (rule 3)
+
+The turn program of `codegen/tests/promise_reaction.rs` prints the turns
+from the creation of a handle to the resume of its `await`. The three
+tiers print the `node` v24.18.0 output for all 23 rows:
+
+| Form | Turns | Form | Turns |
+|---|---|---|---|
+| `await` of a completed handle | 1 | `then2-rejected-adopt` | 4 |
+| plain call | 1 | `catch` rejected | 2 |
+| `then` | 2 | `catch` fulfilled | 2 |
+| `then` with no parameter | 2 | `catch` adoption | 4 |
+| `then` with a `void` callback | 2 | `catch` with a `void` callback | 2 |
+| `then` adoption | 4 | `finally` fulfilled | 4 |
+| `then` adoption of `void` | 4 | `finally` rejected | 4 |
+| `then(…).then(…)` | 3 | `finally` on `Promise<void>` | 4 |
+| `then` on a rejected handle | 2 | capturing `then` | 2 |
+| `then(f, r)` fulfilled | 2 | capturing `catch` | 2 |
+| `then(f, r)` rejected | 2 | capturing `finally` | 4 |
+| `Promise.all(…).then(…)` | 3 | | |
+
+`a361` is an interleaved program. Its golden is the `node` output, and
+the golden sweeps compare each tier with it byte for byte. A capturing callback has the `node` order; the async
+conversion of the measurement added 1 or 2 turns.
+
+### Fact witness
+
+`codegen/tests/support/lir_facts_release.rs` now follows a `Suspend`
+successor on an exception path. At the pin it reported "exception edge
+releases 0 owned handles; lexical scopes require 1" for the source
+program `try { return await h; } finally { f(); await t(); }`, which
+has no reaction. The release is after the finalizer's suspensions. The
+new test `an_awaiting_finalizer_keeps_the_exception_path_release`
+removes that release and the witness fires. Two hundred iterations of a
+throwing and a quiet `finally` callback leave 0 tasks on the dev JIT.
+
+### Goldens and documents
+
+The LIR text golden adds the five accept entries and changes no other
+block. No existing `.expected` file changes. The generated corpus index
+adds the eight entries and the new `r97` purpose. The language reference
+changes the Q34 prose and the three §182 examples. The TypeScript
+tutorial async section states the reactions and adds one program block
+(28 TypeScript fences); "Work after a read completes" replaces the "no
+`.then`" sentence.
+
+### Tests and cost
+
+Debug build, warm, `finished in`:
+
+| Test | Tests | Cost | Native work |
+|---|---:|---|---|
+| `codegen/tests/promise_reaction.rs` | 4 | 1.08–1.11 s | four C builds: the turn program, the rooting program, its control without captures, and the hidden-environment control; six JIT sessions |
+| `compiler/tests/promise_reaction.rs` | 5 | 0.02 s | none; eleven checker calls |
+| `lir_facts::release::an_awaiting_finalizer_keeps_the_exception_path_release` | 1 | inside `codegen/tests/lir.rs` | one checker call, one lowering, two fact comparisons |
+
+The golden sweeps run `a357`–`a361` in each tier, so the new test files
+do not run them again. Suites, debug, warm build, passed/failed/ignored
+and wall time: compiler 1,114/0/1 (92 s); runtime 464/0/3; CLI 55/0/0
+(10 s), without `cli/tests/gate.rs`; codegen 912/0/1 (291 s), with one
+`gate-skip` line for the benchmark entry `a22`.
+
+Source file lines (§5.y rule 2, at most 2,000):
+`codegen/tests/support/lir_facts.rs` 1,713, after the trap comparison
+moved to `lir_facts/traps.rs` (295); `compiler/src/hir.rs` 1,966;
+`codegen/src/lir.rs` 1,983; `compiler/src/check/expr/call.rs` 1,955;
+`codegen/src/lower/mod.rs` 1,931.
+
+### Chain cost
+
+Release CLI, the same timing method as part 8: C AOT executables, best
+of nine per input; dev JIT `subscript run`, best of three. Net time
+subtracts the zero-chain run.
+
+| Form | C AOT, 1,000,000 chains, run 1 / run 2 | Dev JIT, 1,000,000 chains, runs 1–4 |
+|---|---|---|
+| `await now(i).then(add1)` | 175.7 / 175.3 ns | 308.9 / 304.8 / 296.1 / 307.8 ns |
+| hand-written `await myThen(now(i), add1)` | 176.2 / 179.3 ns | 289.8 / 281.0 / 284.4 / 302.7 ns |
+| hand-written, held: `const r = myThen(…); await r` | — / 186.2 ns | — / — / — / 306.5 ns |
+| no callback, `add1(await now(i))` | 65.1 / 67.3 ns | 118.1 / 116.9 / 116.9 / 123.4 ns |
+| capturing `then((v) => v + k)` | 208.8 / 216.1 ns | 392.6 / 395.9 / 392.6 / 411.2 ns |
+| hand-written class with a field and an async method | 211.4 / 216.2 ns | 390.7 / 389.1 / 391.7 / 403.1 ns |
+
+- C AOT: `then` costs 0.98–1.00 of the direct wrapper call.
+- Dev JIT: `then` costs 1.02–1.08 of the direct wrapper call. The wrapper
+  is a direct `await` of a call, which lowers to one `AsyncCall`
+  suspension. `then` creates a handle and awaits it, as the held wrapper
+  does, and the held wrapper costs the same as `then` in run 4.
+- A capturing callback costs 0.99–1.00 of the class form in C AOT and
+  1.00–1.02 on the dev JIT. The async conversion of part 8 cost 1.90.
+- The 10,000-chain totals are 2 ms, inside the noise of process start.
+
+### Checker cost
+
+Release CLI, `subscript check`, best of three: a program of 1,000
+`.then` calls checks in 28.3 ms, and the same program with 1,000
+hand-written generic wrapper calls in 35.2 ms. A second run agrees
+within 0.4 ms. `subscript check` over the 315 accept files of the pin, second
+run of each: 1.200 s with the pin release binary and 1.214 s with this
+one.

@@ -581,8 +581,44 @@ result=7
 A local, an array, a field, or a global can hold
 a handle (§70.3 rule 2a). A handle can pass to another function.
 Every handle a program creates must have
-one awaited completion. `new Promise`, `.then`, `.catch`, `.finally`,
-and the statics other than `Promise.all` do not exist.
+one awaited completion. `new Promise` and the statics other than
+`Promise.all` do not exist.
+
+`then`, `catch`, and `finally` on a handle create a new handle (§186).
+A callback lambda can capture a `const`. A callback parameter has the
+value type of the handle, or `Error` in a rejection callback; another
+parameter type is rejected. A `catch` callback returns the
+value type of its handle; another result type is rejected with `S013`.
+The callbacks run in the order that `node` gives:
+
+```ts
+async function value(n: i32): Promise<i32> {
+  await Context.suspend();
+  return n;
+}
+
+async function fails(): Promise<i32> {
+  await Context.suspend();
+  throw new Error("boom");
+}
+
+export async function main(): Promise<void> {
+  const base: i32 = 10;
+  const sum: Promise<string> = value(1)
+    .then((v: i32): i32 => v + base)
+    .then((v: i32): string => `sum ${v}`);
+  print(await sum);
+  print(`recovered ${await fails().catch((e: Error): i32 => e.message.length)}`);
+  print(`${await value(2).finally((): void => { print("finally"); })}`);
+}
+```
+
+```text
+sum 11
+recovered 4
+finally
+2
+```
 
 An async call runs the callee to its first await at the call. A callee
 that never awaits completes at the call, and its handle carries the
@@ -1175,7 +1211,9 @@ Every handle needs one `await` (S013), so collect the handles in an
 array or a `TaskGroup` and await them.
 A synchronous callback that captures a `const` cannot go to a held
 async call (S009), so use an async arrow or a class method.
-A promise has no `.then` method (C8).
+A `then` callback on the read handle can capture a `const` directly, as in
+`readFile(path, "utf8").then((text: string): void => { totals.last = text; })`
+(§186).
 
 The completion work runs inside the host's async step, on the Context
 owner thread, after the host completes the request. A line that the

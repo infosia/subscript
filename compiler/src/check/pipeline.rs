@@ -245,6 +245,7 @@ fn run_with_effects(
         task_group_parameters: false,
         deciding_type: false,
         generic_callback_context: false,
+        lambda_result_hint: None,
         initializer_call: None,
         active_call: None,
         function_value_decision: false,

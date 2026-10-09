@@ -1,0 +1,15 @@
+caught callback 1
+recovered 6
+passed 5
+through -1
+rejected fail 3
+ok 3
+void void failure
+finally a
+finally value 4
+finally b
+rethrown fail 5
+replaced from finally
+caught again fail 7
+finally c
+chained 8

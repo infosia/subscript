@@ -75,3 +75,15 @@ pub(crate) fn async_receiver_diagnostic(pos: Pos) -> Diagnostic {
     diagnostic.rule = Some(crate::check::diagnostic_text::RECEIVER_RULE);
     diagnostic
 }
+
+/// A synchronous reaction callback that captures `this` (§186 rule 4).
+pub(crate) fn reaction_receiver_diagnostic(method: &str, pos: Pos) -> Diagnostic {
+    let mut diagnostic = diagnostic(
+        RejectionSite::AsyncArrowCapture,
+        format!("a `.{method}(...)` callback cannot capture `this`; copy the needed field into a `const` first"),
+        pos,
+    );
+    diagnostic.example = Some(&crate::check::diagnostic_text::REACTION_RECEIVER);
+    diagnostic.rule = Some(crate::check::diagnostic_text::REACTION_RECEIVER_RULE);
+    diagnostic
+}
