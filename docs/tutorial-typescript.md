@@ -1109,6 +1109,78 @@ A Worker Context has no provider, so a file call in a Worker completes with that
 The host interprets paths and completes requests on the Context owner thread.
 C25 records the differences from Node.js.
 
+### Work after a read completes
+
+An async function awaits the read and then runs the work. The work can
+be a callback parameter, an async arrow, or an async method
+([`corpus/accept/a356-file-completion-work.ts`](../corpus/accept/a356-file-completion-work.ts)):
+
+```ts
+// excerpt of corpus/accept/a356-file-completion-work.ts
+async function readThenAsync(path: string, cb: (text: string) => Promise<void>): Promise<void> {
+  const text = await readFile(path, "utf8");
+  await cb(text);
+}
+
+class Loader {
+  async load(path: string): Promise<void> {
+    const text = await readFile(path, "utf8");
+    this.count += 1;
+    this.text = `${this.text}${text}`;
+    print(`${this.name} loaded ${text}`);
+  }
+}
+
+  const first = readThen("a.txt", show);
+  print("after readThen call");
+  await first;
+
+  const totals = new Totals();
+  const handles: Promise<void>[] = [];
+  handles.push(readThenAsync("pending.txt", async (text: string): Promise<void> => {
+    totals.count += 1;
+    totals.last = text;
+    print(`arrow ${text}`);
+  }));
+  await Promise.all(handles);
+
+  const group = new TaskGroup();
+  group.add(loader.load("a.txt"));
+  group.add(loader.load("b.txt"));
+  await group.join();
+```
+
+The test host defers the read of `pending.txt` until its next write
+request. Its committed output on both tiers:
+
+```text
+// excerpt of corpus/accept/a356-file-completion-work.expected
+after readThen call
+show alpha
+before release count=0
+arrow late
+after release write
+totals 1 late
+group started
+group loaded alpha
+group loaded beta
+group 2 alphabeta
+all started
+all loaded beta
+all loaded alpha
+all 2 betaalpha
+```
+
+Every handle needs one `await` (S013), so collect the handles in an
+array or a `TaskGroup` and await them.
+A synchronous callback that captures a `const` cannot go to a held
+async call (S009), so use an async arrow or a class method.
+A promise has no `.then` method (C8).
+
+The completion work runs inside the host's async step, on the Context
+owner thread, after the host completes the request. A line that the
+script prints after the call and before the `await` comes first.
+
 ## Tooling
 
 Accepted programs are valid TypeScript, so `tsc` and tsserver work on

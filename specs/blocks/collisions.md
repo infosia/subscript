@@ -751,7 +751,7 @@ differs in four ways:
 4. Another member, another argument form (an options object, another
    encoding), and a default or namespace import are rejected here.
 
-Accept: `a355`. Reject: `r399`, `r400`, `r401`.
+Accept: `a355`, `a356`. Reject: `r399`, `r400`, `r401`.
 
 ## 2. Q-register resolutions not covered above
 

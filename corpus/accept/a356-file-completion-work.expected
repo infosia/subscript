@@ -1,0 +1,14 @@
+after readThen call
+show alpha
+before release count=0
+arrow late
+after release write
+totals 1 late
+group started
+group loaded alpha
+group loaded beta
+group 2 alphabeta
+all started
+all loaded beta
+all loaded alpha
+all 2 betaalpha
