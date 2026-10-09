@@ -1147,16 +1147,27 @@ C25 records the differences from Node.js.
 
 ### Work after a read completes
 
-An async function awaits the read and then runs the work. The work can
-be a callback parameter, an async arrow, or an async method
+`then` runs the work when the read completes, and `catch` handles a
+failed read. The work can be a named function or a synchronous arrow
 ([`corpus/accept/a356-file-completion-work.ts`](../corpus/accept/a356-file-completion-work.ts)):
 
 ```ts
 // excerpt of corpus/accept/a356-file-completion-work.ts
-async function readThenAsync(path: string, cb: (text: string) => Promise<void>): Promise<void> {
-  const text = await readFile(path, "utf8");
-  await cb(text);
-}
+  const first = readFile("a.txt", "utf8").then(show);
+  print("after then call");
+  await first;
+
+  const totals = new Totals();
+  const handles: Promise<void>[] = [];
+  handles.push(readFile("pending.txt", "utf8").then((text: string): void => {
+    totals.count += 1;
+    totals.last = text;
+    print(`then ${text}`);
+  }));
+  await Promise.all(handles);
+
+  const missing = readFile("missing.txt", "utf8").catch((e: Error): string => `caught ${e.message}`);
+  print(await missing);
 
 class Loader {
   async load(path: string): Promise<void> {
@@ -1167,19 +1178,6 @@ class Loader {
   }
 }
 
-  const first = readThen("a.txt", show);
-  print("after readThen call");
-  await first;
-
-  const totals = new Totals();
-  const handles: Promise<void>[] = [];
-  handles.push(readThenAsync("pending.txt", async (text: string): Promise<void> => {
-    totals.count += 1;
-    totals.last = text;
-    print(`arrow ${text}`);
-  }));
-  await Promise.all(handles);
-
   const group = new TaskGroup();
   group.add(loader.load("a.txt"));
   group.add(loader.load("b.txt"));
@@ -1187,16 +1185,19 @@ class Loader {
 ```
 
 The test host defers the read of `pending.txt` until its next write
-request. Its committed output on both tiers:
+request. It completes the read of `missing.txt` with an `Error`. Its
+committed output on both tiers:
 
 ```text
 // excerpt of corpus/accept/a356-file-completion-work.expected
-after readThen call
+after then call
 show alpha
 before release count=0
-arrow late
+then late
 after release write
 totals 1 late
+after catch call
+caught missing file
 group started
 group loaded alpha
 group loaded beta
@@ -1209,11 +1210,10 @@ all 2 betaalpha
 
 Every handle needs one `await` (S013), so collect the handles in an
 array or a `TaskGroup` and await them.
-A synchronous callback that captures a `const` cannot go to a held
-async call (S009), so use an async arrow or a class method.
-A `then` callback on the read handle can capture a `const` directly, as in
-`readFile(path, "utf8").then((text: string): void => { totals.last = text; })`
-(§186).
+A synchronous `then` or `catch` callback can capture a `const` local
+(§186). A capture of a `let`, a `var`, or `this` is S009.
+To update `this`, use a class method: the async method awaits the read
+and then updates the fields.
 
 The completion work runs inside the host's async step, on the Context
 owner thread, after the host completes the request. A line that the

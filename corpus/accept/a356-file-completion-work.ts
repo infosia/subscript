@@ -1,24 +1,14 @@
 // corpus: accept/a356-file-completion-work
 // interpreter: no — calls the host file provider
 // purpose: Run work when a host file read completes.
-// exercises: file-module, host-completion, async-function, async-arrow, capture, class, task-group, promise-all
-// questions: compiler.md §185, §181, §170, §166, collisions.md C25
+// exercises: file-module, host-completion, Promise.then, Promise.catch, capture, class, task-group, promise-all
+// questions: compiler.md §186, §185, §181, §170, §166, collisions.md C25
 // tsc: accepts
 // js-comparable: no C25: Host file errors and byte arrays differ from node.
 // enable-module: node:fs/promises
 // file-provider: scratch
 
 import { readFile, writeFile } from "node:fs/promises";
-
-async function readThen(path: string, cb: (text: string) => void): Promise<void> {
-  const text = await readFile(path, "utf8");
-  cb(text);
-}
-
-async function readThenAsync(path: string, cb: (text: string) => Promise<void>): Promise<void> {
-  const text = await readFile(path, "utf8");
-  await cb(text);
-}
 
 function show(text: string): void {
   print(`show ${text}`);
@@ -46,19 +36,19 @@ export async function main(): Promise<void> {
   await writeFile("a.txt", "alpha");
   await writeFile("b.txt", "beta");
 
-  // 1. A named function runs when the read completes.
-  const first = readThen("a.txt", show);
-  print("after readThen call");
+  // 1. then runs a named function when the read completes.
+  const first = readFile("a.txt", "utf8").then(show);
+  print("after then call");
   await first;
 
-  // 2. An async arrow captures a const object and updates a field.
+  // 2. A synchronous then callback captures a const object and updates its fields.
   const totals = new Totals();
   await writeFile("pending.txt", "late");
   const handles: Promise<void>[] = [];
-  handles.push(readThenAsync("pending.txt", async (text: string): Promise<void> => {
+  handles.push(readFile("pending.txt", "utf8").then((text: string): void => {
     totals.count += 1;
     totals.last = text;
-    print(`arrow ${text}`);
+    print(`then ${text}`);
   }));
   print(`before release count=${totals.count}`);
   // The test provider completes pending.txt in the next write callback.
@@ -67,7 +57,12 @@ export async function main(): Promise<void> {
   await Promise.all(handles);
   print(`totals ${totals.count} ${totals.last}`);
 
-  // 3. A class method updates this; a TaskGroup and Promise.all wait.
+  // 3. catch handles a failed read; its callback returns a string.
+  const missing = readFile("missing.txt", "utf8").catch((e: Error): string => `caught ${e.message}`);
+  print("after catch call");
+  print(await missing);
+
+  // 4. A class method updates this; a TaskGroup and Promise.all wait.
   const loader = new Loader("group");
   const group = new TaskGroup();
   group.add(loader.load("a.txt"));
@@ -83,6 +78,6 @@ export async function main(): Promise<void> {
   print(`all ${other.count} ${other.text}`);
 }
 
-// pin: e3bd0bbc
-// pin-dev-jit: Exit 0; output matches the golden.
-// pin-c-aot: Exit 0; output matches the golden.
+// pin: 5875a70c
+// pin-dev-jit: Exit 1; 3 errors, the first S013 "Promise combinator `.then(...)` is not in the language" at 40:43.
+// pin-c-aot: Exit 1; the same 3 errors before C emission.

@@ -1,9 +1,11 @@
-after readThen call
+after then call
 show alpha
 before release count=0
-arrow late
+then late
 after release write
 totals 1 late
+after catch call
+caught missing file
 group started
 group loaded alpha
 group loaded beta

@@ -41907,17 +41907,17 @@ class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
   field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
   field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
   method m0 "constructor" -> f0
-class c1 "Totals" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:27:7
-  field d3 "count": I32 defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:28:3
-  field d4 "last": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:29:3
-class c2 "Loader" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:32:7
-  field d5 "name": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:33:3
-  field d6 "count": I32 defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:34:3
-  field d7 "text": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:35:3
+class c1 "Totals" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:17:7
+  field d3 "count": I32 defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:18:3
+  field d4 "last": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:19:3
+class c2 "Loader" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:22:7
+  field d5 "name": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:23:3
+  field d6 "count": I32 defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:24:3
+  field d7 "text": Str defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:25:3
   method m1 "constructor" -> f1
   method m2 "load" -> f2
-class c3 "<async environment 7>" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:58:45
-  field d8 "totals": Class(ClassId(1)) defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:58:45
+class c3 "<callback environment 7>" value=false descriptor=false boundary=false align=None @ a356-file-completion-work.ts:48:53
+  field d8 "totals": Class(ClassId(1)) defaulted=false absence=false foreign=None @ a356-file-completion-work.ts:48:53
 intrinsic Ambient.0 "Print"
 intrinsic Ambient.1 "Unreachable"
 intrinsic Ambient.2 "Collect"
@@ -42142,21 +42142,21 @@ fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } 
     %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
     StoreAddress(%6, %3) @ :0:0
     -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
-fn f1 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a356-file-completion-work.ts:36:3
-  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a356-file-completion-work.ts:36:3
-  param %1 "name": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:36:15
+fn f1 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a356-file-completion-work.ts:26:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a356-file-completion-work.ts:26:3
+  param %1 "name": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:26:15
   value %0: Data(Class(ClassId(2))) name=Some("this")
   value %1: Data(Str) name=Some("name")
   value %2: Address(AddressType { pointee: Str, array_base: None }) name=None
   b0 Some("entry"):
-    %2: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 31 } }] @ a356-file-completion-work.ts:36:36
-    StoreAddress(%2, %1) @ a356-file-completion-work.ts:36:36
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 3 } }
-fn f2 "load" kind=Method { class: ClassId(2), method: MethodId(2) } exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:37:9
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 9 } }]
+    %2: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 26, col: 31 } }] @ a356-file-completion-work.ts:26:36
+    StoreAddress(%2, %1) @ a356-file-completion-work.ts:26:36
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 26, col: 3 } }
+fn f2 "load" kind=Method { class: ClassId(2), method: MethodId(2) } exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:27:9
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 27, col: 9 } }]
   can-raise
-  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a356-file-completion-work.ts:37:9
-  param %1 "path": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:37:14
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a356-file-completion-work.ts:27:9
+  param %1 "path": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:27:14
   value %0: Data(Class(ClassId(2))) name=Some("this")
   value %1: Data(Str) name=Some("path")
   value %2: Data(AsyncHandle(Str)) name=None
@@ -42172,71 +42172,93 @@ fn f2 "load" kind=Method { class: ClassId(2), method: MethodId(2) } exported=fal
   value %12: Data(Str) name=None
   value %13: Data(Class(ClassId(2))) name=Some("this")
   b0 Some("entry"):
-    %2: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%1) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 24 } }] @ a356-file-completion-work.ts:38:24
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 18 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 18 } }] }
+    %2: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%1) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 24 } }] @ a356-file-completion-work.ts:28:24
+    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 18 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 18 } }] }
   b1(%3: Data(Str), %13: Data(Class(ClassId(2)))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 38, col: 18 } }] @ a356-file-completion-work.ts:38:18
-    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 39, col: 5 } }] @ a356-file-completion-work.ts:39:10
-    %5: Data(I32) = LoadAddress(%4) @ a356-file-completion-work.ts:39:10
-    %6: Data(I32) = Binary(Add)(%5, Integer(1):I32) @ a356-file-completion-work.ts:39:10
-    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 39, col: 5 } }] @ a356-file-completion-work.ts:39:10
-    StoreAddress(%7, %6) @ a356-file-completion-work.ts:39:10
-    %8: Data(Str) = LoadField(Class(FieldId(7)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 20 } }] @ a356-file-completion-work.ts:40:25
-    %9: Data(Str) = Template([Operand { index: 0, format: Str }, Operand { index: 1, format: Str }])(%8, %3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
-    %10: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 5 } }] @ a356-file-completion-work.ts:40:10
-    StoreAddress(%10, %9) @ a356-file-completion-work.ts:40:10
-    %11: Data(Str) = LoadField(Class(FieldId(5)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 41, col: 14 } }] @ a356-file-completion-work.ts:41:19
-    %12: Data(Str) = Template([Operand { index: 0, format: Str }, Text(" loaded "), Operand { index: 1, format: Str }])(%11, %3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 41, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 41, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 41, col: 11 } }] @ a356-file-completion-work.ts:41:11
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a356-file-completion-work.ts:41:5
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 9 } }
-fn f3 "readThen" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:13:16
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 13, col: 16 } }]
-  can-raise
-  param %0 "path": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:13:25
-  param %1 "cb": Data(Func(FuncType { params: [Str], ret: Void })) kind=Explicit storage=None @ a356-file-completion-work.ts:13:39
-  value %0: Data(Str) name=Some("path")
-  value %1: Data(Func(FuncType { params: [Str], ret: Void })) name=Some("cb")
-  value %2: Data(AsyncHandle(Str)) name=None
-  value %3: Data(Str) name=None
-  value %4: Data(Func(FuncType { params: [Str], ret: Void })) name=Some("cb")
-  b0 Some("entry"):
-    %2: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%0) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 22 } }] @ a356-file-completion-work.ts:14:22
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 16 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(1))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 16 } }] }
-  b1(%3: Data(Str), %4: Data(Func(FuncType { params: [Str], ret: Void }))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 16 } }] @ a356-file-completion-work.ts:14:16
-    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Str], ret: Void })), Data(Str)], return_type: None })(%4, %3) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 15, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 15, col: 3 } }] @ a356-file-completion-work.ts:15:3
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 13, col: 16 } }
-fn f4 "readThenAsync" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:18:16
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 18, col: 16 } }]
-  can-raise
-  param %0 "path": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:18:30
-  param %1 "cb": Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })) kind=Explicit storage=None @ a356-file-completion-work.ts:18:44
-  value %0: Data(Str) name=Some("path")
-  value %1: Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })) name=Some("cb")
-  value %2: Data(AsyncHandle(Str)) name=None
-  value %3: Data(Str) name=None
-  value %4: Data(AsyncHandle(Void)) name=None
-  value %5: Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })) name=Some("cb")
-  b0 Some("entry"):
-    %2: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%0) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 22 } }] @ a356-file-completion-work.ts:19:22
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 16 }, successor: BlockId(1), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(1))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 16 } }] }
-  b1(%3: Data(Str), %5: Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) }))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 16 } }] @ a356-file-completion-work.ts:19:16
-    %4: Data(AsyncHandle(Void)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })), Data(Str)], return_type: Some(Data(AsyncHandle(Void))) })(%5, %3) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 9 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 9 } }] @ a356-file-completion-work.ts:20:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 3 }, successor: BlockId(2), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 3 } }] }
-  b2 Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 20, col: 3 } }] @ a356-file-completion-work.ts:20:3
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 18, col: 16 } }
-fn f5 "show" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a356-file-completion-work.ts:23:10
-  param %0 "text": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:23:15
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 28, col: 18 } }] @ a356-file-completion-work.ts:28:18
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 29, col: 5 } }] @ a356-file-completion-work.ts:29:10
+    %5: Data(I32) = LoadAddress(%4) @ a356-file-completion-work.ts:29:10
+    %6: Data(I32) = Binary(Add)(%5, Integer(1):I32) @ a356-file-completion-work.ts:29:10
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 29, col: 5 } }] @ a356-file-completion-work.ts:29:10
+    StoreAddress(%7, %6) @ a356-file-completion-work.ts:29:10
+    %8: Data(Str) = LoadField(Class(FieldId(7)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 30, col: 20 } }] @ a356-file-completion-work.ts:30:25
+    %9: Data(Str) = Template([Operand { index: 0, format: Str }, Operand { index: 1, format: Str }])(%8, %3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 30, col: 17 } }] @ a356-file-completion-work.ts:30:17
+    %10: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 30, col: 5 } }] @ a356-file-completion-work.ts:30:10
+    StoreAddress(%10, %9) @ a356-file-completion-work.ts:30:10
+    %11: Data(Str) = LoadField(Class(FieldId(5)))(%13) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 31, col: 14 } }] @ a356-file-completion-work.ts:31:19
+    %12: Data(Str) = Template([Operand { index: 0, format: Str }, Text(" loaded "), Operand { index: 1, format: Str }])(%11, %3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 31, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 31, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 31, col: 11 } }] @ a356-file-completion-work.ts:31:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a356-file-completion-work.ts:31:5
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 27, col: 9 } }
+fn f3 "show" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a356-file-completion-work.ts:13:10
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:13:15
   value %0: Data(Str) name=Some("text")
   value %1: Data(Str) name=None
   b0 Some("entry"):
-    %1: Data(Str) = Template([Text("show "), Operand { index: 0, format: Str }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 24, col: 9 } }] @ a356-file-completion-work.ts:24:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a356-file-completion-work.ts:24:3
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 23, col: 10 } }
-fn f6 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:45:23
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }]
+    %1: Data(Str) = Template([Text("show "), Operand { index: 0, format: Str }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 14, col: 9 } }] @ a356-file-completion-work.ts:14:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a356-file-completion-work.ts:14:3
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 13, col: 10 } }
+fn f4 "[[Promise.then (v) => void]]<string, void>" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:40:17
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }]
+  can-raise
+  param %0 "h": Data(AsyncHandle(Str)) kind=Explicit storage=None @ a356-file-completion-work.ts:40:17
+  param %1 "f": Data(Func(FuncType { params: [Str], ret: Void })) kind=Explicit storage=None @ a356-file-completion-work.ts:40:17
+  value %0: Data(AsyncHandle(Str)) name=Some("h")
+  value %1: Data(Func(FuncType { params: [Str], ret: Void })) name=Some("f")
+  value %2: Data(Str) name=None
+  value %3: Data(AsyncHandle(Str)) name=Some("h")
+  value %4: Data(Func(FuncType { params: [Str], ret: Void })) name=Some("f")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] }
+  b1(%2: Data(Str), %3: Data(AsyncHandle(Str)), %4: Data(Func(FuncType { params: [Str], ret: Void }))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Str], ret: Void })), Data(Str)], return_type: None })(%4, %2) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }, Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }] @ a356-file-completion-work.ts:40:48
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 43 } }] @ a356-file-completion-work.ts:40:43
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 43 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a356-file-completion-work.ts:40:17
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }
+  b3 Some("release.landing"):
+    ExceptionPark() @ a356-file-completion-work.ts:40:48
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }] @ a356-file-completion-work.ts:40:48
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }] @ a356-file-completion-work.ts:40:48
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 48 } }
+fn f5 "[[Promise.catch (e) => value]]<string, string>" kind=Free exported=false generator=false async=true -> Str entry=b0 @ a356-file-completion-work.ts:61:19
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }]
+  can-raise
+  param %0 "h": Data(AsyncHandle(Str)) kind=Explicit storage=None @ a356-file-completion-work.ts:61:19
+  param %1 "r": Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) kind=Explicit storage=None @ a356-file-completion-work.ts:61:19
+  value %0: Data(AsyncHandle(Str)) name=Some("h")
+  value %1: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) name=Some("r")
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Data(AsyncHandle(Str)) name=None
+  value %4: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Class(ClassId(0))) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(AsyncHandle(Str)) name=Some("h")
+  value %9: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) name=Some("r")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 }, successor: BlockId(2), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }] }
+  b1(%2: Data(Class(ClassId(0))), %3: Data(AsyncHandle(Str)), %4: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str }))) Some("catch"):
+    %7: Data(Str) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })), Data(Class(ClassId(0)))], return_type: Some(Data(Str)) })(%4, %2) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }, Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }] @ a356-file-completion-work.ts:61:57
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }] @ a356-file-completion-work.ts:61:51
+    -> Return { value: Some(Value(ValueId(7))), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }
+  b2(%5: Data(Str), %8: Data(AsyncHandle(Str)), %9: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str }))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }] @ a356-file-completion-work.ts:61:19
+    AsyncHandleRelease(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }] @ a356-file-completion-work.ts:61:51
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 51 } }
+  b3 Some("catch.landing"):
+    %6: Data(Class(ClassId(0))) = CatchEntry() @ a356-file-completion-work.ts:61:51
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(6)), Value(ValueId(8)), Value(ValueId(9))], ownership: [false, true, false] })
+  b4 Some("release.landing"):
+    ExceptionPark() @ a356-file-completion-work.ts:61:57
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }] @ a356-file-completion-work.ts:61:57
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }] @ a356-file-completion-work.ts:61:57
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 57 } }
+fn f6 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:35:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }]
   can-raise
   value %0: Data(Str) name=None
   value %1: Data(Str) name=None
@@ -42245,239 +42267,273 @@ fn f6 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   value %4: Data(Str) name=None
   value %5: Data(AsyncHandle(Void)) name=None
   value %6: Data(Str) name=None
-  value %7: Data(Func(FuncType { params: [Str], ret: Void })) name=None
-  value %8: Data(AsyncHandle(Void)) name=None
-  value %9: Data(Str) name=None
-  value %10: Data(Class(ClassId(1))) name=None
-  value %11: Address(AddressType { pointee: I32, array_base: None }) name=None
-  value %12: Data(Str) name=None
-  value %13: Address(AddressType { pointee: Str, array_base: None }) name=None
-  value %14: Data(Str) name=None
+  value %7: Data(AsyncHandle(Str)) name=None
+  value %8: Data(Func(FuncType { params: [Str], ret: Void })) name=None
+  value %9: Data(AsyncHandle(Void)) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(Class(ClassId(1))) name=None
+  value %12: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %13: Data(Str) name=None
+  value %14: Address(AddressType { pointee: Str, array_base: None }) name=None
   value %15: Data(Str) name=None
-  value %16: Data(AsyncHandle(Void)) name=None
-  value %17: Data(Array(AsyncHandle(Void))) name=None
-  value %18: Data(Str) name=None
-  value %19: Data(Class(ClassId(3))) name=None
-  value %20: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
-  value %21: Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })) name=None
-  value %22: Data(AsyncHandle(Void)) name=None
-  value %23: Data(I32) name=None
-  value %24: Data(I32) name=None
-  value %25: Data(Str) name=None
-  value %26: Data(Str) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(AsyncHandle(Void)) name=None
+  value %18: Data(Array(AsyncHandle(Void))) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(AsyncHandle(Str)) name=None
+  value %21: Data(Class(ClassId(3))) name=None
+  value %22: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %23: Data(Func(FuncType { params: [Str], ret: Void })) name=None
+  value %24: Data(AsyncHandle(Void)) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
   value %27: Data(Str) name=None
-  value %28: Data(AsyncHandle(Void)) name=None
+  value %28: Data(Str) name=None
   value %29: Data(Str) name=None
-  value %30: Data(AsyncHandle(Array(Void))) name=None
-  value %31: Data(Array(Void)) name=None
-  value %32: Data(I32) name=None
-  value %33: Data(Str) name=None
-  value %34: Data(Str) name=None
-  value %35: Data(Class(ClassId(2))) name=None
+  value %30: Data(AsyncHandle(Void)) name=None
+  value %31: Data(Str) name=None
+  value %32: Data(AsyncHandle(Array(Void))) name=None
+  value %33: Data(Array(Void)) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(Str) name=None
   value %36: Data(Str) name=None
-  value %37: Address(AddressType { pointee: I32, array_base: None }) name=None
-  value %38: Data(Str) name=None
-  value %39: Address(AddressType { pointee: Str, array_base: None }) name=None
-  value %40: Data(TaskGroup) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(AsyncHandle(Str)) name=None
+  value %39: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) name=None
+  value %40: Data(AsyncHandle(Str)) name=None
   value %41: Data(Str) name=None
-  value %42: Data(AsyncHandle(Void)) name=None
-  value %43: Data(Str) name=None
-  value %44: Data(AsyncHandle(Void)) name=None
-  value %45: Data(Str) name=None
-  value %46: Data(AsyncHandle(Void)) name=None
-  value %47: Data(I32) name=None
-  value %48: Data(Str) name=None
+  value %42: Data(Str) name=None
+  value %43: Data(Class(ClassId(2))) name=None
+  value %44: Data(Str) name=None
+  value %45: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %46: Data(Str) name=None
+  value %47: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %48: Data(TaskGroup) name=None
   value %49: Data(Str) name=None
-  value %50: Data(Class(ClassId(2))) name=None
+  value %50: Data(AsyncHandle(Void)) name=None
   value %51: Data(Str) name=None
-  value %52: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %52: Data(AsyncHandle(Void)) name=None
   value %53: Data(Str) name=None
-  value %54: Address(AddressType { pointee: Str, array_base: None }) name=None
-  value %55: Data(Str) name=None
-  value %56: Data(AsyncHandle(Void)) name=None
+  value %54: Data(AsyncHandle(Void)) name=None
+  value %55: Data(I32) name=None
+  value %56: Data(Str) name=None
   value %57: Data(Str) name=None
-  value %58: Data(AsyncHandle(Void)) name=None
-  value %59: Data(Array(AsyncHandle(Void))) name=None
-  value %60: Data(Str) name=None
-  value %61: Data(AsyncHandle(Array(Void))) name=None
-  value %62: Data(Array(Void)) name=None
-  value %63: Data(I32) name=None
-  value %64: Data(Str) name=None
+  value %58: Data(Class(ClassId(2))) name=None
+  value %59: Data(Str) name=None
+  value %60: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %61: Data(Str) name=None
+  value %62: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %63: Data(Str) name=None
+  value %64: Data(AsyncHandle(Void)) name=None
   value %65: Data(Str) name=None
   value %66: Data(AsyncHandle(Void)) name=None
-  value %67: Data(AsyncHandle(Void)) name=None
-  value %68: Data(Class(ClassId(1))) name=None
-  value %69: Data(AsyncHandle(Void)) name=None
-  value %70: Data(Class(ClassId(1))) name=None
-  value %71: Data(Array(AsyncHandle(Void))) name=None
-  value %72: Data(AsyncHandle(Void)) name=None
-  value %73: Data(Class(ClassId(1))) name=None
-  value %74: Data(Array(AsyncHandle(Void))) name=None
+  value %67: Data(Array(AsyncHandle(Void))) name=None
+  value %68: Data(Str) name=None
+  value %69: Data(AsyncHandle(Array(Void))) name=None
+  value %70: Data(Array(Void)) name=None
+  value %71: Data(I32) name=None
+  value %72: Data(Str) name=None
+  value %73: Data(Str) name=None
+  value %74: Data(AsyncHandle(Void)) name=None
   value %75: Data(AsyncHandle(Void)) name=None
-  value %76: Data(Array(AsyncHandle(Void))) name=None
-  value %77: Data(Class(ClassId(2))) name=None
-  value %78: Data(TaskGroup) name=None
-  value %79: Data(AsyncHandle(Void)) name=None
-  value %80: Data(Array(AsyncHandle(Void))) name=None
-  value %81: Data(TaskGroup) name=None
-  value %82: Data(Class(ClassId(2))) name=None
-  value %83: Data(Array(AsyncHandle(Void))) name=None
+  value %76: Data(Class(ClassId(1))) name=None
+  value %77: Data(AsyncHandle(Void)) name=None
+  value %78: Data(Class(ClassId(1))) name=None
+  value %79: Data(Array(AsyncHandle(Void))) name=None
+  value %80: Data(AsyncHandle(Void)) name=None
+  value %81: Data(Class(ClassId(1))) name=None
+  value %82: Data(Array(AsyncHandle(Void))) name=None
+  value %83: Data(AsyncHandle(Void)) name=None
+  value %84: Data(Array(AsyncHandle(Void))) name=None
+  value %85: Data(AsyncHandle(Str)) name=None
+  value %86: Data(AsyncHandle(Void)) name=None
+  value %87: Data(Array(AsyncHandle(Void))) name=None
+  value %88: Data(AsyncHandle(Str)) name=None
+  value %89: Data(Class(ClassId(2))) name=None
+  value %90: Data(TaskGroup) name=None
+  value %91: Data(AsyncHandle(Void)) name=None
+  value %92: Data(Array(AsyncHandle(Void))) name=None
+  value %93: Data(AsyncHandle(Str)) name=None
+  value %94: Data(TaskGroup) name=None
+  value %95: Data(Class(ClassId(2))) name=None
+  value %96: Data(Array(AsyncHandle(Void))) name=None
   b0 Some("entry"):
-    %0: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 19 } }] @ a356-file-completion-work.ts:46:19
-    %1: Data(Str) = StringLiteral("alpha")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 28 } }] @ a356-file-completion-work.ts:46:28
-    %2: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 9 } }] @ a356-file-completion-work.ts:46:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] }
+    %0: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 19 } }] @ a356-file-completion-work.ts:36:19
+    %1: Data(Str) = StringLiteral("alpha")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 28 } }] @ a356-file-completion-work.ts:36:28
+    %2: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 9 } }] @ a356-file-completion-work.ts:36:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(2), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 3 } }] }
   b1 Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] @ a356-file-completion-work.ts:46:3
-    %3: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 19 } }] @ a356-file-completion-work.ts:47:19
-    %4: Data(Str) = StringLiteral("beta")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 28 } }] @ a356-file-completion-work.ts:47:28
-    %5: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%3, %4) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 9 } }] @ a356-file-completion-work.ts:47:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(5), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 3 }, successor: BlockId(2), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 3 } }] }
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 36, col: 3 } }] @ a356-file-completion-work.ts:36:3
+    %3: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 19 } }] @ a356-file-completion-work.ts:37:19
+    %4: Data(Str) = StringLiteral("beta")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 28 } }] @ a356-file-completion-work.ts:37:28
+    %5: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%3, %4) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 9 } }] @ a356-file-completion-work.ts:37:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(5), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 3 }, successor: BlockId(2), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 3 } }] }
   b2 Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 3 } }] @ a356-file-completion-work.ts:47:3
-    %6: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 50, col: 26 } }] @ a356-file-completion-work.ts:50:26
-    %7: Data(Func(FuncType { params: [Str], ret: Void })) = FunctionRef(FunctionId(5))() @ a356-file-completion-work.ts:50:35
-    %8: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Str), Data(Func(FuncType { params: [Str], ret: Void }))], return_type: None })(%6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 50, col: 17 } }] @ a356-file-completion-work.ts:50:17
-    %9: Data(Str) = StringLiteral("after readThen call")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 51, col: 9 } }] @ a356-file-completion-work.ts:51:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a356-file-completion-work.ts:51:3
-    -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: false }, pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(8))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }] }
-  b3(%66: Data(AsyncHandle(Void))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }] @ a356-file-completion-work.ts:52:3
-    %10: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 18 } }] @ a356-file-completion-work.ts:55:18
-    %11: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%10) @ a356-file-completion-work.ts:28:3
-    StoreAddress(%11, Integer(0):I32) @ a356-file-completion-work.ts:28:3
-    %12: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 29, col: 18 } }] @ a356-file-completion-work.ts:29:18
-    %13: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(4)))(%10) @ a356-file-completion-work.ts:29:3
-    StoreAddress(%13, %12) @ a356-file-completion-work.ts:29:3
-    %14: Data(Str) = StringLiteral("pending.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 19 } }] @ a356-file-completion-work.ts:56:19
-    %15: Data(Str) = StringLiteral("late")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 34 } }] @ a356-file-completion-work.ts:56:34
-    %16: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%14, %15) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 9 } }] @ a356-file-completion-work.ts:56:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(16), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(66)), Value(ValueId(10))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }] }
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 37, col: 3 } }] @ a356-file-completion-work.ts:37:3
+    %6: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 26 } }] @ a356-file-completion-work.ts:40:26
+    %7: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%6) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
+    %8: Data(Func(FuncType { params: [Str], ret: Void })) = FunctionRef(FunctionId(3))() @ a356-file-completion-work.ts:40:48
+    %9: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(AsyncHandle(Str)), Data(Func(FuncType { params: [Str], ret: Void }))], return_type: None })(%7, %8) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 40, col: 17 } }] @ a356-file-completion-work.ts:40:17
+    %10: Data(Str) = StringLiteral("after then call")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 41, col: 9 } }] @ a356-file-completion-work.ts:41:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%10) @ a356-file-completion-work.ts:41:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(9), owned: false }, pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(9))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }] }
+  b3(%74: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }] @ a356-file-completion-work.ts:42:3
+    %11: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 18 } }] @ a356-file-completion-work.ts:45:18
+    %12: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%11) @ a356-file-completion-work.ts:18:3
+    StoreAddress(%12, Integer(0):I32) @ a356-file-completion-work.ts:18:3
+    %13: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 19, col: 18 } }] @ a356-file-completion-work.ts:19:18
+    %14: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(4)))(%11) @ a356-file-completion-work.ts:19:3
+    StoreAddress(%14, %13) @ a356-file-completion-work.ts:19:3
+    %15: Data(Str) = StringLiteral("pending.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 19 } }] @ a356-file-completion-work.ts:46:19
+    %16: Data(Str) = StringLiteral("late")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 34 } }] @ a356-file-completion-work.ts:46:34
+    %17: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%15, %16) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 9 } }] @ a356-file-completion-work.ts:46:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(17), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(74)), Value(ValueId(11))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] }
   b4 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:52:3
-    AsyncHandleRelease(%66) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }] @ a356-file-completion-work.ts:52:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }] @ a356-file-completion-work.ts:52:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 52, col: 3 } }
-  b5(%67: Data(AsyncHandle(Void)), %68: Data(Class(ClassId(1)))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }] @ a356-file-completion-work.ts:56:3
-    %17: Data(Array(AsyncHandle(Void))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 36 } }] @ a356-file-completion-work.ts:57:36
-    %18: Data(Str) = StringLiteral("pending.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 30 } }] @ a356-file-completion-work.ts:58:30
-    %19: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 45 } }] @ a356-file-completion-work.ts:58:45
-    %20: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(8)))(%19) @ a356-file-completion-work.ts:58:45
-    StoreAddress(%20, %68) @ a356-file-completion-work.ts:58:45
-    %21: Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) })) = MakeClosure(FunctionId(7))(%19) @ a356-file-completion-work.ts:58:45
-    %22: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str), Data(Func(FuncType { params: [Str], ret: AsyncHandle(Void) }))], return_type: None })(%18, %21) invalidates=[ValueId(17)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 16 } }] @ a356-file-completion-work.ts:58:16
-    %23: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(AsyncHandle(Void))), Data(AsyncHandle(Void))], return_type: Some(Data(I32)) })(%17, %22) invalidates=[ValueId(17)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 3 } }] @ a356-file-completion-work.ts:58:3
-    %24: Data(I32) = LoadField(Class(FieldId(3)))(%68) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 33 } }] @ a356-file-completion-work.ts:63:40
-    %25: Data(Str) = Template([Text("before release count="), Operand { index: 0, format: I32 }])(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%25) invalidates=[ValueId(17)] @ a356-file-completion-work.ts:63:3
-    %26: Data(Str) = StringLiteral("release.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 19 } }] @ a356-file-completion-work.ts:65:19
-    %27: Data(Str) = StringLiteral("release")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 34 } }] @ a356-file-completion-work.ts:65:34
-    %28: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%26, %27) invalidates=[ValueId(17)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 9 } }] @ a356-file-completion-work.ts:65:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(28), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 }, successor: BlockId(7), resume_value: None, arguments: [Value(ValueId(67)), Value(ValueId(68)), Value(ValueId(17))], ownership: [false, false, false], invalidates: [ValueId(17)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }] }
+    ExceptionPark() @ a356-file-completion-work.ts:42:3
+    AsyncHandleRelease(%74) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }] @ a356-file-completion-work.ts:42:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }] @ a356-file-completion-work.ts:42:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 42, col: 3 } }
+  b5(%75: Data(AsyncHandle(Void)), %76: Data(Class(ClassId(1)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] @ a356-file-completion-work.ts:46:3
+    %18: Data(Array(AsyncHandle(Void))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 47, col: 36 } }] @ a356-file-completion-work.ts:47:36
+    %19: Data(Str) = StringLiteral("pending.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 25 } }] @ a356-file-completion-work.ts:48:25
+    %20: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%19) invalidates=[ValueId(18)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 16 } }] @ a356-file-completion-work.ts:48:16
+    %21: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 53 } }] @ a356-file-completion-work.ts:48:53
+    %22: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(8)))(%21) @ a356-file-completion-work.ts:48:53
+    StoreAddress(%22, %76) @ a356-file-completion-work.ts:48:53
+    %23: Data(Func(FuncType { params: [Str], ret: Void })) = MakeClosure(FunctionId(7))(%21) @ a356-file-completion-work.ts:48:53
+    %24: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(AsyncHandle(Str)), Data(Func(FuncType { params: [Str], ret: Void }))], return_type: None })(%20, %23) invalidates=[ValueId(18)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 16 } }] @ a356-file-completion-work.ts:48:16
+    %25: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(AsyncHandle(Void))), Data(AsyncHandle(Void))], return_type: Some(Data(I32)) })(%18, %24) invalidates=[ValueId(18)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 3 } }] @ a356-file-completion-work.ts:48:3
+    %26: Data(I32) = LoadField(Class(FieldId(3)))(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 53, col: 33 } }] @ a356-file-completion-work.ts:53:40
+    %27: Data(Str) = Template([Text("before release count="), Operand { index: 0, format: I32 }])(%26) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 53, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 53, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 53, col: 9 } }] @ a356-file-completion-work.ts:53:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%27) invalidates=[ValueId(18)] @ a356-file-completion-work.ts:53:3
+    %28: Data(Str) = StringLiteral("release.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 19 } }] @ a356-file-completion-work.ts:55:19
+    %29: Data(Str) = StringLiteral("release")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 34 } }] @ a356-file-completion-work.ts:55:34
+    %30: Data(AsyncHandle(Void)) = HostCompletion { target: Standard(WriteText), result_size: 0, result_kind: 1, error_metadata: [24, 0, 0, 8, 16, 0] }(%28, %29) invalidates=[ValueId(18)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 9 } }] @ a356-file-completion-work.ts:55:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(30), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 }, successor: BlockId(7), resume_value: None, arguments: [Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(18))], ownership: [false, false, false], invalidates: [ValueId(18)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }] }
   b6 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:56:3
-    AsyncHandleRelease(%67) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }] @ a356-file-completion-work.ts:56:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }] @ a356-file-completion-work.ts:56:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 3 } }
-  b7(%69: Data(AsyncHandle(Void)), %70: Data(Class(ClassId(1))), %71: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }] @ a356-file-completion-work.ts:65:3
-    %29: Data(Str) = StringLiteral("after release write")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 66, col: 9 } }] @ a356-file-completion-work.ts:66:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%29) invalidates=[ValueId(71)] @ a356-file-completion-work.ts:66:3
-    %30: Data(AsyncHandle(Array(Void))) = AsyncAll(%71) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 9 } }] @ a356-file-completion-work.ts:67:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(30), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 }, successor: BlockId(9), resume_value: Some(ValueId(31)), arguments: [Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71))], ownership: [false, false, false], invalidates: [ValueId(71), ValueId(31)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }] }
+    ExceptionPark() @ a356-file-completion-work.ts:46:3
+    AsyncHandleRelease(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] @ a356-file-completion-work.ts:46:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }] @ a356-file-completion-work.ts:46:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 46, col: 3 } }
+  b7(%77: Data(AsyncHandle(Void)), %78: Data(Class(ClassId(1))), %79: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }] @ a356-file-completion-work.ts:55:3
+    %31: Data(Str) = StringLiteral("after release write")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 56, col: 9 } }] @ a356-file-completion-work.ts:56:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%31) invalidates=[ValueId(79)] @ a356-file-completion-work.ts:56:3
+    %32: Data(AsyncHandle(Array(Void))) = AsyncAll(%79) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 9 } }] @ a356-file-completion-work.ts:57:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(32), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 }, successor: BlockId(9), resume_value: Some(ValueId(33)), arguments: [Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79))], ownership: [false, false, false], invalidates: [ValueId(79), ValueId(33)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }] }
   b8 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:65:3
-    AsyncHandleArrayRelease(%71) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }] @ a356-file-completion-work.ts:65:3
-    AsyncHandleRelease(%69) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }] @ a356-file-completion-work.ts:65:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }] @ a356-file-completion-work.ts:65:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 65, col: 3 } }
-  b9(%31: Data(Array(Void)), %72: Data(AsyncHandle(Void)), %73: Data(Class(ClassId(1))), %74: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(10))), pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }] @ a356-file-completion-work.ts:67:3
-    %32: Data(I32) = LoadField(Class(FieldId(3)))(%73) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 19 } }] @ a356-file-completion-work.ts:68:26
-    %33: Data(Str) = LoadField(Class(FieldId(4)))(%73) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 35 } }] @ a356-file-completion-work.ts:68:42
-    %34: Data(Str) = Template([Text("totals "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%32, %33) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 9 } }] @ a356-file-completion-work.ts:68:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%34) invalidates=[ValueId(74), ValueId(31)] @ a356-file-completion-work.ts:68:3
-    %35: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 18 } }] @ a356-file-completion-work.ts:71:18
-    %36: Data(Str) = StringLiteral("group")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 29 } }] @ a356-file-completion-work.ts:71:29
-    %37: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%35) @ a356-file-completion-work.ts:34:3
-    StoreAddress(%37, Integer(0):I32) @ a356-file-completion-work.ts:34:3
-    %38: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 18 } }] @ a356-file-completion-work.ts:35:18
-    %39: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%35) @ a356-file-completion-work.ts:35:3
-    StoreAddress(%39, %38) @ a356-file-completion-work.ts:35:3
-    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%35, %36) invalidates=[ValueId(74), ValueId(31)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 18 } }] @ a356-file-completion-work.ts:71:18
-    %40: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 17 } }] @ a356-file-completion-work.ts:72:17
-    %41: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 73, col: 25 } }] @ a356-file-completion-work.ts:73:25
-    %42: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%35, %41) invalidates=[ValueId(74), ValueId(31)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 73, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 73, col: 13 } }] @ a356-file-completion-work.ts:73:13
-    TaskGroup(Add)(%40, %42) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 73, col: 3 } }] @ a356-file-completion-work.ts:73:3
-    %43: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 25 } }] @ a356-file-completion-work.ts:74:25
-    %44: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%35, %43) invalidates=[ValueId(74), ValueId(31)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 13 } }] @ a356-file-completion-work.ts:74:13
-    TaskGroup(Add)(%40, %44) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 3 } }] @ a356-file-completion-work.ts:74:3
-    %45: Data(Str) = StringLiteral("group started")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 9 } }] @ a356-file-completion-work.ts:75:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%45) invalidates=[ValueId(74), ValueId(31)] @ a356-file-completion-work.ts:75:3
-    %46: Data(AsyncHandle(Void)) = TaskGroup(Join)(%40) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 9 } }] @ a356-file-completion-work.ts:76:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(46), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 }, successor: BlockId(11), resume_value: None, arguments: [Value(ValueId(72)), Value(ValueId(74)), Value(ValueId(35)), Value(ValueId(40))], ownership: [false, false, false, false], invalidates: [ValueId(74), ValueId(31)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] }
+    ExceptionPark() @ a356-file-completion-work.ts:55:3
+    AsyncHandleArrayRelease(%79) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }] @ a356-file-completion-work.ts:55:3
+    AsyncHandleRelease(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }] @ a356-file-completion-work.ts:55:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }] @ a356-file-completion-work.ts:55:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 55, col: 3 } }
+  b9(%33: Data(Array(Void)), %80: Data(AsyncHandle(Void)), %81: Data(Class(ClassId(1))), %82: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(10))), pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }] @ a356-file-completion-work.ts:57:3
+    %34: Data(I32) = LoadField(Class(FieldId(3)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 19 } }] @ a356-file-completion-work.ts:58:26
+    %35: Data(Str) = LoadField(Class(FieldId(4)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 35 } }] @ a356-file-completion-work.ts:58:42
+    %36: Data(Str) = Template([Text("totals "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%34, %35) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 9 } }] @ a356-file-completion-work.ts:58:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%36) invalidates=[ValueId(82), ValueId(33)] @ a356-file-completion-work.ts:58:3
+    %37: Data(Str) = StringLiteral("missing.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 28 } }] @ a356-file-completion-work.ts:61:28
+    %38: Data(AsyncHandle(Str)) = HostCompletion { target: Standard(ReadText), result_size: 8, result_kind: 2, error_metadata: [24, 0, 0, 8, 16, 0] }(%37) invalidates=[ValueId(82), ValueId(33)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }] @ a356-file-completion-work.ts:61:19
+    %39: Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str })) = MakeClosure(FunctionId(8))() @ a356-file-completion-work.ts:61:57
+    %40: Data(AsyncHandle(Str)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(AsyncHandle(Str)), Data(Func(FuncType { params: [Class(ClassId(0))], ret: Str }))], return_type: Some(Data(Str)) })(%38, %39) invalidates=[ValueId(82), ValueId(33)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 19 } }] @ a356-file-completion-work.ts:61:19
+    %41: Data(Str) = StringLiteral("after catch call")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 62, col: 9 } }] @ a356-file-completion-work.ts:62:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%41) invalidates=[ValueId(82), ValueId(33)] @ a356-file-completion-work.ts:62:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(40), owned: false }, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 }, successor: BlockId(11), resume_value: Some(ValueId(42)), arguments: [Value(ValueId(80)), Value(ValueId(82)), Value(ValueId(40))], ownership: [false, false, false], invalidates: [ValueId(82), ValueId(33)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] }
   b10 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:67:3
-    AsyncHandleArrayRelease(%74) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }] @ a356-file-completion-work.ts:67:3
-    AsyncHandleRelease(%72) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }] @ a356-file-completion-work.ts:67:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }] @ a356-file-completion-work.ts:67:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 3 } }
-  b11(%75: Data(AsyncHandle(Void)), %76: Data(Array(AsyncHandle(Void))), %77: Data(Class(ClassId(2))), %78: Data(TaskGroup)) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(12))), pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] @ a356-file-completion-work.ts:76:3
-    %47: Data(I32) = LoadField(Class(FieldId(6)))(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 18 } }] @ a356-file-completion-work.ts:77:25
-    %48: Data(Str) = LoadField(Class(FieldId(7)))(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 34 } }] @ a356-file-completion-work.ts:77:41
-    %49: Data(Str) = Template([Text("group "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%47, %48) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }] @ a356-file-completion-work.ts:77:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%49) invalidates=[ValueId(76), ValueId(31)] @ a356-file-completion-work.ts:77:3
-    %50: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 79, col: 17 } }] @ a356-file-completion-work.ts:79:17
-    %51: Data(Str) = StringLiteral("all")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 79, col: 28 } }] @ a356-file-completion-work.ts:79:28
-    %52: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%50) @ a356-file-completion-work.ts:34:3
-    StoreAddress(%52, Integer(0):I32) @ a356-file-completion-work.ts:34:3
-    %53: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 18 } }] @ a356-file-completion-work.ts:35:18
-    %54: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%50) @ a356-file-completion-work.ts:35:3
-    StoreAddress(%54, %53) @ a356-file-completion-work.ts:35:3
-    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%50, %51) invalidates=[ValueId(76), ValueId(31)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 79, col: 17 } }] @ a356-file-completion-work.ts:79:17
-    %55: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 45 } }] @ a356-file-completion-work.ts:80:45
-    %56: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%50, %55) invalidates=[ValueId(76), ValueId(31)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 34 } }] @ a356-file-completion-work.ts:80:34
-    %57: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 66 } }] @ a356-file-completion-work.ts:80:66
-    %58: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%50, %57) invalidates=[ValueId(76), ValueId(31)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 55 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 55 } }] @ a356-file-completion-work.ts:80:55
-    AsyncHandleRetain(%56) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 34 } }] @ a356-file-completion-work.ts:80:34
-    %59: Data(Array(AsyncHandle(Void))) = ArrayLiteral(%56, %58) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 55 } }] @ a356-file-completion-work.ts:80:33
-    AsyncHandleRelease(%56) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 80, col: 33 } }] @ a356-file-completion-work.ts:80:33
-    %60: Data(Str) = StringLiteral("all started")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 81, col: 9 } }] @ a356-file-completion-work.ts:81:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%60) invalidates=[ValueId(76), ValueId(31), ValueId(59)] @ a356-file-completion-work.ts:81:3
-    %61: Data(AsyncHandle(Array(Void))) = AsyncAll(%59) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 9 } }] @ a356-file-completion-work.ts:82:9
-    -> Suspend { kind: AsyncHandle { handle: ValueId(61), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 }, successor: BlockId(13), resume_value: Some(ValueId(62)), arguments: [Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(78)), Value(ValueId(50)), Value(ValueId(59))], ownership: [false, false, false, false, false], invalidates: [ValueId(76), ValueId(31), ValueId(59), ValueId(62)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] }
+    ExceptionPark() @ a356-file-completion-work.ts:57:3
+    AsyncHandleArrayRelease(%82) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }] @ a356-file-completion-work.ts:57:3
+    AsyncHandleRelease(%80) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }] @ a356-file-completion-work.ts:57:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }] @ a356-file-completion-work.ts:57:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 57, col: 3 } }
+  b11(%42: Data(Str), %83: Data(AsyncHandle(Void)), %84: Data(Array(AsyncHandle(Void))), %85: Data(AsyncHandle(Str))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(12))), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%42) invalidates=[ValueId(84), ValueId(33)] @ a356-file-completion-work.ts:63:3
+    %43: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 66, col: 18 } }] @ a356-file-completion-work.ts:66:18
+    %44: Data(Str) = StringLiteral("group")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 66, col: 29 } }] @ a356-file-completion-work.ts:66:29
+    %45: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%43) @ a356-file-completion-work.ts:24:3
+    StoreAddress(%45, Integer(0):I32) @ a356-file-completion-work.ts:24:3
+    %46: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 25, col: 18 } }] @ a356-file-completion-work.ts:25:18
+    %47: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%43) @ a356-file-completion-work.ts:25:3
+    StoreAddress(%47, %46) @ a356-file-completion-work.ts:25:3
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%43, %44) invalidates=[ValueId(84), ValueId(33)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 66, col: 18 } }] @ a356-file-completion-work.ts:66:18
+    %48: Data(TaskGroup) = TaskGroup(Create)() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 67, col: 17 } }] @ a356-file-completion-work.ts:67:17
+    %49: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 25 } }] @ a356-file-completion-work.ts:68:25
+    %50: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%43, %49) invalidates=[ValueId(84), ValueId(33)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 13 } }] @ a356-file-completion-work.ts:68:13
+    TaskGroup(Add)(%48, %50) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 68, col: 3 } }] @ a356-file-completion-work.ts:68:3
+    %51: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 69, col: 25 } }] @ a356-file-completion-work.ts:69:25
+    %52: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%43, %51) invalidates=[ValueId(84), ValueId(33)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 69, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 69, col: 13 } }] @ a356-file-completion-work.ts:69:13
+    TaskGroup(Add)(%48, %52) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 69, col: 3 } }] @ a356-file-completion-work.ts:69:3
+    %53: Data(Str) = StringLiteral("group started")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 70, col: 9 } }] @ a356-file-completion-work.ts:70:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%53) invalidates=[ValueId(84), ValueId(33)] @ a356-file-completion-work.ts:70:3
+    %54: Data(AsyncHandle(Void)) = TaskGroup(Join)(%48) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 9 } }] @ a356-file-completion-work.ts:71:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(54), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 }, successor: BlockId(13), resume_value: None, arguments: [Value(ValueId(83)), Value(ValueId(84)), Value(ValueId(85)), Value(ValueId(43)), Value(ValueId(48))], ownership: [false, false, false, false, false], invalidates: [ValueId(84), ValueId(33)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] }
   b12 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:76:3
-    TaskGroup(Release)(%78) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] @ a356-file-completion-work.ts:76:3
-    AsyncHandleArrayRelease(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] @ a356-file-completion-work.ts:76:3
-    AsyncHandleRelease(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] @ a356-file-completion-work.ts:76:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }] @ a356-file-completion-work.ts:76:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 3 } }
-  b13(%62: Data(Array(Void)), %79: Data(AsyncHandle(Void)), %80: Data(Array(AsyncHandle(Void))), %81: Data(TaskGroup), %82: Data(Class(ClassId(2))), %83: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
-    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(14))), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    %63: Data(I32) = LoadField(Class(FieldId(6)))(%82) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 16 } }] @ a356-file-completion-work.ts:83:22
-    %64: Data(Str) = LoadField(Class(FieldId(7)))(%82) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 31 } }] @ a356-file-completion-work.ts:83:37
-    %65: Data(Str) = Template([Text("all "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%63, %64) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 83, col: 9 } }] @ a356-file-completion-work.ts:83:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%65) invalidates=[ValueId(80), ValueId(31), ValueId(83), ValueId(62)] @ a356-file-completion-work.ts:83:3
-    AsyncHandleArrayRelease(%83) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }] @ a356-file-completion-work.ts:45:23
-    TaskGroup(Release)(%81) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }] @ a356-file-completion-work.ts:45:23
-    AsyncHandleArrayRelease(%80) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }] @ a356-file-completion-work.ts:45:23
-    AsyncHandleRelease(%79) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }] @ a356-file-completion-work.ts:45:23
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 45, col: 23 } }
+    ExceptionPark() @ a356-file-completion-work.ts:63:9
+    AsyncHandleRelease(%85) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
+    AsyncHandleArrayRelease(%84) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
+    AsyncHandleRelease(%83) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }] @ a356-file-completion-work.ts:63:9
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 63, col: 9 } }
+  b13(%86: Data(AsyncHandle(Void)), %87: Data(Array(AsyncHandle(Void))), %88: Data(AsyncHandle(Str)), %89: Data(Class(ClassId(2))), %90: Data(TaskGroup)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(14))), pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    %55: Data(I32) = LoadField(Class(FieldId(6)))(%89) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 18 } }] @ a356-file-completion-work.ts:72:25
+    %56: Data(Str) = LoadField(Class(FieldId(7)))(%89) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 34 } }] @ a356-file-completion-work.ts:72:41
+    %57: Data(Str) = Template([Text("group "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%55, %56) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 72, col: 9 } }] @ a356-file-completion-work.ts:72:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%57) invalidates=[ValueId(87), ValueId(33)] @ a356-file-completion-work.ts:72:3
+    %58: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 17 } }] @ a356-file-completion-work.ts:74:17
+    %59: Data(Str) = StringLiteral("all")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 28 } }] @ a356-file-completion-work.ts:74:28
+    %60: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%58) @ a356-file-completion-work.ts:24:3
+    StoreAddress(%60, Integer(0):I32) @ a356-file-completion-work.ts:24:3
+    %61: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 25, col: 18 } }] @ a356-file-completion-work.ts:25:18
+    %62: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(7)))(%58) @ a356-file-completion-work.ts:25:3
+    StoreAddress(%62, %61) @ a356-file-completion-work.ts:25:3
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%58, %59) invalidates=[ValueId(87), ValueId(33)] traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 74, col: 17 } }] @ a356-file-completion-work.ts:74:17
+    %63: Data(Str) = StringLiteral("b.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 45 } }] @ a356-file-completion-work.ts:75:45
+    %64: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%58, %63) invalidates=[ValueId(87), ValueId(33)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 34 } }] @ a356-file-completion-work.ts:75:34
+    %65: Data(Str) = StringLiteral("a.txt")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 66 } }] @ a356-file-completion-work.ts:75:66
+    %66: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2))), Data(Str)], return_type: None })(%58, %65) invalidates=[ValueId(87), ValueId(33)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 55 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 55 } }] @ a356-file-completion-work.ts:75:55
+    AsyncHandleRetain(%64) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 34 } }] @ a356-file-completion-work.ts:75:34
+    %67: Data(Array(AsyncHandle(Void))) = ArrayLiteral(%64, %66) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 55 } }] @ a356-file-completion-work.ts:75:33
+    AsyncHandleRelease(%64) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 75, col: 33 } }] @ a356-file-completion-work.ts:75:33
+    %68: Data(Str) = StringLiteral("all started")() traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 76, col: 9 } }] @ a356-file-completion-work.ts:76:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%68) invalidates=[ValueId(87), ValueId(33), ValueId(67)] @ a356-file-completion-work.ts:76:3
+    %69: Data(AsyncHandle(Array(Void))) = AsyncAll(%67) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 9 } }] @ a356-file-completion-work.ts:77:9
+    -> Suspend { kind: AsyncHandle { handle: ValueId(69), owned: true }, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 }, successor: BlockId(15), resume_value: Some(ValueId(70)), arguments: [Value(ValueId(86)), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(90)), Value(ValueId(58)), Value(ValueId(67))], ownership: [false, false, false, false, false, false], invalidates: [ValueId(87), ValueId(33), ValueId(67), ValueId(70)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] }
   b14 Some("release.landing"):
-    ExceptionPark() @ a356-file-completion-work.ts:82:3
-    AsyncHandleArrayRelease(%83) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    TaskGroup(Release)(%81) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    AsyncHandleArrayRelease(%80) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    AsyncHandleRelease(%79) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }] @ a356-file-completion-work.ts:82:3
-    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 82, col: 3 } }
-fn f7 "<lambda a356-file-completion-work.ts:58:45>" kind=Lambda exported=false generator=false async=true -> Void entry=b0 @ a356-file-completion-work.ts:58:45
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 45 } }]
-  param %0 "<owned environment>": Data(Class(ClassId(3))) kind=OwnedEnvironment storage=None @ a356-file-completion-work.ts:58:45
-  param %3 "text": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:58:45
+    ExceptionPark() @ a356-file-completion-work.ts:71:3
+    TaskGroup(Release)(%90) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    AsyncHandleRelease(%88) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    AsyncHandleArrayRelease(%87) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    AsyncHandleRelease(%86) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }] @ a356-file-completion-work.ts:71:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 71, col: 3 } }
+  b15(%70: Data(Array(Void)), %91: Data(AsyncHandle(Void)), %92: Data(Array(AsyncHandle(Void))), %93: Data(AsyncHandle(Str)), %94: Data(TaskGroup), %95: Data(Class(ClassId(2))), %96: Data(Array(AsyncHandle(Void)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(16))), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    %71: Data(I32) = LoadField(Class(FieldId(6)))(%95) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 16 } }] @ a356-file-completion-work.ts:78:22
+    %72: Data(Str) = LoadField(Class(FieldId(7)))(%95) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 31 } }] @ a356-file-completion-work.ts:78:37
+    %73: Data(Str) = Template([Text("all "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: Str }])(%71, %72) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 78, col: 9 } }] @ a356-file-completion-work.ts:78:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%73) invalidates=[ValueId(92), ValueId(33), ValueId(96), ValueId(70)] @ a356-file-completion-work.ts:78:3
+    AsyncHandleArrayRelease(%96) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }] @ a356-file-completion-work.ts:35:23
+    TaskGroup(Release)(%94) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }] @ a356-file-completion-work.ts:35:23
+    AsyncHandleRelease(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }] @ a356-file-completion-work.ts:35:23
+    AsyncHandleArrayRelease(%92) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }] @ a356-file-completion-work.ts:35:23
+    AsyncHandleRelease(%91) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }] @ a356-file-completion-work.ts:35:23
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 35, col: 23 } }
+  b16 Some("release.landing"):
+    ExceptionPark() @ a356-file-completion-work.ts:77:3
+    AsyncHandleArrayRelease(%96) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    TaskGroup(Release)(%94) traps=[Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    AsyncHandleRelease(%93) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    AsyncHandleArrayRelease(%92) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    AsyncHandleRelease(%91) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }] @ a356-file-completion-work.ts:77:3
+    -> Unreachable { pos: Pos { file: "a356-file-completion-work.ts", line: 77, col: 3 } }
+fn f7 "<lambda a356-file-completion-work.ts:48:53>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a356-file-completion-work.ts:48:53
+  param %0 "<owned environment>": Data(Class(ClassId(3))) kind=OwnedEnvironment storage=None @ a356-file-completion-work.ts:48:53
+  param %3 "text": Data(Str) kind=Explicit storage=None @ a356-file-completion-work.ts:48:53
   value %0: Data(Class(ClassId(3))) name=Some("<owned environment>")
   value %1: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
   value %2: Data(Class(ClassId(1))) name=None
@@ -42489,18 +42545,27 @@ fn f7 "<lambda a356-file-completion-work.ts:58:45>" kind=Lambda exported=false g
   value %8: Address(AddressType { pointee: Str, array_base: None }) name=None
   value %9: Data(Str) name=None
   b0 Some("entry"):
-    %1: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a356-file-completion-work.ts:58:45
-    %2: Data(Class(ClassId(1))) = LoadAddress(%1) @ a356-file-completion-work.ts:58:45
-    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 59, col: 5 } }] @ a356-file-completion-work.ts:59:12
-    %5: Data(I32) = LoadAddress(%4) @ a356-file-completion-work.ts:59:12
-    %6: Data(I32) = Binary(Add)(%5, Integer(1):I32) @ a356-file-completion-work.ts:59:12
-    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 59, col: 5 } }] @ a356-file-completion-work.ts:59:12
-    StoreAddress(%7, %6) @ a356-file-completion-work.ts:59:12
-    %8: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(4)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 60, col: 5 } }] @ a356-file-completion-work.ts:60:12
-    StoreAddress(%8, %3) @ a356-file-completion-work.ts:60:12
-    %9: Data(Str) = Template([Text("arrow "), Operand { index: 0, format: Str }])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 11 } }] @ a356-file-completion-work.ts:61:11
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a356-file-completion-work.ts:61:5
-    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 58, col: 45 } }
+    %1: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a356-file-completion-work.ts:48:53
+    %2: Data(Class(ClassId(1))) = LoadAddress(%1) @ a356-file-completion-work.ts:48:53
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 49, col: 5 } }] @ a356-file-completion-work.ts:49:12
+    %5: Data(I32) = LoadAddress(%4) @ a356-file-completion-work.ts:49:12
+    %6: Data(I32) = Binary(Add)(%5, Integer(1):I32) @ a356-file-completion-work.ts:49:12
+    %7: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 49, col: 5 } }] @ a356-file-completion-work.ts:49:12
+    StoreAddress(%7, %6) @ a356-file-completion-work.ts:49:12
+    %8: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(4)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 50, col: 5 } }] @ a356-file-completion-work.ts:50:12
+    StoreAddress(%8, %3) @ a356-file-completion-work.ts:50:12
+    %9: Data(Str) = Template([Text("then "), Operand { index: 0, format: Str }])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 51, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 51, col: 11 } }] @ a356-file-completion-work.ts:51:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a356-file-completion-work.ts:51:5
+    -> Return { value: None, pos: Pos { file: "a356-file-completion-work.ts", line: 48, col: 53 } }
+fn f8 "<lambda a356-file-completion-work.ts:61:57>" kind=Lambda exported=false generator=false async=false -> Str entry=b0 @ a356-file-completion-work.ts:61:57
+  param %0 "e": Data(Class(ClassId(0))) kind=Explicit storage=None @ a356-file-completion-work.ts:61:57
+  value %0: Data(Class(ClassId(0))) name=Some("e")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = LoadField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 89 } }] @ a356-file-completion-work.ts:61:91
+    %2: Data(Str) = Template([Text("caught "), Operand { index: 0, format: Str }])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 79 } }, Trap { kind: Allocation, pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 79 } }] @ a356-file-completion-work.ts:61:79
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a356-file-completion-work.ts", line: 61, col: 79 } }
 ===== a357-promise-then-chains =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
