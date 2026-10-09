@@ -370,7 +370,7 @@ warning[W001]: `token` is allocated in each loop iteration but neither escapes t
    |
 17 |     const token: Token = new Token(i);
    |                          ^
-   = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.
+   = rule: If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.
 warning: 1 warning(s)
 ```
 
@@ -1341,8 +1341,8 @@ with `init` before the first frame and `shutdown` after the last,
 exactly as `main.c` does. The recommended loop also calls
 `subscript_rt_ctx_collect(ctx)` once per frame, after the entry and the
 pump return, outside the bracket (see the memory model above). The
-capstone does not call it; its script collects one time, in
-`shutdown`. The capstone's measured run:
+capstone calls it, and the script writes no release code for its
+per-frame garbage. The capstone's measured run:
 
 ```text
 host:init index=1
@@ -1350,16 +1350,19 @@ script:init step=0.25
 host:state entities=1 flags=3 layer=1
 host:frame=0 index=2
 script:update x=0.25,step=0.25
+host:frame=0 allocations-before=16 allocations-after=5
 host:state entities=1 flags=3 layer=2
+host:frame=1 index=3
+script:update x=0.5,step=0.25
+host:frame=1 allocations-before=12 allocations-after=5
 ...
-host:shutdown allocations-before=30 bytes-before=1664
 script:shutdown
-host:shutdown allocations-after=5 bytes-after=176
 ```
 
-The last two lines are invariant 2 seen from outside: `shutdown` drops
-the last script root and calls `Context.collect()`, and the host
-watches 30 live allocations become 5.
+The `allocations` lines are invariant 2 seen from outside. Each frame
+leaves its garbage live until the host collects, and the collection
+returns the count to 5. Without the collection, the same run counts
+16, 23, and 30 live allocations after frames 0, 1, and 2.
 
 ### Step 9 — workers, and which thread drives which Context
 

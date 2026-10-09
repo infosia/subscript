@@ -85,11 +85,12 @@ export function update(): void {
   }
 }
 
-// Teardown phase: the host reads live_bytes before and after this call, so the
-// collection appears as numbers on the host side.
+// Teardown phase: the host calls this entry once, after the last frame. The
+// host collects once per frame and prints the counts (main.c). After this
+// call, the host releases the Context, and the release reclaims everything.
 export function shutdown(): void {
-  // C7 and invariant 2: removing the last root does not collect by itself;
-  // this explicit call is the event the host measures around.
+  // C7 and invariant 2: removing the last root does not collect by itself.
+  // This explicit call is a script-side collection before the Context release.
   session = null;
   Context.collect();
   print("script:shutdown");

@@ -42,10 +42,10 @@ impl WarnCode {
     pub fn explanation(self) -> &'static str {
         match self {
             WarnCode::W001 => {
-                "A reference-class allocation repeated by a loop should escape the iteration or be released."
+                "If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection."
             }
             WarnCode::W002 => {
-                "A local should not be used after `Context.free(local)` without an intervening reassignment."
+                "A use of a local after `Context.free(local)`, with no reassignment between them, reads a freed object."
             }
             WarnCode::W003 => {
                 "Fresh callback userdata registered in a loop creates and roots a new binding record per iteration."

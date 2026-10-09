@@ -499,7 +499,7 @@ mod tests {
                 "  |\n",
                 "1 | const token = allocate();\n",
                 "  |               ^\n",
-                "  = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.\n",
+                "  = rule: If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.\n",
                 "warning: 1 warning(s)",
             )
         );

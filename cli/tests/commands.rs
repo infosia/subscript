@@ -117,7 +117,7 @@ fn w001_output(path: &Path) -> Vec<u8> {
             "  |\n",
             "9 |     const token: Token = new Token(i);\n",
             "  |                          ^\n",
-            "  = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.\n",
+            "  = rule: If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.\n",
             "warning: 1 warning(s)\n",
         ),
         path.display()

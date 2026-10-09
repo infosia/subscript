@@ -617,7 +617,7 @@ Warnings do not change acceptance unless the CLI is run with `--deny-warnings`. 
 
 ### W001
 
-A reference-class allocation repeated by a loop should escape the iteration or be released.
+If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.
 
 Pinned corpus: [`corpus/warn/w01-loop-allocation-unreleased.ts`](../corpus/warn/w01-loop-allocation-unreleased.ts), line 17.
 
@@ -631,7 +631,7 @@ export function main(): void {
 
 ### W002
 
-A local should not be used after `Context.free(local)` without an intervening reassignment.
+A use of a local after `Context.free(local)`, with no reassignment between them, reads a freed object.
 
 Pinned corpus: [`corpus/warn/w02-use-after-free.ts`](../corpus/warn/w02-use-after-free.ts), line 18.
 

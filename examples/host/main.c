@@ -135,6 +135,20 @@ int main(void) {
             }
         }
         engineWorldPump(world);
+        /* Invariant 2 and §18.2d: the recommended release pattern. The host
+         * collects once per frame, after the script calls and the pump and
+         * outside the enter/exit bracket, so the script writes no release
+         * code for per-frame garbage. The counts before and after the
+         * collection make invariant 2 visible from the host: nothing is
+         * reclaimed until the host asks, and the live count stays bounded. */
+        uint64_t allocationsBefore = subscript_rt_ctx_live_allocations(ctx);
+        subscript_rt_ctx_collect(ctx);
+        printf(
+            "host:frame=%" PRIu32 " allocations-before=%" PRIu64
+            " allocations-after=%" PRIu64 "\n",
+            hostFrame,
+            allocationsBefore,
+            subscript_rt_ctx_live_allocations(ctx));
         state = (EngineEntityState){0};
         entityCount = hostReadEntity(world, &state);
         printf(
@@ -145,14 +159,7 @@ int main(void) {
             state.engineTransform.engineLayer);
     }
 
-    /* shutdown drops the last script root and calls subscript_rt_context.collect() explicitly.
-     * The before/after host figures make invariant 2 externally observable;
-     * counts are portable, while byte totals describe this ship allocator. */
-    printf(
-        "host:shutdown allocations-before=%" PRIu64
-        " bytes-before=%" PRIu64 "\n",
-        subscript_rt_ctx_live_allocations(ctx),
-        subscript_rt_ctx_live_bytes(ctx));
+    /* shutdown is the script's last entry; the host only drains its output. */
     if (scriptAttached) {
         scriptAttached = hostCallScript(ctx, subscript_export_shutdown);
         hostDrainScriptOutput(ctx, &drained);
@@ -160,11 +167,6 @@ int main(void) {
             hostReportTrap(ctx);
         }
     }
-    printf(
-        "host:shutdown allocations-after=%" PRIu64
-        " bytes-after=%" PRIu64 "\n",
-        subscript_rt_ctx_live_allocations(ctx),
-        subscript_rt_ctx_live_bytes(ctx));
 
     /* The world is released on its loop thread, then the subscript_rt_context release
      * ends every remaining script allocation and completes host ownership. */
