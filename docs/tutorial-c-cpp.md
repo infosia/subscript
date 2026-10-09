@@ -107,7 +107,7 @@ export function main(): void {
 
   const particle: Particle = new Particle(a);
   print(`particle.x=${particle.position.x}`);
-  Context.free(particle);  // explicit, like free()
+  Context.free(particle);  // optional, like free(); a host collection also reclaims it
 }
 ```
 
@@ -210,6 +210,8 @@ A zero budget runs no script and promotes no parked frame.
 One dispatch runs to its next suspension, completion, or a trap.
 The budget does not bound that segment's time. This API is no time limit.
 Call the budgeted step once per frame. Work remains while `pending` is not zero.
+After the step returns, the frame is a step boundary: the host can call
+`subscript_rt_ctx_collect(ctx)` there (see the memory model below).
 
 ```c
 /* In the host frame loop, after the async export call: */
@@ -289,16 +291,42 @@ error[S100]: imported module `../math` is not among the program's files
 
 ## The memory model, in C terms
 
+The recommended pattern puts the release work on the host, not on the
+script author:
+
+1. The script writes no release code by default. A handle and a
+   generator release themselves when their last holder releases them
+   (§70, §176). Every other value stays until a collection.
+2. The host calls `subscript_rt_ctx_collect(ctx)` at a step boundary,
+   for a game once per frame. The precondition is script depth 0: call
+   it between script calls, outside the `enter`/`exit` bracket, and
+   never from host code that a script call reaches. Call it on the
+   thread of the Context (§18.2d; Step 9). The cost is a
+   mark-and-sweep, and it grows with the live data, not with the
+   allocations since the last collection (§22.2, §22.4 criterion 4).
+3. `Context.free`, `using`, and a script `Context.collect()` are
+   optimizations. Use them where a measured peak inside one call
+   matters, or where a resource needs its release at a known point.
+4. A value that crosses to the host follows your protocol. A host
+   object behind a handle stays valid as long as you keep it (§142).
+   Registered callback userdata stays a collection root while its
+   registration lives (§14.4b, §111); see "Round-tripping script
+   objects through the host" below.
+
+The parts of the model:
+
 - A **Context** is an owning arena your host creates and releases.
   Every `new` allocates in it.
-- `Context.free(x)` releases one allocation now, like `free`.
+- `Context.free(x)` releases one allocation now, like `free`. It is an
+  optimization: a collection also reclaims an allocation that nothing
+  reaches.
 - `Context.collect()` is a mark-and-sweep over what script references
   can still reach — but it runs **only when called**. Nothing runs
   behind your back; a program that never collects is correct and simply
   retains more memory until the Context is released.
 - Releasing the Context frees everything it owns at once
   (`examples/context-per-scene/` uses one Context per scene for this).
-- `using x = new T(...)` releases at scope exit, in reverse
+- `using x = new T(...)` calls the hook at scope exit, in reverse
   declaration order, for a reference class that declares
   `[Symbol.dispose](): void` (`specs/blocks/compiler.md` §60). The
   hook runs at the natural end of the scope, at `return`, at `break`,
@@ -1310,7 +1338,11 @@ So a frame loop is: stage or gather the frame's inputs →
 `hostCallScript(ctx, subscript_export_update)` (or a direct call with
 parameters) → read outputs and drain `print` text — once per frame,
 with `init` before the first frame and `shutdown` after the last,
-exactly as `main.c` does. The capstone's measured run:
+exactly as `main.c` does. The recommended loop also calls
+`subscript_rt_ctx_collect(ctx)` once per frame, after the entry and the
+pump return, outside the bracket (see the memory model above). The
+capstone does not call it; its script collects one time, in
+`shutdown`. The capstone's measured run:
 
 ```text
 host:init index=1

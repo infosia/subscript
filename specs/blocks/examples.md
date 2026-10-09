@@ -232,10 +232,11 @@ destroys**, not a fixture that lives for the process.
 
 The question it answers is one a game host actually asks — a scene ends,
 and everything the scene allocated should go away. `Context.collect()`
-(Q7) can do it, but only for allocations the script has made unreachable,
-and in the development tier the freed bytes stay owned by the Context
-(§8.1a, retain-and-poison), so a session cycling scenes grows
-monotonically. Releasing the Context and building the next one from
+(Q7) can do it, but only for allocations the script has made unreachable.
+*(Corrected: freed bytes stay owned by the Context only while the
+freed-handle diagnostics mode retains them; since `compiler.md`
+§8.1a-1 that mode is off by default, and the development tier
+releases as the ship tier does.)* Releasing the Context and building the next one from
 `subscript_init` reclaims everything, in both tiers, without the script dropping
 a single reference.
 

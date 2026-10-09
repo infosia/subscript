@@ -9,7 +9,8 @@ The syntax is a subset of TypeScript. Every accepted program also
 type-checks under stock `tsc`, so tsserver gives you completion,
 rename, and go-to-definition with no plugin. The semantics below the
 syntax are not JavaScript's. Values have C data layout. Integers have
-fixed widths. Memory is explicit. The compiler rejects the dynamic
+fixed widths. No collector runs unless the host or the script calls
+it. The compiler rejects the dynamic
 patterns that it cannot compile to predictable machine code.
 
 This page is the list of what changes. Every program and every output
@@ -25,7 +26,7 @@ program type-checks under stock `tsc --strict`.
 | `class` | Reference class (`new`, heap) or `@ValueType` value class (copied) |
 | `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
-| Garbage collection | `Context.free`, `Context.collect`, `using`; nothing runs unbidden |
+| Garbage collection | Nothing to write by default: the host collects at a step boundary. `Context.free` and `using` are optimizations. Nothing collects unbidden |
 | `throw` / `try` | The seven `Error`-family classes only; `finally` runs on each exit; faults are traps, which no `catch` or `finally` stops |
 | Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
@@ -322,7 +323,31 @@ Numeric `enum` also exists, and it lowers to a C enum.
 ## Memory is explicit
 
 No collector runs on its own. This is a design invariant, not a
-setting. Each value follows one of two release rules:
+setting. The recommended pattern puts the release work on the host:
+
+1. **The script writes no release code by default.** A handle and a
+   generator release themselves. Every other value stays until a
+   collection. A program that never frees and never collects is
+   correct; it only holds more memory.
+2. **The host collects at a step boundary**, for a game once per
+   frame. It calls `subscript_rt_ctx_collect` between script calls, at
+   script depth 0, on the thread of the Context (§18.2d). The call is
+   the same mark-and-sweep as `Context.collect()`. Its cost grows with
+   the live data, not with the allocations since the last collection
+   (§22.2, §22.4 criterion 4).
+3. **`Context.free`, `using`, and a script `Context.collect()` are
+   optimizations.** Use them where a measured peak matters: a large
+   temporary, or a loop that allocates many objects in one call. A
+   host collection runs between calls, so it does not lower a peak
+   inside one call. Use `using` where a resource needs its release at
+   a known point.
+4. **A value that crosses to the host follows the host's protocol.**
+   The script cannot free a host object behind a handle; the host
+   keeps it valid (§142). Callback userdata that the host holds stays
+   a collection root while its registration lives. A registration with
+   the default lifetime lives as long as the Context (§14.4b, §111).
+
+Each value follows one of two release rules:
 
 - **Counted values.** A handle (`Promise<T>`) and a generator own a
   suspended frame. A dynamic array of such values is also counted, at
@@ -332,17 +357,21 @@ setting. Each value follows one of two release rules:
 - **Context memory.** Every other allocation is in the **Context**,
   the arena the host creates and releases. This includes the
   allocations that the compiler makes where the source has no `new`.
-  Context memory stays until `Context.free`, `Context.collect()`, or
-  the Context release.
+  Context memory stays until a collection, `Context.free`, or the
+  Context release.
 
-The two operations on Context memory:
+Three calls release Context memory. Each runs only where it is
+written:
 
+- The host's `subscript_rt_ctx_collect` collects what script references
+  no longer reach. This is the default release path.
 - `Context.free(value)` releases one reference object at once.
-- `Context.collect()` collects what script references no longer reach,
-  and it runs only where you write it.
+- `Context.collect()` in a script runs the same collection inside a
+  script call.
 
 Dropping the last reference to Context memory frees nothing by itself.
-Dropping the last holder of a counted value releases it.
+Dropping the last holder of a counted value releases it. In the table
+below, `Context.collect()` stands for either collection call.
 
 | Value | Who allocates it | What releases it |
 |---|---|---|
@@ -357,9 +386,13 @@ Dropping the last holder of a counted value releases it.
 
 A program that never collects is **correct**. It holds more memory
 until the host releases the Context. Each capturing callback allocates
-one environment. So a host that runs many capturing callbacks in each
-step collects at a step boundary: the script calls `Context.collect()`,
-or the host calls `subscript_rt_ctx_collect`.
+one environment, and the host collection at each step boundary
+reclaims the environments that nothing reaches.
+
+The optimization forms follow. `Context.free` ends an allocation at
+once, and a script `Context.collect()` reclaims inside the call. This
+program needs neither: a host collection after `main` reclaims `temp`
+and each `scratch`. They lower the peak of the call:
 
 ```ts
 class Frame {
@@ -386,9 +419,11 @@ export function main(): void {
 kept=1
 ```
 
-`using` releases at scope exit, in reverse declaration order. The class
-declares `[Symbol.dispose]()`, as in TypeScript's explicit resource
-management:
+`using` calls `[Symbol.dispose]()` at each scope exit, in reverse
+declaration order (§60). Use it where a resource needs its release at
+a known point. The hook releases what the class holds. The object
+itself is Context memory like any other value. The class declares the
+hook as in TypeScript's explicit resource management:
 
 ```ts
 class Buffer {
@@ -423,7 +458,8 @@ close 1
 
 The compiler warns where it proves unbounded growth. `W001` flags an
 allocation that a loop repeats and that neither escapes the iteration
-nor is released. `W002` flags a local read after `Context.free`. `W003`
+nor is released. That growth is inside one call, where a host
+collection does not reach. `W002` flags a local read after `Context.free`. `W003`
 flags fresh callback userdata registered in a loop. `W004` flags a
 value copy that a function writes through and never reads. Warnings do
 not fail a build. `subscript check --deny-warnings` makes them fail in
@@ -1045,7 +1081,7 @@ rule. The section numbers refer to
 |---|---|---|
 | A host handle: an entry parameter or a foreign-call result | The host. No ownership moves (§142 rule 1). | Copies it, keeps it in any object, closure, or module global, and uses it in a later call. It cannot free the host object. |
 | A scalar, or a struct with the C layout | The script, as a copy | Reads a copy by value, as a `@ValueType` value, with no Context allocation. A completion copies the C bytes (§178 rule 7). A `V \| null` struct is a box, not a by-value copy (§124 rule 1). |
-| A `string` or `u8[]` that a completion or the file module delivers | The Context. The completion copies the host bytes into a new value (§184 rule 2, §185 rule 4). | Uses it as any string or array. `Context.collect()` or the Context release frees it. |
+| A `string` or `u8[]` that a completion or the file module delivers | The Context. The completion copies the host bytes into a new value (§184 rule 2, §185 rule 4). | Uses it as any string or array. A collection or the Context release frees it. |
 | A `string` field of a struct that the host fills | The Context. The read copies the bytes of the C string view into a new string (§28 rule 3). | Same as the row above. |
 | The handle of an async host call (`Promise<T>`) | Counted. The script holders and the host operation each hold a count (§178 rule 2). | Awaits it at least once (§70). It is freed after the last holder releases it and the host completes it (§178 rule 8). |
 
@@ -1072,7 +1108,7 @@ Common mistakes, each from the rules above:
 - A `string` that the script passes to the host is a view of the
   script bytes. It is valid only during the call, so a host that keeps
   it copies it (§28 rule 2).
-- `Context.collect()` does not end a pending host operation. The
+- A collection does not end a pending host operation. The
   operation roots its waiters until the host completes it (§178 rule
   10).
 - A dropped handle does not cancel a host operation. If the host then
