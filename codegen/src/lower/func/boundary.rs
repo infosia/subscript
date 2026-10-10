@@ -1,12 +1,17 @@
-//! Foreign calls and the boundary-struct marshalling.
+//! Foreign calls and the boundary-struct marshaling.
 
 use super::abi::{
     ensure_sysv_argument_register_capacity, is_pure_hfa_leaves, plan_aggregate_arg_for_signature,
     plan_sysv_struct_return,
 };
 use super::*;
-use subscript_boundary::{CopyBack, PointerPass, StructPass};
-use subscript_compiler::CallbackLifetime;
+use std::sync::Arc;
+
+use subscript_boundary::{PointerPass, StructPass};
+use subscript_compiler::crossing::{
+    CallPlan, ElementsPlan, MemberCrossing, NotLowered, ParameterPlan, PointerPlan, ResultPlan,
+    StructPlan, WriteBack,
+};
 
 /// The layout question that a boundary C layout answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +35,7 @@ pub(crate) fn fixed_array_member(owner: &str, member: &str) -> String {
 
 /// True when `ty` is a fixed array of scalars, which a call copies as bytes
 /// in a scratch struct (§187 rule 13).
-pub(crate) fn is_scalar_fixed_array(module: &l::Module, ty: &Type) -> bool {
+fn is_scalar_fixed_array(module: &l::Module, ty: &Type) -> bool {
     matches!(ty, Type::FixedArray(..))
         && subscript_compiler::boundary_pass::field_shape(module, ty)
             == subscript_boundary::FieldShape::Bytes
@@ -81,6 +86,25 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .get(id.0 as usize)
             .ok_or_else(|| internal(format!("foreign function {} is missing", id.0)))?
             .clone();
+        // §189 rule 2: the call builds its marshaling from the plan of its
+        // callee.
+        let plan = self.crossing_plan(id)?;
+        if plan.parameters.len() != declaration.parameters.len() {
+            return Err(internal(format!(
+                "foreign call `{}` has no plan for each parameter",
+                declaration.source_name
+            )));
+        }
+        // §187 rule 12: no result with a member that has no read lowering
+        // reaches code generation.
+        if let ResultPlan::Struct(read) = &plan.result {
+            if let Some(unreadable) = &read.unreadable {
+                return Err(internal(format!(
+                    "foreign result of `{}` has a member with no read lowering: `{}.{}`",
+                    declaration.source_name, unreadable.owner, unreadable.member
+                )));
+            }
+        }
         let operand_count = declaration
             .parameters
             .iter()
@@ -113,11 +137,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
         // §187 rule 7: the scratch scope opens only for a call whose build
         // can allocate.
-        let needs_scratch_scope = declaration
-            .parameters
-            .iter()
-            .any(|parameter| boundary_type_builds_scratch(self.ml.lir, &parameter.ty));
-        let scratch_mark = if needs_scratch_scope {
+        let scratch_mark = if plan.scratch_scope {
             Some(
                 self.call_runtime(self.ml.rt.boundary_scratch_mark, &[self.ctx], false)?
                     .ok_or_else(|| internal("boundary scratch mark has no result"))?,
@@ -135,8 +155,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         });
         let mut writebacks = Vec::new();
         let mut cursor = 0usize;
-        for parameter in &declaration.parameters {
-            if parameter.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint) {
+        for (parameter, parameter_plan) in declaration.parameters.iter().zip(&plan.parameters) {
+            if *parameter_plan == ParameterPlan::CompletionEndpoint {
                 let address = endpoint.ok_or_else(|| internal("completion endpoint is missing"))?;
                 self.push_boundary_aggregate(
                     &mut signature,
@@ -150,7 +170,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?;
                 continue;
             }
-            let (value, array_snapshot) = if let Type::Array(element) = &parameter.ty {
+            let (value, array_snapshot) = if let ParameterPlan::Pair(_) = parameter_plan {
+                let Type::Array(element) = &parameter.ty else {
+                    return Err(internal(format!(
+                        "foreign pair parameter `{}` is not an array",
+                        parameter.source_name
+                    )));
+                };
                 let data_ty = parameter_types
                     .get(cursor)
                     .ok_or_else(|| internal("foreign array data type is missing"))?;
@@ -197,6 +223,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             };
             self.marshal_foreign_argument(
                 parameter,
+                parameter_plan,
                 value,
                 array_snapshot,
                 &mut signature,
@@ -357,15 +384,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         crate::lir::boundary_view(self.ml.lir)
     }
 
-    /// True when the call passes the elements of a pair of `element` as a
-    /// scratch array.
-    fn elements_need_scratch(&self, element: &Type) -> bool {
-        match element {
-            Type::Class(class) if self.is_value_class(element) => {
-                subscript_boundary::struct_pass(&self.boundary_view(), *class) != StructPass::Bytes
-            }
-            _ => false,
-        }
+    /// The plan of `callee`, built on its first call.
+    fn crossing_plan(&mut self, callee: l::ForeignFunctionId) -> Result<Arc<CallPlan>, String> {
+        let lir = self.ml.lir;
+        self.ml.crossing_plans.get(lir, callee)
     }
 
     fn boundary_pointer_class(&self, ty: &Type) -> Option<usize> {
@@ -658,21 +680,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         // §187 rule 12: a result lowers by its read facts. No call rebuilds
         // it, so its C layout is the layout of its members as C wrote them.
         let components = self.boundary_leaf_components_in(class.0, CLayout::Read)?;
-        let definition = self
-            .ml
-            .lir
-            .classes
-            .get(class.0)
-            .ok_or_else(|| internal(format!("return class {} is missing", class.0)))?;
-        if definition
-            .fields
-            .iter()
-            .any(|field| matches!(field.ty, Type::Func(_) | Type::Array(_) | Type::Str))
-        {
-            return Err(internal(
-                "foreign aggregate return contains an absorbed field",
-            ));
-        }
         let registers = match abi {
             AggregateAbi::Aapcs64 if is_pure_hfa_leaves(&components.leaves) => {
                 Some(components.leaves.clone())
@@ -734,9 +741,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // the argument, its plan, and the call state
     fn marshal_foreign_argument(
         &mut self,
         parameter: &l::ForeignParameter,
+        plan: &ParameterPlan,
         value: RV,
         array_snapshot: Option<(Value, Value)>,
         signature: &mut Signature,
@@ -744,22 +753,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         writebacks: &mut Vec<BoundaryPtrWriteback>,
         pos: &Pos,
     ) -> Result<(), String> {
-        match &parameter.ty {
-            Type::StringAlias(alias) => {
-                let definition = self
-                    .ml
-                    .lir
-                    .string_aliases
-                    .get(alias.0)
-                    .ok_or_else(|| internal("wire alias is missing"))?;
-                if definition.wire_values.is_none() {
-                    return Err(internal("plain string alias reached a foreign parameter"));
-                }
-                let value = self.expect_scalar(value)?;
-                self.push_foreign_argument(signature, arguments, types::I32, value);
-                Ok(())
+        match plan {
+            ParameterPlan::Value => {
+                self.marshal_foreign_value(parameter, value, signature, arguments)
             }
-            Type::Str => {
+            ParameterPlan::StringView => {
                 let handle = self.expect_scalar(value)?;
                 let data = self
                     .call_runtime(self.ml.rt.str_data, &[self.ctx, handle], false)?
@@ -780,34 +778,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     &BoundaryLeaves::descriptor(),
                 )
             }
-            Type::Array(element) => {
+            ParameterPlan::Pair(pair) => {
                 let (data, length) =
                     array_snapshot.ok_or_else(|| internal("foreign array snapshot is missing"))?;
                 let count = self.builder.ins().uextend(types::I64, length);
-                let data = match &**element {
-                    Type::Class(class) if self.elements_need_scratch(element) => {
-                        // §187 rule 7: the call does not write `const`
-                        // elements back.
-                        let writable = !matches!(
-                            &parameter.foreign_provenance,
-                            Some(
-                                l::ForeignTypeProvenance::Descriptor {
-                                    element_const: true,
-                                    ..
-                                } | l::ForeignTypeProvenance::ScalarPair {
-                                    element_const: true,
-                                    ..
-                                }
-                            )
-                        );
-                        let pass = subscript_boundary::element_pass(
-                            &self.boundary_view(),
-                            *class,
-                            writable,
-                        );
-                        self.marshal_boundary_array(class.0, pass, data, length, pos)?
-                    }
-                    _ => data,
+                let data = match &pair.elements {
+                    Some(elements) => self.marshal_boundary_array(elements, data, length, pos)?,
+                    None => data,
                 };
                 match &parameter.foreign_provenance {
                     Some(l::ForeignTypeProvenance::Descriptor { .. }) => {
@@ -834,43 +811,58 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     ))),
                 }
             }
-            Type::Class(class) if self.is_value_class(&parameter.ty) => {
+            ParameterPlan::ByValue(structure) => {
                 let address = self.expect_aggregate(value)?;
-                self.marshal_boundary_struct(class.0, address, signature, arguments, pos)
+                self.marshal_boundary_struct(structure, address, signature, arguments, pos)
             }
-            ty if self.boundary_pointer_class(ty).is_some() => {
+            ParameterPlan::Pointer(pointer) => {
                 let source = self.boundary_pointer_value(value)?;
-                let class = self
-                    .boundary_pointer_class(ty)
-                    .ok_or_else(|| internal("boundary pointer class is missing"))?;
-                // §187 rule 7: the call does not write a `const` target
-                // back.
-                let writable =
-                    parameter.foreign_provenance != Some(l::ForeignTypeProvenance::ConstPointer);
-                let pass = subscript_boundary::parameter_pass(
-                    &self.boundary_view(),
-                    ClassId(class),
-                    writable,
-                );
-                match pass {
+                match pointer.pass {
                     PointerPass::ScriptMemory => {
                         self.push_foreign_argument(signature, arguments, types::I64, source);
                     }
-                    PointerPass::ScratchWrittenBack => {
-                        let (pointer, writeback) =
-                            self.marshal_boundary_pointer(class, source, true, pos)?;
-                        self.push_foreign_argument(signature, arguments, types::I64, pointer);
+                    PointerPass::ScratchWrittenBack | PointerPass::ScratchReadOnly => {
+                        let (address, writeback) =
+                            self.marshal_boundary_pointer(pointer, source, pos)?;
+                        self.push_foreign_argument(signature, arguments, types::I64, address);
                         writebacks.extend(writeback);
                     }
-                    PointerPass::ScratchReadOnly => {
-                        let (pointer, _) =
-                            self.marshal_boundary_pointer(class, source, false, pos)?;
-                        self.push_foreign_argument(signature, arguments, types::I64, pointer);
-                    }
                     PointerPass::Cycle => {
-                        return Err(struct_cycle(&self.ml.lir.classes[class].source_name));
+                        return Err(struct_cycle(
+                            &self.ml.lir.classes[pointer.class.0].source_name,
+                        ));
                     }
                 }
+                Ok(())
+            }
+            other => Err(internal(format!(
+                "foreign parameter `{}` has the plan {other:?}",
+                parameter.source_name
+            ))),
+        }
+    }
+
+    /// Passes a scalar, an enum, a wire alias, or a handle.
+    fn marshal_foreign_value(
+        &mut self,
+        parameter: &l::ForeignParameter,
+        value: RV,
+        signature: &mut Signature,
+        arguments: &mut Vec<Value>,
+    ) -> Result<(), String> {
+        match &parameter.ty {
+            Type::StringAlias(alias) => {
+                let definition = self
+                    .ml
+                    .lir
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| internal("wire alias is missing"))?;
+                if definition.wire_values.is_none() {
+                    return Err(internal("plain string alias reached a foreign parameter"));
+                }
+                let value = self.expect_scalar(value)?;
+                self.push_foreign_argument(signature, arguments, types::I32, value);
                 Ok(())
             }
             ty => match self.ml.layouts.repr(ty)? {
@@ -993,16 +985,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(())
     }
 
-    /// Passes the target of a struct-pointer parameter as a scratch copy.
-    /// When `written_back` is true, the writeback carries a snapshot of the
-    /// bytes that the call put in the scratch struct (§187 rule 7).
+    /// Passes the target of a struct-pointer parameter as a scratch copy,
+    /// as `plan` says. A written-back copy carries a snapshot of the bytes
+    /// that the call put in the scratch struct (§187 rule 7).
     fn marshal_boundary_pointer(
         &mut self,
-        class: usize,
+        plan: &PointerPlan,
         source: Value,
-        written_back: bool,
         pos: &Pos,
     ) -> Result<(Value, Option<BoundaryPtrWriteback>), String> {
+        let class = plan.class.0;
+        let written_back = plan.pass == PointerPass::ScratchWrittenBack;
+        let target = plan
+            .target
+            .as_ref()
+            .ok_or_else(|| internal("a scratch pointer has no target plan"))?;
         let (_, size, align) = self.boundary_c_layout(class)?;
         let scratch = self.stack_slot(size, align);
         self.zero_bytes(scratch, size, align);
@@ -1016,7 +1013,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let ready = self.builder.create_block();
         self.builder.ins().brif(nonnull, populate, &[], ready, &[]);
         self.builder.switch_to_block(populate);
-        self.populate_boundary_value(class, source, scratch, pos)?;
+        self.populate_boundary_value(target, source, scratch, pos)?;
         if let Some(snapshot) = snapshot {
             self.copy_bytes(snapshot, scratch, size, align);
         }
@@ -1024,24 +1021,31 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.switch_to_block(ready);
         let null = self.iconst(types::I64, 0);
         let pointer = self.builder.ins().select(nonnull, scratch, null);
-        Ok((
-            pointer,
-            snapshot.map(|snapshot| BoundaryPtrWriteback {
-                class,
+        let writeback = match snapshot {
+            Some(snapshot) => Some(BoundaryPtrWriteback {
+                plan: plan
+                    .write_back
+                    .clone()
+                    .ok_or_else(|| internal("a written-back target has no write-back plan"))?,
                 source,
                 scratch,
                 snapshot,
             }),
-        ))
+            None => None,
+        };
+        Ok((pointer, writeback))
     }
 
+    /// Builds the scratch struct of `plan` at `destination` from the script
+    /// struct at `source`, member by member as the plan says.
     fn populate_boundary_value(
         &mut self,
-        class: usize,
+        plan: &StructPlan,
         source: Value,
         destination: Value,
         pos: &Pos,
     ) -> Result<(), String> {
+        let class = plan.class.0;
         let definition = self
             .ml
             .lir
@@ -1049,15 +1053,28 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .get(class)
             .cloned()
             .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
+        match plan.pass {
+            StructPass::Scratch => {}
+            StructPass::Cycle => return Err(struct_cycle(&definition.source_name)),
+            StructPass::Bytes => {
+                return Err(internal(format!(
+                    "boundary struct `{}` copies its bytes and has no member build",
+                    definition.source_name
+                )))
+            }
+        }
         let language_layout = self.ml.layouts.class(class)?.clone();
         let (c_offsets, _, _) = self.boundary_c_layout(class)?;
-        let mut index = 0usize;
-        while index < definition.fields.len() {
-            let field = &definition.fields[index];
+        for member in &plan.members {
+            let index = member.field;
+            let field = definition
+                .fields
+                .get(index)
+                .ok_or_else(|| internal("a boundary plan member has no field"))?;
             let language_offset = language_layout.field_offsets[index] as i32;
             let c_offset = c_offsets[index] as i32;
-            match &field.ty {
-                Type::Func(_) => {
+            match &member.crossing {
+                MemberCrossing::Callback(callback) => {
                     let code =
                         self.builder
                             .ins()
@@ -1066,9 +1083,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset + 8);
-                    // §111 rule 2: the lowering reads the lifetime off the
-                    // class. It never derives it from the source name.
-                    let explicit = definition.callback_lifetime == CallbackLifetime::Explicit;
+                    // §111 rule 2: the plan reads the lifetime off the class.
+                    // It never derives it from the source name.
+                    let explicit = callback.explicit;
                     let trampoline_id = if explicit {
                         self.ml.rt.cb_registration_trampoline
                     } else {
@@ -1082,24 +1099,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.builder
                         .ins()
                         .store(flags(), trampoline, destination, c_offset);
-                    let first = definition
-                        .fields
-                        .get(index + 1)
-                        .ok_or_else(|| internal("boundary callback has no userdata field"))?;
-                    let first_offset = language_layout.field_offsets[index + 1] as i32;
+                    let first_offset = *language_layout
+                        .field_offsets
+                        .get(callback.userdata)
+                        .ok_or_else(|| internal("boundary callback has no userdata field"))?
+                        as i32;
                     let userdata =
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, first_offset);
-                    let has_second = definition
-                        .fields
-                        .get(index + 2)
-                        .is_some_and(|field| is_userdata_slot(&field.ty));
-                    let userdata2 = if has_second {
-                        let offset = language_layout.field_offsets[index + 2] as i32;
-                        self.builder.ins().load(types::I64, flags(), source, offset)
-                    } else {
-                        self.iconst(types::I64, 0)
+                    let userdata2 = match callback.second {
+                        Some(second) => {
+                            let offset = language_layout.field_offsets[second] as i32;
+                            self.builder.ins().load(types::I64, flags(), source, offset)
+                        }
+                        None => self.iconst(types::I64, 0),
                     };
                     // §111 rule 4: an explicit-lifetime crossing creates one
                     // registration; every other crossing binds as before.
@@ -1119,23 +1133,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         flags(),
                         binding,
                         destination,
-                        c_offsets[index + 1] as i32,
+                        c_offsets[callback.userdata] as i32,
                     );
-                    if has_second {
+                    if let Some(second) = callback.second {
                         let zero = self.iconst(types::I64, 0);
                         self.builder.ins().store(
                             flags(),
                             zero,
                             destination,
-                            c_offsets[index + 2] as i32,
+                            c_offsets[second] as i32,
                         );
-                        index += 3;
-                    } else {
-                        let _ = first;
-                        index += 2;
                     }
                 }
-                Type::Str => {
+                MemberCrossing::StringView => {
                     let handle =
                         self.builder
                             .ins()
@@ -1153,9 +1163,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.builder
                         .ins()
                         .store(flags(), length, destination, c_offset + 8);
-                    index += 1;
                 }
-                Type::Array(element) => {
+                MemberCrossing::Pair(pair) => {
                     let handle =
                         self.builder
                             .ins()
@@ -1167,24 +1176,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let source_data = self
                         .call_runtime(self.ml.rt.array_data, &[self.ctx, handle], false)?
                         .ok_or_else(|| internal("boundary array data is missing"))?;
-                    let data = match &**element {
-                        Type::Class(element_class) if self.elements_need_scratch(element) => {
-                            let writable = field.foreign_provenance
-                                != Some(l::ForeignTypeProvenance::ConstPointer);
-                            let pass = subscript_boundary::element_pass(
-                                &self.boundary_view(),
-                                *element_class,
-                                writable,
-                            );
-                            self.marshal_boundary_array(
-                                element_class.0,
-                                pass,
-                                source_data,
-                                length,
-                                pos,
-                            )?
+                    let data = match &pair.elements {
+                        Some(elements) => {
+                            self.marshal_boundary_array(elements, source_data, length, pos)?
                         }
-                        _ => source_data,
+                        None => source_data,
                     };
                     self.builder
                         .ins()
@@ -1192,12 +1188,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.builder
                         .ins()
                         .store(flags(), data, destination, c_offset + 8);
-                    index += 1;
                 }
-                ty if self.boundary_pointer_class(ty).is_some() => {
-                    let child_class = self
-                        .boundary_pointer_class(ty)
-                        .ok_or_else(|| internal("boundary child class is missing"))?;
+                MemberCrossing::Pointer(pointer) => {
                     let source_pointer =
                         self.builder
                             .ins()
@@ -1205,92 +1197,95 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     // The populated struct is a scratch struct. The copy-back
                     // keeps the script link, and the call writes back the
                     // scratch copy of a non-`const` target (§187 rule 7).
-                    let writable =
-                        field.foreign_provenance != Some(l::ForeignTypeProvenance::ConstPointer);
-                    let target = match subscript_boundary::member_pass(
-                        &self.boundary_view(),
-                        StructPass::Scratch,
-                        ClassId(child_class),
-                        writable,
-                    ) {
+                    let target = match pointer.pass {
                         PointerPass::ScriptMemory => source_pointer,
-                        PointerPass::ScratchWrittenBack => {
-                            self.scratch_target(child_class, source_pointer, true, pos)?
-                        }
-                        PointerPass::ScratchReadOnly => {
-                            self.scratch_target(child_class, source_pointer, false, pos)?
+                        PointerPass::ScratchWrittenBack | PointerPass::ScratchReadOnly => {
+                            self.scratch_target(pointer, source_pointer, pos)?
                         }
                         PointerPass::Cycle => {
                             return Err(struct_cycle(
-                                &self.ml.lir.classes[child_class].source_name,
+                                &self.ml.lir.classes[pointer.class.0].source_name,
                             ));
                         }
                     };
                     self.builder
                         .ins()
                         .store(flags(), target, destination, c_offset);
-                    index += 1;
                 }
-                Type::Class(inner) if self.is_value_class(&field.ty) => {
+                MemberCrossing::Embedded(nested) => {
                     let source = self.address_offset(source, i64::from(language_offset));
                     let destination = self.address_offset(destination, i64::from(c_offset));
-                    match subscript_boundary::embedded_pass(
-                        &self.boundary_view(),
-                        StructPass::Scratch,
-                        *inner,
-                    ) {
+                    match nested.pass {
                         StructPass::Scratch => {
-                            self.populate_boundary_value(inner.0, source, destination, pos)?
+                            self.populate_boundary_value(nested, source, destination, pos)?
                         }
                         StructPass::Bytes => {
-                            let layout = self.ml.layouts.class(inner.0)?.clone();
+                            let layout = self.ml.layouts.class(nested.class.0)?.clone();
                             self.copy_bytes(destination, source, layout.size, layout.align);
                         }
                         StructPass::Cycle => {
-                            return Err(struct_cycle(&self.ml.lir.classes[inner.0].source_name));
+                            return Err(struct_cycle(
+                                &self.ml.lir.classes[nested.class.0].source_name,
+                            ));
                         }
                     }
-                    index += 1;
                 }
                 // §187 rule 13: a fixed array of scalars copies as bytes.
-                ty @ Type::FixedArray(..) => {
-                    if !is_scalar_fixed_array(self.ml.lir, ty) {
-                        return Err(fixed_array_member(
-                            &definition.source_name,
-                            &field.source_name,
-                        ));
-                    }
-                    let (size, align) = self.boundary_c_field(ty)?;
+                MemberCrossing::FixedBytes => {
+                    let (size, align) = self.boundary_c_field(&field.ty)?;
                     let from = self.address_offset(source, i64::from(language_offset));
                     let to = self.address_offset(destination, i64::from(c_offset));
                     self.copy_bytes(to, from, size, align);
-                    index += 1;
                 }
-                ty => {
-                    let value = self.load_data(ty, source, language_offset)?;
+                MemberCrossing::Bytes => {
+                    let value = self.load_data(&field.ty, source, language_offset)?;
                     let value = self.expect_scalar(value)?;
                     self.builder
                         .ins()
                         .store(flags(), value, destination, c_offset);
-                    index += 1;
+                }
+                MemberCrossing::NotLowered(NotLowered::FixedArrayOfStructs) => {
+                    return Err(fixed_array_member(
+                        &definition.source_name,
+                        &field.source_name,
+                    ));
+                }
+                MemberCrossing::NotLowered(NotLowered::CallbackWithoutUserdata) => {
+                    return Err(internal("boundary callback has no userdata field"));
+                }
+                other => {
+                    return Err(internal(format!(
+                        "boundary field `{}.{}` has the plan {other:?}",
+                        definition.source_name, field.source_name
+                    )))
                 }
             }
         }
         Ok(())
     }
 
-    /// The scratch copy of the script struct of class `class` at `source`,
-    /// or null for a null `source`. A written-back copy holds its snapshot
-    /// after the scratch struct, and stores `source` and the copy in a
-    /// stack slot of the call, which the call writes back (§187 rule 7).
+    /// The scratch copy of the script struct at `source` that `plan`
+    /// targets, or null for a null `source`. A written-back copy holds its
+    /// snapshot after the scratch struct, and stores `source` and the copy
+    /// in a stack slot of the call, which the call writes back (§187 rule
+    /// 7).
     fn scratch_target(
         &mut self,
-        class: usize,
+        plan: &PointerPlan,
         source: Value,
-        written_back: bool,
         pos: &Pos,
     ) -> Result<Value, String> {
+        let class = plan.class.0;
+        let target = plan
+            .target
+            .as_ref()
+            .ok_or_else(|| internal("a scratch pointer has no target plan"))?;
+        let written_back = plan.pass == PointerPass::ScratchWrittenBack;
         let slot = if written_back {
+            let write_back = plan
+                .write_back
+                .clone()
+                .ok_or_else(|| internal("a written-back target has no write-back plan"))?;
             let targets = self
                 .boundary_targets
                 .as_mut()
@@ -1309,7 +1304,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .as_mut()
                 .ok_or_else(|| internal("a written-back target has no call"))?
                 .slots
-                .push((class, slot));
+                .push((write_back, slot));
             Some(slot)
         } else {
             None
@@ -1336,7 +1331,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             )?
             .ok_or_else(|| internal("boundary scratch target is missing"))?;
         self.trap_check();
-        self.populate_boundary_value(class, source, scratch, pos)?;
+        self.populate_boundary_value(target, source, scratch, pos)?;
         if let Some(slot) = slot {
             let snapshot = self.address_offset(scratch, i64::from(size));
             self.copy_bytes(snapshot, scratch, size, align);
@@ -1349,18 +1344,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     /// Builds a scratch array of the `length` script elements at `source`,
-    /// which the call passes as `pass`. The binder and the checker reject a
-    /// pair whose elements the call writes back (§187 rule 11), so `pass`
-    /// is [`PointerPass::ScratchReadOnly`].
+    /// which the call passes as `plan` says. The binder and the checker
+    /// reject a pair whose elements the call writes back (§187 rule 11), so
+    /// the pass is [`PointerPass::ScratchReadOnly`].
     fn marshal_boundary_array(
         &mut self,
-        element_class: usize,
-        pass: PointerPass,
+        plan: &ElementsPlan,
         source: Value,
         length: Value,
         pos: &Pos,
     ) -> Result<Value, String> {
-        match pass {
+        let element_class = plan.class.0;
+        match plan.pass {
             PointerPass::ScratchReadOnly => {}
             PointerPass::ScratchWrittenBack => {
                 return Err(written_back_elements(
@@ -1378,6 +1373,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 ))
             }
         }
+        let element = plan
+            .element
+            .as_ref()
+            .ok_or_else(|| internal("a scratch array has no element plan"))?;
         let language_layout = self.ml.layouts.class(element_class)?.clone();
         let (_, c_size, _) = self.boundary_c_layout(element_class)?;
         let length64 = self.builder.ins().uextend(types::I64, length);
@@ -1417,7 +1416,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         // §187 rule 11: no build inside the loop writes back a target.
         self.element_depth(1)?;
         let populated =
-            self.populate_boundary_value(element_class, source_element, destination_element, pos);
+            self.populate_boundary_value(element, source_element, destination_element, pos);
         self.element_depth(-1)?;
         populated?;
         let next = self.builder.ins().iadd_imm(index, 1);
@@ -1459,14 +1458,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 cursor.ins().stack_store(null, *slot, 0);
             }
         }
-        for (class, slot) in targets.slots.iter().rev() {
-            let (_, size, _) = self.boundary_c_layout(*class)?;
+        for (plan, slot) in targets.slots.iter().rev() {
+            let (_, size, _) = self.boundary_c_layout(plan.class.0)?;
             let source = self.builder.ins().stack_load(types::I64, *slot, 0);
             let scratch = self.builder.ins().stack_load(types::I64, *slot, 8);
             let snapshot = self.address_offset(scratch, i64::from(size));
             self.write_back_boundary_pointer(
                 BoundaryPtrWriteback {
-                    class: *class,
+                    plan: plan.clone(),
                     source,
                     scratch,
                     snapshot,
@@ -1478,25 +1477,26 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     /// Writes back the members of one scratch struct that C changed (§187
-    /// rules 6 and 7): each member that [`subscript_boundary::copy_back`]
-    /// names is written only when its scratch bytes differ from the
-    /// snapshot that the call took after it built the struct. A script
-    /// write that a callback makes during the call stays when C leaves the
-    /// member unchanged.
+    /// rules 6 and 7): each member that the write-back plan names is
+    /// written only when its scratch bytes differ from the snapshot that
+    /// the call took after it built the struct. A script write that a
+    /// callback makes during the call stays when C leaves the member
+    /// unchanged.
     fn write_back_boundary_pointer(
         &mut self,
         writeback: BoundaryPtrWriteback,
         pos: &Pos,
     ) -> Result<(), String> {
+        let class = writeback.plan.class.0;
         let definition = self
             .ml
             .lir
             .classes
-            .get(writeback.class)
+            .get(class)
             .cloned()
-            .ok_or_else(|| internal(format!("boundary class {} is missing", writeback.class)))?;
-        let language_layout = self.ml.layouts.class(writeback.class)?.clone();
-        let (c_offsets, _, _) = self.boundary_c_layout(writeback.class)?;
+            .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
+        let language_layout = self.ml.layouts.class(class)?.clone();
+        let (c_offsets, _, _) = self.boundary_c_layout(class)?;
         let nonnull = self
             .builder
             .ins()
@@ -1505,37 +1505,34 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let done = self.builder.create_block();
         self.builder.ins().brif(nonnull, copy, &[], done, &[]);
         self.builder.switch_to_block(copy);
-        for (index, field) in definition.fields.iter().enumerate() {
+        for member in &writeback.plan.members {
+            let index = member.field;
+            let field = definition
+                .fields
+                .get(index)
+                .ok_or_else(|| internal("a write-back plan member has no field"))?;
             let language_offset = language_layout.field_offsets[index] as i32;
             let c_offset = c_offsets[index] as i32;
-            let shape = subscript_compiler::boundary_pass::field_shape(self.ml.lir, &field.ty);
-            let copy_back = subscript_boundary::copy_back(&shape);
-            if copy_back == CopyBack::Skip {
-                continue;
-            }
-            if let CopyBack::Embedded(inner) = copy_back {
-                match subscript_boundary::struct_pass(&self.boundary_view(), inner) {
-                    StructPass::Scratch => {
-                        let scratch = self.address_offset(writeback.scratch, i64::from(c_offset));
-                        let snapshot = self.address_offset(writeback.snapshot, i64::from(c_offset));
-                        let source =
-                            self.address_offset(writeback.source, i64::from(language_offset));
-                        self.write_back_boundary_pointer(
-                            BoundaryPtrWriteback {
-                                class: inner.0,
-                                source,
-                                scratch,
-                                snapshot,
-                            },
-                            pos,
-                        )?;
-                        continue;
-                    }
-                    StructPass::Bytes => {}
-                    StructPass::Cycle => {
-                        return Err(struct_cycle(&self.ml.lir.classes[inner.0].source_name));
-                    }
+            match &member.write {
+                WriteBack::Embedded(nested) => {
+                    let scratch = self.address_offset(writeback.scratch, i64::from(c_offset));
+                    let snapshot = self.address_offset(writeback.snapshot, i64::from(c_offset));
+                    let source = self.address_offset(writeback.source, i64::from(language_offset));
+                    self.write_back_boundary_pointer(
+                        BoundaryPtrWriteback {
+                            plan: nested.clone(),
+                            source,
+                            scratch,
+                            snapshot,
+                        },
+                        pos,
+                    )?;
+                    continue;
                 }
+                WriteBack::Cycle(nested) => {
+                    return Err(struct_cycle(&self.ml.lir.classes[nested.0].source_name));
+                }
+                _ => {}
             }
             let (c_size, _) = self.boundary_c_field(&field.ty)?;
             let changed =
@@ -1544,9 +1541,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let kept = self.builder.create_block();
             self.builder.ins().brif(changed, write, &[], kept, &[]);
             self.builder.switch_to_block(write);
-            match copy_back {
-                CopyBack::Skip => {}
-                CopyBack::StringView => {
+            match &member.write {
+                WriteBack::StringView => {
                     // A view that C left as the call built it keeps the
                     // script string: the copy-back allocates only for a
                     // view that C wrote.
@@ -1574,20 +1570,20 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .store(flags(), handle, writeback.source, language_offset);
                     self.trap_check();
                 }
-                CopyBack::Embedded(inner) => {
+                WriteBack::EmbeddedBytes(inner) => {
                     let layout = self.ml.layouts.class(inner.0)?.clone();
                     let source = self.address_offset(writeback.scratch, i64::from(c_offset));
                     let destination =
                         self.address_offset(writeback.source, i64::from(language_offset));
                     self.copy_bytes(destination, source, layout.size, layout.align);
                 }
-                CopyBack::Bytes if matches!(field.ty, Type::FixedArray(..)) => {
+                WriteBack::FixedBytes => {
                     let from = self.address_offset(writeback.scratch, i64::from(c_offset));
                     let to = self.address_offset(writeback.source, i64::from(language_offset));
                     let (_, align) = self.boundary_c_field(&field.ty)?;
                     self.copy_bytes(to, from, c_size, align);
                 }
-                CopyBack::Bytes => {
+                WriteBack::Bytes => {
                     let ty = &field.ty;
                     let Repr::Scalar(repr) = self.ml.layouts.repr(ty)? else {
                         return Err(internal(format!(
@@ -1601,6 +1597,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .load(repr, flags(), writeback.scratch, c_offset);
                     self.store_data(ty, writeback.source, language_offset, RV::Scalar(value))?;
                 }
+                other => return Err(internal(format!("boundary write-back plan {other:?}"))),
             }
             self.builder.ins().jump(kept, &[]);
             self.builder.switch_to_block(kept);
@@ -1638,17 +1635,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.ins().icmp_imm(IntCC::NotEqual, differ, 0)
     }
 
+    /// Passes a by-value boundary struct as `plan` says (§187 rule 10).
     fn marshal_boundary_struct(
         &mut self,
-        class: usize,
+        plan: &StructPlan,
         source: Value,
         signature: &mut Signature,
         arguments: &mut Vec<Value>,
         pos: &Pos,
     ) -> Result<(), String> {
+        let class = plan.class.0;
         let (_, size, align) = self.boundary_c_layout(class)?;
         let components = self.boundary_leaf_components(class)?;
-        match subscript_boundary::value_parameter_pass(&self.boundary_view(), ClassId(class)) {
+        match plan.pass {
             // §187 rule 10: the C bytes are the script bytes, a fixed array
             // of scalars included.
             StructPass::Bytes => {
@@ -1657,7 +1656,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             StructPass::Scratch => {
                 let scratch = self.stack_slot(size, align);
                 self.zero_bytes(scratch, size, align);
-                self.populate_boundary_value(class, source, scratch, pos)?;
+                self.populate_boundary_value(plan, source, scratch, pos)?;
                 self.push_boundary_aggregate(
                     signature,
                     arguments,

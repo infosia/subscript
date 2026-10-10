@@ -260,6 +260,33 @@ fn largest_copying_set<V: StructView>(view: &V, candidates: Vec<V::Struct>) -> V
     }
 }
 
+/// The members of `s` that make it a scratch struct: each member, by
+/// index into [`StructView::fields`], that does not meet the rule of
+/// [`struct_pass`]. The list is empty for a struct that copies its bytes,
+/// and for a struct that is a scratch struct only because it is on its
+/// own embedding path.
+#[must_use]
+pub fn scratch_members<V: StructView>(view: &V, s: V::Struct) -> Vec<usize> {
+    let owned;
+    let bytes: &[V::Struct] = match view.copying() {
+        Some(copying) => copying,
+        None => {
+            owned = bytes_structs(view, s);
+            &owned
+        }
+    };
+    if bytes.contains(&s) {
+        return Vec::new();
+    }
+    view.fields(s)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| !member_copies(field, bytes))
+        .map(|(index, _)| index)
+        .collect()
+}
+
 fn member_copies<S: Copy + PartialEq>(field: &FieldShape<S>, bytes: &[S]) -> bool {
     match *field {
         FieldShape::Bytes | FieldShape::Userdata => true,
@@ -901,6 +928,36 @@ mod tests {
         ] {
             assert_eq!(builds_scratch(&view, name), builds, "{name}");
         }
+    }
+
+    /// §189 rule 2: the members that make a struct a scratch struct are the
+    /// members that fail the rule of `struct_pass`.
+    #[test]
+    fn the_scratch_members_are_the_members_that_do_not_copy() {
+        let view = view();
+        for (name, members) in [
+            ("P", vec![]),
+            ("Outer", vec![]),
+            ("Text", vec![0]),
+            ("Holder", vec![1]),
+            ("TextLinked", vec![1]),
+            ("Wrap", vec![0]),
+            ("List", vec![0]),
+            ("Fn", vec![0]),
+            ("Desc", vec![0]),
+            ("Odd", vec![0]),
+            ("Cycle", vec![0]),
+            ("Node", vec![1]),
+        ] {
+            assert_eq!(scratch_members(&view, name), members, "{name}");
+            assert_eq!(
+                members.is_empty(),
+                struct_pass(&view, name) == StructPass::Bytes,
+                "{name}"
+            );
+        }
+        // A struct that the view does not define has no member.
+        assert!(scratch_members(&view, "Undefined").is_empty());
     }
 
     #[test]

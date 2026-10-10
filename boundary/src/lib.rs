@@ -6,8 +6,8 @@ mod read;
 
 pub use pass::{
     builds_scratch, class_pass, copy_back, copying_structs, cycle_structs, element_pass,
-    embedded_pass, member_pass, parameter_pass, struct_pass, target_pass, value_parameter_pass,
-    writes_back, CopyBack, FieldShape, PointerPass, StructPass, StructView,
+    embedded_pass, member_pass, parameter_pass, scratch_members, struct_pass, target_pass,
+    value_parameter_pass, writes_back, CopyBack, FieldShape, PointerPass, StructPass, StructView,
 };
 pub use read::{
     first_cycle, first_unreadable, member_read, no_read_lowering_message,

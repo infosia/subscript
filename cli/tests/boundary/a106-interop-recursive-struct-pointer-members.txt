@@ -1,0 +1,11 @@
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor: scratch read-only, none for null [SGPUProbeFullRenderPipelineDescriptor.label string view, SGPUProbeFullRenderPipelineDescriptor.fragment const pointer to scratch struct]
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment: scratch read-only, none for null [SGPUProbeFragmentState.entryPoint string view, SGPUProbeFragmentState.constants pair, SGPUProbeFragmentState.targets pair]
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.entryPoint: string view of script bytes
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.constants: pair
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.constants[]: scratch read-only per element [SGPUProbeConstantEntry.key string view]
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.constants[].key: string view of script bytes
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.targets: pair
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck descriptor.fragment.targets[]: script memory
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck selector: value
+corpus/accept/a106-interop-recursive-struct-pointer-members.ts:10:14 subProbeFullRenderPipelineCheck result: value

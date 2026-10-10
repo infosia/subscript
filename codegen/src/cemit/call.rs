@@ -1,6 +1,7 @@
 //! Script calls and foreign calls.
 
 use super::*;
+use subscript_compiler::crossing::ParameterPlan;
 
 impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     pub(super) fn emit_call(
@@ -164,13 +165,28 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .foreign_symbols
                 .push(declaration.source_name.clone());
         }
+        // §189 rule 2: the call builds its marshaling from the plan of its
+        // callee.
+        let plan = self.crossing_plan(function)?;
+        if plan.parameters.len() != declaration.parameters.len() {
+            return Err(internal(format!(
+                "foreign call `{}` has no plan for each parameter",
+                declaration.source_name
+            )));
+        }
+        // §187 rule 12: no result with a member that has no read lowering
+        // reaches code generation.
+        if let subscript_compiler::crossing::ResultPlan::Struct(read) = &plan.result {
+            if let Some(unreadable) = &read.unreadable {
+                return Err(internal(format!(
+                    "foreign result of `{}` has a member with no read lowering: `{}.{}`",
+                    declaration.source_name, unreadable.owner, unreadable.member
+                )));
+            }
+        }
         // §187 rule 7: the scratch scope opens only for a call whose build
         // can allocate.
-        let needs_scratch = declaration
-            .parameters
-            .iter()
-            .any(|parameter| boundary_type_builds_scratch(self.emitter.module, &parameter.ty));
-        let scratch_mark = if needs_scratch {
+        let scratch_mark = if plan.scratch_scope {
             let mark = self.fresh();
             let call = self.emitter.runtime_call(
                 "uint64_t",
@@ -185,7 +201,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         let boundary_position = self.emitter.pos_id(&instruction.pos);
         self.boundary_targets = Some(BoundaryTargets::default());
-        // The marshalling goes to its own buffer, so the variables of each
+        // The marshaling goes to its own buffer, so the variables of each
         // written-back target are declared before the first of them.
         let outer = out;
         let mut marshalled = String::new();
@@ -193,8 +209,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let mut arguments = Vec::new();
         let mut boundary_writebacks = Vec::new();
         let mut cursor = 0usize;
-        for parameter in &declaration.parameters {
-            if parameter.foreign_provenance == Some(l::ForeignTypeProvenance::CompletionEndpoint) {
+        for (parameter, parameter_plan) in declaration.parameters.iter().zip(&plan.parameters) {
+            if *parameter_plan == ParameterPlan::CompletionEndpoint {
                 arguments.push(
                     endpoint
                         .clone()
@@ -202,7 +218,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 continue;
             }
-            if let Type::Array(element) = &parameter.ty {
+            if let ParameterPlan::Pair(pair) = parameter_plan {
+                let Type::Array(element) = &parameter.ty else {
+                    return Err(internal(format!(
+                        "foreign call `{}` pair parameter `{}` is not an array",
+                        declaration.source_name, parameter.source_name
+                    )));
+                };
                 let data = operands.get(cursor).ok_or_else(|| {
                     internal(format!(
                         "foreign call `{}` array parameter `{}` has no data snapshot",
@@ -227,33 +249,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         declaration.source_name, parameter.source_name
                     )));
                 }
-                let (data, count) = match element.as_ref() {
-                    Type::Class(class) if self.elements_need_scratch(element)? => {
-                        // §187 rule 7: the call does not write `const`
-                        // elements back.
-                        let writable = !matches!(
-                            parameter.foreign_provenance.as_ref(),
-                            Some(
-                                l::ForeignTypeProvenance::Descriptor {
-                                    element_const: true,
-                                    ..
-                                } | l::ForeignTypeProvenance::ScalarPair {
-                                    element_const: true,
-                                    ..
-                                }
-                            )
-                        );
-                        let elements = self.element_pass(*class, writable);
-                        self.marshal_boundary_array(
-                            out,
-                            *class,
-                            elements,
-                            data,
-                            count,
-                            boundary_position,
-                        )?
+                let (data, count) = match &pair.elements {
+                    Some(elements) => {
+                        self.marshal_boundary_array(out, elements, data, count, boundary_position)?
                     }
-                    _ => (data.clone(), count.clone()),
+                    None => (data.clone(), count.clone()),
                 };
                 match parameter.foreign_provenance.as_ref() {
                     Some(l::ForeignTypeProvenance::Descriptor {
@@ -307,8 +307,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             arguments.push(
                 self.marshal_foreign_value(
                     out,
-                    &parameter.ty,
-                    parameter.foreign_provenance.as_ref(),
+                    parameter_plan,
+                    parameter,
                     value,
                     boundary_position,
                     &mut boundary_writebacks,

@@ -269,10 +269,6 @@ pub(crate) fn association_key_kind(module: &l::Module, ty: &Type) -> Result<u32,
     })
 }
 
-pub(crate) fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
-}
-
 fn boundary_class(module: &l::Module, class: ClassId) -> Result<&l::Class, String> {
     module
         .classes
@@ -320,32 +316,6 @@ pub(crate) fn boundary_class_contains_pointer(
     class: ClassId,
 ) -> Result<bool, String> {
     boundary_class_contains_pointer_inner(module, class, &mut HashSet::new())
-}
-
-/// True when a call that passes an argument of type `ty` can allocate a
-/// scratch target or a scratch array (§187 rule 7). Both tiers open the
-/// scratch scope of a call, a mark before and a release after it, only
-/// then. A struct pointer passes its target in a local of the call, so
-/// only the build of that target can allocate; a pair of elements that
-/// do not copy their bytes always allocates its scratch array.
-pub(crate) fn boundary_type_builds_scratch(module: &l::Module, ty: &Type) -> bool {
-    let view = crate::lir::boundary_view(module);
-    let builds = |class: ClassId| {
-        subscript_boundary::struct_pass(&view, class) == subscript_boundary::StructPass::Scratch
-            && subscript_boundary::builds_scratch(&view, class)
-    };
-    match ty {
-        Type::Array(element) => matches!(element.as_ref(), Type::Class(class)
-            if lir_class_is_value(module, *class)
-                && subscript_boundary::struct_pass(&view, *class)
-                    != subscript_boundary::StructPass::Bytes),
-        Type::Nullable(inner) => {
-            matches!(inner.as_ref(), Type::Class(class)
-                if lir_class_is_value(module, *class) && builds(*class))
-        }
-        Type::Class(class) => lir_class_is_value(module, *class) && builds(*class),
-        _ => false,
-    }
 }
 
 #[cfg(test)]

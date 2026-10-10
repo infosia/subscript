@@ -23,7 +23,7 @@ compiler for the host's own translation units beyond the one-shot
 ## 2. Surface
 
 One binary, `subscript`, in a new top-level crate `cli/` (package
-`subscript-cli`). Six subcommands — the five below plus `bind` (§10);
+`subscript-cli`). Seven subcommands — the six below plus `bind` (§10);
 anything else is a usage error. *(This line said "Four" until
 implementation counted the list — corrected 2026-07-30; the list was
 always the contract. `bind` added by §10 the same day.)*
@@ -81,6 +81,15 @@ programs without host C bindings (the class the JIT gate already runs
 standalone). A program needing host symbols is a clear error, not a
 crash. `--watch` (hot reload, compiler.md §8.2) is contracted at §12
 (taken 2026-07-31).
+
+### 2.6 `subscript boundary <file.ts> [--mirror <file.d.ts>]... [--enable-module <module>] [--deny-warnings]`
+
+*(Added 2026-10-11, `compiler.md` §189.)* Takes the arguments of
+`check` (§2.1). It checks the program as `check` does, lowers it to
+LIR, and prints the crossing plan of each foreign call site to stdout:
+one line for each call site and crossing position. Exit 0 when the
+program checks; 1 with the `check` diagnostics; 2 for a usage or I/O
+error. No artifact.
 
 ## 3. Behaviour rules
 

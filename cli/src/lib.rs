@@ -97,6 +97,7 @@ fn dispatch<O: Write, E: Write>(
     };
     match command {
         "check" => check_command(&args[1..], stderr),
+        "boundary" => boundary_command(&args[1..], stdout, stderr),
         "emit" => emit_command(&args[1..], stderr),
         "bind" => bind_command(&args[1..], stdout),
         "link-flags" => link_flags_command(&args[1..], stdout),
@@ -110,7 +111,7 @@ fn dispatch<O: Write, E: Write>(
 }
 
 fn usage() -> &'static str {
-    "usage: subscript <check|emit|bind|link-flags|build|run> ..."
+    "usage: subscript <check|boundary|emit|bind|link-flags|build|run> ..."
 }
 
 #[derive(Debug, Default)]
@@ -139,6 +140,41 @@ fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Fail
     } else {
         SUCCESS
     })
+}
+
+/// `subscript boundary` (`specs/blocks/compiler.md` §189): checks the
+/// program as `check` does, lowers it, and prints the crossing plan of each
+/// foreign call site.
+fn boundary_command<O: Write, E: Write>(
+    args: &[OsString],
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<u8, Failure> {
+    let parsed = parse_source_arguments(args)?;
+    let source = parsed
+        .source
+        .as_ref()
+        .ok_or_else(|| Failure::usage("boundary requires <file.ts>"))?;
+    let files = load_program(source, &parsed.mirrors)?;
+    let module =
+        subscript_compiler::check_program_with(&files, &module_options(&parsed.enabled_modules))
+            .map_err(|diagnostics| rejection(&files, diagnostics))?;
+    let warnings = check_warnings(&module);
+    if !warnings.is_empty() {
+        write_warnings(&files, &warnings, stderr)?;
+        if parsed.deny_warnings {
+            return Ok(PROGRAM_ERROR);
+        }
+    }
+    let lowered = subscript_codegen::lir::lower_module(&module).map_err(|error| {
+        Failure::program(format!("internal error: LIR construction failed: {error}"))
+    })?;
+    let lines = subscript_compiler::crossing::report(&lowered).map_err(Failure::program)?;
+    for line in lines {
+        writeln!(stdout, "{line}")
+            .map_err(|error| Failure::usage(format!("write boundary report: {error}")))?;
+    }
+    Ok(SUCCESS)
 }
 
 fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure> {

@@ -21,9 +21,8 @@ use subscript_runtime::TrapKind;
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
-    boundary_class_contains_pointer, boundary_type_builds_scratch, capture_parameters, data_type,
-    explicit_parameters, foreign_parameter_type_matches, is_userdata_slot, operand_type,
-    runtime_trap_kind, value_type,
+    boundary_class_contains_pointer, capture_parameters, data_type, explicit_parameters,
+    foreign_parameter_type_matches, operand_type, runtime_trap_kind, value_type,
 };
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
@@ -37,8 +36,7 @@ mod async_count;
 pub(crate) use async_callable::define_async_callable;
 mod boundary;
 pub(crate) use boundary::{
-    fixed_array_member, is_scalar_fixed_array, struct_cycle, written_back_elements,
-    written_back_in_elements,
+    fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
 };
 mod builtin;
 mod call;
@@ -152,9 +150,10 @@ impl BoundaryLeaves {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct BoundaryPtrWriteback {
-    class: usize,
+    /// The members that the copy-back writes.
+    plan: subscript_compiler::crossing::WriteBackPlan,
     source: Value,
     scratch: Value,
     /// The bytes that the call put in `scratch` before the call.
@@ -171,8 +170,9 @@ struct BoundaryPtrWriteback {
 struct BoundaryTargets {
     /// The block where the build of the call starts.
     start: Block,
-    /// The class and the stack slot of each copy, in build order.
-    slots: Vec<(usize, StackSlot)>,
+    /// The write-back plan and the stack slot of each copy, in build
+    /// order.
+    slots: Vec<(subscript_compiler::crossing::WriteBackPlan, StackSlot)>,
     /// The depth of element loops that the build is in.
     elements: u32,
 }

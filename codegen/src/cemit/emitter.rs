@@ -29,6 +29,7 @@ impl<'m> Emitter<'m> {
             helper_count: 0,
             long_string_data: String::new(),
             long_string_symbols: HashMap::new(),
+            crossing_plans: subscript_compiler::crossing::Plans::default(),
         })
     }
 

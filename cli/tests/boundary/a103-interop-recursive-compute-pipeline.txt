@@ -1,0 +1,48 @@
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:19:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:20:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:21:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:22:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:23:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:24:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:25:12 subProbeComputePipelineCheck result: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck descriptor: scratch read-only, none for null [SGPUProbeComputePipelineDescriptor.label string view, SGPUProbeComputePipelineDescriptor.compute embedded scratch struct]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck descriptor.label: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck descriptor.compute: embedded scratch [SGPUProbeComputeState.entryPoint string view]
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck descriptor.compute.entryPoint: string view of script bytes
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck selector: value
+corpus/accept/a103-interop-recursive-compute-pipeline.ts:26:12 subProbeComputePipelineCheck result: value

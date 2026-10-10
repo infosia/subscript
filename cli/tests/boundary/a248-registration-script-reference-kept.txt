@@ -1,0 +1,11 @@
+corpus/accept/a248-registration-script-reference-kept.ts:16:29 subDeviceCreate chain: script memory
+corpus/accept/a248-registration-script-reference-kept.ts:16:29 subDeviceCreate result: value
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart device: value
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart payload: value
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart immediate: value
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart info: by-value scratch [SubRequestInfo.callback callback]
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart info.callback: callback registration
+corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart result: value
+corpus/accept/a248-registration-script-reference-kept.ts:32:21 subRequestReleaseCount device: value
+corpus/accept/a248-registration-script-reference-kept.ts:32:21 subRequestReleaseCount result: value
+corpus/accept/a248-registration-script-reference-kept.ts:38:3 subDeviceRelease device: value

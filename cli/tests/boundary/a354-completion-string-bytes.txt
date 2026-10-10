@@ -1,0 +1,29 @@
+corpus/accept/a354-completion-string-bytes.ts:10:18 subDeviceCreate chain: script memory
+corpus/accept/a354-completion-string-bytes.ts:10:18 subDeviceCreate result: value
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart device: value
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart payload: value
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart immediate: value
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart info: by-value scratch [SubRequestInfo.callback callback]
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart info.callback: callback registration
+corpus/accept/a354-completion-string-bytes.ts:11:3 subRequestStart result: value
+corpus/accept/a354-completion-string-bytes.ts:12:16 subCompletionText device: value
+corpus/accept/a354-completion-string-bytes.ts:12:16 subCompletionText empty: value
+corpus/accept/a354-completion-string-bytes.ts:12:16 subCompletionText endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:13:17 subCompletionBytes device: value
+corpus/accept/a354-completion-string-bytes.ts:13:17 subCompletionBytes empty: value
+corpus/accept/a354-completion-string-bytes.ts:13:17 subCompletionBytes endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:18:28 subCompletionText device: value
+corpus/accept/a354-completion-string-bytes.ts:18:28 subCompletionText empty: value
+corpus/accept/a354-completion-string-bytes.ts:18:28 subCompletionText endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:18:58 subCompletionText device: value
+corpus/accept/a354-completion-string-bytes.ts:18:58 subCompletionText empty: value
+corpus/accept/a354-completion-string-bytes.ts:18:58 subCompletionText endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:22:15 subCompletionTextError device: value
+corpus/accept/a354-completion-string-bytes.ts:22:15 subCompletionTextError endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:25:27 subCompletionText device: value
+corpus/accept/a354-completion-string-bytes.ts:25:27 subCompletionText empty: value
+corpus/accept/a354-completion-string-bytes.ts:25:27 subCompletionText endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:26:28 subCompletionBytes device: value
+corpus/accept/a354-completion-string-bytes.ts:26:28 subCompletionBytes empty: value
+corpus/accept/a354-completion-string-bytes.ts:26:28 subCompletionBytes endpoint: completion endpoint
+corpus/accept/a354-completion-string-bytes.ts:28:3 subDeviceRelease device: value

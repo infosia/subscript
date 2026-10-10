@@ -1,0 +1,7 @@
+corpus/accept/a27-interop-string-view.ts:21:29 subDeviceCreate chain: script memory
+corpus/accept/a27-interop-string-view.ts:21:29 subDeviceCreate result: value
+corpus/accept/a27-interop-string-view.ts:24:3 subDeviceSetLabel device: value
+corpus/accept/a27-interop-string-view.ts:24:3 subDeviceSetLabel label: string view of script bytes
+corpus/accept/a27-interop-string-view.ts:39:3 subDeviceSetLogger device: value
+corpus/accept/a27-interop-string-view.ts:39:3 subDeviceSetLogger logger: by-value scratch [SubCallbackInfo.callback callback]
+corpus/accept/a27-interop-string-view.ts:39:3 subDeviceSetLogger logger.callback: callback binding

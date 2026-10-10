@@ -1,0 +1,17 @@
+corpus/accept/a348-boundary-values-have-c-form.ts:15:12 subBoundaryNarrow value: value
+corpus/accept/a348-boundary-values-have-c-form.ts:15:12 subBoundaryNarrow result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:16:12 subBoundaryHalfCheck value: value
+corpus/accept/a348-boundary-values-have-c-form.ts:16:12 subBoundaryHalfCheck result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:16:41 subBoundaryHalfCheck value: value
+corpus/accept/a348-boundary-values-have-c-form.ts:16:41 subBoundaryHalfCheck result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:16:62 subBoundaryHalfReturn result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:17:12 subBoundaryHalf2Check value: by-value bytes
+corpus/accept/a348-boundary-values-have-c-form.ts:17:12 subBoundaryHalf2Check result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:17:69 subBoundaryHalf2Check value: by-value bytes
+corpus/accept/a348-boundary-values-have-c-form.ts:17:69 subBoundaryHalf2Check result: value
+corpus/accept/a348-boundary-values-have-c-form.ts:17:91 subBoundaryHalf2Return result: read bytes
+corpus/accept/a348-boundary-values-have-c-form.ts:18:17 subBoundaryFloat2Return result: read bytes
+corpus/accept/a348-boundary-values-have-c-form.ts:20:17 subBoundaryBoolReturn result: read bytes
+corpus/accept/a348-boundary-values-have-c-form.ts:23:12 subBoundaryScriptSize data: pair
+corpus/accept/a348-boundary-values-have-c-form.ts:23:12 subBoundaryScriptSize data[]: script memory
+corpus/accept/a348-boundary-values-have-c-form.ts:23:12 subBoundaryScriptSize result: value

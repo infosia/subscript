@@ -21,11 +21,11 @@ cargo build --offline --release -p subscript-cli
 alias subscript=target/release/subscript
 ```
 
-The binary has six subcommands. Any other word is a usage error:
+The binary has seven subcommands. Any other word is a usage error:
 
 ```text
 $ subscript --help
-subscript: unknown subcommand `--help`; usage: subscript <check|emit|bind|link-flags|build|run> ...
+subscript: unknown subcommand `--help`; usage: subscript <check|boundary|emit|bind|link-flags|build|run> ...
 ```
 
 ## The language in five programs
@@ -915,6 +915,26 @@ subscript build  --source game.ts --mirror engine.generated.d.ts \
 
 `subscript run` takes no `--mirror` and rejects the flag with exit 2. A
 program that binds a header is built and run through `build`.
+
+The declarations set the cost of each foreign call, and the call site
+does not show it. To see it, run `subscript boundary` with the
+arguments of `check`. The command prints one line for each call site
+and each crossing position. A line gives the pass: the value, the
+script memory, or a scratch copy that the call builds. In brackets, it
+names the members that make the struct a scratch copy. After
+`writes-back`, it names the members that the call copies back when C
+changed them (`compiler.md` §189).
+
+```sh
+subscript boundary game.ts --mirror engine.generated.d.ts
+```
+
+```text
+// excerpt of cli/tests/boundary/a100-interop-texture-descriptor-read.txt
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor: scratch written-back if changed, none for null [SGPUProbeTextureDescriptor.label string view, SGPUProbeTextureDescriptor.viewFormats pair] writes-back label extent format mipLevelCount sampleCount dimension usage
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.label: string view of script bytes
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.viewFormats[]: script memory
+```
 
 See the walkthroughs
 [`e09-c-structs-and-slices.ts`](../examples/e09-c-structs-and-slices.ts)

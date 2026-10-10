@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::lir as l;
-use subscript_compiler::types::{CallbackLifetime, ClassId, Type};
+use subscript_compiler::types::{ClassId, Type};
 use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
@@ -17,9 +17,8 @@ use crate::layout::{is_unsigned, type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, borrowed_capture_parameters,
-    boundary_class_contains_pointer, boundary_type_builds_scratch, capture_parameters, data_type,
-    explicit_parameters, foreign_parameter_type_matches, is_userdata_slot, operand_type,
-    runtime_trap_kind, value_type,
+    boundary_class_contains_pointer, capture_parameters, data_type, explicit_parameters,
+    foreign_parameter_type_matches, operand_type, runtime_trap_kind, value_type,
 };
 use crate::position_table::PositionTable;
 use crate::root_storage::{self, RootStoragePlan};
@@ -141,10 +140,13 @@ struct Emitter<'m> {
     helper_count: u32,
     long_string_data: String,
     long_string_symbols: HashMap<Vec<u8>, String>,
+    /// The plan of each foreign callee, built on its first call (§189).
+    crossing_plans: subscript_compiler::crossing::Plans,
 }
 
 struct BoundaryPtrWriteback {
-    class: ClassId,
+    /// The members that the copy-back writes.
+    plan: subscript_compiler::crossing::WriteBackPlan,
     source: String,
     scratch: String,
     /// The bytes that the call put in `scratch` before the call.

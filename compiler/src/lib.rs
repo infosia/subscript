@@ -16,6 +16,7 @@ mod test_interop;
 use crate::check::rejection::{diagnostic, RejectionSite};
 pub mod api_reference;
 pub mod boundary_pass;
+pub mod crossing;
 pub mod diag;
 mod diag_render;
 pub mod divergence;

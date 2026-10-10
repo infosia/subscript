@@ -34,8 +34,7 @@
 mod func;
 
 pub(crate) use func::{
-    fixed_array_member, is_scalar_fixed_array, struct_cycle, written_back_elements,
-    written_back_in_elements,
+    fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
 };
 
 use std::collections::HashMap;
@@ -370,6 +369,8 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub foreign_ids: HashMap<String, FuncId>,
     /// Foreign imports in deterministic first-use order.
     pub foreign_symbols: Vec<String>,
+    /// The plan of each foreign callee, built on its first call (§189).
+    pub crossing_plans: subscript_compiler::crossing::Plans,
     pub positions: PositionTable,
     pub lambda_count: u32,
     pub str_count: u32,
@@ -1315,6 +1316,7 @@ fn lower_lir_module_with_positions<M: Module>(
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),
+        crossing_plans: subscript_compiler::crossing::Plans::default(),
         // §169 rule 12: a reload extends the session's existing ids.
         positions,
         lambda_count: 0,

@@ -1,0 +1,5 @@
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor: scratch written-back if changed, none for null [SGPUProbeTextureDescriptor.label string view, SGPUProbeTextureDescriptor.viewFormats pair] writes-back label extent format mipLevelCount sampleCount dimension usage
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.label: string view of script bytes
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.extent: embedded bytes
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.viewFormats: pair
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.viewFormats[]: script memory
