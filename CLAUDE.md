@@ -232,6 +232,12 @@ numbered rules do not apply to them.
    defect of the test. A cost that no reason covers comes out before
    the test lands. Ask what a test costs at the same time as what it
    proves.
+16. **A hidden cost is rejected, not accepted.** Some forms have a cost
+   that depends on something the source does not show, such as another
+   declaration or a run-time class. Some forms multiply the cost of
+   the plain form. Reject each of these with a diagnostic that names
+   the cause. A cost that comes from the data the source declares, such
+   as a string field that the call converts, is not hidden.
 
 ## Code conventions
 
