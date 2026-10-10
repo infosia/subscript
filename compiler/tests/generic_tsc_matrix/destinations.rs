@@ -137,7 +137,9 @@ pub(super) fn cells() -> Vec<Cell> {
         }
     }
     // C21 excludes concrete destinations that use void outside a result type.
-    assert_eq!(omitted, 1488, "destination instance admission changed");
+    // S013 excludes those with a parameter that holds a handle and is not
+    // discharged (compiler.md §188.1 rule 2).
+    assert_eq!(omitted, 1494, "destination instance admission changed");
     eprintln!("destination axis: 35 constrained kinds, 17 constructors, 2 directions, 3 sites, {} cells, {omitted} omitted instances", cells.len());
     cells
 }

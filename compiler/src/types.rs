@@ -607,6 +607,20 @@ impl Type {
             || matches!(self, Type::Array(element) if matches!(element.as_ref(), Type::AsyncHandle(_)))
     }
 
+    /// True when a value of the type holds an async handle: a handle, or a
+    /// dynamic array, a `FixedArray`, or an iterator result whose element
+    /// holds one, at any depth (`compiler.md` §188.1 rule 1).
+    #[must_use]
+    pub fn holds_async_handle(&self) -> bool {
+        match self {
+            Type::AsyncHandle(_) => true,
+            Type::Array(element) | Type::FixedArray(element, _) | Type::IterResult(element) => {
+                element.holds_async_handle()
+            }
+            _ => false,
+        }
+    }
+
     /// Returns the element and traversal for a directly iterable container.
     ///
     /// A `Map<K, V>` is not one (`compiler.md` §104.1 rule 1): TypeScript
@@ -1162,6 +1176,37 @@ mod tests {
         );
         assert!(!Type::Array(Box::new(Type::I32)).carries_async_handle());
         assert!(!Type::I32.carries_async_handle());
+    }
+
+    #[test]
+    fn async_handle_holding_covers_each_container_at_any_depth() {
+        let handle = || Type::AsyncHandle(Box::new(Type::I32));
+        let holding = [
+            handle(),
+            Type::Array(Box::new(handle())),
+            Type::Array(Box::new(Type::Array(Box::new(handle())))),
+            Type::FixedArray(Box::new(handle()), 2),
+            Type::IterResult(Box::new(handle())),
+            Type::AsyncHandle(Box::new(Type::Array(Box::new(Type::I32)))),
+            Type::Array(Box::new(Type::FixedArray(Box::new(handle()), 1))),
+        ];
+        for ty in holding {
+            assert!(ty.holds_async_handle(), "{ty:?}");
+        }
+        let not_holding = [
+            Type::I32,
+            Type::Array(Box::new(Type::I32)),
+            Type::Array(Box::new(Type::Array(Box::new(Type::I32)))),
+            Type::FixedArray(Box::new(Type::I32), 2),
+            Type::IterResult(Box::new(Type::I32)),
+            Type::Map(Box::new(Type::I32), Box::new(handle())),
+            Type::Set(Box::new(Type::I32)),
+            Type::Generator(Box::new(handle())),
+            Type::TaskGroup,
+        ];
+        for ty in not_holding {
+            assert!(!ty.holds_async_handle(), "{ty:?}");
+        }
     }
 
     #[test]

@@ -281,13 +281,18 @@ impl<'p> Checker<'p> {
                 None
             };
             let param_pos = self.pos(pattern.span());
+            let async_origins = if self.apparent_type(p.ty()).holds_async_handle() {
+                HashSet::from([fx.register_async_origin(param_pos.clone())])
+            } else {
+                HashSet::new()
+            };
             self.declare_local(
                 &p.name,
                 Local {
                     annotated: p.annotated,
                     ty: p.ty().clone(),
                     mutable: true,
-                    async_origins: HashSet::new(),
+                    async_origins,
                     caught: false,
                     function_value_required: None,
                 },
@@ -342,10 +347,7 @@ impl<'p> Checker<'p> {
                             ret = Some(expected);
                         }
                     }
-                    if matches!(
-                        self.apparent_type(&checked.ty),
-                        Type::AsyncHandle(_) | Type::Array(_)
-                    ) {
+                    if self.transfers_async_origins(&checked.ty) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
@@ -400,31 +402,7 @@ impl<'p> Checker<'p> {
         fx.shadowed_narrowing_scopes.remove(&fx.scopes.len());
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
-        let unhandled = fx.async_origins[origin_start..]
-            .iter()
-            .filter(|(_, handled)| !*handled)
-            .map(|(pos, _)| pos.clone())
-            .collect::<Vec<_>>();
-        for origin in unhandled {
-            let group = fx.group_origins.iter().any(|id| {
-                fx.async_origins
-                    .get(*id as usize)
-                    .is_some_and(|(pos, _)| *pos == origin)
-            });
-            self.reject_subset(
-                if group {
-                    RejectionSite::TaskGroupUnjoined
-                } else {
-                    RejectionSite::AsyncHandleUnawaited
-                },
-                if group {
-                    "a task group requires a join in its declaring scope"
-                } else {
-                    "an async handle is dropped without any await of its completion"
-                },
-                origin,
-            );
-        }
+        self.report_unhandled_async_origins(fx, origin_start);
         fx.async_origins.truncate(origin_start);
         fx.group_origins.retain(|id| (*id as usize) < origin_start);
         let ret = ret.unwrap_or(Type::Error);

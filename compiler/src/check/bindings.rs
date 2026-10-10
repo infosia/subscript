@@ -245,6 +245,7 @@ impl<'p> Checker<'p> {
         let name = format!("[[pattern#{id}.source]]");
         let ty = source.ty.clone();
         let pos = source.pos.clone();
+        self.declare_pattern_storage(&name, &ty, self.expr_async_origins(&source, fx), fx);
         let place = hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Local(name.clone(), ty.clone(), false),
@@ -260,6 +261,34 @@ impl<'p> Checker<'p> {
             pos,
         });
         self.bind_pattern_from(pattern, &place, mutable, annotated, fx, out);
+    }
+
+    /// Gives checker-generated pattern storage the origins of the value
+    /// that it holds, so each name bound out of it carries them
+    /// (`compiler.md` §188.1 rule 2). Storage with no origin stays
+    /// undeclared.
+    pub(crate) fn declare_pattern_storage(
+        &mut self,
+        name: &str,
+        ty: &Type,
+        async_origins: HashSet<u32>,
+        fx: &mut FnCtx,
+    ) {
+        if async_origins.is_empty() {
+            return;
+        }
+        self.declare_in_context(
+            name,
+            Local {
+                annotated: false,
+                ty: ty.clone(),
+                mutable: false,
+                async_origins,
+                caught: false,
+                function_value_required: None,
+            },
+            fx,
+        );
     }
 
     pub(super) fn resolution_error(

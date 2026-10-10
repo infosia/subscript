@@ -289,32 +289,7 @@ impl<'p> Checker<'p> {
                 Vec::new()
             }
         };
-        let unhandled = fx
-            .async_origins
-            .iter()
-            .filter(|(_, handled)| !*handled)
-            .map(|(pos, _)| pos.clone())
-            .collect::<Vec<_>>();
-        for origin in unhandled {
-            let group = fx.group_origins.iter().any(|id| {
-                fx.async_origins
-                    .get(*id as usize)
-                    .is_some_and(|(pos, _)| *pos == origin)
-            });
-            self.reject_subset(
-                if group {
-                    RejectionSite::TaskGroupUnjoined
-                } else {
-                    RejectionSite::AsyncHandleUnawaited
-                },
-                if group {
-                    "a task group requires a join in its declaring scope"
-                } else {
-                    "an async handle is dropped without any await of its completion"
-                },
-                origin,
-            );
-        }
+        self.report_unhandled_async_origins(&fx, 0);
         let body = if has_dispose_binding(&body) {
             using_scope::structure(body, &mut self.next_using_switch_id)
         } else {
@@ -358,6 +333,36 @@ impl<'p> Checker<'p> {
             body,
             pos,
         })
+    }
+
+    /// Reports each origin from `start` on that its body does not
+    /// discharge, at the site of the origin (`compiler.md` §188.1 rule 4).
+    pub(in crate::check) fn report_unhandled_async_origins(&mut self, fx: &FnCtx, start: usize) {
+        let unhandled = fx.async_origins[start..]
+            .iter()
+            .filter(|(_, handled)| !*handled)
+            .map(|(pos, _)| pos.clone())
+            .collect::<Vec<_>>();
+        for origin in unhandled {
+            let group = fx.group_origins.iter().any(|id| {
+                fx.async_origins
+                    .get(*id as usize)
+                    .is_some_and(|(pos, _)| *pos == origin)
+            });
+            self.reject_subset(
+                if group {
+                    RejectionSite::TaskGroupUnjoined
+                } else {
+                    RejectionSite::AsyncHandleUnawaited
+                },
+                if group {
+                    "a task group requires a join in its declaring scope"
+                } else {
+                    "an async handle is dropped without any await of its completion"
+                },
+                origin,
+            );
+        }
     }
 
     /// Declares parameters as locals and checks default values. Answers
@@ -405,7 +410,7 @@ impl<'p> Checker<'p> {
                     annotated: ps.annotated,
                     ty: ps.ty().clone(),
                     mutable: true,
-                    async_origins: if self.apparent_type(ps.ty()).carries_async_handle() {
+                    async_origins: if self.apparent_type(ps.ty()).holds_async_handle() {
                         HashSet::from([fx.register_async_origin(pos.clone())])
                     } else {
                         HashSet::new()
@@ -656,13 +661,18 @@ impl<'p> Checker<'p> {
                             }
                         };
                         let param_pos = self.pos(param.span);
+                        let async_origins = if self.apparent_type(ps.ty()).holds_async_handle() {
+                            HashSet::from([fx.register_async_origin(param_pos.clone())])
+                        } else {
+                            HashSet::new()
+                        };
                         self.declare_local(
                             &ps.name,
                             Local {
                                 annotated: ps.annotated,
                                 ty: ps.ty().clone(),
                                 mutable: true,
-                                async_origins: HashSet::new(),
+                                async_origins,
                                 caught: false,
                                 function_value_required: None,
                             },
@@ -688,6 +698,7 @@ impl<'p> Checker<'p> {
                             self.check_stmt(s, &mut fx, &mut body);
                         }
                     }
+                    self.report_unhandled_async_origins(&fx, 0);
                     if has_dispose_binding(&body) {
                         body = using_scope::structure(body, &mut self.next_using_switch_id);
                     }

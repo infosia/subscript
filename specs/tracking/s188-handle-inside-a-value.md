@@ -362,3 +362,109 @@ async function make(): Promise<Holder> { return new Holder([WORK]); }
 ```
 
 Each `main` ends with `print("end")` (`print("main end")` in 1.2).
+
+## Implementation
+
+Contract: `compiler.md` §188, pin `5149dfb3`. The checker implements
+option "A+store" of part 3.1. LIR, codegen, the runtime, and the
+interpreter do not change.
+
+### Checker
+
+- `Type::holds_async_handle` (rule 1): `Promise<T>`, and `T[]`,
+  `FixedArray<T, N>`, or an iterator result whose element holds a
+  handle, at any depth. `Map`, `Set`, and `Generator` do not hold one.
+- Origins (rule 2):
+  - a call result whose type holds a handle, at each site that the pin
+    tracks (`track_async_call_result`): a source function, an indirect
+    call, a method, a completion function, a file-module function;
+  - an `await` result whose type holds a handle;
+  - a parameter of a function, a method, a constructor, or a lambda
+    (a `then`, `catch`, or `finally` callback included) whose type
+    holds a handle;
+  - the hidden storage of a declaration pattern and of a `for…of`
+    pattern carries the origins of its initializer or subject.
+- A built-in method result is not an origin: `pop()`, `shift()`,
+  `next()` on a generator, and `Map.get` read a value that is already
+  held. g03–g05 and `a339` stay accepted for this reason.
+- Discharges (rule 3): the argument and `return` sites accept a type
+  that holds a handle or a dynamic array. A store into a field, into a
+  module global, or into an element under a field or a global
+  discharges the stored origins. A store into an element of a local,
+  at any index depth, adds the origins to the local.
+- S013 (rule 4): one function reports each origin that its body does
+  not discharge, for a function, a lambda, and a constructor body. At
+  the pin a constructor body reported no origin.
+
+### Corpus
+
+| Id | Pin `5149dfb3` (three tiers) | HEAD |
+|---|---|---|
+| `r414-await-result-handle-array-in-place` | accepted, `2`, `end` | S013 at 10:13 |
+| `r415-destructured-await-result-dropped` | accepted, `end` | S013 at 10:19 |
+| `r416-then-callback-handle-parameter` | accepted, `2 end` | S013 at 10:32 |
+| `r417-constructor-handle-parameter` | accepted, `1 end` | S013 at 10:15 |
+| `r418-nested-handle-array-call-result` | accepted, `1 end` | S013 at 10:12 |
+| `a364-handle-field-store-awaited` | 1 S013 at 14:11 | `0`, `1`, `end` |
+| `a365-handle-global-store-awaited` | 2 S013 at 8:31, 8:40 | `1 2`, `end` |
+| `a366-fixed-array-handle-return` | 2 S013 at 8:46, 8:55 | `1 2`, `end` |
+| `a367-destructured-call-result-awaited` | 1 S013 at 9:18 | `1 2`, `end` |
+
+`r415` binds element 0 and drops element 1, and no binding is awaited.
+A destructured `await` result with one binding awaited is accepted
+(f10, rule 5). `node` v24.18.0 prints each `.expected` of the four
+accept entries; each is `js-comparable: yes`. `tsc` 5.9.2 accepts the
+nine programs. The three tiers print the `.expected` of each accept
+entry.
+
+`subscript check` over the accept, warn, trap, reject, and example
+files: the output of HEAD and of the pin differs only for the nine new
+entries. The LIR text golden (`codegen/tests/lir-goldens/corpus.txt`)
+adds the four new async accept entries; the text of each other entry
+does not change.
+
+### Tests
+
+- `compiler/tests/async_handle_origins.rs`: each origin kind and each
+  discharge, with a control in the same shape. Each dropped program
+  has exactly one S013 at the marked origin site. The runtime cases
+  f10, f16, f22, f23, and g03–g05 check; h03 and k10 stay S013.
+- `codegen/src/interpreter/counted_measurement_tests.rs`:
+  - The inline holder rows drop an `await` result (`await outer;`,
+    `await make();`), which rule 2 rejects. Each row now binds the
+    result and awaits it under `if (false)`, so the checker sees one
+    await and the run still drops the value.
+  - The fresh index rows (`stored[0]=work()`, `o.jobs[0]=work()`,
+    `n[0][0]=work()`) were S013 at the pin. Rule 3 accepts them; the
+    test runs each in the three tiers with 0 retained tasks.
+- `compiler/tests/counted_capture_block.rs`: the `Holder` constructor
+  body called `g()` and dropped the handle. The body is now empty, so
+  the test reports only its S009.
+- `compiler/tests/generic_tsc_matrix/destinations.rs`: 1,494 omitted
+  concrete instances (1,488 at the pin). The six new ones have a
+  `FixedArray<Promise<i32>, 2>` parameter that their body does not
+  discharge.
+
+### Checker cost
+
+Release CLI, `subscript check` of each accept entry in series, best of
+three, with the mirror and module options that each entry needs:
+
+| Set | Pin | HEAD |
+|---|---|---|
+| 351 entries that both accept | 1.510 s | 1.513 s |
+| 355 entries (HEAD) | — | 1.526 s |
+
+Dense program: 1,000 async functions that each destructure an `await`
+result, iterate an `await` result, and call a lambda with a
+handle-array parameter. Best of three: pin 114.2 ms, HEAD 117.8 ms
+(1.03 of the pin).
+
+### Open
+
+1. A built-in method result is not an origin (see Checker). Rule 2
+   says "any callee".
+2. `specs/tracking/s172-reference-holders.md` names the test
+   `measured_fresh_index_positions_still_have_no_accepted_form`. Its
+   name is now
+   `measured_fresh_index_positions_are_accepted_and_release_every_task`.

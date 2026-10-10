@@ -290,6 +290,11 @@ type is rejected with a divergence. Other combinators and the
 adoption of a thenable stay rejected; a class's own `then` method is
 an ordinary method. Accept adds `a357`–`a361`; reject adds
 `r402`–`r404`; `r97` is rewritten to `then(null, r)`.
+*Revised 2026-10-11 (§188):* a value of a type that holds a handle (an
+`await` result, a call result, a lambda or constructor parameter, a
+pattern binding) is an S013 origin, and a store into a field or a
+module global discharges it. Accept adds `a364`–`a367`; reject adds
+`r414`–`r418`.
 
 ### C9. Field initializers — every construction, earlier fields through `this`
 

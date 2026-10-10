@@ -124,6 +124,23 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
+    (
+        "r414-await-result-handle-array-in-place.ts",
+        RuleCode::S013,
+        10,
+    ),
+    (
+        "r415-destructured-await-result-dropped.ts",
+        RuleCode::S013,
+        10,
+    ),
+    ("r416-then-callback-handle-parameter.ts", RuleCode::S013, 10),
+    ("r417-constructor-handle-parameter.ts", RuleCode::S013, 10),
+    (
+        "r418-nested-handle-array-call-result.ts",
+        RuleCode::S013,
+        10,
+    ),
     ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
     ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),

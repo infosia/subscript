@@ -407,18 +407,20 @@ impl<'p> Checker<'p> {
                 "the assignment",
             );
         }
-        if op.is_none() && self.apparent_type(&target_ty).carries_async_handle() {
+        if op.is_none() && self.apparent_type(&target_ty).holds_async_handle() {
             let origins = self.expr_async_origins(&value, fx);
+            // §188.1 rule 3: a local takes the origins; an element of a
+            // local array adds them; a field or a module global discharges them.
             match &target.kind {
                 ExprKind::Local(name, _, _) => fx.set_local_async_origins(name, origins),
-                ExprKind::Index { obj, .. } => {
-                    if let ExprKind::Local(name, _, _) = &obj.kind {
+                _ => match local_element_root(&target) {
+                    Some(name) => {
                         let mut stored = fx.local_async_origins(name);
                         stored.extend(origins);
                         fx.set_local_async_origins(name, stored);
                     }
-                }
-                _ => {}
+                    None => fx.handle_async_origins(&origins),
+                },
             }
         }
         if let Some(key) = path_key(&target) {
@@ -845,5 +847,18 @@ impl<'p> Checker<'p> {
         }
         self.check_namespace_member(obj, prop, prop_pos, fx, true)
             .map(Place::StaticField)
+    }
+}
+
+/// Returns the local array that an element store writes into, through
+/// element reads only. A path through a field or a global has no root.
+fn local_element_root(target: &hir::Expr) -> Option<&str> {
+    match &target.kind {
+        ExprKind::Index { obj, .. } => match &obj.kind {
+            ExprKind::Local(name, _, _) => Some(name),
+            ExprKind::Index { .. } => local_element_root(obj),
+            _ => None,
+        },
+        _ => None,
     }
 }

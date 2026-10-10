@@ -1558,10 +1558,7 @@ impl<'p> Checker<'p> {
             self.generic_callback_context = saved_context;
             if let Some(param_ty) = param_ty {
                 self.require_expr_assignable(&checked, &param_ty, fx, "the argument");
-                if matches!(
-                    &self.apparent_type(&param_ty),
-                    Type::AsyncHandle(_) | Type::Array(_)
-                ) {
+                if self.transfers_async_origins(&param_ty) {
                     let origins = self.expr_async_origins(&checked, fx);
                     fx.handle_async_origins(&origins);
                 }

@@ -275,9 +275,9 @@ function sync(h:Promise<void>):{shape} {{stored.push(h);stored.pop();return {pay
                     source.push_str("const h=work();await h;const outer=sync(h);\n");
                     source.push_str(&format!("{{const v=outer;if(false){{await {inner};}}}}\n"));
                 } else {
-                    source.push_str(
-                        "const outer=make();if(false){await outer;}await Context.suspend();\n",
-                    );
+                    source.push_str(&format!(
+                        "const outer=make();if(false){{const v=await outer;await {inner};}}await Context.suspend();\n"
+                    ));
                 }
                 for _ in 0..reads {
                     source.push_str(if control {
@@ -291,7 +291,9 @@ function sync(h:Promise<void>):{shape} {{stored.push(h);stored.pop();return {pay
                 main.push_str(&format!("await {name}();\n"));
             }
         }
-        source.push_str("async function discard():Promise<void>{await make();}\n");
+        source.push_str(&format!(
+            "async function discard():Promise<void>{{const v=await make();if(false){{await {inner};}}}}\n"
+        ));
         main.push_str("await discard();}\n");
         source.push_str(&main);
         let label = shape.replace(['<', '>', '[', ']', ','], "_");
@@ -454,7 +456,7 @@ function same(a:Promise<void>[]):Promise<void>{const keep=a[0];a[0]=keep;return 
 }
 
 #[test]
-fn measured_fresh_index_positions_still_have_no_accepted_form() {
+fn measured_fresh_index_positions_are_accepted_and_release_every_task() {
     for (label, setup, receiver, cleanup) in [
         ("global", "stored=a;", "stored", "stored=[];"),
         ("field", "const o=new Box(a);", "o.jobs", "Context.free(o);"),
@@ -468,16 +470,11 @@ fn measured_fresh_index_positions_still_have_no_accepted_form() {
         let source = |value| {
             format!("async function work():Promise<void>{{return;}}\nlet stored:Promise<void>[]=[];\nclass Box{{jobs:Promise<void>[];constructor(a:Promise<void>[]){{this.jobs=a;}}}}\nasync function use():Promise<void>{{const h=work();await h;const a:Promise<void>[]=[work()];await a[0];{setup}await {receiver}[0];{receiver}[0]={value};await {receiver}[0];{cleanup}}}\nexport async function main():Promise<void>{{await use();}}")
         };
-        let control = source("h");
-        check_program(&[SourceFile::new("fresh-index.ts", control.clone())])
-            .expect("observed-local control");
-        let errors = check_program(&[SourceFile::new("fresh-index.ts", source("work()"))])
-            .expect_err("measured S013 form");
-        assert!(
-            errors.iter().any(|error| error.code.to_string() == "S013"),
-            "{label}: {errors:?}"
-        );
-        zero_in_three_tiers(&format!("observed-index-{label}"), &control);
+        // compiler.md §188.1 rule 3: a store into a field or a module
+        // global discharges the fresh task; a store into an element of a
+        // local adds it to the local, which the next await discharges.
+        zero_in_three_tiers(&format!("observed-index-{label}"), &source("h"));
+        zero_in_three_tiers(&format!("fresh-index-{label}"), &source("work()"));
     }
 }
 

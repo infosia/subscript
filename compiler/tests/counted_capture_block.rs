@@ -160,7 +160,7 @@ fn nested_blocks_keep_binding_identity_when_names_repeat() {
 
 #[test]
 fn a_constructor_result_carries_its_argument_blocks() {
-    let prelude = format!("{PRELUDE} class Holder {{ cb: () => Promise<i32> = work; constructor(g: () => Promise<i32>) {{ g(); }} }}");
+    let prelude = format!("{PRELUDE} class Holder {{ cb: () => Promise<i32> = work; constructor(g: () => Promise<i32>) {{ }} }}");
     rejected(&format!("{prelude} export function main(): void {{ let f = new Holder(work); {{ const h = work(); const g = () => h; f = new Holder(g); }} }}"), 1);
     accepted(&format!("{prelude} export function main(): void {{ {{ const h = work(); const g = () => h; let f = new Holder(work); f = new Holder(g); }} }}"));
 }

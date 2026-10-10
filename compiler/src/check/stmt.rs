@@ -508,10 +508,7 @@ impl<'p> Checker<'p> {
                 } else {
                     let checked = self.check_expr(arg, Some(&ret), fx);
                     self.require_return_assignable(&checked, &ret, fx);
-                    if matches!(
-                        self.apparent_type(&checked.ty),
-                        Type::AsyncHandle(_) | Type::Array(_)
-                    ) {
+                    if self.transfers_async_origins(&checked.ty) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
@@ -1011,6 +1008,7 @@ impl<'p> Checker<'p> {
         };
         let mut prologue = Vec::new();
         if pattern.is_destructuring() {
+            self.declare_pattern_storage(&name, &elem_ty, binding_async_origins, fx);
             let element = hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Local(name.clone(), elem_ty.clone(), false),

@@ -87,12 +87,22 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// True when a value of the type discharges its origins at an argument
+    /// or a `return`: the type holds a handle or is a dynamic array
+    /// (`compiler.md` §188.1 rule 3).
+    pub(crate) fn transfers_async_origins(&self, ty: &Type) -> bool {
+        let ty = self.apparent_type(ty);
+        ty.holds_async_handle() || matches!(ty, Type::Array(_))
+    }
+
+    /// Makes a value whose type holds a handle an origin
+    /// (`compiler.md` §188.1 rule 2).
     pub(crate) fn track_async_call_result(
         &mut self,
         value: hir::Expr,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        if !self.apparent_type(&value.ty).carries_async_handle() {
+        if !self.apparent_type(&value.ty).holds_async_handle() {
             return value;
         }
         let pos = value.pos.clone();
@@ -409,7 +419,12 @@ impl<'p> Checker<'p> {
             }
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
-            ast::Expr::Await(a) => self.check_await(a, fx, pos),
+            ast::Expr::Await(a) => {
+                // §188.1 rule 2: an `await` result that holds a handle is
+                // an origin.
+                let value = self.check_await(a, fx, pos);
+                self.track_async_call_result(value, fx)
+            }
             ast::Expr::TsNonNull(t) => {
                 let p = self.pos(t.span);
                 self.reject_subset(
