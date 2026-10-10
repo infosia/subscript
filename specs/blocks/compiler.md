@@ -231,3 +231,4 @@ Every section, with its status:
 | §187 | A field with no read lowering is not read | active | [`s187-a-field-with-no-read-lowering-is-not-read.md`](compiler/s187-a-field-with-no-read-lowering-is-not-read.md) |
 | §188 | A handle inside a value has an origin | active | [`s188-a-handle-inside-a-value-has-an-origin.md`](compiler/s188-a-handle-inside-a-value-has-an-origin.md) |
 | §189 | The `boundary` command shows each crossing | active | [`s189-the-boundary-command-shows-each-crossing.md`](compiler/s189-the-boundary-command-shows-each-crossing.md) |
+| §190 | A dev run forks only a single-threaded process | active | [`s190-a-dev-run-forks-only-a-single-threaded-process.md`](compiler/s190-a-dev-run-forks-only-a-single-threaded-process.md) |

@@ -336,6 +336,11 @@ caller's process, no later work removes the limit.
 Both criteria now read: **output survives each termination mode on each
 tier that isolates the run.**
 
+*(Amended by §190.)* On Unix, the dev tier forks only a single-threaded
+caller. A multithreaded caller runs a program without a native library
+in a runner process, which retains output. A multithreaded caller
+cannot run a program with a native library: the run returns an error.
+
 **Consequence for tests.** A test that asserts dev-tier retention must
 obtain its run through one shared helper. That helper's return type must
 express "this configuration does not isolate the dev run". A call site
