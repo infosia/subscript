@@ -164,12 +164,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .foreign_symbols
                 .push(declaration.source_name.clone());
         }
-        let needs_scratch = declaration.parameters.iter().try_fold(
-            false,
-            |needed, parameter| -> Result<bool, String> {
-                Ok(needed || boundary_type_requires_build(self.emitter.module, &parameter.ty)?)
-            },
-        )?;
+        // §187 rule 7: the scratch scope opens only for a call whose build
+        // can allocate.
+        let needs_scratch = declaration
+            .parameters
+            .iter()
+            .any(|parameter| boundary_type_builds_scratch(self.emitter.module, &parameter.ty));
         let scratch_mark = if needs_scratch {
             let mark = self.fresh();
             let call = self.emitter.runtime_call(
@@ -184,6 +184,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             None
         };
         let boundary_position = self.emitter.pos_id(&instruction.pos);
+        self.boundary_targets = Some(BoundaryTargets::default());
+        // The marshalling goes to its own buffer, so the variables of each
+        // written-back target are declared before the first of them.
+        let outer = out;
+        let mut marshalled = String::new();
+        let out = &mut marshalled;
         let mut arguments = Vec::new();
         let mut boundary_writebacks = Vec::new();
         let mut cursor = 0usize;
@@ -222,14 +228,30 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     )));
                 }
                 let (data, count) = match element.as_ref() {
-                    Type::Class(class)
-                        if self.emitter.is_value_class(*class)?
-                            && !crate::lir::copies_boundary_bytes(
-                                self.emitter.module,
-                                &Type::Class(*class),
-                            ) =>
-                    {
-                        self.marshal_boundary_array(out, *class, data, count, boundary_position)?
+                    Type::Class(class) if self.elements_need_scratch(element)? => {
+                        // §187 rule 7: the call does not write `const`
+                        // elements back.
+                        let writable = !matches!(
+                            parameter.foreign_provenance.as_ref(),
+                            Some(
+                                l::ForeignTypeProvenance::Descriptor {
+                                    element_const: true,
+                                    ..
+                                } | l::ForeignTypeProvenance::ScalarPair {
+                                    element_const: true,
+                                    ..
+                                }
+                            )
+                        );
+                        let elements = self.element_pass(*class, writable);
+                        self.marshal_boundary_array(
+                            out,
+                            *class,
+                            elements,
+                            data,
+                            count,
+                            boundary_position,
+                        )?
                     }
                     _ => (data.clone(), count.clone()),
                 };
@@ -306,6 +328,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 declaration.source_name
             )));
         }
+        let targets = self.boundary_targets.take().unwrap_or_default();
+        let out = outer;
+        out.push_str(&targets.declarations);
+        out.push_str(&marshalled);
         let call = format!("{}({})", declaration.source_name, arguments.join(", "));
         match &declaration.return_type {
             ty if subscript_compiler::types::boundary_kind(ty)
@@ -325,9 +351,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             _ => self.assign(out, result.clone(), &call)?,
         }
-        if !boundary_writebacks.is_empty() {
+        if !boundary_writebacks.is_empty() || !targets.targets.is_empty() {
             out.push_str("    if (*(const uint32_t*)ctx == 0u) {\n");
-            for writeback in boundary_writebacks {
+            // The parameters first, then each nested target, the last one
+            // built first.
+            for writeback in boundary_writebacks
+                .into_iter()
+                .chain(targets.targets.into_iter().rev())
+            {
                 self.emit_boundary_writeback(out, writeback, boundary_position)?;
             }
             out.push_str("    }\n");

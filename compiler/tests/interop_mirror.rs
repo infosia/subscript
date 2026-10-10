@@ -215,6 +215,9 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subRequestMarkLiveBytes",
             "subRequestLiveBytesFellBy",
             "subRequestReleaseAndRefire",
+            // §187 rule 5: input structs whose members have no read lowering.
+            "subDescReadLayTotal",
+            "subDescReadStrTotal",
         ]
     );
 

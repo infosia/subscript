@@ -629,6 +629,10 @@ pub enum Divergence {
     ForeignDirectCallback,
     /// A foreign string-view, descriptor, or callback return has no return provenance in the boundary vocabulary.
     ForeignReturnProvenance,
+    /// C writes a struct the script reads; no read lowering exists for its pair, view, callback, descriptor, userdata, or validated-pair member (§187).
+    ForeignResultRead,
+    /// A call builds each scratch copy once; a struct that reaches itself through pointers it must copy has no finite scratch build (§187 rule 9).
+    ForeignStructCycle,
     /// An async function uses a Promise<T> return view; an async generator needs an async iterator return view.
     AsyncGeneratorFunction,
     /// An async function must declare its suspendable return view with an explicit Promise<T> annotation.
@@ -786,6 +790,16 @@ pub enum Divergence {
     ProvenanceEmptyCEnum,
     /// One CEnum typedef has one provenance record.
     ProvenanceDuplicateCEnum,
+    /// A member record names a non-empty aggregate and member.
+    ProvenanceEmptyMember,
+    /// One boundary-struct member has one member record.
+    ProvenanceDuplicateMember,
+    /// A member record must name a field of a boundary class of its mirror.
+    MirrorMemberTargetMissing,
+    /// A pointer-parameter record names a non-empty function and parameter.
+    ProvenanceEmptyPointerParameter,
+    /// One pointer parameter has one pointer-parameter record.
+    ProvenanceDuplicatePointerParameter,
 
     /// Iteration requires a declared container or string type; literal unions have no traversal representation.
     IterationSubjectDomain,
@@ -1321,6 +1335,8 @@ impl Divergence {
         Divergence::WireAliasNestedForeignReturn,
         Divergence::ForeignDirectCallback,
         Divergence::ForeignReturnProvenance,
+        Divergence::ForeignResultRead,
+        Divergence::ForeignStructCycle,
         Divergence::AsyncGeneratorFunction,
         Divergence::AsyncReturnAnnotationMissing,
         Divergence::OptionalParameter,
@@ -1405,6 +1421,11 @@ impl Divergence {
         Divergence::ProvenanceDuplicateExternalType,
         Divergence::ProvenanceEmptyCEnum,
         Divergence::ProvenanceDuplicateCEnum,
+        Divergence::ProvenanceEmptyMember,
+        Divergence::ProvenanceDuplicateMember,
+        Divergence::MirrorMemberTargetMissing,
+        Divergence::ProvenanceEmptyPointerParameter,
+        Divergence::ProvenanceDuplicatePointerParameter,
         Divergence::IterationSubjectDomain,
         Divergence::FixedArrayMethods,
         Divergence::CompilerOwnedValue,

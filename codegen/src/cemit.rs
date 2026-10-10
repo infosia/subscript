@@ -17,7 +17,7 @@ use crate::layout::{is_unsigned, type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, borrowed_capture_parameters,
-    boundary_class_contains_pointer, boundary_type_requires_build, capture_parameters, data_type,
+    boundary_class_contains_pointer, boundary_type_builds_scratch, capture_parameters, data_type,
     explicit_parameters, foreign_parameter_type_matches, is_userdata_slot, operand_type,
     runtime_trap_kind, value_type,
 };
@@ -147,6 +147,23 @@ struct BoundaryPtrWriteback {
     class: ClassId,
     source: String,
     scratch: String,
+    /// The bytes that the call put in `scratch` before the call.
+    snapshot: String,
+}
+
+/// The scratch copies of pointer targets that the build of one foreign
+/// call writes back (§187 rule 7). No pair of such elements reaches code
+/// generation (rule 11), so the count of the copies is static: each one
+/// declares its variables in `declarations`, at the scope of the call,
+/// and the call writes back each target by code after the call.
+#[derive(Default)]
+struct BoundaryTargets {
+    /// The declarations of the variables of each copy, initialized to null.
+    declarations: String,
+    /// The copies in build order.
+    targets: Vec<BoundaryPtrWriteback>,
+    /// The depth of element loops that the build is in.
+    elements: u32,
 }
 
 fn local_contains_managed(layouts: &Layouts, ty: &l::ValueType) -> Result<bool, String> {
@@ -189,6 +206,8 @@ struct Body<'e, 'm, 'f> {
     /// Whether `emit_storage` declared a shadow-root frame. `emit_pop`
     /// reads the same fact, so push and pop cannot disagree.
     shadow_frame: bool,
+    /// The written-back targets of the foreign call that emits now.
+    boundary_targets: Option<BoundaryTargets>,
 }
 
 enum EdgeCopySource {

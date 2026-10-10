@@ -50,6 +50,41 @@ pub(super) const PROVENANCEEMPTYCENUM: DivergenceEntry = DivergenceEntry {
                 collision: "compiler.md §23.3",
             };
 
+pub(super) const PROVENANCEDUPLICATEPOINTERPARAMETER: DivergenceEntry = DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-parameter function=\"f\" parameter=\"p\" const=false\n// @subscript-c-parameter function=\"f\" parameter=\"p\" const=false\n// file: main.ts\nexport function main():void{}",
+                subscript: "no equivalent; regenerate the mirror from its C header",
+                why: "One pointer parameter has one pointer-parameter record.",
+                collision: "compiler.md §187",
+            };
+
+pub(super) const PROVENANCEEMPTYPOINTERPARAMETER: DivergenceEntry = DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-parameter function=\"\" parameter=\"p\" const=false\n// file: main.ts\nexport function main():void{}",
+                subscript: "no equivalent; regenerate the mirror from its C header",
+                why: "A pointer-parameter record names a non-empty function and parameter.",
+                collision: "compiler.md §187",
+            };
+
+pub(super) const MIRRORMEMBERTARGETMISSING: DivergenceEntry = DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"x.h\"\n// @subscript-c-member aggregate=\"Missing\" member=\"m\" const=true\ndeclare function foreign():void;\n// file: main.ts\nexport function main():void{}",
+                subscript: "no equivalent; regenerate the mirror from its C header",
+                why: "A member record must name a field of a boundary class of its mirror.",
+                collision: "compiler.md §187",
+            };
+
+pub(super) const PROVENANCEDUPLICATEMEMBER: DivergenceEntry = DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-member aggregate=\"A\" member=\"m\" const=true\n// @subscript-c-member aggregate=\"A\" member=\"m\" const=true\n// file: main.ts\nexport function main():void{}",
+                subscript: "no equivalent; regenerate the mirror from its C header",
+                why: "One boundary-struct member has one member record.",
+                collision: "compiler.md §187",
+            };
+
+pub(super) const PROVENANCEEMPTYMEMBER: DivergenceEntry = DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-member aggregate=\"\" member=\"m\" const=true\n// file: main.ts\nexport function main():void{}",
+                subscript: "no equivalent; regenerate the mirror from its C header",
+                why: "A member record names a non-empty aggregate and member.",
+                collision: "compiler.md §187",
+            };
+
 pub(super) const PROVENANCEDUPLICATECENUM: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-cenum typedef=\"T\" alias=\"E\"\n// @subscript-c-cenum typedef=\"T\" alias=\"E\"\n// file: main.ts\nexport function main():void{}",
                 subscript: "no equivalent; regenerate the mirror from its C header",

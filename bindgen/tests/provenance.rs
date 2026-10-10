@@ -724,8 +724,10 @@ fn recursive_render_pipeline_struct_pointer_evidence_shape() {
     ), "{mirror}");
 }
 
+/// §187 rule 2: the copy-back of a scratch fill materializes a string view
+/// at any depth of by-value embedding.
 #[test]
-fn recursive_read_direction_fails_loud_at_innermost_member() {
+fn recursive_embedded_string_view_has_a_fill_read_lowering() {
     let header = "
         #include <stddef.h>
         typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
@@ -736,20 +738,14 @@ fn recursive_read_direction_fails_loud_at_innermost_member() {
         } SGPUComputePipelineDescriptor;
         void sgpuReadRecursive(SGPUComputePipelineDescriptor *descriptor);
     ";
-    let error = generate_for_header(header, "pipeline.h")
-        .expect_err("mutable recursive scratch positions have no read lowering");
-    assert!(
-        error.to_string().contains(
-            "parameter `descriptor` may read recursively-lowered member \
-             `SGPUComputeState.entryPoint`"
-        ),
-        "{error}"
-    );
-    assert!(error.to_string().contains("script-to-C"), "{error}");
+    generate_for_header(header, "pipeline.h")
+        .expect("an embedded string view under a fill has a copy-back read lowering");
 }
 
+/// §187 rule 11: C can write the elements of a mutable pair of scratch
+/// elements, so the pair is rejected before the walk reaches its elements.
 #[test]
-fn recursive_pair_element_read_direction_fails_loud_at_innermost_member() {
+fn recursive_pair_element_read_direction_fails_loud_at_the_pair() {
     let header = "
         #include <stddef.h>
         typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
@@ -764,33 +760,43 @@ fn recursive_pair_element_read_direction_fails_loud_at_innermost_member() {
         .expect_err("mutable recursively lowered elements have no read lowering");
     assert!(
         error.to_string().contains(
-            "field `constants` has mutable recursively-lowered pair elements and may read \
-             `SGPUConstantEntry.key`"
+            "foreign function `sgpuReadConstants` parameter `stage` reads \
+             `SGPUProgrammableStage.constants`, a pair whose elements the call copies in \
+             and back one by one"
         ),
         "{error}"
     );
 }
 
+/// §187 rule 1: under a fill, C writes the target of a non-`const` pointer
+/// member, and a string view below it has no read lowering. C only reads
+/// the target of a `const` member, so the twin binds.
 #[test]
 fn recursive_struct_pointer_read_direction_fails_loud_at_innermost_member() {
-    let header = "
+    let header = |qualifier: &str| {
+        format!(
+            "
         #include <stddef.h>
-        typedef struct SGPUStringView { const char *data; size_t len; } SGPUStringView;
-        typedef struct SGPUFragmentState { SGPUStringView entryPoint; } SGPUFragmentState;
-        typedef struct SGPURenderPipelineDescriptor {
-            const SGPUFragmentState *fragment;
-        } SGPURenderPipelineDescriptor;
+        typedef struct SGPUStringView {{ const char *data; size_t len; }} SGPUStringView;
+        typedef struct SGPUFragmentState {{ SGPUStringView entryPoint; }} SGPUFragmentState;
+        typedef struct SGPURenderPipelineDescriptor {{
+            {qualifier}SGPUFragmentState *fragment;
+        }} SGPURenderPipelineDescriptor;
         void sgpuReadRecursive(SGPURenderPipelineDescriptor *descriptor);
-    ";
-    let error = generate_for_header(header, "pipeline.h")
-        .expect_err("mutable pointer-reachable scratch positions have no read lowering");
+    "
+        )
+    };
+    let error = generate_for_header(&header(""), "pipeline.h")
+        .expect_err("a mutable pointer target under a fill has no string-view read lowering");
     assert!(
         error.to_string().contains(
-            "parameter `descriptor` may read recursively-lowered member \
-             `SGPUFragmentState.entryPoint`"
+            "foreign function `sgpuReadRecursive` parameter `descriptor` reads \
+             `SGPUFragmentState.entryPoint`, a string-view field with no read lowering"
         ),
         "{error}"
     );
+    generate_for_header(&header("const "), "pipeline.h")
+        .expect("C only reads the target of a `const` pointer member");
 }
 
 #[test]
@@ -808,8 +814,9 @@ fn mutable_recursive_struct_pointer_target_fails_loud_at_innermost_member() {
         .expect_err("mutable pointer targets have no recursive read lowering");
     assert!(
         error.to_string().contains(
-            "field `fragment` has a mutable recursively-lowered pointer target and may read \
-             `SGPUFragmentState.entryPoint`"
+            "foreign function `sgpuUse` parameter `descriptor` through \
+             `SGPURenderPipelineDescriptor.fragment` reads `SGPUFragmentState.entryPoint`, a \
+             string-view field with no read lowering"
         ),
         "{error}"
     );
@@ -826,17 +833,13 @@ fn unsupported_recursive_member_names_the_innermost_field() {
         void sgpuUse(const SGPUOuter *outer);
     ";
     let error = generate_for_header(header, "pipeline.h")
-        .expect_err("recursive callback member has no write lowering");
+        .expect_err("recursive callback member has an unsupported callback shape");
+    // §187 rules 8 and 15: the scratch build lowers a nested callback field
+    // of the supported shape, so the callback shape rule names this one.
     assert!(
         error
             .to_string()
-            .contains("`SGPUInner.callback` which is a callback"),
-        "{error}"
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("no write-direction scratch lowering"),
+            .contains("callback typedef `SGPUUnsupportedCallback` has an unsupported signature"),
         "{error}"
     );
 }
@@ -852,17 +855,13 @@ fn unsupported_pointer_reachable_member_names_the_innermost_field() {
         void sgpuUse(const SGPUOuter *outer);
     ";
     let error = generate_for_header(header, "pipeline.h")
-        .expect_err("pointer-reachable callback member has no write lowering");
+        .expect_err("pointer-reachable callback member has an unsupported callback shape");
+    // §187 rules 8 and 15: the scratch build lowers a nested callback field
+    // of the supported shape, so the callback shape rule names this one.
     assert!(
         error
             .to_string()
-            .contains("`SGPUInner.callback` which is a callback"),
-        "{error}"
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("no write-direction scratch lowering"),
+            .contains("callback typedef `SGPUUnsupportedCallback` has an unsupported signature"),
         "{error}"
     );
 }
@@ -880,15 +879,13 @@ fn cyclic_pointer_reachable_lowering_fails_loud_at_innermost_member() {
     ";
     let error = generate_for_header(header, "pipeline.h")
         .expect_err("cyclic pointer scratch construction must fail loud");
-    assert!(error.to_string().contains("`SGPUNode.next`"), "{error}");
+    // §187 rule 9: the pass decision gives the cycle outcome, because
+    // `SGPUNode` holds a string view and builds a scratch struct.
     assert!(
-        error.to_string().contains("struct-pointer type cycle"),
-        "{error}"
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("no finite write-direction scratch lowering"),
+        error.to_string().contains(
+            "foreign function `sgpuUse` parameter `node` passes `SGPUNode.next`, a member \
+             through which a struct reaches itself"
+        ),
         "{error}"
     );
 }

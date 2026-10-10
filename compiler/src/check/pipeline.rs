@@ -395,6 +395,8 @@ fn run_with_effects(
             ck.resolve_mirror_signatures(i);
         }
     }
+    // §187 rule 3: a result can name a class that a later mirror declares.
+    ck.check_foreign_result_reads();
     ck.in_boundary = false;
     for i in 0..prog.files.len() {
         if !prog.files[i].dts {

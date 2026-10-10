@@ -1,6 +1,20 @@
 //! C boundary kind facts shared by the binder, layouts, and both backends.
 #![warn(missing_docs)]
 
+mod pass;
+mod read;
+
+pub use pass::{
+    builds_scratch, class_pass, copy_back, copying_structs, cycle_structs, element_pass,
+    embedded_pass, member_pass, parameter_pass, struct_pass, target_pass, value_parameter_pass,
+    writes_back, CopyBack, FieldShape, PointerPass, StructPass, StructView,
+};
+pub use read::{
+    first_cycle, first_unreadable, member_read, no_read_lowering_message,
+    written_back_pair_message, MemberKind, MemberRead, Reach, ReadMember, ReadPosition, ReadRoot,
+    ReadView, StructCycle, Unreadable, UnreadableKind, WrittenBack,
+};
+
 /// The native register bank of a scalar boundary value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

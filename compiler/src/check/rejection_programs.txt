@@ -9602,3 +9602,72 @@ class C { n: i32 = 5; async run(): Promise<i32> { return await f().then((v: i32)
 export async function main(): Promise<void> { print(`${await new C().run()}`); }
 END FILE
 END PROGRAM
+PROGRAM	foreign-result-read			0
+FILE	E	target/s154/forms/foreign-result-read/main.ts
+export function main(): void {  }
+END FILE
+FILE	A	target/s154/forms/foreign-result-read/mirror.d.ts
+// @subscript-c-header include="result-read.h"
+declare class L { tag: i32; items: u32[]; constructor(tag: i32, items: u32[]); }
+declare function f_result_read(): L;
+END FILE
+END PROGRAM
+PROGRAM	foreign-struct-cycle			0
+FILE	E	target/s154/forms/foreign-struct-cycle/main.ts
+export function main(): void {  }
+END FILE
+FILE	A	target/s154/forms/foreign-struct-cycle/mirror.d.ts
+// @subscript-c-header include="struct-cycle.h"
+declare class N { v: i32; next: N | null; constructor(v: i32, next: N | null); }
+declare function f_cycle(n: N | null): void;
+END FILE
+END PROGRAM
+PROGRAM	new-prov-pointer-parameter-duplicate			0
+FILE	A	target/s154/forms/new-prov-pointer-parameter-duplicate/mirror.d.ts
+// @subscript-c-parameter function="f" parameter="p" const=false
+// @subscript-c-parameter function="f" parameter="p" const=false
+
+END FILE
+FILE	E	target/s154/forms/new-prov-pointer-parameter-duplicate/main.ts
+export function main():void{}
+END FILE
+END PROGRAM
+PROGRAM	new-prov-pointer-parameter-empty			0
+FILE	A	target/s154/forms/new-prov-pointer-parameter-empty/mirror.d.ts
+// @subscript-c-parameter function="" parameter="p" const=false
+
+END FILE
+FILE	E	target/s154/forms/new-prov-pointer-parameter-empty/main.ts
+export function main():void{}
+END FILE
+END PROGRAM
+PROGRAM	c-prov-target-member			0
+FILE	A	target/s154/forms/c-prov-target-member/mirror.d.ts
+// @subscript-c-header include="x.h"
+// @subscript-c-member aggregate="Missing" member="m" const=true
+declare function foreign():void;
+
+END FILE
+FILE	E	target/s154/forms/c-prov-target-member/main.ts
+export function main():void{}
+END FILE
+END PROGRAM
+PROGRAM	new-prov-member-duplicate			0
+FILE	A	target/s154/forms/new-prov-member-duplicate/mirror.d.ts
+// @subscript-c-member aggregate="A" member="m" const=true
+// @subscript-c-member aggregate="A" member="m" const=true
+
+END FILE
+FILE	E	target/s154/forms/new-prov-member-duplicate/main.ts
+export function main():void{}
+END FILE
+END PROGRAM
+PROGRAM	new-prov-member-empty			0
+FILE	A	target/s154/forms/new-prov-member-empty/mirror.d.ts
+// @subscript-c-member aggregate="" member="m" const=true
+
+END FILE
+FILE	E	target/s154/forms/new-prov-member-empty/main.ts
+export function main():void{}
+END FILE
+END PROGRAM

@@ -422,6 +422,20 @@ pub(super) const FOREIGNRETURNPROVENANCE: DivergenceEntry = DivergenceEntry {
                 collision: "compiler.md §23.3",
             };
 
+pub(super) const FOREIGNRESULTREAD: DivergenceEntry = DivergenceEntry {
+                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\n// @subscript-c-header include=\"result-read.h\"\ndeclare class L { tag: i32; items: u32[]; constructor(tag: i32, items: u32[]); }\ndeclare class P { x: i32; constructor(x: i32); }\ndeclare class H { k: i32; p: P | null; constructor(k: i32, p: P | null); }\ndeclare class U { name: string; ud: object | null; constructor(name: string, ud: object | null); }\ndeclare class S { name: string; l: L; constructor(name: string, l: L); }\ntype OnL = (l: L) => void;\ndeclare class C { cb: OnL; ud: object | null; constructor(cb: OnL, ud: object | null); }\ndeclare function f_result_read(): L;\ndeclare function f_fill_pointer(out: H | null): void;\ndeclare function f_fill_userdata(out: U | null): void;\ndeclare function f_fill_nested(out: S | null): void;\ndeclare function f_fill_elements(items: L[]): void;\ndeclare function f_register(c: C): void;",
+                subscript: "// file: main.ts\nexport function main(): void { const p: P = f_result_plain(); print(`${p.tag}`); }\n// file: mirror.d.ts\n// @subscript-c-header include=\"result-read.h\"\ndeclare class P { tag: i32; count: u32; constructor(tag: i32, count: u32); }\ndeclare function f_result_plain(): P;",
+                why: "C writes a struct the script reads; no read lowering exists for its pair, view, callback, descriptor, userdata, or validated-pair member (§187).",
+                collision: "compiler.md §187",
+            };
+
+pub(super) const FOREIGNSTRUCTCYCLE: DivergenceEntry = DivergenceEntry {
+                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\n// @subscript-c-header include=\"struct-cycle.h\"\ndeclare class N { v: i32; next: N | null; constructor(v: i32, next: N | null); }\ndeclare function f_cycle(n: N | null): void;",
+                subscript: "// file: main.ts\nexport function main(): void { print(`${f_sum(new N(1, null))}`); }\n// file: mirror.d.ts\n// @subscript-c-header include=\"struct-cycle.h\"\n// @subscript-c-member aggregate=\"N\" member=\"next\" const=true\n// @subscript-c-parameter function=\"f_sum\" parameter=\"n\" const=true\ndeclare class N { v: i32; next: N | null; constructor(v: i32, next: N | null); }\ndeclare function f_sum(n: N | null): i32;",
+                why: "A call builds each scratch copy once; a struct that reaches itself through pointers it must copy has no finite scratch build (§187 rule 9).",
+                collision: "compiler.md §187",
+            };
+
 pub(super) const ASYNCGENERATORFUNCTION: DivergenceEntry = DivergenceEntry {
                 ts: "async function *f():AsyncGenerator<i32> {yield 1;}\nexport function main(): void {  }",
                 subscript: "no equivalent; use an async function or a synchronous generator",

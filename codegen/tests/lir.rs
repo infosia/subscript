@@ -420,7 +420,9 @@ fn a163_accounts_for_nullable_boundary_boxes() {
             .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
     assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
     // Six uncounted array headers each add eight payload bytes (§171).
-    assert_eq!(accounting.live_bytes, 3025, "{id}");
+    // The copy-back keeps a string view that C does not write (§187 rule
+    // 7), so none of the 70 calls allocates a string.
+    assert_eq!(accounting.live_bytes, 1625, "{id}");
     eprintln!(
         "{id}: live_bytes={} reserved_bytes={}",
         accounting.live_bytes, accounting.reserved_bytes

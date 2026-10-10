@@ -141,6 +141,11 @@ macro_rules! rejection_classes {
                         RuleCode::S100,
                         Diverges(Divergence::ProvenanceDuplicateCEnum),
                     ),
+                    Self::ProvenanceEmptyMember => (RuleCode::S100, Diverges(Divergence::ProvenanceEmptyMember)),
+                    Self::ProvenanceDuplicateMember => (RuleCode::S100, Diverges(Divergence::ProvenanceDuplicateMember)),
+                    Self::MirrorMemberTargetMissing => (RuleCode::S100, Diverges(Divergence::MirrorMemberTargetMissing)),
+                    Self::ProvenanceEmptyPointerParameter => (RuleCode::S100, Diverges(Divergence::ProvenanceEmptyPointerParameter)),
+                    Self::ProvenanceDuplicatePointerParameter => (RuleCode::S100, Diverges(Divergence::ProvenanceDuplicatePointerParameter)),
                     Self::BindingPatternUnsupportedRoot => {
                         (RuleCode::S100, Diverges(Divergence::NestedPattern))
                     }

@@ -466,6 +466,8 @@ impl Divergence {
             Divergence::WireAliasNestedForeignReturn => established::WIREALIASNESTEDFOREIGNRETURN,
             Divergence::ForeignDirectCallback => established::FOREIGNDIRECTCALLBACK,
             Divergence::ForeignReturnProvenance => established::FOREIGNRETURNPROVENANCE,
+            Divergence::ForeignResultRead => established::FOREIGNRESULTREAD,
+            Divergence::ForeignStructCycle => established::FOREIGNSTRUCTCYCLE,
             Divergence::AsyncGeneratorFunction => established::ASYNCGENERATORFUNCTION,
             Divergence::AsyncReturnAnnotationMissing => established::ASYNCRETURNANNOTATIONMISSING,
             Divergence::OptionalParameter => established::OPTIONALPARAMETER,
@@ -569,6 +571,11 @@ impl Divergence {
             }
             Divergence::ProvenanceEmptyCEnum => established_tail::PROVENANCEEMPTYCENUM,
             Divergence::ProvenanceDuplicateCEnum => established_tail::PROVENANCEDUPLICATECENUM,
+            Divergence::ProvenanceEmptyMember => established_tail::PROVENANCEEMPTYMEMBER,
+            Divergence::ProvenanceDuplicateMember => established_tail::PROVENANCEDUPLICATEMEMBER,
+            Divergence::MirrorMemberTargetMissing => established_tail::MIRRORMEMBERTARGETMISSING,
+            Divergence::ProvenanceEmptyPointerParameter => established_tail::PROVENANCEEMPTYPOINTERPARAMETER,
+            Divergence::ProvenanceDuplicatePointerParameter => established_tail::PROVENANCEDUPLICATEPOINTERPARAMETER,
 
             Divergence::IterationSubjectDomain => established_tail::ITERATIONSUBJECTDOMAIN,
             Divergence::FixedArrayMethods => established_tail::FIXEDARRAYMETHODS,

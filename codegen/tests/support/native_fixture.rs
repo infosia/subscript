@@ -163,6 +163,8 @@ extern "C" {
     fn subRequestMarkLiveBytes();
     fn subRequestLiveBytesFellBy();
     fn subRequestReleaseAndRefire();
+    fn subDescReadLayTotal();
+    fn subDescReadStrTotal();
 }
 
 impl Fixture {
@@ -645,6 +647,16 @@ impl Fixture {
                 (
                     "subRequestReleaseAndRefire".to_string(),
                     subRequestReleaseAndRefire as *const u8,
+                ),
+                // Input structs with members that have no read lowering
+                // (compiler.md §187 rule 5).
+                (
+                    "subDescReadLayTotal".to_string(),
+                    subDescReadLayTotal as *const u8,
+                ),
+                (
+                    "subDescReadStrTotal".to_string(),
+                    subDescReadStrTotal as *const u8,
                 ),
             ];
             // SAFETY: the test-only fixture crate links these static-lifetime

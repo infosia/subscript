@@ -978,8 +978,10 @@ name = "subscript-cli"
 version = "0.1.0"
 dependencies = [
  "subscript-bindgen",
+ "subscript-boundary",
  "subscript-codegen",
  "subscript-compiler",
+ "subscript-interop-fixture",
 ]
 
 [[package]]

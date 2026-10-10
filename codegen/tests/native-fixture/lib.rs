@@ -30,3 +30,12 @@ mod class_cases {
 
 #[cfg(not(all(windows, target_env = "msvc")))]
 pub use class_cases::*;
+
+/// The directory of the read-root fixture (`specs/blocks/compiler.md` §187
+/// rule 3): `read-root.h` and `read-root.c`. Its only user,
+/// `cli/tests/read_root.rs`, has the same `cfg`.
+#[cfg(not(all(windows, target_env = "msvc")))]
+pub const READ_ROOT_DIRECTORY: &str = env!("CARGO_MANIFEST_DIR");
+/// The read-root fixture header. The tests bind subsets of it.
+#[cfg(not(all(windows, target_env = "msvc")))]
+pub const READ_ROOT_HEADER: &str = include_str!("read-root.h");

@@ -717,6 +717,8 @@ impl<'p> Checker<'p> {
                                     .map(|annotation| annotation.type_ann.as_ref()),
                                 pos.clone(),
                             )
+                        } else if self.in_boundary {
+                            self.member_const_provenance(&self.classes[id.0].name, &key.sym, &ty)
                         } else {
                             None
                         };

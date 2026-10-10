@@ -1296,4 +1296,52 @@ int32_t subRequestLiveBytesFellBy(SubDevice device, uint32_t atLeast);
  * and traps. Nothing else in this fixture calls it. */
 void subRequestReleaseAndRefire(SubDevice device);
 
+/* ---- §187: struct fields with no read lowering ----
+ * These structs hold a member that has a script-to-C lowering and no
+ * C-to-script lowering. The script can pass them to C. A struct that C
+ * writes and the script reads must not hold one, so no function here
+ * returns them. The reject corpus declares such results in a second
+ * mirror (compiler.md §48, §187 rule 3). */
+typedef struct SubDescReadLay {
+    int32_t tag;
+    size_t itemsCount;
+    const uint32_t *items;
+} SubDescReadLay;
+
+typedef struct SubDescReadOuter {
+    int32_t kind;
+    SubDescReadLay inner;
+} SubDescReadOuter;
+
+typedef struct SubDescReadHolder {
+    int32_t kind;
+    const SubDescReadLay *inner;
+} SubDescReadHolder;
+
+typedef struct SubDescReadStr {
+    SubStringView label;
+    int32_t n;
+} SubDescReadStr;
+
+typedef struct SubDescReadStrHolder {
+    int32_t kind;
+    const SubDescReadStr *inner;
+} SubDescReadStrHolder;
+
+/* C can write through `inner`: the pointer is not `const`. The mirror
+ * records that fact for a mirror that names this struct as external
+ * (compiler.md §187 rule 3). The target holds a string view, which has
+ * no read lowering behind a pointer (§187 rule 2); a pair has a read
+ * lowering at every reach (§187 rule 11). */
+typedef struct SubDescReadMutHolder {
+    int32_t kind;
+    SubDescReadStr *inner;
+} SubDescReadMutHolder;
+
+/* Answers `tag` plus the sum of the items. */
+int32_t subDescReadLayTotal(SubDescReadLay lay);
+
+/* Answers `n` plus the label length. */
+int32_t subDescReadStrTotal(const SubDescReadStr *value);
+
 #endif /* SUBSCRIPT_INTEROP_H */

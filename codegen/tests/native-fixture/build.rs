@@ -51,6 +51,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
+    // The §187 read-root fixture: the tests bind subsets of its header.
+    let read_root_source = manifest.join("read-root.c");
+    println!("cargo:rerun-if-changed={}", read_root_source.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest.join("read-root.h").display()
+    );
     println!("cargo:rerun-if-changed={}", external_source.display());
     println!("cargo:rerun-if-changed={}", external_header.display());
     println!("cargo:rerun-if-changed={}", wire_source.display());
@@ -83,7 +90,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file(directory.join("abi-pressure.c"))
         .file(&external_source)
         .file(&wire_source)
+        .file(&read_root_source)
         .include(&directory)
+        .include(&manifest)
         .std("c11")
         .opt_level(2)
         .compile("subscript_interop_fixture");

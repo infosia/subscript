@@ -13,3 +13,11 @@ path = "src/main.rs"
 subscript-bindgen = { path = "../bindgen" }
 subscript-codegen = { path = "../codegen" }
 subscript-compiler = { path = "../compiler" }
+
+[dev-dependencies]
+subscript-boundary = { path = "../boundary" }
+
+# The interop fixture's build script compiles `_Float16` sources that MSVC
+# `cl` cannot compile; mirrors `codegen/Cargo.toml` (compiler.md §11c).
+[target.'cfg(not(all(windows, target_env = "msvc")))'.dev-dependencies]
+subscript-interop-fixture = { path = "../codegen/tests/native-fixture" }

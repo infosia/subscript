@@ -768,6 +768,8 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::ForeignReturnProvenance),
     ),
+    Self::ForeignResultRead => (RuleCode::S100, Diverges(Divergence::ForeignResultRead)),
+    Self::ForeignStructCycle => (RuleCode::S100, Diverges(Divergence::ForeignStructCycle)),
     Self::ForeignFunctionHeaderMissing => (RuleCode::S100, TscRejects),
     Self::TypeOnlyNamespaceImport => {
         (RuleCode::S100, Diverges(Divergence::NamedModuleSurface))

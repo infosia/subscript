@@ -81,6 +81,55 @@ impl<'p> Checker<'p> {
             }
         }
 
+        // §187 rule 3: a pointer-parameter record names a parameter of a
+        // foreign function of this mirror.
+        let mut read_errors = Vec::new();
+        for ((function_name, parameter_name), record) in &parsed.provenance.pointer_parameters {
+            let exists = functions.get(function_name).is_some_and(|function| {
+                function.params.iter().any(|parameter| {
+                    parameter_name_from_pat(&parameter.pat)
+                        .is_some_and(|name| name == parameter_name)
+                })
+            });
+            if !exists {
+                read_errors.push((
+                    RejectionSite::MirrorParameterTargetMissing,
+                    format!(
+                        "mirror `{}` has provenance record naming nonexistent \
+                         parameter `{}.{}`: `{}`",
+                        parsed.name, function_name, parameter_name, record.raw
+                    ),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                ));
+            }
+        }
+        // A member record names a field of a boundary class of this mirror.
+        for ((aggregate, member), record) in &parsed.provenance.members {
+            let exists = classes.get(aggregate).is_some_and(|class| {
+                class.body.iter().any(|class_member| {
+                    matches!(class_member, ast::ClassMember::ClassProp(prop)
+                        if Self::class_method_name(&prop.key).is_some_and(|key| key == *member))
+                })
+            });
+            if !exists {
+                read_errors.push((
+                    RejectionSite::MirrorMemberTargetMissing,
+                    format!(
+                        "mirror `{}` has provenance record naming nonexistent \
+                         member `{}.{}`: `{}`",
+                        parsed.name, aggregate, member, record.raw
+                    ),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                ));
+            }
+        }
+        // The record maps have no order, so the diagnostics take the
+        // mirror's own line order.
+        read_errors.sort_by_key(|(_, _, pos)| pos.line);
+        for (site, message, pos) in read_errors {
+            self.reject_subset(site, message, pos);
+        }
+
         for (typedef_name, record) in &parsed.provenance.callbacks {
             if !aliases.contains(typedef_name) {
                 self.reject_subset(
@@ -282,6 +331,28 @@ impl<'p> Checker<'p> {
         None
     }
 
+    /// The provenance of a boundary-struct member whose C pointer is
+    /// `const`: a struct pointer, a pair of struct elements, or a pair of
+    /// `CEnum` elements with a `@subscript-c-member` record of `const=true`
+    /// in any mirror (§187 rules 3, 7, and 11). A member with no record is
+    /// not `const`.
+    pub(super) fn member_const_provenance(
+        &self,
+        owner: &str,
+        member: &str,
+        ty: &Type,
+    ) -> Option<hir::ForeignTypeProvenance> {
+        let key = (owner.to_string(), member.to_string());
+        let constant = self
+            .prog
+            .files
+            .iter()
+            .filter_map(|file| file.provenance.members.get(&key))
+            .any(|record| record.value);
+        (constant && matches!(self.apparent_type(ty), Type::Nullable(_) | Type::Array(_)))
+            .then_some(hir::ForeignTypeProvenance::ConstPointer)
+    }
+
     /// Converts parameter provenance into the consumer-ready HIR shape and
     /// rejects missing or type-incompatible records.
     pub(super) fn foreign_parameter_provenance(
@@ -362,7 +433,17 @@ impl<'p> Checker<'p> {
                 );
                 None
             }
-            (_, None) => None,
+            (_, None) => {
+                // §187 rule 7: a `const` struct pointer reaches code
+                // generation, so the call does not write its target back.
+                let constant = parsed
+                    .provenance
+                    .pointer_parameters
+                    .get(&key)
+                    .is_some_and(|record| record.value);
+                (constant && matches!(self.apparent_type(ty), Type::Nullable(_)))
+                    .then_some(hir::ForeignTypeProvenance::ConstPointer)
+            }
         }
     }
 

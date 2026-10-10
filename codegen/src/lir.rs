@@ -76,31 +76,11 @@ impl fmt::Display for VerifyError {
 impl Error for VerifyError {}
 
 fn boundary_class_is_embedded_header(module: &hir::Module, header: ClassId) -> bool {
-    if !module
-        .classes
-        .get(header.0)
-        .is_some_and(|class| class.is_value && class.is_boundary)
-    {
-        return false;
-    }
-    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
-    let used_as_link = module.classes.iter().any(|class| {
-        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
-    }) || module.foreign_fns.iter().any(|function| {
-        function
-            .params
-            .iter()
-            .any(|parameter| parameter.ty == nullable_header)
-    });
-    used_as_link
-        && module.classes.iter().any(|class| {
-            class.is_value
-                && class.is_boundary
-                && class
-                    .fields
-                    .first()
-                    .is_some_and(|field| field.ty == Type::Class(header))
-        })
+    subscript_compiler::boundary_pass::is_embedded_header(
+        &module.classes,
+        &module.foreign_fns,
+        header,
+    )
 }
 
 /// Lowers one complete typed HIR module to ordered LIR.
@@ -139,10 +119,13 @@ pub fn lower_module_for_reload(
             .map(|(field, offset)| (*offset, l::CountAction::for_type(&field.ty)))
             .collect();
     }
+    // §187 rule 3: the one pass decision of the boundary crate, for every
+    // class at once.
+    let copying = subscript_boundary::copying_structs(&boundary_view(&lowered));
     let boundary_copies = lowered
         .classes
         .iter()
-        .map(|class| derive_boundary_byte_copy(&lowered, &Type::Class(class.id)))
+        .map(|class| copying.contains(&class.id))
         .collect::<Vec<_>>();
     for (class, copies) in lowered.classes.iter_mut().zip(boundary_copies) {
         class.copies_boundary_bytes = copies;
@@ -182,43 +165,11 @@ pub(crate) fn copies_boundary_bytes(module: &l::Module, ty: &Type) -> bool {
     }
 }
 
-fn derive_boundary_byte_copy(module: &l::Module, ty: &Type) -> bool {
-    if !matches!(ty, Type::Class(id) if module.classes.get(id.0).is_some_and(|class| class.is_value))
-    {
-        return false;
-    }
-    fn visit(module: &l::Module, ty: &Type, active: &mut Vec<ClassId>) -> bool {
-        if subscript_compiler::types::boundary_kind(ty).is_some() || *ty == Type::Object {
-            return true;
-        }
-        if let Type::Nullable(inner) = ty {
-            return matches!(inner.as_ref(), Type::Object)
-                || matches!(inner.as_ref(), Type::Class(id) if module.classes.get(id.0).is_some_and(|class| !class.is_value || (class.is_boundary && class.is_embedded_header)));
-        }
-        if let Type::FixedArray(element, _) = ty {
-            return visit(module, element, active);
-        }
-        let Type::Class(id) = ty else {
-            return false;
-        };
-        let Some(class) = module.classes.get(id.0) else {
-            return false;
-        };
-        if !class.is_value {
-            return true;
-        }
-        if !class.is_boundary || active.contains(id) {
-            return false;
-        }
-        active.push(*id);
-        let result = class
-            .fields
-            .iter()
-            .all(|field| field.foreign_provenance.is_none() && visit(module, &field.ty, active));
-        active.pop();
-        result
-    }
-    visit(module, ty, &mut Vec::new())
+/// The view of the LIR classes that the pass decision reads.
+pub(crate) fn boundary_view(
+    module: &l::Module,
+) -> subscript_compiler::boundary_pass::Classes<'_, l::Module> {
+    subscript_compiler::boundary_pass::Classes(module)
 }
 
 /// Verifies every function in an LIR module and returns all findings.
@@ -740,6 +691,7 @@ fn convert_provenance(value: &hir::ForeignTypeProvenance) -> l::ForeignTypeProve
                 typedef_name: typedef_name.clone(),
             }
         }
+        hir::ForeignTypeProvenance::ConstPointer => l::ForeignTypeProvenance::ConstPointer,
         _ => unreachable!("new foreign provenance requires an explicit LIR form"),
     }
 }

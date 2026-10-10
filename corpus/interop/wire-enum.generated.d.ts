@@ -15,6 +15,11 @@
 // @subscript-c-header include="wire-enum.h"
 // @subscript-c-cenum typedef="SubWireModeC" alias="SubWireMode"
 // @subscript-c-cenum typedef="SubBindToneC" alias="SubBindTone"
+// @subscript-c-member aggregate="SubWireModeRecord" member="modes" const=true
+// @subscript-c-parameter function="subWireModeRecordEchoMode" parameter="value" const=true
+// @subscript-c-parameter function="subWireModeRecordEchoElement" parameter="value" const=true
+// @subscript-c-parameter function="subWireModeRecordFill" parameter="value" const=false
+// @subscript-c-parameter function="subWireModeRecordFillUnknown" parameter="value" const=false
 
 declare class SubWireModeRecord {
   tag: i32;

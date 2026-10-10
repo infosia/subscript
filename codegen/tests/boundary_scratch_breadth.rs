@@ -157,6 +157,12 @@ fn mirror() -> String {
         .unwrap();
         source.push_str("}\n");
 
+        // The observer only reads: every pointer is `const` (§187 rule 3).
+        writeln!(
+            source,
+            "// @subscript-c-member aggregate=\"ScratchNested{position}\" member=\"leaf\" const=true"
+        )
+        .unwrap();
         writeln!(source, "declare class ScratchNested{position} {{").unwrap();
         source.push_str("  label: string;\n  values: u32[];\n");
         writeln!(source, "  leaf: ScratchLeaf{position} | null;").unwrap();
@@ -180,6 +186,13 @@ fn mirror() -> String {
     }
 
     for count in 1..=MAX_POSITIONS {
+        for position in 1..=count {
+            writeln!(
+                source,
+                "// @subscript-c-member aggregate=\"ScratchOuter{count}\" member=\"position{position}\" const=true"
+            )
+            .unwrap();
+        }
         writeln!(source, "declare class ScratchOuter{count} {{").unwrap();
         source.push_str("  label: string;\n  positionCount: u32;\n");
         for position in 1..=count {
@@ -199,6 +212,11 @@ fn mirror() -> String {
             .unwrap();
         }
         source.push_str(");\n}\n");
+        writeln!(
+            source,
+            "// @subscript-c-parameter function=\"scratchObserve{count}\" parameter=\"descriptor\" const=true"
+        )
+        .unwrap();
         writeln!(
             source,
             "declare function scratchObserve{count}(descriptor: ScratchOuter{count} | null): u32;"

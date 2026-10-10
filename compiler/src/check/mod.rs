@@ -47,6 +47,7 @@ mod exports;
 mod expr;
 pub(crate) mod fallthrough;
 mod field_initializer;
+mod foreign_read;
 mod function_value;
 mod generics;
 mod inference;

@@ -66,6 +66,15 @@ pub struct Parsed {
     pub aliases: Vec<Alias>,
     /// Raw doc comments keyed by the declared name they document.
     pub docs: Vec<(String, String)>,
+    /// `typedef` declarations from included headers that are not system
+    /// headers, in source order. The emitter emits none of them. The read
+    /// scan classifies an external struct (§48) by its definition here
+    /// (`specs/blocks/compiler.md` §187 rule 3).
+    pub included_decls: Vec<Decl>,
+    /// Scalar `typedef` aliases from the same included headers.
+    pub included_aliases: Vec<Alias>,
+    /// Names of the included `typedef`s that the frontend does not model.
+    pub included_unmodeled: Vec<String>,
 }
 
 /// A `#define` macro definition seen in the main file.
@@ -836,11 +845,21 @@ unsafe fn parse_inner(source: &str) -> Result<Parsed, ParseError> {
 
     let root = clang_getTranslationUnitCursor(tu);
     let mut parsed = Parsed::default();
+    let mut included = Parsed::default();
     for cursor in children(root) {
         if is_from_main_file(cursor) {
             visit_top_level(cursor, &mut parsed)?;
+        } else if clang_getCursorKind(cursor) == CXCursor_TypedefDecl
+            && clang_Location_isInSystemHeader(clang_getCursorLocation(cursor)) == 0
+            && visit_typedef(cursor, &mut included).is_err()
+        {
+            // A typedef that this header does not reach needs no model.
+            // The read scan fails loud if it reaches one of these names.
+            parsed.included_unmodeled.push(cursor_spelling(cursor));
         }
     }
+    parsed.included_decls = included.decls;
+    parsed.included_aliases = included.aliases;
     Ok(parsed)
 }
 

@@ -46,6 +46,14 @@ pub(crate) struct Mirror {
     /// provenance complete while ordinary ambient type resolution verifies
     /// the referenced alias (compiler.md §51).
     pub cenums: HashMap<String, Record<String>>,
+    /// `(aggregate, member)` → `const` of each struct-pointer member and
+    /// each pair of struct elements (`specs/blocks/compiler.md` §187
+    /// rule 3). A member with no record counts as mutable.
+    pub members: HashMap<(String, String), Record<bool>>,
+    /// `(function, parameter)` → `const` of each struct-pointer parameter
+    /// (§187 rule 3). A pointer parameter with no record counts as
+    /// non-`const`.
+    pub pointer_parameters: HashMap<(String, String), Record<bool>>,
 }
 
 /// Parses every `@subscript-c-*` record in one mirror.
@@ -340,6 +348,72 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     },
                 );
             }
+            Parsed::Member {
+                aggregate,
+                member,
+                is_const,
+            } => {
+                if aggregate.is_empty() || member.is_empty() {
+                    return Err(malformed(
+                        RejectionSite::ProvenanceEmptyMember,
+                        name,
+                        line_number,
+                        trimmed,
+                        "member aggregate and member fields must be non-empty",
+                    ));
+                }
+                let key = (aggregate, member);
+                if mirror.members.contains_key(&key) {
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicateMember,
+                        name,
+                        line_number,
+                        trimmed,
+                        "member",
+                    ));
+                }
+                mirror.members.insert(
+                    key,
+                    Record {
+                        value: is_const,
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
+            Parsed::PointerParameter {
+                function,
+                parameter,
+                is_const,
+            } => {
+                if function.is_empty() || parameter.is_empty() {
+                    return Err(malformed(
+                        RejectionSite::ProvenanceEmptyPointerParameter,
+                        name,
+                        line_number,
+                        trimmed,
+                        "parameter function and parameter fields must be non-empty",
+                    ));
+                }
+                let key = (function, parameter);
+                if mirror.pointer_parameters.contains_key(&key) {
+                    return Err(duplicate(
+                        RejectionSite::ProvenanceDuplicatePointerParameter,
+                        name,
+                        line_number,
+                        trimmed,
+                        "pointer parameter",
+                    ));
+                }
+                mirror.pointer_parameters.insert(
+                    key,
+                    Record {
+                        value: is_const,
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
         }
     }
     Ok(mirror)
@@ -401,6 +475,16 @@ enum Parsed {
         typedef_name: String,
         alias: String,
     },
+    Member {
+        aggregate: String,
+        member: String,
+        is_const: bool,
+    },
+    PointerParameter {
+        function: String,
+        parameter: String,
+        is_const: bool,
+    },
 }
 
 fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
@@ -438,6 +522,16 @@ fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
         "cenum" => Parsed::CEnum {
             typedef_name: cursor.string("typedef")?,
             alias: cursor.string("alias")?,
+        },
+        "member" => Parsed::Member {
+            aggregate: cursor.string("aggregate")?,
+            member: cursor.string("member")?,
+            is_const: cursor.boolean("const")?,
+        },
+        "parameter" => Parsed::PointerParameter {
+            function: cursor.string("function")?,
+            parameter: cursor.string("parameter")?,
+            is_const: cursor.boolean("const")?,
         },
         other => {
             return Err(RejectionFailure::new(

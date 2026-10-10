@@ -237,6 +237,13 @@ pub enum ForeignTypeProvenance {
         /// C function-pointer typedef spelling.
         typedef_name: String,
     },
+    /// The C pointer of a struct-pointer parameter, of a struct-pointer
+    /// member, or of the elements of a pair member of structs is `const`
+    /// (the `@subscript-c-parameter` and `@subscript-c-member` records,
+    /// `specs/blocks/compiler.md` §187 rule 7): C only reads the target, so
+    /// the call does not write its scratch copy back. A pointer with no
+    /// record is not `const`.
+    ConstPointer,
 }
 
 /// One foreign C-ABI declaration.

@@ -105,9 +105,11 @@ mod clangfe;
 mod completion;
 mod cparse;
 mod emit;
+mod read_lowering;
 
 pub use clangfe::{parse, Alias, CEnumMapping, Constant, Macro, Parsed};
 pub use cparse::{CField, Decl, ParseError};
+pub use read_lowering::StructPasses;
 
 /// The binder input beyond the header text and its include spelling.
 ///
@@ -219,4 +221,18 @@ pub fn generate_with_options(
         &options.explicit_callback_lifetimes,
         &options.completions,
     )
+}
+
+/// Returns the pass decision (`specs/blocks/compiler.md` §187 rule 3) for
+/// each boundary struct that `header` defines, in declaration order: the
+/// binder's view of the structs, given to the pass functions of the
+/// boundary crate that both code-generation tiers call.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] when libclang cannot parse the header, or when
+/// a struct holds a malformed count-first pair.
+pub fn boundary_passes(header: &str) -> Result<Vec<StructPasses>, ParseError> {
+    let parsed = clangfe::parse(header)?;
+    read_lowering::boundary_passes(&parsed)
 }

@@ -13,7 +13,10 @@
 // import/export), like the language prelude.
 
 // @subscript-c-header include="interop.h"
+// @subscript-c-member aggregate="SubChainHeader" member="next" const=false
+// @subscript-c-parameter function="subChainPayloadValue" parameter="chain" const=false
 // @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-parameter function="subDeviceCreate" parameter="chain" const=false
 // @subscript-c-descriptor function="subDeviceSubmit" parameter="commands" aggregate="SubBufferView" element="uint32_t" const=true
 // @subscript-c-string-view function="subDeviceSetLabel" parameter="label" aggregate="SubStringView"
 // @subscript-c-descriptor function="subSliceChecksumF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
@@ -26,12 +29,73 @@
 // @subscript-c-descriptor function="subSliceChecksumI16" parameter="data" aggregate="SubSliceI16" element="int16_t" const=true
 // @subscript-c-descriptor function="subSliceChecksumF16" parameter="data" aggregate="SubSliceF16" element="SubFloat16" const=true
 // @subscript-c-descriptor function="subBulkConsumeF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
+// @subscript-c-member aggregate="SubEventHeader" member="next" const=false
+// @subscript-c-parameter function="subDeviceQuery" parameter="status" const=false
 // @subscript-c-descriptor function="subDeviceWait" parameter="waits" aggregate="SubWaitList" element="SubWaitEntry" const=false
 // @subscript-c-scalar-pair function="subDeviceSumBytes" parameter="data" element="uint8_t" const=true
 // @subscript-c-scalar-pair function="subDeviceFillBytes" parameter="data" element="uint8_t" const=false
 // @subscript-c-scalar-pair function="subDeviceFillShorts" parameter="data" element="uint16_t" const=false
+// @subscript-c-parameter function="subBoundaryStringCheck" parameter="record" const=true
+// @subscript-c-parameter function="subBoundaryStringFill" parameter="record" const=false
+// @subscript-c-parameter function="subProbeTextureDescriptorCheck" parameter="descriptor" const=true
+// @subscript-c-parameter function="subProbeTextureDescriptorFill" parameter="descriptor" const=false
+// @subscript-c-parameter function="subProbePipelineLayoutCheck" parameter="descriptor" const=true
+// @subscript-c-parameter function="subProbeBindGroupEntryCheck" parameter="entry" const=true
+// @subscript-c-parameter function="subProbeBindGroupEntryFill" parameter="entry" const=false
+// @subscript-c-parameter function="subProbeComputePipelineCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeVertexBufferLayout" member="attributes" const=true
+// @subscript-c-member aggregate="SGPUProbeVertexState" member="buffers" const=true
+// @subscript-c-parameter function="subProbeRenderPipelineCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeProgrammableStage" member="constants" const=true
+// @subscript-c-parameter function="subProbeProgrammableStageCheck" parameter="stage" const=true
+// @subscript-c-member aggregate="SGPUProbeColorTargetState" member="blend" const=true
+// @subscript-c-member aggregate="SGPUProbeFragmentState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeFullRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeFullRenderPipelineCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeHandleRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeFullRenderPipelineWithHandleCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeNestedColorTargetState" member="blend" const=true
+// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeNestedRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeFullRenderPipelineWithNestedBlendCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeUnmarkedColorTargetState" member="blend" const=true
+// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeUnmarkedRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeFullRenderPipelineWithUnmarkedBlendCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeBreadthRenderPipelineDescriptor" member="depthStencil" const=true
+// @subscript-c-member aggregate="SGPUProbeBreadthRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeBreadthRenderPipelineCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeWideVertexState" member="buffers" const=true
+// @subscript-c-member aggregate="SGPUProbeWidePointerElement" member="payload" const=true
+// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="elements" const=true
+// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="elements" const=true
+// @subscript-c-member aggregate="SGPUProbeWideRenderPipelineDescriptor" member="depthStencil" const=true
+// @subscript-c-member aggregate="SGPUProbeWideRenderPipelineDescriptor" member="fragment" const=true
+// @subscript-c-parameter function="subProbeWideRenderPipelineCheck" parameter="descriptor" const=true
 // @subscript-c-scalar-pair function="subProbeQueueSubmitCheck" parameter="commands" element="SubDevice" const=true
+// @subscript-c-parameter function="subByValueI32OneReport" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI32PairReport" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI32TripleReport" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI16I16I32Report" parameter="report" const=false
+// @subscript-c-parameter function="subByValueU8FourReport" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI64PairReport" parameter="report" const=false
+// @subscript-c-parameter function="subByValueF32Hfa2Report" parameter="report" const=false
+// @subscript-c-parameter function="subByValueF32Hfa4Report" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI32F32Report" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI32I64Report" parameter="report" const=false
+// @subscript-c-parameter function="subByValueI64TripleReport" parameter="report" const=false
 // @subscript-c-callback-lifetime aggregate="SubRequestInfo"
+// @subscript-c-member aggregate="SubDescReadHolder" member="inner" const=true
+// @subscript-c-member aggregate="SubDescReadStrHolder" member="inner" const=true
+// @subscript-c-member aggregate="SubDescReadMutHolder" member="inner" const=false
+// @subscript-c-parameter function="subDescReadStrTotal" parameter="value" const=true
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -770,6 +834,45 @@ declare function subRequestReleaseCount(device: SubDevice): i32;
 declare function subRequestMarkLiveBytes(device: SubDevice): void;
 declare function subRequestLiveBytesFellBy(device: SubDevice, atLeast: u32): i32;
 declare function subRequestReleaseAndRefire(device: SubDevice): void;
+
+declare class SubDescReadLay {
+  tag: i32;
+  items: u32[];
+  constructor(tag: i32, items: u32[]);
+}
+
+declare class SubDescReadOuter {
+  kind: i32;
+  inner: SubDescReadLay;
+  constructor(kind: i32, inner: SubDescReadLay);
+}
+
+declare class SubDescReadHolder {
+  kind: i32;
+  inner: SubDescReadLay | null;
+  constructor(kind: i32, inner: SubDescReadLay | null);
+}
+
+declare class SubDescReadStr {
+  label: string;
+  n: i32;
+  constructor(label: string, n: i32);
+}
+
+declare class SubDescReadStrHolder {
+  kind: i32;
+  inner: SubDescReadStr | null;
+  constructor(kind: i32, inner: SubDescReadStr | null);
+}
+
+declare class SubDescReadMutHolder {
+  kind: i32;
+  inner: SubDescReadStr | null;
+  constructor(kind: i32, inner: SubDescReadStr | null);
+}
+
+declare function subDescReadLayTotal(lay: SubDescReadLay): i32;
+declare function subDescReadStrTotal(value: SubDescReadStr | null): i32;
 
 type SubFloat16 = f16;
 

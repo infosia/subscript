@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    types, AbiParam, ArgumentPurpose, Block, BlockArg, InstBuilder, MemFlags, Signature,
+    types, AbiParam, ArgumentPurpose, Block, BlockArg, InstBuilder, MemFlags, Signature, StackSlot,
     StackSlotData, StackSlotKind, Value,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -21,8 +21,9 @@ use subscript_runtime::TrapKind;
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
-    boundary_class_contains_pointer, capture_parameters, data_type, explicit_parameters,
-    foreign_parameter_type_matches, is_userdata_slot, operand_type, runtime_trap_kind, value_type,
+    boundary_class_contains_pointer, boundary_type_builds_scratch, capture_parameters, data_type,
+    explicit_parameters, foreign_parameter_type_matches, is_userdata_slot, operand_type,
+    runtime_trap_kind, value_type,
 };
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
@@ -35,6 +36,10 @@ mod async_callable;
 mod async_count;
 pub(crate) use async_callable::define_async_callable;
 mod boundary;
+pub(crate) use boundary::{
+    fixed_array_member, is_scalar_fixed_array, struct_cycle, written_back_elements,
+    written_back_in_elements,
+};
 mod builtin;
 mod call;
 mod coroutine;
@@ -152,6 +157,24 @@ struct BoundaryPtrWriteback {
     class: usize,
     source: Value,
     scratch: Value,
+    /// The bytes that the call put in `scratch` before the call.
+    snapshot: Value,
+}
+
+/// The scratch copies of pointer targets that the build of one foreign
+/// call writes back (§187 rule 7). No pair of such elements reaches code
+/// generation (rule 11), so the count of the copies is static: each copy
+/// stores its script pointer and its scratch pointer in its own stack
+/// slot, which the call nulls in `start` before the build, and the call
+/// writes back each target by code after the call.
+#[derive(Debug, Clone)]
+struct BoundaryTargets {
+    /// The block where the build of the call starts.
+    start: Block,
+    /// The class and the stack slot of each copy, in build order.
+    slots: Vec<(usize, StackSlot)>,
+    /// The depth of element loops that the build is in.
+    elements: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -465,6 +488,8 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     raise_target: Option<Block>,
     /// The number of pending-word checks emitted so far.
     pending_checks: usize,
+    /// The written-back targets of the foreign call that lowers now.
+    boundary_targets: Option<BoundaryTargets>,
 }
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
@@ -1022,6 +1047,7 @@ pub(crate) fn define_function<M: Module>(
             consumed_traps: Vec::new(),
             raise_target: None,
             pending_checks: 0,
+            boundary_targets: None,
         };
         initialize_storage(&mut body)?;
         if matches!(function.kind, l::FunctionKind::ModuleInitializer) {
@@ -1197,6 +1223,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 consumed_traps: Vec::new(),
                 raise_target: None,
                 pending_checks: 0,
+                boundary_targets: None,
             };
             let size = body.iconst(types::I64, i64::from(plan.size));
             let class = body.iconst(types::I32, i64::from(rtc::CLASS_GENERATOR));
@@ -1385,6 +1412,7 @@ pub(crate) fn define_coroutine<M: Module>(
                 consumed_traps: Vec::new(),
                 raise_target: None,
                 pending_checks: 0,
+                boundary_targets: None,
             };
             initialize_storage(&mut body)?;
             let state = body.builder.ins().load(types::I32, flags(), frame, 0);

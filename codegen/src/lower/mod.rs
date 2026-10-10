@@ -33,6 +33,11 @@
 
 mod func;
 
+pub(crate) use func::{
+    fixed_array_member, is_scalar_fixed_array, struct_cycle, written_back_elements,
+    written_back_in_elements,
+};
+
 use std::collections::HashMap;
 
 use cranelift_codegen::ir::{

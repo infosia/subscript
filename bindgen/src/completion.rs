@@ -82,6 +82,14 @@ pub(crate) fn select(
             )));
         };
         if matches!(registry.get(result), Some(Kind::Boundary)) {
+            crate::read_lowering::reject_unreadable(
+                parsed,
+                registry,
+                subscript_boundary::ReadPosition::CompletionResult { function },
+                result,
+                subscript_boundary::ReadRoot::Value,
+                subscript_boundary::Reach::Root,
+            )?;
             validate_struct(parsed, registry, function, result, &mut Vec::new())?;
         }
         selected.insert(

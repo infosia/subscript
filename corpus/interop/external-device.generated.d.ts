@@ -17,3 +17,9 @@
 
 declare function subExternalDeviceIdentity(device: SubDevice): SubDevice;
 declare function subExternalDeviceTag(device: SubDevice, tag: u32): u32;
+
+declare class SubDescReadUd {
+  k: i32;
+  ud: object | null;
+  constructor(k: i32, ud: object | null);
+}

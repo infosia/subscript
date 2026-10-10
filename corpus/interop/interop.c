@@ -1706,3 +1706,15 @@ void subRequestReleaseAndRefire(SubDevice device) {
 subscript_rt_context *subCompletionDeviceContext(SubDevice device) {
     return device == NULL ? NULL : device->req_ctx;
 }
+
+int32_t subDescReadLayTotal(SubDescReadLay lay) {
+    int32_t total = lay.tag;
+    for (size_t i = 0; i < lay.itemsCount; i++) {
+        total += (int32_t)lay.items[i];
+    }
+    return total;
+}
+
+int32_t subDescReadStrTotal(const SubDescReadStr *value) {
+    return value == NULL ? -1 : value->n + (int32_t)value->label.len;
+}

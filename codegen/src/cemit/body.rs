@@ -164,6 +164,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             pending_checks: std::cell::Cell::new(0),
             temporary: 0,
             shadow_frame: false,
+            boundary_targets: None,
         })
     }
 
