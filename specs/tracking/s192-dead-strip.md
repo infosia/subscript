@@ -131,3 +131,30 @@ gets `-Wl,--gc-sections`.
 Open: a windows-gnu host whose `PATH` clang targets MSVC passes
 `-Wl,--gc-sections` to `link.exe` or `lld-link`, which do not know the
 option. No fix is in this section.
+
+## 8. Linux
+
+Date: 2026-10-11. Revision: `3231e6d7`. Host: x86-64 Linux, 16 cores,
+clang 21.1.8, GNU ld. Program: the `print("size")` program of
+`ship_link_is_at_most_half_the_control_link`, emitted by
+`subscript emit`, linked by hand with the `build_c_aot` flags.
+"Loaded" is the sum of the `SHF_ALLOC` sections other than
+`SHT_NOBITS` (`size -A`, debug, comment, and symbol sections left out).
+
+| Archive profile | Link | File | Stripped | Loaded |
+|---|---|---:|---:|---:|
+| debug | ship | 19,285,624 | 975,800 | 966,902 |
+| debug | control | 28,110,080 | 8,152,384 | 8,143,421 |
+| release | ship | 4,737,176 | 684,984 | 677,880 |
+| release | control | 8,650,304 | 3,699,944 | 3,690,720 |
+
+| Archive profile | File ratio | Loaded ratio |
+|---|---:|---:|
+| debug | 0.69 | 0.12 |
+| release | 0.55 | 0.18 |
+
+The file sizes are the ones that the full gate reported at
+`3231e6d7`, where the test failed in the debug and the release step.
+The debug ship file holds 17.7 MB of `.debug_*` sections: GNU ld keeps
+the DWARF of the sections that `--gc-sections` removes. §192.2
+acceptance 2 now compares the loaded size.

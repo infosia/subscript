@@ -44,7 +44,15 @@ carries its tables (+563 KB measured).
    half the size of a same-shape control link without the flag. The
    test reads the output of the real link site, not a copy of its
    command. A ratio holds on every platform; an absolute bound does
-   not, because an ELF executable keeps the DWARF of its live members.
+   not. The size is the loaded size, not the file size. On ELF it is
+   the sum of `sh_size` over the sections with `SHF_ALLOC` set whose
+   type is not `SHT_NOBITS`. On Mach-O it is the file size. A
+   test-only ELF64 reader in `codegen/src/ship_tests.rs` reads the
+   section headers; no new dependency. *(Amended 2026-10-11: on
+   x86-64 Linux, `--gc-sections` keeps the DWARF of removed sections
+   in the file, so the file-size ratio was 0.69 with the debug archive
+   and 0.55 with the release archive, and the test failed. The loaded
+   size ratio is 0.12 and 0.18.)*
 3. Cost: the link time of one program with and without the flag, and
    the wall time of the codegen tests, against the pin.
 4. The tracking note records the size of each example host and of a
