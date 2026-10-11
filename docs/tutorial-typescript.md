@@ -1145,6 +1145,50 @@ UTF-8 byte; `codePointAt` and `charAt` read the code point that starts
 at a byte index. Case conversion applies Unicode default case
 conversion, without locale rules.
 
+Each character of `"日本語"` is 3 bytes in UTF-8. An ASCII character is
+1 byte, and `𠮷` is 4 bytes:
+
+```ts
+export function main(): void {
+  const text: string = "日本語";
+  print(`length=${text.length}`);
+  const position: i32 = text.indexOf("本");
+  print(`indexOf=${position}`);
+  print(`slice=${text.slice(position, position + 3)}`);
+  print(`at=${text.at(position)}`);
+  print(`charCodeAt=${text.charCodeAt(position)}`);
+  print(`charCodeAt+1=${text.charCodeAt(position + 1)}`);
+  for (const character of text) {
+    print(`for-of=${character}`);
+  }
+}
+```
+
+```text
+length=9
+indexOf=3
+slice=本
+at=本
+charCodeAt=230
+charCodeAt+1=156
+for-of=日
+for-of=本
+for-of=語
+```
+
+Node prints `length=3`, `indexOf=1`, `slice=本語`, and
+`charCodeAt=26412`. `charCodeAt` reads one byte of the sequence, not the
+character. `position + 1` is not the next character: it is the second
+byte of `本`. `text.at(1)` and `text.slice(1)` trap, because byte 1 is
+inside a UTF-8 sequence. Use `for...of` to step one code point at a
+time.
+
+`padStart` and `padEnd` count the target in bytes too. If the last copy
+of the pad ends inside a UTF-8 sequence, the call traps:
+`"A".padStart(2, "あ")` gives `trap [string-slice]: padStart(2): the cut
+is at pad byte 1, inside a UTF-8 sequence`. `"A".padStart(4, "あ")` gives
+`あA`.
+
 ## The standard library is a subset
 
 Arrays (growable `T[]` and `FixedArray<T, N>`), strings, `Map`, `Set`,

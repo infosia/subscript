@@ -187,8 +187,8 @@
 | `trimStart(): string` | Removes ECMA whitespace from the start. |
 | `trimEnd(): string` | Removes ECMA whitespace from the end. |
 | `repeat(count: i32): string` | Repeats the UTF-8 byte string. |
-| `padStart(length: i32, pad?: string): string` | Pads to a byte length on the left; an empty pad returns unchanged bytes. |
-| `padEnd(length: i32, pad?: string): string` | Pads to a byte length on the right; an empty pad returns unchanged bytes. |
+| `padStart(length: i32, pad?: string): string` | Pads to a byte length on the left; an empty pad returns unchanged bytes; a cut inside a UTF-8 sequence of the pad traps. |
+| `padEnd(length: i32, pad?: string): string` | Pads to a byte length on the right; an empty pad returns unchanged bytes; a cut inside a UTF-8 sequence of the pad traps. |
 | `toUpperCase(): string` | Applies Unicode Default Case Conversion. |
 | `toLowerCase(): string` | Applies Unicode Default Case Conversion. |
 | `replace(pattern: string, replacement: string): string` | Replaces the first literal match with ECMA `$` substitutions. |
@@ -651,7 +651,7 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
 
 ### `string.padStart` — Q5 / Q21
 
-The target length is a UTF-8 byte length.
+The target length is a UTF-8 byte length. A cut inside a UTF-8 sequence of the pad traps.
 
 subscript:
 
@@ -672,7 +672,7 @@ console.log("é".padStart(3, "x"));
 
 ### `string.padEnd` — Q5 / Q21
 
-The target length is a UTF-8 byte length.
+The target length is a UTF-8 byte length. A cut inside a UTF-8 sequence of the pad traps.
 
 subscript:
 

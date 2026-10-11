@@ -185,6 +185,10 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t102-generator-parameter" => (TrapKind::UncaughtException, 24, 5),
         "t105-dropped-generator-break" => (TrapKind::UncaughtException, 12, 39),
         "t109-generator-close-throws" => (TrapKind::UncaughtException, 11, 13),
+        // compiler.md §191 rule 1: the position of the padding call.
+        "t110-pad-start-cut-inside-sequence" | "t111-pad-end-cut-inside-sequence" => {
+            (TrapKind::StringSlice, 13, 23)
+        }
         "t106-dropped-generator-local" => (TrapKind::UncaughtException, 12, 39),
         "t103-unstarted-generator-parameter" => (TrapKind::UncaughtException, 22, 5),
         "t104-coroutine-closure-environment" => (TrapKind::UncaughtException, 21, 61),
@@ -867,6 +871,12 @@ fn compare_trap_runs(
                 "t97-counted-field-collect" | "t98-counted-field-task-order" | "t107-collected-task-order" => Some("Error: first"),
                 "t108-host-operation-dropped-error" => Some("Error: host failure"),
                 "t109-generator-close-throws" => Some("Error: close"),
+                "t110-pad-start-cut-inside-sequence" => {
+                    Some("padStart(2): the cut is at pad byte 1, inside a UTF-8 sequence")
+                }
+                "t111-pad-end-cut-inside-sequence" => {
+                    Some("padEnd(2): the cut is at pad byte 1, inside a UTF-8 sequence")
+                }
                 "t83-unobserved-aggregate-exception" => Some("Error: aggregate dropped"),
         "t82-worker-trap-site" => Some(
                     "worker trapped with index-out-of-bounds: index 5 out of bounds for array length 1",

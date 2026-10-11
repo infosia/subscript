@@ -1096,6 +1096,12 @@ Accept: `a355`, `a356`. Reject: `r399`, `r400`, `r401`.
   `NaN`, and the return type carries no NaN; `"ab".repeat(-1)` throws
   a `RangeError`, so both implementations reject it and that is no
   divergence in kind.
+  *(Revised 2026-10-11 by compiler.md §191.)* A `padStart` or
+  `padEnd` whose last pad copy is cut inside a UTF-8 sequence traps
+  with `string-slice` (`t110`, `t111`), because the result is not
+  valid UTF-8. Node counts the target in UTF-16 units and pads with
+  whole characters there (`"A".padStart(2, "あ")` is `あA`, node
+  v24.18.0). A cut on a boundary is unchanged (`a368`).
   *(Revised 2026-09-09 by compiler.md §95. Three more cases trapped
   before it: `split("")`, `replaceAll("", …)`, and an empty `pad`
   above the target. Each gave up a result that ECMA defines, so each

@@ -561,7 +561,7 @@ pub unsafe extern "C" fn subscript_rt_str_at(
             unsafe {
                 (*ctx).trap(
                     TrapKind::StrRange,
-                    format!("codePointAt({index}) out of range for string length {len}"),
+                    format!("at({i}) normalizes to {index}, out of range for string length {len}"),
                     pos_id,
                 )
             };
@@ -572,7 +572,7 @@ pub unsafe extern "C" fn subscript_rt_str_at(
             unsafe {
                 (*ctx).trap(
                     TrapKind::StrRange,
-                    format!("charAt({index}) is not on a UTF-8 boundary"),
+                    format!("at({i}) normalizes to {index}, which is not on a UTF-8 boundary"),
                     pos_id,
                 )
             };
@@ -808,10 +808,12 @@ pub unsafe extern "C" fn subscript_rt_str_repeat(
 
 /// Shared body of `padStart`/`padEnd` (Q21 byte lengths): pads with
 /// cyclic copies of `pad`, the final repeat truncated to the target
-/// length. An already-long-enough receiver returns a **fresh copy**
-/// with unchanged bytes (§8: documented choice — every §8 string
-/// result is a fresh Context allocation). An empty `pad` returns
-/// a fresh copy with the receiver length at every target.
+/// length. A cut inside a UTF-8 sequence of `pad` traps with the
+/// string range kind before the result exists (§191). An
+/// already-long-enough receiver returns a **fresh copy** with unchanged
+/// bytes (§8: documented choice — every §8 string result is a fresh
+/// Context allocation). An empty `pad` returns a fresh copy with the
+/// receiver length at every target.
 ///
 /// # Safety
 ///
@@ -840,12 +842,26 @@ unsafe fn str_pad(
         let bytes = unsafe { ctx.str_bytes(pad) };
         (bytes.as_ptr(), bytes.len())
     };
-    let target = usize::try_from(target.max(0)).unwrap_or(0);
-    let result_len = if pad_len == 0 {
-        bytes_len
-    } else {
-        target.max(bytes_len)
+    let fill_len = {
+        // SAFETY: `pad` is live. This view ends before the allocation below.
+        let pad_bytes = unsafe { std::slice::from_raw_parts(pad_ptr, pad_len) };
+        let fill_len = crate::strops::pad_fill_len(bytes_len, target, pad_bytes);
+        // §191 rule 1 and rule 3: the cut is checked on the pad bytes
+        // before the result exists.
+        if let Some(cut) = crate::strops::pad_cut_inside_sequence(fill_len, pad_bytes) {
+            let method = if at_start { "padStart" } else { "padEnd" };
+            ctx.trap(
+                TrapKind::StringSlice,
+                format!(
+                    "{method}({target}): the cut is at pad byte {cut}, inside a UTF-8 sequence"
+                ),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        fill_len
     };
+    let result_len = bytes_len + fill_len;
     ctx.alloc_str_with(result_len, pos_id, |destination| {
         // SAFETY: both input ranges stay live during this synchronous
         // writer. Neither range overlaps the fresh destination.

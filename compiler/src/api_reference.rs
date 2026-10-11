@@ -210,7 +210,7 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
         id: "q5-pad-start-byte-length",
         surface: "`string.padStart`",
         q_rule: "Q5 / Q21",
-        summary: "The target length is a UTF-8 byte length.",
+        summary: "The target length is a UTF-8 byte length. A cut inside a UTF-8 sequence of the pad traps.",
         subscript: r#"export function main(): void {
   print("é".padStart(3, "x"));
 }
@@ -224,7 +224,7 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
         id: "q5-pad-end-byte-length",
         surface: "`string.padEnd`",
         q_rule: "Q5 / Q21",
-        summary: "The target length is a UTF-8 byte length.",
+        summary: "The target length is a UTF-8 byte length. A cut inside a UTF-8 sequence of the pad traps.",
         subscript: r#"export function main(): void {
   print("é".padEnd(3, "x"));
 }

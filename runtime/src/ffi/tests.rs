@@ -954,10 +954,10 @@ fn assert_direct_pad_matches_vec_reference(at_start: bool) {
         (b"ab", 9, b"xyz"),
         (b"", 5, b"ab"),
         (b"receiver", 3, b"xy"),
-        (b"z", 6, "é".as_bytes()),
+        (b"z", 7, "é".as_bytes()),
     ];
     for &(receiver, target, pad) in cases {
-        let expected = crate::strops::pad(receiver, target, pad, at_start);
+        let expected = crate::strops::pad(receiver, target, pad, at_start).expect("boundary cut");
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         let receiver_handle = ctx.alloc_str(receiver, 0);
@@ -972,6 +972,63 @@ fn assert_direct_pad_matches_vec_reference(at_start: bool) {
         };
         // SAFETY: `result` is a live string in this Context.
         unsafe { assert_eq!(ctx.str_bytes(result), expected) };
+    }
+}
+
+#[test]
+fn ffi_pad_cut_inside_a_sequence_traps_before_the_result_exists() {
+    // Each trap case has a control of the same shape: the same receiver
+    // and pad, with a target whose cut is on a boundary.
+    // (target, pad, pad byte of the cut, padStart text, padEnd text)
+    type PadCase<'a> = (i32, &'a [u8], Option<usize>, &'a str, &'a str);
+    let a = "あ".as_bytes();
+    let cases: &[PadCase] = &[
+        (2, a, Some(1), "あA", "Aあ"),
+        (4, a, None, "あA", "Aあ"),
+        (3, a, Some(2), "", ""),
+        (6, "あx".as_bytes(), Some(1), "", ""),
+        (8, "あx".as_bytes(), None, "あxあA", "Aあxあ"),
+        (4, "𠮷".as_bytes(), Some(3), "", ""),
+        (5, "𠮷".as_bytes(), None, "𠮷A", "A𠮷"),
+    ];
+    for at_start in [true, false] {
+        let method = if at_start { "padStart" } else { "padEnd" };
+        for &(target, pad, cut, start_text, end_text) in cases {
+            let mut ctx = Context::new();
+            let p: *mut Context = &mut *ctx;
+            let receiver_handle = ctx.alloc_str(b"A", 0);
+            let pad_handle = ctx.alloc_str(pad, 0);
+            let live = ctx.live_count();
+            // SAFETY: the Context and both input strings stay live.
+            let result = unsafe {
+                if at_start {
+                    subscript_rt_str_pad_start(p, receiver_handle, target, pad_handle, 7)
+                } else {
+                    subscript_rt_str_pad_end(p, receiver_handle, target, pad_handle, 7)
+                }
+            };
+            match cut {
+                Some(cut) => {
+                    assert!(result.is_null(), "{method}({target})");
+                    assert_eq!(ctx.live_count(), live, "{method}({target}) allocated");
+                    let record = ctx.trap_record().expect("trap");
+                    assert_eq!(record.kind, TrapKind::StringSlice);
+                    assert_eq!(record.pos_id, 7);
+                    assert_eq!(
+                        record.message,
+                        format!(
+                            "{method}({target}): the cut is at pad byte {cut}, inside a UTF-8 sequence"
+                        )
+                    );
+                }
+                None => {
+                    assert!(ctx.trap_record().is_none(), "{method}({target})");
+                    let text = if at_start { start_text } else { end_text };
+                    // SAFETY: `result` is a live string in this Context.
+                    unsafe { assert_eq!(ctx.str_bytes(result), text.as_bytes()) };
+                }
+            }
+        }
     }
 }
 

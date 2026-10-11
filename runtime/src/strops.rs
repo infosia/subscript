@@ -247,21 +247,54 @@ pub fn repeat_into(s: &[u8], out: &mut [u8]) {
     fill_cyclic(out, s);
 }
 
+/// The number of pad bytes that `padStart`/`padEnd` write (Q21 byte
+/// lengths). A receiver already at least `target` bytes long, a
+/// `target` ≤ 0, and an empty `pad` give zero.
+#[must_use]
+pub fn pad_fill_len(receiver_len: usize, target: i32, pad: &[u8]) -> usize {
+    let target = usize::try_from(target.max(0)).unwrap_or(0);
+    if pad.is_empty() {
+        return 0;
+    }
+    target.saturating_sub(receiver_len)
+}
+
+/// The pad byte where a fill of `fill_len` bytes cuts the last copy of
+/// `pad`, if that byte is inside a UTF-8 sequence (§191 rule 1).
+///
+/// The check reads one byte of the pad: the byte after the cut is a
+/// continuation byte only when the cut is inside a sequence. A whole
+/// number of copies and an empty pad give `None`.
+#[must_use]
+pub fn pad_cut_inside_sequence(fill_len: usize, pad: &[u8]) -> Option<usize> {
+    if pad.is_empty() {
+        return None;
+    }
+    let cut = fill_len % pad.len();
+    (cut != 0 && pad[cut] & 0xC0 == 0x80).then_some(cut)
+}
+
 /// `padStart`/`padEnd` (Q21 byte lengths): pads with cyclic copies of
 /// `pad`, the final repeat truncated so the result is exactly `target`
 /// bytes ("ab".padStart(5, "xy") → "xyxab"). A receiver already at
 /// least `target` bytes long — or a `target` ≤ 0 — returns the
 /// receiver's bytes unchanged (the caller allocates a fresh copy). An
 /// empty `pad` returns the receiver unchanged at every target.
-#[must_use]
-pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
-    let target = usize::try_from(target.max(0)).unwrap_or(0);
-    if target <= s.len() || pad.is_empty() {
-        return s.to_vec();
+///
+/// # Errors
+///
+/// If the cut of the last copy is inside a UTF-8 sequence of `pad`,
+/// returns the pad byte of the cut (§191 rule 1) and builds no result.
+pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Result<Vec<u8>, usize> {
+    let fill = pad_fill_len(s.len(), target, pad);
+    if let Some(cut) = pad_cut_inside_sequence(fill, pad) {
+        return Err(cut);
     }
-    let fill = target - s.len();
+    if fill == 0 {
+        return Ok(s.to_vec());
+    }
     let filler = pad.iter().copied().cycle().take(fill);
-    let mut out = Vec::with_capacity(target);
+    let mut out = Vec::with_capacity(s.len() + fill);
     if at_start {
         out.extend(filler);
         out.extend_from_slice(s);
@@ -269,7 +302,7 @@ pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
         out.extend_from_slice(s);
         out.extend(filler);
     }
-    out
+    Ok(out)
 }
 
 /// Writes the `padStart` or `padEnd` result into an exact-size buffer.
@@ -651,17 +684,69 @@ mod tests {
     fn pad_truncates_the_final_repeat_like_js() {
         // The JS-verified truncation rule: "ab".padStart(5, "xy") is
         // "xyxab" and .padEnd(5, "xy") is "abxyx".
-        assert_eq!(pad(b"ab", 5, b"xy", true), b"xyxab");
-        assert_eq!(pad(b"ab", 5, b"xy", false), b"abxyx");
+        assert_eq!(pad(b"ab", 5, b"xy", true), Ok(b"xyxab".to_vec()));
+        assert_eq!(pad(b"ab", 5, b"xy", false), Ok(b"abxyx".to_vec()));
         // Default single-space pad.
-        assert_eq!(pad(b"7", 3, b" ", true), b"  7");
-        assert_eq!(pad(b"7", 3, b" ", false), b"7  ");
+        assert_eq!(pad(b"7", 3, b" ", true), Ok(b"  7".to_vec()));
+        assert_eq!(pad(b"7", 3, b" ", false), Ok(b"7  ".to_vec()));
         // Exact and already-long-enough receivers: unchanged bytes.
-        assert_eq!(pad(b"abc", 3, b"x", true), b"abc");
-        assert_eq!(pad(b"abcd", 2, b"x", true), b"abcd");
-        assert_eq!(pad(b"ab", -1, b"x", true), b"ab");
+        assert_eq!(pad(b"abc", 3, b"x", true), Ok(b"abc".to_vec()));
+        assert_eq!(pad(b"abcd", 2, b"x", true), Ok(b"abcd".to_vec()));
+        assert_eq!(pad(b"ab", -1, b"x", true), Ok(b"ab".to_vec()));
         // An empty pad leaves the receiver unchanged.
-        assert_eq!(pad(b"ab", 5, b"", true), b"ab");
+        assert_eq!(pad(b"ab", 5, b"", true), Ok(b"ab".to_vec()));
+    }
+
+    #[test]
+    fn pad_cut_inside_a_sequence_is_an_error_and_a_boundary_cut_is_not() {
+        // Each trap case has a control of the same shape whose cut is on a
+        // boundary. The control target differs from the trap target only.
+        let a = "あ".as_bytes();
+        let ax = "あx".as_bytes();
+        let wide = "𠮷".as_bytes();
+        for at_start in [true, false] {
+            // "A" + 1 byte of "あ": the cut is at pad byte 1.
+            assert_eq!(pad(b"A", 2, a, at_start), Err(1));
+            let control = pad(b"A", 4, a, at_start).expect("whole copy");
+            assert_eq!(control.len(), 4);
+            assert!(std::str::from_utf8(&control).is_ok());
+            // "A" + 2 bytes of "あ": the cut is at pad byte 2.
+            assert_eq!(pad(b"A", 3, a, at_start), Err(2));
+            // A mixed pad: 5 fill bytes cut "あx" + "あ" at byte 1.
+            assert_eq!(pad(b"A", 6, ax, at_start), Err(1));
+            // Control: 7 fill bytes end after the second "あ".
+            let control = pad(b"A", 8, ax, at_start).expect("cut after あ");
+            let text = if at_start { "あxあA" } else { "Aあxあ" };
+            assert_eq!(control, text.as_bytes());
+            // A supplementary character: every non-whole fill traps.
+            for (target, cut) in [(2, 1), (3, 2), (4, 3), (6, 1)] {
+                assert_eq!(pad(b"A", target, wide, at_start), Err(cut), "{target}");
+            }
+            let control = pad(b"A", 9, wide, at_start).expect("two copies");
+            let text = if at_start { "𠮷𠮷A" } else { "A𠮷𠮷" };
+            assert_eq!(control, text.as_bytes());
+            // A receiver that is already long enough does not read the pad.
+            assert_eq!(
+                pad("あい".as_bytes(), 2, a, at_start),
+                Ok("あい".as_bytes().to_vec())
+            );
+        }
+    }
+
+    #[test]
+    fn pad_cut_check_reads_the_fill_length_and_the_pad_only() {
+        assert_eq!(pad_fill_len(1, 2, b"x"), 1);
+        assert_eq!(pad_fill_len(3, 2, b"x"), 0);
+        assert_eq!(pad_fill_len(1, -4, b"x"), 0);
+        assert_eq!(pad_fill_len(1, 9, b""), 0);
+        let a = "あ".as_bytes();
+        assert_eq!(pad_cut_inside_sequence(0, a), None);
+        assert_eq!(pad_cut_inside_sequence(1, a), Some(1));
+        assert_eq!(pad_cut_inside_sequence(2, a), Some(2));
+        assert_eq!(pad_cut_inside_sequence(3, a), None);
+        assert_eq!(pad_cut_inside_sequence(4, a), Some(1));
+        assert_eq!(pad_cut_inside_sequence(7, b"xy"), None);
+        assert_eq!(pad_cut_inside_sequence(5, b""), None);
     }
 
     #[test]

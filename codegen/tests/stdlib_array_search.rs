@@ -34,22 +34,22 @@ fn signed_index_traps_keep_kind_message_and_position() {
         (
             "\"abc\".at(3)",
             TrapKind::StrRange,
-            "codePointAt(3) out of range for string length 3",
+            "at(3) normalizes to 3, out of range for string length 3",
         ),
         (
             "\"abc\".at(-4)",
             TrapKind::StrRange,
-            "codePointAt(-1) out of range for string length 3",
+            "at(-4) normalizes to -1, out of range for string length 3",
         ),
         (
             "\"héllo\".at(2)",
             TrapKind::StrRange,
-            "charAt(2) is not on a UTF-8 boundary",
+            "at(2) normalizes to 2, which is not on a UTF-8 boundary",
         ),
         (
             "\"héllo\".at(-4)",
             TrapKind::StrRange,
-            "charAt(2) is not on a UTF-8 boundary",
+            "at(-4) normalizes to 2, which is not on a UTF-8 boundary",
         ),
     ] {
         let source = format!(
