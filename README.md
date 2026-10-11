@@ -385,6 +385,14 @@ subscript run examples/e01-sized-integers.ts
 subscript check game.ts --mirror engine.generated.d.ts
 ```
 
+To see how each foreign call passes its arguments to C, give `boundary`
+the arguments of `check`. It prints one line for each call site and
+crossing position:
+
+```sh
+subscript boundary game.ts --mirror engine.generated.d.ts
+```
+
 For a host with its own build system, emit the C translation unit and
 ask what the link line must add:
 
