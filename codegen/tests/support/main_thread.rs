@@ -227,7 +227,9 @@ pub fn run(tests: &[Test]) -> ExitCode {
             &selected,
             thread_limit(threads),
             |test, scope| {
-                if test.phase == Phase::Parallel || cfg!(not(unix)) {
+                if test.phase == Phase::Parallel
+                    || (cfg!(not(unix)) && test.phase == Phase::MainThread)
+                {
                     return match std::thread::Builder::new()
                         .name(test.name.clone())
                         .spawn_scoped(scope, test.run)
