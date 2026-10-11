@@ -46,7 +46,9 @@ decision, not silently by this one.
 Prints, one per line, what a host build must add to link the emitted
 C: the runtime include directory, the runtime static archive path,
 and the platform system libraries (`kernel32 ntdll userenv ws2_32
-dbghelp` on Windows, none elsewhere). `--cc` selects flag spelling
+dbghelp` on Windows, none elsewhere), then, on the last line, the
+linker flag that removes unreferenced code (`specs/blocks/compiler.md`
+§192). `--cc` selects flag spelling
 (`unix` default, `msvc`). Paths resolve per §4. Exit 2 if the archive
 cannot be resolved; never guesses.
 

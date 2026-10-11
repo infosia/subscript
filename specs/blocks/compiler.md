@@ -233,3 +233,4 @@ Every section, with its status:
 | §189 | The `boundary` command shows each crossing | active | [`s189-the-boundary-command-shows-each-crossing.md`](compiler/s189-the-boundary-command-shows-each-crossing.md) |
 | §190 | A dev run forks only a single-threaded process | active | [`s190-a-dev-run-forks-only-a-single-threaded-process.md`](compiler/s190-a-dev-run-forks-only-a-single-threaded-process.md) |
 | §191 | A padding does not end inside a UTF-8 sequence | active | [`s191-a-padding-does-not-end-inside-a-utf-8-sequence.md`](compiler/s191-a-padding-does-not-end-inside-a-utf-8-sequence.md) |
+| §192 | A ship link removes unreferenced code | active | [`s192-a-ship-link-removes-unreferenced-code.md`](compiler/s192-a-ship-link-removes-unreferenced-code.md) |
