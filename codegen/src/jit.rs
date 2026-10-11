@@ -24,6 +24,9 @@ mod symbols;
 pub use self::bench::{
     jit_bench, jit_bench_configured, jit_bench_with_warmup_floor, jit_compile_time, BenchSamples,
 };
+#[cfg(unix)]
+#[doc(hidden)]
+pub use self::isolation::dev_run_thread_count;
 pub(crate) use self::memory::install_reservation;
 #[cfg(test)]
 pub(crate) use self::probe::{

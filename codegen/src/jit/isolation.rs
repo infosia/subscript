@@ -8,8 +8,11 @@
 //! runs the runner. The runner exists on Apple targets and on Linux with
 //! glibc, whose loader passes `argc` and `argv` to a constructor. The runner compiles and runs the program and reports in the
 //! form of a forked child (`protocol.rs`).
-
-use std::time::{Duration, Instant};
+//!
+//! The thread count of rules 1 and 3 comes from the platform. On Linux
+//! it leaves out a thread that has started to exit, and a run reads it
+//! once. On Apple targets a run with a native library or a file provider
+//! reads a count above 1 again for up to 2 ms.
 
 use subscript_compiler::SourceFile;
 
@@ -68,11 +71,49 @@ pub(super) fn thread_count() -> Option<usize> {
 
 /// The number of threads in this process, or `None` if the platform
 /// does not give it.
+///
+/// Linux form (compiler.md §190.1 rule 3): the count is the entries of
+/// `/proc/self/task` whose `stat` flags do not hold `PF_EXITING`. A
+/// thread with that flag runs no more user code. If a `stat` file cannot
+/// be opened or read, its task ended after the directory read, and the
+/// count leaves it out. If a `stat` line cannot be parsed, the count is
+/// `None`.
 #[cfg(target_os = "linux")]
 pub(super) fn thread_count() -> Option<usize> {
-    std::fs::read_dir("/proc/self/task")
-        .ok()
-        .map(|tasks| tasks.filter(Result::is_ok).count())
+    use std::io::Read;
+
+    let tasks = std::fs::read_dir("/proc/self/task").ok()?;
+    let mut count = 0;
+    let mut line = String::new();
+    for task in tasks.flatten() {
+        let Ok(mut stat) = std::fs::File::open(task.path().join("stat")) else {
+            continue;
+        };
+        line.clear();
+        if stat.read_to_string(&mut line).is_err() {
+            continue;
+        }
+        if !stat_line_is_exiting(&line)? {
+            count += 1;
+        }
+    }
+    Some(count)
+}
+
+/// Whether the flags of a `/proc/<pid>/task/<tid>/stat` line hold
+/// `PF_EXITING`, or `None` if the line cannot be parsed. The flags are
+/// field 9. Field 2 (`comm`) is in parentheses and can hold spaces and
+/// `)`, so the fields are read after the last `)`.
+#[cfg(target_os = "linux")]
+fn stat_line_is_exiting(line: &str) -> Option<bool> {
+    /// The task flag of a thread that has started to exit
+    /// (`include/linux/sched.h`).
+    const PF_EXITING: u64 = 0x4;
+
+    let (_, rest) = line.rsplit_once(')')?;
+    // After `comm`, field 3 (`state`) is the first; field 9 is the seventh.
+    let flags: u64 = rest.split_ascii_whitespace().nth(6)?.parse().ok()?;
+    Some(flags & PF_EXITING != 0)
 }
 
 /// The number of threads in this process, or `None` if the platform
@@ -87,12 +128,27 @@ pub(super) fn describe_count(threads: Option<usize>) -> String {
     threads.map_or_else(|| "an unknown number of".to_string(), |n| n.to_string())
 }
 
-/// The thread count of a run. If the run has a native library or a file
-/// provider (`settle`) and the count is above 1, the count is read again
-/// for up to 2 ms (compiler.md §190.1 rule 3): the platform counts a
-/// joined thread for some microseconds after the join. A run without
-/// such inputs reads the count once.
+/// The thread count of a run (compiler.md §190.1 rule 3).
+///
+/// Linux and other non-Apple form: the count is read once, with no wait.
+/// The Linux count leaves out a joined thread that is still exiting.
+/// `settle` has no effect.
+#[cfg(not(target_vendor = "apple"))]
 pub(super) fn thread_count_for_run(settle: bool) -> Option<usize> {
+    let _ = settle;
+    thread_count()
+}
+
+/// The thread count of a run (compiler.md §190.1 rule 3).
+///
+/// Apple form: if the run has a native library or a file provider
+/// (`settle`) and the count is above 1, the count is read again for up
+/// to 2 ms: the platform counts a joined thread for some microseconds
+/// after the join. A run without such inputs reads the count once.
+#[cfg(target_vendor = "apple")]
+pub(super) fn thread_count_for_run(settle: bool) -> Option<usize> {
+    use std::time::{Duration, Instant};
+
     let mut count = thread_count();
     if !settle || count == Some(1) || count.is_none() {
         return count;
@@ -103,6 +159,18 @@ pub(super) fn thread_count_for_run(settle: bool) -> Option<usize> {
         count = thread_count();
     }
     count
+}
+
+/// The thread count that the compiler.md §190.1 rule 1 and rule 3
+/// checks read, read once with no wait. It is the platform count:
+/// on Linux it leaves out a thread that has started to exit. `None`
+/// means that the platform does not give the count.
+///
+/// It exists for the §190.3 tests and is not part of the supported API.
+#[doc(hidden)]
+#[must_use]
+pub fn dev_run_thread_count() -> Option<usize> {
+    thread_count()
 }
 
 /// Runs `files` from a multithreaded caller (compiler.md §190.1 rules 2
@@ -445,5 +513,40 @@ mod tests {
         if let Some(during) = during {
             assert!(during >= 2, "during {during}");
         }
+    }
+
+    /// A `stat` line of task 4242 whose `comm` is `a) b`, with `flags`
+    /// in field 9.
+    #[cfg(target_os = "linux")]
+    fn stat_line(flags: u64) -> String {
+        format!("4242 (a) b) S 1 4242 4242 0 -1 {flags} 120 0 0 0 5 3 0 0 20 0 1 0 100\n")
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_stat_parser_reads_the_flags_after_the_last_parenthesis() {
+        // 0x4040_0004: PF_EXITING with other flags set.
+        assert_eq!(stat_line_is_exiting(&stat_line(0x4040_0004)), Some(true));
+        // 0x4040_0040: other flags set, PF_EXITING clear.
+        assert_eq!(stat_line_is_exiting(&stat_line(0x4040_0040)), Some(false));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_stat_parser_gives_none_for_a_line_it_cannot_parse() {
+        assert_eq!(
+            stat_line_is_exiting("4242 comm S 1 4242 4242 0 -1 4 120\n"),
+            None
+        );
+        assert_eq!(stat_line_is_exiting("4242 (comm) S 1 4242\n"), None);
+        assert_eq!(
+            stat_line_is_exiting("4242 (comm) S 1 4242 4242 0 -1 flags 120\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_public_count_is_the_platform_count() {
+        assert_eq!(dev_run_thread_count().is_some(), thread_count().is_some());
     }
 }

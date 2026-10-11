@@ -145,11 +145,11 @@ fn a_phase_1_native_run_is_the_rule_3_error() {
     }
 }
 
-/// §190.1 rule 3: the platform counts a joined thread for some
-/// microseconds after the join. A native run that starts at once after
-/// several joins reads the count again and runs. The control is the
-/// second-thread test above, whose live thread still gives the rule 3
-/// error.
+/// §190.1 rule 3: the platform can count a joined thread after the join.
+/// A native run that starts at once after several joins runs: the Linux
+/// count leaves out an exiting thread, and Apple targets read the count
+/// again. The control is the second-thread test above, whose live thread
+/// still gives the rule 3 error.
 fn a_native_run_right_after_joins_runs_the_program() {
     let (files, library) = native_program();
     std::thread::scope(|scope| {
@@ -160,6 +160,51 @@ fn a_native_run_right_after_joins_runs_the_program() {
     let stdout = run_jit_with_native_libraries(&files, std::slice::from_ref(&library))
         .expect("the run right after the joins");
     assert_eq!(stdout, b"7\n");
+}
+
+/// Start-and-join cycles of the test below. At the pin `8c43b6d8`, on an
+/// x86-64 Linux host with no load, the old count was above 1 in 17 to 49
+/// cycles of 5,000 in each of 5 runs. Gate cost: 0.21 s debug, 0.20 s
+/// release, measured.
+#[cfg(target_os = "linux")]
+const JOIN_CYCLES: usize = 5_000;
+
+/// §190.3 acceptance 1: a phase 2 test starts and joins one thread, then
+/// reads the rule 3 count at once. The Linux count leaves out the joined
+/// thread while it exits, so every read is 1. The control is the test
+/// below.
+#[cfg(target_os = "linux")]
+fn a_joined_thread_is_not_in_the_count_at_once() {
+    let mut above_one = 0;
+    let mut unknown = 0;
+    for _ in 0..JOIN_CYCLES {
+        std::thread::spawn(|| {})
+            .join()
+            .expect("join an empty thread");
+        match subscript_codegen::dev_run_thread_count() {
+            Some(1) => {}
+            Some(_) => above_one += 1,
+            None => unknown += 1,
+        }
+    }
+    assert!(
+        above_one == 0 && unknown == 0,
+        "{above_one} of {JOIN_CYCLES} cycles counted above 1; {unknown} unknown"
+    );
+}
+
+/// The control of the test above: a second thread that stays alive,
+/// parked on a channel, is in the count.
+#[cfg(target_os = "linux")]
+fn a_live_second_thread_is_in_the_count() {
+    let (stop, wait) = std::sync::mpsc::channel::<()>();
+    let second = std::thread::spawn(move || {
+        let _ = wait.recv();
+    });
+    let during = subscript_codegen::dev_run_thread_count();
+    stop.send(()).expect("stop the second thread");
+    second.join().expect("join the second thread");
+    assert_eq!(during, Some(2));
 }
 
 /// The control of the rule 3 tests above: the same program and library in
@@ -321,6 +366,10 @@ fn main() -> ExitCode {
             a_native_run_with_a_second_thread_is_the_rule_3_error,
             a_native_run_on_the_only_thread_runs_the_program,
             a_native_run_right_after_joins_runs_the_program,
+            #[cfg(target_os = "linux")]
+            a_joined_thread_is_not_in_the_count_at_once,
+            #[cfg(target_os = "linux")]
+            a_live_second_thread_is_in_the_count,
         ],
     ])
 }
