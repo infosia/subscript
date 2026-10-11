@@ -35,6 +35,9 @@ use clang_sys::*;
 
 use crate::cparse::{CField, Decl, ParseError};
 
+#[cfg(test)]
+mod tests;
+
 /// Everything the frontend extracts from a header: the boundary
 /// declarations consumed by the emitter, plus the production-C facts
 /// (macros, constants, scalar/flag typedef aliases, doc comments).
@@ -919,13 +922,13 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
     match canon.kind {
         CXType_Enum => {
             record_doc(cursor, &name, parsed);
-            let decl = clang_getTypeDeclaration(canon);
+            let decl = type_definition_or_declaration(canon);
             let members = enum_members(decl);
             parsed.decls.push(Decl::Enum { name, members });
         }
         CXType_Record => {
             record_doc(cursor, &name, parsed);
-            let decl = clang_getTypeDeclaration(canon);
+            let decl = type_definition_or_declaration(canon);
             validate_record_layout(&name, cursor, canon, decl)?;
             let fields = struct_fields(decl);
             parsed.decls.push(Decl::Struct { name, fields });
@@ -935,7 +938,7 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
             match pointee.kind {
                 // `typedef struct X_T *X;` — opaque handle.
                 CXType_Record => {
-                    let decl = clang_getTypeDeclaration(pointee);
+                    let decl = type_definition_or_declaration(pointee);
                     validate_record_layout(&name, cursor, pointee, decl)?;
                     record_doc(cursor, &name, parsed);
                     parsed.decls.push(Decl::Handle { name });
@@ -970,6 +973,18 @@ unsafe fn visit_typedef(cursor: CXCursor, parsed: &mut Parsed) -> Result<(), Par
         }),
     }
     Ok(())
+}
+
+/// Gets the definition for member and layout reads. Keeps the declaration
+/// when no definition exists, so an opaque handle stays incomplete.
+unsafe fn type_definition_or_declaration(ty: CXType) -> CXCursor {
+    let decl = clang_getTypeDeclaration(ty);
+    let definition = clang_getCursorDefinition(decl);
+    if clang_Cursor_isNull(definition) != 0 {
+        decl
+    } else {
+        definition
+    }
 }
 
 /// Collects the typedef chain under a scalar typedef's immediate underlying
