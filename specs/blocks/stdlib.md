@@ -378,10 +378,11 @@ no capture groups, so this needs no regex engine (verified:
 `"a-b".replace("-", "[$1]")` is `"a[$1]b"`).
 
 *(`at` is accepted by §8.10: out of range traps, as `codePointAt`
-does.)* `normalize` (Unicode
-normalization tables), `localeCompare`,
-`toLocaleUpperCase`/`LowerCase` (locale data) — each a missing
-prerequisite rather than a cost. `match` and `matchAll` are rejected
+does.)* `normalize()` and `normalize("NFC")` are accepted by
+`compiler.md` §193; another form is rejected. `localeCompare` and
+`toLocaleUpperCase`/`LowerCase` (locale data) are rejected — each a
+missing prerequisite rather than a cost. The `subscript:text` module
+(`compiler.md` §193) gives grapheme counts and grapheme slices. `match` and `matchAll` are rejected
 for the **result type** §15.3 names, not for a missing engine.
 *(Corrected 2026-09-10 by `compiler.md` §103.3. This paragraph listed
 `match`/`matchAll`/`search` together as needing "a regex engine".
