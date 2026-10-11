@@ -616,7 +616,12 @@ pub fn posix_feature_arguments() -> &'static [&'static str] {
 /// native static libraries that `rustc` adds. macOS needs no explicit list.
 #[must_use]
 pub fn runtime_system_libraries(style: CCompilerStyle) -> Vec<OsString> {
-    let platform = if cfg!(target_os = "windows") {
+    system_library_arguments(host_link_platform(), style)
+}
+
+/// Returns the link platform of the host that runs this code.
+fn host_link_platform() -> SystemLibraryPlatform {
+    if cfg!(target_os = "windows") {
         SystemLibraryPlatform::Windows
     } else if cfg!(target_os = "macos") {
         SystemLibraryPlatform::MacOs
@@ -624,8 +629,33 @@ pub fn runtime_system_libraries(style: CCompilerStyle) -> Vec<OsString> {
         SystemLibraryPlatform::Linux
     } else {
         SystemLibraryPlatform::Other
-    };
-    system_library_arguments(platform, style)
+    }
+}
+
+/// Returns the linker arguments that remove unreferenced code from a
+/// ship-tier link, in the selected spelling (compiler.md §192).
+///
+/// Apple uses `-Wl,-dead_strip`. Other Unix-style links use
+/// `-Wl,--gc-sections`. MSVC uses the linker option `/OPT:REF`, which must
+/// follow the `-link` marker. Add these arguments after
+/// [`add_executable_output`].
+#[must_use]
+pub fn unreferenced_code_removal_arguments(style: CCompilerStyle) -> &'static [&'static str] {
+    unreferenced_code_removal_for(host_link_platform(), style)
+}
+
+fn unreferenced_code_removal_for(
+    platform: SystemLibraryPlatform,
+    style: CCompilerStyle,
+) -> &'static [&'static str] {
+    if style.is_msvc() {
+        return &["/OPT:REF"];
+    }
+    match platform {
+        SystemLibraryPlatform::MacOs => &["-Wl,-dead_strip"],
+        SystemLibraryPlatform::Linux | SystemLibraryPlatform::Windows => &["-Wl,--gc-sections"],
+        SystemLibraryPlatform::Other => &[],
+    }
 }
 
 fn system_library_arguments(
@@ -1053,6 +1083,7 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         .arg(&staticlib)
         .args(runtime_system_libraries(cc.style()));
     add_executable_output(&mut command, &exe_path, cc.style());
+    command.args(unreferenced_code_removal_arguments(cc.style()));
     let compile = command.output().map_err(|e| {
         RunError::Internal(internal(format!(
             "the platform C compiler `{}` could not be run: {e}; \

@@ -57,8 +57,8 @@ use std::time::{Duration, Instant};
 
 use subscript_codegen::{
     emit_c, jit_bench_with_warmup_floor, jit_compile_time, posix_feature_arguments,
-    runtime_staticlib_path, runtime_system_libraries, tool_output_report, CCompilerStyle,
-    ReloadSession,
+    runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    unreferenced_code_removal_arguments, CCompilerStyle, ReloadSession,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -1487,6 +1487,7 @@ fn measure_ship(
         .arg(&entry)
         .arg(&staticlib)
         .args(runtime_system_libraries(CCompilerStyle::Unix))
+        .args(unreferenced_code_removal_arguments(CCompilerStyle::Unix))
         .arg("-o")
         .arg(&exe)
         .output()

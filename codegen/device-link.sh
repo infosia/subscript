@@ -30,6 +30,10 @@
 # line tools for the iOS half, and a populated cargo cache (every cargo
 # invocation is --offline).
 #
+# Each link passes the flag that removes unreferenced code
+# (specs/blocks/compiler.md §192): -Wl,-dead_strip for the Apple
+# targets, -Wl,--gc-sections for Linux and Android.
+#
 # All paths are resolved relative to this script's directory.
 
 set -eu
@@ -70,6 +74,7 @@ if [ "$HOST_OS" = "Darwin" ]; then
         "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/aarch64-apple-ios/release/$RUNTIME_LIB" \
+        -Wl,-dead_strip \
         -o "$OUT_DIR/$ENTRY_ID-ios"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-ios"
 else
@@ -85,6 +90,7 @@ if [ "$HOST_OS" = "Darwin" ]; then
         "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/release/$RUNTIME_LIB" \
+        -Wl,-dead_strip \
         -o "$OUT_DIR/$ENTRY_ID-macos"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-macos"
     file "$OUT_DIR/$ENTRY_ID-macos"
@@ -118,6 +124,7 @@ if [ "$HOST_OS" = "Linux" ] && [ "$HOST_ARCH" = "x86_64" ]; then
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/release/$RUNTIME_LIB" \
         -lm -ldl -lpthread -lrt -lutil -lgcc_s -lc \
+        -Wl,--gc-sections \
         -o "$OUT_DIR/$ENTRY_ID-linux"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-linux"
     file "$OUT_DIR/$ENTRY_ID-linux"
@@ -178,6 +185,7 @@ else
         "$OUT_DIR/entry.c" \
         "$TARGET_DIR/aarch64-linux-android/release/$RUNTIME_LIB" \
         -ldl -llog -lunwind -lm -lc \
+        -Wl,--gc-sections \
         -o "$OUT_DIR/$ENTRY_ID-android"
     LINKED="$LINKED $OUT_DIR/$ENTRY_ID-android"
 fi

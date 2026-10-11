@@ -597,8 +597,31 @@ fn link_flags_covers_clean_and_unresolved_archive_paths() -> Result<(), String> 
     {
         expected_stdout.extend_from_slice(format!("{}\n", library.to_string_lossy()).as_bytes());
     }
+    let removal = subscript_codegen::unreferenced_code_removal_arguments(
+        subscript_codegen::CCompilerStyle::Unix,
+    );
+    assert!(!removal.is_empty());
+    for flag in removal {
+        expected_stdout.extend_from_slice(format!("{flag}\n").as_bytes());
+    }
     assert_eq!(linked.stdout, expected_stdout);
     assert!(linked.stderr.is_empty());
+
+    let msvc = output(
+        subscript()
+            .arg("link-flags")
+            .arg("--cc")
+            .arg("msvc")
+            .arg("--runtime-lib")
+            .arg(&archive)
+            .arg("--runtime-include")
+            .arg(&include),
+    )?;
+    assert_code(&msvc, 0);
+    assert_eq!(
+        String::from_utf8_lossy(&msvc.stdout).lines().last(),
+        Some("/OPT:REF")
+    );
 
     let missing = output(
         subscript()

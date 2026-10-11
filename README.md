@@ -391,7 +391,7 @@ ask what the link line must add:
 ```sh
 subscript bind --header engine.h -o engine.generated.d.ts
 subscript emit game.ts --mirror engine.generated.d.ts --no-entry -o out/
-subscript link-flags    # runtime include dir, static archive, system libs
+subscript link-flags    # runtime include dir, static archive, system libs, removal flag
 ```
 
 Or build and run a complete host in one step — this is all

@@ -16,7 +16,8 @@ use std::time::Instant;
 
 use subscript_codegen::{
     emit_c, host_c_compiler, posix_feature_arguments, runtime_staticlib_path,
-    runtime_system_libraries, tool_output_report, CCompilerStyle,
+    runtime_system_libraries, tool_output_report, unreferenced_code_removal_arguments,
+    CCompilerStyle,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -197,6 +198,7 @@ fn measure(
         .arg(&entry)
         .arg(&staticlib)
         .args(runtime_system_libraries(CCompilerStyle::Unix))
+        .args(unreferenced_code_removal_arguments(CCompilerStyle::Unix))
         .arg("-o")
         .arg(&exe)
         .output()

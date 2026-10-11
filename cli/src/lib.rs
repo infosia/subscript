@@ -17,7 +17,8 @@ use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides,
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory,
     emit_c_files_with_options, host_c_compiler, include_directory_arg, run_jit_configured,
-    runtime_system_libraries, CCompilerStyle, EmitCFilesError, RunError,
+    runtime_system_libraries, unreferenced_code_removal_arguments, CCompilerStyle, EmitCFilesError,
+    RunError,
 };
 use subscript_compiler::{
     check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile, Warning,
@@ -378,6 +379,10 @@ fn link_flags_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8,
         writeln!(stdout, "{}", library.to_string_lossy())
             .map_err(|error| Failure::usage(format!("write link flags: {error}")))?;
     }
+    for flag in unreferenced_code_removal_arguments(parsed.style) {
+        writeln!(stdout, "{flag}")
+            .map_err(|error| Failure::usage(format!("write link flags: {error}")))?;
+    }
     Ok(SUCCESS)
 }
 
@@ -596,6 +601,7 @@ fn compile_build<E: Write>(
         .arg(&runtime.library)
         .args(runtime_system_libraries(style));
     add_executable_output(&mut command, executable, style);
+    command.args(unreferenced_code_removal_arguments(style));
 
     let output = command.output().map_err(|error| {
         Failure::usage(format!(

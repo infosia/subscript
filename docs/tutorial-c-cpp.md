@@ -479,23 +479,33 @@ three mechanisms.
 
 ### Step 4 — or integrate with your own build system
 
-Your build owns the final link; subscript hands it two things:
+Your build owns the final link; subscript hands it what the link needs:
 
 ```sh
 $ subscript emit hello.ts --no-entry -o gen/
 $ subscript link-flags
 -I/path/to/subscript/runtime/include
 /path/to/subscript/target/release/libsubscript_runtime.a
+-Wl,-dead_strip
 ```
 
-The two `link-flags` lines are absolute paths on the host that ran the
-command. The first is the include directory that holds the generated
+The first two `link-flags` lines are absolute paths on the host that ran
+the command. The first is the include directory that holds the generated
 `subscript_runtime.h`. The second is the runtime static archive. This
 host is macOS and needs no system library. `link-flags` adds
 `kernel32 ntdll userenv ws2_32 dbghelp` on Windows and
 `m dl pthread rt util gcc_s c` on Linux (`codegen/src/ship.rs`;
 `specs/blocks/compiler.md` §11b). `--cc msvc` prints the include path
 as `/I`; the library path is the one this host built.
+
+The last line is the linker flag that removes unreferenced code
+(`specs/blocks/compiler.md` §192): `-Wl,-dead_strip` on macOS,
+`-Wl,--gc-sections` on Linux, and `/OPT:REF` with `--cc msvc`.
+`/OPT:REF` is a linker option, so put it after `/link` on the `cl`
+command line. Without the flag, the executable keeps runtime code that
+the program never calls. The flag keeps every symbol that the link
+references. If your host finds a symbol by name at run time (`dlsym`),
+pass your own linker flag that keeps that symbol.
 
 `emit --no-entry` writes three files into `gen/`:
 
@@ -516,7 +526,7 @@ The whole path, run end to end:
 cc -std=c11 -O2 -fwrapv -ffp-contract=off \
    -Igen $(subscript link-flags | head -1) \
    gen/program.c main.c \
-   $(subscript link-flags | tail -1) \
+   $(subscript link-flags | tail -n +2) \
    -o frame
 ```
 
@@ -533,7 +543,7 @@ owns every host entry declaration:
 cc  -std=c11 -O2 -fwrapv -ffp-contract=off -Igen $(subscript link-flags | head -1) \
     -c gen/program.c -o gen/program.o
 c++ -std=c++17 -O2 -Igen $(subscript link-flags | head -1) \
-    host.cpp gen/program.o $(subscript link-flags | tail -1) -o cpphost
+    host.cpp gen/program.o $(subscript link-flags | tail -n +2) -o cpphost
 ```
 
 ### Step 5 — host-callable exports: the parameters a host passes

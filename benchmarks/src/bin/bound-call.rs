@@ -25,7 +25,7 @@ use std::process::{Command, ExitCode};
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c, host_c_compiler,
     host_entry, include_directory_arg, runtime_staticlib_path, runtime_system_libraries,
-    tool_output_report, HostCCompiler, AOT_ENTRY_C,
+    tool_output_report, unreferenced_code_removal_arguments, HostCCompiler, AOT_ENTRY_C,
 };
 #[cfg(unix)]
 use subscript_compiler::{check_program, SourceFile};
@@ -578,6 +578,9 @@ fn link_sources(
         command.args(runtime_system_libraries(compiler.style()));
     }
     add_executable_output(&mut command, executable, compiler.style());
+    if runtime.is_some() {
+        command.args(unreferenced_code_removal_arguments(compiler.style()));
+    }
     let output = command.output().map_err(|error| {
         format!(
             "the C compiler `{}` could not build {label}: {error}",

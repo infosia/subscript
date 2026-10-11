@@ -305,6 +305,90 @@ fn public_toolchain_api_carries_the_ship_contract() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn unreferenced_code_removal_follows_the_platform_and_the_style() {
+    for platform in [
+        SystemLibraryPlatform::Windows,
+        SystemLibraryPlatform::Linux,
+        SystemLibraryPlatform::MacOs,
+        SystemLibraryPlatform::Other,
+    ] {
+        assert_eq!(
+            unreferenced_code_removal_for(platform, CCompilerStyle::Msvc),
+            ["/OPT:REF"]
+        );
+    }
+    assert_eq!(
+        unreferenced_code_removal_for(SystemLibraryPlatform::MacOs, CCompilerStyle::Unix),
+        ["-Wl,-dead_strip"]
+    );
+    for platform in [SystemLibraryPlatform::Linux, SystemLibraryPlatform::Windows] {
+        assert_eq!(
+            unreferenced_code_removal_for(platform, CCompilerStyle::Unix),
+            ["-Wl,--gc-sections"]
+        );
+    }
+    assert!(
+        unreferenced_code_removal_for(SystemLibraryPlatform::Other, CCompilerStyle::Unix)
+            .is_empty()
+    );
+    assert_eq!(
+        unreferenced_code_removal_arguments(CCompilerStyle::Unix),
+        unreferenced_code_removal_for(host_link_platform(), CCompilerStyle::Unix)
+    );
+
+    // `/OPT:REF` is a linker option, so it must follow the `-link` marker.
+    let mut msvc = Command::new("cl");
+    add_executable_output(&mut msvc, Path::new("program.exe"), CCompilerStyle::Msvc);
+    msvc.args(unreferenced_code_removal_arguments(CCompilerStyle::Msvc));
+    assert_eq!(
+        msvc.get_args().collect::<Vec<_>>(),
+        ["/Fe:program.exe", "-link", "/OPT:REF"]
+    );
+}
+
+/// The ship link removes unreferenced code (compiler.md §192 acceptance 2).
+///
+/// The test reads the executable that `build_c_aot` links. The control
+/// links the same `program.c` and `entry.c` by hand without the flag. The
+/// bound is a ratio: an ELF executable keeps the DWARF of its live
+/// members, so an absolute bound does not hold on Linux.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn ship_link_is_at_most_half_the_control_link() {
+    let files = sources("export function main(): void {\n  print(\"size\");\n}\n");
+    let linked = build_c_aot(&files, RunConfig::default()).expect("ship link");
+    let removed = std::fs::metadata(&linked.executable)
+        .expect("ship link size")
+        .len();
+
+    let dir = &linked.directory.path;
+    let control_path = dir.join("control");
+    let cc = host_c_compiler().expect("resolve C compiler");
+    let mut command = cc.command();
+    add_c11_optimized_flags(&mut command, cc.style());
+    command
+        .arg(include_directory_arg(cc.style(), dir))
+        .arg(dir.join("program.c"))
+        .arg(dir.join("entry.c"))
+        .arg(runtime_staticlib().expect("runtime staticlib"))
+        .args(runtime_system_libraries(cc.style()));
+    add_executable_output(&mut command, &control_path, cc.style());
+    let compile = command.output().expect("run C compiler");
+    assert!(
+        compile.status.success(),
+        "linking the control failed:\n{}",
+        tool_output_report(&compile)
+    );
+    let control = std::fs::metadata(&control_path)
+        .expect("control size")
+        .len();
+    assert!(
+        removed.saturating_mul(2) <= control,
+        "ship link is {removed} bytes, control link is {control} bytes"
+    );
+}
+
 /// Drives the emitted-C ship tier with a test-specific C host entry.
 /// The compile/link flags and runtime inputs are exactly the ones used
 /// by `run_c_aot`; only the host driver source differs.
@@ -348,6 +432,7 @@ fn run_c_aot_with_entry(files: &[SourceFile], entry: &str) -> std::process::Outp
         command.arg("-pthread");
     }
     add_executable_output(&mut command, &exe_path, cc.style());
+    command.args(unreferenced_code_removal_arguments(cc.style()));
     let compile = command.output().expect("run C compiler");
     assert!(
         compile.status.success(),

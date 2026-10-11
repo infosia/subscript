@@ -567,19 +567,21 @@ of the translation unit.
 for a rejected program, `Emission(String)` for a C-lowering failure,
 and `Io { action, path, source }` for a write failure.
 
-Compile the result as C11 and link the runtime archive. Run this
-from the repository root. `$OUT` names the directory you passed to
-`emit_c_files`, and the archive below is the development profile's:
+Compile the result as C11 and link the runtime archive. `$OUT` names
+the directory you passed to `emit_c_files`. `subscript link-flags`
+prints the include directory, the runtime archive, the system
+libraries, and the flag that removes unreferenced code, as the
+[C/C++ tutorial](tutorial-c-cpp.md) shows in its step 4:
 
 ```sh
-$ clang -std=c11 -O2 -Iruntime/include \
+$ clang -std=c11 -O2 $(subscript link-flags | head -1) \
     "$OUT/program.c" "$OUT/entry.c" \
-    target/debug/libsubscript_runtime.a -o "$OUT/program"
+    $(subscript link-flags | tail -n +2) -o "$OUT/program"
 $ "$OUT/program"
 hello from the ship tier
 ```
 
-A host build script gets the same three inputs from the crate, so no
+A host build script gets the same inputs from the crate, so no
 path is hard-coded:
 
 - `runtime_staticlib_path()` — the archive for the running profile.
@@ -592,6 +594,9 @@ path is hard-coded:
   Windows lists five import libraries (`kernel32 ntdll userenv
   ws2_32 dbghelp`), non-macOS Unix lists `m dl pthread rt util
   gcc_s c`, and macOS lists none.
+- `unreferenced_code_removal_arguments(style)` — the flag that removes
+  unreferenced code (`specs/blocks/compiler.md` §192). Add it after
+  `add_executable_output`: the MSVC `/OPT:REF` must follow `-link`.
 
 `host_c_compiler()` returns the compiler this repository selects,
 including MSVC discovery on Windows. `CCompilerStyle` says which
