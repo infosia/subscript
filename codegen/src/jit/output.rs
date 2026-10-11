@@ -71,6 +71,12 @@ impl TemporaryFile {
         Ok(bytes)
     }
 
+    /// The path of the file. A runner opens it by this path.
+    #[cfg(unix)]
+    pub(super) fn path(&self) -> &Path {
+        self.path.as_deref().expect("live temporary path")
+    }
+
     fn take_parts(mut self) -> (PathBuf, File) {
         (
             self.path.take().expect("live temporary path"),
@@ -91,6 +97,9 @@ pub(super) struct RetainedOutput {
     file: File,
     #[cfg(unix)]
     start: u64,
+    /// The path of `file`. A runner opens it by this path.
+    #[cfg(unix)]
+    path: PathBuf,
     owned_path: Option<PathBuf>,
 }
 
@@ -122,6 +131,8 @@ impl RetainedOutput {
                 file,
                 #[cfg(unix)]
                 start,
+                #[cfg(unix)]
+                path: path.to_path_buf(),
                 owned_path: None,
             });
         }
@@ -131,6 +142,8 @@ impl RetainedOutput {
             file,
             #[cfg(unix)]
             start: 0,
+            #[cfg(unix)]
+            path: path.clone(),
             owned_path: Some(path),
         })
     }
@@ -139,6 +152,12 @@ impl RetainedOutput {
         self.file.try_clone().map_err(|error| {
             RunError::Internal(internal(format!("clone JIT output file: {error}")))
         })
+    }
+
+    /// The path of the retained output file.
+    #[cfg(unix)]
+    pub(super) fn path(&self) -> &Path {
+        &self.path
     }
 
     #[cfg(unix)]

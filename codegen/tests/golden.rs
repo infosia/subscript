@@ -13,6 +13,13 @@
 //! missing runtime static library, or a failing compile/link fails this
 //! test: the gate machine is the development machine (§8.3).
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 mod corpus;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
@@ -127,7 +134,6 @@ fn run_dev_corpus_entry(
     run_jit_with_native_libraries(sources, libraries)
 }
 
-#[test]
 fn r27_field_initializer_entries_match_across_tiers() {
     let accept = corpus::corpus_accept();
     let mut failures = Vec::new();
@@ -149,7 +155,6 @@ fn r27_field_initializer_entries_match_across_tiers() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
 fn r28_binary32_bit_access_matches_the_golden_across_tiers() {
     let accept = corpus::corpus_accept();
     let id = "a135-f32-bits";
@@ -167,7 +172,6 @@ fn r28_binary32_bit_access_matches_the_golden_across_tiers() {
     );
 }
 
-#[test]
 fn r29_class_index_signature_matches_the_golden_across_tiers() {
     let accept = corpus::corpus_accept();
     let id = "a136-index-signature";
@@ -185,7 +189,6 @@ fn r29_class_index_signature_matches_the_golden_across_tiers() {
     );
 }
 
-#[test]
 fn r30_handle_entry_parameters_match_the_golden_across_tiers() {
     let accept = corpus::corpus_accept();
     let id = HANDLE_ENTRY_PARAM_ID;
@@ -206,7 +209,6 @@ fn r30_handle_entry_parameters_match_the_golden_across_tiers() {
     );
 }
 
-#[test]
 fn r32_wire_entry_parameters_match_the_golden_across_tiers() {
     let accept = corpus::corpus_accept();
     let id = WIRE_ENTRY_PARAM_ID;
@@ -227,7 +229,6 @@ fn r32_wire_entry_parameters_match_the_golden_across_tiers() {
     );
 }
 
-#[test]
 fn r31_using_disposal_matches_the_goldens_across_tiers() {
     let accept = corpus::corpus_accept();
     for id in ["a138-using-dispose", "a139-using-async"] {
@@ -258,7 +259,6 @@ fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<Na
     }
 }
 
-#[test]
 fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     let id = "a60-string-unicode";
@@ -281,7 +281,6 @@ fn unicode_string_entry_matches_across_tiers_before_golden_comparison() {
     println!("{id}: {:?}", String::from_utf8_lossy(&jit));
 }
 
-#[test]
 fn string_literal_union_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a91-string-literal-union";
@@ -301,7 +300,6 @@ fn string_literal_union_entry_matches_across_tiers_and_golden() {
     println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
 }
 
-#[test]
 fn descriptor_literal_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a92-descriptor-literals";
@@ -321,7 +319,6 @@ fn descriptor_literal_entry_matches_across_tiers_and_golden() {
     println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
 }
 
-#[test]
 fn q34_async_entries_match_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -345,7 +342,6 @@ fn q34_async_entries_match_across_tiers_and_golden() {
     }
 }
 
-#[test]
 fn r13_async_method_entries_match_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -368,7 +364,6 @@ fn r13_async_method_entries_match_across_tiers_and_golden() {
     }
 }
 
-#[test]
 fn capturing_lambda_environment_survives_recursive_reentry() {
     let accept = corpus::corpus_accept();
     let id = "a114-lambda-env-recursion";
@@ -388,7 +383,6 @@ fn capturing_lambda_environment_survives_recursive_reentry() {
     );
 }
 
-#[test]
 fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a96-interop-byte-pairs";
@@ -408,7 +402,6 @@ fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
     println!("ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
 }
 
-#[test]
 fn embedded_chain_header_box_keeps_the_complete_extension() {
     let accept = corpus::corpus_accept();
     let id = "a89-interop-chain-payload";
@@ -428,7 +421,6 @@ fn embedded_chain_header_box_keeps_the_complete_extension() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn managed_boundary_box_survives_the_building_function() {
     let accept = corpus::corpus_accept();
     let id = "a169-managed-boundary-box";
@@ -448,7 +440,6 @@ fn managed_boundary_box_survives_the_building_function() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn string_field_pointer_write_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a97-interop-string-field-write";
@@ -468,7 +459,6 @@ fn string_field_pointer_write_direction_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn string_field_pointer_read_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a98-interop-string-field-read";
@@ -488,7 +478,6 @@ fn string_field_pointer_read_direction_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn texture_descriptor_write_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a99-interop-texture-descriptor-write";
@@ -508,7 +497,6 @@ fn texture_descriptor_write_direction_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn texture_descriptor_read_direction_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a100-interop-texture-descriptor-read";
@@ -528,7 +516,6 @@ fn texture_descriptor_read_direction_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn recursive_boundary_pipeline_entries_match_both_tiers_and_goldens() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -553,7 +540,6 @@ fn recursive_boundary_pipeline_entries_match_both_tiers_and_goldens() {
     }
 }
 
-#[test]
 fn struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a106-interop-recursive-struct-pointer-members";
@@ -576,7 +562,6 @@ fn struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn handle_beside_arrays_through_nullable_member_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a119-interop-handle-beside-arrays";
@@ -596,7 +581,6 @@ fn handle_beside_arrays_through_nullable_member_matches_both_tiers_and_golden() 
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn nested_structs_behind_array_element_pointer_match_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a120-interop-nested-behind-element-pointer";
@@ -616,7 +600,6 @@ fn nested_structs_behind_array_element_pointer_match_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a121-interop-unmarked-reach-through";
@@ -639,7 +622,6 @@ fn unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn two_reach_through_pointer_members_match_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a122-interop-two-pointer-members";
@@ -659,7 +641,6 @@ fn two_reach_through_pointer_members_match_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn wide_descriptor_breadth_and_depth_match_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a123-interop-wide-descriptor";
@@ -682,7 +663,6 @@ fn wide_descriptor_breadth_and_depth_match_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn contextual_conditionals_match_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a124-contextual-conditional";
@@ -705,7 +685,6 @@ fn contextual_conditionals_match_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn conditional_arm_narrowing_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a125-conditional-arm-narrowing";
@@ -725,7 +704,6 @@ fn conditional_arm_narrowing_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn suspension_state_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a149-suspension-state";
@@ -750,7 +728,6 @@ fn suspension_state_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn by_value_packing_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a126-interop-by-value-packing";
@@ -770,7 +747,6 @@ fn by_value_packing_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn handle_parameter_pair_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a107-interop-handle-parameter-pair";
@@ -793,7 +769,6 @@ fn handle_parameter_pair_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn nullable_handle_parameter_matches_both_tiers_and_golden() {
     let accept = corpus::corpus_accept();
     let id = "a108-interop-nullable-handle-parameter";
@@ -813,7 +788,6 @@ fn nullable_handle_parameter_matches_both_tiers_and_golden() {
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
-#[test]
 fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     let accept = corpus::corpus_accept();
     for id in [
@@ -857,30 +831,48 @@ struct SweepOutcome {
     failures: Vec<String>,
 }
 
-/// Runs one entry on both tiers and compares the two outputs and the
-/// golden. The caller prints and asserts.
-fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
+fn sweep_libraries(entry: &SweepEntry) -> Vec<NativeLibrary> {
+    native_libraries(&entry.sources).expect("the selection step drops every excluded entry")
+}
+
+/// True when the dev run of the entry has a native library or a file
+/// provider. Such a run needs a single-threaded process (compiler.md
+/// §190.1 rule 3), so it runs on this thread after the pool.
+fn dev_run_needs_the_main_thread(entry: &SweepEntry) -> bool {
+    !sweep_libraries(entry).is_empty()
+        || entry
+            .sources
+            .iter()
+            .any(|f| f.source.lines().any(|l| l == "// file-provider: scratch"))
+}
+
+/// The dev-JIT run of one entry, or its failure line.
+fn dev_sweep_run(entry: &SweepEntry) -> Result<Vec<u8>, String> {
+    run_dev_corpus_entry(&entry.id, &entry.sources, &sweep_libraries(entry))
+        .map_err(|e| format!("{}: dev-JIT run failed: {e}", entry.id))
+}
+
+/// The ship tier: emit C, compile at -O2 -ffp-contract=off, link with
+/// the runtime, run, capture stdout.
+fn ship_sweep_run(entry: &SweepEntry) -> Result<Vec<u8>, String> {
+    run_ship_corpus_entry(&entry.id, &entry.sources, &sweep_libraries(entry))
+        .map_err(|e| format!("{}: ship-C-AOT run failed: {e}", entry.id))
+}
+
+/// Compares the two tier outputs of one entry and the golden. The
+/// caller prints and asserts.
+fn compare_sweep_outputs(
+    entry: &SweepEntry,
+    jit: Result<Vec<u8>, String>,
+    ship: Result<Vec<u8>, String>,
+) -> SweepOutcome {
     let id = &entry.id;
     let golden = &entry.golden;
-    let libraries =
-        native_libraries(&entry.sources).expect("the selection step drops every excluded entry");
     let mut failures = Vec::new();
-    let jit = match run_dev_corpus_entry(id, &entry.sources, &libraries) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            failures.push(format!("{id}: dev-JIT run failed: {e}"));
-            return SweepOutcome {
-                compared: false,
-                failures,
-            };
-        }
-    };
-    // The ship tier: emit C, compile at -O2 -ffp-contract=off, link
-    // with the runtime, run, capture stdout.
-    let ship = match run_ship_corpus_entry(id, &entry.sources, &libraries) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            failures.push(format!("{id}: ship-C-AOT run failed: {e}"));
+    let (jit, ship) = match (jit, ship) {
+        (Ok(jit), Ok(ship)) => (jit, ship),
+        (Err(failure), _) | (Ok(_), Err(failure)) => {
+            failures.push(failure);
             return SweepOutcome {
                 compared: false,
                 failures,
@@ -914,7 +906,11 @@ fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
     }
 }
 
-#[test]
+/// Runs one entry on both tiers on this thread and compares them.
+fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
+    compare_sweep_outputs(entry, dev_sweep_run(entry), ship_sweep_run(entry))
+}
+
 fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     let accept = corpus::corpus_accept();
     let golden_ids = corpus::golden_ids(&accept);
@@ -946,10 +942,20 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
         }
     }
 
-    let mut outcomes: Vec<(usize, SweepOutcome)> = pool::map_in_order(&pooled, compare_sweep_entry)
-        .into_iter()
-        .zip(pooled.iter().map(|entry| entry.index))
-        .map(|(outcome, index)| (index, outcome))
+    // The pool runs the ship tier of every pooled entry and the dev tier
+    // of each entry that can run from a pool thread. The other dev runs
+    // happen on this thread after the pool joins its threads.
+    let pooled_runs = pool::map_in_order(&pooled, |entry| {
+        let jit = (!dev_run_needs_the_main_thread(entry)).then(|| dev_sweep_run(entry));
+        (jit, ship_sweep_run(entry))
+    });
+    let mut outcomes: Vec<(usize, SweepOutcome)> = pooled
+        .iter()
+        .zip(pooled_runs)
+        .map(|(entry, (jit, ship))| {
+            let jit = jit.unwrap_or_else(|| dev_sweep_run(entry));
+            (entry.index, compare_sweep_outputs(entry, jit, ship))
+        })
         .collect();
     outcomes.extend(
         hooked
@@ -985,7 +991,6 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     );
 }
 
-#[test]
 fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
     // Output shape is part of the corpus convention: every run-set
     // non-empty output ends at a line boundary. The retired r267 program is silent.
@@ -1001,4 +1006,51 @@ fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
             "{id}: golden has no final newline"
         );
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            r27_field_initializer_entries_match_across_tiers,
+            r28_binary32_bit_access_matches_the_golden_across_tiers,
+            r29_class_index_signature_matches_the_golden_across_tiers,
+            r30_handle_entry_parameters_match_the_golden_across_tiers,
+            r32_wire_entry_parameters_match_the_golden_across_tiers,
+            r31_using_disposal_matches_the_goldens_across_tiers,
+            unicode_string_entry_matches_across_tiers_before_golden_comparison,
+            string_literal_union_entry_matches_across_tiers_and_golden,
+            descriptor_literal_entry_matches_across_tiers_and_golden,
+            capturing_lambda_environment_survives_recursive_reentry,
+            every_corpus_entry_with_a_golden_ends_in_a_newline,
+        ],
+        main_thread: [
+            q34_async_entries_match_across_tiers_and_golden,
+            r13_async_method_entries_match_across_tiers_and_golden,
+            scalar_parameter_pair_entry_matches_across_tiers_and_golden,
+            embedded_chain_header_box_keeps_the_complete_extension,
+            managed_boundary_box_survives_the_building_function,
+            string_field_pointer_write_direction_matches_both_tiers_and_golden,
+            string_field_pointer_read_direction_matches_both_tiers_and_golden,
+            texture_descriptor_write_direction_matches_both_tiers_and_golden,
+            texture_descriptor_read_direction_matches_both_tiers_and_golden,
+            recursive_boundary_pipeline_entries_match_both_tiers_and_goldens,
+            struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden,
+            handle_beside_arrays_through_nullable_member_matches_both_tiers_and_golden,
+            nested_structs_behind_array_element_pointer_match_both_tiers_and_golden,
+            unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden,
+            two_reach_through_pointer_members_match_both_tiers_and_golden,
+            wide_descriptor_breadth_and_depth_match_both_tiers_and_golden,
+            contextual_conditionals_match_both_tiers_and_golden,
+            conditional_arm_narrowing_matches_both_tiers_and_golden,
+            suspension_state_matches_both_tiers_and_golden,
+            by_value_packing_matches_both_tiers_and_golden,
+            handle_parameter_pair_matches_both_tiers_and_golden,
+            nullable_handle_parameter_matches_both_tiers_and_golden,
+            narrow_corpus_entries_match_across_tiers_before_golden_comparison,
+            jit_ship_c_aot_and_golden_agree_byte_for_byte,
+        ],
+    ])
 }

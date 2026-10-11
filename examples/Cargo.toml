@@ -18,3 +18,11 @@ subscript-interop-fixture = { path = "../codegen/tests/native-fixture" }
 
 [build-dependencies]
 cc = "1"
+
+# compiler.md §190.1 rule 3: this binary runs its tests in two phases
+# (`codegen/tests/support/main_thread.rs`). A phase 2 test runs in its own
+# process, on that process's main thread, so its native-library runs can
+# fork.
+[[test]]
+name = "gate"
+harness = false

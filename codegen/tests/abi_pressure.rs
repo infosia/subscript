@@ -19,7 +19,6 @@ fn class_library() -> subscript_codegen::NativeLibrary {
     }
 }
 
-#[test]
 fn boundary_gate_in_both_tiers() {
     // Isolated Apple arm64 cost: 4.284 s for both tiers, excluding the Rust build.
     // The 459 allocator checks and 90 boundary checks share one module per tier.
@@ -79,7 +78,6 @@ fn boundary_gate_in_both_tiers() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
 fn raw_bool_bytes_are_canonical_in_both_tiers() {
     // One module per tier tests raw, nested, and fixed-array bool storage (§179.1 rule 6).
     // Isolated Apple arm64 cost: 0.567 s for both tiers, excluding the Rust build.
@@ -126,7 +124,6 @@ export function main(): void {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[test]
 fn header_only_boundary_value_runs_in_both_tiers() {
     // Isolated Apple arm64 cost: 0.452539 s, excluding the Rust build.
     // Cost: one small module per tier and one C compile; no native archive build.
@@ -179,7 +176,6 @@ fn header_only_boundary_value_runs_in_both_tiers() {
     }
 }
 
-#[test]
 fn headerless_boundary_value_runs_in_both_tiers() {
     // Isolated Apple arm64 cost: 0.464 s, excluding the Rust build.
     // Cost: one small module per tier and one C compile; no native archive build.
@@ -203,7 +199,6 @@ fn headerless_boundary_value_runs_in_both_tiers() {
     }
 }
 
-#[test]
 fn fixed_array_boundary_pointer_compares_host_layout() {
     // Isolated Apple arm64 cost: 0.097 s, excluding the Rust build.
     // Cost: two C compiles compare an exact mirror and an independently stale mirror.
@@ -251,4 +246,21 @@ fn fixed_array_boundary_pointer_compares_host_layout() {
             assert!(error.contains("boundary class field offset"), "{error}");
         }
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+pub(super) fn main() -> std::process::ExitCode {
+    crate::main_thread::run(&crate::main_thread_tests![
+        parallel: [
+            raw_bool_bytes_are_canonical_in_both_tiers,
+            headerless_boundary_value_runs_in_both_tiers,
+            fixed_array_boundary_pointer_compares_host_layout,
+        ],
+        main_thread: [
+            boundary_gate_in_both_tiers,
+            header_only_boundary_value_runs_in_both_tiers,
+        ],
+    ])
 }

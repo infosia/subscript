@@ -1,4 +1,12 @@
 //! Standard-file operation, provider, verifier, and reload witnesses (§185).
+
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 #[allow(dead_code)]
 #[path = "support/files.rs"]
 mod fixture;
@@ -11,7 +19,6 @@ use subscript_runtime::TrapKind;
 
 /// Rule 3: the provider is set before the module initializer runs. The
 /// initializer starts a read; `main` awaits it.
-#[test]
 fn a_pre_init_hook_provider_is_visible_to_the_module_initializer() {
     let sources = [SourceFile::entry(
         "main.ts",
@@ -54,7 +61,6 @@ fn a_pre_init_hook_provider_is_visible_to_the_module_initializer() {
 }
 
 /// The shipping tier cannot call a Rust provider, so it refuses one.
-#[test]
 fn the_shipping_tier_refuses_a_rust_file_provider() {
     let sources = [SourceFile::entry(
         "main.ts",
@@ -68,7 +74,6 @@ fn the_shipping_tier_refuses_a_rust_file_provider() {
     );
 }
 
-#[test]
 fn no_provider_is_a_caught_error_in_both_tiers() {
     let sources = [SourceFile::entry("main.ts", "import {readFile} from 'node:fs/promises'; export async function main():Promise<void>{try{await readFile('absent','utf8');}catch(e){if(e instanceof Error)print(`${e.name}:${e.message}`);}}")];
     let config = RunConfig::default().with_enabled_modules(&["node:fs/promises"]);
@@ -87,7 +92,6 @@ fn no_provider_is_a_caught_error_in_both_tiers() {
     );
 }
 
-#[test]
 fn standard_result_verifier_uses_the_operation_contract() {
     let source = [SourceFile::entry("main.ts", "import {readFile} from 'node:fs/promises'; export async function main():Promise<void>{print(await readFile('file','utf8'));}")];
     let mut options = subscript_compiler::CheckOptions::default();
@@ -116,7 +120,6 @@ fn standard_result_verifier_uses_the_operation_contract() {
     );
 }
 
-#[test]
 fn new_frame_awaits_a_pre_reload_source_but_old_waiter_traps() {
     let old = "import {readFile,writeFile} from 'node:fs/promises'; let held:Promise<string>[]=[]; export async function main():Promise<void>{await writeFile('pending.txt','old');held.push(readFile('pending.txt','utf8'));} export async function consume():Promise<void>{print(await held[0]);} export async function release():Promise<void>{await writeFile('release.txt','x');}";
     let sources = |text: &str| [SourceFile::entry("main.ts", text)];
@@ -158,7 +161,6 @@ fn new_frame_awaits_a_pre_reload_source_but_old_waiter_traps() {
 
 /// The configured capturing constructor applies the modules and the provider,
 /// and reports an initializer trap.
-#[test]
 fn a_configured_capturing_session_reports_an_initializer_trap() {
     let text = "import {readFile} from 'node:fs/promises';\n\
                 const xs: i32[] = [];\n\
@@ -190,7 +192,6 @@ fn a_configured_capturing_session_reports_an_initializer_trap() {
 }
 
 /// The verifier compares the operands with the operation signature.
-#[test]
 fn standard_operand_verifier_uses_the_operation_signature() {
     let source = [SourceFile::entry("main.ts", "import {writeFile} from 'node:fs/promises'; export async function main():Promise<void>{await writeFile('file','text');}")];
     let mut options = subscript_compiler::CheckOptions::default();
@@ -219,7 +220,6 @@ fn standard_operand_verifier_uses_the_operation_signature() {
 }
 
 /// A reload session refuses an option that it does not apply.
-#[test]
 fn a_reload_session_refuses_an_option_it_does_not_apply() {
     let sources = [SourceFile::entry(
         "main.ts",
@@ -248,4 +248,24 @@ fn a_reload_session_refuses_an_option_it_does_not_apply() {
     let mut session = ReloadSession::new_configured(&sources, host.config()).expect("session");
     session.call_export("main").expect("main");
     assert_eq!(session.take_output(), b"x\n");
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            the_shipping_tier_refuses_a_rust_file_provider,
+            no_provider_is_a_caught_error_in_both_tiers,
+            standard_result_verifier_uses_the_operation_contract,
+            new_frame_awaits_a_pre_reload_source_but_old_waiter_traps,
+            a_configured_capturing_session_reports_an_initializer_trap,
+            standard_operand_verifier_uses_the_operation_signature,
+            a_reload_session_refuses_an_option_it_does_not_apply,
+        ],
+        main_thread: [
+            a_pre_init_hook_provider_is_visible_to_the_module_initializer,
+        ],
+    ])
 }

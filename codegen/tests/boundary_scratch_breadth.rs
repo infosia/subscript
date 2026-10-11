@@ -1,6 +1,13 @@
 //! §44.8: combined breadth-and-depth coverage for recursive boundary
 //! scratch.
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -335,7 +342,6 @@ fn address_plan(c: &str, owner_type: &str) -> Vec<String> {
         .collect()
 }
 
-#[test]
 fn lowered_positions_are_disjoint_and_sibling_content_independent_from_one_through_n() {
     let empty_hir = checked(false);
     let populated_hir = checked(true);
@@ -414,4 +420,17 @@ fn lowered_positions_are_disjoint_and_sibling_content_independent_from_one_throu
             .unwrap_or_else(|error| panic!("{label}: breadth JIT run failed: {error}"));
         assert_eq!(String::from_utf8_lossy(&stdout), expected_stdout, "{label}");
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+        ],
+        main_thread: [
+            lowered_positions_are_disjoint_and_sibling_content_independent_from_one_through_n,
+        ],
+    ])
 }

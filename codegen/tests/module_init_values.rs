@@ -1,6 +1,13 @@
 //! Function values in initializer routes under compiler.md §137 rule 5b.
 //! Cost: warm debug test execution 0.71 s, four ship-C program compiles.
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
@@ -30,12 +37,10 @@ fn all_engines(files: &[SourceFile], expected: &[u8]) {
     );
 }
 
-#[test]
 fn a_host_call_can_initialize_a_global() {
     host_program("const chain: SubChainHeader = new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_BASE, null); const device: SubDevice = subDeviceCreate(chain); export function main(): void { subDeviceRelease(device); }", b"");
 }
 
-#[test]
 fn a_direct_body_can_call_a_host_to_initialize_a_global() {
     host_program("function poll(): i32 { return subDevicePoll(1); } const first: i32 = poll(); export function main(): void { print(`${first}`); }", b"0\n");
 }
@@ -61,7 +66,6 @@ fn host_program(source: &str, expected: &[u8]) {
     );
 }
 
-#[test]
 fn a_comparator_in_a_dependency_does_not_read_the_importer() {
     all_engines(&[
         SourceFile::entry("main.ts", "import { first } from './a'; let count: i32 = 0; export function main(): void { print(`${first() + count}`); }"),
@@ -69,7 +73,22 @@ fn a_comparator_in_a_dependency_does_not_read_the_importer() {
     ], b"1\n");
 }
 
-#[test]
 fn a_map_callback_can_initialize_its_global() {
     all_engines(&[SourceFile::entry("main.ts", "const xs: i32[] = [1, 2]; const ys: i32[] = xs.map((x: i32): i32 => x + 1); export function main(): void { print(`${ys[0]} ${ys[1]}`); }")], b"2 3\n");
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            a_comparator_in_a_dependency_does_not_read_the_importer,
+            a_map_callback_can_initialize_its_global,
+        ],
+        main_thread: [
+            a_host_call_can_initialize_a_global,
+            a_direct_body_can_call_a_host_to_initialize_a_global,
+        ],
+    ])
 }

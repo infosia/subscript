@@ -1,5 +1,12 @@
 //! Differential and regeneration gates for the teaching examples.
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "../../codegen/tests/support/main_thread.rs"]
+mod main_thread;
+
 // Referencing the package library makes Cargo propagate build.rs's native
 // engine archive into this integration-test link, where its addresses are
 // registered with the development tier.
@@ -14,7 +21,6 @@ extern crate subscript_interop_fixture;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::thread;
 
 use subscript_bindgen::{generate_with_options, BindOptions};
 use subscript_codegen::{
@@ -343,26 +349,27 @@ fn native_libraries(uses_engine: bool, uses_interop: bool) -> Result<Vec<NativeL
     Ok(libraries)
 }
 
-fn run_jit_on_fresh_thread(program: &Program) -> Result<Vec<u8>, String> {
-    let id = program.id.clone();
-    let source = program.source.clone();
-    let uses_engine = program.uses_engine;
-    let uses_interop = program.uses_interop;
-    thread::spawn(move || {
-        let files = source_files(&id, &source, uses_engine, uses_interop)?;
-        let libraries = native_libraries(uses_engine, uses_interop)?;
-        run_jit_with_native_libraries(&files, &libraries)
-            .map_err(|error| format!("{id}: dev-JIT run failed: {error}"))
-    })
-    .join()
-    .map_err(|_| format!("{}: dev-JIT thread panicked", program.id))?
+/// Runs one program on the dev tier from this thread. A test that calls
+/// it is a phase 2 test, which runs in its own process on that process's
+/// main thread (compiler.md §190.1 rule 3).
+fn run_jit_on_this_thread(program: &Program) -> Result<Vec<u8>, String> {
+    let id = &program.id;
+    let files = source_files(
+        id,
+        &program.source,
+        program.uses_engine,
+        program.uses_interop,
+    )?;
+    let libraries = native_libraries(program.uses_engine, program.uses_interop)?;
+    run_jit_with_native_libraries(&files, &libraries)
+        .map_err(|error| format!("{id}: dev-JIT run failed: {error}"))
 }
 
 fn assert_programs_match(programs: &[Program], set_name: &str) {
     let mut failures = Vec::new();
     let mut compared = 0usize;
     for program in programs {
-        let jit = match run_jit_on_fresh_thread(program) {
+        let jit = match run_jit_on_this_thread(program) {
             Ok(output) => output,
             Err(error) => {
                 failures.push(error);
@@ -434,13 +441,11 @@ fn assert_programs_match(programs: &[Program], set_name: &str) {
     );
 }
 
-#[test]
 fn every_example_matches_dev_jit_ship_c_aot_and_golden() {
     let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));
     assert_programs_match(&examples, "example");
 }
 
-#[test]
 fn every_phase_gate_program_matches_dev_jit_ship_c_aot_and_golden() {
     let programs =
         discover_gate_programs().unwrap_or_else(|error| panic!("discover gate programs: {error}"));
@@ -472,17 +477,14 @@ fn assert_host_program_matches_golden(directory: &str, label: &str) {
     );
 }
 
-#[test]
 fn capstone_host_builds_runs_and_matches_golden() {
     assert_host_program_matches_golden("host", "capstone");
 }
 
-#[test]
 fn context_per_scene_host_builds_runs_and_matches_golden() {
     assert_host_program_matches_golden("context-per-scene", "Context-per-scene host");
 }
 
-#[test]
 fn derived_example_set_excludes_phase_gate_programs() {
     let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));
     let gate_programs =
@@ -505,7 +507,6 @@ fn derived_example_set_excludes_phase_gate_programs() {
     );
 }
 
-#[test]
 fn engine_mirror_regenerates_byte_identically() {
     let engine = examples_root().join("engine");
     let header_path = engine.join("engine.h");
@@ -536,7 +537,6 @@ fn engine_mirror_regenerates_byte_identically() {
 // The only gate program binding both headers uses interop.h, whose fixture is
 // excluded on windows-msvc; this emission test is therefore excluded there.
 #[cfg(not(all(windows, target_env = "msvc")))]
-#[test]
 fn two_header_gate_emits_both_provenance_vocabularies() {
     let programs =
         discover_gate_programs().unwrap_or_else(|error| panic!("discover gate programs: {error}"));
@@ -581,4 +581,24 @@ fn two_header_gate_emits_both_provenance_vocabularies() {
             program.id
         );
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            capstone_host_builds_runs_and_matches_golden,
+            context_per_scene_host_builds_runs_and_matches_golden,
+            derived_example_set_excludes_phase_gate_programs,
+            engine_mirror_regenerates_byte_identically,
+            #[cfg(not(all(windows, target_env = "msvc")))]
+            two_header_gate_emits_both_provenance_vocabularies,
+        ],
+        main_thread: [
+            every_example_matches_dev_jit_ship_c_aot_and_golden,
+            every_phase_gate_program_matches_dev_jit_ship_c_aot_and_golden,
+        ],
+    ])
 }

@@ -493,7 +493,6 @@ fn assert_runs(mirror: &str, program: impl Fn(&str) -> String, call: &str, outpu
 /// §187 rule 7, 187.3 item 4: `subReadRootHolderFill` replaces `out->p`.
 /// The copy-back keeps the script link, so the replacement is lost and
 /// the script `RrPoint` keeps its value; `k` is read.
-#[test]
 fn a_fill_keeps_the_script_link_of_a_pointer_member() {
     let mirror = bind(&subset(&["subReadRootHolderFill"])).expect("the fill binds");
     let program = |call: &str| {
@@ -517,7 +516,6 @@ fn a_fill_keeps_the_script_link_of_a_pointer_member() {
 /// a `const` pointer root (`subReadRootOuterBump`). `RrQ` copies its bytes,
 /// so the call passes its script memory. A null root builds no target, and
 /// the call writes back nothing.
-#[test]
 fn a_pointer_target_is_written_back() {
     let program = |call: &str| {
         format!(
@@ -548,7 +546,6 @@ fn a_pointer_target_is_written_back() {
 /// §187 rule 7: a read-only host with a non-`const` pointer graph. The
 /// call passes `RrScene` and `RrMesh` as scratch copies and writes both
 /// back; `RrMaterial` copies its bytes.
-#[test]
 fn a_scene_graph_is_written_back_at_every_depth() {
     let mirror = bind(&subset(&["subReadRootRender"])).expect("the scene graph binds");
     let program = |call: &str| {
@@ -585,7 +582,6 @@ fn a_scene_graph_is_written_back_at_every_depth() {
 /// checker rejects the binder's mirror of it, with one text. A `const`
 /// pair names the member that needs the write-back. Each twin with
 /// `const` pointers binds.
-#[test]
 fn a_pair_whose_elements_are_written_back_is_rejected() {
     let lead = "a pair whose elements the call copies in and back one by one. The cost grows \
                 with the count, and the call site does not show it.";
@@ -707,7 +703,6 @@ const RENDER_SCENE_CONST: (&str, &str) = ("RrScMesh *mesh;", "const RrScMesh *me
 /// a scratch array and each mesh as a scratch copy that it does not write
 /// back. Each material copies its bytes, so C writes `r` in the script
 /// memory. The control has no call.
-#[test]
 fn a_const_scene_twin_binds_and_runs() {
     let mirror = bind(&subset(RENDER_SCENE).replace(RENDER_SCENE_CONST.0, RENDER_SCENE_CONST.1))
         .expect("the const scene binds");
@@ -736,7 +731,6 @@ fn a_const_scene_twin_binds_and_runs() {
 /// first leaf of each `RrNMid` through a `const` pair, which the call
 /// passes as a scratch array, and the `const` leaves of each element as
 /// script memory. The control has no call.
-#[test]
 fn a_const_pair_of_struct_elements_is_read() {
     let mirror = bind(&subset(&[
         "subReadRootNSum",
@@ -770,7 +764,6 @@ fn a_const_pair_of_struct_elements_is_read() {
 /// (`subReadRootGUse`, `7701`). A C cast to an extension that does not copy
 /// its bytes reads past the scratch copy of the header (187.3 item 13);
 /// that value is not stable, so no case asserts it.
-#[test]
 fn a_link_to_an_embedded_header_passes_its_declared_type() {
     let extension_user = "int32_t subReadRootHExtLen(const RrHExt *e);\n";
     let mirror = bind(&format!(
@@ -826,7 +819,6 @@ fn a_link_to_an_embedded_header_passes_its_declared_type() {
 /// (`subReadRootWTouch`, read again by `subReadRootWRead`): each header
 /// copies its bytes, so the call passes script memory. Each runs with a
 /// plain header box beside the extension's box.
-#[test]
 fn a_header_of_a_math_or_graphics_header_binds_and_runs() {
     let mirror = bind(&format!(
         "{}int32_t subReadRootHExtLen(const RrHExt *e);\n",
@@ -947,7 +939,6 @@ fn a_header_of_a_math_or_graphics_header_binds_and_runs() {
 /// read lowering: embedded by value in a scratch struct (`RrNamedUd`), at a
 /// root that copies its bytes (`RrUd`), and behind a pointer member
 /// (`subReadRootPStep`).
-#[test]
 fn a_userdata_slot_is_read_only_where_the_copy_back_skips_it() {
     let tail = "a userdata field that C can write";
     assert_rejected(
@@ -1027,7 +1018,6 @@ fn a_userdata_slot_is_read_only_where_the_copy_back_skips_it() {
 /// passes `RrCmd` as a scratch struct and its `RrCounter` target as the
 /// script memory, so the write reaches the script. The control is the
 /// same program with no call: the counter keeps its value.
-#[test]
 fn a_target_passed_as_script_memory_is_read() {
     let mirror = bind(&subset(&["subReadRootCmdRun", "RrCmd"])).expect("the input binds");
     let program = |call: &str| {
@@ -1052,7 +1042,6 @@ fn a_target_passed_as_script_memory_is_read() {
 /// The binder, the checked classes, and code generation give the same pass
 /// for each struct and each pointer member, from one function. The header
 /// covers each member shape.
-#[test]
 fn the_binder_and_code_generation_take_one_pass_decision() {
     let header = format!(
         "{}\
@@ -1148,7 +1137,6 @@ fn the_binder_and_code_generation_take_one_pass_decision() {
 /// the script, and C leaves the member: the script value stays. The
 /// control `subReadRootJobSet` calls the same callback and then writes
 /// `count->n = 5`: C's value is written back.
-#[test]
 fn a_script_write_during_the_call_stays_when_c_leaves_the_member() {
     let mirror = bind(&subset(&[
         "subReadRootJobRun",
@@ -1178,7 +1166,6 @@ fn a_script_write_during_the_call_stays_when_c_leaves_the_member() {
 /// `subReadRootRenderConst` writes `id` through the `const` pointer and
 /// adds 1 to `mesh->count` through the non-`const` member: the script keeps
 /// `id` and reads the count. The control has no call.
-#[test]
 fn a_target_behind_a_const_pointer_is_not_written_back() {
     let mirror = bind(&subset(&["subReadRootRenderConst"])).expect("the scene binds");
     let program = |call: &str| {
@@ -1208,7 +1195,6 @@ fn a_target_behind_a_const_pointer_is_not_written_back() {
 /// rejects each position of the mirror that declares them, a by-value one
 /// included, with the same text. The control passes a struct whose target
 /// copies its bytes.
-#[test]
 fn a_struct_cycle_is_rejected_at_each_position() {
     let tail = "a member through which a struct reaches itself; a call cannot build a \
                 struct cycle as scratch copies (compiler.md §187)";
@@ -1254,7 +1240,6 @@ fn a_struct_cycle_is_rejected_at_each_position() {
 /// §187 rule 10: a by-value struct whose bytes the call copies passes its
 /// bytes, a fixed array of scalars included. The control passes the same
 /// struct through a `const` pointer, as the script memory.
-#[test]
 fn a_struct_whose_bytes_the_call_copies_passes_them_by_value() {
     let mirror = bind(&subset(&["subReadRootFtSum", "subReadRootFtSumP", "RrFt"]))
         .expect("the fixed-array struct binds");
@@ -1275,7 +1260,6 @@ fn a_struct_whose_bytes_the_call_copies_passes_them_by_value() {
 /// §187 rule 11: a mutable scalar pair behind a non-`const` pointer member
 /// of a `const` root keeps its script elements, and C writes them in place.
 /// The control has no call.
-#[test]
 fn a_scalar_pair_behind_a_pointer_is_written_in_place() {
     let mirror = bind(&subset(&["subReadRootSceneDeform", "RrDMesh", "RrDScene"]))
         .expect("the deform scene binds");
@@ -1298,7 +1282,6 @@ fn a_scalar_pair_behind_a_pointer_is_written_in_place() {
 /// §187 rule 12: a result lowers by the read facts of its members, so a
 /// result with a fixed array and a pointer member reads in both tiers. The
 /// control is a result with the fixed array only.
-#[test]
 fn a_result_reads_by_its_read_facts() {
     let mirror = bind(&subset(&[
         "subReadRootFrGet",
@@ -1323,7 +1306,6 @@ fn a_result_reads_by_its_read_facts() {
 /// `subReadRootBoundsRender` reads `bounds` of a scratch `RrBMesh` behind a
 /// `const` root and writes `bounds[1]`; `RrTr` crosses through a `const`
 /// pointer, by value, and as a fill. The control runs with no call.
-#[test]
 fn a_scalar_fixed_array_in_a_scratch_struct_copies_as_bytes() {
     let mirror = bind(&subset(&[
         "subReadRootBoundsRender",
@@ -1379,7 +1361,6 @@ fn mode_alias() -> SourceFile {
 /// at a fill and at a by-value input. The binder and the checker reject
 /// each position with one text. The `const` twin `RrRecC` is accepted and
 /// runs in both tiers.
-#[test]
 fn a_writable_pair_of_validated_elements_is_not_read() {
     let tail = "a pair of validated elements that C can write";
     let message = |function: &str, parameter: &str| {
@@ -1450,7 +1431,6 @@ fn a_writable_pair_of_validated_elements_is_not_read() {
 /// that the pass decision lowers: a scalar fixed array beside a pair
 /// (`RrPMesh`, through a `const` pointer and by value) and beside a string
 /// view (`RrPNamed`).
-#[test]
 fn a_scalar_fixed_array_beside_a_pair_or_a_view_binds() {
     let mirror = bind(&subset(&[
         "subReadRootPDraw",
@@ -1475,7 +1455,6 @@ fn a_scalar_fixed_array_beside_a_pair_or_a_view_binds() {
 /// §187 rule 9: a cycle of structs that copy their bytes, through `const`
 /// pointers only, passes as script memory; `subReadRootCSum` sums the list.
 /// The control is a list of one node.
-#[test]
 fn a_const_cycle_of_byte_structs_passes_as_script_memory() {
     let mirror = bind(&subset(&["subReadRootCSum", "RrCNode"])).expect("the list binds");
     let program = |head: &str| {
@@ -1501,7 +1480,6 @@ fn a_const_cycle_of_byte_structs_passes_as_script_memory() {
 /// call reads no class id, so `subReadRootIvSum` reads `707` every time and
 /// `subReadRootIvBump` writes C memory. The control passes script boxes of
 /// the header and of the extension `RrTile`.
-#[test]
 fn c_memory_passes_as_it_is() {
     let mirror = bind(&subset(&[
         "subReadRootIvAt",
@@ -1537,7 +1515,6 @@ fn c_memory_passes_as_it_is() {
 /// header: `subReadRootCross` binds and checks, in one mirror and across
 /// two. The link passes as `RrVec3`, so the `pos` of an `RrNodeV` box runs
 /// as a plain `RrVec3` box does.
-#[test]
 fn a_cycle_class_in_a_family_passes_as_the_header() {
     let mirror = bind(&subset(&["subReadRootCross", "RrVec3", "RrNodeV"]))
         .expect("the header with a cycle extension binds");
@@ -1590,4 +1567,39 @@ fn a_cycle_class_in_a_family_passes_as_the_header() {
         SourceFile::new("main.ts", program(plain)),
     ]);
     assert!(checked.is_ok(), "{:?}", checked.err());
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+pub(super) fn main() -> std::process::ExitCode {
+    crate::main_thread::run(&crate::main_thread_tests![
+        parallel: [
+            a_pair_whose_elements_are_written_back_is_rejected,
+            the_binder_and_code_generation_take_one_pass_decision,
+        ],
+        main_thread: [
+            a_fill_keeps_the_script_link_of_a_pointer_member,
+            a_pointer_target_is_written_back,
+            a_scene_graph_is_written_back_at_every_depth,
+            a_const_scene_twin_binds_and_runs,
+            a_const_pair_of_struct_elements_is_read,
+            a_link_to_an_embedded_header_passes_its_declared_type,
+            a_header_of_a_math_or_graphics_header_binds_and_runs,
+            a_userdata_slot_is_read_only_where_the_copy_back_skips_it,
+            a_target_passed_as_script_memory_is_read,
+            a_script_write_during_the_call_stays_when_c_leaves_the_member,
+            a_target_behind_a_const_pointer_is_not_written_back,
+            a_struct_cycle_is_rejected_at_each_position,
+            a_struct_whose_bytes_the_call_copies_passes_them_by_value,
+            a_scalar_pair_behind_a_pointer_is_written_in_place,
+            a_result_reads_by_its_read_facts,
+            a_scalar_fixed_array_in_a_scratch_struct_copies_as_bytes,
+            a_writable_pair_of_validated_elements_is_not_read,
+            a_scalar_fixed_array_beside_a_pair_or_a_view_binds,
+            a_const_cycle_of_byte_structs_passes_as_script_memory,
+            c_memory_passes_as_it_is,
+            a_cycle_class_in_a_family_passes_as_the_header,
+        ],
+    ])
 }

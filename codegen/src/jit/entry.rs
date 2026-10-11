@@ -4,20 +4,20 @@
 use std::ffi::c_void;
 use std::fs::File;
 #[cfg(unix)]
-use std::io::Write;
-#[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 use cranelift_jit::JITModule;
-#[cfg(unix)]
-use subscript_runtime::TrapKind;
 use subscript_runtime::{ffi, Context, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES};
 
 use super::compile::call_script_entry;
 #[cfg(unix)]
+use super::isolation;
+#[cfg(unix)]
 use super::output::TemporaryFile;
 use super::output::{capture_stdout_line, AbortingStdoutGuard, CapturedStdout, RetainedOutput};
+#[cfg(unix)]
+use super::protocol::{parse_outcome, write_outcome};
 #[cfg(unix)]
 use super::AbnormalTermination;
 use super::{JitMemoryAccounting, RunError, TrapReport};
@@ -151,134 +151,38 @@ pub(super) fn execute_entry(
     }
 }
 
-#[cfg(unix)]
-fn write_protocol_bytes(file: &mut File, bytes: &[u8]) -> std::io::Result<()> {
-    file.write_all(&(bytes.len() as u64).to_le_bytes())?;
-    file.write_all(bytes)
-}
-
-#[cfg(unix)]
-fn write_child_protocol(
-    protocol: &mut File,
-    outcome: &Result<CompletedRun, RunError>,
-) -> std::io::Result<()> {
-    match outcome {
-        Ok(_) => protocol.write_all(&[0])?,
-        Err(RunError::Trap(report)) => {
-            protocol.write_all(&[1])?;
-            protocol.write_all(&(report.rule as u32).to_le_bytes())?;
-            protocol.write_all(&report.pos.line.to_le_bytes())?;
-            protocol.write_all(&report.pos.col.to_le_bytes())?;
-            write_protocol_bytes(protocol, report.pos.file.as_bytes())?;
-            write_protocol_bytes(protocol, report.message.as_bytes())?;
-        }
-        Err(error) => {
-            protocol.write_all(&[2])?;
-            write_protocol_bytes(protocol, error.to_string().as_bytes())?;
-        }
-    }
-    protocol.flush()
-}
-
-#[cfg(unix)]
-struct ProtocolReader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-#[cfg(unix)]
-impl<'a> ProtocolReader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn take(&mut self, len: usize) -> Result<&'a [u8], RunError> {
-        let end = self
-            .offset
-            .checked_add(len)
-            .ok_or_else(|| RunError::Internal(internal("overflow reading JIT child protocol")))?;
-        let bytes = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or_else(|| RunError::Internal(internal("truncated JIT child protocol")))?;
-        self.offset = end;
-        Ok(bytes)
-    }
-
-    fn u8(&mut self) -> Result<u8, RunError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u32(&mut self) -> Result<u32, RunError> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("four protocol bytes"),
-        ))
-    }
-
-    fn bytes(&mut self) -> Result<&'a [u8], RunError> {
-        let len = u64::from_le_bytes(self.take(8)?.try_into().expect("eight protocol bytes"));
-        let len = usize::try_from(len)
-            .map_err(|_| RunError::Internal(internal("oversized field in JIT child protocol")))?;
-        self.take(len)
-    }
-
-    fn string(&mut self) -> Result<String, RunError> {
-        String::from_utf8(self.bytes()?.to_vec()).map_err(|error| {
-            RunError::Internal(internal(format!(
-                "invalid UTF-8 in JIT child protocol: {error}"
-            )))
-        })
-    }
-}
-
-#[cfg(unix)]
-fn parse_child_protocol(bytes: &[u8], stdout: Vec<u8>) -> Result<Vec<u8>, RunError> {
-    // The only user of `Pos` in this module is this unix function, so
-    // the import lives here and ends with it.
-    use subscript_compiler::Pos;
-
-    let mut protocol = ProtocolReader::new(bytes);
-    match protocol.u8()? {
-        0 => Ok(stdout),
-        1 => {
-            let rule_number = protocol.u32()?;
-            let rule = TrapKind::from_u32(rule_number).ok_or_else(|| {
-                RunError::Internal(internal(format!(
-                    "unknown trap kind {rule_number} in JIT child protocol"
-                )))
-            })?;
-            let line = protocol.u32()?;
-            let col = protocol.u32()?;
-            let file = protocol.string()?;
-            let message = protocol.string()?;
-            Err(RunError::Trap(TrapReport {
-                rule,
-                message,
-                pos: Pos::new(file, line, col),
-                stdout,
-            }))
-        }
-        2 => Err(RunError::Internal(protocol.string()?)),
-        tag => Err(RunError::Internal(internal(format!(
-            "unknown JIT child protocol tag {tag}"
-        )))),
-    }
-}
-
+/// Runs the entry in a forked child and returns its retained output.
+///
+/// compiler.md §190.1 rule 1: the `fork` happens only when the process
+/// has one thread. The caller selects this path from the same check;
+/// the check here is the last one before the `fork`. `settle` marks a run
+/// with a native library or a file provider, whose count above 1 is read
+/// again for up to 2 ms (rule 3).
 #[cfg(unix)]
 pub(super) fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
     options: EntryOptions,
+    settle: bool,
 ) -> Result<Vec<u8>, RunError> {
     let mut output = RetainedOutput::new()?;
     let writer = output.writer()?;
     let mut protocol = TemporaryFile::new("protocol")?;
     let mut stderr = TemporaryFile::new("stderr")?;
 
-    // SAFETY: the child inherits finalized JIT code, the Context runtime, and
-    // caller-supplied native symbol addresses. It reports through files and
-    // calls `_exit`, while the parent alone frees the module after `waitpid`.
+    let threads = isolation::thread_count_for_run(settle);
+    if threads != Some(1) {
+        return Err(RunError::Internal(internal(format!(
+            "{} (the process has {} threads)",
+            isolation::RULE_1_MESSAGE,
+            isolation::describe_count(threads)
+        ))));
+    }
+    // SAFETY: the process has one thread, so no other thread holds a lock
+    // at the `fork` (§190.1 rule 1). The child inherits finalized JIT code,
+    // the Context runtime, and caller-supplied native symbol addresses. It
+    // reports through files and calls `_exit`, while the parent alone frees
+    // the module after `waitpid`.
     let child = unsafe { libc::fork() };
     if child < 0 {
         return Err(RunError::Internal(internal(format!(
@@ -300,7 +204,7 @@ pub(super) fn execute_entry_retained(
             unsafe { libc::_exit(122) };
         }
         let outcome = execute_entry(module, lowered, options, Some(writer));
-        let written = write_child_protocol(
+        let written = write_outcome(
             protocol.file.as_mut().expect("live JIT child protocol"),
             &outcome,
         )
@@ -310,11 +214,24 @@ pub(super) fn execute_entry_retained(
         unsafe { libc::_exit(if written { 0 } else { 121 }) };
     }
     drop(writer);
+    collect_child(child, &mut output, &mut stderr, &mut protocol)
+}
 
+/// Waits for a child that runs one entry, then reads its retained
+/// stdout, its stderr, and its outcome. A forked child and a runner
+/// report in the same form.
+#[cfg(unix)]
+pub(super) fn collect_child(
+    child: libc::pid_t,
+    output: &mut RetainedOutput,
+    stderr: &mut TemporaryFile,
+    protocol: &mut TemporaryFile,
+) -> Result<Vec<u8>, RunError> {
     let mut status = 0;
     loop {
-        // SAFETY: `child` is the positive PID returned by `fork`; `status` is
-        // live writable storage and this parent waits for that child only.
+        // SAFETY: `child` is the positive PID of a child of this process;
+        // `status` is live writable storage and this parent waits for that
+        // child only.
         let waited = unsafe { libc::waitpid(child, &mut status, 0) };
         if waited == child {
             break;
@@ -350,7 +267,7 @@ pub(super) fn execute_entry_retained(
         }));
     }
     let protocol = protocol.bytes()?;
-    parse_child_protocol(&protocol, stdout)
+    parse_outcome(&protocol, stdout)
 }
 
 #[cfg(not(unix))]
@@ -358,6 +275,7 @@ pub(super) fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
     options: EntryOptions,
+    _settle: bool,
 ) -> Result<Vec<u8>, RunError> {
     let output = RetainedOutput::new()?;
     let writer = output.writer()?;

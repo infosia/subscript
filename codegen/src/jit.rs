@@ -10,10 +10,14 @@ use subscript_runtime::TrapKind;
 mod bench;
 mod compile;
 mod entry;
+#[cfg(unix)]
+mod isolation;
 mod memory;
 mod output;
 #[cfg(test)]
 mod probe;
+#[cfg(unix)]
+mod protocol;
 mod run;
 mod symbols;
 

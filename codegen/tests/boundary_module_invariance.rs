@@ -67,7 +67,6 @@ fn files(padding: usize) -> [SourceFile; 2] {
     ]
 }
 
-#[test]
 fn two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding() {
     let fixture = native_fixture::fixture().expect("this target requires the fixture");
     let mut reference: Option<Vec<u8>> = None;
@@ -84,4 +83,17 @@ fn two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding() 
             reference = Some(jit);
         }
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+pub(super) fn main() -> std::process::ExitCode {
+    crate::main_thread::run(&crate::main_thread_tests![
+        parallel: [
+        ],
+        main_thread: [
+            two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding,
+        ],
+    ])
 }

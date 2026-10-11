@@ -21,3 +21,12 @@ subscript-boundary = { path = "../boundary" }
 # `cl` cannot compile; mirrors `codegen/Cargo.toml` (compiler.md §11c).
 [target.'cfg(not(all(windows, target_env = "msvc")))'.dev-dependencies]
 subscript-interop-fixture = { path = "../codegen/tests/native-fixture" }
+
+# compiler.md §190.1 rule 3: this binary runs its tests in two phases
+# (`codegen/tests/support/main_thread.rs`). A phase 2 test runs in its own
+# process, on that process's main thread, so its native-library runs can
+# fork.
+[[test]]
+name = "read_root"
+path = "tests/main_thread/read_root.rs"
+harness = false

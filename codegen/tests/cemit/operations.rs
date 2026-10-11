@@ -1,7 +1,6 @@
 use super::*;
 
-#[test]
-fn array_trapping_callbacks_report_identically_across_tiers() {
+pub(super) fn array_trapping_callbacks_report_identically_across_tiers() {
     // The remaining seven closure methods (`map` has its own test): a
     // callback that indexes past the end aborts the iteration in the
     // shared runtime and surfaces the identical trap tuple and stdout
@@ -27,8 +26,7 @@ fn array_trapping_callbacks_report_identically_across_tiers() {
     }
 }
 
-#[test]
-fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
+pub(super) fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
     // The callback pushes while the runtime iterates the receiver, well
     // past the initial capacity, so the storage moves; the runtime
     // re-resolves the element pointer per element (`arrops.rs`
@@ -39,8 +37,7 @@ fn array_callback_growth_during_iteration_is_defined_on_both_tiers() {
     );
 }
 
-#[test]
-fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
+pub(super) fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
     let accept = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
     for id in [
         "a51-map",
@@ -68,8 +65,7 @@ fn map_set_corpus_entries_match_across_tiers_before_golden_capture() {
     }
 }
 
-#[test]
-fn map_and_set_trapping_foreach_callbacks_report_identically() {
+pub(super) fn map_and_set_trapping_foreach_callbacks_report_identically() {
     for src in [
         "export function main(): void {\n  const probe: i32[] = [7];\n  const map: Map<i32, i32> = new Map<i32, i32>();\n  map.set(1, 1);\n  map.forEach((value: i32, key: i32): void => { print(`${probe[value + key]}`); });\n}\n",
         "export function main(): void {\n  const probe: i32[] = [7];\n  const set: Set<i32> = new Set<i32>();\n  set.add(1);\n  set.forEach((key: i32): void => { print(`${probe[key + 1]}`); });\n}\n",
@@ -94,8 +90,7 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
     }
 }
 
-#[test]
-fn map_growth_during_for_each_visits_the_appended_entry() {
+pub(super) fn map_growth_during_for_each_visits_the_appended_entry() {
     // The deleted first slot makes the ordered vector compactable. The
     // callback's insertion reaches the growth boundary while iteration
     // is positioned after that slot. The live ECMA traversal must keep
@@ -121,8 +116,7 @@ fn map_growth_during_for_each_visits_the_appended_entry() {
     );
 }
 
-#[test]
-fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
+pub(super) fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
     assert_tiers_print(
         "let seen: string = \"\";\n\
          export function main(): void {\n\
@@ -164,8 +158,7 @@ fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
     );
 }
 
-#[test]
-fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
+pub(super) fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
     // stdlib.md §9: the in-place methods return the receiver. Mutating
     // through the returned handle must be visible through the original
     // one — a44/a45 cannot tell a fresh copy from the receiver, so the
@@ -177,8 +170,7 @@ fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
     );
 }
 
-#[test]
-fn join_prints_negative_zero_as_the_q14_rules_require() {
+pub(super) fn join_prints_negative_zero_as_the_q14_rules_require() {
     // Section 95 uses the same zero spelling in join and interpolation.
     assert_tiers_print(
         "export function main(): void {\n  const xs: f64[] = [0.1, 2.5, -0];\n  print(xs.join(\",\"));\n}\n",
@@ -194,40 +186,35 @@ fn join_prints_negative_zero_as_the_q14_rules_require() {
 // statement order runs the argument first. Each program below logs the
 // order it observed, so the two tiers disagree unless the property holds.
 
-#[test]
-fn array_needle_method_evaluates_the_receiver_before_the_argument() {
+pub(super) fn array_needle_method_evaluates_the_receiver_before_the_argument() {
     assert_tiers_print(
         "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction mkNeedle(): i32 {\n  log = log + \"N\";\n  return 2;\n}\nexport function main(): void {\n  const r: i32 = mkArr().indexOf(mkNeedle());\n  print(`${log}:${r}`);\n}\n",
         "RN:1\n",
     );
 }
 
-#[test]
-fn array_closure_method_evaluates_the_receiver_before_the_callback() {
+pub(super) fn array_closure_method_evaluates_the_receiver_before_the_callback() {
     assert_tiers_print(
         "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction big(v: i32): boolean {\n  return v > 1;\n}\nfunction mkPred(): (v: i32) => boolean {\n  log = log + \"P\";\n  return big;\n}\nexport function main(): void {\n  const kept: i32[] = mkArr().filter(mkPred());\n  print(`${log}:${kept.length}`);\n}\n",
         "RP:1\n",
     );
 }
 
-#[test]
-fn array_reduce_evaluates_receiver_then_callback_then_init() {
+pub(super) fn array_reduce_evaluates_receiver_then_callback_then_init() {
     assert_tiers_print(
         "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  a.push(2);\n  return a;\n}\nfunction add(acc: i32, v: i32): i32 {\n  return acc + v;\n}\nfunction mkStep(): (acc: i32, v: i32) => i32 {\n  log = log + \"F\";\n  return add;\n}\nfunction mkInit(): i32 {\n  log = log + \"I\";\n  return 10;\n}\nexport function main(): void {\n  const total: i32 = mkArr().reduce(mkStep(), mkInit());\n  print(`${log}:${total}`);\n}\n",
         "RFI:13\n",
     );
 }
 
-#[test]
-fn array_push_evaluates_the_receiver_before_the_argument() {
+pub(super) fn array_push_evaluates_the_receiver_before_the_argument() {
     assert_tiers_print(
         "let log: string = \"\";\nfunction mkArr(): i32[] {\n  log = log + \"R\";\n  const a: i32[] = [];\n  a.push(1);\n  return a;\n}\nfunction mkVal(): i32 {\n  log = log + \"V\";\n  return 5;\n}\nexport function main(): void {\n  mkArr().push(mkVal());\n  print(log);\n}\n",
         "RV\n",
     );
 }
 
-#[test]
-fn string_method_evaluates_the_receiver_before_the_argument() {
+pub(super) fn string_method_evaluates_the_receiver_before_the_argument() {
     // The argument emits statements of its own (`reverse` is an in-place
     // call statement), so an unbound receiver expression would land in
     // the call after them.
@@ -260,96 +247,84 @@ fn assert_order(body: &str, expected: &str) {
     assert_tiers_print(&format!("{ORDER_PRELUDE}{body}"), expected);
 }
 
-#[test]
-fn user_function_arguments_run_left_to_right() {
+pub(super) fn user_function_arguments_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const r: i32 = take(mkL(), pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "LR:12\n",
     );
 }
 
-#[test]
-fn indirect_call_arguments_run_left_to_right() {
+pub(super) fn indirect_call_arguments_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const f: (a: i32, b: i32) => i32 = take;\n  const r: i32 = f(mkL(), pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "LR:12\n",
     );
 }
 
-#[test]
-fn reference_class_method_receiver_runs_before_its_argument() {
+pub(super) fn reference_class_method_receiver_runs_before_its_argument() {
     assert_order(
         "class Box {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkBox(): Box {\n  note(\"B\");\n  return new Box(10);\n}\nexport function main(): void {\n  const r: i32 = mkBox().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "BR:12\n",
     );
 }
 
-#[test]
-fn value_class_method_receiver_runs_before_its_argument() {
+pub(super) fn value_class_method_receiver_runs_before_its_argument() {
     assert_order(
         "@ValueType\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "PR:12\n",
     );
 }
 
-#[test]
-fn constructor_arguments_run_left_to_right() {
+pub(super) fn constructor_arguments_run_left_to_right() {
     assert_order(
         "class Pair {\n  a: i32;\n  b: i32;\n  constructor(a: i32, b: i32) {\n    this.a = a;\n    this.b = b;\n  }\n}\nexport function main(): void {\n  const p: Pair = new Pair(mkL(), pick ? mkR() : 0);\n  print(`${log}:${p.a}${p.b}`);\n}\n",
         "LR:12\n",
     );
 }
 
-#[test]
-fn math_arguments_run_left_to_right() {
+pub(super) fn math_arguments_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const r: f64 = Math.max(mkL() as f64, (pick ? mkR() : 0) as f64);\n  print(`${log}:${r}`);\n}\n",
         "LR:2\n",
     );
 }
 
-#[test]
-fn date_utc_arguments_run_left_to_right() {
+pub(super) fn date_utc_arguments_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const ms: i64 = Date.UTC(2000, mkL(), pick ? mkR() : 0);\n  print(`${log}:${new Date(ms).toISOString()}`);\n}\n",
         "LR:2000-02-02T00:00:00.000Z\n",
     );
 }
 
-#[test]
-fn binary_operands_run_left_to_right() {
+pub(super) fn binary_operands_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const r: i32 = mkL() + (pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "LR:3\n",
     );
 }
 
-#[test]
-fn index_operands_run_left_to_right() {
+pub(super) fn index_operands_run_left_to_right() {
     assert_order(
         "function mkArr(): i32[] {\n  note(\"A\");\n  const a: i32[] = [];\n  a.push(7);\n  a.push(8);\n  return a;\n}\nexport function main(): void {\n  const r: i32 = mkArr()[(pick ? mkR() : 0) - 1];\n  print(`${log}:${r}`);\n}\n",
         "AR:8\n",
     );
 }
 
-#[test]
-fn array_element_store_evaluates_the_target_before_the_value() {
+pub(super) fn array_element_store_evaluates_the_target_before_the_value() {
     assert_order(
         "function mkArr(): i32[] {\n  note(\"A\");\n  const a: i32[] = [];\n  a.push(7);\n  a.push(8);\n  return a;\n}\nexport function main(): void {\n  mkArr()[0] = pick ? mkR() : 0;\n  print(log);\n}\n",
         "AR\n",
     );
 }
 
-#[test]
-fn field_store_evaluates_the_target_base_before_the_value() {
+pub(super) fn field_store_evaluates_the_target_base_before_the_value() {
     assert_order(
         "class Box {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n}\nfunction mkBox(): Box {\n  note(\"B\");\n  return new Box(0);\n}\nexport function main(): void {\n  mkBox().n = pick ? mkR() : 0;\n  print(log);\n}\n",
         "BR\n",
     );
 }
 
-#[test]
-fn compound_assignment_evaluates_the_target_base_once() {
+pub(super) fn compound_assignment_evaluates_the_target_base_once() {
     // `mkBox().n += …` calls `mkBox` exactly once, as the dev tier does;
     // an unpinned place is spelled twice in the emitted C.
     assert_order(
@@ -358,16 +333,14 @@ fn compound_assignment_evaluates_the_target_base_once() {
     );
 }
 
-#[test]
-fn fixed_array_literal_elements_run_left_to_right() {
+pub(super) fn fixed_array_literal_elements_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const fa: FixedArray<i32, 2> = [mkL(), pick ? mkR() : 0];\n  print(`${log}:${fa[0]}${fa[1]}`);\n}\n",
         "LR:12\n",
     );
 }
 
-#[test]
-fn short_circuit_operands_do_not_run_the_skipped_side() {
+pub(super) fn short_circuit_operands_do_not_run_the_skipped_side() {
     // `&&`/`||` skip the right operand entirely (the dev tier branches).
     // The right operand here lowers to statements, which must not be
     // hoisted out of the branch in the ship tier.
@@ -377,8 +350,7 @@ fn short_circuit_operands_do_not_run_the_skipped_side() {
     );
 }
 
-#[test]
-fn short_circuit_in_a_loop_condition_re_runs_per_iteration() {
+pub(super) fn short_circuit_in_a_loop_condition_re_runs_per_iteration() {
     // The branch lowering above sits inside the loop, so the condition
     // is re-evaluated each iteration and still guards its right operand:
     // the last test would index out of bounds if `&&` did not stop.
@@ -409,8 +381,7 @@ fn emitted_function_body(c: &str, function: subscript_compiler::lir::FunctionId)
     &rest[..end + 3]
 }
 
-#[test]
-fn dynamic_array_length_and_index_use_inline_header_fields() {
+pub(super) fn dynamic_array_length_and_index_use_inline_header_fields() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -464,8 +435,7 @@ fn dynamic_array_length_and_index_use_inline_header_fields() {
     );
 }
 
-#[test]
-fn static_array_callback_iterator_uses_inline_header_fields() {
+pub(super) fn static_array_callback_iterator_uses_inline_header_fields() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -532,8 +502,7 @@ fn static_array_callback_iterator_uses_inline_header_fields() {
     );
 }
 
-#[test]
-fn generator_creation_call_keeps_its_implicit_allocation_check() {
+pub(super) fn generator_creation_call_keeps_its_implicit_allocation_check() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -567,8 +536,7 @@ fn generator_creation_call_keeps_its_implicit_allocation_check() {
     );
 }
 
-#[test]
-fn local_load_store_address_chains_emit_as_member_expressions() {
+pub(super) fn local_load_store_address_chains_emit_as_member_expressions() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -625,8 +593,7 @@ fn local_load_store_address_chains_emit_as_member_expressions() {
     );
 }
 
-#[test]
-fn multiply_constant_trip_loop_emits_four_straight_iterations() {
+pub(super) fn multiply_constant_trip_loop_emits_four_straight_iterations() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -670,8 +637,7 @@ fn multiply_constant_trip_loop_emits_four_straight_iterations() {
     );
 }
 
-#[test]
-fn parallel_copy_cycle_uses_one_temporary() {
+pub(super) fn parallel_copy_cycle_uses_one_temporary() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -699,8 +665,7 @@ fn parallel_copy_cycle_uses_one_temporary() {
     );
 }
 
-#[test]
-fn address_passed_to_a_call_stays_materialized() {
+pub(super) fn address_passed_to_a_call_stays_materialized() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -728,8 +693,7 @@ fn address_passed_to_a_call_stays_materialized() {
     );
 }
 
-#[test]
-fn parameter_storage_is_initialized_once_when_its_address_escapes() {
+pub(super) fn parameter_storage_is_initialized_once_when_its_address_escapes() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -759,8 +723,7 @@ fn parameter_storage_is_initialized_once_when_its_address_escapes() {
     );
 }
 
-#[test]
-fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
+pub(super) fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
     let out = run_c_aot(&[SourceFile::new("a22-matrix-propagation.ts", A22_SOURCE)])
         .expect("a22 runs through the ship tier");
     assert_eq!(
@@ -772,8 +735,7 @@ fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
     );
 }
 
-#[test]
-fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
+pub(super) fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     // stdlib.md §3: `Date.now()` is Context-owned and pinnable — the
     // ship-tier half of the both-tier pinned-clock check. The dev-tier
     // half is `jit.rs` (unit test
@@ -917,8 +879,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     );
 }
 
-#[test]
-fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
+pub(super) fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
     // The index is a parameter — the FixedArray bounds analysis cannot
     // prove it in range, so the check stays and fires at the indexing
     // expression's TS position.
@@ -944,8 +905,7 @@ fn ship_c_aot_reports_an_out_of_bounds_trap_with_its_position() {
     assert_trap_outcomes_identical("FixedArray index trap", &outcomes);
 }
 
-#[test]
-fn ship_c_aot_reports_a_division_by_zero_trap() {
+pub(super) fn ship_c_aot_reports_a_division_by_zero_trap() {
     let files = [SourceFile::new(
         "test.ts",
         "function f(d: i32): i32 {\n  return 10 / d;\n}\nexport function main(): void {\n  print(`${f(0)}`);\n}\n",
@@ -967,8 +927,7 @@ fn ship_c_aot_reports_a_division_by_zero_trap() {
     assert_trap_outcomes_identical("division-by-zero trap", &outcomes);
 }
 
-#[test]
-fn held_async_copy_pass_and_second_await_match_both_tiers() {
+pub(super) fn held_async_copy_pass_and_second_await_match_both_tiers() {
     let files = [SourceFile::new(
         "held-copy.ts",
         "async function work(): Promise<i32> {\n  await Context.suspend();\n  return 41;\n}\nasync function consume(handle: Promise<i32>): Promise<i32> {\n  return await handle;\n}\nexport async function main(): Promise<void> {\n  const first: Promise<i32> = work();\n  {\n    const second: Promise<i32> = first;\n    print(`copy=${await second}`);\n  }\n  print(`again=${await first}`);\n  const passed: Promise<i32> = work();\n  print(`pass=${await consume(passed)}`);\n}\n",
@@ -980,8 +939,7 @@ fn held_async_copy_pass_and_second_await_match_both_tiers() {
     assert_eq!(ship, expected);
 }
 
-#[test]
-fn held_async_cached_reference_survives_collect_on_both_tiers() {
+pub(super) fn held_async_cached_reference_survives_collect_on_both_tiers() {
     let files = [SourceFile::new(
         "held-reference.ts",
         "async function work(): Promise<string> {\n  await Context.suspend();\n  return `value=${41}`;\n}\nexport async function main(): Promise<void> {\n  const first: Promise<string> = work();\n  {\n    const second: Promise<string> = first;\n    print(await second);\n  }\n  Context.collect();\n  print(await first);\n}\n",
@@ -993,8 +951,7 @@ fn held_async_cached_reference_survives_collect_on_both_tiers() {
     assert_eq!(ship, expected);
 }
 
-#[test]
-fn many_completed_async_calls_leave_no_frames_without_collect() {
+pub(super) fn many_completed_async_calls_leave_no_frames_without_collect() {
     let files = [SourceFile::new(
         "many-awaits.ts",
         "async function work(value: i32): Promise<i32> { return value; }\nexport async function main(): Promise<void> {\n  let total: i32 = 0;\n  for (let i: i32 = 0; i < 10000; i += 1) total += await work(i);\n}\n",
@@ -1008,8 +965,7 @@ fn many_completed_async_calls_leave_no_frames_without_collect() {
     );
 }
 
-#[test]
-fn a183_long_string_emits_five_adjacent_c_literals() {
+pub(super) fn a183_long_string_emits_five_adjacent_c_literals() {
     let source = include_str!("../../../corpus/accept/a183-long-string-literal.ts");
     let hir = check_program(&[SourceFile::new("a183-long-string-literal.ts", source)])
         .expect("a183 checks cleanly");

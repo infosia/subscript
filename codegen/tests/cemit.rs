@@ -10,6 +10,13 @@
 //! byte-equality is the real invariant, so these need no committed
 //! golden.
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 #[allow(dead_code)]
 mod corpus;
 
@@ -273,7 +280,6 @@ fn assert_tiers_print(src: &str, expected: &str) {
     }
 }
 
-#[test]
 fn enum_casts_use_target_integer_width_on_all_tiers() {
     let source = r#"
 enum Values { Negative = -1, Minimum = -2147483648 }
@@ -297,7 +303,6 @@ export function main(): void {
     }
 }
 
-#[test]
 fn s68_frame_class_locals_match_both_tiers() {
     let source = include_str!("../../corpus/accept/a164-frame-class-locals.ts");
     let expected = include_str!("../../corpus/accept/a164-frame-class-locals.expected");
@@ -314,7 +319,6 @@ fn s68_frame_class_locals_match_both_tiers() {
     );
 }
 
-#[test]
 fn s68_empty_template_matches_both_tiers() {
     assert_tiers_print(
         "export function main(): void { const value: string = ``; print(`empty=[${value}] len=${value.length}`); }\n",
@@ -322,7 +326,6 @@ fn s68_empty_template_matches_both_tiers() {
     );
 }
 
-#[test]
 fn s68_float_remainder_matches_both_tiers() {
     let source = include_str!("../../corpus/accept/a165-empty-template-float-remainder.ts");
     let expected = include_str!("../../corpus/accept/a165-empty-template-float-remainder.expected");
@@ -341,7 +344,6 @@ fn s68_float_remainder_matches_both_tiers() {
     );
 }
 
-#[test]
 fn narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers() {
     assert_tiers_print(
         "export function main(): void {\n\
@@ -372,7 +374,6 @@ fn narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers() {
     );
 }
 
-#[test]
 fn float_to_narrow_int_casts_saturate_to_the_narrow_range_on_both_tiers() {
     // The corpus only casts in-range floats to narrow ints, so overflow
     // saturation could regress silently. A float that overflows a narrow
@@ -400,7 +401,6 @@ fn float_to_narrow_int_casts_saturate_to_the_narrow_range_on_both_tiers() {
 
 // ----- cross-tier byte-equality (dev-JIT ≡ ship-C-AOT) -----
 
-#[test]
 fn c1_mutating_value_method_persists_like_the_jit() {
     // A value method that mutates `this` must mutate the receiver;
     // a non-mutating call on a copy must be unaffected.
@@ -409,28 +409,24 @@ fn c1_mutating_value_method_persists_like_the_jit() {
     );
 }
 
-#[test]
 fn c2_capturing_lambda_over_f32_matches_the_jit() {
     assert_tiers_agree(
         "export function main(): void {\n  const offset: f32 = 0.5;\n  const add: (value: f32) => f32 = (value: f32): f32 => value + offset;\n  print(`${add(8.0)}`);\n}\n",
     );
 }
 
-#[test]
 fn c2_capturing_lambda_over_i64_matches_the_jit() {
     assert_tiers_agree(
         "export function main(): void {\n  const base: i64 = 10000000000;\n  const add: (value: i64) => i64 = (value: i64): i64 => value + base;\n  print(`${add(1)}`);\n}\n",
     );
 }
 
-#[test]
 fn c2_capturing_lambda_over_i32_matches_the_jit() {
     assert_tiers_agree(
         "export function main(): void {\n  const offset: i32 = 5;\n  const add: (value: i32) => i32 = (value: i32): i32 => value + offset;\n  print(`${add(7)}`);\n}\n",
     );
 }
 
-#[test]
 fn m1_collect_then_delete_live_handle_matches_the_jit() {
     // The handle is live across Context.collect(), so a single Context.free must
     // succeed on both tiers (no spurious double-delete trap).
@@ -439,14 +435,12 @@ fn m1_collect_then_delete_live_handle_matches_the_jit() {
     );
 }
 
-#[test]
 fn m1_collect_then_use_live_handle_matches_the_jit() {
     assert_tiers_agree(
         "class C { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const a: C = new C(7);\n  Context.collect();\n  print(`${a.x}`);\n  Context.free(a);\n}\n",
     );
 }
 
-#[test]
 fn m1_collect_keeps_references_inside_a_fixed_array_local_alive() {
     // The Box references live only inside a `FixedArray` local; the
     // shadow frame must root the aggregate's interior so Context.collect() does
@@ -457,7 +451,6 @@ fn m1_collect_keeps_references_inside_a_fixed_array_local_alive() {
     );
 }
 
-#[test]
 fn m1_collect_keeps_references_inside_a_fixed_array_param_alive() {
     // The CLIF path roots a managed-interior aggregate *parameter* by
     // copying it into the callee's shadow frame; the C tier must too, so
@@ -467,7 +460,6 @@ fn m1_collect_keeps_references_inside_a_fixed_array_param_alive() {
     );
 }
 
-#[test]
 fn date_intrinsics_match_across_tiers() {
     // stdlib.md §3: construction, accessors, carries, toISOString — the
     // committed a42 golden pins the full battery; this pins cross-tier
@@ -477,7 +469,6 @@ fn date_intrinsics_match_across_tiers() {
     );
 }
 
-#[test]
 fn ship_c_aot_reports_a_date_range_trap_with_its_position() {
     // Q20: out-of-range times trap — there is no Invalid-Date value.
     let files = [SourceFile::new(
@@ -502,7 +493,6 @@ fn ship_c_aot_reports_a_date_range_trap_with_its_position() {
     assert_trap_outcomes_identical("Date constructor range trap", &outcomes);
 }
 
-#[test]
 fn ship_c_aot_reports_a_to_iso_year_range_trap() {
     // toISOString requires years 0000–9999 (stdlib.md §3); the TimeClip
     // maximum is a valid time but not printable.
@@ -552,7 +542,6 @@ fn assert_str_range_trap_identical(src: &str, line: u32) {
     assert_trap_outcomes_identical("String range trap", &outcomes);
 }
 
-#[test]
 fn string_char_code_at_out_of_range_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  const s: string = \"abc\";\n  print(`${s.charCodeAt(3)}`);\n}\n",
@@ -560,7 +549,6 @@ fn string_char_code_at_out_of_range_traps_identically() {
     );
 }
 
-#[test]
 fn string_char_at_off_utf8_boundary_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  print(\"é\".charAt(1));\n}\n",
@@ -568,7 +556,6 @@ fn string_char_at_off_utf8_boundary_traps_identically() {
     );
 }
 
-#[test]
 fn string_code_point_at_off_utf8_boundary_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  print(`${\"é\".codePointAt(1)}`);\n}\n",
@@ -576,7 +563,6 @@ fn string_code_point_at_off_utf8_boundary_traps_identically() {
     );
 }
 
-#[test]
 fn string_code_point_at_out_of_range_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  print(`${\"a\".codePointAt(1)}`);\n}\n",
@@ -584,7 +570,6 @@ fn string_code_point_at_out_of_range_traps_identically() {
     );
 }
 
-#[test]
 fn string_repeat_negative_count_traps_identically() {
     assert_str_range_trap_identical(
         "export function main(): void {\n  print(\"ab\".repeat(-1));\n}\n",
@@ -592,7 +577,6 @@ fn string_repeat_negative_count_traps_identically() {
     );
 }
 
-#[test]
 fn string_split_empty_separator_matches_section95() {
     assert_tiers_print(
         "export function main(): void {\n  const parts: string[] = \"ab\".split(\"\");\n  print(`${parts.length}`);\n}\n",
@@ -600,7 +584,6 @@ fn string_split_empty_separator_matches_section95() {
     );
 }
 
-#[test]
 fn string_replace_all_empty_pattern_matches_section95() {
     assert_tiers_print(
         "export function main(): void {\n  print(\"ab\".replaceAll(\"\", \"x\"));\n}\n",
@@ -608,7 +591,6 @@ fn string_replace_all_empty_pattern_matches_section95() {
     );
 }
 
-#[test]
 fn string_empty_pad_that_must_fill_matches_section95() {
     assert_tiers_print(
         "export function main(): void {\n  print(\"ab\".padEnd(5, \"\"));\n}\n",
@@ -616,7 +598,6 @@ fn string_empty_pad_that_must_fill_matches_section95() {
     );
 }
 
-#[test]
 fn string_methods_match_across_tiers_without_a_golden() {
     // The committed a43 golden pins the full battery; this pins
     // cross-tier agreement for a compact slice with computed (non-
@@ -649,7 +630,6 @@ fn assert_number_range_trap_identical(src: &str, line: u32) {
     assert_trap_outcomes_identical("Number range trap", &outcomes);
 }
 
-#[test]
 fn parse_int_out_of_range_radix_traps_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print(`${parseInt(\"10\", 1)}`);\n}\n",
@@ -657,7 +637,6 @@ fn parse_int_out_of_range_radix_traps_identically() {
     );
 }
 
-#[test]
 fn to_fixed_out_of_range_digits_trap_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print((1.0).toFixed(101));\n}\n",
@@ -687,7 +666,6 @@ fn assert_json_trap_identical(src: &str, kind: TrapKind, line: u32) {
     assert_trap_outcomes_identical("JSON trap", &outcomes);
 }
 
-#[test]
 fn json_stringify_nan_traps_identically() {
     assert_json_trap_identical(
         "export function main(): void {\n  print(JSON.stringify(NaN));\n}\n",
@@ -696,7 +674,6 @@ fn json_stringify_nan_traps_identically() {
     );
 }
 
-#[test]
 fn json_stringify_infinity_traps_identically() {
     assert_json_trap_identical(
         "export function main(): void {\n  print(JSON.stringify(Number.POSITIVE_INFINITY));\n}\n",
@@ -705,7 +682,6 @@ fn json_stringify_infinity_traps_identically() {
     );
 }
 
-#[test]
 fn json_stringify_cyclic_reference_graph_traps_identically() {
     assert_json_trap_identical(
         "class Node {\n  next: Node | null;\n  constructor() { this.next = null; }\n}\nexport function main(): void {\n  const node: Node = new Node();\n  node.next = node;\n  print(JSON.stringify(node));\n}\n",
@@ -744,11 +720,80 @@ fn trap_native_libraries(files: &[SourceFile]) -> Option<Vec<subscript_codegen::
     }
 }
 
-/// Runs one trap entry on both tiers and compares kind, message,
-/// position, and pre-trap stdout. The caller prints and asserts.
-fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
+/// Q6/§8.1b: the double-delete and use-after-delete entries run the dev
+/// tier with freed-handle diagnostics and post-run accounting.
+fn freed_handle_diagnostic(id: &str) -> bool {
+    matches!(id, "t22-double-delete-q6" | "t23-use-after-delete-q6")
+}
+
+/// True when the dev run of the entry has a native library in a forked
+/// run. Such a run needs a single-threaded process (compiler.md §190.1
+/// rule 3), so it runs on this thread after the pool.
+fn trap_dev_needs_the_main_thread(case: &TrapCase) -> bool {
+    allocation_failure_count(&case.id).is_none()
+        && !freed_handle_diagnostic(&case.id)
+        && !trap_native_libraries(&case.files)
+            .expect("the sweep excludes unavailable fixture entries")
+            .is_empty()
+}
+
+/// The dev-tier run of one trap entry.
+fn trap_dev_run(case: &TrapCase) -> Result<Vec<u8>, RunError> {
     let id = &case.id;
     let files = &case.files;
+    let libraries =
+        trap_native_libraries(files).expect("the sweep excludes unavailable fixture entries");
+    if id.as_str() == "t50-wire-entry-unknown-value" {
+        trap_corpus::run_wire_entry_unknown_dev(files, &libraries)
+    } else if let Some(n) = allocation_failure_count(id) {
+        run_jit_with_alloc_failure(files, n)
+    } else if freed_handle_diagnostic(id) {
+        run_jit_with_memory_accounting(files, true).map(|(stdout, _)| stdout)
+    } else if callback_userdata_diagnostic(id) {
+        run_jit_with_freed_handle_diagnostics_and_native_libraries(files, &libraries)
+    } else {
+        let config = RunConfig::default().with_native_libraries(&libraries);
+        run_jit_configured(files, config).map(|output| output.stdout)
+    }
+}
+
+/// §14.4b (A) pins its trap with freed-handle diagnostics on, for the
+/// Context-lifetime binding and for the §111 registration alike.
+fn callback_userdata_diagnostic(id: &str) -> bool {
+    matches!(
+        id,
+        "t46-callback-userdata-freed" | "t59-registration-userdata-freed"
+    )
+}
+
+/// The ship-tier run of one trap entry.
+fn trap_ship_run(case: &TrapCase) -> Result<Vec<u8>, RunError> {
+    let id = &case.id;
+    let files = &case.files;
+    let libraries =
+        trap_native_libraries(files).expect("the sweep excludes unavailable fixture entries");
+    if id.as_str() == "t50-wire-entry-unknown-value" {
+        trap_corpus::run_wire_entry_unknown_ship(files, &libraries)
+    } else if let Some(n) = allocation_failure_count(id) {
+        run_c_aot_with_alloc_failure(files, n)
+    } else if freed_handle_diagnostic(id) {
+        run_c_aot(files)
+    } else if callback_userdata_diagnostic(id) {
+        run_c_aot_with_freed_handle_diagnostics_and_native_libraries(files, &libraries)
+    } else {
+        let config = RunConfig::default().with_native_libraries(&libraries);
+        run_c_aot_configured(files, config).map(|output| output.stdout)
+    }
+}
+
+/// Compares the two tier runs of one trap entry: kind, message,
+/// position, and pre-trap stdout. The caller prints and asserts.
+fn compare_trap_runs(
+    case: &TrapCase,
+    jit: Result<Vec<u8>, RunError>,
+    ship: Result<Vec<u8>, RunError>,
+) -> TrapCaseOutcome {
+    let id = &case.id;
     let expected = &case.expected;
     let mut failures = Vec::new();
     let (expected_kind, expected_line, expected_column) = trap_expectation(id);
@@ -760,46 +805,6 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
     } else {
         format!("{id}.ts")
     };
-    let freed_handle_diagnostic = matches!(
-        id.as_str(),
-        "t22-double-delete-q6" | "t23-use-after-delete-q6"
-    );
-    // §14.4b (A) pins its trap with freed-handle diagnostics on, for the
-    // Context-lifetime binding and for the §111 registration alike.
-    let callback_userdata_diagnostic = matches!(
-        id.as_str(),
-        "t46-callback-userdata-freed" | "t59-registration-userdata-freed"
-    );
-    let libraries =
-        trap_native_libraries(files).expect("the sweep excludes unavailable fixture entries");
-    let (jit, ship) = if id.as_str() == "t50-wire-entry-unknown-value" {
-        (
-            trap_corpus::run_wire_entry_unknown_dev(files, &libraries),
-            trap_corpus::run_wire_entry_unknown_ship(files, &libraries),
-        )
-    } else if let Some(n) = allocation_failure_count(id) {
-        (
-            run_jit_with_alloc_failure(files, n),
-            run_c_aot_with_alloc_failure(files, n),
-        )
-    } else if freed_handle_diagnostic {
-        (
-            run_jit_with_memory_accounting(files, true).map(|(stdout, _)| stdout),
-            run_c_aot(files),
-        )
-    } else if callback_userdata_diagnostic {
-        (
-            run_jit_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
-            run_c_aot_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
-        )
-    } else {
-        let config = RunConfig::default().with_native_libraries(&libraries);
-        (
-            run_jit_configured(files, config).map(|output| output.stdout),
-            run_c_aot_configured(files, config).map(|output| output.stdout),
-        )
-    };
-
     match &jit {
         Err(RunError::Trap(report)) => {
             if report.rule != expected_kind
@@ -926,7 +931,6 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
     TrapCaseOutcome { line, failures }
 }
 
-#[test]
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
@@ -953,8 +957,17 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         });
     }
 
+    // The pool runs the ship tier of every case and the dev tier of each
+    // case that can run from a pool thread. The other dev runs happen on
+    // this thread after the pool joins its threads.
+    let pooled_runs = pool::map_in_order(&cases, |case| {
+        let jit = (!trap_dev_needs_the_main_thread(case)).then(|| trap_dev_run(case));
+        (jit, trap_ship_run(case))
+    });
     let mut failures = Vec::new();
-    for outcome in pool::map_in_order(&cases, check_trap_case) {
+    for (case, (jit, ship)) in cases.iter().zip(pooled_runs) {
+        let jit = jit.unwrap_or_else(|| trap_dev_run(case));
+        let outcome = compare_trap_runs(case, jit, ship);
         println!("{}", outcome.line);
         failures.extend(outcome.failures);
     }
@@ -966,7 +979,6 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     );
 }
 
-#[test]
 fn p20_review_accept_entries_reach_both_generators() {
     let accept = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
     let mut failures = Vec::new();
@@ -1004,7 +1016,6 @@ fn p20_review_accept_entries_reach_both_generators() {
     );
 }
 
-#[test]
 fn out_of_range_320_byte_value_type_store_stops_before_the_store() {
     // An out-of-range `subscript_arr_at` traps. The 320-byte store into
     // its result must be unreachable, and stdout must match the dev
@@ -1050,7 +1061,6 @@ fn out_of_range_320_byte_value_type_store_stops_before_the_store() {
 /// `compiler.md` §115.4 item 1 and §115.7: a parse failure that no
 /// handler catches is the uncaught-exception trap at the `JSON.parse`
 /// call, for a string, a reference, and a nested target.
-#[test]
 fn uncaught_json_parse_failures_trap_identically() {
     for (source, line) in [
         (
@@ -1070,7 +1080,6 @@ fn uncaught_json_parse_failures_trap_identically() {
     }
 }
 
-#[test]
 fn binary32_bit_access_uses_the_declared_runtime_symbols() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1084,7 +1093,6 @@ fn binary32_bit_access_uses_the_declared_runtime_symbols() {
     assert!(c.contains("subscript_rt_math_f32_from_bits(ctx, v"), "{c}");
 }
 
-#[test]
 fn accessor_and_underscore_member_emit_distinct_c_symbols() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;
@@ -1114,7 +1122,6 @@ fn accessor_and_underscore_member_emit_distinct_c_symbols() {
     );
 }
 
-#[test]
 fn generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -1143,7 +1150,6 @@ fn generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     );
 }
 
-#[test]
 fn async_generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
@@ -1195,7 +1201,6 @@ fn async_generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     }
 }
 
-#[test]
 fn aligned_value_class_emits_alignas_on_the_first_field() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1206,7 +1211,6 @@ fn aligned_value_class_emits_alignas_on_the_first_field() {
     assert!(c.contains("    _Alignas(16) float d3;"), "{c}");
 }
 
-#[test]
 fn host_callable_export_emits_handle_and_scalar_parameters() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1244,7 +1248,6 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
     );
 }
 
-#[test]
 fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1285,7 +1288,6 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
     );
 }
 
-#[test]
 fn parameterized_async_export_has_no_host_wrapper() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1316,7 +1318,6 @@ fn parameterized_async_export_has_no_host_wrapper() {
     );
 }
 
-#[test]
 fn generic_async_instance_has_no_host_wrapper() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1344,7 +1345,6 @@ fn generic_async_instance_has_no_host_wrapper() {
     );
 }
 
-#[test]
 fn acyclic_json_serializer_emits_no_tracking_operations() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1358,7 +1358,6 @@ fn acyclic_json_serializer_emits_no_tracking_operations() {
     assert!(!c.contains("subscript_rt_json_leave(ctx,"), "{c}");
 }
 
-#[test]
 fn constructor_less_value_class_emits_field_initializer_store() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1373,7 +1372,6 @@ fn constructor_less_value_class_emits_field_initializer_store() {
     );
 }
 
-#[test]
 fn constructor_less_reference_class_emits_field_initializer_store() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1388,7 +1386,6 @@ fn constructor_less_reference_class_emits_field_initializer_store() {
     );
 }
 
-#[test]
 fn string_literal_union_equality_emits_an_integer_compare() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1413,7 +1410,6 @@ fn string_literal_union_equality_emits_an_integer_compare() {
     );
 }
 
-#[test]
 fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1465,7 +1461,6 @@ fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
     );
 }
 
-#[test]
 fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1520,7 +1515,6 @@ fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
     );
 }
 
-#[test]
 fn absence_presence_test_emits_reserved_integer_compare() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1552,7 +1546,6 @@ fn absence_presence_test_emits_reserved_integer_compare() {
     );
 }
 
-#[test]
 fn a115_string_literal_union_switch_emits_integer_c_switches() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
@@ -1591,7 +1584,6 @@ fn a115_string_literal_union_switch_emits_integer_c_switches() {
     );
 }
 
-#[test]
 fn descriptor_nested_defaults_are_fresh_per_construction() {
     assert_tiers_print(
         "@Descriptor\n\
@@ -1659,7 +1651,6 @@ export function main(): void {
     .expect("provenance fixture checks")
 }
 
-#[test]
 fn foreign_c_names_come_from_typed_mirror_provenance() {
     use subscript_codegen::emit_c;
 
@@ -1693,7 +1684,6 @@ fn foreign_c_names_come_from_typed_mirror_provenance() {
     );
 }
 
-#[test]
 fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
     use subscript_codegen::emit_c;
 
@@ -1759,7 +1749,6 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
     assert!(error.contains("invalid mirror id"), "{error}");
 }
 
-#[test]
 fn to_string_out_of_range_radix_traps_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print((1.0).toString(37));\n}\n",
@@ -1767,7 +1756,6 @@ fn to_string_out_of_range_radix_traps_identically() {
     );
 }
 
-#[test]
 fn to_exponential_out_of_range_digits_trap_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print((1.0).toExponential(101));\n}\n",
@@ -1775,7 +1763,6 @@ fn to_exponential_out_of_range_digits_trap_identically() {
     );
 }
 
-#[test]
 fn to_precision_out_of_range_digits_trap_identically() {
     assert_number_range_trap_identical(
         "export function main(): void {\n  print((1.0).toPrecision(0));\n}\n",
@@ -1783,7 +1770,6 @@ fn to_precision_out_of_range_digits_trap_identically() {
     );
 }
 
-#[test]
 fn array_trapping_map_callback_reports_identically_across_tiers() {
     // stdlib.md §9 gate: a callback that traps mid-`map` (an OOB index
     // inside the closure at v == 3) aborts the iteration in the shared
@@ -1811,7 +1797,6 @@ fn array_trapping_map_callback_reports_identically_across_tiers() {
     assert_trap_outcomes_identical("Array.map callback trap", &outcomes);
 }
 
-#[test]
 fn array_empty_shift_reports_identically_across_tiers() {
     let files = [SourceFile::new(
         "test.ts",
@@ -1836,7 +1821,6 @@ fn array_empty_shift_reports_identically_across_tiers() {
     assert_trap_outcomes_identical("Array.shift trap", &outcomes);
 }
 
-#[test]
 fn array_methods_match_across_tiers_without_a_golden() {
     // The committed a44/a45 goldens pin the full batteries; this pins
     // cross-tier agreement for a compact slice with computed receivers,
@@ -1873,3 +1857,120 @@ fn assert_callback_trap_identical(src: &str, line: u32) {
 
 #[path = "cemit/operations.rs"]
 mod operations;
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            enum_casts_use_target_integer_width_on_all_tiers,
+            s68_frame_class_locals_match_both_tiers,
+            s68_empty_template_matches_both_tiers,
+            s68_float_remainder_matches_both_tiers,
+            narrow_integer_operations_wrap_at_the_declared_width_on_both_tiers,
+            float_to_narrow_int_casts_saturate_to_the_narrow_range_on_both_tiers,
+            c1_mutating_value_method_persists_like_the_jit,
+            c2_capturing_lambda_over_f32_matches_the_jit,
+            c2_capturing_lambda_over_i64_matches_the_jit,
+            c2_capturing_lambda_over_i32_matches_the_jit,
+            m1_collect_then_delete_live_handle_matches_the_jit,
+            m1_collect_then_use_live_handle_matches_the_jit,
+            m1_collect_keeps_references_inside_a_fixed_array_local_alive,
+            m1_collect_keeps_references_inside_a_fixed_array_param_alive,
+            date_intrinsics_match_across_tiers,
+            ship_c_aot_reports_a_date_range_trap_with_its_position,
+            ship_c_aot_reports_a_to_iso_year_range_trap,
+            string_char_code_at_out_of_range_traps_identically,
+            string_char_at_off_utf8_boundary_traps_identically,
+            string_code_point_at_off_utf8_boundary_traps_identically,
+            string_code_point_at_out_of_range_traps_identically,
+            string_repeat_negative_count_traps_identically,
+            string_split_empty_separator_matches_section95,
+            string_replace_all_empty_pattern_matches_section95,
+            string_empty_pad_that_must_fill_matches_section95,
+            string_methods_match_across_tiers_without_a_golden,
+            parse_int_out_of_range_radix_traps_identically,
+            to_fixed_out_of_range_digits_trap_identically,
+            json_stringify_nan_traps_identically,
+            json_stringify_infinity_traps_identically,
+            json_stringify_cyclic_reference_graph_traps_identically,
+            p20_review_accept_entries_reach_both_generators,
+            out_of_range_320_byte_value_type_store_stops_before_the_store,
+            uncaught_json_parse_failures_trap_identically,
+            binary32_bit_access_uses_the_declared_runtime_symbols,
+            accessor_and_underscore_member_emit_distinct_c_symbols,
+            generic_method_instances_hold_distinct_hir_names_and_lir_ids,
+            async_generic_method_instances_hold_distinct_hir_names_and_lir_ids,
+            aligned_value_class_emits_alignas_on_the_first_field,
+            host_callable_export_emits_handle_and_scalar_parameters,
+            wire_alias_entry_wrapper_validates_before_the_internal_call,
+            parameterized_async_export_has_no_host_wrapper,
+            generic_async_instance_has_no_host_wrapper,
+            acyclic_json_serializer_emits_no_tracking_operations,
+            constructor_less_value_class_emits_field_initializer_store,
+            constructor_less_reference_class_emits_field_initializer_store,
+            string_literal_union_equality_emits_an_integer_compare,
+            wire_enum_foreign_crossing_is_identity_with_unknown_return_trap,
+            wire_enum_switch_formatting_and_boundary_member_read_use_wire_values,
+            absence_presence_test_emits_reserved_integer_compare,
+            a115_string_literal_union_switch_emits_integer_c_switches,
+            descriptor_nested_defaults_are_fresh_per_construction,
+            foreign_c_names_come_from_typed_mirror_provenance,
+            missing_emission_site_provenance_is_an_internal_error_naming_the_site,
+            to_string_out_of_range_radix_traps_identically,
+            to_exponential_out_of_range_digits_trap_identically,
+            to_precision_out_of_range_digits_trap_identically,
+            array_trapping_map_callback_reports_identically_across_tiers,
+            array_empty_shift_reports_identically_across_tiers,
+            array_methods_match_across_tiers_without_a_golden,
+            operations::array_trapping_callbacks_report_identically_across_tiers,
+            operations::array_callback_growth_during_iteration_is_defined_on_both_tiers,
+            operations::map_set_corpus_entries_match_across_tiers_before_golden_capture,
+            operations::map_and_set_trapping_foreach_callbacks_report_identically,
+            operations::map_growth_during_for_each_visits_the_appended_entry,
+            operations::map_mutation_during_for_each_keeps_the_p22_visit_rules,
+            operations::fill_reverse_and_sort_return_the_receiver_not_a_copy,
+            operations::join_prints_negative_zero_as_the_q14_rules_require,
+            operations::array_needle_method_evaluates_the_receiver_before_the_argument,
+            operations::array_closure_method_evaluates_the_receiver_before_the_callback,
+            operations::array_reduce_evaluates_receiver_then_callback_then_init,
+            operations::array_push_evaluates_the_receiver_before_the_argument,
+            operations::string_method_evaluates_the_receiver_before_the_argument,
+            operations::user_function_arguments_run_left_to_right,
+            operations::indirect_call_arguments_run_left_to_right,
+            operations::reference_class_method_receiver_runs_before_its_argument,
+            operations::value_class_method_receiver_runs_before_its_argument,
+            operations::constructor_arguments_run_left_to_right,
+            operations::math_arguments_run_left_to_right,
+            operations::date_utc_arguments_run_left_to_right,
+            operations::binary_operands_run_left_to_right,
+            operations::index_operands_run_left_to_right,
+            operations::array_element_store_evaluates_the_target_before_the_value,
+            operations::field_store_evaluates_the_target_base_before_the_value,
+            operations::compound_assignment_evaluates_the_target_base_once,
+            operations::fixed_array_literal_elements_run_left_to_right,
+            operations::short_circuit_operands_do_not_run_the_skipped_side,
+            operations::short_circuit_in_a_loop_condition_re_runs_per_iteration,
+            operations::dynamic_array_length_and_index_use_inline_header_fields,
+            operations::static_array_callback_iterator_uses_inline_header_fields,
+            operations::generator_creation_call_keeps_its_implicit_allocation_check,
+            operations::local_load_store_address_chains_emit_as_member_expressions,
+            operations::multiply_constant_trip_loop_emits_four_straight_iterations,
+            operations::parallel_copy_cycle_uses_one_temporary,
+            operations::address_passed_to_a_call_stays_materialized,
+            operations::parameter_storage_is_initialized_once_when_its_address_escapes,
+            operations::ship_c_aot_prints_the_frozen_a22_golden_byte_exactly,
+            operations::date_now_reads_the_pinned_context_clock_in_the_ship_tier,
+            operations::ship_c_aot_reports_an_out_of_bounds_trap_with_its_position,
+            operations::ship_c_aot_reports_a_division_by_zero_trap,
+            operations::held_async_copy_pass_and_second_await_match_both_tiers,
+            operations::held_async_cached_reference_survives_collect_on_both_tiers,
+            operations::many_completed_async_calls_leave_no_frames_without_collect,
+            operations::a183_long_string_emits_five_adjacent_c_literals,
+        ],
+        main_thread: [
+            trap_corpus_entries_match_dev_stdout_on_both_tiers,
+        ],
+    ])
+}

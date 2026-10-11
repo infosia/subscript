@@ -1,5 +1,12 @@
 //! Function reference map reads and field calls agree across engines (compiler.md §123).
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
@@ -14,7 +21,6 @@ use subscript_codegen::{
 };
 use subscript_compiler::{check_program, SourceFile};
 
-#[test]
 fn nullable_map_values_and_field_reads_keep_their_evaluation_order() {
     let files = [SourceFile::new(
         "test.ts",
@@ -78,7 +84,6 @@ fn assert_three_engines(files: &[SourceFile], expected: &[u8], libraries: &[Nati
 }
 
 #[cfg(not(all(windows, target_env = "msvc")))]
-#[test]
 fn boundary_function_field_reads_the_same_pair_as_a_local_copy() {
     let files = mirror_program(
         r#"
@@ -97,7 +102,6 @@ fn boundary_function_field_reads_the_same_pair_as_a_local_copy() {
     assert_three_engines(&files, b"updated local\nupdated field\n", &libraries);
 }
 
-#[test]
 fn static_nullable_function_path_calls_and_copies() {
     let files = [SourceFile::new(
         "test.ts",
@@ -119,7 +123,6 @@ fn static_nullable_function_path_calls_and_copies() {
     assert_three_engines(&files, b"10\n12\nnull\n", &[]);
 }
 
-#[test]
 fn nullable_reference_map_get_or_accepts_a_null_default() {
     let files = [SourceFile::new(
         "test.ts",
@@ -137,7 +140,6 @@ fn nullable_reference_map_get_or_accepts_a_null_default() {
 }
 
 #[cfg(not(all(windows, target_env = "msvc")))]
-#[test]
 fn nullable_boundary_map_get_or_accepts_a_null_default() {
     let files = mirror_program(
         r#"
@@ -153,4 +155,23 @@ fn nullable_boundary_map_get_or_accepts_a_null_default() {
         .expect("interop fixture")
         .library()];
     assert_three_engines(&files, b"true 7 8 true true\n", &libraries);
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            nullable_map_values_and_field_reads_keep_their_evaluation_order,
+            static_nullable_function_path_calls_and_copies,
+            nullable_reference_map_get_or_accepts_a_null_default,
+        ],
+        main_thread: [
+            #[cfg(not(all(windows, target_env = "msvc")))]
+            boundary_function_field_reads_the_same_pair_as_a_local_copy,
+            #[cfg(not(all(windows, target_env = "msvc")))]
+            nullable_boundary_map_get_or_accepts_a_null_default,
+        ],
+    ])
 }

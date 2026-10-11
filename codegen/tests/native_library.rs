@@ -1,6 +1,13 @@
 //! Caller-supplied native-library surface, explicit resolution errors, and
 //! abort-time output preservation for the run helpers.
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 // Naming the dev-dependency propagates its test-only native archive into
 // this integration-test link.
 extern crate subscript_archive_fixture;
@@ -100,7 +107,6 @@ fn missing_symbol_program() -> Vec<SourceFile> {
     ]
 }
 
-#[test]
 fn static_archive_link_input_follows_translation_units_on_all_tiers() {
     let files = vec![
         SourceFile::ambient(
@@ -137,7 +143,6 @@ fn static_archive_link_input_follows_translation_units_on_all_tiers() {
     assert_eq!(jit, c_aot, "dev JIT tier differs from ship C-AOT tier");
 }
 
-#[test]
 fn empty_library_set_runs_programs_without_foreign_calls() {
     let files = [SourceFile::entry(
         "main.ts",
@@ -147,7 +152,6 @@ fn empty_library_set_runs_programs_without_foreign_calls() {
     assert_eq!(run_c_aot(&files).expect("ship C AOT"), b"local\n");
 }
 
-#[test]
 fn unregistered_foreign_symbol_is_named_before_platform_lookup() {
     for (tier, result) in [
         ("dev JIT", run_jit(&missing_symbol_program())),
@@ -164,7 +168,6 @@ fn unregistered_foreign_symbol_is_named_before_platform_lookup() {
 
 /// Subprocess target that keeps the environment-variable compatibility path
 /// isolated from the test runner's parallel process environment.
-#[test]
 fn jit_output_file_override_child() {
     let Ok(mode) = std::env::var(ABORT_CHILD_MODE) else {
         return;
@@ -217,7 +220,6 @@ fn assert_abnormal_output(result: Result<Vec<u8>, RunError>, label: &str) {
     );
 }
 
-#[test]
 fn non_unwinding_panic_surfaces_output_already_produced() {
     let Some(run_dev) = isolated_dev_run() else {
         println!("{DEV_RETENTION_SKIP}");
@@ -229,7 +231,6 @@ fn non_unwinding_panic_surfaces_output_already_produced() {
     std::fs::remove_dir_all(&fixture).expect("remove abort fixture directory");
 }
 
-#[test]
 fn jit_output_file_override_still_retains_child_process_output() {
     let Some(_run_dev) = isolated_dev_run() else {
         println!("{DEV_RETENTION_SKIP}");
@@ -259,7 +260,6 @@ fn jit_output_file_override_still_retains_child_process_output() {
     std::fs::remove_dir_all(&fixture).expect("remove abort fixture directory");
 }
 
-#[test]
 fn no_opt_in_hard_signal_returns_retained_output_on_both_tiers() {
     let fixture = abort_fixture("signal");
     if let Some(run_dev) = isolated_dev_run() {
@@ -274,4 +274,23 @@ fn no_opt_in_hard_signal_returns_retained_output_on_both_tiers() {
         "C-AOT hard signal",
     );
     std::fs::remove_dir_all(&fixture).expect("remove abort fixture directory");
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            empty_library_set_runs_programs_without_foreign_calls,
+            unregistered_foreign_symbol_is_named_before_platform_lookup,
+            jit_output_file_override_still_retains_child_process_output,
+        ],
+        main_thread: [
+            jit_output_file_override_child,
+            static_archive_link_input_follows_translation_units_on_all_tiers,
+            non_unwinding_panic_surfaces_output_already_produced,
+            no_opt_in_hard_signal_returns_retained_output_on_both_tiers,
+        ],
+    ])
 }

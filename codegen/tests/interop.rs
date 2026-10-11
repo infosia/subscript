@@ -71,7 +71,6 @@ class LogSink {
 
 /// Handle lifecycle: create returns a handle, retain/release take it as an
 /// opaque pointer. No callback, so no output beyond the marker.
-#[test]
 fn handle_create_retain_release() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -88,7 +87,6 @@ fn handle_create_retain_release() {
 
 /// String label marshaling and the callback: setLogger fires the callback
 /// with the stored label, so the sink accumulates the label's length.
-#[test]
 fn string_label_round_trips_through_the_callback() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -117,7 +115,6 @@ fn string_label_round_trips_through_the_callback() {
 /// `(ptr, count)` array descriptor: submit sums the commands and fires the
 /// callback with a message of length (sum + chain depth = 0). Also proves
 /// the callback userdata (`object | null` narrowed with `as`).
-#[test]
 fn buffer_view_sum_through_the_callback() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -148,7 +145,6 @@ fn buffer_view_sum_through_the_callback() {
 /// Chain-slot address-of via the constructor: `new SubChainHeader(_, tail)`
 /// stores the address of `tail`'s storage into the `Struct | null` slot.
 /// create walks the chain (depth 2), surfaced through submit.
-#[test]
 fn chain_slot_address_of_via_constructor() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -178,7 +174,6 @@ fn chain_slot_address_of_via_constructor() {
 }
 
 /// Chain-slot address-of via an explicit `next` assignment.
-#[test]
 fn chain_slot_address_of_via_assignment() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -209,7 +204,6 @@ fn chain_slot_address_of_via_assignment() {
 
 /// An extension's embedded header crosses the chain slot by address, so
 /// the callee can recover and fold the payload fields that follow it.
-#[test]
 fn chain_extension_payload_is_read_through_its_embedded_header() {
     let prog = include_str!("../../corpus/accept/a89-interop-chain-payload.ts");
     let golden = include_bytes!("../../corpus/accept/a89-interop-chain-payload.expected");
@@ -229,7 +223,6 @@ fn chain_extension_payload_is_read_through_its_embedded_header() {
 /// submit, then nonzero after the pump. This proves the deferred fire.
 /// It also proves that the userdata, and the Context-held callback
 /// binding behind it, outlived the registration.
-#[test]
 fn deferred_completion_callback_fires_on_pump() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -259,7 +252,6 @@ fn deferred_completion_callback_fires_on_pump() {
     assert_eq!(both_tiers(&prog), b"0\n0\n60\n");
 }
 
-#[test]
 fn callback_userdata_rooting_corpus_survives_collect_on_both_tiers() {
     let program = include_str!("../../corpus/accept/a90-callback-userdata-rooted.ts");
     let output = both_tiers(program);
@@ -270,7 +262,6 @@ fn callback_userdata_rooting_corpus_survives_collect_on_both_tiers() {
     );
 }
 
-#[test]
 fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
     let files = || {
         vec![
@@ -313,7 +304,6 @@ fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
 
 /// All five patterns composed in one program: chain + handle + string +
 /// (ptr,count) + callback with userdata.
-#[test]
 fn all_patterns_composed() {
     let prog = format!(
         "{SINK}export function main(): void {{
@@ -350,31 +340,26 @@ fn all_patterns_composed() {
 /// second, whose ternary lowers to statements of its own. The dev tier
 /// marshals in argument order, so the ship tier must not let the
 /// marshaling of a later argument overtake an earlier one.
-#[test]
 fn foreign_call_arguments_run_left_to_right() {
     let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkDevice(): SubDevice {\n  note(\"D\");\n  return subDeviceCreate(null);\n}\nfunction mkLabel(): string {\n  note(\"L\");\n  return \"abc\";\n}\nexport function main(): void {\n  subDeviceSetLabel(mkDevice(), pick ? mkLabel() : \"\");\n  print(log);\n}\n";
     assert_eq!(both_tiers(prog), b"DL\n");
 }
 
-#[test]
 fn foreign_call_operands_survive_a_later_suspension() {
     let program = "async function av(value: i32): Promise<i32> {\n  await Context.suspend();\n  return value;\n}\nexport async function main(): Promise<void> {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, (await av(2)) as u32);\n  print(`probe=${probe}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n}\n";
     assert_eq!(both_tiers(program), b"probe=2\n");
 }
 
-#[test]
 fn foreign_call_without_suspension_uses_call_time_view() {
     let program = "function grow(commands: SubDevice[], device: SubDevice): u32 {\n  commands.push(device);\n  return 0;\n}\nexport function main(): void {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third));\n  print(`f2=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
     assert_eq!(both_tiers(program), b"f2=3 len=3\n");
 }
 
-#[test]
 fn foreign_call_rule_7a_plain_twin_uses_call_time_view() {
     let program = "async function av(value: u32): Promise<u32> {\n  await Context.suspend();\n  return value;\n}\nfunction grow(commands: SubDevice[], device: SubDevice, value: u32): u32 {\n  commands.push(device);\n  return value;\n}\nexport async function main(): Promise<void> {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third, 0));\n  print(`f2sync=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
     assert_eq!(both_tiers(program), b"f2sync=3 len=3\n");
 }
 
-#[test]
 fn foreign_call_rule_7a_later_suspension_uses_call_time_view() {
     // §68.7.3 applies the same call-time view after a later suspension.
     let program = "async function av(value: u32): Promise<u32> {\n  await Context.suspend();\n  return value;\n}\nfunction grow(commands: SubDevice[], device: SubDevice, value: u32): u32 {\n  commands.push(device);\n  return value;\n}\nexport async function main(): Promise<void> {\n  const queue: SubDevice = subDeviceCreate(null);\n  const first: SubDevice = subDeviceCreate(null);\n  const second: SubDevice = subDeviceCreate(null);\n  const third: SubDevice = subDeviceCreate(null);\n  const commands: SubDevice[] = [first, second];\n  const probe: u64 = subProbeQueueSubmitCheck(queue, commands, grow(commands, third, await av(0)));\n  print(`f2suspend=${probe} len=${commands.length}`);\n  subDeviceRelease(queue);\n  subDeviceRelease(first);\n  subDeviceRelease(second);\n  subDeviceRelease(third);\n}\n";
@@ -383,13 +368,11 @@ fn foreign_call_rule_7a_later_suspension_uses_call_time_view() {
 
 /// A mirror boundary struct's `new` is a positional field initializer
 /// list; its fields are evaluated left to right too.
-#[test]
 fn boundary_struct_field_initializers_run_left_to_right() {
     let prog = "let log: string = \"\";\nlet pick: boolean = true;\nfunction note(tag: string): void {\n  log = log + tag;\n}\nfunction mkKind(): SubChainKind {\n  note(\"H\");\n  return SubChainKind.SUB_CHAIN_KIND_BASE;\n}\nfunction mkIntensity(): f32 {\n  note(\"I\");\n  return 1.5;\n}\nexport function main(): void {\n  const ext: SubChainExtA = new SubChainExtA(new SubChainHeader(mkKind(), null), pick ? mkIntensity() : 0.0, 2);\n  print(`${log}:${ext.intensity}`);\n}\n";
     assert_eq!(both_tiers(prog), b"HI:1.5\n");
 }
 
-#[test]
 fn boundary_struct_new_arguments_survive_suspension() {
     let program = "async function av(label: string, value: i32): Promise<i32> {\n  print(`av:${label}`);\n  await Context.suspend();\n  return value;\n}\nexport async function main(): Promise<void> {\n  const rect: SubRect = new SubRect(1, await av(\"rect-y\", 2), 3 as u32, 4 as u32);\n  print(`rect=${rect.x},${rect.y},${rect.width},${rect.height}`);\n}\n";
     assert_eq!(both_tiers(program), b"av:rect-y\nrect=1,2,3,4\n");
@@ -416,7 +399,6 @@ class RequestSink {
 
 /// §111.2: two deferred one-shots live at the same time. The adapter
 /// holds both, fires both at the pump, and ends each one time.
-#[test]
 fn two_deferred_one_shots_each_end_one_time() {
     let program = format!(
         "{REQUEST_SINK}\
@@ -454,7 +436,6 @@ export function main(): void {{
 /// §111.2: a start that meets a full table is refused. The refused
 /// crossing still received a registration, so the adapter ends it at
 /// once and answers -1.
-#[test]
 fn a_start_over_the_table_capacity_is_refused_and_released_at_once() {
     let program = format!(
         "{REQUEST_SINK}\
@@ -495,7 +476,6 @@ export function main(): void {{
 
 /// §111.2: one subscription at a time. A second subscribe is refused,
 /// and its registration ends at once instead of leaking.
-#[test]
 fn a_second_subscribe_is_refused_and_released_at_once() {
     let program = format!(
         "{REQUEST_SINK}\
@@ -537,7 +517,6 @@ export function main(): void {{
 /// The pump fires what is queued when the drain starts. A notification a
 /// callback queues during the drain overwrites nothing and fires at the
 /// next pump.
-#[test]
 fn a_notification_queued_during_the_drain_fires_at_the_next_pump() {
     // The callback reaches the device through its own userdata, because
     // a boundary callback captures nothing (C5).
@@ -589,4 +568,37 @@ export function main(): void {
         both_tiers(program),
         b"note 1:2\nnote 2:3\nnote 3:4\ndrained\nnote 4:9\nnote 5:10\nreleased 1\n"
     );
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+pub(super) fn main() -> std::process::ExitCode {
+    crate::main_thread::run(&crate::main_thread_tests![
+        parallel: [
+        ],
+        main_thread: [
+            handle_create_retain_release,
+            string_label_round_trips_through_the_callback,
+            buffer_view_sum_through_the_callback,
+            chain_slot_address_of_via_constructor,
+            chain_slot_address_of_via_assignment,
+            chain_extension_payload_is_read_through_its_embedded_header,
+            deferred_completion_callback_fires_on_pump,
+            callback_userdata_rooting_corpus_survives_collect_on_both_tiers,
+            callback_userdata_fire_check_traps_identically_on_both_tiers,
+            all_patterns_composed,
+            foreign_call_arguments_run_left_to_right,
+            foreign_call_operands_survive_a_later_suspension,
+            foreign_call_without_suspension_uses_call_time_view,
+            foreign_call_rule_7a_plain_twin_uses_call_time_view,
+            foreign_call_rule_7a_later_suspension_uses_call_time_view,
+            boundary_struct_field_initializers_run_left_to_right,
+            boundary_struct_new_arguments_survive_suspension,
+            two_deferred_one_shots_each_end_one_time,
+            a_start_over_the_table_capacity_is_refused_and_released_at_once,
+            a_second_subscribe_is_refused_and_released_at_once,
+            a_notification_queued_during_the_drain_fires_at_the_next_pump,
+        ],
+    ])
 }

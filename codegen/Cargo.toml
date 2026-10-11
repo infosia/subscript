@@ -43,3 +43,61 @@ subscript-interop-fixture = { path = "tests/native-fixture" }
 
 [build-dependencies]
 cc = "1"
+
+# compiler.md §190.1 rule 3: these binaries run their tests in two phases
+# (`tests/support/main_thread.rs`). A phase 2 test runs in its own process,
+# on that process's main thread, so its native-library runs can fork.
+[[test]]
+name = "dev_run_threads"
+harness = false
+
+[[test]]
+name = "abi_pressure"
+path = "tests/main_thread/abi_pressure.rs"
+harness = false
+
+[[test]]
+name = "boundary_module_invariance"
+path = "tests/main_thread/boundary_module_invariance.rs"
+harness = false
+
+[[test]]
+name = "boundary_scratch_breadth"
+harness = false
+
+[[test]]
+name = "cemit"
+harness = false
+
+[[test]]
+name = "file_module"
+harness = false
+
+[[test]]
+name = "function_value_reference"
+harness = false
+
+[[test]]
+name = "golden"
+harness = false
+
+[[test]]
+name = "interop"
+path = "tests/main_thread/interop.rs"
+harness = false
+
+[[test]]
+name = "module_init_routes"
+harness = false
+
+[[test]]
+name = "module_init_values"
+harness = false
+
+[[test]]
+name = "native_library"
+harness = false
+
+[[test]]
+name = "shared_narrowing"
+harness = false

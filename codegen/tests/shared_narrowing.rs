@@ -1,5 +1,12 @@
 //! Shared-read guards, local copies, boundary places, and disposal order (compiler.md §124).
 
+// compiler.md §190.1 rule 3: a test function that the phase list does
+// not name fails the build.
+#![deny(dead_code)]
+
+#[path = "support/main_thread.rs"]
+mod main_thread;
+
 #[path = "../../compiler/tests/corpus/interop.rs"]
 #[allow(dead_code)]
 mod interop;
@@ -8,7 +15,6 @@ use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, ru
 use subscript_compiler::{check_program, SourceFile};
 
 /// One three-engine run pins loop edges that the shared-narrowing corpus does not exercise.
-#[test]
 fn while_checks_the_condition_after_continue_disposal() {
     let files = [SourceFile::new(
         "test.ts",
@@ -35,7 +41,6 @@ fn while_checks_the_condition_after_continue_disposal() {
     assert_eq!(run_c_aot(&files).expect("ship C"), expected);
 }
 
-#[test]
 fn a_shared_function_or_global_read_traps_but_a_local_copy_survives() {
     use subscript_codegen::{interpreter::InterpretError, RunError};
     use subscript_runtime::TrapKind;
@@ -96,7 +101,6 @@ fn a_shared_function_or_global_read_traps_but_a_local_copy_survives() {
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
-#[test]
 fn narrowed_boundary_field_and_global_stores_keep_the_box() {
     use subscript_codegen::{run_c_aot_configured, run_jit_configured, RunConfig};
     let Some(fixture) = native_fixture::fixture() else {
@@ -120,7 +124,6 @@ fn narrowed_boundary_field_and_global_stores_keep_the_box() {
     }
 }
 
-#[test]
 fn shared_narrowing_site_rejects_a_load_instead_of_a_conversion() {
     use subscript_codegen::lir::verify_module;
     use subscript_compiler::lir::{InstructionKind, TrapKind};
@@ -169,7 +172,6 @@ fn shared_narrowing_site_rejects_a_load_instead_of_a_conversion() {
     );
 }
 
-#[test]
 fn narrowing_origins_require_their_sites_and_local_copies_pass() {
     use subscript_codegen::lir::verify_module;
     use subscript_compiler::lir::{InstructionKind, NarrowOrigin, TrapKind};
@@ -240,7 +242,6 @@ fn narrowing_origins_require_their_sites_and_local_copies_pass() {
     }
 }
 
-#[test]
 fn as_cast_null_traps_keep_their_runtime_identity() {
     use subscript_codegen::interpreter::InterpretError;
     use subscript_runtime::TrapKind;
@@ -289,7 +290,6 @@ fn as_cast_null_traps_keep_their_runtime_identity() {
     }
 }
 
-#[test]
 fn terminators_report_each_narrowing_kind() {
     use subscript_codegen::lir::verify_module;
     use subscript_compiler::lir::{Terminator, TrapKind};
@@ -336,4 +336,23 @@ fn terminators_report_each_narrowing_kind() {
             "{errors:?}"
         );
     }
+}
+
+// compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
+// starts a dev run with a native library or a file provider and runs in
+// its own process, on that process's main thread.
+fn main() -> std::process::ExitCode {
+    main_thread::run(&main_thread_tests![
+        parallel: [
+            while_checks_the_condition_after_continue_disposal,
+            a_shared_function_or_global_read_traps_but_a_local_copy_survives,
+            shared_narrowing_site_rejects_a_load_instead_of_a_conversion,
+            narrowing_origins_require_their_sites_and_local_copies_pass,
+            terminators_report_each_narrowing_kind,
+        ],
+        main_thread: [
+            narrowed_boundary_field_and_global_stores_keep_the_box,
+            as_cast_null_traps_keep_their_runtime_identity,
+        ],
+    ])
 }

@@ -14,10 +14,13 @@ use crate::{NativeLibrary, RunConfig, RunOutput};
 /// lowering, executes the exported `main(): void` under the dev JIT,
 /// and returns the exact stdout bytes the run produced.
 ///
-/// On Unix, the program runs in a forked child so that output survives a run
-/// that does not complete normally. Consequently, side effects that a native
-/// library performs on host memory during the run are not observable in the
-/// caller's process. On non-Unix platforms, the program runs in-process.
+/// On Unix, the program runs in a separate process so that output survives a
+/// run that does not complete normally: a forked child if the caller has one
+/// thread, else a new process of the caller's executable (compiler.md
+/// §190.1 rule 5).
+/// Consequently, side effects that a native library performs on host memory
+/// during the run are not observable in the caller's process. On non-Unix
+/// platforms, the program runs in-process.
 ///
 /// # Errors
 ///
@@ -33,6 +36,10 @@ pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 }
 
 /// Runs the development tier with one complete option record.
+///
+/// On Unix, a caller with more than one thread cannot run a program with a
+/// native library or a file provider (compiler.md §190.1 rule 3); the run
+/// returns [`RunError::Internal`] that names the rule.
 ///
 /// # Errors
 ///
@@ -50,6 +57,18 @@ pub fn run_jit_configured(
             "host hooks are not available in the development tier",
         )));
     }
+    // §190.1 rules 1 and 2: only a single-threaded caller compiles here and
+    // forks. An accounting run stays in process (rule 7). A run with a
+    // native library or a file provider reads a count above 1 again for up
+    // to 2 ms (rule 3).
+    let settle = !config.native_libraries.is_empty() || config.file_provider.is_some();
+    #[cfg(unix)]
+    if !config.memory_accounting {
+        let threads = super::isolation::thread_count_for_run(settle);
+        if threads != Some(1) {
+            return super::isolation::run_multithreaded(files, config, threads);
+        }
+    }
     let (module, lowered) =
         compile_jit_with(files, config.native_libraries, &config.check_options())?;
     let options = EntryOptions {
@@ -63,7 +82,7 @@ pub fn run_jit_configured(
             stdout: run.stdout,
         })
     } else {
-        execute_entry_retained(&module, &lowered, options).map(|stdout| RunOutput {
+        execute_entry_retained(&module, &lowered, options, settle).map(|stdout| RunOutput {
             stdout,
             memory_accounting: None,
         })
@@ -121,10 +140,13 @@ pub fn run_jit_with_memory_accounting_and_native_libraries(
 /// Checks, lowers, and runs `files` through the dev JIT with the
 /// caller-supplied native libraries available for foreign calls.
 ///
-/// On Unix, the program runs in a forked child so that output survives a run
-/// that does not complete normally. Consequently, side effects that a native
-/// library performs on host memory during the run are not observable in the
-/// caller's process. On non-Unix platforms, the program runs in-process.
+/// On Unix, the program runs in a separate process so that output survives a
+/// run that does not complete normally: a forked child if the caller has one
+/// thread, else a new process of the caller's executable (compiler.md
+/// §190.1 rule 5).
+/// Consequently, side effects that a native library performs on host memory
+/// during the run are not observable in the caller's process. On non-Unix
+/// platforms, the program runs in-process.
 ///
 /// # Errors
 ///
@@ -152,10 +174,13 @@ pub fn run_jit_with_native_libraries(
 /// matching [`run_jit_with_memory_accounting`] when its diagnostics argument
 /// is true.
 ///
-/// On Unix, the program runs in a forked child so that output survives a run
-/// that does not complete normally. Consequently, side effects that a native
-/// library performs on host memory during the run are not observable in the
-/// caller's process. On non-Unix platforms, the program runs in-process.
+/// On Unix, the program runs in a separate process so that output survives a
+/// run that does not complete normally: a forked child if the caller has one
+/// thread, else a new process of the caller's executable (compiler.md
+/// §190.1 rule 5).
+/// Consequently, side effects that a native library performs on host memory
+/// during the run are not observable in the caller's process. On non-Unix
+/// platforms, the program runs in-process.
 ///
 /// # Errors
 ///
@@ -181,10 +206,13 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
 /// The injected fault is armed before `subscript_init`, so module-initializer
 /// allocations are part of the count.
 ///
-/// On Unix, the program runs in a forked child so that output survives a run
-/// that does not complete normally. Consequently, side effects that a native
-/// library performs on host memory during the run are not observable in the
-/// caller's process. On non-Unix platforms, the program runs in-process.
+/// On Unix, the program runs in a separate process so that output survives a
+/// run that does not complete normally: a forked child if the caller has one
+/// thread, else a new process of the caller's executable (compiler.md
+/// §190.1 rule 5).
+/// Consequently, side effects that a native library performs on host memory
+/// during the run are not observable in the caller's process. On non-Unix
+/// platforms, the program runs in-process.
 ///
 /// # Errors
 ///

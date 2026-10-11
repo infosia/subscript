@@ -1131,6 +1131,23 @@ mod tests {
         Ok(())
     }
 
+    /// compiler.md §190.2 acceptance 3: an in-process `run` on a libtest
+    /// thread starts this test binary again as the dev-tier runner.
+    #[test]
+    fn an_in_process_run_on_a_test_thread_reaches_the_runner() -> Result<(), String> {
+        let program = TestFile::program("export function main(): void {\n  print(`runner`);\n}\n")?;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = execute(
+            os_args([OsStr::new("run"), program.0.as_os_str()]),
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(code, SUCCESS, "{}", String::from_utf8_lossy(&stderr));
+        assert_eq!(stdout, b"runner\n");
+        Ok(())
+    }
+
     #[test]
     fn watched_files_keep_the_stamp_taken_before_the_load() -> Result<(), String> {
         let known = TestFile::program("export function main(): void {}\n")?;

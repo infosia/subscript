@@ -383,8 +383,8 @@ re-export it.
 `status: String`, `stdout: Vec<u8>`, and `stderr: Vec<u8>`, and it
 retains the bytes produced before the process stopped.
 `ReloadSession` never produces it, because a session runs in your
-process. `run_jit` on Unix runs the program in a forked child, so a
-signal in generated or foreign code arrives as
+process. `run_jit` on Unix runs the program in a separate process, so
+a signal in generated or foreign code arrives as
 `AbnormalTermination`. `run_c_aot` reports a linked program's
 non-trap exit the same way.
 
@@ -415,9 +415,19 @@ Development tier, all in `subscript_codegen`:
 - `JIT_OUTPUT_FILE_ENV` — an optional environment override that names
   a parent-owned output file for a JIT run.
 
-On Unix the `run_jit*` helpers run the program in a forked child, so
-the output survives a run that does not complete normally. One
-consequence matters for a host: a native library's writes to host
+On Unix the `run_jit*` helpers run the program in a separate process,
+so the output survives a run that does not complete normally. If your
+process has one thread, the run is a forked child. If it has more
+threads, the run is a new process of your own executable, because a
+`fork` of a multithreaded process can stop on a lock that another
+thread held (compiler.md §190). A constructor in `subscript-codegen`
+turns that process into the runner before your `main` runs, so your
+host needs no second binary. The runner
+cannot resolve a native symbol of your process, so a run with a native
+library or a file provider needs a single-threaded caller. In a
+multithreaded caller it returns `RunError::Internal`.
+
+One consequence matters for a host: a native library's writes to host
 memory during such a run are not visible in your process. Use
 `ReloadSession` when you need those writes.
 
