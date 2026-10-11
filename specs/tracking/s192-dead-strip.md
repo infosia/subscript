@@ -158,3 +158,18 @@ The file sizes are the ones that the full gate reported at
 The debug ship file holds 17.7 MB of `.debug_*` sections: GNU ld keeps
 the DWARF of the sections that `--gc-sections` removes. §192.2
 acceptance 2 now compares the loaded size.
+
+### Implementation
+
+Contract pin: `0cecdc5b`. `loaded_size` (`codegen/src/ship_tests.rs`)
+reads the ELF64 section headers on Linux and the file size on macOS.
+`loaded_size_sums_the_allocated_sections_that_occupy_the_file` tests
+it on a built three-section buffer and on a file that is not ELF.
+
+| Archive profile | Ship loaded | Control loaded | Ratio | Test wall, pin | Test wall, after |
+|---|---:|---:|---:|---:|---:|
+| debug | 966,590 | 8,142,951 | 0.12 | 0.68 s (failed) | 0.71 s |
+| release | 677,568 | 3,690,216 | 0.18 | 0.30 s (failed) | 0.31 s |
+
+`cargo test -p subscript-codegen --lib ship::tests`: 22 passed in
+debug (2.06 s) and release (0.90 s).
