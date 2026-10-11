@@ -767,6 +767,25 @@ differs in four ways:
 
 Accept: `a355`, `a356`. Reject: `r399`, `r400`, `r401`.
 
+### C26. `subscript:text` is a module that `node` cannot load
+
+`import { graphemeLength, sliceGraphemes } from "subscript:text"`
+gives grapheme counts and grapheme slices (`compiler.md` §193). `tsc`
+accepts the import through the prelude declaration. `node` has no
+module with this specifier, so a program that imports it does not run
+under `node`. The hand check is `Intl.Segmenter` with
+`{ granularity: "grapheme" }`: it gives the same clusters on every
+input of `a369` and `a370` (node v24.18.0, Unicode 17.0). The module
+is narrower than the declaration in two ways:
+
+1. Only the named import form is accepted. A default, namespace, or
+   bare import, and a re-export, are rejected here and accepted by
+   `tsc`.
+2. A function of the module is a callee only. Its use as a value is
+   rejected here and accepted by `tsc`.
+
+Accept: `a369`, `a370`. Reject: `r421`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

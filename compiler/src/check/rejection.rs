@@ -20,6 +20,9 @@ rejection_classes! {
     Self::FileModuleImportForm => (RuleCode::S100, Diverges(Divergence::FileModuleImportForm)),
     Self::FileModuleFunctionValue => (RuleCode::S100, Diverges(Divergence::FileModuleFunctionValue)),
     Self::FileModuleArguments | Self::FileModuleMember => (RuleCode::S100, TscRejects),
+    Self::TextModuleImportForm => (RuleCode::S100, Diverges(Divergence::TextModuleImportForm)),
+    Self::TextModuleFunctionValue => (RuleCode::S100, Diverges(Divergence::TextModuleFunctionValue)),
+    Self::TextModuleArguments | Self::TextModuleMember => (RuleCode::S100, TscRejects),
 
     Self::ErrorMemberOutsideSurface => (RuleCode::S018, Diverges(Divergence::ErrorMemberOutsideSurface)),
     Self::NestedNominalClass => (RuleCode::S100, Diverges(Divergence::NestedNominalClass)),

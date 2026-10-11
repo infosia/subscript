@@ -1202,6 +1202,15 @@ pub enum StrFn {
     Concat,
     /// `at(i)` — a code point at a signed byte index; invalid indices trap.
     At,
+    /// `normalize()` and `normalize("NFC")` — the NFC form (compiler.md
+    /// §193 rule 3).
+    Normalize,
+    /// `graphemeLength(s)` from `subscript:text` — the number of
+    /// extended grapheme clusters (compiler.md §193 rule 2).
+    GraphemeLength,
+    /// `sliceGraphemes(s, start, end?)` from `subscript:text` — a slice
+    /// by grapheme-cluster positions (compiler.md §193 rule 2).
+    SliceGraphemes,
 }
 
 /// Regular-expression intrinsics (stdlib.md §15, Q31).

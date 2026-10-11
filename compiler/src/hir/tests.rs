@@ -606,7 +606,18 @@ fn str_fn_shapes_match_the_section_8_contract() {
     assert_eq!(StrFn::Split.ret(), StrRet::StrArray);
     assert_eq!(StrFn::Trim.ret(), StrRet::Str);
     assert_eq!(StrFn::ReplaceAll.ret(), StrRet::Str);
-    // pos_id: only the five pure search predicates take none.
+    assert_eq!(StrFn::Normalize.params(), &[] as &[P]);
+    assert_eq!(StrFn::GraphemeLength.params(), &[] as &[P]);
+    assert_eq!(StrFn::SliceGraphemes.params(), &[P::I32, P::I32]);
+    assert_eq!(StrFn::Normalize.ret(), StrRet::Str);
+    assert_eq!(StrFn::GraphemeLength.ret(), StrRet::I32);
+    assert_eq!(StrFn::SliceGraphemes.ret(), StrRet::Str);
+    // The grapheme operations are module functions, not methods (§193).
+    assert!(StrFn::Normalize.is_method());
+    assert!(!StrFn::GraphemeLength.is_method());
+    assert!(!StrFn::SliceGraphemes.is_method());
+    // pos_id: the five pure search predicates and the grapheme count,
+    // which cannot trap or allocate, take none.
     for f in StrFn::ALL {
         let pure = matches!(
             f,
@@ -615,6 +626,7 @@ fn str_fn_shapes_match_the_section_8_contract() {
                 | StrFn::Includes
                 | StrFn::StartsWith
                 | StrFn::EndsWith
+                | StrFn::GraphemeLength
         );
         assert_eq!(f.takes_pos_id(), !pure, "pos_id of {}", f.name());
     }

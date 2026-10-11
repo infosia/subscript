@@ -298,10 +298,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let symbol = runtime_symbol
                     .as_deref()
                     .ok_or_else(|| internal(format!("String.{name} has no runtime symbol")))?;
-                let position = !matches!(
-                    name.as_str(),
-                    "IndexOf" | "LastIndexOf" | "Includes" | "StartsWith" | "EndsWith"
-                );
+                // The runtime signature carries a position exactly when
+                // the operation can trap (`StrFn::takes_pos_id`).
+                let position = subscript_compiler::hir::StrFn::ALL
+                    .get(usize::from(intrinsic.operation))
+                    .is_some_and(|operation| operation.takes_pos_id());
                 self.emit_simple_runtime_intrinsic(
                     out,
                     instruction,

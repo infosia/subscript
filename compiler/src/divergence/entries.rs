@@ -45,6 +45,18 @@ impl Divergence {
                 why: "Each file call resolves to one host operation by its arguments, so a file function has no value form.",
                 collision: "C25",
             },
+            Divergence::TextModuleImportForm => DivergenceEntry {
+                ts: "import * as Text from \"subscript:text\"; export function main(): void { print(`${Text.graphemeLength(\"か\")}`); }",
+                subscript: "import {graphemeLength} from \"subscript:text\"; export function main(): void { print(`${graphemeLength(\"か\")}`); }",
+                why: "The checker resolves each text call at its named import, so a namespace, bare import, or re-export has no form.",
+                collision: "C26",
+            },
+            Divergence::TextModuleFunctionValue => DivergenceEntry {
+                ts: "import {graphemeLength} from \"subscript:text\"; export function main(): void { const count = graphemeLength; print(`${count(\"か\")}`); }",
+                subscript: "import {graphemeLength} from \"subscript:text\"; export function main(): void { print(`${graphemeLength(\"か\")}`); }",
+                why: "Each text call lowers to one runtime operation, so a text function has no value form.",
+                collision: "C26",
+            },
             Divergence::CaptureOutlivesBlock => DivergenceEntry {
                 ts: "async function work(): Promise<i32> { return 7; } export function main(): void { let f: () => Promise<i32> = work; { const h = work(); f = () => h; } }",
                 subscript: "async function work(): Promise<i32> { return 7; } export function main(): void { { const h = work(); let f: () => Promise<i32> = () => h; } }",

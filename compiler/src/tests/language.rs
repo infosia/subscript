@@ -1746,7 +1746,7 @@ fn string_methods_type_and_normalize_optional_arguments() {
 #[test]
 fn rejected_string_member_is_s014_naming_the_member() {
     for (member, call, q_rule) in [
-        ("normalize", "s.normalize()", "Q21"),
+        ("normalize", "s.normalize(\"NFD\")", "Q21"),
         ("localeCompare", "s.localeCompare(s)", "Q21"),
         ("toLocaleLowerCase", "s.toLocaleLowerCase()", "Q21"),
         ("matchAll", "s.matchAll(s)", "Q31"),

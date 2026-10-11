@@ -321,13 +321,16 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             token: "bare `null` initializer infers no",
         });
     }
-    if (name.starts_with("api-print-0-value-") || name.starts_with("api-JSON-parse-0-value-"))
+    if (name.starts_with("api-print-0-value-")
+        || name.starts_with("api-JSON-parse-0-value-")
+        || name.starts_with("api-subscript:text-graphemeLength-0-value-")
+        || name.starts_with("api-subscript:text-sliceGraphemes-0-value-"))
         && name.contains("-string-alias-")
     {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "Q32",
-            message: if name.starts_with("api-print-") {
+            message: if !name.starts_with("api-JSON-parse-") {
                 "type mismatch: the argument expects `string`"
             } else {
                 "type mismatch: `JSON.parse` text expects `string`"

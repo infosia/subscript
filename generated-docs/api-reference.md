@@ -199,10 +199,18 @@
 | `codePointAt(index: i32): i32` | Returns the code point starting at a UTF-8 byte index; out of range traps. |
 | `concat(other: string): string` | Returns a fresh concatenation with exactly one other string. |
 | `at(index: i32): string` | Returns a code point at a signed byte index; invalid indices trap. |
+| `normalize(form?: "NFC"): string` | Returns the NFC form; text that is already NFC returns the receiver; another form is rejected. |
 | `string.search(pattern: RegExp): i32` | Returns the first UTF-8 byte offset, or -1. |
 | `string.replace(pattern: RegExp, replacement: string): string` | Replaces the first match with ECMA `$` substitutions. |
 | `string.replaceAll(pattern: RegExp, replacement: string): string` | Replaces every match with ECMA `$` substitutions; the RegExp must be global. |
 | `string.split(separator: RegExp, limit?: i32): string[]` | Splits with capture reinjection. |
+
+### subscript:text
+
+| subscript signature | Behavior |
+|---|---|
+| `graphemeLength(s: string): i32` | Returns the number of extended grapheme clusters (UAX #29, Unicode 17.0). |
+| `sliceGraphemes(s: string, start: i32, end?: i32): string` | Slices by grapheme-cluster positions with the clamp and negative-index rules of slice. |
 
 ### RegExp
 
@@ -361,7 +369,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | string | `localeCompare` | S014 | Q21 | — | Locale-dependent collation is unavailable. | `r26-string-localecompare.ts` |
 | string | `toLocaleUpperCase` | S014 | Q21 | `toUpperCase` | Locale-sensitive case conversion is unavailable. | `r28-string-tolocaleupper.ts` |
 | string | `toLocaleLowerCase` | S014 | Q21 | `toLowerCase` | Locale-sensitive case conversion is unavailable. | — |
-| string | `normalize` | S014 | Q21 | — | Unicode normalization tables are unavailable. | — |
+| string | `normalize` | S014 | Q21 | `normalize("NFC")` | The form must be omitted or the literal "NFC"; NFD, NFKC, and NFKD are not available. | `r419-normalize-nfd.ts` |
 | string | `match` | S014 | Q31 | — | The match result requires an optional numeric index, but the language requires a definite `i32` index. | `r27-string-match.ts` |
 | string | `matchAll` | S014 | Q31/Q30 | — | It needs a Q30 fusion decision and each iteration step still yields an object. | `r81-regex-match-all.ts` |
 | T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |

@@ -258,6 +258,10 @@ impl<'p> Checker<'p> {
                     }
                     continue;
                 }
+                if raw == super::text_module::SPECIFIER {
+                    self.text_module_import(import, &mut additions);
+                    continue;
+                }
                 let stem = normalize_module_specifier(&raw);
                 let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
                     let pos = self.pos(import.src.span);

@@ -201,9 +201,9 @@ const STRING_REJECTIONS: &[ApiRejection] = &[
         "string",
         "normalize",
         "Q21",
-        None,
-        "Unicode normalization tables are unavailable.",
-        None,
+        Some("normalize(\"NFC\")"),
+        "The form must be omitted or the literal \"NFC\"; NFD, NFKC, and NFKD are not available.",
+        Some("r419-normalize-nfd.ts"),
     ),
 ];
 
@@ -827,7 +827,10 @@ pub(crate) fn str_method(name: &str) -> Option<StrFn> {
         "trimRight" => "trimEnd",
         other => other,
     };
-    StrFn::ALL.iter().copied().find(|f| f.name() == name)
+    StrFn::ALL
+        .iter()
+        .copied()
+        .find(|f| f.is_method() && f.name() == name)
 }
 
 /// Maps an `Array` method name to its intrinsic (stdlib.md §9, Q22).
@@ -1124,7 +1127,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary,
         });
     }
-    for f in StrFn::ALL {
+    for f in StrFn::ALL.into_iter().filter(|f| f.is_method()) {
         out.push(ApiItem {
             group: "string",
             signature: f.api_signature().to_string(),
@@ -1139,6 +1142,14 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     }) {
         out.push(ApiItem {
             group: "string",
+            signature: f.api_signature().to_string(),
+            summary: f.api_summary(),
+        });
+    }
+    // The `subscript:text` module functions (compiler.md §193).
+    for f in StrFn::ALL.into_iter().filter(|f| !f.is_method()) {
+        out.push(ApiItem {
+            group: "subscript:text",
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });
@@ -1497,8 +1508,11 @@ mod tests {
         assert_eq!(str_method("replaceAll"), Some(StrFn::ReplaceAll));
         // Every declared method round-trips through its name.
         for f in StrFn::ALL {
-            assert_eq!(str_method(f.name()), Some(f));
+            let expected = f.is_method().then_some(f);
+            assert_eq!(str_method(f.name()), expected);
         }
+        assert_eq!(str_method("normalize"), Some(StrFn::Normalize));
+        assert_eq!(str_method("graphemeLength"), None);
         assert_eq!(str_method("slice"), Some(StrFn::Slice));
         assert_eq!(str_method("substring"), Some(StrFn::Substring));
         assert_eq!(str_method("substr"), Some(StrFn::Substr));
@@ -1651,7 +1665,12 @@ mod tests {
             assert!(has(group, f.api_signature()), "Date.{}", f.name());
         }
         for f in StrFn::ALL {
-            assert!(has("string", f.api_signature()), "string.{}", f.name());
+            let group = if f.is_method() {
+                "string"
+            } else {
+                "subscript:text"
+            };
+            assert!(has(group, f.api_signature()), "{group}.{}", f.name());
         }
         for f in ArrFn::ALL {
             assert!(has("T[]", f.api_signature()), "T[].{}", f.name());

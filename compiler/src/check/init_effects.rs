@@ -479,7 +479,10 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::StrFn::CharAt
                     | hir::StrFn::CodePointAt
                     | hir::StrFn::Concat
-                    | hir::StrFn::At => false,
+                    | hir::StrFn::At
+                    | hir::StrFn::Normalize
+                    | hir::StrFn::GraphemeLength
+                    | hir::StrFn::SliceGraphemes => false,
                 } {
                     self.record_indirect_call();
                 }

@@ -293,7 +293,9 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::Global(_))
             | Some(ScopeItem::Func(_))
             | Some(ScopeItem::GenericFunc(_))
-            | Some(ScopeItem::Foreign(_) | ScopeItem::StandardFile(_)) => None,
+            | Some(
+                ScopeItem::Foreign(_) | ScopeItem::StandardFile(_) | ScopeItem::StandardText(_),
+            ) => None,
             None => {
                 if name == "Object" {
                     if prop == "setPrototypeOf" {

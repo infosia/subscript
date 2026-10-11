@@ -111,7 +111,10 @@ impl<'p> Checker<'p> {
                 return checker.reject_error_call(&name, pos);
             }
             if c.type_args.is_some()
-                && matches!(item, Some(ScopeItem::Func(_)) | Some(ScopeItem::Foreign(_)))
+                && matches!(
+                    item,
+                    Some(ScopeItem::Func(_) | ScopeItem::Foreign(_) | ScopeItem::StandardText(_))
+                )
             {
                 checker.reject_subset(
                     RejectionSite::NonGenericFunctionTypeArguments,
@@ -127,6 +130,9 @@ impl<'p> Checker<'p> {
                 Some(ScopeItem::Func(f)) => checker.check_direct_call(&f, c, fx, pos),
                 Some(ScopeItem::Foreign(f)) => checker.check_foreign_call(&f, c, fx, pos),
                 Some(ScopeItem::StandardFile(write)) => checker.check_file_call(write, c, fx, pos),
+                Some(ScopeItem::StandardText(operation)) => {
+                    checker.check_text_call(operation, c, fx, pos)
+                }
                 Some(ScopeItem::GenericFunc(key)) => {
                     let (arguments, checked) = if let Some(type_args) = &c.type_args {
                         (checker.resolve_instance_arguments(type_args), None)
@@ -1271,6 +1277,7 @@ impl<'p> Checker<'p> {
                 "search" | "replace" | "replaceAll" | "split" => {
                     checker.check_string_pattern_method(recv, &name, c, fx, pos, prop_pos)
                 }
+                "normalize" => checker.check_normalize(recv, c, pos, prop_pos),
                 other => {
                     // The §8 method intrinsics (stdlib.md §8, Q21).
                     if let Some(f) = crate::ambient::str_method(other) {

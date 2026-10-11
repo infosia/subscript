@@ -741,10 +741,11 @@ impl RegexFn {
 }
 
 impl StrFn {
-    /// Every accepted `String` method, in declaration order; the index
+    /// Every accepted `String` method and the two `subscript:text`
+    /// functions (see [`StrFn::is_method`]), in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [StrFn; 24] = [
+    pub const ALL: [StrFn; 27] = [
         StrFn::Slice,
         StrFn::IndexOf,
         StrFn::LastIndexOf,
@@ -769,6 +770,9 @@ impl StrFn {
         StrFn::CodePointAt,
         StrFn::Concat,
         StrFn::At,
+        StrFn::Normalize,
+        StrFn::GraphemeLength,
+        StrFn::SliceGraphemes,
     ];
 
     /// The lib member name (the checker's lookup and diagnostics).
@@ -799,6 +803,9 @@ impl StrFn {
             StrFn::CodePointAt => "codePointAt",
             StrFn::At => "at",
             StrFn::Concat => "concat",
+            StrFn::Normalize => "normalize",
+            StrFn::GraphemeLength => "graphemeLength",
+            StrFn::SliceGraphemes => "sliceGraphemes",
         }
     }
 
@@ -830,6 +837,9 @@ impl StrFn {
             StrFn::CodePointAt => "subscript_rt_str_code_point_at",
             StrFn::At => "subscript_rt_str_at",
             StrFn::Concat => "subscript_rt_str_concat",
+            StrFn::Normalize => "subscript_rt_str_normalize",
+            StrFn::GraphemeLength => "subscript_rt_str_grapheme_length",
+            StrFn::SliceGraphemes => "subscript_rt_str_slice_graphemes",
         }
     }
 
@@ -838,7 +848,9 @@ impl StrFn {
     #[must_use]
     pub fn params(self) -> &'static [StrParam] {
         match self {
-            StrFn::Slice | StrFn::Substring | StrFn::Substr => &[StrParam::I32, StrParam::I32],
+            StrFn::Slice | StrFn::Substring | StrFn::Substr | StrFn::SliceGraphemes => {
+                &[StrParam::I32, StrParam::I32]
+            }
             StrFn::IndexOf
             | StrFn::LastIndexOf
             | StrFn::Split
@@ -853,7 +865,9 @@ impl StrFn {
             | StrFn::TrimStart
             | StrFn::TrimEnd
             | StrFn::ToUpperCase
-            | StrFn::ToLowerCase => &[],
+            | StrFn::ToLowerCase
+            | StrFn::Normalize
+            | StrFn::GraphemeLength => &[],
             StrFn::PadStart | StrFn::PadEnd => &[StrParam::I32, StrParam::Str],
             StrFn::Replace | StrFn::ReplaceAll => &[StrParam::Str, StrParam::Str],
         }
@@ -863,9 +877,11 @@ impl StrFn {
     #[must_use]
     pub fn ret(self) -> StrRet {
         match self {
-            StrFn::IndexOf | StrFn::LastIndexOf | StrFn::CharCodeAt | StrFn::CodePointAt => {
-                StrRet::I32
-            }
+            StrFn::IndexOf
+            | StrFn::LastIndexOf
+            | StrFn::CharCodeAt
+            | StrFn::CodePointAt
+            | StrFn::GraphemeLength => StrRet::I32,
             StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => StrRet::Bool,
             StrFn::Split => StrRet::StrArray,
             _ => StrRet::Str,
@@ -885,7 +901,16 @@ impl StrFn {
                 | StrFn::Includes
                 | StrFn::StartsWith
                 | StrFn::EndsWith
+                | StrFn::GraphemeLength
         )
+    }
+
+    /// Whether the operation is a `String` method. The grapheme
+    /// operations are functions of the `subscript:text` module
+    /// (compiler.md §193 rule 2), so no method name resolves to them.
+    #[must_use]
+    pub fn is_method(self) -> bool {
+        !matches!(self, StrFn::GraphemeLength | StrFn::SliceGraphemes)
     }
 
     /// Source-level subscript signature, before checker default normalization.
@@ -916,6 +941,9 @@ impl StrFn {
             StrFn::CodePointAt => "codePointAt(index: i32): i32",
             StrFn::At => "at(index: i32): string",
             StrFn::Concat => "concat(other: string): string",
+            StrFn::Normalize => "normalize(form?: \"NFC\"): string",
+            StrFn::GraphemeLength => "graphemeLength(s: string): i32",
+            StrFn::SliceGraphemes => "sliceGraphemes(s: string, start: i32, end?: i32): string",
         }
     }
 
@@ -957,6 +985,15 @@ impl StrFn {
             }
             StrFn::At => "Returns a code point at a signed byte index; invalid indices trap.",
             StrFn::Concat => "Returns a fresh concatenation with exactly one other string.",
+            StrFn::Normalize => {
+                "Returns the NFC form; text that is already NFC returns the receiver; another form is rejected."
+            }
+            StrFn::GraphemeLength => {
+                "Returns the number of extended grapheme clusters (UAX #29, Unicode 17.0)."
+            }
+            StrFn::SliceGraphemes => {
+                "Slices by grapheme-cluster positions with the clamp and negative-index rules of slice."
+            }
         }
     }
 }

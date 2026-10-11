@@ -651,6 +651,10 @@ mod tests {
                 "function read(match: RegExpMatchArray): void {\n  print(`${match.groups}`);\n}\nexport function main(): void {}\n"
                     .to_string()
             }
+            ("string", "normalize") => {
+                "export function main(): void {\n  const value: string = \"x\";\n  value.normalize(\"NFD\");\n}\n"
+                    .to_string()
+            }
             ("string", member) => format!(
                 "export function main(): void {{\n  const value: string = \"x\";\n  value.{member}();\n}}\n"
             ),

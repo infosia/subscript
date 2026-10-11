@@ -1189,6 +1189,51 @@ of the pad ends inside a UTF-8 sequence, the call traps:
 is at pad byte 1, inside a UTF-8 sequence`. `"A".padStart(4, "あ")` gives
 `あA`.
 
+### Characters that a user sees
+
+A byte count does not tell you how many characters a user sees. `"が"`
+can be one code point (U+304C), or `"か"` followed by the combining
+mark U+3099. A ZWJ emoji sequence is several code points and one
+character. The `subscript:text` module counts and slices extended
+grapheme clusters (Unicode 17.0), and `normalize()` gives the NFC form.
+The import is the only opt-in; no build option enables the module.
+
+```ts file=main.ts
+import { graphemeLength, sliceGraphemes } from "subscript:text";
+
+function shorten(name: string, limit: i32): string {
+  if (graphemeLength(name) <= limit) {
+    return name;
+  }
+  return `${sliceGraphemes(name, 0, limit)}…`;
+}
+
+export function main(): void {
+  // "が" typed as "か" and U+3099, and the same word stored precomposed.
+  const typed: string = "か\u3099くせい";
+  const stored: string = "がくせい";
+  print(`length=${typed.length} graphemes=${graphemeLength(typed)}`);
+  print(`equal=${typed === stored} nfc=${typed.normalize() === stored}`);
+  print(shorten("山田\u{1F468}\u200D\u{1F373}太郎", 3));
+  print(shorten("佐藤", 3));
+}
+```
+
+```sh
+$ subscript run main.ts
+length=15 graphemes=4
+equal=false nfc=true
+山田👨‍🍳…
+佐藤
+```
+
+Equality, `Map` and `Set` keys, and search compare the exact bytes.
+No operation normalizes for you: call `normalize()` where text enters
+the program. `normalize("NFC")` is the same call. `normalize("NFD")`
+and the other forms are compile errors. `sliceGraphemes` takes the
+`slice` rules for negative and out-of-range positions, and returns the
+original bytes.
+
 ## The standard library is a subset
 
 Arrays (growable `T[]` and `FixedArray<T, N>`), strings, `Map`, `Set`,

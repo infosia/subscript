@@ -1061,6 +1061,11 @@ fn module_options(modules: &[String]) -> subscript_compiler::CheckOptions {
 }
 fn module_value(args: &[OsString], index: &mut usize) -> Result<String, Failure> {
     let value = path_value(args, index, "--enable-module")?;
+    if value == Path::new("subscript:text") {
+        return Err(Failure::usage(
+            "subscript:text needs no --enable-module; import it to use it",
+        ));
+    }
     if value != Path::new("node:fs/promises") {
         return Err(Failure::usage(
             "the enabled standard module must be node:fs/promises",
@@ -1074,6 +1079,31 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn enable_module_names_the_file_module_and_rejects_the_text_module() {
+        let value = |module: &str| {
+            let args = vec![OsString::from("--enable-module"), OsString::from(module)];
+            let mut index = 0;
+            module_value(&args, &mut index)
+        };
+        assert_eq!(
+            value("node:fs/promises").ok().as_deref(),
+            Some("node:fs/promises")
+        );
+        let text = value("subscript:text").expect_err("subscript:text is not an option");
+        assert!(
+            text.message.contains("needs no --enable-module"),
+            "{}",
+            text.message
+        );
+        let other = value("node:path").expect_err("an unknown module is rejected");
+        assert!(
+            other.message.contains("must be node:fs/promises"),
+            "{}",
+            other.message
+        );
+    }
 
     struct TestFile(PathBuf);
 

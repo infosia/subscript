@@ -1,0 +1,17 @@
+6 clusters, 33 bytes
+[0] が (6 bytes)
+[1] き (3 bytes)
+[2] 𠮷 (4 bytes)
+[3] 👩‍👧 (11 bytes)
+[4] 🇯🇵 (8 bytes)
+[5] ! (1 bytes)
+𠮷👩‍👧🇯🇵!
+がき
+🇯🇵!
+𠮷👩‍👧
+が
+🇯🇵!
+reversed: ""
+past the end: ""
+true false
+山田👨‍🍳…

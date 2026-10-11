@@ -54,6 +54,7 @@ mod memory;
 mod numbers;
 mod regex;
 mod strings;
+mod text;
 mod uri;
 
 pub use array_methods::*;
@@ -69,6 +70,7 @@ pub use memory::*;
 pub use numbers::*;
 pub use regex::*;
 pub use strings::*;
+pub use text::*;
 pub use uri::*;
 
 #[cfg(test)]

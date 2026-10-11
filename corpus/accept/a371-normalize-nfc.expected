@@ -1,0 +1,12 @@
+ascii: Hello, world same=true unchanged=true idempotent=true
+japanese: 日本語のテキスト same=true unchanged=true idempotent=true
+supplementary kanji: 𠮷野家 same=true unchanged=true idempotent=true
+combining dakuten: がぎ same=true unchanged=false idempotent=true
+precomposed dakuten: がぎ same=true unchanged=true idempotent=true
+zwj family: 👩‍👩‍👧‍👦 same=true unchanged=true idempotent=true
+regional pair: 🇯🇵 same=true unchanged=true idempotent=true
+reorder: Ḍ̇ same=true unchanged=false idempotent=true
+singleton: Å same=true unchanged=false idempotent=true
+false true
+0 true
+raw keys 2, NFC keys 1, has true

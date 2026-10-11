@@ -484,6 +484,7 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(pos)
             }
+            Some(ScopeItem::StandardText(_)) => self.reject_text_function_value(&name, pos),
             Some(ScopeItem::Foreign(_)) => {
                 self.reject_subset(
                     RejectionSite::ForeignFunctionValue,

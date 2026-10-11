@@ -158,10 +158,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .get(intrinsic.operation as usize)
                     .ok_or_else(|| internal(format!("String.{name} operation is out of range")))?;
                 let bool_result = matches!(name.as_str(), "Includes" | "StartsWith" | "EndsWith");
-                let takes_position = !matches!(
-                    name.as_str(),
-                    "IndexOf" | "LastIndexOf" | "Includes" | "StartsWith" | "EndsWith"
-                );
+                // The runtime signature carries a position exactly when
+                // the operation can trap (`StrFn::takes_pos_id`).
+                let takes_position = subscript_compiler::hir::StrFn::ALL
+                    .get(intrinsic.operation as usize)
+                    .is_some_and(|operation| operation.takes_pos_id());
                 self.simple_runtime_intrinsic(
                     function,
                     operands,

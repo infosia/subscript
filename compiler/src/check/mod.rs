@@ -467,6 +467,8 @@ pub(crate) struct GenericClass {
 pub(crate) enum ScopeItem {
     /// A named file-module member; true selects writeFile.
     StandardFile(bool),
+    /// A named `subscript:text` function (compiler.md §193).
+    StandardText(crate::hir::StrFn),
     Poisoned,
     /// A static qualifier with its source module identity and import spelling.
     Namespace {
@@ -1600,3 +1602,4 @@ mod tests {
 }
 
 mod text;
+mod text_module;

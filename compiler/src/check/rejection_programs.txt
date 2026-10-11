@@ -9671,3 +9671,38 @@ FILE	E	target/s154/forms/new-prov-member-empty/main.ts
 export function main():void{}
 END FILE
 END PROGRAM
+PROGRAM	s193-arguments	TS2554		0
+FILE	E	main.ts
+import {graphemeLength} from "subscript:text"; export function main(): void { print(`${graphemeLength()}`); }
+END FILE
+END PROGRAM
+PROGRAM	s193-member	TS2305		0
+FILE	E	main.ts
+import {graphemeWidth} from "subscript:text"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s193-default			0
+FILE	E	main.ts
+import Text from "subscript:text"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s193-bare			0
+FILE	E	main.ts
+import "subscript:text"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s193-namespace			0
+FILE	E	main.ts
+import * as Text from "subscript:text"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s193-reexport			0
+FILE	E	main.ts
+export {graphemeLength} from "subscript:text"; export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s193-function-value			0
+FILE	E	main.ts
+import {graphemeLength} from "subscript:text"; export function main(): void { const count = graphemeLength; print(`${count("か")}`); }
+END FILE
+END PROGRAM

@@ -250,3 +250,184 @@ test this.
 7. **The ship link flag.** Independent of this module, a dead-strip
    link removes 2.18 MB from (b) at HEAD. Whether `build_c_aot` and
    `subscript build` pass it is a separate decision.
+
+## 9. Implementation
+
+Contract: `compiler.md` §193, at pin `6092b9d0`. Platform: aarch64
+macOS. Date: 2026-10-11. Sizes are in bytes.
+
+### 9.1 Form
+
+- `StrFn` has three more operations, appended after `At`:
+  `Normalize` (24), `GraphemeLength` (25), `SliceGraphemes` (26). The
+  runtime symbols are `subscript_rt_str_normalize`,
+  `subscript_rt_str_grapheme_length`, and
+  `subscript_rt_str_slice_graphemes`, in `runtime/src/ffi/text.rs`.
+- The dev JIT registers the three symbols (`jit/symbols.rs`). The C
+  emitter calls them through the operation table. The interpreter
+  calls the same functions (`interpreter/intrinsics.rs`).
+- The C emitter and the Cranelift lowering read the position argument
+  from `StrFn::takes_pos_id`. Before, each held its own list of names.
+  `GraphemeLength` takes no position: it cannot trap or allocate.
+- `StrFn::is_method` is false for the two grapheme operations. No
+  string method name resolves to them.
+- `subscript:text` is resolved in `check/text_module.rs`. It is not in
+  `STANDARD_MODULES`: `--enable-module subscript:text` is an error.
+  A named import binds the operation. A default, namespace, or bare
+  import and a re-export are S100 (`TextModuleImportForm`). An unknown
+  name is S100 (`TextModuleMember`, `tsc` TS2305). A function value is
+  S100 (`TextModuleFunctionValue`). A wrong argument count is S100
+  (`TextModuleArguments`, `tsc` TS2554).
+- `normalize()` and `normalize("NFC")` lower to `StrFn::Normalize`.
+  Another argument, including a `string` variable that holds `"NFC"`,
+  is the S014 `normalize` rejection with the message "The form must be
+  omitted or the literal "NFC"; NFD, NFKC, and NFKD are not
+  available.".
+- `icu_normalizer` 2.2.0 is built with `compiled_data` and `utf8_iter`.
+  The lock adds `unicode-segmentation` 1.13.3 and the `utf8_iter` edge.
+- The functions rely on the valid-UTF-8 string invariant. The grapheme functions read other bytes as `""`; the `normalize` result for such bytes is not specified.
+
+### 9.2 Red at the pin
+
+The CLI built from a `git archive` of `6092b9d0`, `subscript check`:
+
+| Entry | Pin result |
+|---|---|
+| `a369-grapheme-length` | S100 imported module `subscript:text` is not among the program's files |
+| `a370-slice-graphemes` | S100 imported module `subscript:text` is not among the program's files |
+| `a371-normalize-nfc` | S014 `normalize` is rejected: Unicode normalization tables are unavailable. (Q21), at each call |
+| `r419-normalize-nfd` | S014 with the pin message; the `expected-error` text is absent |
+| `r420-normalize-non-literal` | S014 with the pin message; the `expected-error` text is absent |
+| `r421-text-module-unknown-export` | S100 module not among the program's files; the `expected-error` text is absent |
+
+### 9.3 `tsc`, `node`, and `Intl.Segmenter`
+
+- `tsc -p tsconfig.json` passes with the prelude
+  `declare module "subscript:text"`. The s193 rejection programs
+  measure `tsc`: the unknown name is TS2305, a missing argument is
+  TS2554, and the default, namespace, bare, re-export, and
+  function-value forms are accepted.
+- `node` v24.18.0 (Unicode 17.0, ICU 78.3) runs `a371-normalize-nfc`
+  with the output of the golden, byte for byte.
+- `Intl.Segmenter` with `granularity: "grapheme"` under the same
+  `node`, for the inputs of `a369` and `a370`:
+
+| Input | Clusters (`node`) | `graphemeLength` |
+|---|---:|---:|
+| `""` | 0 | 0 |
+| `"Hello, world"` | 12 | 12 |
+| `"日本語のテキスト"` | 8 | 8 |
+| `"𠮷野家"` | 3 | 3 |
+| `"か\u3099き\u3099"` | 2 | 2 |
+| `"がぎ"` | 2 | 2 |
+| ZWJ family, 4 people | 1 | 1 |
+| regional indicators J P | 1 | 1 |
+| two flags | 2 | 2 |
+| `"a\r\nb"` | 3 | 3 |
+| the `a370` text | 6 (bytes 6, 3, 4, 11, 8, 1) | 6 (same bytes) |
+| the `a370` name | 5 | 5 |
+
+### 9.4 Size
+
+Release builds. The program is the 3-line `main` of section 3 with
+one call added. `subscript build` links with dead-code removal (§192).
+Executables are measured after `strip`.
+
+| Artifact | Pin | Final | Delta |
+|---|---:|---:|---:|
+| program without the module | 658,344 | 658,344 | 0 |
+| + `graphemeLength` and `sliceGraphemes` | — | 691,560 | +33,216 |
+| + `normalize()` | — | 741,832 | +83,488 |
+| + both | — | 775,064 | +116,720 |
+| `subscript` CLI | 11,792,904 | 11,926,072 | +133,168 |
+| `libsubscript_runtime.a` | 21,138,328 | 21,972,480 | +834,152 |
+
+- The unstripped program without the module differs from the pin by
+  the length of the archive path in its debug-map entries, not by code.
+- The CLI delta includes the checker code of this section and both
+  runtime dependencies. Section 3 measured +83,264 for the runtime
+  feature alone.
+
+### 9.5 Run time and allocation
+
+Method of section 4: release, `Context::new_releasing()`, best of 7
+batches, ns per call, a `collect` between batches.
+
+| Input | Bytes | Clusters | `graphemeLength` | `sliceGraphemes(0, n/2)` | byte `slice`, same range | NFC |
+|---|---:|---:|---:|---:|---:|---:|
+| ASCII | 99 | 99 | 68 | 57 | 138 | 8 |
+| Japanese BMP | 96 | 32 | 511 | 321 | 141 | 97 |
+| Supplementary kanji | 100 | 30 | 669 | 405 | 141 | 121 |
+| Combining dakuten (not NFC) | 96 | 16 | 501 | 327 | 143 | 770 |
+| Precomposed dakuten (NFC) | 96 | 32 | 464 | 295 | 140 | 97 |
+| Emoji ZWJ sequences | 100 | 4 | 693 | 549 | 139 | 120 |
+| ASCII | 9,999 | 9,999 | 2,967 | 1,280 | 610 | 389 |
+| Japanese BMP | 9,996 | 3,332 | 51,596 | 29,511 | 5,715 | 7,537 |
+| Supplementary kanji | 10,000 | 3,000 | 65,830 | 36,119 | 5,318 | 10,182 |
+| Combining dakuten (not NFC) | 9,996 | 1,666 | 50,876 | 28,553 | 5,713 | 69,697 |
+| Precomposed dakuten (NFC) | 9,996 | 3,332 | 46,523 | 26,674 | 5,713 | 7,398 |
+| Emoji ZWJ sequences | 10,000 | 400 | 68,006 | 36,736 | 5,143 | 10,015 |
+
+Facts:
+
+1. ASCII takes a byte path. ASCII text is NFC. In ASCII text only CR
+   LF joins two bytes into one cluster (UAX #29 GB3). The section 4
+   ASCII numbers were 113,509 ns (count) and 20,643 ns (NFC) at 10 KB.
+2. NFC of text that is not NFC runs the normalizer one time over the
+   tail after the NFC prefix, into a Rust `String`, then copies the
+   result into one Context string. It costs about 7.0 ns per byte. A
+   first form ran two passes (count, then write into the Context
+   string) to avoid the buffer; it cost 160,193 ns at 10 KB, about 16
+   ns per byte. On 2026-10-11 the owner selected the one-pass form.
+   The NFC column was measured again on the final code; the other
+   columns are from the first form, whose grapheme code is unchanged.
+4. `normalize` does not check the bytes again: strings are valid
+   UTF-8 by invariant. A `std::str::from_utf8` check before the
+   normalizer was measured and removed: NFC text at 10 KB went from
+   7,398 ns to 12,804 ns (+73%). The `&str` forms (`split_normalized`,
+   `normalize_to`) after that check cost 20,631 ns, so the code uses
+   the UTF-8 forms, and `utf8_iter` stays enabled.
+3. A counting global allocator, one call each: `graphemeLength`
+   allocates nothing. `normalize` of NFC text allocates nothing and
+   returns the receiver. At about 10 KB, `sliceGraphemes` makes one
+   host allocation, the result. `normalize` of text that is not NFC
+   makes two (15,018 bytes): the Rust buffer, then the Context string.
+   At about 100 bytes the Context arena serves the result, so
+   `sliceGraphemes` makes none and `normalize` makes one, the buffer.
+
+### 9.6 Tests
+
+- `runtime/src/ffi/text/tests.rs`: the 766 lines of
+  `GraphemeBreakTest-17.0.0.txt` (from the `icu_segmenter` 2.3.0
+  crate source, unmodified) for count and slice, and the 20,034 data
+  lines of `NormalizationTest-17.0.0.txt` (from unicode.org; the
+  committed file keeps the five columns and drops the comments, with
+  the source SHA-256 in its header), each column through `normalize`.
+  `unicode-segmentation` and `icu_normalizer` do not ship these files
+  in their crate sources.
+- Cost: the eight runtime tests run in the existing runtime library
+  test binary, so they add no link. Measured `finished in` for the
+  eight: 0.03 s to 0.05 s in release, 0.39 s to 0.42 s in debug.
+- Suite: compiler, runtime, and codegen packages, and the CLI test
+  targets except `gate.rs`. Debug: 2,532 + 95 passed, 2 failed, 5
+  ignored, 372 s. Release: 2,529 + 95 passed, 2 failed, 5 ignored,
+  302 s. The two failures read collision `C26`, which
+  `collisions.md` did not have then. With C26 recorded,
+  `collision_ids_and_headings_are_total` and the `js_corpus` tests
+  pass in debug and release.
+- The ambient-API matrix (`generic_tsc_matrix/api.rs`) calls a
+  standard-module function through its named import. The two text
+  functions add 432 cells; 404 have no admitted instance, so the
+  pinned omission count is 9,356. A string-literal alias argument is
+  the Q32 divergence, as for `print`.
+- The LIR text golden gains the three operation-table rows in each of
+  its 91 modules (273 lines), captured with
+  `SUBSCRIPT_CAPTURE_LIR_GOLDENS=1`.
+
+### 9.7 Open
+
+1. `"abc".graphemeLength()` reports the generic string-member
+   diagnostic. It gives no hint that the function is in
+   `subscript:text`.
+2. ``s.normalize(`NFC`)``, with a no-substitution template literal, is
+   rejected; `tsc` accepts it.

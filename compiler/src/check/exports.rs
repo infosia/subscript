@@ -88,16 +88,23 @@ impl Checker<'_> {
         let unsupported_form =
             export.type_only || export.specifiers.iter().any(unsupported_export_specifier);
         // A standard module has no export list to re-export (§185 rule 1).
-        let standard_source = export
-            .src
-            .as_ref()
-            .filter(|source| &*source.value == "node:fs/promises");
+        let standard_source = export.src.as_ref().filter(|source| {
+            &*source.value == "node:fs/promises" || &*source.value == super::text_module::SPECIFIER
+        });
         if let Some(source) = standard_source {
-            self.reject_subset(
-                RejectionSite::FileModuleImportForm,
-                super::file_module::FORMS,
-                self.pos(source.span),
-            );
+            if &*source.value == super::text_module::SPECIFIER {
+                self.reject_subset(
+                    RejectionSite::TextModuleImportForm,
+                    super::text_module::FORMS,
+                    self.pos(source.span),
+                );
+            } else {
+                self.reject_subset(
+                    RejectionSite::FileModuleImportForm,
+                    super::file_module::FORMS,
+                    self.pos(source.span),
+                );
+            }
         }
         let missing_source = !unsupported_form
             && standard_source.is_none()

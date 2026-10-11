@@ -13,6 +13,10 @@ pub(crate) enum RejectionSite {
     FileModuleMember,
     FileModuleImportForm,
     FileModuleFunctionValue,
+    TextModuleArguments,
+    TextModuleMember,
+    TextModuleImportForm,
+    TextModuleFunctionValue,
 
     ErrorMemberOutsideSurface,
     NestedNominalClass,

@@ -199,8 +199,13 @@ pub(super) fn cells() -> Vec<Cell> {
                                 .join(", ")
                         )
                     };
+                    // A function of a standard module (an owner such as
+                    // `subscript:text`) is called through its named import.
+                    let module = api.owner.contains(':');
                     let (callee, receiver) = if api.owner.is_empty() {
                         (api.name.clone(), String::new())
+                    } else if module {
+                        (member.to_string(), String::new())
                     } else if matches!(
                         api.owner.as_str(),
                         "Context" | "JSON" | "Math" | "MapConstructor"
@@ -262,6 +267,14 @@ pub(super) fn cells() -> Vec<Cell> {
                             kinds::prelude(kind)
                         }
                     );
+                    let declaration = if module {
+                        format!(
+                            "import {{ {member} }} from \"{}\"; {declaration}",
+                            api.owner
+                        )
+                    } else {
+                        declaration
+                    };
                     let supplied: String = baseline
                         .iter()
                         .enumerate()
@@ -459,7 +472,7 @@ pub(super) fn cells() -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        8952,
+        9356,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

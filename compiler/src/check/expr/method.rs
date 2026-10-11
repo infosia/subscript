@@ -276,6 +276,41 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// `normalize()` and `normalize("NFC")` (compiler.md §193 rule 3).
+    /// Another argument form is the S014 `normalize` rejection, because
+    /// NFC is the only normalization form that the runtime provides.
+    pub(super) fn check_normalize(
+        &mut self,
+        recv: hir::Expr,
+        c: &ast::CallExpr,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        let accepted = match c.args.as_slice() {
+            [] => true,
+            [argument] => {
+                argument.spread.is_none()
+                    && matches!(&*argument.expr, ast::Expr::Lit(ast::Lit::Str(form)) if form.value == *"NFC")
+            }
+            _ => false,
+        };
+        if !accepted {
+            if !self.str_subset_rejection("normalize", prop_pos.clone()) {
+                self.str_surface_error("normalize", prop_pos);
+            }
+            return self.err_expr(pos);
+        }
+        hir::Expr {
+            pending_work: None,
+            kind: ExprKind::Call {
+                callee: Callee::Str(StrFn::Normalize),
+                args: vec![recv],
+            },
+            ty: Type::Str,
+            pos,
+        }
+    }
+
     /// Emits the Q21 rejection for a known out-of-subset `String`
     /// member, naming the member and pointing at the accepted spelling;
     /// returns `false` when `name` is not in the rejected set (the

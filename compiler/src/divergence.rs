@@ -33,6 +33,10 @@ pub enum Divergence {
     FileModuleImportForm,
     /// A standard file function is called directly, not held as a value.
     FileModuleFunctionValue,
+    /// The text module is imported with named specifiers only.
+    TextModuleImportForm,
+    /// A text module function is called directly, not held as a value.
+    TextModuleFunctionValue,
 
     /// Only a literal zero length store statement clears a dynamic array.
     ArrayLengthStore,
@@ -810,7 +814,7 @@ pub enum Divergence {
     CompilerOwnedValue,
     /// Compiler namespaces expose only declared intrinsics; JavaScript prototype members and inherited Object methods have no namespace representation.
     NamespaceObjectMember,
-    /// Unicode normalization needs tables that the runtime does not provide.
+    /// Only NFC normalization is available; NFD, NFKC, and NFKD need tables that the runtime does not provide.
     UnicodeNormalization,
     /// TypeScript makes the match index optional; the language requires a definite i32 index and has no optional numeric field.
     MatchOptionalIndex,
@@ -1054,6 +1058,8 @@ impl Divergence {
         Divergence::FileModuleStringAlias,
         Divergence::FileModuleImportForm,
         Divergence::FileModuleFunctionValue,
+        Divergence::TextModuleImportForm,
+        Divergence::TextModuleFunctionValue,
         Divergence::ArrayLengthStore,
         Divergence::AbstractMember,
         Divergence::NestedNominalClass,

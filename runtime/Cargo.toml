@@ -12,6 +12,9 @@ crate-type = ["rlib", "staticlib"]
 num-bigint = "0.4.8"
 num-traits = "0.2.19"
 ryu-js = "=1.0.3"
+# compiler.md §193 rule 5: Unicode 17.0 grapheme clusters and NFC.
+unicode-segmentation = "=1.13.3"
+icu_normalizer = { version = "=2.2.0", default-features = false, features = ["compiled_data", "utf8_iter"] }
 # Forked for the execution budget the contract requires (stdlib.md §15.4);
 # upstream has none at any version. Pinned by commit in Cargo.lock.
 regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }

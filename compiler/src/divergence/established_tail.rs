@@ -121,10 +121,10 @@ pub(super) const NAMESPACEOBJECTMEMBER: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const UNICODENORMALIZATION: DivergenceEntry = DivergenceEntry {
-    ts: "const text: string = \"x\".normalize();",
-    subscript: "const text: string = \"x\";",
-    why: "Unicode normalization needs tables that the runtime does not provide.",
-    collision: "stdlib.md §8",
+    ts: "const text: string = \"x\".normalize(\"NFD\");",
+    subscript: "const text: string = \"x\".normalize(\"NFC\");",
+    why: "Only NFC normalization is available; NFD, NFKC, and NFKD need tables that the runtime does not provide.",
+    collision: "compiler.md §193",
 };
 
 pub(super) const MATCHOPTIONALINDEX: DivergenceEntry = DivergenceEntry {

@@ -19,8 +19,8 @@ a003.ts	STRING_REJECTIONS/string / toLocaleLowerCase		S014
 export function main(): void { const s: string = "x"; s.toLocaleLowerCase(); }
 ===
 a004.ts	STRING_REJECTIONS/string / normalize		S014		
-`normalize` is rejected: Unicode normalization tables are unavailable. (Q21)
-export function main(): void { const s: string = "x"; s.normalize(); }
+`normalize` is rejected: The form must be omitted or the literal "NFC"; NFD, NFKC, and NFKD are not available; use `normalize("NFC")` (Q21)
+export function main(): void { const s: string = "x"; s.normalize("NFD"); }
 ===
 a005.ts	REGEX_STRING_REJECTIONS/string / match		S014		
 `match` is rejected: The match result requires an optional numeric index, but the language requires a definite `i32` index. (Q31)
@@ -742,7 +742,7 @@ a003-b.ts	STRING_REJECTIONS/string / toLocaleLowerCase	TS2769	S014
 export function main(): void { "x".toLocaleLowerCase(1); }
 ===
 a004-b.ts	STRING_REJECTIONS/string / normalize	TS2769	S014		
-`normalize` is rejected: Unicode normalization tables are unavailable. (Q21)
+`normalize` is rejected: The form must be omitted or the literal "NFC"; NFD, NFKC, and NFKD are not available; use `normalize("NFC")` (Q21)
 export function main(): void { "x".normalize(1); }
 ===
 a005-b.ts	REGEX_STRING_REJECTIONS/string / match	TS2322	S014		

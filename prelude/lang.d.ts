@@ -134,3 +134,10 @@ declare module "node:fs/promises" {
   export function writeFile(path: string, data: string): Promise<void>;
   export function writeFile(path: string, data: u8[]): Promise<void>;
 }
+
+// compiler.md §193: grapheme clusters (UAX #29). The import is the
+// opt-in; no build option enables the module.
+declare module "subscript:text" {
+  export function graphemeLength(s: string): i32;
+  export function sliceGraphemes(s: string, start: i32, end?: i32): string;
+}

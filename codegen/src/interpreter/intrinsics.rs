@@ -554,6 +554,24 @@ impl Interpreter<'_> {
             "Concat" => Value::Handle(unsafe {
                 ffi::subscript_rt_str_concat(context, receiver, handle(1)?, 0)
             }),
+            // SAFETY: live string; runtime owns the NFC tables.
+            "Normalize" => {
+                Value::Handle(unsafe { ffi::subscript_rt_str_normalize(context, receiver, 0) })
+            }
+            // SAFETY: live string; runtime owns the cluster rules.
+            "GraphemeLength" => {
+                Value::I(unsafe { ffi::subscript_rt_str_grapheme_length(context, receiver) } as i64)
+            }
+            // SAFETY: live string; runtime owns the cluster rules.
+            "SliceGraphemes" => Value::Handle(unsafe {
+                ffi::subscript_rt_str_slice_graphemes(
+                    context,
+                    receiver,
+                    integer(1)?,
+                    integer(2)?,
+                    0,
+                )
+            }),
             _ => return Err(self.invalid(None, format!("unknown String intrinsic {operation}"))),
         };
         self.check_runtime(&Pos::new("<string>", 1, 1))?;
