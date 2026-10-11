@@ -232,3 +232,4 @@ Every section, with its status:
 | §188 | A handle inside a value has an origin | active | [`s188-a-handle-inside-a-value-has-an-origin.md`](compiler/s188-a-handle-inside-a-value-has-an-origin.md) |
 | §189 | The `boundary` command shows each crossing | active | [`s189-the-boundary-command-shows-each-crossing.md`](compiler/s189-the-boundary-command-shows-each-crossing.md) |
 | §190 | A dev run forks only a single-threaded process | active | [`s190-a-dev-run-forks-only-a-single-threaded-process.md`](compiler/s190-a-dev-run-forks-only-a-single-threaded-process.md) |
+| §191 | A padding does not end inside a UTF-8 sequence | active | [`s191-a-padding-does-not-end-inside-a-utf-8-sequence.md`](compiler/s191-a-padding-does-not-end-inside-a-utf-8-sequence.md) |
