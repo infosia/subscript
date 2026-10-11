@@ -37,11 +37,19 @@ round 1. One gate step in 28 hung.
    and the caller has more than one thread, the run returns
    `RunError::Internal` with a message that names this rule. It does
    not fork, and it does not run in process. The platform can count a
-   joined thread for some microseconds after the join (up to 36 µs
-   measured). So before this error, and before the rule 1 check of
-   such a run refuses the `fork`, the dev tier reads the count again
-   for up to 2 ms. A run without a native library or a file provider
-   does not wait. A test binary that runs
+   joined thread after the join. On Linux, the count does not include
+   a thread that has started to exit: its `/proc/self/task/<tid>/stat`
+   flags hold `PF_EXITING` (`0x4`). Such a thread runs no more user
+   code, so it holds no lock that rule 1 guards. The Linux count is
+   read once, with no wait. On Apple targets, before this error and
+   before the rule 1 check of such a run refuses the `fork`, the dev
+   tier reads the count again for up to 2 ms. A run without a native
+   library or a file provider does not wait. *(Amended 2026-10-11: on
+   x86-64 Linux under load, a joined thread stayed in
+   `/proc/self/task` for up to 11.97 ms, so the 2 ms re-read failed
+   phase 2 tests of `cli/tests/read_root.rs` in the full gate. In
+   each of 458 such counts, every extra thread had `PF_EXITING`
+   set.)* A test binary that runs
    such programs lists each test in one of two phases. A phase 1 test
    starts no such run and runs on a thread of the harness. A phase 2
    test runs in its own process: the harness starts the test binary
@@ -95,3 +103,21 @@ round 1. One gate step in 28 hung.
 6. The tracking note records each test binary that runs native-library
    or file-provider programs, the tests of its second phase, and the
    wall time of each such binary against the pin.
+
+### 190.3 Acceptance of the rule 3 amendment (Linux exiting threads)
+
+1. Red at the pin `3231e6d7` (core principle 10), on x86-64 Linux: a
+   test starts and joins one thread, then reads the rule 3 count at
+   once, for a stated number of cycles. At the pin the count is above
+   1 in at least one cycle. After the change it is 1 in every cycle.
+   A control keeps a second thread alive and reads a count of 2. The
+   test states its gate cost, measured (core principle 15).
+2. Red at the pin: `cargo test -p subscript-cli --test read_root`,
+   debug, runs 20 times while `2 × nproc` busy processes run. The
+   failure count at the pin and after the change is recorded. After
+   the change it is 0.
+3. No test sets `LIBCLANG_NOTHREADS` or removes a thread that a
+   dependency starts. The libclang parse thread stays: it is the
+   realistic form of a joined thread before a run.
+4. Apple targets keep the 2 ms re-read with no change.
+5. Every test that ran before passes, with the same counts.

@@ -362,3 +362,43 @@ a time, cost about 73 s debug and 57 s release of codegen + CLI wall.
 - G: `--nocapture` has no effect on phase 2: the parent prints a child's
   output only for a failure. A process that a phase 2 test starts
   inherits `SUBSCRIPT_TEST_PHASE_2_CHILD`.
+
+## Linux: a joined thread stays in the count
+
+Date: 2026-10-11. Revision: `3231e6d7`. Host: x86-64 Linux, 16 cores,
+kernel 7.0.0, glibc.
+
+### Fact
+
+The full gate at `3231e6d7` failed 3 phase 2 tests of
+`cli/tests/read_root.rs` in the debug step with the rule 3 error
+`(the process has 2 threads)`. The release step passed them. Three
+debug runs of that binary alone: 1 failed (2 tests), 2 passed. The
+failed test differs from run to run.
+
+### Cause
+
+In the phase 2 child, `subscript_bindgen::clangfe::parse` calls
+`clang_parseTranslationUnit`. libclang runs the parse on a new thread
+(`llvm::CrashRecoveryContext::RunSafelyOnThread`, 8 MiB stack) and
+joins it. The dev run starts after the join. gdb shows one
+`pthread_create` in the child, from that call; strace shows the thread
+exit before the `fork`. With `LIBCLANG_NOTHREADS=1`, gdb shows no
+`pthread_create`.
+
+### Measurement
+
+A C program starts and joins one thread, then counts
+`/proc/self/task` at once, 20,000 cycles. If the count is above 1, it
+reads each task's flags (`stat` field 9) and counts again until the
+count is 1.
+
+| Load | Count above 1 | Longest time to count 1 | Extra task without `PF_EXITING` |
+|---|---:|---:|---:|
+| none | 37 | 0.99 ms | 0 |
+| 32 busy processes | 421 | 11.97 ms | 0 |
+
+The 2 ms re-read does not cover the loaded case. In all 458 counts
+above 1, every extra task had `PF_EXITING` set. §190.1 rule 3 is
+amended: the Linux count leaves out a task with `PF_EXITING` set, and
+reads once.
