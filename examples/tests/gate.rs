@@ -31,9 +31,7 @@ use subscript_codegen::{
 // on windows-msvc; split out so the import is not unused there.
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::emit_c;
-#[cfg(not(all(windows, target_env = "msvc")))]
-use subscript_compiler::check_program;
-use subscript_compiler::SourceFile;
+use subscript_compiler::{check_program, render_diagnostics, SourceFile};
 
 const ENGINE_MIRROR_NAME: &str = "engine.generated.d.ts";
 const INTEROP_MIRROR_NAME: &str = "interop.generated.d.ts";
@@ -177,6 +175,61 @@ fn discover_gate_programs() -> Result<Vec<Program>, String> {
     #[cfg(all(windows, target_env = "msvc"))]
     programs.retain(|program| !program.uses_interop);
     Ok(programs)
+}
+
+/// The directory of the TypeScript-beginner examples, relative to the
+/// examples root.
+const TYPESCRIPT_DIRECTORY: &str = "typescript";
+/// The one TypeScript-beginner script that the compiler rejects. Its golden
+/// is the rendered diagnostic, not a run output.
+const TYPESCRIPT_REJECTED_STEM: &str = "rejected";
+
+/// Gives the id of a TypeScript-beginner script. The id is the source file
+/// name, so a diagnostic names the path that `subscript run` names when it
+/// runs from the repository root.
+fn typescript_id(stem: &str) -> String {
+    format!("examples/{TYPESCRIPT_DIRECTORY}/{stem}")
+}
+
+/// Loads every `.ts` file in `examples/typescript/`, sorted by id.
+fn discover_typescript_scripts() -> Result<Vec<Program>, String> {
+    let directory = examples_root().join(TYPESCRIPT_DIRECTORY);
+    let entries = fs::read_dir(&directory)
+        .map_err(|error| format!("read directory {}: {error}", directory.display()))?;
+    let mut programs = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read directory entry: {error}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("ts") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        programs.push(load_program(&path, typescript_id(stem))?);
+    }
+    programs.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(programs)
+}
+
+/// Splits the TypeScript-beginner scripts into the accepted scripts and
+/// `rejected.ts`. The run set excludes only `rejected.ts`; its own test
+/// compares its diagnostic.
+fn split_typescript_scripts() -> Result<(Vec<Program>, Program), String> {
+    let rejected_id = typescript_id(TYPESCRIPT_REJECTED_STEM);
+    let (rejected, accepted): (Vec<Program>, Vec<Program>) = discover_typescript_scripts()?
+        .into_iter()
+        .partition(|program| program.id == rejected_id);
+    let rejected = rejected
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("{rejected_id}.ts not found"))?;
+    if accepted.is_empty() {
+        return Err(format!(
+            "no accepted scripts found under examples/{TYPESCRIPT_DIRECTORY}"
+        ));
+    }
+    Ok((accepted, rejected))
 }
 
 fn read_mirror(path: &Path) -> Result<String, String> {
@@ -452,6 +505,30 @@ fn every_phase_gate_program_matches_dev_jit_ship_c_aot_and_golden() {
     assert_programs_match(&programs, "phase gate");
 }
 
+fn every_typescript_script_matches_dev_jit_ship_c_aot_and_golden() {
+    let (accepted, _) = split_typescript_scripts()
+        .unwrap_or_else(|error| panic!("discover TypeScript scripts: {error}"));
+    assert_programs_match(&accepted, "TypeScript");
+}
+
+fn typescript_rejected_script_matches_rendered_diagnostic() {
+    let (_, rejected) = split_typescript_scripts()
+        .unwrap_or_else(|error| panic!("discover TypeScript scripts: {error}"));
+    let files = source_files(&rejected.id, &rejected.source, false, false)
+        .unwrap_or_else(|error| panic!("{}: load sources: {error}", rejected.id));
+    let Err(diagnostics) = check_program(&files) else {
+        panic!("{}: the compiler accepted the program", rejected.id);
+    };
+    // The CLI writes the rendered diagnostics with one trailing newline.
+    let rendered = format!("{}\n", render_diagnostics(&files, &diagnostics));
+    assert!(
+        rendered.as_bytes() == rejected.expected.as_slice(),
+        "{}: the rendered diagnostic differs from its golden:\nactual:\n{rendered}\ngolden:\n{}",
+        rejected.id,
+        String::from_utf8_lossy(&rejected.expected)
+    );
+}
+
 fn assert_host_program_matches_golden(directory: &str, label: &str) {
     let host = examples_root().join(directory);
     let script = host.join("build.sh");
@@ -593,12 +670,14 @@ fn main() -> std::process::ExitCode {
             context_per_scene_host_builds_runs_and_matches_golden,
             derived_example_set_excludes_phase_gate_programs,
             engine_mirror_regenerates_byte_identically,
+            typescript_rejected_script_matches_rendered_diagnostic,
             #[cfg(not(all(windows, target_env = "msvc")))]
             two_header_gate_emits_both_provenance_vocabularies,
         ],
         main_thread: [
             every_example_matches_dev_jit_ship_c_aot_and_golden,
             every_phase_gate_program_matches_dev_jit_ship_c_aot_and_golden,
+            every_typescript_script_matches_dev_jit_ship_c_aot_and_golden,
         ],
     ])
 }

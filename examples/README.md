@@ -5,6 +5,8 @@ application. The host owns the process and main loop; scripts provide typed,
 host-callable behavior. These examples show the language differences that
 matter when deciding whether that model fits an application.
 
+If you know some TypeScript and no C, start with [`typescript/`](typescript/).
+
 Read the numbered examples in order:
 
 1. [`e01`–`e04`](#language-foundations) establish sized values, C-layout value
