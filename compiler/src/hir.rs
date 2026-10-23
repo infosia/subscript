@@ -1089,6 +1089,16 @@ pub enum JsonFn {
     /// Allocates the `SyntaxError` message of the failed `ParseBegin`
     /// (`compiler.md` §115.7 rules 3 and 4).
     ParseFailure,
+    /// Records the leaf mismatch and its declared type.
+    ParseRecord,
+    /// Adds a field segment to the mismatch path.
+    ParseField,
+    /// Adds an index segment to the mismatch path.
+    ParseIndex,
+    /// Relabels a mismatch at the nullable validator node.
+    ParseRelabel,
+    /// Allocates the complete mismatch message before document release.
+    ParseMismatch,
 }
 
 /// `Date` intrinsic operations (stdlib.md §3): the accepted

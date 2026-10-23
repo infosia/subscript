@@ -341,10 +341,95 @@ fn json_parse_returns_its_target_and_raises_in_its_caller() {
     assert_eq!(messages.len(), 2);
     assert!(messages
         .iter()
-        .any(|body| body.contains("JSON.parse: document does not match Config")));
-    assert!(messages
-        .iter()
-        .any(|body| body.contains("JSON.parse: document does not match FixedArray<i16,  3>")));
+        .any(|body| body.contains("ParseMismatch") && body.contains("Str(\"Config\")")));
+    assert!(messages.iter().any(
+        |body| body.contains("ParseMismatch") && body.contains("Str(\"FixedArray<i16,  3>\")")
+    ));
+}
+
+// Cost: one checked program and one HIR walk; 0.01 s in the debug test profile.
+#[test]
+fn json_validator_records_only_in_false_return_branches() {
+    use hir::{Callee, ExprKind, HirChild, JsonFn};
+
+    fn walk(node: HirChild<'_>, failure_branch: bool, counts: &mut [usize; 4]) {
+        match node {
+            HirChild::Expr(expr) => {
+                if let ExprKind::Call {
+                    callee: Callee::Json(function),
+                    ..
+                } = &expr.kind
+                {
+                    let index = match function {
+                        JsonFn::ParseRecord => Some(0),
+                        JsonFn::ParseField => Some(1),
+                        JsonFn::ParseIndex => Some(2),
+                        JsonFn::ParseRelabel => Some(3),
+                        _ => None,
+                    };
+                    if let Some(index) = index {
+                        assert!(failure_branch, "{function:?} must precede return false");
+                        counts[index] += 1;
+                    }
+                }
+                for child in expr.children() {
+                    walk(child, failure_branch, counts);
+                }
+            }
+            HirChild::Stmt(Stmt::If {
+                cond, then, els, ..
+            }) => {
+                walk(HirChild::Expr(cond), failure_branch, counts);
+                let returns_false = matches!(
+                    then.last(),
+                    Some(Stmt::Return { value: Some(value), .. })
+                        if matches!(value.kind, ExprKind::Bool(false))
+                );
+                for stmt in then {
+                    walk(HirChild::Stmt(stmt), returns_false, counts);
+                }
+                for stmt in els.iter().flatten() {
+                    walk(HirChild::Stmt(stmt), failure_branch, counts);
+                }
+            }
+            HirChild::Stmt(stmt) => {
+                for child in stmt.children() {
+                    walk(child, failure_branch, counts);
+                }
+            }
+        }
+    }
+
+    // Section 194.2 rule 4: each record call belongs to a failure branch.
+    let module = check(
+        r#"
+        class Person {
+            age: i32 = 0;
+            active: boolean = true;
+            name: string = "";
+            friend: Person | null = null;
+            scores: i32[] = [];
+            fixed: FixedArray<i16, 3> = [0, 0, 0];
+            people: Person[] = [];
+        }
+        export function main(): void { JSON.parse<Person>("{}"); }
+        "#,
+    )
+    .expect("all JSON validator families check");
+    let mut counts = [0; 4];
+    for function in &module.functions {
+        if function.name.contains(".validate") {
+            for stmt in &function.body {
+                walk(HirChild::Stmt(stmt), false, &mut counts);
+            }
+        }
+    }
+    for (name, count) in ["ParseRecord", "ParseField", "ParseIndex", "ParseRelabel"]
+        .into_iter()
+        .zip(counts)
+    {
+        assert!(count > 0, "the HIR must contain {name}");
+    }
 }
 
 #[test]

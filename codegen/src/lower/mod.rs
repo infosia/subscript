@@ -757,6 +757,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             J::ParseArrayLen => (&[I64, I64, I64, I32], Some(I32)),
             J::ParseArrayGet => (&[I64, I64, I64, I32, I32], Some(I64)),
             J::ParseObjectGet => (&[I64, I64, I64, I64, I32], Some(I64)),
+            J::ParseRecord => (&[I64, I64, I64, I64, I32, I32], None),
+            J::ParseField => (&[I64, I64, I32], None),
+            J::ParseIndex => (&[I64, I32, I32], None),
+            J::ParseRelabel => (&[I64, I64, I64, I32], None),
+            J::ParseMismatch => (&[I64, I64, I64, I32], Some(I64)),
             J::ParseFailure => (&[I64, I32], Some(I64)),
             other => return Err(internal(format!("unknown JsonFn {other:?}"))),
         };

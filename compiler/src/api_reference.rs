@@ -121,7 +121,7 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
 "#,
         javascript: r#"console.log(JSON.parse('"\\ud800"'));
 "#,
-        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match string\n"),
+        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match string at $: expected string, found a string with a lone surrogate\n"),
         javascript_outcome: WitnessOutcome::Value("�\n"),
     },
     DivergenceWitness {
@@ -141,7 +141,7 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
 "#,
         javascript: r#"console.log(JSON.parse("1e39"));
 "#,
-        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match f32\n"),
+        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match f32 at $: expected f32, found a number out of range\n"),
         javascript_outcome: WitnessOutcome::Value("1e+39\n"),
     },
     DivergenceWitness {

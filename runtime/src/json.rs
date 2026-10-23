@@ -9,6 +9,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+mod mismatch;
+use mismatch::Mismatch;
+
 /// Context-owned output builders. A successful `finish` removes its
 /// entry. A trapped dev run drops unfinished transient entries when the
 /// host clears the trap before its next call.
@@ -106,6 +109,7 @@ pub(crate) struct JsonParsers {
     /// The failure of the last `begin` that returned zero, until
     /// `take_failure` reads it.
     failure: Option<ParseFailure>,
+    mismatch: Option<Mismatch>,
 }
 
 impl JsonParsers {
@@ -115,6 +119,7 @@ impl JsonParsers {
     /// records nothing, which `take_failure` reports as an internal fault.
     pub(crate) fn begin(&mut self, bytes: &[u8]) -> u64 {
         self.failure = None;
+        self.mismatch = None;
         let document = match Parser::new(bytes).parse() {
             Ok(document) => document,
             Err(failure) => {
@@ -145,6 +150,7 @@ impl JsonParsers {
     pub(crate) fn clear(&mut self) {
         self.documents.clear();
         self.failure = None;
+        self.mismatch = None;
     }
 
     pub(crate) fn root(&self, parser: u64) -> Option<u64> {

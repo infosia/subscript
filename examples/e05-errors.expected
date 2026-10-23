@@ -4,4 +4,4 @@ ratio=7
 caught=Error: division by zero
 json=42
 json-syntax=JSON.parse: invalid syntax at byte 1
-json-type=JSON.parse: document does not match i32
+json-type=JSON.parse: document does not match i32 at $: expected i32, found string

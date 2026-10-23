@@ -549,7 +549,7 @@ export function main(): void {
 ```sh
 $ subscript run errors.ts
 JSON.parse: invalid syntax at byte 23
-JSON.parse: document does not match Config
+JSON.parse: document does not match Config at $.count: expected i32, found no field
 ```
 
 An expected failure can also be a value. A lookup that finds nothing

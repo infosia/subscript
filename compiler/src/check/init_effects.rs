@@ -436,6 +436,11 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::JsonFn::ParseArrayLen
                     | hir::JsonFn::ParseArrayGet
                     | hir::JsonFn::ParseObjectGet
+                    | hir::JsonFn::ParseRecord
+                    | hir::JsonFn::ParseField
+                    | hir::JsonFn::ParseIndex
+                    | hir::JsonFn::ParseRelabel
+                    | hir::JsonFn::ParseMismatch
                     | hir::JsonFn::ParseFailure => false,
                 } {
                     self.record_indirect_call();

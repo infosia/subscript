@@ -1,6 +1,6 @@
 # A JSON mismatch names its path — `compiler.md` §194
 
-Status: contract committed. Implementation is next.
+Status: landed.
 
 ## Measurement at the pin `3231e6d7`
 
@@ -25,3 +25,30 @@ scriptc reports a checked-cast mismatch with a path and the two kinds:
 `expected number at $.port, got string` *(docs:
 <https://github.com/vercel-labs/scriptc>, the "Runtime type checks"
 limitation page)*. No scriptc binary was run for this note.
+
+## Landing
+
+Red at the pin: a binary built from a clean checkout of `3231e6d7`
+gives 10 different lines on `a255` and 7 on `a372`. After the landing,
+both entries agree on the dev JIT, the ship C, the interpreter, and the
+golden.
+
+Success-path cost, ship tier, MSVC: a loop of 200,000
+`JSON.parse<Config>` calls (`name: string`, `count: i32`), 3 warm-up
+runs, then 11 runs of each binary in turn.
+
+| Binary | Median |
+|---|---|
+| pin | 109.411 ms |
+| landing | 111.165 ms |
+
+The change is +1.60%. The stop limit of §194.5 is 5%.
+
+Cost of the new unit tests, as the process median: the record classes
+and segments 6.163 ms, the nullable relabel 5.821 ms, the `JsonFn`
+table 5.311 ms. The compiler test that walks the validator HIR takes
+0.01 s in the debug test profile.
+
+The Phase Review found a runtime test that copied the validator checks
+and could not fail. The compiler HIR walk replaced it. A local mutation
+moved one `ParseRecord` onto the success path, and the walk failed.

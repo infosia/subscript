@@ -859,10 +859,7 @@ impl Checker<'_> {
                 RejectionSite::JsonMissingTypeError,
                 "missing TypeError class",
             ))?,
-            json_string(
-                &format!("JSON.parse: document does not match {spelling}"),
-                &pos,
-            ),
+            json_local("mismatch", Type::Str, &pos),
             pos.clone(),
         );
         let not = |operand: hir::Expr| hir::Expr {
@@ -922,6 +919,19 @@ impl Checker<'_> {
                     &pos,
                 )),
                 then: vec![
+                    hir::Stmt::Let {
+                        name: "mismatch".to_string(),
+                        ty: Type::Str,
+                        mutable: false,
+                        dispose: false,
+                        init: self.json_call(
+                            JsonFn::ParseMismatch,
+                            vec![locals.parser(), json_string(spelling, &pos)],
+                            Type::Str,
+                            &pos,
+                        ),
+                        pos: pos.clone(),
+                    },
                     end(),
                     hir::Stmt::Throw {
                         value: type_error,
@@ -961,6 +971,20 @@ impl Checker<'_> {
         Ok(wrapper)
     }
 
+    fn json_leaf_record(&self, node: hir::Expr, label: &str, target: i64, pos: &Pos) -> hir::Stmt {
+        hir::Stmt::Expr(self.json_call(
+            JsonFn::ParseRecord,
+            vec![
+                JsonLocals::new(pos).parser(),
+                node,
+                json_string(label, pos),
+                json_int(target, pos),
+            ],
+            Type::Void,
+            pos,
+        ))
+    }
+
     fn json_validation_body(
         &self,
         ty: &Type,
@@ -968,6 +992,7 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
+        let label = self.type_name(ty);
         let shape = self.apparent_type(ty);
         let ty = &shape;
 
@@ -984,33 +1009,59 @@ impl Checker<'_> {
             value: Some(value),
             pos: pos.clone(),
         };
+        let record = |target| self.json_leaf_record(locals.node(), &label, target, pos);
+        let checked = |condition, target| {
+            vec![
+                json_record_false_unless(condition, vec![record(target)], pos),
+                return_value(json_bool(true, pos)),
+            ]
+        };
         if let Some(target) = json_number_target(&self.apparent_type(ty)) {
-            return Ok(vec![return_value(self.json_call(
-                JsonFn::ParseNumberFits,
-                vec![locals.parser(), locals.node(), json_int(target, pos)],
-                Type::Bool,
-                pos,
-            ))]);
+            return Ok(checked(
+                self.json_call(
+                    JsonFn::ParseNumberFits,
+                    vec![locals.parser(), locals.node(), json_int(target, pos)],
+                    Type::Bool,
+                    pos,
+                ),
+                target,
+            ));
         }
         match ty {
-            Type::Bool => Ok(vec![return_value(kind(JsonKind::BOOL))]),
-            Type::Str => Ok(vec![return_value(kind(JsonKind::STRING))]),
+            Type::Bool => Ok(checked(kind(JsonKind::BOOL), -1)),
+            Type::Str => Ok(checked(kind(JsonKind::STRING), -1)),
             Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
                 cond: kind(JsonKind::NULL),
                 then: vec![return_value(json_bool(true, pos))],
-                els: Some(vec![return_value(script_call(
-                    validators[json_type_index(types, inner)?].clone(),
-                    vec![locals.parser(), locals.node()],
-                    Type::Bool,
-                    pos,
-                ))]),
+                els: Some(vec![
+                    json_record_false_unless(
+                        script_call(
+                            validators[json_type_index(types, inner)?].clone(),
+                            vec![locals.parser(), locals.node()],
+                            Type::Bool,
+                            pos,
+                        ),
+                        vec![hir::Stmt::Expr(self.json_call(
+                            JsonFn::ParseRelabel,
+                            vec![locals.node(), json_string(&label, pos)],
+                            Type::Void,
+                            pos,
+                        ))],
+                        pos,
+                    ),
+                    return_value(json_bool(true, pos)),
+                ]),
                 pos: pos.clone(),
             }]),
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_validation_body(ty, element, types, validators, pos)
             }
             Type::Class(id) => {
-                let mut body = vec![json_return_false_unless(kind(JsonKind::OBJECT), pos)];
+                let mut body = vec![json_record_false_unless(
+                    kind(JsonKind::OBJECT),
+                    vec![record(-1)],
+                    pos,
+                )];
                 for field in &self.classes[id.0].fields {
                     let field_node = self.json_call(
                         JsonFn::ParseObjectGet,
@@ -1031,17 +1082,35 @@ impl Checker<'_> {
                         pos: pos.clone(),
                     });
                     let local = json_local(&format!("field_{}", field.name), Type::U64, pos);
-                    body.push(json_return_false_unless(
+                    let segment = || {
+                        hir::Stmt::Expr(self.json_call(
+                            JsonFn::ParseField,
+                            vec![json_string(&field.name, pos)],
+                            Type::Void,
+                            pos,
+                        ))
+                    };
+                    body.push(json_record_false_unless(
                         json_binary(BinOp::Ne, local.clone(), json_u64(0, pos), Type::Bool, pos),
+                        vec![
+                            self.json_leaf_record(
+                                json_u64(0, pos),
+                                &self.type_name(&field.ty),
+                                -1,
+                                pos,
+                            ),
+                            segment(),
+                        ],
                         pos,
                     ));
-                    body.push(json_return_false_unless(
+                    body.push(json_record_false_unless(
                         script_call(
                             validators[json_type_index(types, &field.ty)?].clone(),
                             vec![locals.parser(), local],
                             Type::Bool,
                             pos,
                         ),
+                        vec![segment()],
                         pos,
                     ));
                 }
@@ -1063,12 +1132,25 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, RejectionFailure> {
+        let label = self.type_name(array_ty);
         let shape = self.apparent_type(array_ty);
         let array_ty = &shape;
 
         let locals = JsonLocals::new(pos);
+        let record = || {
+            self.json_leaf_record(
+                locals.node(),
+                &label,
+                if matches!(array_ty, Type::FixedArray(..)) {
+                    -2
+                } else {
+                    -1
+                },
+                pos,
+            )
+        };
         let mut body = vec![
-            json_return_false_unless(
+            json_record_false_unless(
                 self.json_call(
                     JsonFn::ParseIsKind,
                     vec![
@@ -1079,6 +1161,7 @@ impl Checker<'_> {
                     Type::Bool,
                     pos,
                 ),
+                vec![record()],
                 pos,
             ),
             hir::Stmt::Let {
@@ -1096,7 +1179,7 @@ impl Checker<'_> {
             },
         ];
         if let Type::FixedArray(_, expected) = array_ty {
-            body.push(json_return_false_unless(
+            body.push(json_record_false_unless(
                 json_binary(
                     BinOp::Eq,
                     locals.length(),
@@ -1104,10 +1187,11 @@ impl Checker<'_> {
                     Type::Bool,
                     pos,
                 ),
+                vec![record()],
                 pos,
             ));
         } else {
-            body.push(json_return_false_unless(
+            body.push(json_record_false_unless(
                 json_binary(
                     BinOp::Ge,
                     locals.length(),
@@ -1115,6 +1199,7 @@ impl Checker<'_> {
                     Type::Bool,
                     pos,
                 ),
+                vec![record()],
                 pos,
             ));
         }
@@ -1136,13 +1221,19 @@ impl Checker<'_> {
         body.push(hir::Stmt::While {
             cond: json_binary(BinOp::Lt, locals.index(), locals.length(), Type::Bool, pos),
             body: vec![
-                json_return_false_unless(
+                json_record_false_unless(
                     script_call(
                         element_validator,
                         vec![locals.parser(), child],
                         Type::Bool,
                         pos,
                     ),
+                    vec![hir::Stmt::Expr(self.json_call(
+                        JsonFn::ParseIndex,
+                        vec![locals.index()],
+                        Type::Void,
+                        pos,
+                    ))],
                     pos,
                 ),
                 hir::Stmt::Expr(json_increment(locals.index(), pos)),
@@ -1589,7 +1680,15 @@ fn json_binary(op: BinOp, left: hir::Expr, right: hir::Expr, ty: Type, pos: &Pos
     }
 }
 
-fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
+fn json_record_false_unless(
+    condition: hir::Expr,
+    mut records: Vec<hir::Stmt>,
+    pos: &Pos,
+) -> hir::Stmt {
+    records.push(hir::Stmt::Return {
+        value: Some(json_bool(false, pos)),
+        pos: pos.clone(),
+    });
     hir::Stmt::If {
         cond: hir::Expr {
             pending_work: None,
@@ -1600,10 +1699,7 @@ fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
             ty: Type::Bool,
             pos: pos.clone(),
         },
-        then: vec![hir::Stmt::Return {
-            value: Some(json_bool(false, pos)),
-            pos: pos.clone(),
-        }],
+        then: records,
         els: None,
         pos: pos.clone(),
     }

@@ -309,6 +309,111 @@ fn json_parser_invalid(ctx: &mut Context, operation: &str, pos_id: u32) {
     );
 }
 
+/// Records a typed JSON leaf mismatch. Zero denotes a missing field.
+/// Numeric targets use the validation tags; -1 denotes kind, and -2 denotes length.
+///
+/// # Safety
+/// Shared contract; `parser`, nonzero `node`, and `label` are live.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_record(
+    ctx: *mut Context,
+    parser: u64,
+    node: u64,
+    label: *const u8,
+    target: i32,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let label = unsafe { ctx.str_view(label) };
+    let Ok(label) = std::str::from_utf8(label) else {
+        json_parser_invalid(ctx, "record label", pos_id);
+        return;
+    };
+    let result = ctx.json_parsers().record(parser, node, label, target);
+    parsed(ctx, result, (), "record", pos_id);
+}
+
+/// Adds a field segment to the recorded mismatch.
+///
+/// # Safety
+/// Shared contract; `field` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_field(
+    ctx: *mut Context,
+    field: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let field = unsafe { ctx.str_view(field) };
+    let Ok(field) = std::str::from_utf8(field) else {
+        json_parser_invalid(ctx, "record field", pos_id);
+        return;
+    };
+    let result = ctx.json_parsers().mismatch_field(field);
+    parsed(ctx, result, (), "record field", pos_id);
+}
+
+/// Adds an array index to the recorded mismatch.
+///
+/// # Safety
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_index(ctx: *mut Context, index: i32, pos_id: u32) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let result = ctx.json_parsers().mismatch_index(index);
+    parsed(ctx, result, (), "record index", pos_id);
+}
+
+/// Relabels a failure at the nullable validator's own node.
+///
+/// # Safety
+/// Shared contract; `label` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_relabel(
+    ctx: *mut Context,
+    node: u64,
+    label: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let label = unsafe { ctx.str_view(label) };
+    let Ok(label) = std::str::from_utf8(label) else {
+        json_parser_invalid(ctx, "relabel", pos_id);
+        return;
+    };
+    let result = ctx.json_parsers().mismatch_relabel(node, label);
+    parsed(ctx, result, (), "relabel", pos_id);
+}
+
+/// Allocates the mismatch message before the parsed document is released.
+///
+/// # Safety
+/// Shared contract; `parser` and `target` are live.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_mismatch(
+    ctx: *mut Context,
+    parser: u64,
+    target: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract and live string handle.
+    let ctx = unsafe { &mut *ctx };
+    let target = unsafe { ctx.str_view(target) };
+    let Ok(target) = std::str::from_utf8(target) else {
+        json_parser_invalid(ctx, "mismatch target", pos_id);
+        return std::ptr::null_mut();
+    };
+    let Some(message) = ctx.json_parsers().mismatch_message(parser, target) else {
+        json_parser_invalid(ctx, "mismatch message", pos_id);
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str(message.as_bytes(), pos_id)
+}
+
 fn parsed<T>(ctx: &mut Context, value: Option<T>, default: T, operation: &str, pos_id: u32) -> T {
     match value {
         Some(value) => value,

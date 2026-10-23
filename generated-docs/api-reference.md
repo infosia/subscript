@@ -537,7 +537,7 @@ Node:
 console.log(JSON.parse('"\\ud800"'));
 ```
 
-- subscript result: `JSON.parse: document does not match string\n`
+- subscript result: `JSON.parse: document does not match string at $: expected string, found a string with a lone surrogate\n`
 - Node result: `�\n`
 
 ### `JSON.parse<f32>("1e39")` — Q28
@@ -564,7 +564,7 @@ Node:
 console.log(JSON.parse("1e39"));
 ```
 
-- subscript result: `JSON.parse: document does not match f32\n`
+- subscript result: `JSON.parse: document does not match f32 at $: expected f32, found a number out of range\n`
 - Node result: `1e+39\n`
 
 ### `string.length` — Q5

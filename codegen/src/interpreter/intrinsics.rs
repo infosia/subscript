@@ -862,6 +862,39 @@ impl Interpreter<'_> {
             "ParseObjectGet" => Value::U(unsafe {
                 ffi::subscript_rt_json_parse_object_get(context, id(0)?, id(1)?, handle(2)?, 0)
             }),
+            // SAFETY: the Context owns the document and all string handles are live.
+            "ParseRecord" => {
+                unsafe {
+                    ffi::subscript_rt_json_parse_record(
+                        context,
+                        id(0)?,
+                        id(1)?,
+                        handle(2)?,
+                        integer(3)? as i32,
+                        0,
+                    )
+                };
+                Value::Void
+            }
+            // SAFETY: the field name is a live string handle.
+            "ParseField" => {
+                unsafe { ffi::subscript_rt_json_parse_field(context, handle(0)?, 0) };
+                Value::Void
+            }
+            // SAFETY: the Context owns the mismatch record.
+            "ParseIndex" => {
+                unsafe { ffi::subscript_rt_json_parse_index(context, integer(0)? as i32, 0) };
+                Value::Void
+            }
+            // SAFETY: the label is live and the node belongs to this document.
+            "ParseRelabel" => {
+                unsafe { ffi::subscript_rt_json_parse_relabel(context, id(0)?, handle(1)?, 0) };
+                Value::Void
+            }
+            // SAFETY: the document and target string are live.
+            "ParseMismatch" => Value::Handle(unsafe {
+                ffi::subscript_rt_json_parse_mismatch(context, id(0)?, handle(1)?, 0)
+            }),
             // SAFETY: the Context is live.
             "ParseFailure" => {
                 Value::Handle(unsafe { ffi::subscript_rt_json_parse_failure(context, 0) })

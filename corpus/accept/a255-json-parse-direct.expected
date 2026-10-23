@@ -15,16 +15,16 @@ trailing: SyntaxError: JSON.parse: invalid syntax at byte 4
 utf8 offset: SyntaxError: JSON.parse: invalid syntax at byte 6
 empty: SyntaxError: JSON.parse: invalid syntax at byte 0
 depth: SyntaxError: JSON.parse: nesting deeper than 128 at byte 128
-depth 128: TypeError: JSON.parse: document does not match i32[]
-missing field: TypeError: JSON.parse: document does not match Config
-wrong kind: TypeError: JSON.parse: document does not match Config
-contextual target: TypeError: JSON.parse: document does not match Config
-element: TypeError: JSON.parse: document does not match i32[]
-out of range: TypeError: JSON.parse: document does not match u8
-not an integer: TypeError: JSON.parse: document does not match i32
-f32 overflow: TypeError: JSON.parse: document does not match f32
-lone surrogate: TypeError: JSON.parse: document does not match string
-fixed length: TypeError: JSON.parse: document does not match FixedArray<i16, 3>
+depth 128: TypeError: JSON.parse: document does not match i32[] at $[0]: expected i32, found array
+missing field: TypeError: JSON.parse: document does not match Config at $.count: expected i32, found no field
+wrong kind: TypeError: JSON.parse: document does not match Config at $.count: expected i32, found string
+contextual target: TypeError: JSON.parse: document does not match Config at $: expected Config, found array
+element: TypeError: JSON.parse: document does not match i32[] at $[2]: expected i32, found string
+out of range: TypeError: JSON.parse: document does not match u8 at $: expected u8, found a number out of range
+not an integer: TypeError: JSON.parse: document does not match i32 at $: expected i32, found a non-integer number
+f32 overflow: TypeError: JSON.parse: document does not match f32 at $: expected f32, found a number out of range
+lone surrogate: TypeError: JSON.parse: document does not match string at $: expected string, found a string with a lone surrogate
+fixed length: TypeError: JSON.parse: document does not match FixedArray<i16, 3> at $: expected FixedArray<i16, 3>, found an array of length 2
 no partial value
 kept: before:1
 after failures: ok again:4

@@ -415,7 +415,7 @@ impl NumFn {
 
 impl JsonFn {
     /// Every internal JSON runtime leaf in discriminant order.
-    pub const ALL: [JsonFn; 29] = [
+    pub const ALL: [JsonFn; 34] = [
         JsonFn::Begin,
         JsonFn::BeginTracked,
         JsonFn::Finish,
@@ -445,6 +445,11 @@ impl JsonFn {
         JsonFn::ParseArrayGet,
         JsonFn::ParseObjectGet,
         JsonFn::ParseFailure,
+        JsonFn::ParseRecord,
+        JsonFn::ParseField,
+        JsonFn::ParseIndex,
+        JsonFn::ParseRelabel,
+        JsonFn::ParseMismatch,
     ];
 
     /// Whether the runtime call can leave the Context trapped.
@@ -488,6 +493,11 @@ impl JsonFn {
             JsonFn::ParseArrayLen => "subscript_rt_json_parse_array_len",
             JsonFn::ParseArrayGet => "subscript_rt_json_parse_array_get",
             JsonFn::ParseObjectGet => "subscript_rt_json_parse_object_get",
+            JsonFn::ParseRecord => "subscript_rt_json_parse_record",
+            JsonFn::ParseField => "subscript_rt_json_parse_field",
+            JsonFn::ParseIndex => "subscript_rt_json_parse_index",
+            JsonFn::ParseRelabel => "subscript_rt_json_parse_relabel",
+            JsonFn::ParseMismatch => "subscript_rt_json_parse_mismatch",
             JsonFn::ParseFailure => "subscript_rt_json_parse_failure",
         }
     }
@@ -1017,6 +1027,28 @@ impl WorkerFn {
         match self {
             Self::Spawn(_) => Self::Spawn(0),
             other => other,
+        }
+    }
+}
+
+#[cfg(test)]
+mod json_mismatch_tests {
+    use super::JsonFn;
+
+    // Cost: five intrinsic table lookups; no compilation or external process.
+    #[test]
+    fn mismatch_operations_name_their_runtime_functions() {
+        for (operation, symbol) in [
+            (JsonFn::ParseRecord, "subscript_rt_json_parse_record"),
+            (JsonFn::ParseField, "subscript_rt_json_parse_field"),
+            (JsonFn::ParseIndex, "subscript_rt_json_parse_index"),
+            (JsonFn::ParseRelabel, "subscript_rt_json_parse_relabel"),
+            (JsonFn::ParseMismatch, "subscript_rt_json_parse_mismatch"),
+        ] {
+            assert_eq!(operation.symbol(), symbol);
+            assert_eq!(JsonFn::ALL.get(operation as usize), Some(&operation));
+            assert!(operation.can_trap());
+            assert!(!operation.returns_bool());
         }
     }
 }

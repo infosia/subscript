@@ -1,0 +1,14 @@
+nested range: JSON.parse: document does not match Person at $.friend.age: expected u8, found a number out of range
+after nested range: ok
+nullable kind: JSON.parse: document does not match Person at $.friend: expected Person | null, found number
+after nullable kind: ok
+nested missing: JSON.parse: document does not match Person at $.friend.age: expected u8, found no field
+after nested missing: ok
+first field: JSON.parse: document does not match Person at $.name: expected string, found number
+after first field: ok
+duplicate key: JSON.parse: document does not match Person at $.age: expected u8, found a number out of range
+after duplicate key: ok
+class element: JSON.parse: document does not match Person[] at $[1].name: expected string, found number
+after class element: ok
+fixed field: JSON.parse: document does not match Config at $.values: expected FixedArray<i16, 3>, found an array of length 2
+after fixed field: 3

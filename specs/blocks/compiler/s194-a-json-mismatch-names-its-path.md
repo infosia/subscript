@@ -103,8 +103,10 @@ The three engines call the same runtime functions for each `JsonFn`.
   (regenerated, never edited), and `docs/tutorial-typescript.md`.
 - `compiler/tests/exceptions.rs`: the root wrapper no longer holds the
   whole message as a literal, so the assertion reads the new form.
-- The LIR text snapshot: validators gain the record calls on their
-  `false` branches.
+- The LIR text snapshot: each module declares the five new runtime
+  functions. The snapshot holds no validator body, so it shows no
+  record call. *(Corrected at the landing; the first text predicted
+  record calls in the snapshot.)*
 
 Any other moved golden is a stop.
 
@@ -138,9 +140,12 @@ Any other moved golden is a stop.
    the dev JIT, the ship C, the interpreter, and the golden,
    byte-exact.
 2. `tsc` exits 0 over both entries.
-3. A runtime unit test parses a valid document through each record
-   path and finds the record empty. A second unit test builds each
-   `<F>` class and each path segment kind directly in the runtime.
+3. A compiler test walks the synthesized validators of every family. It
+   finds each record call in a branch that ends in `return false`. A
+   runtime unit test finds that `ParseBegin` clears an earlier record.
+   A second unit test builds each `<F>` class and each path segment
+   kind directly in the runtime. *(Corrected at the landing: a runtime
+   test of a valid document cannot fail, because no validator runs.)*
 4. Success-path cost on the ship tier: a loop of 200,000 successful
    `JSON.parse<Config>` calls, measured at the pin and after. If the
    median is more than 5% slower, the landing stops and reports. Both
