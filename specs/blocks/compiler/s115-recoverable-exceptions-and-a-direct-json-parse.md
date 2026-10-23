@@ -241,6 +241,8 @@ position defect, so the form changes, not the site.)*
    field, a wrong kind, an integer out of range, a non-integer for an
    integer target, a finite `f64` that overflows `f32`, and a lone
    surrogate for a `string` target.
+   *(Amended 2026-10-23 by §194: the message adds the path of the
+   first failure, the expected type, and what the document holds.)*
 6. The messages are this project's. They do not copy any JavaScript
    engine, and an entry that prints one is not `js-comparable` (C6).
 7. The parse document is released before the raise. No partial value

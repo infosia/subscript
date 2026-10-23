@@ -235,3 +235,4 @@ Every section, with its status:
 | §191 | A padding does not end inside a UTF-8 sequence | active | [`s191-a-padding-does-not-end-inside-a-utf-8-sequence.md`](compiler/s191-a-padding-does-not-end-inside-a-utf-8-sequence.md) |
 | §192 | A ship link removes unreferenced code | active | [`s192-a-ship-link-removes-unreferenced-code.md`](compiler/s192-a-ship-link-removes-unreferenced-code.md) |
 | §193 | A text module counts graphemes and normalizes to NFC | active | [`s193-a-text-module-counts-graphemes-and-normalizes-to-nfc.md`](compiler/s193-a-text-module-counts-graphemes-and-normalizes-to-nfc.md) |
+| §194 | A JSON mismatch names its path | active | [`s194-a-json-mismatch-names-its-path.md`](compiler/s194-a-json-mismatch-names-its-path.md) |
