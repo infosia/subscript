@@ -352,15 +352,15 @@ fn unreferenced_code_removal_follows_the_platform_and_the_style() {
 /// The test reads the executable that `build_c_aot` links. The control
 /// links the same `program.c` and `entry.c` by hand without the flag. The
 /// bound is a ratio: an ELF executable keeps the DWARF of its live
-/// members, so an absolute bound does not hold on Linux.
+/// members, so an absolute bound does not hold on Linux. The test
+/// compares the loaded size, because GNU ld keeps the DWARF of the
+/// sections that `--gc-sections` removes.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn ship_link_is_at_most_half_the_control_link() {
     let files = sources("export function main(): void {\n  print(\"size\");\n}\n");
     let linked = build_c_aot(&files, RunConfig::default()).expect("ship link");
-    let removed = std::fs::metadata(&linked.executable)
-        .expect("ship link size")
-        .len();
+    let removed = loaded_size(&linked.executable);
 
     let dir = &linked.directory.path;
     let control_path = dir.join("control");
@@ -380,12 +380,128 @@ fn ship_link_is_at_most_half_the_control_link() {
         "linking the control failed:\n{}",
         tool_output_report(&compile)
     );
-    let control = std::fs::metadata(&control_path)
-        .expect("control size")
-        .len();
+    let control = loaded_size(&control_path);
     assert!(
         removed.saturating_mul(2) <= control,
-        "ship link is {removed} bytes, control link is {control} bytes"
+        "ship link loaded size is {removed} bytes, control link loaded size is {control} bytes"
+    );
+}
+
+/// The loaded size of an ELF64 little-endian executable: the sum of
+/// `sh_size` over the sections with `SHF_ALLOC` set whose type is not
+/// `SHT_NOBITS`. The test fails if the file is not ELF64 little-endian,
+/// or if a header is out of bounds.
+#[cfg(target_os = "linux")]
+fn loaded_size(path: &Path) -> u64 {
+    const SHF_ALLOC: u64 = 0x2;
+    const SHT_NOBITS: u32 = 8;
+    let bytes =
+        std::fs::read(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let field = |offset: usize, len: usize| -> &[u8] {
+        offset
+            .checked_add(len)
+            .and_then(|end| bytes.get(offset..end))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: header field at {offset} is out of bounds",
+                    path.display()
+                )
+            })
+    };
+    let u16_at =
+        |offset: usize| u16::from_le_bytes(field(offset, 2).try_into().expect("two bytes"));
+    let u32_at =
+        |offset: usize| u32::from_le_bytes(field(offset, 4).try_into().expect("four bytes"));
+    let u64_at =
+        |offset: usize| u64::from_le_bytes(field(offset, 8).try_into().expect("eight bytes"));
+    // e_ident: magic, EI_CLASS = ELFCLASS64 (2), EI_DATA = ELFDATA2LSB (1).
+    assert!(
+        bytes.len() >= 64 && bytes[..4] == *b"\x7fELF" && bytes[4] == 2 && bytes[5] == 1,
+        "{} is not an ELF64 little-endian file",
+        path.display()
+    );
+    let to_usize = |value: u64| {
+        usize::try_from(value)
+            .unwrap_or_else(|_| panic!("{}: header value {value} is out of bounds", path.display()))
+    };
+    let shoff = to_usize(u64_at(0x28));
+    let shentsize = usize::from(u16_at(0x3a));
+    let shnum = usize::from(u16_at(0x3c));
+    assert!(
+        shentsize >= 64,
+        "{}: e_shentsize {shentsize} is less than 64",
+        path.display()
+    );
+    let mut size = 0u64;
+    for index in 0..shnum {
+        let header = index
+            .checked_mul(shentsize)
+            .and_then(|offset| offset.checked_add(shoff))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: section header {index} is out of bounds",
+                    path.display()
+                )
+            });
+        let sh_type = u32_at(header + 4);
+        let sh_flags = u64_at(header + 8);
+        let sh_size = u64_at(header + 0x20);
+        if sh_flags & SHF_ALLOC != 0 && sh_type != SHT_NOBITS {
+            size = size.saturating_add(sh_size);
+        }
+    }
+    size
+}
+
+/// The loaded size of a Mach-O executable: the file size.
+#[cfg(target_os = "macos")]
+fn loaded_size(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .unwrap_or_else(|error| panic!("size of {}: {error}", path.display()))
+        .len()
+}
+
+/// The ELF reader counts only the allocated sections that occupy file
+/// space, and it rejects a file that is not ELF.
+#[cfg(target_os = "linux")]
+#[test]
+fn loaded_size_sums_the_allocated_sections_that_occupy_the_file() {
+    // ELF64 header (64 bytes), then three section headers of 64 bytes.
+    let section = |sh_type: u32, sh_flags: u64, sh_size: u64| {
+        let mut header = vec![0u8; 64];
+        header[4..8].copy_from_slice(&sh_type.to_le_bytes());
+        header[8..16].copy_from_slice(&sh_flags.to_le_bytes());
+        header[0x20..0x28].copy_from_slice(&sh_size.to_le_bytes());
+        header
+    };
+    let mut elf = vec![0u8; 64];
+    elf[..4].copy_from_slice(b"\x7fELF");
+    elf[4] = 2; // ELFCLASS64
+    elf[5] = 1; // ELFDATA2LSB
+    elf[6] = 1; // EV_CURRENT
+    elf[0x28..0x30].copy_from_slice(&64u64.to_le_bytes()); // e_shoff
+    elf[0x3a..0x3c].copy_from_slice(&64u16.to_le_bytes()); // e_shentsize
+    elf[0x3c..0x3e].copy_from_slice(&3u16.to_le_bytes()); // e_shnum
+    elf.extend(section(1, 0x2, 0x123)); // SHT_PROGBITS, SHF_ALLOC
+    elf.extend(section(8, 0x3, 0x4000)); // SHT_NOBITS, SHF_ALLOC | SHF_WRITE
+    elf.extend(section(1, 0, 0x777)); // SHT_PROGBITS, not allocated
+
+    let dir = TempDir::new("loaded-size-test").expect("temp dir");
+    let elf_path = dir.path.join("minimal.elf");
+    write_file(&elf_path, &elf).expect("write minimal.elf");
+    assert_eq!(loaded_size(&elf_path), 0x123);
+
+    let text_path = dir.path.join("not-elf.txt");
+    write_file(&text_path, b"not an executable").expect("write not-elf.txt");
+    let failure = std::panic::catch_unwind(|| loaded_size(&text_path))
+        .expect_err("a file that is not ELF fails");
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(
+        message.contains("is not an ELF64 little-endian file"),
+        "unexpected failure message: {message:?}"
     );
 }
 

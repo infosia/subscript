@@ -47,6 +47,9 @@ mod ship;
 
 pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, emit_c_files_with_options, EmitCFilesError, EmittedCFiles};
+#[cfg(unix)]
+#[doc(hidden)]
+pub use jit::dev_run_thread_count;
 pub use jit::{
     jit_bench, jit_bench_configured, jit_bench_with_warmup_floor, jit_compile_time, run_jit,
     run_jit_configured, run_jit_with_alloc_failure,

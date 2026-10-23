@@ -156,8 +156,9 @@ pub(super) fn execute_entry(
 /// compiler.md §190.1 rule 1: the `fork` happens only when the process
 /// has one thread. The caller selects this path from the same check;
 /// the check here is the last one before the `fork`. `settle` marks a run
-/// with a native library or a file provider, whose count above 1 is read
-/// again for up to 2 ms (rule 3).
+/// with a native library or a file provider. On Apple targets its count
+/// above 1 is read again for up to 2 ms; on Linux the count is read once
+/// and leaves out an exiting thread (rule 3).
 #[cfg(unix)]
 pub(super) fn execute_entry_retained(
     module: &JITModule,

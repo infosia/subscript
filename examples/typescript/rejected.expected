@@ -1,0 +1,12 @@
+error[S007]: bare `number` is rejected; there is no default numeric type — use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64)
+ --> examples/typescript/rejected.ts:27:16
+   |
+27 |   const count: number = 3;
+   |                ^
+   = rule: Bare `number` is rejected; sized numeric types are mandatory.
+   = TypeScript accepts:
+   |   const count: number = 3;
+   = subscript:
+   |   const count: i32 = 3;
+   = why: `number` is a 64-bit float with no C width, so every declaration names one of the sized types. (collisions.md C3)
+error: 1 error(s)

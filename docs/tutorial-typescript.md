@@ -26,7 +26,7 @@ program type-checks under stock `tsc --strict`.
 | `class` | Reference class (`new`, heap) or `@ValueType` value class (copied) |
 | `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
-| Garbage collection | Nothing to write by default: the host collects at a step boundary. `Context.free` and `using` are optimizations. Nothing collects unbidden |
+| Garbage collection | Nothing collects unbidden. The easiest start writes no release code and lets the host collect at a step boundary. `Context.free` and `using` are also available |
 | `throw` / `try` | The seven `Error`-family classes only; `finally` runs on each exit; faults are traps, which no `catch` or `finally` stops |
 | Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
@@ -323,12 +323,14 @@ Numeric `enum` also exists, and it lowers to a C enum.
 ## Memory is explicit
 
 No collector runs on its own. This is a design invariant, not a
-setting. The recommended pattern puts the release work on the host:
+setting. The language does not prefer one release style. For a
+TypeScript user, the style below is the easiest start, because the
+script code looks like TypeScript code. The host does the release work:
 
-1. **The script writes no release code by default.** A handle and a
-   generator release themselves. Every other value stays until a
-   collection. A program that never frees and never collects is
-   correct; it only holds more memory.
+1. **The script writes no release code.** A handle and a generator
+   release themselves. Every other value stays until a collection. A
+   program that never frees and never collects is correct; it only
+   holds more memory.
 2. **The host collects at a step boundary**, for a game once per
    frame. It calls `subscript_rt_ctx_collect` between script calls, at
    script depth 0, on the thread of the Context (§18.2d). The call is
@@ -336,11 +338,11 @@ setting. The recommended pattern puts the release work on the host:
    the live data, not with the allocations since the last collection
    (§22.2, §22.4 criterion 4).
 3. **`Context.free`, `using`, and a script `Context.collect()` are
-   optimizations.** Use them where a measured peak matters: a large
-   temporary, or a loop that allocates many objects in one call. A
-   host collection runs between calls, so it does not lower a peak
-   inside one call. Use `using` where a resource needs its release at
-   a known point.
+   available when you need them.** They help where a measured peak
+   matters: a large temporary, or a loop that allocates many objects
+   in one call. A host collection runs between calls, so it does not
+   lower a peak inside one call. Use `using` where a resource needs
+   its release at a known point.
 4. **A value that crosses to the host follows the host's protocol.**
    The script cannot free a host object behind a handle; the host
    keeps it valid (§142). Callback userdata that the host holds stays
@@ -364,7 +366,7 @@ Three calls release Context memory. Each runs only where it is
 written:
 
 - The host's `subscript_rt_ctx_collect` collects what script references
-  no longer reach. This is the default release path.
+  no longer reach. The style above uses only this call.
 - `Context.free(value)` releases one reference object at once.
 - `Context.collect()` in a script runs the same collection inside a
   script call.
@@ -389,7 +391,7 @@ until the host releases the Context. Each capturing callback allocates
 one environment, and the host collection at each step boundary
 reclaims the environments that nothing reaches.
 
-The optimization forms follow. `Context.free` ends an allocation at
+An example of these forms follows. `Context.free` ends an allocation at
 once, and a script `Context.collect()` reclaims inside the call. This
 program needs neither: a host collection after `main` reclaims `temp`
 and each `scratch`. They lower the peak of the call:

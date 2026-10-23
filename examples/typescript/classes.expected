@@ -1,0 +1,6 @@
+walk 3 m
+time 1.5 s
+start 0,0
+copy 9,0
+inside 1, outside 0
+ada at 5,5

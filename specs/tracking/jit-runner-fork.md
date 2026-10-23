@@ -362,3 +362,79 @@ a time, cost about 73 s debug and 57 s release of codegen + CLI wall.
 - G: `--nocapture` has no effect on phase 2: the parent prints a child's
   output only for a failure. A process that a phase 2 test starts
   inherits `SUBSCRIPT_TEST_PHASE_2_CHILD`.
+
+## Linux: a joined thread stays in the count
+
+Date: 2026-10-11. Revision: `3231e6d7`. Host: x86-64 Linux, 16 cores,
+kernel 7.0.0, glibc.
+
+### Fact
+
+The full gate at `3231e6d7` failed 3 phase 2 tests of
+`cli/tests/read_root.rs` in the debug step with the rule 3 error
+`(the process has 2 threads)`. The release step passed them. Three
+debug runs of that binary alone: 1 failed (2 tests), 2 passed. The
+failed test differs from run to run.
+
+### Cause
+
+In the phase 2 child, `subscript_bindgen::clangfe::parse` calls
+`clang_parseTranslationUnit`. libclang runs the parse on a new thread
+(`llvm::CrashRecoveryContext::RunSafelyOnThread`, 8 MiB stack) and
+joins it. The dev run starts after the join. gdb shows one
+`pthread_create` in the child, from that call; strace shows the thread
+exit before the `fork`. With `LIBCLANG_NOTHREADS=1`, gdb shows no
+`pthread_create`.
+
+### Measurement
+
+A C program starts and joins one thread, then counts
+`/proc/self/task` at once, 20,000 cycles. If the count is above 1, it
+reads each task's flags (`stat` field 9) and counts again until the
+count is 1.
+
+| Load | Count above 1 | Longest time to count 1 | Extra task without `PF_EXITING` |
+|---|---:|---:|---:|
+| none | 37 | 0.99 ms | 0 |
+| 32 busy processes | 421 | 11.97 ms | 0 |
+
+The 2 ms re-read does not cover the loaded case. In all 458 counts
+above 1, every extra task had `PF_EXITING` set. §190.1 rule 3 is
+amended: the Linux count leaves out a task with `PF_EXITING` set, and
+reads once.
+
+### Implementation
+
+Contract pin: `8c43b6d8`. Host: x86-64 Linux, 16 threads (`nproc`),
+kernel 7.0.0, glibc.
+
+- `thread_count` (Linux) counts the `/proc/self/task` entries whose
+  `stat` flags do not hold `PF_EXITING`. `stat_line_is_exiting` parses
+  field 9 after the last `)`. A `stat` file that cannot be opened or
+  read leaves its task out; a line that cannot be parsed gives `None`.
+- `thread_count_for_run` reads once on every target other than Apple.
+  The Apple form keeps the 2 ms re-read.
+- `subscript_codegen::dev_run_thread_count` (`#[doc(hidden)]`,
+  `cfg(unix)`) gives the count to the tests.
+
+§190.3 acceptance 1: `a_joined_thread_is_not_in_the_count_at_once`
+runs 5,000 start-and-join cycles. With the old count at the pin, no
+load, the count was above 1 in 31, 18, 17, 18, and 49 cycles of 5 runs.
+After the change it was 1 in every cycle of 5 debug and 5 release runs.
+The control `a_live_second_thread_is_in_the_count` reads 2. Cost: 0.21 s
+debug, 0.20 s release; the `dev_run_threads` binary is 0.27 s.
+
+§190.3 acceptance 2: `cargo test -p subscript-cli --test read_root`,
+debug, 20 runs, 32 busy processes.
+
+| Tree | Failed runs | Failed tests |
+|---|---:|---:|
+| pin `8c43b6d8` | 20 of 20 | 56 |
+| after | 0 of 20 | 0 |
+
+Each failure at the pin is the rule 3 error `(the process has 2
+threads)`. Wall per run under load: 6.6–18.9 s at the pin, 7.6–8.8 s
+after.
+
+Open: Apple targets keep the 2 ms re-read; no Apple run under load is
+measured.
