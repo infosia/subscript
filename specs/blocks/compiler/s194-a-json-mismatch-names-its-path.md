@@ -62,7 +62,9 @@ The three engines call the same runtime functions for each `JsonFn`.
    | an array with the wrong length for a `FixedArray` | `an array of length <N>` |
 
    A number that overflows `f64` (`1e400`) gives `a number out of
-   range`, because stdlib §13.3 rejects an infinity.
+   range`, because stdlib §13.3 rejects an infinity. For an integer
+   target, a number with a fraction gives `a non-integer number`, also
+   when it is outside the range (`12345678901234567890.5` for `i32`).
 6. The messages are this project's (§115.7 rule 6). An entry that
    prints one is not `js-comparable` (C6).
 
