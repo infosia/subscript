@@ -77,3 +77,17 @@ form gives S011, and `r436` pins it.
 Gate after the fixes: `gate full 15a10978 dirty:12 debug 2890/0/5
 release 2887/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
 `tools/hygiene.sh` exit 0.
+
+## Open items 1–3 (§195.11)
+
+Measured at the pin `5d5d7816` with `target/debug/subscript`, `tsc`
+5.9.2, and `node` v24.22.1.
+
+| Entry | `tsc` | subscript at the pin |
+|---|---|---|
+| `a374-undefined-nullish-null` | no error | S100 ×4 "the right operand expects `Box`, got `null`" |
+| `r437-undefined-conditional-cross-join` | no error | S100 "conditional branches have no common type" |
+| `r438-undefined-to-null-conversion` | TS2322 | S005 "nominal types are not interchangeable", with a "TypeScript accepts" block |
+
+`node` prints the `a374` golden: `false true`, `hit 7`, `true`,
+`true`, `true`.

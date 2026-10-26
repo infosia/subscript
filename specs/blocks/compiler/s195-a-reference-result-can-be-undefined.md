@@ -33,9 +33,12 @@ Problem, measured at the pin `ee65e587`:
    `T` is the set of `T | null` (C7, §123.1 rule 1). The two spellings
    have one representation: the nullable pointer of `T | null`.
 2. The two spellings are different types. Neither converts to the
-   other, as `tsc` requires. A `T` converts to both.
+   other, as `tsc` requires. A `T` converts to both. A conversion
+   between the spellings is rejected (S012).
 3. `T | null | undefined` is rejected (S011). A type that needs both
-   spellings has no representation.
+   spellings has no representation. A conditional with one branch of
+   each spelling gives this S011. A branch has the `null` spelling if
+   it is the `null` literal or a `T | null` value.
 4. **The result position.** `T | undefined` is legal as the declared
    result type of a module-level function declaration or of a class
    method. The method can be generic or be a method of a generic class.
@@ -101,9 +104,10 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
 
 1. `a ?? b` accepts a left operand of either spelling (§82.3). If `b`
    is nullable, the result has the type of `b`, with the spelling of
-   `b`. If `b` is the `null` literal, the form is rejected (S100), as
-   it is at the pin; `tsc` gives `T | null` there (open item 1). Else
-   the result is `T`.
+   `b`. If `b` is the `null` literal, the result is `T | null`, with
+   the `null` spelling, as `tsc` gives. Else the result is `T`. The
+   rule applies to an optional chain on the left and to a left operand
+   whose type holds a type parameter.
 2. An optional chain on a left operand of the `undefined` spelling has
    the two positions of §82.3.
 3. Template interpolation, `!`, and a truth position stay rejected for
@@ -170,6 +174,7 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
 | `return;` or the end of the body | S012 | `` a function whose result is `T \| undefined` returns with `return undefined;` `` |
 | `===` or `!==` across spellings, one operand a literal or the token | S012 | `` `===` compares a `null` and an `undefined` absence; use `==` `` |
 | `===` or `!==` across spellings, two values | S012 | `` `===` compares a `null` and an `undefined` absence; two absent values are not equal under JavaScript `` |
+| a conversion between spellings (§195.1 rule 2) | S012 | `` `T \| undefined` and `T \| null` do not convert to each other `` |
 | a scalar `T` | S011 | the existing S011 text, with `undefined` in place of `null` |
 | the boundary | S012 | `` a function that crosses the C boundary has no `T \| undefined` `` |
 | a function value | S100 | `` a function whose result is `T \| undefined` may only be called `` |
@@ -251,4 +256,36 @@ Open:
    that does not read the table gets the `null` spelling. At
    `15a10978` each nullable builtin result reads the table (`find`,
    `findLast`, `Map.get`, `Worker.poll`, `Inbox.wait`, `Inbox.poll`).
+
+### 195.11 The open items of the Phase Review
+
+*(Added 2026-10-27.)* This section closes open items 1, 2, and 3 of
+§195.10. Open item 4 stays open.
+
+1. Open item 1: §195.4 rule 1 gives `x ?? null` the type `T | null`.
+   `tsc` accepts the form, and `node` prints the `a374` golden.
+2. Open item 2: §195.1 rule 3 gives S011 for a conditional with one
+   branch of each spelling.
+3. Open item 3: the `tsc` model of the diagnostic renderer has two
+   relations. For a conversion, a nullable type converts to a nullable
+   type of the same spelling only. For a comparison, the two spellings
+   are comparable, as `tsc` accepts `u === n`.
+4. A conversion between the spellings has its own S012 diagnostic
+   (§195.8). At the pin it gave S005 with the nominal-type text and a
+   false "TypeScript accepts" block.
+
+Acceptance:
+
+1. Red first, at the pin `5d5d7816`: `a374-undefined-nullish-null` is
+   rejected with S100. `r437-undefined-conditional-cross-join` gives
+   S100, not S011. `r438-undefined-to-null-conversion` gives S005, not
+   S012.
+2. `a374` passes `tsc`, and its output under `node` equals its golden.
+3. A unit test shows that the S012 conversion diagnostic of `r438`
+   renders no "TypeScript accepts" block. Its control shows that the
+   cross-spelling `===` diagnostic of §195.3 still renders the block.
+4. A unit test of the `tsc` model calls each relation on the pair
+   `Box | undefined`, `Box | null`. The conversion relation gives false
+   in each direction. The comparison relation gives true.
+5. No golden moves.
 
