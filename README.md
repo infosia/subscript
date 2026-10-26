@@ -97,7 +97,8 @@ gaps to be closed later:
   walkthrough (a complete host is 31 lines of C).
 - [subscript for TypeScript developers](docs/tutorial-typescript.md) —
   what changes coming from TypeScript: sized integers, nominal and value
-  classes, `null` without `undefined`, explicit memory, `Error`-family
+  classes, `null` as the absent value and `undefined` as a function
+  result only, explicit memory, `Error`-family
   exceptions beside uncatchable traps, host-stepped `async`, coroutines,
   workers, and the complete rejection table.
 - [subscript for Rust embedders](docs/tutorial-rust.md) — embedding

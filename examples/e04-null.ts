@@ -1,6 +1,6 @@
 // example: e04-null
 // teaches: Represent absence as T | null and narrow it with != null before member access.
-// differs-from-typescript: C7 permits only Ref | null, with no undefined and no general unions.
+// differs-from-typescript: C7 permits Ref | null, Ref | undefined only as a function result, and no general unions.
 // see: corpus/accept/a17-null-story.ts, corpus/reject/r12-general-union.ts, corpus/reject/r13-undefined.ts, collisions.md C7
 
 // The language has one absent value. This program builds a two-node list and
@@ -11,8 +11,9 @@ class Node {
   // absent case that must be narrowed before member access.
   // Rejected alternative: a general union is S011, "unions are limited to
   // `Ref | null`"; corpus/reject/r12-general-union.ts pins it.
-  // Rejected alternative: Node | undefined is S012, "`undefined` is banned;
-  // the single null story is `null`"; corpus/reject/r13-undefined.ts pins it.
+  // Rejected alternative: a Node | undefined field is S012, "`T | undefined`
+  // is legal only as the result type of a function declaration or a class
+  // method"; corpus/reject/r13-undefined.ts pins it.
   next: Node | null;
 
   constructor(active: boolean, next: Node | null) {

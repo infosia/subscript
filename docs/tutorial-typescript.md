@@ -24,7 +24,7 @@ program type-checks under stock `tsc --strict`.
 | `number` | `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64` |
 | Structural types | Nominal types; same shape is not the same type |
 | `class` | Reference class (`new`, heap) or `@ValueType` value class (copied) |
-| `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
+| `undefined`, `T \| U` | `Ref \| null`, narrowed before use; `Ref \| undefined` as a function result only |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
 | Garbage collection | Nothing collects unbidden. The easiest start writes no release code and lets the host collect at a step boundary. `Context.free` and `using` are also available |
 | `throw` / `try` | The seven `Error`-family classes only; `finally` runs on each exit; faults are traps, which no `catch` or `finally` stops |
@@ -199,8 +199,9 @@ per argument list, which is how a call stays a direct call.
 
 ## `Ref | null` is the only union, and narrowing is mandatory
 
-There is no `undefined`. There is no optional property that means
-absence. The only union is `Ref | null`, where `Ref` is a reference
+There is no optional property that means absence. `undefined` has
+one narrow use, a function result (see below). The only union is
+`Ref | null`, where `Ref` is a reference
 class, an opaque handle, a function type, or a boundary struct
 pointer. A member access needs narrowing first. `i32 | null` is
 rejected: a scalar has no null. This is the control-flow narrowing TypeScript already
@@ -210,9 +211,7 @@ taught you. Here the compiler requires it.
 it evaluates `b` only when `a` is `null`.
 
 `==` and `!=` mean `===` and `!==` here; `==` and `===` are one operator.
-No coercion happens: `tsc` rejects comparisons of unrelated types, and the language has no `undefined`.
-Where JavaScript gives `undefined` (a miss of `Map.get` or `find`, a finished generator), this language gives `null`.
-Test such a value with `== null`, which gives the same result in both.
+No coercion happens: `tsc` rejects comparisons of unrelated types.
 See [`compiler.md` §144](../specs/blocks/compiler.md).
 
 ```ts
@@ -248,6 +247,72 @@ export function main(): void {
 ```text
 found=2 missing=-1
 ```
+
+### `Ref | undefined` as a function result
+
+A function declaration or a class method can declare the result
+`Ref | undefined`. This lets a script method return a miss as
+`Map.get` does. The body returns the miss with `return undefined;`.
+The `undefined` value has the same representation as `null`, so the
+form costs nothing at run time.
+
+`Map.get`, `find`, and `findLast` return `T | undefined`, as in
+TypeScript. A finished generator gives `null` for its value.
+
+```ts
+class Box {
+  v: i32;
+  constructor(v: i32) {
+    this.v = v;
+  }
+}
+
+class Shelf {
+  items: Box[] = [];
+  at(i: i32): Box | undefined {
+    if (i < 0 || i >= this.items.length) {
+      return undefined;
+    }
+    return this.items[i];
+  }
+}
+
+export function main(): void {
+  const shelf: Shelf = new Shelf();
+  shelf.items.push(new Box(4));
+  const hit = shelf.at(0);
+  if (hit !== undefined) {
+    print(`hit=${hit.v}`);
+  }
+  const counts = new Map<string, Box>();
+  const missing = shelf.at(5) === undefined;
+  const absent = counts.get("x") == null;
+  print(`missing=${missing} absent=${absent}`);
+}
+```
+
+```text
+hit=4
+missing=true absent=true
+```
+
+The two spellings are different types, as in `tsc`:
+
+- `Ref | undefined` is legal only as a function result, and as the
+  type of a local or an expression that holds that result. A field, a
+  parameter, an annotated local, an arrow result, and a type argument
+  reject it (S012).
+- The `undefined` token is legal only in `return undefined;` and in a
+  comparison with a nullable value.
+- A `Ref | undefined` value does not convert to `Ref | null`. Write
+  `x ?? null` or test `x === undefined` first.
+- `===` and `!==` between the two spellings are rejected (S012):
+  JavaScript gives `false` for `undefined === null`. `x == null` tests
+  either spelling, and gives the same result in both languages.
+- A function that crosses the C boundary has no `Ref | undefined`.
+  C has one null pointer.
+
+See [`compiler.md` §195](../specs/blocks/compiler/s195-a-reference-result-can-be-undefined.md).
 
 Optional chaining exists in two positions, because every other
 position produces `undefined`. `x?.v` is legal as the whole left
@@ -1314,7 +1379,7 @@ pinned corpus example, is in
 | S009 | A synchronous capturing lambda that escapes its defining function or the block of a counted capture; an async arrow that captures a `let`, `var`, parameter, or `this`; a `TaskGroup` outside one `const` local |
 | S010 | An exception form outside the decided surface: a `throw` of a value outside the `Error` family, `catch (e: any)` |
 | S011 | Unions beyond `Ref \| null`, and unnarrowed access |
-| S012 | `undefined` |
+| S012 | `undefined` outside a function result, `return undefined;`, and an absence comparison |
 | S013 | The `Promise` object surface, and an async handle never awaited |
 | S014 | Standard-library use outside the subset, and `f16` arithmetic |
 | S016 | A name with no declaration |
