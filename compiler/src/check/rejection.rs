@@ -932,6 +932,7 @@ rejection_classes! {
     Self::UndefinedResultFallThrough => (RuleCode::S012, Diverges(Divergence::UndefinedResultReturn)),
     Self::UndefinedReturnValue => (RuleCode::S012, TscRejects),
     Self::StrictEqualityAcrossSpellings => (RuleCode::S012, Diverges(Divergence::StrictEqualityAcrossSpellings)),
+    Self::ConversionAcrossSpellings => (RuleCode::S012, TscRejects),
     Self::UndefinedResultHostEntry => (RuleCode::S012, Diverges(Divergence::UndefinedResultBoundary)),
     Self::UndefinedResultFunctionValue => (RuleCode::S100, Diverges(Divergence::UndefinedResultFunctionValue)),
     Self::NullableNonReference => {

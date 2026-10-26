@@ -823,6 +823,11 @@ impl<'p> Checker<'p> {
             let right = self.check_expr(&binary.right, None, fx);
             let inner = self.non_null_type(&left.ty);
             let ty = if matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
+                && self.apparent_type(&right.ty) == Type::Null
+            {
+                // §195.4 rule 1: the `null` literal gives `T | null`.
+                Type::nullable(inner)
+            } else if matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
                 || self.is_unconstrained_type_parameter(&left.ty)
             {
                 self.generic_union(&inner, &right.ty)
@@ -875,6 +880,11 @@ impl<'p> Checker<'p> {
             }
             value_ty => {
                 let right = self.check_expr(right_ast, Some(&value_ty), fx);
+                // §195.4 rule 1: the `null` literal gives `T | null`.
+                if self.apparent_type(&right.ty) == Type::Null && self.allows_nullable(&value_ty) {
+                    let result_ty = Type::nullable(value_ty);
+                    return self.render_nullish_cond(plan.tests, plan.value, right, result_ty, pos);
+                }
                 self.require_assignable(
                     &right.ty.clone(),
                     &value_ty,
@@ -895,6 +905,10 @@ impl<'p> Checker<'p> {
         if matches!(self.apparent_type(&right.ty), Type::Nullable(right_inner, _) if *right_inner == *inner)
         {
             return right.ty.clone();
+        }
+        // §195.4 rule 1: the `null` literal gives `T | null`, as `tsc` gives.
+        if self.apparent_type(&right.ty) == Type::Null && self.allows_nullable(inner) {
+            return Type::nullable(inner.clone());
         }
         if self.apparent_type(&(right.ty)) != Type::Error {
             self.require_assignable(&right.ty.clone(), inner, right.pos.clone(), what);
@@ -1487,7 +1501,7 @@ impl<'p> Checker<'p> {
                 {
                     RejectionSite::BooleanRelationalOperand
                 } else if equality_operator.is_some()
-                    && (self.ts_erased_assignable(&lt, &rt) || self.ts_erased_assignable(&rt, &lt))
+                    && (self.ts_erased_comparable(&lt, &rt) || self.ts_erased_comparable(&rt, &lt))
                 {
                     RejectionSite::ErasedAssignableEquality
                 } else {
@@ -1540,13 +1554,18 @@ impl<'p> Checker<'p> {
         .then(|| ty.clone())
     }
 
-    /// Whether one branch is the `null` literal and the other has the
-    /// `undefined` spelling (compiler.md §195.1 rule 3).
+    /// Whether one branch has the `null` spelling and the other has the
+    /// `undefined` spelling (compiler.md §195.1 rule 3). A branch has the
+    /// `null` spelling if it is the `null` literal or a `T | null` value.
     fn joins_null_and_undefined(&self, left: &Type, right: &Type) -> bool {
-        let undefined = Some(crate::types::Absence::Undefined);
-        (self.apparent_type(left) == Type::Null && self.apparent_type(right).absence() == undefined)
-            || (self.apparent_type(right) == Type::Null
-                && self.apparent_type(left).absence() == undefined)
+        let null_spelled = |ty: &Type| {
+            let ty = self.apparent_type(ty);
+            ty == Type::Null || ty.absence() == Some(crate::types::Absence::Null)
+        };
+        let undefined_spelled =
+            |ty: &Type| self.apparent_type(ty).absence() == Some(crate::types::Absence::Undefined);
+        (null_spelled(left) && undefined_spelled(right))
+            || (null_spelled(right) && undefined_spelled(left))
     }
 
     // §146: equal types and legal nullable pairs have a symmetric join.

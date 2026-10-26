@@ -114,6 +114,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S011,
         16,
     ),
+    (
+        "r437-undefined-conditional-cross-join.ts",
+        RuleCode::S011,
+        17,
+    ),
+    ("r438-undefined-to-null-conversion.ts", RuleCode::S012, 15),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
@@ -686,7 +692,8 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
 }
 
 /// compiler.md §195.8: each `undefined` entry gives the message of its
-/// row, and each `tsc: accepts` entry carries a block that cites C7.
+/// row. Each `tsc: accepts` entry carries a block that cites C7, and each
+/// `tsc: rejects` entry carries no block.
 #[test]
 fn undefined_entries_give_their_section_195_rows() {
     let dir = corpus_dir().join("reject");
@@ -698,6 +705,8 @@ fn undefined_entries_give_their_section_195_rows() {
             .any(|line| line == "// questions: compiler.md §195")
             && file != "r13-undefined.ts"
             && file != "r436-undefined-conditional-null-join.ts"
+            && file != "r437-undefined-conditional-cross-join.ts"
+            && file != "r438-undefined-to-null-conversion.ts"
         {
             continue;
         }
@@ -715,13 +724,20 @@ fn undefined_entries_give_their_section_195_rows() {
             "{file}: `{}` does not contain `{substring}`",
             first.message
         );
-        let variant = first
-            .divergence
-            .expect("a tsc-accepted entry carries a block");
-        assert_eq!(variant.entry().collision, "C7", "{file}: {variant:?}");
+        if source
+            .lines()
+            .any(|line| line.starts_with("// tsc: rejects"))
+        {
+            assert_eq!(first.divergence, None, "{file}: `tsc` rejects, so no block");
+        } else {
+            let variant = first
+                .divergence
+                .expect("a tsc-accepted entry carries a block");
+            assert_eq!(variant.entry().collision, "C7", "{file}: {variant:?}");
+        }
         checked += 1;
     }
-    assert_eq!(checked, 16, "r13 and r422-r436");
+    assert_eq!(checked, 18, "r13 and r422-r438");
 }
 
 /// §79 rule 1 pairs a `tsc: accepts` reject entry with a divergence block.

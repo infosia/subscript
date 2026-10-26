@@ -226,7 +226,7 @@ token is legal in `return undefined;` of such a function and as an
 operand of an absence comparison. `===` and `!==` across the two
 spellings are rejected: `node` gives `false` there, also when both
 values are absent. Each other position of `| undefined` stays
-rejected. Accept: `a373`. Reject: `r422`–`r435`.
+rejected. Accept: `a373`, `a374`. Reject: `r422`–`r438`.
 
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in

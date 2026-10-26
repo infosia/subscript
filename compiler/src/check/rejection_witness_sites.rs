@@ -433,6 +433,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::UndefinedResultFallThrough,
     RejectionSite::UndefinedReturnValue,
     RejectionSite::StrictEqualityAcrossSpellings,
+    RejectionSite::ConversionAcrossSpellings,
     RejectionSite::UndefinedResultHostEntry,
     RejectionSite::UndefinedResultFunctionValue,
     RejectionSite::ConstructorTypeAnnotation,

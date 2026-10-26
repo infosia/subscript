@@ -465,6 +465,7 @@ pub(crate) enum RejectionSite {
     UndefinedResultFallThrough,
     UndefinedReturnValue,
     StrictEqualityAcrossSpellings,
+    ConversionAcrossSpellings,
     UndefinedResultHostEntry,
     UndefinedResultFunctionValue,
     ConstructorTypeAnnotation,

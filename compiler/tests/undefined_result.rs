@@ -3,7 +3,7 @@
 //! `let` reassignment.
 
 use subscript_compiler::divergence::Divergence;
-use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
+use subscript_compiler::{check_program, render_diagnostics, Diagnostic, RuleCode, SourceFile};
 
 const PRELUDE: &str = "class Box { v: i32 = 1; }\n\
     function pick(): Box | undefined { return undefined; }\n\
@@ -172,9 +172,78 @@ fn nullish_result_types_follow_the_right_operand() {
     // §195.1 rule 2: a `T | undefined` result does not convert to `T | null`.
     assert_row(
         "export function main(): void { const b: Box | null = maybe() ?? pick(); print(`${b == null}`); }",
-        RuleCode::S005,
-        "nominal types are not interchangeable: the initializer expects `Box | null`, got `Box | undefined`",
+        RuleCode::S012,
+        "`T | undefined` and `T | null` do not convert to each other: the initializer expects `Box | null`, got `Box | undefined`",
     );
+    // Right operand `null`: the result is `Box | null`, for each left spelling.
+    assert_accepted(
+        "export function main(): void { const b: Box | null = pick() ?? null; const c: Box | null = maybe() ?? null; print(`${b === null} ${c === null}`); }",
+    );
+    assert_accepted(
+        "export function main(): void { const b = pick() ?? null; print(`${b === null}`); }",
+    );
+    assert_row(
+        "export function main(): void { const b = pick() ?? null; print(`${b === undefined}`); }",
+        RuleCode::S012,
+        "`===` compares a `null` and an `undefined` absence; use `==`",
+    );
+}
+
+const CONVERSION: &str = "`T | undefined` and `T | null` do not convert to each other";
+
+/// compiler.md §195.11 rule 4: a conversion between the spellings is its
+/// own S012, in each direction and at each conversion site.
+#[test]
+fn a_conversion_between_spellings_is_s012() {
+    for body in [
+        "const u = pick(); const b: Box | null = u;",
+        "let n: Box | null = null; n = pick();",
+        "const f = (x: Box | null): void => {}; f(pick());",
+    ] {
+        assert_row(
+            &format!("export function main(): void {{ {body} }}"),
+            RuleCode::S012,
+            CONVERSION,
+        );
+    }
+    assert_row(
+        "function f(): Box | undefined { return maybe(); }",
+        RuleCode::S012,
+        CONVERSION,
+    );
+    // Control: a `T` converts to both spellings.
+    assert_accepted(
+        "function f(): Box | undefined { return new Box(); }
+function g(): Box | null { return new Box(); }",
+    );
+}
+
+/// compiler.md §195.11 acceptance 3: `tsc` rejects the conversion, so the
+/// diagnostic renders no "TypeScript accepts" block; the cross-spelling
+/// `===` of §195.3 keeps its block.
+#[test]
+fn the_conversion_diagnostic_renders_no_typescript_block() {
+    let render = |body: &str| {
+        let source = format!("{PRELUDE}{body}\n");
+        let files = [SourceFile::entry("main.ts", source)];
+        let diagnostics = check_program(&files).expect_err("the source is rejected");
+        assert_eq!(diagnostics[0].code, RuleCode::S012, "{body}");
+        render_diagnostics(&files, &diagnostics)
+    };
+    let conversion = render(
+        "export function main(): void { const u = pick(); const b: Box | null = u; print(`${b === null}`); }",
+    );
+    assert!(conversion.contains(CONVERSION), "{conversion}");
+    assert!(
+        !conversion.contains("= TypeScript accepts:"),
+        "{conversion}"
+    );
+    // Control: the same pair under `===` renders the block.
+    let comparison = render(
+        "export function main(): void { const u = pick(); const n = maybe(); print(`${u === n}`); }",
+    );
+    assert!(comparison.contains(CROSS_VALUES), "{comparison}");
+    assert!(comparison.contains("= TypeScript accepts:"), "{comparison}");
 }
 
 const CROSS_LITERAL: &str = "compares a `null` and an `undefined` absence; use `";
@@ -270,6 +339,25 @@ fn a_conditional_does_not_join_the_null_literal_with_the_undefined_spelling() {
     // Control: a `T` joins the `undefined` spelling.
     assert_accepted(
         "export function main(): void { const c = true; const x = c ? new Box() : pick(); print(`${x === undefined}`); }",
+    );
+}
+
+/// compiler.md §195.1 rule 3: a `T | null` value branch has the `null`
+/// spelling, as the `null` literal has.
+#[test]
+fn a_conditional_does_not_join_a_null_value_with_the_undefined_spelling() {
+    for join in ["c ? pick() : maybe()", "c ? maybe() : pick()"] {
+        assert_row(
+            &format!(
+                "export function main(): void {{ const c = true; const x = {join}; print(`${{x == null}}`); }}"
+            ),
+            RuleCode::S011,
+            "`T | null | undefined` has no representation",
+        );
+    }
+    // Control: two branches of one spelling join.
+    assert_accepted(
+        "export function main(): void { const c = true; const x = c ? maybe() : maybe(); const y = c ? pick() : pick(); print(`${x === null} ${y === undefined}`); }",
     );
 }
 

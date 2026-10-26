@@ -1538,5 +1538,6 @@ UndefinedResultBareReturn	s195-bare-return	S012	a function whose result is `T | 
 UndefinedResultFallThrough	s195-fall-through	S012	a function whose result is `T | undefined` returns with `return undefined;`; control reaches the end of the body
 UndefinedReturnValue	s195-return-undefined-null-result	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; this function returns `Box | null`, not `T | undefined`
 StrictEqualityAcrossSpellings	s195-strict-cross	S012	`===` compares a `null` and an `undefined` absence; use `==`
+ConversionAcrossSpellings	s195-cross-conversion	S012	`T | undefined` and `T | null` do not convert to each other: the initializer expects `Box | null`, got `Box | undefined`
 UndefinedResultHostEntry	s195-host-entry	S012	a function that crosses the C boundary has no `T | undefined`; entry export `pick` returns `Box | undefined`
 UndefinedResultFunctionValue	s195-function-value	S100	a function whose result is `T | undefined` may only be called

@@ -484,6 +484,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::UndefinedResultFallThrough => WitnessEntry::General { files: &["s195-fall-through"], variant: Some(Divergence::UndefinedResultReturn), reason: "" },
         RejectionSite::UndefinedReturnValue => WitnessEntry::General { files: &["s195-return-undefined-null-result"], variant: None, reason: "" },
         RejectionSite::StrictEqualityAcrossSpellings => WitnessEntry::General { files: &["s195-strict-cross"], variant: Some(Divergence::StrictEqualityAcrossSpellings), reason: "" },
+        RejectionSite::ConversionAcrossSpellings => WitnessEntry::General { files: &["s195-cross-conversion"], variant: None, reason: "" },
         RejectionSite::UndefinedResultHostEntry => WitnessEntry::General { files: &["s195-host-entry"], variant: Some(Divergence::UndefinedResultBoundary), reason: "" },
         RejectionSite::UndefinedResultFunctionValue => WitnessEntry::General { files: &["s195-function-value"], variant: Some(Divergence::UndefinedResultFunctionValue), reason: "" },
         RejectionSite::NullableNonReference => WitnessEntry::General { files: &["nullable-non-reference", "c-nullable-scalar", "c-value-nullable-array-reject"], variant: Some(Divergence::NullableNonReference), reason: "" },

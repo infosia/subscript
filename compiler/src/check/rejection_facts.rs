@@ -419,6 +419,16 @@ fn ast_field_on_normal_exit(body: &[swc_ecma_ast::Stmt], field: &str) -> Option<
     Some(!bad && fallthrough != Some(false))
 }
 
+/// The `tsc` relation that the model applies (compiler.md §195.11 rule 3).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum TsRelation {
+    /// Assignability: a nullable type converts to a nullable type of the
+    /// same absence spelling only.
+    Conversion,
+    /// Comparability: the two absence spellings are comparable.
+    Comparison,
+}
+
 impl super::Checker<'_> {
     /// TypeScript assignability after the prelude erases sized numeric types.
     pub(super) fn ts_erased_assignable(
@@ -426,7 +436,17 @@ impl super::Checker<'_> {
         from: &crate::types::Type,
         to: &crate::types::Type,
     ) -> bool {
-        self.ts_erased_assignable_inner(from, to, &mut Vec::new(), false)
+        self.ts_erased_assignable_inner(from, to, &mut Vec::new(), false, TsRelation::Conversion)
+    }
+
+    /// TypeScript comparability of two equality operands after the prelude
+    /// erases sized numeric types (compiler.md §195.11 rule 3).
+    pub(super) fn ts_erased_comparable(
+        &self,
+        from: &crate::types::Type,
+        to: &crate::types::Type,
+    ) -> bool {
+        self.ts_erased_assignable_inner(from, to, &mut Vec::new(), false, TsRelation::Comparison)
     }
 
     /// Nominal assignments compare the collected structural class signatures too.
@@ -435,7 +455,7 @@ impl super::Checker<'_> {
         from: &crate::types::Type,
         to: &crate::types::Type,
     ) -> bool {
-        self.ts_erased_assignable_inner(from, to, &mut Vec::new(), true)
+        self.ts_erased_assignable_inner(from, to, &mut Vec::new(), true, TsRelation::Conversion)
     }
 
     fn ts_erased_assignable_inner(
@@ -444,6 +464,7 @@ impl super::Checker<'_> {
         to: &crate::types::Type,
         seen: &mut Vec<(crate::types::Type, crate::types::Type)>,
         structural_classes: bool,
+        relation: TsRelation,
     ) -> bool {
         use crate::types::Type;
         // A constraint does not make a concrete value assignable to an unknown T.
@@ -466,13 +487,18 @@ impl super::Checker<'_> {
         seen.push((from.clone(), to.clone()));
         let assignable = match (&from, &to) {
             (Type::Enum(_), number) if self.apparent_type(number).is_numeric() => true,
-            (Type::Nullable(a, _), Type::Nullable(b, _)) => {
-                self.ts_erased_assignable_inner(a, b, seen, structural_classes)
+            // §195.11 rule 3: a conversion keeps the absence spelling; a
+            // comparison accepts both spellings.
+            (Type::Nullable(a, from_spelling), Type::Nullable(b, to_spelling)) => {
+                (relation == TsRelation::Comparison || from_spelling == to_spelling)
+                    && self.ts_erased_assignable_inner(a, b, seen, structural_classes, relation)
             }
             // §195.1 rule 2: `tsc` converts `null` to the `null` spelling only.
-            (Type::Null, Type::Nullable(_, spelling)) => *spelling == crate::types::Absence::Null,
+            (Type::Null, Type::Nullable(_, spelling)) => {
+                relation == TsRelation::Comparison || *spelling == crate::types::Absence::Null
+            }
             (a, Type::Nullable(b, _)) => {
-                self.ts_erased_assignable_inner(a, b, seen, structural_classes)
+                self.ts_erased_assignable_inner(a, b, seen, structural_classes, relation)
             }
             (Type::Array(a), Type::Array(b))
             | (Type::Set(a), Type::Set(b))
@@ -481,14 +507,14 @@ impl super::Checker<'_> {
             | (Type::IterResult(a), Type::IterResult(b))
             | (Type::Inbox(a), Type::Inbox(b))
             | (Type::Outbox(a), Type::Outbox(b)) => {
-                self.ts_erased_assignable_inner(a, b, seen, structural_classes)
+                self.ts_erased_assignable_inner(a, b, seen, structural_classes, relation)
             }
             (Type::FixedArray(a, n), Type::FixedArray(b, m)) => {
-                n == m && self.ts_erased_assignable_inner(a, b, seen, structural_classes)
+                n == m && self.ts_erased_assignable_inner(a, b, seen, structural_classes, relation)
             }
             (Type::Map(a, b), Type::Map(c, d)) | (Type::Worker(a, b), Type::Worker(c, d)) => {
-                self.ts_erased_assignable_inner(a, c, seen, structural_classes)
-                    && self.ts_erased_assignable_inner(b, d, seen, structural_classes)
+                self.ts_erased_assignable_inner(a, c, seen, structural_classes, relation)
+                    && self.ts_erased_assignable_inner(b, d, seen, structural_classes, relation)
             }
             (Type::Class(a), Type::Class(b)) => match (
                 self.instance_arguments.get(a),
@@ -498,7 +524,13 @@ impl super::Checker<'_> {
                     a == b
                         && xs.len() == ys.len()
                         && xs.iter().zip(ys).all(|(x, y)| {
-                            self.ts_erased_assignable_inner(x, y, seen, structural_classes)
+                            self.ts_erased_assignable_inner(
+                                x,
+                                y,
+                                seen,
+                                structural_classes,
+                                relation,
+                            )
                         })
                 }
                 _ if structural_classes => {
@@ -516,6 +548,7 @@ impl super::Checker<'_> {
                                         &target.ty,
                                         seen,
                                         structural_classes,
+                                        relation,
                                     )
                             })
                     }) && self.class_sigs[b.0].methods.iter().all(|(name, target)| {
@@ -536,6 +569,7 @@ impl super::Checker<'_> {
                                                 x.ty(),
                                                 seen,
                                                 structural_classes,
+                                                relation,
                                             )
                                         })
                                         && self.ts_erased_assignable_inner(
@@ -543,6 +577,7 @@ impl super::Checker<'_> {
                                             &target.ret,
                                             seen,
                                             structural_classes,
+                                            relation,
                                         )
                                 })
                     })
@@ -552,7 +587,7 @@ impl super::Checker<'_> {
             (Type::Func(a), Type::Func(b)) => {
                 a.params.len() == b.params.len()
                     && a.params.iter().zip(&b.params).all(|(x, y)| {
-                        self.ts_erased_assignable_inner(y, x, seen, structural_classes)
+                        self.ts_erased_assignable_inner(y, x, seen, structural_classes, relation)
                     })
                     && (self.apparent_type(&b.ret) == Type::Void
                         || self.ts_erased_assignable_inner(
@@ -560,6 +595,7 @@ impl super::Checker<'_> {
                             &b.ret,
                             seen,
                             structural_classes,
+                            relation,
                         ))
             }
             _ => false,

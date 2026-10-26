@@ -260,3 +260,118 @@ fn s180_finally_keeps_enum_switch_return_coverage_site() {
     ));
     assert_eq!(finalizer, plain);
 }
+
+type CheckerObserver = Box<dyn Fn(&super::Checker<'_>)>;
+
+thread_local! {
+    static OBSERVER: std::cell::RefCell<Option<CheckerObserver>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Calls the observer that the current test installed, after the bodies
+/// of the program are checked.
+pub(super) fn observe_checker(checker: &super::Checker<'_>) {
+    OBSERVER.with_borrow(|observer| {
+        if let Some(observer) = observer {
+            observer(checker);
+        }
+    });
+}
+
+/// Checks `source` and gives what `observe` reads from each checker run.
+fn observed<T: 'static>(
+    source: &str,
+    observe: impl Fn(&super::Checker<'_>) -> T + 'static,
+) -> Vec<T> {
+    let results = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = std::rc::Rc::clone(&results);
+    OBSERVER.with_borrow_mut(|observer| {
+        *observer = Some(Box::new(move |checker| {
+            sink.borrow_mut().push(observe(checker));
+        }));
+    });
+    let checked = check_program(&[SourceFile::entry("fact.ts", source)]);
+    OBSERVER.with_borrow_mut(|observer| *observer = None);
+    checked.expect("the observed source must check");
+    std::rc::Rc::try_unwrap(results)
+        .ok()
+        .expect("the observer is dropped")
+        .into_inner()
+}
+
+/// The pair `Box | undefined`, `Box | null` of the checked program.
+fn spelled_boxes(checker: &super::Checker<'_>) -> (crate::types::Type, crate::types::Type) {
+    use crate::types::{Absence, ClassId, Type};
+    let index = checker
+        .classes
+        .iter()
+        .position(|class| class.name == "Box")
+        .expect("the program declares `Box`");
+    let class = Type::Class(ClassId(index));
+    (
+        Type::nullable_spelled(class.clone(), Absence::Undefined),
+        Type::nullable_spelled(class, Absence::Null),
+    )
+}
+
+const BOX_PROGRAM: &str = "class Box { v: i32 = 1; }\nexport function main(): void {}\n";
+
+#[test]
+fn the_tsc_model_converts_within_a_spelling_and_compares_across_spellings() {
+    // compiler.md §195.11 rule 3: `tsc` rejects the conversion (TS2322) in
+    // each direction, and accepts `u === n`.
+    let runs = observed(BOX_PROGRAM, |checker| {
+        let (undefined, null) = spelled_boxes(checker);
+        [
+            checker.ts_erased_assignable(&undefined, &null),
+            checker.ts_erased_assignable(&null, &undefined),
+            checker.ts_nominal_assignable(&undefined, &null),
+            checker.ts_nominal_assignable(&null, &undefined),
+            checker.ts_erased_comparable(&undefined, &null),
+            checker.ts_erased_comparable(&null, &undefined),
+            // Control: the same spelling converts.
+            checker.ts_erased_assignable(&undefined, &undefined),
+            checker.ts_erased_assignable(&null, &null),
+        ]
+    });
+    assert!(!runs.is_empty());
+    for run in runs {
+        assert_eq!(
+            run,
+            [false, false, false, false, true, true, true, true],
+            "conversion x4, comparison x2, same-spelling controls x2"
+        );
+    }
+}
+
+#[test]
+fn a_conversion_across_spellings_is_a_spelling_mismatch_only() {
+    use crate::types::Type;
+    // compiler.md §195.1 rule 2: the pair differs only in the spelling.
+    let runs = observed(BOX_PROGRAM, |checker| {
+        let (undefined, null) = spelled_boxes(checker);
+        let class = checker.non_null_type(&null);
+        [
+            checker.converts_across_spellings(&undefined, &null),
+            checker.converts_across_spellings(&null, &undefined),
+            // Controls: one spelling, a non-nullable side, and another inner type.
+            checker.converts_across_spellings(&null, &null),
+            checker.converts_across_spellings(&undefined, &class),
+            checker.converts_across_spellings(&class, &null),
+            checker.converts_across_spellings(&undefined, &Type::nullable(Type::Str)),
+        ]
+    });
+    assert!(!runs.is_empty());
+    for run in runs {
+        assert_eq!(run, [true, true, false, false, false, false]);
+    }
+}
+
+#[test]
+fn a_conversion_across_spellings_has_its_own_site_without_a_block() {
+    rejected(
+        "class Box { v: i32 = 1; }\nfunction pick(): Box | undefined { return undefined; }\nexport function main(): void { const b: Box | null = pick(); print(`${b === null}`); }",
+        "ConversionAcrossSpellings",
+        None,
+    );
+}

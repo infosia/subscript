@@ -251,6 +251,20 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Whether `from` and `to` are nullable types of different absence
+    /// spellings, and `from` converts to `to` under the spelling of `to`
+    /// (compiler.md §195.1 rule 2).
+    pub(crate) fn converts_across_spellings(&self, from: &Type, to: &Type) -> bool {
+        match (self.apparent_type(from), self.apparent_type(to)) {
+            (Type::Nullable(inner, from_spelling), Type::Nullable(_, to_spelling))
+                if from_spelling != to_spelling =>
+            {
+                self.assignable(&Type::nullable_spelled(*inner, to_spelling), to)
+            }
+            _ => false,
+        }
+    }
+
     /// Emits the rule-specific diagnostic for a failed assignment.
     pub(crate) fn require_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
         if self.assignable(from, to) {
@@ -338,6 +352,17 @@ impl<'p> Checker<'p> {
     fn report_not_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
         let from_n = self.type_name(from);
         let to_n = self.type_name(to);
+        if self.converts_across_spellings(from, to) {
+            self.reject_subset(
+                RejectionSite::ConversionAcrossSpellings,
+                format!(
+                    "`T | undefined` and `T | null` do not convert to each other: {} expects `{}`, got `{}`",
+                    what, to_n, from_n
+                ),
+                pos,
+            );
+            return;
+        }
         let class_like = |t: &Type| match t {
             Type::Class(_) | Type::Map(..) | Type::Set(_) => true,
             Type::Nullable(inner, _) => {

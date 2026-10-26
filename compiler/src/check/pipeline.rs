@@ -445,6 +445,8 @@ fn run_with_effects(
     }
     let local_start = ck.diags.len();
     ck.check_local_assignments();
+    #[cfg(test)]
+    super::rejection_fact_tests::observe_checker(&ck);
     // The opaque merge removes repeated generic reads from concrete bodies (§135 rule 3).
     ck.instance_diagnostic_ranges
         .push(local_start..ck.diags.len());

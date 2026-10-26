@@ -9748,6 +9748,13 @@ function pick(): Box | undefined { return undefined; }
 export function main(): void { print(`${pick() === null}`); }
 END FILE
 END PROGRAM
+PROGRAM	s195-cross-conversion	TS2322		0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | undefined { return undefined; }
+export function main(): void { const b: Box | null = pick(); print(`${b === null}`); }
+END FILE
+END PROGRAM
 PROGRAM	s195-host-entry			0
 FILE	E	main.ts
 class Box { v: i32 = 1; }
