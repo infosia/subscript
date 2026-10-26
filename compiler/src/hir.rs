@@ -23,6 +23,7 @@ pub(crate) use effects::NarrowingEffects;
 mod intrinsics;
 mod shared;
 mod sites;
+pub(crate) mod spelling;
 mod text;
 pub use crate::lifetime::LifetimeOperand;
 

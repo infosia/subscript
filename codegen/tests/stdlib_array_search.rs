@@ -90,12 +90,12 @@ fn callbacks_keep_order_original_values_null_misses_and_depth_one() {
     agree(
         r#"
 class C { v: i32; constructor(v: i32) { this.v = v; } }
-function forward(cs: C[], f: (c: C, i: i32) => boolean): C | null { return cs.find(f); }
-function backward(cs: C[], f: (c: C, i: i32) => boolean): C | null { return cs.findLast(f); }
+function forward(cs: C[], f: (c: C, i: i32) => boolean): C | undefined { return cs.find(f); }
+function backward(cs: C[], f: (c: C, i: i32) => boolean): C | undefined { return cs.findLast(f); }
 function index(cs: C[], f: (c: C, i: i32) => boolean): i32 { return cs.findLastIndex(f); }
 export function main(): void {
   const cs: C[] = [new C(1), new C(2), new C(3)];
-  print(`${cs.find((c: C): boolean => false) === null} ${cs.findLast((c: C): boolean => false) === null}`);
+  print(`${cs.find((c: C): boolean => false) === undefined} ${cs.findLast((c: C): boolean => false) === undefined}`);
   const order: i32[] = [0];
   const found = backward(cs, (c: C, i: i32): boolean => { order[0] = order[0] * 10 + i; cs[i] = new C(9); return i === 1; });
   print(`${order[0]} ${(found ?? new C(-1)).v} ${cs[1].v}`);
@@ -109,7 +109,7 @@ export function main(): void {
   print(`${shallow.length} ${shallow[0].join(",")} ${shallow[1].join(",")}`);
   const refs: C[][] = [cs];
   print(`${(refs.find((v: C[]): boolean => true) ?? []).length}`);
-  print(`${refs.findLast((v: C[]): boolean => false) === null}`);
+  print(`${refs.findLast((v: C[]): boolean => false) === undefined}`);
   try { cs.findLast((c: C): boolean => { throw new Error("predicate"); }); }
   catch (e) { if (e instanceof Error) { print(e.message); } }
   try { [1].flatMap((v: i32): i32[] => { throw new Error("mapping"); }); }

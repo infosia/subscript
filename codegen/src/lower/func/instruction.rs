@@ -300,7 +300,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 } else if matches!(
                     (operand_types.first(), result_ty.as_ref()),
                     (
-                        Some(l::ValueType::Data(Type::Nullable(source))),
+                        Some(l::ValueType::Data(Type::Nullable(source, _))),
                         Some(l::ValueType::Data(Type::Class(target)))
                     ) if matches!(source.as_ref(), Type::Class(source)
                         if source == target && self.is_value_class(&Type::Class(*target)))

@@ -272,7 +272,7 @@ VoidTypeOutsideResult	void-type-outside-result	S100	`void` is only allowed as a 
 VoidTypeOutsideResult	c-corpus-r337-void-array	S100	`void` is only allowed as a return, generator element, or Promise result type
 AnyTypeAnnotation	c-corpus-r08-bare-number	S007	bare `number` is rejected; there is no default numeric type — use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64)
 UnknownTypeAnnotation	c-corpus-r01-any	S001	`any` is not part of the language
-UndefinedKeywordAnnotation	c-undefined-type	S012	`undefined` is banned; the single null story is `null`
+UndefinedKeywordAnnotation	c-undefined-type	S012	`undefined` is legal only in `T | undefined`, the result type of a function declaration or a class method
 ObjectTypeOutsideBoundary	c-object-type	S011	`object` is a boundary-only type; it is not available to general declarations
 QualifiedSourceTypeName	c-qualified	S100	qualified type names are not decided
 WorkerTypeArgumentsMissing	c-worker-missing	S100	generic reference class `Worker` requires explicit type arguments
@@ -319,7 +319,7 @@ TypeNameUnknown	c-lib-interface	S016	unknown type name `ReadonlyArray`
 TypeNameUnknown	c-unknown-type	S016	unknown type name `Missing`
 IntersectionTypeAnnotation	intersection-type-annotation	S100	intersection types are not in the decided surface
 IntersectionTypeAnnotation	c-intersection	S100	intersection types are not in the decided surface
-UndefinedUnionMember	c-undefined-union	S012	`undefined` is banned; the single null story is `null`
+UndefinedUnionMember	c-undefined-union	S012	`T | undefined` is legal only as the result type of a function declaration or a class method
 NullableNonReference	nullable-non-reference	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
 NullableNonReference	c-nullable-scalar	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
 NullableNonReference	c-value-nullable-array-reject	S011	unions are limited to `Ref | null`; `i32[] | null` is not a reference type union
@@ -352,8 +352,8 @@ OptionalComputedMember	a-s219	S100	an optional chain cannot use `?.[i]`; narrow 
 OptionalMethodCall	a-s220	S100	an optional call through `?.()` is not in the decided surface
 OptionalFunctionCall	a-s221	S100	an optional call through `?.()` is not in the decided surface
 OptionalPrivateMember	a-s222	S100	private names are not in the decided surface
-UndefinedEqualityPair	a-s224	S012	`undefined` is legal only in a presence test on an absence-capable descriptor member
-UndefinedEqualityNonMember	a-s225	S012	`undefined` is legal only in a presence test on an absence-capable descriptor member
+UndefinedEqualityPair	a-s224	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member
+UndefinedEqualityNonMember	a-s225	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member
 BinaryMixedNumericTypes	a-s227	S007	mixed-type arithmetic (`i64` and `i32`) requires an explicit `as` conversion
 ConditionalNonBooleanCondition	a-s229	S100	condition must be boolean, got `i32`
 AsyncGeneratorYield	async-generator-function	S100	`yield` is only available inside a `function*` coroutine
@@ -628,8 +628,8 @@ UnionUnknownTypeMember	c-union-unknown-rejected	S011	unions are limited to `Ref 
 AggregateAnnotationLimit	c-fixed-layout-pattern	S100	`FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes
 AssignmentLiteralAlias	c-assign-string-enum	S100	type mismatch: the initializer expects `B`, got `A`
 DisjointLiteralAliasAssignment	c-alias-assignment-rejected	S100	type mismatch: the initializer expects `B`, got `A`
-UndefinedOptionalMember	c-corpus-r117-explicit-undefined-member	S012	`undefined` is banned; the single null story is `null`
-UndefinedValue	a-s114	S012	`undefined` is banned; the single null story is `null`
+UndefinedOptionalMember	c-corpus-r117-explicit-undefined-member	S012	`undefined` is legal only in `return undefined;` and in an absence comparison
+UndefinedValue	a-s114	S012	`undefined` is legal only in `return undefined;` and in an absence comparison
 LocalAggregateFrameLimit	c-corpus-r67-frame-local-boundary-too-large	S100	local aggregate storage makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
 NullableCall	a-s236	S100	type `((i32) => i32) | null` is not callable
 NullableCall	c-corpus-r249-unnarrowed-nullable-field-call	S100	type `((i32) => i32) | null` is not callable
@@ -1532,3 +1532,11 @@ TextModuleImportForm	s193-bare	S100	import named functions from subscript:text; 
 TextModuleImportForm	s193-namespace	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 TextModuleImportForm	s193-reexport	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 TextModuleFunctionValue	s193-function-value	S100	`graphemeLength` from subscript:text can only be called; import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
+UndefinedNullUnion	s195-null-undefined-union	S011	`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`
+UndefinedSpellingOutsideValue	s195-nested-spelling	S012	the `undefined` spelling is legal only as the whole type of a value, of a local, or of a function result
+UndefinedResultBareReturn	s195-bare-return	S012	a function whose result is `T | undefined` returns with `return undefined;`, not `return;`
+UndefinedResultFallThrough	s195-fall-through	S012	a function whose result is `T | undefined` returns with `return undefined;`; control reaches the end of the body
+UndefinedReturnValue	s195-return-undefined-null-result	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; this function returns `Box | null`, not `T | undefined`
+StrictEqualityAcrossSpellings	s195-strict-cross	S012	`===` compares a `null` and an `undefined` absence; use `==`
+UndefinedResultHostEntry	s195-host-entry	S012	a function that crosses the C boundary has no `T | undefined`; entry export `pick` returns `Box | undefined`
+UndefinedResultFunctionValue	s195-function-value	S100	a function whose result is `T | undefined` may only be called

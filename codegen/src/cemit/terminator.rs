@@ -132,7 +132,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         for field in &definition.fields {
             let field_address = format!("({address})->d{}", field.id.0);
             match &field.ty {
-                Type::Nullable(inner) => {
+                Type::Nullable(inner, _) => {
                     let Type::Class(target) = inner.as_ref() else {
                         continue;
                     };

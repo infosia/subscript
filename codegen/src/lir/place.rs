@@ -507,9 +507,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .emit(
                     l::InstructionKind::BoxBoundaryValue { payload: extension },
                     vec![value],
-                    Some(l::ValueType::Data(Type::Nullable(Box::new(Type::Class(
-                        header,
-                    ))))),
+                    Some(l::ValueType::Data(Type::Nullable(
+                        Box::new(Type::Class(header)),
+                        subscript_compiler::Absence::Null,
+                    ))),
                     false,
                     vec![l::Trap {
                         kind: l::TrapKind::Allocation,
@@ -664,7 +665,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }));
             }
         }
-        if let l::ValueType::Data(Type::Nullable(target)) = &expected {
+        if let l::ValueType::Data(Type::Nullable(target, _)) = &expected {
             if let Type::Class(target) = target.as_ref() {
                 let boundary = self
                     .lowering

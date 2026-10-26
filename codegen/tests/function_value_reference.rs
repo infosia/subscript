@@ -30,7 +30,7 @@ fn nullable_map_values_and_field_reads_keep_their_evaluation_order() {
         class H { cb: (x: i32) => i32 = first; }
         function replace(h: H): i32 { h.cb = second; return 3; }
         function read(m: Map<string, ((x: i32) => i32) | null>, key: string): void {
-            const f = m.get(key);
+            const f = m.getOr(key, null);
             print(`${f === null} ${f !== null ? f(2) : -1}`);
         }
         export function main(): void {
@@ -46,7 +46,7 @@ fn nullable_map_values_and_field_reads_keep_their_evaluation_order() {
             print(`${fallback !== null ? fallback(2) : -1}`);
             const keys: string[] = ["hit", "miss", "null", "hit"];
             for (const key of keys) {
-                const f = m.get(key);
+                const f = m.getOr(key, null);
                 print(`${f === null} ${f !== null ? f(2) : -1}`);
             }
         }

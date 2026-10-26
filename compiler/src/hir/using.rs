@@ -38,7 +38,7 @@ impl UsingBinding {
     /// Whether the binding can hold `null` (`compiler.md` §97.1 rule 4).
     #[must_use]
     pub fn nullable(&self) -> bool {
-        matches!(self.ty, Type::Nullable(_))
+        matches!(self.ty, Type::Nullable(_, _))
     }
 
     /// The hook call of the binding with its guards: the active flag first,
@@ -62,7 +62,7 @@ impl UsingBinding {
             pos: pos.clone(),
         };
         let receiver_type = match &self.ty {
-            Type::Nullable(inner) => inner.as_ref().clone(),
+            Type::Nullable(inner, _) => inner.as_ref().clone(),
             other => other.clone(),
         };
         let mut hook = Stmt::Expr(Expr {
@@ -150,7 +150,10 @@ mod tests {
     #[test]
     fn a_switch_binding_tests_its_flag_before_its_null_test() {
         let pos = Pos::new("using.ts", 4, 5);
-        let ty = Type::Nullable(Box::new(Type::Class(ClassId(2))));
+        let ty = Type::Nullable(
+            Box::new(Type::Class(ClassId(2))),
+            crate::types::Absence::Null,
+        );
         let binding = UsingBinding::new(
             "storage".to_string(),
             ty.clone(),

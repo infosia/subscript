@@ -346,6 +346,14 @@ impl Divergence {
             Divergence::DeleteProperty => builtin_calls::DELETE_PROPERTY,
             Divergence::OptionalMethodCall => builtin_calls::OPTIONAL_METHOD_CALL,
             Divergence::OptionalFunctionCall => builtin_calls::OPTIONAL_FUNCTION_CALL,
+            Divergence::UndefinedResultPosition => undefined_result::UNDEFINED_RESULT_POSITION,
+            Divergence::UndefinedNullUnion => undefined_result::UNDEFINED_NULL_UNION,
+            Divergence::UndefinedSpellingOutsideValue => undefined_result::UNDEFINED_SPELLING_OUTSIDE_VALUE,
+            Divergence::UndefinedResultReturn => undefined_result::UNDEFINED_RESULT_RETURN,
+            Divergence::StrictEqualityAcrossSpellings => undefined_result::STRICT_EQUALITY_ACROSS_SPELLINGS,
+            Divergence::UndefinedResultBoundary => undefined_result::UNDEFINED_RESULT_BOUNDARY,
+            Divergence::UndefinedResultFunctionValue => undefined_result::UNDEFINED_RESULT_FUNCTION_VALUE,
+            Divergence::NullableElementSearch => undefined_result::NULLABLE_ELEMENT_SEARCH,
             Divergence::UndefinedEqualityPair => builtin_calls::UNDEFINED_EQUALITY_PAIR,
             Divergence::UndefinedEqualityNonMember => builtin_calls::UNDEFINED_EQUALITY_NON_MEMBER,
             Divergence::BareYieldNonVoid => builtin_calls::BARE_YIELD_NON_VOID,
@@ -717,6 +725,9 @@ impl Divergence {
 
 #[path = "builtin_calls.rs"]
 mod builtin_calls;
+
+#[path = "undefined_result.rs"]
+mod undefined_result;
 
 #[path = "surface_forms.rs"]
 mod surface_forms;

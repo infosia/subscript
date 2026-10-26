@@ -375,29 +375,6 @@ console.log(value === 0.7085450778517304 ? "context-sequence" : "host-sequence")
         javascript_outcome: WitnessOutcome::Value("undefined\n"),
     },
     DivergenceWitness {
-        id: "q24-map-get-miss",
-        surface: "`Map.get` miss for a reference-class value",
-        q_rule: "Q24",
-        summary: "subscript returns null where JS returns undefined.",
-        subscript: r#"class Box {
-  value: i32;
-  constructor(value: i32) {
-    this.value = value;
-  }
-}
-
-export function main(): void {
-  const values: Map<string, Box> = new Map<string, Box>();
-  const missing = values.get("missing");
-  print(`${missing === null}`);
-}
-"#,
-        javascript: r#"console.log(`${new Map().get("missing") === null}`);
-"#,
-        subscript_outcome: WitnessOutcome::Value("true\n"),
-        javascript_outcome: WitnessOutcome::Value("false\n"),
-    },
-    DivergenceWitness {
         id: "q11-generator-done-value",
         surface: "`IteratorResult.value` after generator completion",
         q_rule: "Q11",
@@ -768,6 +745,18 @@ mod tests {
             }
             ("Map<K, V with no shared nullable-pointer form>", "get(key)") => {
                 "export function main(): void {\n  const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>();\n  map.get(1);\n}\n"
+                    .to_string()
+            }
+            ("Map<K, V | null>", "get(key)") => {
+                "class Box { v: i32 = 1; }\nexport function main(): void {\n  const map: Map<i32, Box | null> = new Map<i32, Box | null>();\n  map.get(1);\n}\n"
+                    .to_string()
+            }
+            ("(T | null)[]", "find") => {
+                "class Box { v: i32 = 1; }\nexport function main(): void {\n  const values: (Box | null)[] = [null];\n  values.find((value: Box | null): boolean => value === null);\n}\n"
+                    .to_string()
+            }
+            ("(T | null)[]", "findLast") => {
+                "class Box { v: i32 = 1; }\nexport function main(): void {\n  const values: (Box | null)[] = [null];\n  values.findLast((value: Box | null): boolean => value === null);\n}\n"
                     .to_string()
             }
             ("FixedArray<T, N>", "non-callback T[] methods") => {

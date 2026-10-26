@@ -456,7 +456,7 @@ mod tests {
                 "   |\n",
                 "12 | twelve\n",
                 "   |    ^\n",
-                "   = rule: `undefined` is banned; the single null story is `null`.\n",
+                "   = rule: `T | undefined` is legal only as the result type of a function declaration or a class method; the `undefined` token only returns or compares an absence.\n",
                 "error: 2 error(s)",
             )
         );

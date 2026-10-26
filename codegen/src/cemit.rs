@@ -273,7 +273,7 @@ fn collect_aggregates(ty: &Type, result: &mut Vec<Type>) {
                 result.push(ty.clone());
             }
         }
-        Type::Class(_) | Type::Func(_) | Type::Array(_) | Type::Nullable(_) => {}
+        Type::Class(_) | Type::Func(_) | Type::Array(_) | Type::Nullable(_, _) => {}
         _ => {}
     }
 }
@@ -1217,8 +1217,20 @@ mod tests {
             (l::ValueType::Data(Type::Outbox(Box::new(Type::I32))), 0),
             (l::ValueType::Data(function()), 2),
             (l::ValueType::Data(reference), 1),
-            (l::ValueType::Data(Type::Nullable(Box::new(function()))), 2),
-            (l::ValueType::Data(Type::Nullable(Box::new(boundary))), 1),
+            (
+                l::ValueType::Data(Type::Nullable(
+                    Box::new(function()),
+                    subscript_compiler::Absence::Null,
+                )),
+                2,
+            ),
+            (
+                l::ValueType::Data(Type::Nullable(
+                    Box::new(boundary),
+                    subscript_compiler::Absence::Null,
+                )),
+                1,
+            ),
         ];
         let iterator_kinds = [
             l::ForOfKind::ArrayValues,

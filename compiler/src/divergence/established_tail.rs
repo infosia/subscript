@@ -247,9 +247,9 @@ pub(super) const GENERATORDONEVALUE: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const REFERENCESEARCHMISS: DivergenceEntry = DivergenceEntry {
-                ts: "const missing = values.get(key); print(`${missing === undefined}`);",
-                subscript: "const missing = values.get(key); print(`${missing == null}`);",
-                why: "JavaScript undefined becomes null for reference search misses and finished nullable-reference generators. Use == null to test absence in both languages.",
+                ts: "const missing = values.get(key); print(`${missing === null}`);",
+                subscript: "const missing = values.get(key); print(`${missing === undefined}`);",
+                why: "A search miss has the `undefined` spelling, so `=== null` is rejected. A finished nullable generator holds null; test it with `== null`.",
                 collision: "C22",
             };
 
@@ -395,7 +395,7 @@ pub(super) const GENERALUNIONANDUNDEFINED: DivergenceEntry = DivergenceEntry {
     subscript: "class Cell { value: i32 = 0; }\n\
                             let maybe: Cell | null = null;",
     why: "A general union has no single C layout, so the one union form is a \
-                      nullable reference and `undefined` stays out.",
+                      nullable reference; `undefined` spells only a function result.",
     collision: "C7",
 };
 

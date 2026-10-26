@@ -308,7 +308,7 @@ impl<'p> Checker<'p> {
                 } else {
                     RejectionSite::UndefinedValue
                 },
-                "`undefined` is banned; the single null story is `null`",
+                "`undefined` is legal only in `return undefined;` and in an absence comparison",
                 pos.clone(),
             );
             return self.err_expr(pos);
@@ -352,7 +352,8 @@ impl<'p> Checker<'p> {
                 self.reject_subset(
                     if matches!(
                         ctx.map(|ty| self.apparent_type(ty)),
-                        Some(Type::Object | Type::Class(_) | Type::Error) | Some(Type::Nullable(_))
+                        Some(Type::Object | Type::Class(_) | Type::Error)
+                            | Some(Type::Nullable(_, _))
                     ) {
                         RejectionSite::NamespaceContextValue
                     } else {
@@ -415,6 +416,9 @@ impl<'p> Checker<'p> {
                         "generators may only be called, not passed as values",
                         pos.clone(),
                     );
+                    return self.err_expr(pos);
+                }
+                if self.undefined_result_value(&sig.ret, &pos) {
                     return self.err_expr(pos);
                 }
                 let result = if sig.is_async {
@@ -621,7 +625,7 @@ impl<'p> Checker<'p> {
     /// Rewrites a nullable expression to its narrowed type when its
     /// path is in the current non-null set (C7).
     pub(super) fn apply_narrowing(&self, e: &mut hir::Expr, fx: &FnCtx) {
-        if matches!(self.apparent_type(&e.ty), Type::Nullable(_)) {
+        if matches!(self.apparent_type(&e.ty), Type::Nullable(_, _)) {
             if let Some(key) = path_key(e) {
                 if fx
                     .narrowed

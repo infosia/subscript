@@ -32,7 +32,7 @@ export function main(): void {
   groups.forEach((values: i32[], key: string): void => {
     print(`group ${key} ${values.join(",")}`);
   });
-  print(`groups ${groups.size} ${groups.has("even")} ${groups.get("even") === null}`);
+  print(`groups ${groups.size} ${groups.has("even")} ${groups.get("even") === undefined}`);
 
   const s1: Set<i32> = new Set<i32>();
   s1.add(1);

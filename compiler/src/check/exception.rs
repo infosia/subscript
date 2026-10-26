@@ -189,9 +189,9 @@ impl Checker<'_> {
                 return true;
             }
             match &checker.apparent_type(ty) {
-                Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
-                    visit(checker, element, seen)
-                }
+                Type::Array(element)
+                | Type::FixedArray(element, _)
+                | Type::Nullable(element, _) => visit(checker, element, seen),
                 Type::Class(id) => {
                     if !seen.insert(*id) {
                         return false;

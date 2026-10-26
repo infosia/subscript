@@ -106,6 +106,7 @@ impl<'p> Checker<'p> {
     }
 
     fn resolve_type_position(&mut self, ty: &ast::TsType, allow_void: bool) -> Type {
+        let undefined_result = std::mem::take(&mut self.undefined_result);
         let resolved = match ty {
             ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
@@ -115,9 +116,10 @@ impl<'p> Checker<'p> {
                 let elem = self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
                 Type::array(elem)
             }
-            ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u),
+            ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u, undefined_result),
             ast::TsType::TsFnOrConstructorType(f) => self.resolve_fn_type(f),
             ast::TsType::TsParenthesizedType(p) => {
+                self.undefined_result = undefined_result;
                 self.resolve_type_position(&p.type_ann, allow_void)
             }
             other => {
@@ -189,7 +191,7 @@ impl<'p> Checker<'p> {
             TsUndefinedKeyword => {
                 self.reject_subset(
                     RejectionSite::UndefinedKeywordAnnotation,
-                    "`undefined` is banned; the single null story is `null`",
+                    "`undefined` is legal only in `T | undefined`, the result type of a function declaration or a class method",
                     pos,
                 );
                 Type::Error
@@ -668,6 +670,68 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Resolves a union with an `undefined` member (compiler.md §195.1).
+    fn resolve_undefined_union(
+        &mut self,
+        union: &ast::TsUnionType,
+        span: swc_common::Span,
+        undefined_result: bool,
+    ) -> Type {
+        let pos = self.pos(span);
+        if !undefined_result {
+            self.reject_subset(
+                RejectionSite::UndefinedUnionMember,
+                "`T | undefined` is legal only as the result type of a function declaration or a class method",
+                pos,
+            );
+            return Type::Error;
+        }
+        let has_null = union.types.iter().any(|member| {
+            matches!(&**member, ast::TsType::TsKeywordType(kw)
+                if kw.kind == ast::TsKeywordTypeKind::TsNullKeyword)
+        });
+        if has_null {
+            self.reject_subset(
+                RejectionSite::UndefinedNullUnion,
+                "`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`",
+                self.pos(union.span),
+            );
+            return Type::Error;
+        }
+        let others: Vec<_> = union
+            .types
+            .iter()
+            .filter(|member| {
+                !matches!(&***member, ast::TsType::TsKeywordType(kw)
+                    if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword)
+            })
+            .collect();
+        let [base] = others.as_slice() else {
+            self.reject_subset(
+                RejectionSite::UnionGeneralUnionAndUndefined,
+                "unions are limited to `Ref | null`",
+                self.pos(union.span),
+            );
+            return Type::Error;
+        };
+        let inner = self.resolve_type(base);
+        if matches!(self.apparent_type(&inner), Type::Error) {
+            return Type::Error;
+        }
+        if self.allows_nullable(&inner) {
+            return Type::nullable_spelled(inner, crate::types::Absence::Undefined);
+        }
+        let name = self.type_name(&inner);
+        self.reject_subset(
+            RejectionSite::NullableNonReference,
+            format!(
+                "unions are limited to `Ref | null` and a `Ref | undefined` result; `{name} | undefined` is not a reference type union"
+            ),
+            self.pos(base.span()),
+        );
+        Type::Error
+    }
+
     /// The shared acceptance rule for a written or inferred `T | null`.
     pub(super) fn allows_nullable(&self, inner: &Type) -> bool {
         self.instance_restriction(super::opaque::InstanceRestriction::NullableShape, inner)
@@ -676,7 +740,11 @@ impl<'p> Checker<'p> {
                 .is_reference_shape(&self.type_handle_classes)
     }
 
-    fn resolve_union(&mut self, u: &ast::TsUnionOrIntersectionType) -> Type {
+    fn resolve_union(
+        &mut self,
+        u: &ast::TsUnionOrIntersectionType,
+        undefined_result: bool,
+    ) -> Type {
         let union = match u {
             ast::TsUnionOrIntersectionType::TsUnionType(union) => union,
             ast::TsUnionOrIntersectionType::TsIntersectionType(i) => {
@@ -689,25 +757,23 @@ impl<'p> Checker<'p> {
                 return Type::Error;
             }
         };
-        for member in &union.types {
-            if let ast::TsType::TsKeywordType(kw) = &**member {
-                if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword {
-                    let pos = self.pos(kw.span);
-                    self.reject_subset(
-                        RejectionSite::UndefinedUnionMember,
-                        "`undefined` is banned; the single null story is `null`",
-                        pos,
-                    );
-                    return Type::Error;
-                }
-            }
-        }
         let is_null = |t: &ast::TsType| {
             matches!(
                 t,
                 ast::TsType::TsKeywordType(kw) if kw.kind == ast::TsKeywordTypeKind::TsNullKeyword
             )
         };
+        let undefined_member = union.types.iter().find_map(|member| match &**member {
+            ast::TsType::TsKeywordType(kw)
+                if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword =>
+            {
+                Some(kw.span)
+            }
+            _ => None,
+        });
+        if let Some(span) = undefined_member {
+            return self.resolve_undefined_union(union, span, undefined_result);
+        }
         if union.types.len() == 2 {
             let (base, has_null) = if is_null(&union.types[1]) {
                 (&union.types[0], true)

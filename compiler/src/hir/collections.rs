@@ -202,8 +202,8 @@ impl ArrFn {
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
             ArrFn::At => "at(index: i32): T",
-            ArrFn::Find => "find(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | null",
-            ArrFn::FindLast => "findLast(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | null",
+            ArrFn::Find => "find(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | undefined",
+            ArrFn::FindLast => "findLast(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | undefined",
             ArrFn::FindLastIndex => "findLastIndex(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): i32",
             ArrFn::FlatMap => "flatMap<U>(callback: ((value: T) => U[]) | ((value: T, index: i32) => U[])): U[]",
             ArrFn::IndexOf => "indexOf(value: T, fromIndex?: i32): i32",
@@ -251,8 +251,8 @@ impl ArrFn {
     pub(crate) fn api_summary(self) -> &'static str {
         match self {
             ArrFn::At => "Reads a signed index; an out-of-range index traps.",
-            ArrFn::Find => "Returns the first matching nullable-capable element, or null.",
-            ArrFn::FindLast => "Returns the last matching nullable-capable element, or null.",
+            ArrFn::Find => "Returns the first matching reference element, or `undefined`; a nullable element type is rejected.",
+            ArrFn::FindLast => "Returns the last matching reference element, or `undefined`; a nullable element type is rejected.",
             ArrFn::FindLastIndex => "Returns the last matching index, or -1.",
             ArrFn::FlatMap => "Concatenates callback arrays at depth one.",
             ArrFn::IndexOf => "Returns the first `===`-equal element index, or -1.",
@@ -388,7 +388,7 @@ impl MapFn {
         match self {
             MapFn::New => "new Map<K, V>(): Map<K, V>",
             MapFn::Size => "size: i32",
-            MapFn::Get => "get(key: K): V | null",
+            MapFn::Get => "get(key: K): V | undefined",
             MapFn::GetOr => "getOr(key: K, fallback: V): V",
             MapFn::Set => "set(key: K, value: V): Map<K, V>",
             MapFn::Has => "has(key: K): boolean",
@@ -405,7 +405,7 @@ impl MapFn {
         match self {
             MapFn::New => "Constructs an empty insertion-ordered map.",
             MapFn::Size => "Returns the entry count as `i32`.",
-            MapFn::Get => "Returns a nullable reference value; scalar values must use `getOr`.",
+            MapFn::Get => "Returns a reference value or `undefined`; scalar and nullable values must use `getOr`.",
             MapFn::GetOr => "Returns the stored value or the explicit fallback.",
             MapFn::Set => "Stores a value and returns the receiver.",
             MapFn::Has => "Tests key presence with the key kind's equality.",
@@ -578,7 +578,7 @@ impl ArrElemKind {
                 ArrElemKind::SignedInt
             }
             Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
-            Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
+            Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,
             Type::F64 => ArrElemKind::F64,
             Type::F16 => ArrElemKind::F16,

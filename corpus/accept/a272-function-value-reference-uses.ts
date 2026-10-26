@@ -2,7 +2,7 @@
 // purpose: Function references support Map.get and field calls.
 // exercises: map, function-field, narrowing, receiver-order
 // questions: Q8, Q10, Q24
-// tsc: accepts; js-comparable: no Q24: Map.getOr is a language intrinsic; Map.get returns null on a miss.
+// tsc: accepts; js-comparable: no Q24: Map.getOr is a language intrinsic; Map.get returns undefined on a miss.
 function dbl(x: i32): i32 { return x * 2; }
 function fallback(x: i32): i32 { return x + 100; }
 class Holder {
@@ -22,7 +22,7 @@ export function main(): void {
   functions.set("double", dbl);
   const hit = functions.get("double") ?? fallback;
   const miss = functions.get("missing");
-  print(`${hit(3)} ${miss === null}`);
+  print(`${hit(3)} ${miss === undefined}`);
   const present = functions.getOr("double", fallback);
   const absent = functions.getOr("missing", fallback);
   print(`${present(4)} ${absent(4)}`);

@@ -466,11 +466,11 @@ impl super::Checker<'_> {
         seen.push((from.clone(), to.clone()));
         let assignable = match (&from, &to) {
             (Type::Enum(_), number) if self.apparent_type(number).is_numeric() => true,
-            (Type::Nullable(a), Type::Nullable(b)) => {
+            (Type::Nullable(a, _), Type::Nullable(b, _)) => {
                 self.ts_erased_assignable_inner(a, b, seen, structural_classes)
             }
-            (Type::Null, Type::Nullable(_)) => true,
-            (a, Type::Nullable(b)) => {
+            (Type::Null, Type::Nullable(_, _)) => true,
+            (a, Type::Nullable(b, _)) => {
                 self.ts_erased_assignable_inner(a, b, seen, structural_classes)
             }
             (Type::Array(a), Type::Array(b))

@@ -1518,3 +1518,18 @@ s173-map-pairs.ts	MAP_API		S014		§173
 `new Map(iterable)` is rejected: `new Map([[k, v]])` requires a pair element, but the language has no tuple type; use `construct empty, then set` (Q30)
 export function main(): void { const m = new Map<string, i32>([["a", 1]]); const a = new Map([["a", null], ["b", 1]]); const b = new Map([["a", 1], ["b", null]]); const c = new Map([["a", 1], ["b", 1.5]]); const d = new Map([["a", null], ["b", null], ["c", 1]]); }
 ===
+s195-map-get-nullable.ts	FORM_REJECTIONS/Map<K, V | null> / get(key)		S014		
+`get(key)` is rejected: On a nullable value, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5); use `has(key) and getOr` (Q24)
+class Box { v: i32 = 1; }
+export function main(): void { const m = new Map<string, Box | null>(); m.set("k", null); print(`${m.get("k") === undefined}`); }
+===
+s195-find-nullable.ts	FORM_REJECTIONS/(T | null)[] / find		S014		
+`find` is rejected: On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5); use `findIndex` (Q22)
+class Box { v: i32 = 1; }
+export function main(): void { const xs: (Box | null)[] = [null]; print(`${xs.find((b: Box | null): boolean => b === null) === undefined}`); }
+===
+s195-find-last-nullable.ts	FORM_REJECTIONS/(T | null)[] / findLast		S014		
+`findLast` is rejected: On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5); use `findLastIndex` (Q22)
+class Box { v: i32 = 1; }
+export function main(): void { const xs: (Box | null)[] = [null]; print(`${xs.findLast((b: Box | null): boolean => b === null) === undefined}`); }
+===

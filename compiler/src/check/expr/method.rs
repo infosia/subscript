@@ -424,6 +424,13 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if matches!(f, A::Find | A::FindLast)
+            && matches!(self.apparent_type(&elem), Type::Nullable(_, _))
+        {
+            // §195.5 rule 3: the result needs both spellings.
+            self.reject_api_form("(T | null)[]", f.name(), f.name(), pos.clone());
+            return self.err_expr(pos);
+        }
         if matches!(f, A::Find | A::FindLast) && !self.map_get_value_ok(&elem) {
             self.arr_subset_rejection(f.name(), pos.clone());
             return self.err_expr(pos);
@@ -912,13 +919,10 @@ impl<'p> Checker<'p> {
                     A::Filter => arr_ty,
                     A::Some | A::Every => Type::Bool,
                     A::FindIndex | A::FindLastIndex => Type::I32,
-                    A::Find | A::FindLast => {
-                        if matches!(self.apparent_type(&elem), Type::Nullable(_)) {
-                            elem
-                        } else {
-                            Type::nullable(elem)
-                        }
-                    }
+                    A::Find | A::FindLast => Type::nullable_spelled(
+                        elem,
+                        crate::ambient::nullable_result("Array", f.name()),
+                    ),
                     A::FlatMap => {
                         let u = match &self.apparent_type(&cb.ty) {
                             Type::Func(ft) => ft.ret.clone(),
@@ -991,7 +995,7 @@ impl<'p> Checker<'p> {
         }
         let shape = self.apparent_type(value);
         let reference = match &shape {
-            Type::Nullable(inner) => inner.as_ref(),
+            Type::Nullable(inner, _) => inner.as_ref(),
             other => other,
         };
         matches!(
@@ -1320,6 +1324,11 @@ impl<'p> Checker<'p> {
         };
         match operation {
             M::Get => {
+                if matches!(self.apparent_type(&value), Type::Nullable(_, _)) {
+                    // §195.5 rule 3: the result needs both spellings.
+                    self.reject_api_form("Map<K, V | null>", "get(key)", "get(key)", prop_pos);
+                    return self.err_expr(pos);
+                }
                 if !self.map_get_value_ok(&value) {
                     let group = if self.apparent_type(&value).is_numeric()
                         || matches!(
@@ -1343,11 +1352,8 @@ impl<'p> Checker<'p> {
                     &pos,
                     "Map.get",
                 ));
-                let ty = if matches!(&self.apparent_type(&value), Type::Nullable(_)) {
-                    value
-                } else {
-                    Type::nullable(value)
-                };
+                let ty =
+                    Type::nullable_spelled(value, crate::ambient::nullable_result("Map", "get"));
                 mk(MapFn::Get, args, ty, pos)
             }
             M::GetOr => {

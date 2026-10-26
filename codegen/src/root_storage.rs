@@ -1023,7 +1023,15 @@ mod tests {
     // The unused b1 parameter %4 tests a nonempty entry clear set.
     fn interval_fixture() -> l::Function {
         let values = (0..5)
-            .map(|id| value(id, l::ValueType::Data(Type::Nullable(Box::new(Type::Str)))))
+            .map(|id| {
+                value(
+                    id,
+                    l::ValueType::Data(Type::Nullable(
+                        Box::new(Type::Str),
+                        subscript_compiler::Absence::Null,
+                    )),
+                )
+            })
             .collect();
         let mut first = return_block(
             0,
@@ -1044,7 +1052,7 @@ mod tests {
             ownership: Vec::new(),
             block: l::BlockId(1),
             arguments: vec![l::Operand::Constant(l::Constant {
-                ty: Type::Nullable(Box::new(Type::Str)),
+                ty: Type::Nullable(Box::new(Type::Str), subscript_compiler::Absence::Null),
                 kind: l::ConstantKind::Null,
             })],
         });

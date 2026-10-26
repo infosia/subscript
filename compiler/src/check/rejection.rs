@@ -925,10 +925,15 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::IntersectionTypeAnnotationForm),
     ),
-    Self::UndefinedUnionMember => (
-        RuleCode::S012,
-        Diverges(Divergence::GeneralUnionAndUndefined),
-    ),
+    Self::UndefinedUnionMember => (RuleCode::S012, Diverges(Divergence::UndefinedResultPosition)),
+    Self::UndefinedNullUnion => (RuleCode::S011, Diverges(Divergence::UndefinedNullUnion)),
+    Self::UndefinedSpellingOutsideValue => (RuleCode::S012, Diverges(Divergence::UndefinedSpellingOutsideValue)),
+    Self::UndefinedResultBareReturn => (RuleCode::S012, Diverges(Divergence::UndefinedResultReturn)),
+    Self::UndefinedResultFallThrough => (RuleCode::S012, Diverges(Divergence::UndefinedResultReturn)),
+    Self::UndefinedReturnValue => (RuleCode::S012, TscRejects),
+    Self::StrictEqualityAcrossSpellings => (RuleCode::S012, Diverges(Divergence::StrictEqualityAcrossSpellings)),
+    Self::UndefinedResultHostEntry => (RuleCode::S012, Diverges(Divergence::UndefinedResultBoundary)),
+    Self::UndefinedResultFunctionValue => (RuleCode::S100, Diverges(Divergence::UndefinedResultFunctionValue)),
     Self::NullableNonReference => {
         (RuleCode::S011, Diverges(Divergence::NullableNonReference))
     }

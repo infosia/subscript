@@ -311,7 +311,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn is_context_affine_type(&self, ty: &Type) -> bool {
         match &self.apparent_type(ty) {
             Type::Worker(..) | Type::Inbox(_) | Type::Outbox(_) => true,
-            Type::Nullable(inner) => self.is_context_affine_type(inner),
+            Type::Nullable(inner, _) => self.is_context_affine_type(inner),
             _ => false,
         }
     }

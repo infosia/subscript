@@ -787,7 +787,10 @@ export function main(): void {
         .expect("the embedded Header store boxes Limit");
     assert_eq!(
         result_ty,
-        &subscript_compiler::lir::ValueType::Data(Type::Nullable(Box::new(Type::Class(header))))
+        &subscript_compiler::lir::ValueType::Data(Type::Nullable(
+            Box::new(Type::Class(header)),
+            subscript_compiler::Absence::Null
+        ))
     );
     let findings = lir_facts::dropped_facts(&hir, &lir);
     assert!(
@@ -809,8 +812,10 @@ export function main(): void {
                 InstructionKind::BoxBoundaryValue { payload } if payload == limit
             ) {
                 let result = instruction.result.expect("embedded box result");
-                function.values[result.0 as usize].ty =
-                    ValueType::Data(Type::Nullable(Box::new(Type::Class(tick))));
+                function.values[result.0 as usize].ty = ValueType::Data(Type::Nullable(
+                    Box::new(Type::Class(tick)),
+                    subscript_compiler::Absence::Null,
+                ));
                 changed = true;
                 break;
             }

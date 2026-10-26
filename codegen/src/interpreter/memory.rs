@@ -234,7 +234,7 @@ impl Interpreter<'_> {
             | Type::Inbox(_)
             | Type::Outbox(_)
             | Type::Func(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Generator(_)
             | Type::AsyncHandle(_) => Value::Null,
             Type::Error => Value::Void,
@@ -337,7 +337,7 @@ impl Interpreter<'_> {
         result_ty: Option<&l::ValueType>,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
-        let Some(l::ValueType::Data(Type::Nullable(inner))) = result_ty else {
+        let Some(l::ValueType::Data(Type::Nullable(inner, _))) = result_ty else {
             return Err(self.invalid(
                 Some(pos.clone()),
                 "BoxBoundaryValue result type is inconsistent",
@@ -652,7 +652,7 @@ impl Interpreter<'_> {
         value: &Value,
         out: &mut [u8],
     ) -> Result<(), InterpretError> {
-        if let Type::Nullable(inner) = ty {
+        if let Type::Nullable(inner, _) = ty {
             if inner.function_type().is_some() {
                 return self.pack_into(inner, value, out);
             }
@@ -737,7 +737,7 @@ impl Interpreter<'_> {
             | Type::Array(_)
             | Type::Map(_, _)
             | Type::Set(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Worker(_, _)
             | Type::Inbox(_)
             | Type::Outbox(_)
@@ -776,7 +776,7 @@ impl Interpreter<'_> {
     }
 
     pub(super) fn unpack(&self, ty: &Type, bytes: &[u8]) -> Result<Value, InterpretError> {
-        if let Type::Nullable(inner) = ty {
+        if let Type::Nullable(inner, _) = ty {
             if inner.function_type().is_some() {
                 return self.unpack(inner, bytes);
             }
@@ -861,7 +861,7 @@ impl Interpreter<'_> {
             | Type::Array(_)
             | Type::Map(_, _)
             | Type::Set(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Worker(_, _)
             | Type::Inbox(_)
             | Type::Outbox(_)

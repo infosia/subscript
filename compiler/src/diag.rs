@@ -36,7 +36,8 @@ pub enum RuleCode {
     /// Unions are limited to nullable handles (including boundary boxes);
     /// nullable values must be narrowed before member access (C7, §33.5).
     S011,
-    /// `undefined` is banned; the single null story is `null` (C7).
+    /// `T | undefined` is legal only as the result type of a function
+    /// declaration or a class method (C7, compiler.md §195).
     S012,
     /// Promise object construction, unsupported combinators, and un-awaited async calls
     /// are rejected; Q34 exposes no Promise object surface (C8).
@@ -123,7 +124,7 @@ impl RuleCode {
             RuleCode::S011 => {
                 "Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access."
             }
-            RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
+            RuleCode::S012 => "`T | undefined` is legal only as the result type of a function declaration or a class method; the `undefined` token only returns or compares an absence.",
             RuleCode::S013 => {
                 "Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion."
             }

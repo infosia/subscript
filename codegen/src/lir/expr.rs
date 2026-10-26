@@ -41,7 +41,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             l::ValueType::Data(ty.clone())
         };
-        if !matches!(&actual, l::ValueType::Data(Type::Nullable(inner)) if inner.as_ref() == ty) {
+        if !matches!(&actual, l::ValueType::Data(Type::Nullable(inner, _)) if inner.as_ref() == ty)
+        {
             return self.coerce_operand(value, result, pos);
         }
         for trap in &mut traps {
@@ -256,7 +257,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::Cast(value) => {
                 let value = self.require_expr(value)?;
                 let kind = if matches!(self.operand_type(&value, &expr.pos)?,
-                    l::ValueType::Data(Type::Nullable(ref inner)) if inner.as_ref() == &expr.ty)
+                    l::ValueType::Data(Type::Nullable(ref inner, _)) if inner.as_ref() == &expr.ty)
                 {
                     l::InstructionKind::NarrowNonNull(narrow_origin(
                         expr,

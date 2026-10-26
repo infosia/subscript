@@ -273,7 +273,7 @@ impl Scan<'_, '_> {
         let mut rejected = Vec::new();
         for definition in &checker.foreign_defs {
             for param in &definition.params {
-                let pointer = matches!(checker.apparent_type(&param.ty), Type::Nullable(_));
+                let pointer = matches!(checker.apparent_type(&param.ty), Type::Nullable(_, _));
                 let fill = pointer
                     && param.foreign_provenance != Some(hir::ForeignTypeProvenance::ConstPointer);
                 let position = ReadPosition::Parameter {
@@ -424,7 +424,7 @@ impl Scan<'_, '_> {
         let checker = self.checker();
         let class = match checker.apparent_type(ty) {
             Type::Class(id) => id,
-            Type::Nullable(inner) => match checker.apparent_type(&inner) {
+            Type::Nullable(inner, _) => match checker.apparent_type(&inner) {
                 Type::Class(id) => id,
                 _ => return None,
             },

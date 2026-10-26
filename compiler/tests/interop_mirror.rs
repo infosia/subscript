@@ -273,7 +273,7 @@ fn using_program_type_checks_against_the_generated_mirror() {
         .expect("subDeviceCreate foreign declaration");
     assert!(matches!(create.ret, Type::Class(_)), "handle return type");
     assert!(
-        matches!(create.params[0].ty, Type::Nullable(_)),
+        matches!(create.params[0].ty, Type::Nullable(_, _)),
         "chain param is `SubChainHeader | null`"
     );
 
@@ -313,7 +313,7 @@ fn using_program_type_checks_against_the_generated_mirror() {
         .find(|f| f.name == "subProbeSetBindGroupCheck")
         .expect("nullable handle parameter");
     assert!(matches!(set_bind_group.params[0].ty, Type::Class(_)));
-    assert!(matches!(set_bind_group.params[1].ty, Type::Nullable(_)));
+    assert!(matches!(set_bind_group.params[1].ty, Type::Nullable(_, _)));
 
     let sum_bytes = module
         .foreign_fns

@@ -56,7 +56,7 @@ fn null_guard(statement: &hir::Stmt) -> (&hir::Expr, &hir::Expr) {
     };
     assert_eq!(right.kind, hir::ExprKind::Null);
     assert_eq!(right.ty, Type::Null);
-    let Type::Nullable(inner) = &left.ty else {
+    let Type::Nullable(inner, _) = &left.ty else {
         panic!("nullable comparison operand")
     };
     assert!(matches!(inner.as_ref(), Type::Class(_)));
@@ -93,7 +93,7 @@ fn nullable_using_has_null_guard_and_non_null_receiver() {
     assert!(matches!(
         &body[0],
         hir::Stmt::Let {
-            ty: Type::Nullable(_),
+            ty: Type::Nullable(_, _),
             mutable: false,
             ..
         }

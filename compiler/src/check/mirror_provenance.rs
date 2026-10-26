@@ -349,8 +349,12 @@ impl<'p> Checker<'p> {
             .iter()
             .filter_map(|file| file.provenance.members.get(&key))
             .any(|record| record.value);
-        (constant && matches!(self.apparent_type(ty), Type::Nullable(_) | Type::Array(_)))
-            .then_some(hir::ForeignTypeProvenance::ConstPointer)
+        (constant
+            && matches!(
+                self.apparent_type(ty),
+                Type::Nullable(_, _) | Type::Array(_)
+            ))
+        .then_some(hir::ForeignTypeProvenance::ConstPointer)
     }
 
     /// Converts parameter provenance into the consumer-ready HIR shape and
@@ -441,7 +445,7 @@ impl<'p> Checker<'p> {
                     .pointer_parameters
                     .get(&key)
                     .is_some_and(|record| record.value);
-                (constant && matches!(self.apparent_type(ty), Type::Nullable(_)))
+                (constant && matches!(self.apparent_type(ty), Type::Nullable(_, _)))
                     .then_some(hir::ForeignTypeProvenance::ConstPointer)
             }
         }

@@ -422,9 +422,25 @@ pub enum Divergence {
     OptionalMethodCall,
     /// The optional-chain surface tests a nullable receiver for a field read or a method call; it does not test a callable.
     OptionalFunctionCall,
-    /// The undefined token appears only in a presence comparison with an absence-capable descriptor member.
+    /// `T | undefined` is the result type of a function declaration or a class method; every other position spells the absence `T | null` (compiler.md §195.1).
+    UndefinedResultPosition,
+    /// A nullable type has one absence spelling, so `T | null | undefined` has no representation (compiler.md §195.1 rule 3).
+    UndefinedNullUnion,
+    /// The `undefined` spelling is the whole type of a value or a local; other storage holds `T | null` (compiler.md §195.1 rule 6).
+    UndefinedSpellingOutsideValue,
+    /// A function whose result is `T | undefined` returns its absent result with `return undefined;` (compiler.md §195.2 rule 3).
+    UndefinedResultReturn,
+    /// JavaScript gives `false` for `===` across `null` and `undefined`; one representation holds both here (compiler.md §195.3 rule 2).
+    StrictEqualityAcrossSpellings,
+    /// C has one null pointer, so a signature that crosses the C boundary has no `T | undefined` (compiler.md §195.6 rule 1).
+    UndefinedResultBoundary,
+    /// A function type cannot name a `T | undefined` result, so such a function is only a callee (compiler.md §195.6 rule 2).
+    UndefinedResultFunctionValue,
+    /// On a nullable value or element, a search result needs both `null` and `undefined`, and the two share one representation (compiler.md §195.5 rule 3).
+    NullableElementSearch,
+    /// The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.
     UndefinedEqualityPair,
-    /// The undefined token appears only in a presence comparison with an absence-capable descriptor member.
+    /// The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.
     UndefinedEqualityNonMember,
     /// A bare yield carries no value, so only a void generator can use it.
     BareYieldNonVoid,
@@ -1242,6 +1258,14 @@ impl Divergence {
         Divergence::DeleteProperty,
         Divergence::OptionalMethodCall,
         Divergence::OptionalFunctionCall,
+        Divergence::UndefinedResultPosition,
+        Divergence::UndefinedNullUnion,
+        Divergence::UndefinedSpellingOutsideValue,
+        Divergence::UndefinedResultReturn,
+        Divergence::StrictEqualityAcrossSpellings,
+        Divergence::UndefinedResultBoundary,
+        Divergence::UndefinedResultFunctionValue,
+        Divergence::NullableElementSearch,
         Divergence::UndefinedEqualityPair,
         Divergence::UndefinedEqualityNonMember,
         Divergence::BareYieldNonVoid,
@@ -1796,11 +1820,11 @@ mod tests {
         assert_eq!(entry.collision, "C22");
         assert_eq!(
             entry.ts,
-            "const missing = values.get(key); print(`${missing === undefined}`);"
+            "const missing = values.get(key); print(`${missing === null}`);"
         );
         assert_eq!(
             entry.subscript,
-            "const missing = values.get(key); print(`${missing == null}`);"
+            "const missing = values.get(key); print(`${missing === undefined}`);"
         );
         assert!(Divergence::ALL.contains(&Divergence::ReferenceSearchMiss));
     }

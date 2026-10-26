@@ -9706,3 +9706,59 @@ FILE	E	main.ts
 import {graphemeLength} from "subscript:text"; export function main(): void { const count = graphemeLength; print(`${count("か")}`); }
 END FILE
 END PROGRAM
+PROGRAM	s195-null-undefined-union			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | null | undefined { return null; }
+export function main(): void { print(`${pick() == null}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-nested-spelling			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | undefined { return undefined; }
+export function main(): void { const xs = [pick()]; print(`${xs.length}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-bare-return			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(f: boolean): Box | undefined { if (f) { return new Box(); } return; }
+export function main(): void { print(`${pick(false) === undefined}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-fall-through			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(f: boolean): Box | undefined { if (f) { return new Box(); } }
+export function main(): void { print(`${pick(false) === undefined}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-return-undefined-null-result	TS2322		0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | null { return undefined; }
+export function main(): void { print(`${pick() == null}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-strict-cross			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | undefined { return undefined; }
+export function main(): void { print(`${pick() === null}`); }
+END FILE
+END PROGRAM
+PROGRAM	s195-host-entry			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+export function pick(): Box | undefined { return undefined; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s195-function-value			0
+FILE	E	main.ts
+class Box { v: i32 = 1; }
+function pick(): Box | undefined { return undefined; }
+export function main(): void { const f = pick; print(`${f() === undefined}`); }
+END FILE
+END PROGRAM

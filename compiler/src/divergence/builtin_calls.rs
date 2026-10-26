@@ -39,15 +39,15 @@ pub(super) const OPTIONAL_FUNCTION_CALL: DivergenceEntry = DivergenceEntry {
 
 pub(super) const UNDEFINED_EQUALITY_PAIR: DivergenceEntry = DivergenceEntry {
     ts: "\nexport function main(): void { const b = undefined === undefined; }",
-    subscript: "no equivalent; compare null for nullable references or test an absence-capable descriptor member",
-    why: "The undefined token appears only in a presence comparison with an absence-capable descriptor member.",
+    subscript: "no equivalent; compare `undefined` with a nullable value or an absence-capable descriptor member",
+    why: "The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.",
     collision: "C7",
 };
 
 pub(super) const UNDEFINED_EQUALITY_NON_MEMBER: DivergenceEntry = DivergenceEntry {
     ts: "\nexport function main(): void { const x: i32 = 1; const b = undefined === x; }",
-    subscript: "no equivalent; compare null for nullable references or test an absence-capable descriptor member",
-    why: "The undefined token appears only in a presence comparison with an absence-capable descriptor member.",
+    subscript: "no equivalent; compare `undefined` with a nullable value or an absence-capable descriptor member",
+    why: "The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.",
     collision: "C7",
 };
 

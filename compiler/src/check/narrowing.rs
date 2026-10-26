@@ -83,11 +83,11 @@ impl Checker<'_> {
         {
             if matches!(
                 self.apparent_type(&target.ty),
-                crate::types::Type::Nullable(_)
+                crate::types::Type::Nullable(_, _)
             ) && !matches!(
                 self.apparent_type(&value.ty),
                 crate::types::Type::Null
-                    | crate::types::Type::Nullable(_)
+                    | crate::types::Type::Nullable(_, _)
                     | crate::types::Type::Error
             ) {
                 if let Some(key) =
@@ -143,7 +143,7 @@ impl Checker<'_> {
         message: String,
         pos: Pos,
     ) {
-        let nullable_function = matches!(self.apparent_type(&expression.ty), crate::types::Type::Nullable(inner) if matches!(self.apparent_type(&inner), crate::types::Type::Func(_)));
+        let nullable_function = matches!(self.apparent_type(&expression.ty), crate::types::Type::Nullable(inner, _) if matches!(self.apparent_type(&inner), crate::types::Type::Func(_)));
         if (sites.0 != RejectionSite::NullableCall || nullable_function)
             && self.indexed_nullable_error(expression, fx, sites.0, pos.clone())
         {
@@ -581,7 +581,8 @@ pub(super) fn leaf_paths(
                 } else {
                     &other.ty
                 };
-                if null_side.is_some() && matches!(apparent_type(compared_type), Type::Nullable(_))
+                if null_side.is_some()
+                    && matches!(apparent_type(compared_type), Type::Nullable(_, _))
                 {
                     if let Some(key) = fact(target) {
                         return match op {
@@ -737,11 +738,17 @@ mod tests {
                     } else {
                         ExprKind::Local(
                             path.into(),
-                            Type::Nullable(Box::new(Type::Class(crate::types::ClassId(0)))),
+                            Type::Nullable(
+                                Box::new(Type::Class(crate::types::ClassId(0))),
+                                crate::types::Absence::Null,
+                            ),
                             true,
                         )
                     },
-                    ty: Type::Nullable(Box::new(Type::Class(crate::types::ClassId(0)))),
+                    ty: Type::Nullable(
+                        Box::new(Type::Class(crate::types::ClassId(0))),
+                        crate::types::Absence::Null,
+                    ),
                     pos: pos.clone(),
                 };
                 let store = hir::Expr {

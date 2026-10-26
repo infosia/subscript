@@ -1074,7 +1074,14 @@ impl<'p> Checker<'p> {
                         }],
                         Type::Void,
                     ),
-                    "poll" => (WorkerFn::Poll, Vec::new(), Type::Nullable(output.clone())),
+                    "poll" => (
+                        WorkerFn::Poll,
+                        Vec::new(),
+                        Type::Nullable(
+                            output.clone(),
+                            crate::ambient::nullable_result("Worker", "poll"),
+                        ),
+                    ),
                     "close" => (WorkerFn::Close, Vec::new(), Type::Void),
                     "join" => (WorkerFn::Join, Vec::new(), Type::Void),
                     _ => {
@@ -1143,7 +1150,10 @@ impl<'p> Checker<'p> {
                         callee: Callee::Worker(function),
                         args,
                     },
-                    ty: Type::nullable(*message),
+                    ty: Type::nullable_spelled(
+                        *message,
+                        crate::ambient::nullable_result("Inbox", &name),
+                    ),
                     pos,
                 }
             }

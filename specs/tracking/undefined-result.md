@@ -1,6 +1,6 @@
 # A reference result can be `undefined` — `compiler.md` §195
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `ee65e587`
 
@@ -47,3 +47,22 @@ expected error.
 The 15 entries pass `tsc`. The `a373` output under `node` equals its
 golden. Each line of the golden was checked by hand.
 
+
+## Landing
+
+The checker type is `Type::Nullable(Box<Type>, Absence)`. The HIR
+builder erases the `undefined` spelling once, in
+`compiler/src/hir/spelling.rs`. The §195.1 rule 6 check reads the same
+type-slot walk before the erasure.
+
+`codegen/tests/undefined_result_lir.rs` lowers one program with the
+`undefined` spelling and the same program with `null`: the two LIR
+texts are identical, so the run-time code is the code of `T | null`.
+
+Three accept entries change their source from `=== null` to
+`=== undefined` on a `Map.get` result (`a51`, `a66`, `a272`). Their
+outputs do not change.
+
+Gate at the contract `b86970a3` with the implementation in the working
+tree: `gate full … debug 2881/0/5 release 2878/0/5 skips 2/0 clippy
+5/18/11 goldens-moved 0 exit 0`.

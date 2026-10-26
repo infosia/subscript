@@ -562,7 +562,15 @@ impl<'p> Checker<'p> {
             };
         }
         let ret = match &f.return_type {
-            Some(ann) => self.resolve_result_type(&ann.type_ann),
+            Some(ann) => {
+                // §195.1 rule 4: the result of a module-level function
+                // declaration or a class method can be `T | undefined`. A
+                // mirror declaration is not one (§195.6 rule 1).
+                self.undefined_result = !self.in_boundary;
+                let ret = self.resolve_result_type(&ann.type_ann);
+                self.undefined_result = false;
+                ret
+            }
             None => {
                 self.reject_subset(
                     RejectionSite::FunctionReturnAnnotationMissing,

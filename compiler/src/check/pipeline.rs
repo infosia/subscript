@@ -300,6 +300,7 @@ fn run_with_effects(
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         in_boundary: false,
+        undefined_result: false,
         allow_wire_alias_boundary: false,
         in_assoc_key: false,
         in_poisoned_context: false,
@@ -468,8 +469,11 @@ fn run_with_effects(
     ck.diags.extend(initializer_diags);
     ck.validate_layouts();
 
+    let host_exports = ck.host_exports(entry_file);
+    if ck.diags.is_empty() {
+        ck.reject_undefined_host_entries(&host_exports);
+    }
     if provisional || ck.diags.is_empty() {
-        let host_exports = ck.host_exports(entry_file);
         let mut globals = ck.globals;
         let mut top_level = Vec::new();
         let mut initializer_segments = Vec::new();
@@ -522,6 +526,14 @@ fn run_with_effects(
             initializer_can_raise: false,
             source_bytes: prog.source_bytes,
         };
+        if ck.diags.is_empty() {
+            let spelling = super::undefined_spelling::outside_value_diagnostics(&mut module);
+            if !spelling.is_empty() {
+                return Err(spelling);
+            }
+        }
+        // §195.7 rule 2: HIR carries the `null` spelling only.
+        crate::hir::spelling::erase_undefined(&mut module);
         if ck.diags.is_empty() {
             let host_diagnostics = host_entries::populate(&mut module, host_exports);
             if !host_diagnostics.is_empty() {

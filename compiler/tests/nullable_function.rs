@@ -10,7 +10,10 @@ fn function_signature_and_layout_cover_both_forms() {
         ret: Type::I32,
     };
     let function = Type::Func(Box::new(signature.clone()));
-    let nullable = Type::Nullable(Box::new(function.clone()));
+    let nullable = Type::Nullable(
+        Box::new(function.clone()),
+        subscript_compiler::Absence::Null,
+    );
     for (ty, kind) in [
         (function, HandleKind::Func),
         (nullable, HandleKind::NullableFunc),
@@ -22,7 +25,7 @@ fn function_signature_and_layout_cover_both_forms() {
     for ty in [
         Type::I32,
         Type::Null,
-        Type::Nullable(Box::new(Type::Object)),
+        Type::Nullable(Box::new(Type::Object), subscript_compiler::Absence::Null),
     ] {
         assert_eq!(ty.function_type(), None);
         assert_ne!(scalar_size_align(&ty), Some((16, 8)));
@@ -104,7 +107,7 @@ fn nullable_function_display_groups_the_function() {
     }));
     assert_eq!(function.to_string(), "(i32) => i32");
     assert_eq!(
-        Type::Nullable(Box::new(function)).to_string(),
+        Type::Nullable(Box::new(function), subscript_compiler::Absence::Null).to_string(),
         "((i32) => i32) | null"
     );
     let diagnostics = check_body("return f(3);").expect_err("unguarded call");

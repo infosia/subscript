@@ -70,7 +70,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                             self.address_offset(pointer, i64::from(offset))
                         }
                     }
-                    l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
+                    l::ValueType::Data(Type::Nullable(inner, _)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
                     {
                         let pointer = self.expect_scalar(base)?;
                         self.address_offset(pointer, i64::from(offset))

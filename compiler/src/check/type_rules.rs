@@ -158,7 +158,9 @@ impl<'p> Checker<'p> {
             || self.instance_restriction(opaque::InstanceRestriction::CompositeAssignability, to)
         {
             let fits = match (from, to) {
-                (Type::Nullable(a), Type::Nullable(_)) => {
+                (Type::Nullable(a, from_spelling), Type::Nullable(_, to_spelling))
+                    if from_spelling == to_spelling =>
+                {
                     self.assignable_through_constraints(a, to, seen)
                 }
                 (Type::Array(a), Type::Array(b))
@@ -208,8 +210,9 @@ impl<'p> Checker<'p> {
             }
         }
         match (from, to) {
-            (Type::Null, Type::Nullable(_)) => true,
-            (f, Type::Nullable(inner)) => {
+            // §195.1 rule 2: `null` converts to the `null` spelling only.
+            (Type::Null, Type::Nullable(_, spelling)) => *spelling == crate::types::Absence::Null,
+            (f, Type::Nullable(inner, _)) => {
                 self.assignable_through_constraints(f, inner, seen)
                     || (self.is_reference_class(f) && **inner == Type::Object)
             }
@@ -224,7 +227,7 @@ impl<'p> Checker<'p> {
             Type::FixedArray(element, _)
             | Type::Array(element)
             | Type::Set(element)
-            | Type::Nullable(element)
+            | Type::Nullable(element, _)
             | Type::Generator(element)
             | Type::IterResult(element) => Self::contains_string_alias(element),
             Type::Map(key, value) => {
@@ -285,7 +288,7 @@ impl<'p> Checker<'p> {
         what: &str,
     ) {
         if !self.assignable(&from.ty, to) {
-            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner) if *inner == self.apparent_type(to))
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && self.indexed_nullable_error(
                     from,
                     fx,
@@ -299,7 +302,7 @@ impl<'p> Checker<'p> {
             {
                 return;
             }
-            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner) if *inner == self.apparent_type(to))
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && super::expr::path_key(from)
                     .is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
             {
@@ -337,17 +340,17 @@ impl<'p> Checker<'p> {
         let to_n = self.type_name(to);
         let class_like = |t: &Type| match t {
             Type::Class(_) | Type::Map(..) | Type::Set(_) => true,
-            Type::Nullable(inner) => {
+            Type::Nullable(inner, _) => {
                 matches!(**inner, Type::Class(_) | Type::Map(..) | Type::Set(_))
             }
             _ => false,
         };
         let from_nominal = match from {
-            Type::Nullable(inner) => inner.as_ref(),
+            Type::Nullable(inner, _) => inner.as_ref(),
             other => other,
         };
         let to_nominal = match to {
-            Type::Nullable(inner) => inner.as_ref(),
+            Type::Nullable(inner, _) => inner.as_ref(),
             other => other,
         };
         if class_like(from) && class_like(to) {
@@ -355,7 +358,7 @@ impl<'p> Checker<'p> {
                 "nominal types are not interchangeable: {} expects `{}`, got `{}`",
                 what, to_n, from_n
             );
-            if matches!(&self.apparent_type(from), Type::Nullable(inner) if **inner == self.apparent_type(to))
+            if matches!(&self.apparent_type(from), Type::Nullable(inner, _) if **inner == self.apparent_type(to))
             {
                 self.reject_subset(RejectionSite::NullableNominalAssignment, message, pos);
             } else if !self.ts_nominal_assignable(from, to) {
@@ -381,7 +384,7 @@ impl<'p> Checker<'p> {
                 ),
                 pos,
             );
-        } else if self.is_value_class(from) && matches!(to, Type::Nullable(_)) {
+        } else if self.is_value_class(from) && matches!(to, Type::Nullable(_, _)) {
             self.reject_subset(
                 RejectionSite::NullableValueClassAssignment,
                 format!("value class `{}` cannot be nullable", from_n),

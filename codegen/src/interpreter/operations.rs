@@ -187,7 +187,7 @@ impl Interpreter<'_> {
                 _ => false,
             },
             Type::Null
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::TaskGroup
             | Type::Object
             | Type::Class(_)
@@ -265,7 +265,7 @@ impl Interpreter<'_> {
             }));
         }
         let ty = self.data_result_type(result_ty, instruction)?;
-        if let (Type::Class(target), Some(Type::Nullable(source))) = (ty, source_ty) {
+        if let (Type::Class(target), Some(Type::Nullable(source, _))) = (ty, source_ty) {
             if matches!(source.as_ref(), Type::Class(source) if source == target)
                 && self
                     .module
@@ -319,7 +319,7 @@ impl Interpreter<'_> {
                 let raw = value.as_u64()?;
                 self.integer_result(ty, raw)?
             }
-            Type::Nullable(_) | Type::TaskGroup | Type::Object | Type::Class(_) => value.clone(),
+            Type::Nullable(_, _) | Type::TaskGroup | Type::Object | Type::Class(_) => value.clone(),
             _ => value.clone(),
         })
     }

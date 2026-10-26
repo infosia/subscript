@@ -41,20 +41,39 @@ fn new_array_forms_keep_argument_and_callback_limits() {
     .unwrap();
 }
 
+/// compiler.md §195.5 rules 1 and 3: a handle element has an `undefined`
+/// miss, and a nullable element is rejected (S014).
 #[test]
 fn nullable_reference_elements_and_handle_elements_check() {
-    check_program(&[SourceFile::new(
+    let diagnostics = check_program(&[SourceFile::new(
         "test.ts",
         r#"
 class C { v: i32 = 1; }
 export function main(): void {
   const cs: (C | null)[] = [new C(), null];
-  const first: C | null = cs.find((c: C | null): boolean => c !== null);
-  const last: C | null = cs.findLast((c: C | null): boolean => c === null);
+  const first = cs.find((c: C | null): boolean => c !== null);
+  const last = cs.findLast((c: C | null): boolean => c === null);
+}
+"#,
+    )])
+    .unwrap_err();
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code == RuleCode::S014
+            && diagnostic
+                .message
+                .contains("the result needs both `null` and `undefined`")));
+    check_program(&[SourceFile::new(
+        "test.ts",
+        r#"
+class C { v: i32 = 1; }
+export function main(): void {
   const arrays: i32[][] = [[1]];
   const arr = arrays.find((a: i32[]): boolean => true);
   const maps: Map<i32, C>[] = [new Map<i32, C>()];
-  const map: Map<i32, C> | null = maps.find((m: Map<i32, C>): boolean => true);
+  const map = maps.find((m: Map<i32, C>): boolean => true);
+  print(`${arr === undefined} ${map === undefined}`);
 }
 "#,
     )])

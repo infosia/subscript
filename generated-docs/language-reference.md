@@ -4,7 +4,7 @@
 
 ## Current-state surface summary
 
-subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
+subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, `undefined` outside a function result, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
 
 ## Rejection rules
 
@@ -223,42 +223,42 @@ export function main(): void {
 
 Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access.
 
-Pinned corpus: [`corpus/reject/r264-narrowing-switch-join.ts`](../corpus/reject/r264-narrowing-switch-join.ts), line 11.
+Pinned corpus: [`corpus/reject/r427-undefined-scalar-result.ts`](../corpus/reject/r427-undefined-scalar-result.ts), line 10.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS18047
-// expected-error: S011 at line 11
+// tsc: accepts
+// expected-error: S011, `i32 | undefined` is not a reference type union
 ```
 
 ```ts
-  switch (k) {
-    case 0: if (local === null) { return; } break;
-    case 1: print(`${local.v}`); break;
-  }
+  v: i32 = 1;
 }
+function pick(f: boolean): i32 | undefined {
+  if (f) {
+    return 1;
 ```
 
 ### S012
 
-`undefined` is banned; the single null story is `null`.
+`T | undefined` is legal only as the result type of a function declaration or a class method; the `undefined` token only returns or compares an absence.
 
-Pinned corpus: [`corpus/reject/r13-undefined.ts`](../corpus/reject/r13-undefined.ts), line 7.
+Pinned corpus: [`corpus/reject/r422-undefined-bare-return.ts`](../corpus/reject/r422-undefined-bare-return.ts), line 14.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: single null story: use null
+// expected-error: S012, a function whose result is `T | undefined` returns with `return undefined;`
 ```
 
 ```ts
-// tsc: accepts
-// expected-error: single null story: use null
-let maybe: i32 | undefined = undefined;
+    return new Box();
+  }
+  return;
+}
 
-export function main(): void {
 ```
 
 ### S013
@@ -710,9 +710,15 @@ Corpus: [`corpus/accept/a144-accessor.ts`](../corpus/accept/a144-accessor.ts), [
 
 ### Nullish operators
 
-`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.
+`a ?? b` requires `a` to have type `Ref | null` or `Ref | undefined`. It evaluates `a` once and evaluates `b` only when `a` is absent. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.
 
 Corpus: [`corpus/accept/a177-nullish.ts`](../corpus/accept/a177-nullish.ts), [`corpus/reject/r177-nullish-non-nullable-left.ts`](../corpus/reject/r177-nullish-non-nullable-left.ts), [`corpus/reject/r178-optional-chain-unbound.ts`](../corpus/reject/r178-optional-chain-unbound.ts).
+
+### Undefined results
+
+`T | undefined` is legal only as the declared result of a module-level function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.
+
+Corpus: [`corpus/accept/a373-undefined-result.ts`](../corpus/accept/a373-undefined-result.ts), [`corpus/reject/r424-undefined-strict-null-compare.ts`](../corpus/reject/r424-undefined-strict-null-compare.ts), [`corpus/reject/r428-undefined-local-annotation.ts`](../corpus/reject/r428-undefined-local-annotation.ts), [`corpus/reject/r435-map-get-nullable-value.ts`](../corpus/reject/r435-map-get-nullable-value.ts).
 
 ### Generic function inference
 

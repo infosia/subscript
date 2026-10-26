@@ -7,6 +7,8 @@
 use crate::diag::RuleCode;
 use crate::divergence::Divergence;
 mod lib_names;
+#[cfg(test)]
+mod nullable_result_tests;
 mod rejection_id;
 
 /// True for a global value name in the pinned lib surface.
@@ -619,6 +621,9 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection((ApiRejectionId::FormNonCallbackTMethods, Divergence::FixedArrayMethods), "FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
     rejection((ApiRejectionId::MapScalarGet, Divergence::MapScalarGet), "Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
     rejection((ApiRejectionId::MapNonNullableGet, Divergence::MapNonNullableGet), "Map<K, V with no shared nullable-pointer form>", "get(key)", "Q24", Some("getOr"), "The value type has no `| null` form of the map's value representation.", Some("r250-map-generator-get.ts")),
+    rejection((ApiRejectionId::MapNullableGet, Divergence::NullableElementSearch), "Map<K, V | null>", "get(key)", "Q24", Some("has(key) and getOr"), "On a nullable value, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5).", Some("r435-map-get-nullable-value.ts")),
+    rejection((ApiRejectionId::ArrayNullableFind, Divergence::NullableElementSearch), "(T | null)[]", "find", "Q22", Some("findIndex"), "On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5).", None),
+    rejection((ApiRejectionId::ArrayNullableFindLast, Divergence::NullableElementSearch), "(T | null)[]", "findLast", "Q22", Some("findLastIndex"), "On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5).", None),
     rejection((ApiRejectionId::FormNewMapIterable, Divergence::NoTupleType), "Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
     rejection((ApiRejectionId::FormNewSetMap, Divergence::NoTupleType), "Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5).", None),
     rejection((ApiRejectionId::FormNewSetGeneratorT, Divergence::GeneratorSingleUse), "Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),
@@ -661,6 +666,61 @@ impl ApiRejection {
             .class()
             .0
     }
+}
+
+/// One builtin member whose checked result is nullable, with the absence
+/// spelling of its declared result (compiler.md §195.5 rule 2).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NullableResult {
+    /// The declaring interface or class.
+    pub(crate) declaration: &'static str,
+    /// The member name.
+    pub(crate) member: &'static str,
+    /// The absence spelling of the checked result.
+    pub(crate) absence: crate::types::Absence,
+}
+
+/// The builtin members whose checked result is nullable (§195.5 rule 2).
+pub(crate) const NULLABLE_RESULTS: &[NullableResult] = &[
+    NullableResult {
+        declaration: "Map",
+        member: "get",
+        absence: crate::types::Absence::Undefined,
+    },
+    NullableResult {
+        declaration: "Array",
+        member: "find",
+        absence: crate::types::Absence::Undefined,
+    },
+    NullableResult {
+        declaration: "Array",
+        member: "findLast",
+        absence: crate::types::Absence::Undefined,
+    },
+    NullableResult {
+        declaration: "Worker",
+        member: "poll",
+        absence: crate::types::Absence::Null,
+    },
+    NullableResult {
+        declaration: "Inbox",
+        member: "wait",
+        absence: crate::types::Absence::Null,
+    },
+    NullableResult {
+        declaration: "Inbox",
+        member: "poll",
+        absence: crate::types::Absence::Null,
+    },
+];
+
+/// The absence spelling of a builtin member's nullable result
+/// (§195.5 rule 2). A member outside the table has the `null` spelling.
+pub(crate) fn nullable_result(declaration: &str, member: &str) -> crate::types::Absence {
+    NULLABLE_RESULTS
+        .iter()
+        .find(|row| row.declaration == declaration && row.member == member)
+        .map_or(crate::types::Absence::Null, |row| row.absence)
 }
 
 /// Maps a sized-numeric alias name to its type.

@@ -160,10 +160,10 @@ impl<'p> Checker<'p> {
                     continue;
                 }
                 let joined = match (&inferred, &candidate) {
-                    (Type::Nullable(inner), value) if inner.as_ref() == value => {
+                    (Type::Nullable(inner, _), value) if inner.as_ref() == value => {
                         Some(inferred.clone())
                     }
-                    (value, Type::Nullable(inner)) if inner.as_ref() == value => {
+                    (value, Type::Nullable(inner, _)) if inner.as_ref() == value => {
                         Some(candidate.clone())
                     }
                     _ => None,
@@ -176,7 +176,9 @@ impl<'p> Checker<'p> {
                 };
                 inferred = joined;
             }
-            if has_null && !matches!(inferred, Type::Nullable(_)) && self.allows_nullable(&inferred)
+            if has_null
+                && !matches!(inferred, Type::Nullable(_, _))
+                && self.allows_nullable(&inferred)
             {
                 inferred = Type::nullable(inferred);
             }
@@ -236,7 +238,7 @@ impl<'p> Checker<'p> {
                 if *actual == Type::Null {
                     return;
                 }
-                let actual = if let Type::Nullable(inner) = actual {
+                let actual = if let Type::Nullable(inner, _) = actual {
                     inner.as_ref()
                 } else {
                     actual
@@ -328,7 +330,7 @@ impl<'p> Checker<'p> {
             Type::Array(element)
             | Type::FixedArray(element, _)
             | Type::Set(element)
-            | Type::Nullable(element) => vec![element],
+            | Type::Nullable(element, _) => vec![element],
             Type::Map(key, value) => vec![key, value],
             Type::Class(id) => self
                 .instance_arguments

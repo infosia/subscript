@@ -36,7 +36,7 @@ impl Expr {
                 .is_some_and(HandleKind::needs_lifetime_trap)
         };
         let boundary_box_store = |stored: &Type, value: &Type| {
-            matches!(stored, Type::Nullable(inner)
+            matches!(stored, Type::Nullable(inner, _)
             if matches!(inner.as_ref(), Type::Class(class)
                 if value == &Type::Class(*class)
                     && module.classes.get(class.0).is_some_and(|definition| {
@@ -44,7 +44,7 @@ impl Expr {
                     })))
         };
         let embedded_header_store = |stored: &Type, value: &Expr| {
-            let Type::Nullable(inner) = stored else {
+            let Type::Nullable(inner, _) = stored else {
                 return false;
             };
             let Type::Class(header) = inner.as_ref() else {
@@ -56,7 +56,8 @@ impl Expr {
             let Type::Class(extension) = obj.ty else {
                 return false;
             };
-            let nullable = Type::Nullable(Box::new(Type::Class(*header)));
+            let nullable =
+                Type::Nullable(Box::new(Type::Class(*header)), crate::types::Absence::Null);
             let linked = module.classes.iter().any(|class| {
                 class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
             }) || module.foreign_fns.iter().any(|function| {
@@ -136,7 +137,7 @@ impl Expr {
             | K::Cond { .. } => None,
         };
         let narrowed = self.is_shared_location(&module.classes)
-            && matches!(declared, Some(Type::Nullable(inner)) if inner.as_ref() == &self.ty);
+            && matches!(declared, Some(Type::Nullable(inner, _)) if inner.as_ref() == &self.ty);
         let mut sites = match &self.kind {
             K::Str(_) => vec![allocation(&self.pos)],
             K::Binary { op, left, .. } if *op == B::Add && left.ty == Type::Str => {
@@ -185,7 +186,7 @@ impl Expr {
             K::Cast(inner)
                 if matches!(self.ty, Type::Class(_))
                     && (matches!(inner.ty, Type::Object)
-                        || matches!(&inner.ty, Type::Nullable(ty) if **ty == Type::Object)) =>
+                        || matches!(&inner.ty, Type::Nullable(ty, _) if **ty == Type::Object)) =>
             {
                 let Type::Class(class) = self.ty else {
                     unreachable!()
@@ -298,7 +299,7 @@ impl Expr {
                                     .zip(args)
                                     .all(|(parameter, argument)| {
                                         parameter == &argument.ty
-                                            || matches!(parameter, Type::Nullable(inner)
+                                            || matches!(parameter, Type::Nullable(inner, _)
                                                 if argument.ty == Type::Null || inner.as_ref() == &argument.ty)
                                             || boundary_box_store(parameter, &argument.ty)
                                     })
@@ -583,7 +584,7 @@ pub(super) fn declared_field_type<'a>(
             .get(id.0)
             .and_then(|class| class.fields.iter().find(|field| field.name == name))
             .map(|field| &field.ty),
-        Type::Nullable(inner) => declared_field_type(inner, name, classes),
+        Type::Nullable(inner, _) => declared_field_type(inner, name, classes),
         Type::IterResult(_)
         | Type::I8
         | Type::U8

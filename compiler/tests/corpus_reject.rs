@@ -95,6 +95,20 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r402-dropped-then-handle.ts", RuleCode::S013, 10),
     ("r403-then-captures-let.ts", RuleCode::S009, 10),
     ("r404-catch-callback-type.ts", RuleCode::S013, 9),
+    ("r422-undefined-bare-return.ts", RuleCode::S012, 14),
+    ("r423-undefined-fall-through.ts", RuleCode::S012, 10),
+    ("r424-undefined-strict-null-compare.ts", RuleCode::S012, 15),
+    ("r425-null-strict-undefined-compare.ts", RuleCode::S012, 12),
+    ("r426-undefined-strict-cross-compare.ts", RuleCode::S012, 16),
+    ("r427-undefined-scalar-result.ts", RuleCode::S011, 10),
+    ("r428-undefined-local-annotation.ts", RuleCode::S012, 15),
+    ("r429-undefined-field-annotation.ts", RuleCode::S012, 11),
+    ("r430-undefined-parameter-annotation.ts", RuleCode::S012, 10),
+    ("r431-undefined-function-value.ts", RuleCode::S100, 15),
+    ("r432-undefined-array-element.ts", RuleCode::S012, 15),
+    ("r433-undefined-exported-result.ts", RuleCode::S012, 10),
+    ("r434-undefined-arrow-result.ts", RuleCode::S012, 11),
+    ("r435-map-get-nullable-value.ts", RuleCode::S014, 13),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
@@ -664,6 +678,44 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
             file, line, first.pos.line, first.pos.col, first.message
         );
     }
+}
+
+/// compiler.md §195.8: each `undefined` entry gives the message of its
+/// row, and each `tsc: accepts` entry carries a block that cites C7.
+#[test]
+fn undefined_entries_give_their_section_195_rows() {
+    let dir = corpus_dir().join("reject");
+    let mut checked = 0;
+    for (file, _, _) in expected_entries() {
+        let source = fs::read_to_string(dir.join(file)).expect("read reject entry");
+        if !source
+            .lines()
+            .any(|line| line == "// questions: compiler.md §195")
+            && file != "r13-undefined.ts"
+        {
+            continue;
+        }
+        let header = source
+            .lines()
+            .find_map(|line| line.strip_prefix("// expected-error: "))
+            .expect("expected-error header");
+        let (code, substring) = header.split_once(", ").expect("code and message");
+        let files = reject_sources(&dir, file);
+        let diagnostics = check_entry(&files);
+        let first = &diagnostics[0];
+        assert_eq!(first.code.as_str(), code, "{file}");
+        assert!(
+            first.message.contains(substring),
+            "{file}: `{}` does not contain `{substring}`",
+            first.message
+        );
+        let variant = first
+            .divergence
+            .expect("a tsc-accepted entry carries a block");
+        assert_eq!(variant.entry().collision, "C7", "{file}: {variant:?}");
+        checked += 1;
+    }
+    assert_eq!(checked, 15, "r13 and r422-r435");
 }
 
 /// §79 rule 1 pairs a `tsc: accepts` reject entry with a divergence block.

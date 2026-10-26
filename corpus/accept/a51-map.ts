@@ -37,7 +37,7 @@ export function main(): void {
 
   const references: Map<i32, Boxed> = new Map<i32, Boxed>();
   references.set(7, new Boxed(70));
-  print(`get ${references.get(7) === null} ${references.get(8) === null}`);
+  print(`get ${references.get(7) === undefined} ${references.get(8) === undefined}`);
 
   const vectors: Map<string, Vec2> = new Map<string, Vec2>();
   vectors.set("p", new Vec2(3, 4));

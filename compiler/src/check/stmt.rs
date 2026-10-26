@@ -355,7 +355,7 @@ impl<'p> Checker<'p> {
             if dispose && !matches!(&self.apparent_type(&ty), Type::Error) {
                 let shape = self.apparent_type(&ty);
                 let resource_type = match &shape {
-                    Type::Nullable(inner) => inner.as_ref(),
+                    Type::Nullable(inner, _) => inner.as_ref(),
                     other => other,
                 };
                 let valid = match self.apparent_type(resource_type) {
@@ -444,10 +444,10 @@ impl<'p> Checker<'p> {
                 }
             }
             if !matches!(init.kind, hir::ExprKind::Unassigned)
-                && matches!(self.apparent_type(&ty), Type::Nullable(_))
+                && matches!(self.apparent_type(&ty), Type::Nullable(_, _))
                 && !matches!(
                     self.apparent_type(&init.ty),
-                    Type::Nullable(_) | Type::Null | Type::Error
+                    Type::Nullable(_, _) | Type::Null | Type::Error
                 )
             {
                 fx.narrowed.insert_fact(super::NarrowingFact {
@@ -483,6 +483,11 @@ impl<'p> Checker<'p> {
             && fx.frames.last().is_some_and(|frame| frame.is_lambda);
         let value = match &r.arg {
             Some(arg) if poisoned_result => Some(self.err_expr(self.pos(arg.span()))),
+            Some(arg)
+                if !is_generator && ret != Type::Void && super::expr::is_undefined_token(arg) =>
+            {
+                Some(self.check_return_undefined(arg, &ret))
+            }
             Some(arg) => {
                 if is_generator {
                     self.reject_subset(
@@ -516,7 +521,13 @@ impl<'p> Checker<'p> {
                 }
             }
             None => {
-                if ret != Type::Void
+                if self.apparent_type(&ret).absence() == Some(crate::types::Absence::Undefined) {
+                    self.reject_subset(
+                        RejectionSite::UndefinedResultBareReturn,
+                        "a function whose result is `T | undefined` returns with `return undefined;`, not `return;`",
+                        pos.clone(),
+                    );
+                } else if ret != Type::Void
                     && !is_generator
                     && !matches!(&self.apparent_type(&ret), Type::Error)
                 {
@@ -531,6 +542,31 @@ impl<'p> Checker<'p> {
             }
         };
         out.push(hir::Stmt::Return { value, pos });
+    }
+
+    /// Checks `return undefined;` (compiler.md §195.2 rule 1). In a
+    /// function whose result is `T | undefined`, the value is the HIR of
+    /// `return null;`.
+    fn check_return_undefined(&mut self, arg: &ast::Expr, ret: &Type) -> hir::Expr {
+        let pos = self.pos(arg.span());
+        match self.apparent_type(ret) {
+            Type::Nullable(_, crate::types::Absence::Undefined) => hir::Expr {
+                pending_work: None,
+                kind: hir::ExprKind::Null,
+                ty: Type::Null,
+                pos,
+            },
+            Type::Error => self.err_expr(pos),
+            _ => {
+                let name = self.type_name(ret);
+                self.reject_subset(
+                    RejectionSite::UndefinedReturnValue,
+                    format!("`undefined` is legal only in `return undefined;` and in an absence comparison; this function returns `{name}`, not `T | undefined`"),
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+        }
     }
 
     fn require_bool(&mut self, cond: &hir::Expr) {

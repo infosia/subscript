@@ -262,8 +262,8 @@
 | `unshift(value: T): i32` | Prepends one element and returns the new length. |
 | `copyWithin(target: i32, start: i32, end?: i32): T[]` | Copies a clamped range within the receiver and returns the receiver. |
 | `at(index: i32): T` | Reads a signed index; an out-of-range index traps. |
-| `find(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| null` | Returns the first matching nullable-capable element, or null. |
-| `findLast(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| null` | Returns the last matching nullable-capable element, or null. |
+| `find(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| undefined` | Returns the first matching reference element, or `undefined`; a nullable element type is rejected. |
+| `findLast(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| undefined` | Returns the last matching reference element, or `undefined`; a nullable element type is rejected. |
 | `findLastIndex(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): i32` | Returns the last matching index, or -1. |
 | `flatMap<U>(callback: ((value: T) => U[]) \| ((value: T, index: i32) => U[])): U[]` | Concatenates callback arrays at depth one. |
 
@@ -293,7 +293,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `size: i32` | Returns the entry count as `i32`. |
-| `get(key: K): V \| null` | Returns a nullable reference value; scalar values must use `getOr`. |
+| `get(key: K): V \| undefined` | Returns a reference value or `undefined`; scalar and nullable values must use `getOr`. |
 | `getOr(key: K, fallback: V): V` | Returns the stored value or the explicit fallback. |
 | `set(key: K, value: V): Map<K, V>` | Stores a value and returns the receiver. |
 | `has(key: K): boolean` | Tests key presence with the key kind's equality. |
@@ -433,6 +433,9 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | FixedArray<T, N> | `non-callback T[] methods` | S014 | Q22/Q27 | — | Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
 | Map<K, V with no shared nullable-pointer form> | `get(key)` | S014 | Q24 | `getOr` | The value type has no `\| null` form of the map's value representation. | `r250-map-generator-get.ts` |
+| Map<K, V \| null> | `get(key)` | S014 | Q24 | `has(key) and getOr` | On a nullable value, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5). | `r435-map-get-nullable-value.ts` |
+| (T \| null)[] | `find` | S014 | Q22 | `findIndex` | On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5). | — |
+| (T \| null)[] | `findLast` | S014 | Q22 | `findLastIndex` | On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5). | — |
 | Map | `new Map(iterable)` | S014 | Q30 | `construct empty, then set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
 | Set | `new Set(Map)` | S014 | Q30 | `pass a T[], FixedArray<T, N>, Set<T>, or string` | A Map yields a key-value pair, but the language has no tuple type to represent that pair (invariant 5). | — |
 | Set | `new Set(Generator<T>)` | S014 | Q30 | `collect the generator with for…of, then add` | A generator is single-use, and construction is a value expression (stdlib.md §14.4). | `r199-set-source-generator.ts` |
@@ -897,36 +900,6 @@ console.log(String([].shift()));
 
 - subscript result: `Trap`
 - Node result: `undefined\n`
-
-### `Map.get` miss for a reference-class value — Q24
-
-subscript returns null where JS returns undefined.
-
-subscript:
-
-```ts
-class Box {
-  value: i32;
-  constructor(value: i32) {
-    this.value = value;
-  }
-}
-
-export function main(): void {
-  const values: Map<string, Box> = new Map<string, Box>();
-  const missing = values.get("missing");
-  print(`${missing === null}`);
-}
-```
-
-Node:
-
-```js
-console.log(`${new Map().get("missing") === null}`);
-```
-
-- subscript result: `true\n`
-- Node result: `false\n`
 
 ### `IteratorResult.value` after generator completion — Q11
 

@@ -139,7 +139,7 @@ fn read_operands(
                 .and_then(|operand| super::verify::operand_type(function, operand))
                 .is_some_and(|ty| match ty {
                     l::ValueType::Data(Type::Object) => true,
-                    l::ValueType::Data(Type::Nullable(inner)) => *inner == Type::Object,
+                    l::ValueType::Data(Type::Nullable(inner, _)) => *inner == Type::Object,
                     _ => false,
                 });
             if result_is_class && input_is_object {

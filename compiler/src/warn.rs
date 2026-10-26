@@ -1579,7 +1579,7 @@ fn is_callback_userdata_slot(ty: &crate::types::Type) -> bool {
     matches!(ty, crate::types::Type::Object)
         || matches!(
             ty,
-            crate::types::Type::Nullable(inner) if **inner == crate::types::Type::Object
+            crate::types::Type::Nullable(inner, _) if **inner == crate::types::Type::Object
         )
 }
 

@@ -622,7 +622,7 @@ impl Layouts {
             | Type::Outbox(_)
             | Type::Generator(_)
             | Type::AsyncHandle(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Null => Repr::Scalar(types::I64),
             Type::Func(_) => Repr::Pair,
             Type::Class(id) => {
@@ -716,7 +716,7 @@ fn validate_handle_class(layouts: &Layouts, ty: &Type) -> Result<(), String> {
         Type::Class(id) => {
             layouts.class(id.0)?;
         }
-        Type::Nullable(inner) => validate_handle_class(layouts, inner)?,
+        Type::Nullable(inner, _) => validate_handle_class(layouts, inner)?,
         _ => {}
     }
     Ok(())
@@ -812,7 +812,7 @@ fn validate_shape_handle_class(classes: &[ClassShape], ty: &Type) -> Result<(), 
                 .get(id.0)
                 .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
         }
-        Type::Nullable(inner) => validate_shape_handle_class(classes, inner)?,
+        Type::Nullable(inner, _) => validate_shape_handle_class(classes, inner)?,
         _ => {}
     }
     Ok(())
@@ -1018,7 +1018,11 @@ mod tests {
             Repr::Pair
         ));
         assert!(is_managed(&layouts, &Type::Str).expect("managed"));
-        assert!(is_managed(&layouts, &Type::Nullable(Box::new(Type::Object))).expect("managed"));
+        assert!(is_managed(
+            &layouts,
+            &Type::Nullable(Box::new(Type::Object), subscript_compiler::Absence::Null)
+        )
+        .expect("managed"));
         assert!(!is_managed(&layouts, &Type::I64).expect("managed"));
     }
 
@@ -1029,7 +1033,13 @@ mod tests {
             params: Vec::new(),
             ret: Type::I32,
         }));
-        for ty in [function.clone(), Type::Nullable(Box::new(function.clone()))] {
+        for ty in [
+            function.clone(),
+            Type::Nullable(
+                Box::new(function.clone()),
+                subscript_compiler::Absence::Null,
+            ),
+        ] {
             assert!(!is_managed(&layouts, &ty).expect("the pair is not an allocation"));
             assert!(has_managed_interior(&layouts, &ty).expect("environment word"));
             assert_eq!(managed_words(&layouts, &ty).expect("pair root range"), 2);

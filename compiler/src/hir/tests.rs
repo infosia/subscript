@@ -784,7 +784,10 @@ fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
         Type::U64,
         Type::Object,
         Type::Class(ClassId(1)),
-        Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+        Type::Nullable(
+            Box::new(Type::Class(ClassId(1))),
+            crate::types::Absence::Null,
+        ),
         Type::Array(Box::new(Type::I32)),
     ] {
         assert_eq!(of(&ty), Some(ArrElemKind::Int), "{ty:?}");
@@ -810,7 +813,10 @@ fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
         ret: Type::I32,
     }));
     assert_eq!(of(&ft), None);
-    assert_eq!(of(&Type::Nullable(Box::new(ft))), None);
+    assert_eq!(
+        of(&Type::Nullable(Box::new(ft), crate::types::Absence::Null)),
+        None
+    );
     assert_eq!(of(&Type::FixedArray(Box::new(Type::I32), 3)), None);
     assert_eq!(of(&Type::Void), None);
     // Stable ABI codes.

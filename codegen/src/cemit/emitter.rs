@@ -217,7 +217,7 @@ impl<'m> Emitter<'m> {
             | Type::Outbox(_)
             | Type::Generator(_)
             | Type::AsyncHandle(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Null
             | Type::Class(_) => "ptr".into(),
             other => return Err(internal(format!("type tag for {other:?}"))),
@@ -248,7 +248,7 @@ impl<'m> Emitter<'m> {
             | Type::Outbox(_)
             | Type::Generator(_)
             | Type::AsyncHandle(_)
-            | Type::Nullable(_)
+            | Type::Nullable(_, _)
             | Type::Null => "void*".into(),
             Type::Func(_) => "SubFn".into(),
             Type::Class(id) if self.is_value_class(*id)? => self.class_name(*id),

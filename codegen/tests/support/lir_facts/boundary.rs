@@ -305,7 +305,7 @@ pub(super) fn compare_boundary_boxes(
 }
 
 fn hir_boundary_pointer_type(hir: &hir::Module, ty: &subscript_compiler::Type) -> bool {
-    matches!(ty, subscript_compiler::Type::Nullable(inner)
+    matches!(ty, subscript_compiler::Type::Nullable(inner, _)
     if matches!(&**inner, subscript_compiler::Type::Class(class)
         if hir.classes.get(class.0).is_some_and(|definition| {
             definition.is_value && definition.is_boundary
@@ -319,7 +319,7 @@ fn lir_boundary_box(
 ) -> bool {
     let (
         subscript_compiler::Type::Class(source),
-        l::ValueType::Data(subscript_compiler::Type::Nullable(target)),
+        l::ValueType::Data(subscript_compiler::Type::Nullable(target, _)),
     ) = (source, result)
     else {
         return false;
@@ -493,7 +493,7 @@ fn hir_boundary_class_contains_pointer(
         .filter(|definition| definition.is_value)
         .is_some_and(|definition| {
             definition.fields.iter().any(|field| match &field.ty {
-                subscript_compiler::Type::Nullable(inner) => matches!(
+                subscript_compiler::Type::Nullable(inner, _) => matches!(
                     &**inner,
                     subscript_compiler::Type::Class(inner)
                         if hir.classes.get(inner.0).is_some_and(|class| class.is_value)
@@ -529,7 +529,7 @@ fn lir_boundary_class_contains_pointer(
         .filter(|definition| definition.is_value)
         .is_some_and(|definition| {
             definition.fields.iter().any(|field| match &field.ty {
-                subscript_compiler::Type::Nullable(inner) => matches!(
+                subscript_compiler::Type::Nullable(inner, _) => matches!(
                     &**inner,
                     subscript_compiler::Type::Class(inner)
                         if lir.classes.get(inner.0).is_some_and(|class| class.is_value)

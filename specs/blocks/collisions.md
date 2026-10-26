@@ -218,6 +218,16 @@ no `undefined`, so the chain fails with S012. A non-nullable left
 operand of `??`, or a non-nullable tested receiver, fails with S100
 (`tsc` accepts; narrowing). Accept: `a177`. Reject: `r177`, `r178`.
 
+*Revised 2026-10-26 (`compiler.md` §195):* `T | undefined` is legal
+as the result type of a function declaration or a class method, for
+the `T` of `T | null`. It has the representation of `T | null`; the
+checker keeps the two spellings apart, as `tsc` does. The `undefined`
+token is legal in `return undefined;` of such a function and as an
+operand of an absence comparison. `===` and `!==` across the two
+spellings are rejected: `node` gives `false` there, also when both
+values are absent. Each other position of `| undefined` stays
+rejected. Accept: `a373`. Reject: `r422`–`r435`.
+
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
 an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries), `r349` (an optional parameter in a function type, §155).
@@ -670,16 +680,20 @@ Reject: `r297`, `r298`, `r299`, `r335`–`r343`.
 ### C22. A JavaScript `undefined` is `null` here
 
 Where `node` gives `undefined` for a value that a checked program holds
-as a reference, both tiers give `null`. So `x === null` is true here and
-false under `node`, and `x == null` is true in both (`compiler.md`
-§144). Teaching material tests such a value with `== null`.
+as a `T | null` reference, both tiers give `null`. So `x === null` is
+true here and false under `node`, and `x == null` is true in both
+(`compiler.md` §144). Teaching material tests such a value with
+`== null`.
 
-Measured with `node` (2026-10-02), for each source `x == null` prints
-`true` and `x === null` prints `false`:
+Measured with `node` (2026-10-02), for the source below `x == null`
+prints `true` and `x === null` prints `false`:
 
-- a miss of `Map.get`, `find`, or `findLast` on a reference element
-  (`stdlib.md` §10.5);
 - the `value` of a finished generator of `Box | null` (C8).
+
+*Revised 2026-10-26 (`compiler.md` §195.5):* a miss of `Map.get`,
+`find`, or `findLast` on a reference element has the `undefined`
+spelling. `x === undefined` agrees with `node`, and `x === null` is
+rejected (C7).
 
 Accept: `a308`, `a309`.
 

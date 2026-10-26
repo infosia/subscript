@@ -412,7 +412,7 @@ fn map_get_is_nullable_only_for_reference_values() {
          export function main(): void {\n\
            const map: Map<string, C> = new Map<string, C>();\n\
            const value = map.get(\"x\");\n\
-           print(`${value === null}`);\n\
+           print(`${value === undefined}`);\n\
          }\n",
     )
     .expect("reference-valued get checks");
@@ -424,7 +424,10 @@ fn map_get_is_nullable_only_for_reference_values() {
     let hir::Stmt::Let { ty, .. } = &main.body[1] else {
         panic!("expected get binding");
     };
-    assert!(matches!(ty, Type::Nullable(inner) if matches!(**inner, Type::Class(_))));
+    // §195.7 rule 2: HIR carries the `null` spelling of the `undefined` result.
+    assert!(
+        matches!(ty, Type::Nullable(inner, crate::types::Absence::Null) if matches!(**inner, Type::Class(_)))
+    );
 
     let err = check_one(
         "export function main(): void {\n\

@@ -42,7 +42,7 @@ impl<'p> Checker<'p> {
                 let parameter = self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::UnaryNumeric,
                     &operand.ty,
-                ) && !matches!(apparent, Type::Nullable(_));
+                ) && !matches!(apparent, Type::Nullable(_, _));
                 if !parameter && apparent == Type::F16 {
                     self.reject_subset(
                         RejectionSite::HalfFloatUnary,
@@ -105,7 +105,7 @@ impl<'p> Checker<'p> {
                 let parameter = self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::UnaryNumeric,
                     &operand.ty,
-                ) && !matches!(apparent, Type::Nullable(_));
+                ) && !matches!(apparent, Type::Nullable(_, _));
                 if !parameter && !apparent.is_integer() && !matches!(apparent, Type::Error) {
                     let name = self.type_name(&operand.ty);
                     self.reject_subset(
@@ -478,7 +478,7 @@ impl<'p> Checker<'p> {
                 {
                     if b.op == B::LogicalAnd
                         && self.apparent_type(&(right.ty)) == Type::Bool
-                        && !matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+                        && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
                     {
                         Type::Bool
                     } else {
@@ -535,6 +535,16 @@ impl<'p> Checker<'p> {
                     };
                     right = self.check_expr(&b.right, c.as_ref(), fx);
                 }
+                if matches!(b.op, B::EqEqEq | B::NotEqEq) {
+                    if let (Some(l), Some(r)) =
+                        (self.operand_spelling(&left), self.operand_spelling(&right))
+                    {
+                        if l != r {
+                            self.reject_strict_across_spellings(b.op, pos.clone());
+                            return self.err_expr(pos);
+                        }
+                    }
+                }
                 if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
                     if self.apparent_type(&right.ty) == Type::Null {
                         self.restore_nullable_storage(&mut left);
@@ -565,7 +575,7 @@ impl<'p> Checker<'p> {
             Some(target.storage_type(&self.classes))
         };
         if let Some(storage) =
-            storage.filter(|ty| matches!(self.apparent_type(ty), Type::Nullable(_)))
+            storage.filter(|ty| matches!(self.apparent_type(ty), Type::Nullable(_, _)))
         {
             expression.ty = storage.clone();
         }
@@ -794,7 +804,7 @@ impl<'p> Checker<'p> {
         let mut left = self.check_expr(&binary.left, None, fx);
         self.restore_nullable_storage(&mut left);
         if matches!(left_ast, ast::Expr::Bin(binary) if binary.op == ast::BinaryOp::NullishCoalescing)
-            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
             && self.allows_nullable(&left.ty)
         {
             // A preceding fallback can have a narrowed result type.
@@ -806,7 +816,7 @@ impl<'p> Checker<'p> {
         if self.involves_type_parameter(&left.ty) {
             let right = self.check_expr(&binary.right, None, fx);
             let inner = self.non_null_type(&left.ty);
-            let ty = if matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+            let ty = if matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
                 || self.is_unconstrained_type_parameter(&left.ty)
             {
                 self.generic_union(&inner, &right.ty)
@@ -849,7 +859,7 @@ impl<'p> Checker<'p> {
         }
         let value_ty = plan.value.ty.clone();
         match self.apparent_type(&value_ty) {
-            Type::Nullable(inner) => {
+            Type::Nullable(inner, _) => {
                 let (test, value) =
                     self.stabilize_nullable_operand(plan.value, (*inner).clone(), fx);
                 plan.tests.push(test);
@@ -874,9 +884,11 @@ impl<'p> Checker<'p> {
         if right.ty == *inner {
             return inner.clone();
         }
-        let nullable = Type::nullable(inner.clone());
-        if right.ty == nullable {
-            return nullable;
+        // §195.4 rule 1: a nullable right operand gives its own type, with
+        // its own absence spelling.
+        if matches!(self.apparent_type(&right.ty), Type::Nullable(right_inner, _) if *right_inner == *inner)
+        {
+            return right.ty.clone();
         }
         if self.apparent_type(&(right.ty)) != Type::Error {
             self.require_assignable(&right.ty.clone(), inner, right.pos.clone(), what);
@@ -890,7 +902,7 @@ impl<'p> Checker<'p> {
         what: &str,
         site: RejectionSite,
     ) -> Option<Type> {
-        if let Type::Nullable(_) = self.apparent_type(&operand.ty) {
+        if let Type::Nullable(_, _) = self.apparent_type(&operand.ty) {
             return Some(self.non_null_type(&operand.ty));
         }
         let name = self.type_name(&operand.ty);
@@ -1027,7 +1039,7 @@ impl<'p> Checker<'p> {
             &*binary.right
         };
         if left_undefined && right_undefined {
-            self.reject_subset(RejectionSite::UndefinedEqualityPair, "`undefined` is legal only in a presence test on an absence-capable descriptor member", self.pos(undefined_source.span()));
+            self.reject_subset(RejectionSite::UndefinedEqualityPair, "`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member", self.pos(undefined_source.span()));
             return Some(self.err_expr(pos));
         }
 
@@ -1041,8 +1053,13 @@ impl<'p> Checker<'p> {
             other => self.check_expr(other, None, fx),
         };
         if !self.is_absence_capable_member_expr(&checked) {
-            self.reject_subset(RejectionSite::UndefinedEqualityNonMember, "`undefined` is legal only in a presence test on an absence-capable descriptor member", self.pos(undefined_source.span()));
-            return Some(self.err_expr(pos));
+            return Some(self.check_undefined_absence_comparison(
+                binary,
+                checked,
+                left_undefined,
+                self.pos(undefined_source.span()),
+                pos,
+            ));
         }
 
         Some(hir::Expr {
@@ -1054,6 +1071,78 @@ impl<'p> Checker<'p> {
             ty: Type::Bool,
             pos,
         })
+    }
+
+    /// Checks an absence comparison with the `undefined` token (compiler.md
+    /// §195.3). The comparison has the HIR of the same comparison with
+    /// `null`.
+    fn check_undefined_absence_comparison(
+        &mut self,
+        binary: &ast::BinExpr,
+        mut checked: hir::Expr,
+        token_left: bool,
+        token_pos: Pos,
+        pos: Pos,
+    ) -> hir::Expr {
+        // A narrowed local compares through its storage type, as the
+        // comparison with `null` does.
+        self.restore_nullable_storage(&mut checked);
+        let spelling = match self.apparent_type(&checked.ty) {
+            Type::Error => return self.err_expr(pos),
+            Type::Null => crate::types::Absence::Null,
+            Type::Nullable(_, spelling) => spelling,
+            _ => {
+                self.reject_subset(RejectionSite::UndefinedEqualityNonMember, "`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member", token_pos);
+                return self.err_expr(pos);
+            }
+        };
+        if spelling == crate::types::Absence::Null
+            && matches!(binary.op, ast::BinaryOp::EqEqEq | ast::BinaryOp::NotEqEq)
+        {
+            self.reject_strict_across_spellings(binary.op, pos.clone());
+            return self.err_expr(pos);
+        }
+        let token = hir::Expr {
+            pending_work: None,
+            kind: ExprKind::Null,
+            ty: Type::Null,
+            pos: token_pos,
+        };
+        let (left, right) = if token_left {
+            (token, checked)
+        } else {
+            (checked, token)
+        };
+        self.bin_result(binary.op, left, right, pos, BinUse::Expression)
+            .expr
+    }
+
+    /// The absence spelling of an equality operand (compiler.md §195.3
+    /// rule 1): the `null` literal type, or the spelling of a nullable type.
+    fn operand_spelling(&self, operand: &hir::Expr) -> Option<crate::types::Absence> {
+        match self.apparent_type(&operand.ty) {
+            Type::Null => Some(crate::types::Absence::Null),
+            Type::Nullable(_, spelling) => Some(spelling),
+            _ => None,
+        }
+    }
+
+    fn reject_strict_across_spellings(&mut self, op: ast::BinaryOp, pos: Pos) {
+        let loose = if op == ast::BinaryOp::EqEqEq {
+            "=="
+        } else {
+            "!="
+        };
+        let strict = if op == ast::BinaryOp::EqEqEq {
+            "==="
+        } else {
+            "!=="
+        };
+        self.reject_subset(
+            RejectionSite::StrictEqualityAcrossSpellings,
+            format!("`{strict}` compares a `null` and an `undefined` absence; use `{loose}`"),
+            pos,
+        );
     }
 
     pub(super) fn bin_result(
@@ -1195,8 +1284,8 @@ impl<'p> Checker<'p> {
                         || (parameter
                             && !numeric(&lt)
                             && !numeric(&rt)
-                            && !matches!(lt, Type::Nullable(_))
-                            && !matches!(rt, Type::Nullable(_))
+                            && !matches!(lt, Type::Nullable(_, _))
+                            && !matches!(rt, Type::Nullable(_, _))
                             && self.generic_overlap(&left.ty, &right.ty)
                             && self.instance_restriction(
                                 crate::check::opaque::InstanceRestriction::RelationalKind,
@@ -1207,7 +1296,7 @@ impl<'p> Checker<'p> {
                                 },
                             ))
                         || (same_parameter
-                            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_)))
+                            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _)))
                         || (parameter
                             && ((self.is_unconstrained_type_parameter(&left.ty)
                                 && matches!(rt, Type::Str | Type::Bool))
@@ -1223,8 +1312,8 @@ impl<'p> Checker<'p> {
                 };
                 let null_cmp = matches!(
                     (&lt, &rt),
-                    (Type::Null, Type::Nullable(_))
-                        | (Type::Nullable(_), Type::Null)
+                    (Type::Null, Type::Nullable(_, _))
+                        | (Type::Nullable(_, _), Type::Null)
                         | (Type::Null, Type::Null)
                 );
                 let same_scalar = lt == rt
@@ -1450,7 +1539,7 @@ impl<'p> Checker<'p> {
             return Some(left.clone());
         }
         for (value, other) in [(left, right), (right, left)] {
-            if let Type::Nullable(inner) = value {
+            if let Type::Nullable(inner, _) = value {
                 if (other == inner.as_ref() || matches!(other, Type::Null))
                     && self.allows_nullable(inner)
                 {
@@ -1693,7 +1782,7 @@ impl<'p> Checker<'p> {
                 && self.apparent_type(&target).is_integer())
             || (matches!(self.apparent_type(&src), Type::Object)
                 && self.is_reference_class(&target))
-            || (matches!(&self.apparent_type(&src), Type::Nullable(inner) if self.apparent_type(inner) == Type::Object)
+            || (matches!(&self.apparent_type(&src), Type::Nullable(inner, _) if self.apparent_type(inner) == Type::Object)
                 && self.is_reference_class(&target))
             || ((self.in_json_argument || self.in_for_of_subject)
                 && self.apparent_type(&(target)) == Type::Object
@@ -1710,7 +1799,7 @@ impl<'p> Checker<'p> {
                     RejectionSite::IntegerEnumAssertion
                 } else if matches!(
                     (&self.apparent_type(&src), &self.apparent_type(&target)),
-                    (Type::Nullable(_), Type::Class(_))
+                    (Type::Nullable(_, _), Type::Class(_))
                 ) {
                     RejectionSite::NullableClassAssertion
                 } else if self.apparent_type(&src) == Type::Str

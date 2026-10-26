@@ -186,7 +186,7 @@ impl BoundaryBoxModule for hir::Module {
 }
 
 pub(crate) fn boundary_box_class(module: &impl BoundaryBoxModule, ty: &Type) -> Option<ClassId> {
-    let Type::Nullable(inner) = ty else {
+    let Type::Nullable(inner, _) = ty else {
         return None;
     };
     let Type::Class(class) = inner.as_ref() else {
@@ -208,7 +208,7 @@ pub(crate) fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, S
         | Type::Set(_) => 0,
         Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => 5,
         Type::Class(class) if !lir_class_is_value(module, *class) => 0,
-        Type::Nullable(inner) if !matches!(**inner, Type::Func(_)) => 0,
+        Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => 0,
         Type::F32 => 1,
         Type::F64 => 2,
         Type::Str => 3,
@@ -289,7 +289,7 @@ fn boundary_class_contains_pointer_inner(
     let mut result = false;
     for field in &definition.fields {
         result = match &field.ty {
-            Type::Nullable(inner) => {
+            Type::Nullable(inner, _) => {
                 matches!(inner.as_ref(), Type::Class(inner) if lir_class_is_value(module, *inner))
             }
             Type::Class(inner) if lir_class_is_value(module, *inner) => {

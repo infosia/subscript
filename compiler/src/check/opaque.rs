@@ -129,7 +129,7 @@ impl<'p> Checker<'p> {
             }
             InstanceRestriction::CompositeAssignability => matches!(
                 apparent,
-                Type::Nullable(_)
+                Type::Nullable(_, _)
                     | Type::Array(_)
                     | Type::FixedArray(_, _)
                     | Type::Map(_, _)
@@ -144,7 +144,7 @@ impl<'p> Checker<'p> {
                     | Type::IterResult(_)
             ),
             InstanceRestriction::UnaryNumeric => {
-                !matches!(apparent, Type::Nullable(_) | Type::Null | Type::Void)
+                !matches!(apparent, Type::Nullable(_, _) | Type::Null | Type::Void)
             }
             InstanceRestriction::BooleanContext => !matches!(apparent, Type::Func(_)),
             InstanceRestriction::TemplateInterpolation => !matches!(apparent, Type::Error),
@@ -163,7 +163,7 @@ impl<'p> Checker<'p> {
             InstanceRestriction::SwitchKind => !matches!(apparent, Type::Error),
             InstanceRestriction::CastKind => !matches!(apparent, Type::Error),
             InstanceRestriction::RelationalKind => {
-                !matches!(apparent, Type::Nullable(_) | Type::Void | Type::Func(_))
+                !matches!(apparent, Type::Nullable(_, _) | Type::Void | Type::Func(_))
             }
         }
     }
@@ -258,7 +258,9 @@ impl<'p> Checker<'p> {
                 seen.pop();
                 result
             }
-            Type::Nullable(inner) => Type::nullable(self.resolve_apparent_type(inner, seen)),
+            Type::Nullable(inner, absence) => {
+                Type::nullable_spelled(self.resolve_apparent_type(inner, seen), *absence)
+            }
             Type::GenericUnion(members) => {
                 let mut shapes = Vec::new();
                 for member in members.iter() {
@@ -285,7 +287,7 @@ impl<'p> Checker<'p> {
     /// Removes null through the apparent type and preserves parameter identity (§143 rule 1a).
     pub(crate) fn non_null_type(&self, ty: &Type) -> Type {
         match ty {
-            Type::Nullable(inner) => (**inner).clone(),
+            Type::Nullable(inner, _) => (**inner).clone(),
             Type::TypeParameter(parameter) => {
                 let mut parameter = parameter.clone();
                 parameter.constraint = parameter
@@ -323,10 +325,10 @@ impl<'p> Checker<'p> {
         if left == right {
             return true;
         }
-        if let Type::Nullable(inner) = left {
+        if let Type::Nullable(inner, _) = left {
             return self.generic_overlap(inner, right);
         }
-        if let Type::Nullable(inner) = right {
+        if let Type::Nullable(inner, _) = right {
             return self.generic_overlap(left, inner);
         }
         if matches!(left, Type::TypeParameter(_)) && matches!(right, Type::TypeParameter(_)) {

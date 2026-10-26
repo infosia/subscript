@@ -325,7 +325,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             return Err(internal("function conversion requires a matching pair"));
         }
         if let RV::Aggregate(address) = value {
-            if matches!(target, Type::Nullable(_)) {
+            if matches!(target, Type::Nullable(_, _)) {
                 return Ok(RV::Scalar(address));
             }
             return Err(internal(format!(

@@ -415,7 +415,7 @@ impl Planner<'_> {
     /// The value class of `X | null`.
     fn pointer_class(&self, ty: &Type) -> Option<ClassId> {
         match ty {
-            Type::Nullable(inner) => match inner.as_ref() {
+            Type::Nullable(inner, _) => match inner.as_ref() {
                 Type::Class(id) if self.is_value(*id) => Some(*id),
                 _ => None,
             },
@@ -676,7 +676,7 @@ impl Planner<'_> {
             Type::Array(element) => matches!(element.as_ref(), Type::Class(class)
                 if self.is_value(*class)
                     && struct_pass(&self.view, *class) != StructPass::Bytes),
-            Type::Nullable(inner) => {
+            Type::Nullable(inner, _) => {
                 matches!(inner.as_ref(), Type::Class(class)
                     if self.is_value(*class) && builds(*class))
             }
@@ -793,7 +793,7 @@ impl ReadView for LirRead<'_, '_> {
 
 /// True for a `void *` userdata slot (`object` or `object | null`).
 fn is_userdata_slot(ty: &Type) -> bool {
-    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner) if **inner == Type::Object)
+    matches!(ty, Type::Object) || matches!(ty, Type::Nullable(inner, _) if **inner == Type::Object)
 }
 
 #[cfg(test)]

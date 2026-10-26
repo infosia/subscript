@@ -209,9 +209,15 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
-/// Recognizes the one token whose ordinary identifier path is banned by C7.
-/// The checker admits it before general expression checking only in a
-/// strict comparison against an absence-capable descriptor member (§43).
+/// Whether an expression is the `undefined` token, in parentheses or not.
+pub(super) fn is_undefined_token(e: &ast::Expr) -> bool {
+    is_undefined_ident(e)
+}
+
+/// Recognizes the one token whose ordinary identifier path is rejected
+/// (C7). The checker admits it before general expression checking in
+/// `return undefined;` and in an absence comparison (compiler.md §195.2
+/// rule 1, §43).
 fn is_undefined_ident(e: &ast::Expr) -> bool {
     match e {
         ast::Expr::Ident(id) => id.sym.as_ref() == "undefined",
@@ -373,7 +379,7 @@ fn contextual_object_class(
 ) -> Option<ClassId> {
     match &apparent_type(ctx?) {
         Type::Class(id) => Some(*id),
-        Type::Nullable(inner) => match &apparent_type(inner.as_ref()) {
+        Type::Nullable(inner, _) => match &apparent_type(inner.as_ref()) {
             Type::Class(id) => Some(*id),
             _ => None,
         },

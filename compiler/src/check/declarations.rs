@@ -676,6 +676,23 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
         }
+        if let ast::TsType::TsUnionOrIntersectionType(
+            ast::TsUnionOrIntersectionType::TsUnionType(union),
+        ) = &*alias.type_ann
+        {
+            // §195.1 rule 5: a type alias is not the result position.
+            if let Some(member) = union.types.iter().find(|member| {
+                matches!(&***member, ast::TsType::TsKeywordType(keyword)
+                    if keyword.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword)
+            }) {
+                self.reject_subset(
+                    RejectionSite::UndefinedUnionMember,
+                    "`T | undefined` is legal only as the result type of a function declaration or a class method",
+                    self.pos(member.span()),
+                );
+                return;
+            }
+        }
         let Some(members) = string_alias_members(&alias.type_ann) else {
             self.reject_subset(
                 RejectionSite::SourceAliasNotLiteralUnion,

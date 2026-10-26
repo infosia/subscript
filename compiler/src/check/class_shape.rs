@@ -766,7 +766,7 @@ impl<'p> Checker<'p> {
                         .is_some_and(|ann| self.written_type(&ann.type_ann))
                         && !matches!(
                             self.apparent_type(&ty),
-                            Type::Null | Type::Nullable(_) | Type::Error
+                            Type::Null | Type::Nullable(_, _) | Type::Error
                         );
                     self.classes[id.0].fields.push(hir::Field {
                         written_non_null,

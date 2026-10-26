@@ -474,7 +474,7 @@ fn verify_constant(
             l::ConstantKind::Null => matches!(
                 constant.ty,
                 Type::Null
-                    | Type::Nullable(_)
+                    | Type::Nullable(_, _)
                     | Type::Object
                     | Type::Class(_)
                     | Type::Array(_)

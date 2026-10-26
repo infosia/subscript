@@ -30,7 +30,7 @@ pub(super) fn verify_narrowing(function: &l::Function, errors: &mut Vec<VerifyEr
                 .and_then(|value| value_type(function, value));
             let converts = is_conversion(&instruction.kind)
                 && instruction.operands.iter().any(|operand| {
-                    let Some(l::ValueType::Data(Type::Nullable(source))) =
+                    let Some(l::ValueType::Data(Type::Nullable(source, _))) =
                         operand_type(function, operand)
                     else {
                         return false;

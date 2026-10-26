@@ -52,7 +52,7 @@ impl super::Module {
                 Type::Array(t)
                 | Type::FixedArray(t, _)
                 | Type::Set(t)
-                | Type::Nullable(t)
+                | Type::Nullable(t, _)
                 | Type::IterResult(t) => carries(m, t, seen),
                 Type::Map(k, v) => carries(m, k, seen) || carries(m, v, seen),
                 Type::Class(id) => {

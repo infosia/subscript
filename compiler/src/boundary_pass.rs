@@ -113,7 +113,7 @@ pub fn field_shape<C: BoundaryClasses + ?Sized>(classes: &C, ty: &Type) -> Field
             Some(_) => FieldShape::Bytes,
             None => FieldShape::Unlowered,
         },
-        Type::Nullable(inner) => match classes.resolve(&inner) {
+        Type::Nullable(inner, _) => match classes.resolve(&inner) {
             Type::Object => FieldShape::Userdata,
             Type::Class(id) => match classes.class(id) {
                 Some(class) if class.is_value => FieldShape::Pointer {
@@ -246,7 +246,7 @@ pub fn is_embedded_header(
     {
         return false;
     }
-    let link = Type::Nullable(Box::new(Type::Class(header)));
+    let link = Type::Nullable(Box::new(Type::Class(header)), crate::types::Absence::Null);
     let used_as_link = classes
         .iter()
         .any(|class| class.is_boundary && class.fields.iter().any(|field| field.ty == link))
@@ -290,7 +290,7 @@ mod tests {
     }
 
     fn nullable(ty: Type) -> Type {
-        Type::Nullable(Box::new(ty))
+        Type::Nullable(Box::new(ty), crate::types::Absence::Null)
     }
 
     #[test]

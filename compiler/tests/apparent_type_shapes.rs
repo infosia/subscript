@@ -535,18 +535,23 @@ struct AllowGroup {
 
 const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup {
+        name: "concrete-spelling-walk",
+        reason: "The absence spelling walk reads the assembled module, which holds no opaque instance (§135 rule 1, §195.1 rule 6).",
+        sites: &[("undefined_spelling.rs", "outside_value_diagnostics", 0x2c602b16c6c9e2fe)],
+    },
+    AllowGroup {
         name: "inferred-argument-identity",
         reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1).",
         sites: &[
-            ("inference.rs", "infer_call_arguments", 0x0b4c4c7a745c0758),
-            ("inference.rs", "match_inference_type", 0x3c2a6e89afdb9ffd),
-            ("inference.rs", "inferred_parameter_edges", 0x4f00984e9ee75837),
+            ("inference.rs", "infer_call_arguments", 0xcff4b07d3f509319),
+            ("inference.rs", "match_inference_type", 0x45a1699ca55a906c),
+            ("inference.rs", "inferred_parameter_edges", 0xf0e7cada3029a254),
         ],
     },
     AllowGroup {
         name: "conditional-type-identity",
         reason: "The conditional join compares declared concrete types; check_cond routes all type parameters to generic_union (§143).",
-        sites: &[("expr/operator.rs", "conditional_join", 0xfb5ba5c0c4d9388b)],
+        sites: &[("expr/operator.rs", "conditional_join", 0x464171fc0a841446)],
     },
     AllowGroup {
         name: "numeric-storage-constraint-identity",
@@ -575,7 +580,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "concrete-captures", reason: "Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1).", sites: &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
         ("capture/blocks.rs", "flow_inputs", 0x80bc8ebc9b829d3a),
-        ("capture.rs", "type_name", 0x538ecbfbc819af8a),
+        ("capture.rs", "type_name", 0xdb23dc965253bee9),
     ] },
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[
         ("expr/call.rs", "check_indirect_call_with_arguments", 0xed9d360786d01965),
@@ -583,13 +588,13 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("expr/member.rs", "member_on_context", 0xb1ffa3a2183a7b30),
     ] },
     AllowGroup { name: "instance-identity", reason: "Instance keys compare declared type arguments and preserve T identity (§143 rule 1b).", sites: &[
-        ("generics.rs", "numeric_normal_form", 0x58518f62e52b0a50),
+        ("generics.rs", "numeric_normal_form", 0x717a414a03404ca1),
         ("generics.rs", "same_normal_form", 0x13ce99814da5bbaa),
         ("generics.rs", "satisfies_constraint_through_parameters", 0x967a092b7f73d8c0),
         ("instance_chain.rs", "argument_has_error", 0xa9def2fd9d81a55),
     ] },
     AllowGroup { name: "concrete-initializers", reason: "Initializer effect analysis runs on the final concrete HIR (§135 rule 1).", sites: &[
-        ("init_effects.rs", "class_of", 0xb041c5dbb9a8f91),
+        ("init_effects.rs", "class_of", 0x4e311ebca16a4080),
     ] },
     AllowGroup { name: "json-number", reason: "The callers supply apparent_type to this scalar conversion-code selector.", sites: &[
         ("json.rs", "json_number_target", 0xb5c32cde6ace4634),
@@ -612,14 +617,14 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),
         ("opaque.rs", "constraint_cycle", 0x7903218a6714cb24),
-        ("opaque.rs", "generic_overlap", 0xf7d270efc3e83c05),
+        ("opaque.rs", "generic_overlap", 0x626b3dfee7ea20d1),
         ("opaque.rs", "generic_union", 0x00bd1f8d43511104),
         ("opaque.rs", "involves_type_parameter", 0x73713f5554ee1dc7),
         ("initializer.rs", "default_contains_class_parameter", 0xd076751c8d5a2849),
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
         ("opaque.rs", "is_unconstrained_type_parameter", 0xc11d80573c40a67b),
-        ("opaque.rs", "non_null_type", 0x2c00558477fad7c),
-        ("opaque.rs", "resolve_apparent_type", 0x764b551cf3b227d8),
+        ("opaque.rs", "non_null_type", 0x585cfc2fd9141f7d),
+        ("opaque.rs", "resolve_apparent_type", 0xc8989ef6e47e12cb),
     ] },
     AllowGroup { name: "operation-signatures", reason: "The operation dispatcher constructs these outer container, function, and Worker shapes before this pass.", sites: &[
         ("pipeline.rs", "normalize_operation_parameter_types", 0x3a8927e5a46cd33f),
@@ -628,11 +633,11 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("fallthrough.rs", "exits", 0x236c857a745d8fa1),
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b). The nested-nominality guard requires a declared compound type (§173 rule 3).", sites: &[
-        ("type_rules.rs", "assignable_through_constraints", 0xbb1305f0120713de),
-        ("type_rules.rs", "report_not_assignable", 0xb027c95ea3b05166),
+        ("type_rules.rs", "assignable_through_constraints", 0x31a177474a276034),
+        ("type_rules.rs", "report_not_assignable", 0xcf2adcc527a57718),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[
-        ("type_rules.rs", "contains_string_alias", 0xac8041c10ca4be34),
+        ("type_rules.rs", "contains_string_alias", 0xf9567ff408902747),
         ("type_rules.rs", "supported_wire_alias_boundary_type", 0xda2c3c78f1e6611c),
     ] },
     AllowGroup {
@@ -655,7 +660,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("expr/namespace.rs", "check_worker_spawn", 0x5debbbffdf4b6cb8),
             ("host_entries.rs", "populate", 0x19f942a8ec1b1313),
             ("pipeline.rs", "visit_expr", 0xbfa87e28830c1a2f),
-            ("stmt.rs", "check_return", 0xf0f9958c60713a35),
+            ("stmt.rs", "check_return", 0xf5a688aebb2615fa),
         ],
     },
 

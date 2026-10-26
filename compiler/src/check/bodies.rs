@@ -308,15 +308,24 @@ impl<'p> Checker<'p> {
                 && !matches!(self.apparent_type(&sig.ret), Type::Void | Type::Error)
                 && super::fallthrough::sequence_can_fall_through(&body)
             {
-                self.reject_subset(
-                    if self.ts_return_coverage(&body) {
-                        RejectionSite::FunctionReturnCoverage
-                    } else {
-                        RejectionSite::FunctionReturnPathMissing
-                    },
-                    "not all paths return a value",
-                    pos.clone(),
-                );
+                if self.apparent_type(&sig.ret).absence() == Some(crate::types::Absence::Undefined)
+                {
+                    self.reject_subset(
+                        RejectionSite::UndefinedResultFallThrough,
+                        "a function whose result is `T | undefined` returns with `return undefined;`; control reaches the end of the body",
+                        pos.clone(),
+                    );
+                } else {
+                    self.reject_subset(
+                        if self.ts_return_coverage(&body) {
+                            RejectionSite::FunctionReturnCoverage
+                        } else {
+                            RejectionSite::FunctionReturnPathMissing
+                        },
+                        "not all paths return a value",
+                        pos.clone(),
+                    );
+                }
             }
             sig.ret.clone()
         };

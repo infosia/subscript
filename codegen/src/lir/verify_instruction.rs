@@ -75,11 +75,11 @@ pub(super) fn verify_instruction_contract(
     }
     let nullable_conversion = super::verify_narrowing::is_conversion(&instruction.kind)
         && match (operand_types.as_slice(), result_type.as_ref()) {
-            ([l::ValueType::Data(Type::Nullable(source))], Some(l::ValueType::Data(target))) => {
+            ([l::ValueType::Data(Type::Nullable(source, _))], Some(l::ValueType::Data(target))) => {
                 source.as_ref() == target
             }
             (
-                [l::ValueType::Data(Type::Nullable(source))],
+                [l::ValueType::Data(Type::Nullable(source, _))],
                 Some(l::ValueType::Address(address)),
             ) => {
                 source.as_ref() == &address.pointee
@@ -979,7 +979,7 @@ fn boundary_box_signature(
 ) -> bool {
     let (
         [l::ValueType::Data(Type::Class(source))],
-        Some(l::ValueType::Data(Type::Nullable(target))),
+        Some(l::ValueType::Data(Type::Nullable(target, _))),
     ) = (operands, result)
     else {
         return false;
@@ -1028,7 +1028,7 @@ fn field_base_accepts(module: &l::Module, field: l::FieldRef, base: &l::ValueTyp
                 .find(|class| class.fields.iter().any(|candidate| candidate.id == id));
             owner.is_some_and(|class| match base {
                 l::ValueType::Data(Type::Class(id)) => *id == class.id,
-                l::ValueType::Data(Type::Nullable(inner)) => {
+                l::ValueType::Data(Type::Nullable(inner, _)) => {
                     matches!(inner.as_ref(), Type::Class(id)
                         if *id == class.id && class.is_value && class.is_boundary)
                 }

@@ -17,7 +17,7 @@ impl<'p> Checker<'p> {
     pub(super) fn check_receiver(&mut self, obj: &ast::Expr, fx: &mut FnCtx) -> hir::Expr {
         let mut checked = self.check_expr_with_header_receiver(obj, None, fx, true);
         self.apply_narrowing(&mut checked, fx);
-        if let Type::Nullable(_) = self.apparent_type(&checked.ty) {
+        if let Type::Nullable(_, _) = self.apparent_type(&checked.ty) {
             let name = self.type_name(&checked.ty);
             self.nullable_use_error(
                 &checked,

@@ -12,7 +12,7 @@ use crate::{RuleCode, WarnCode};
 
 const GENERATED_BY: &str = "cargo run --offline -p subscript-compiler --bin generate-api-reference";
 
-const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
+const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, `undefined` outside a function result, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
 
 const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 
@@ -20,7 +20,9 @@ const VALUE_REFERENCE_CLASSES: &str = "`@ValueType class` declares a nominal C-l
 
 const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Static accessors use the same rules through the class name. Reference classes and `@ValueType` value classes can declare read accessors. Only reference classes can declare instance write accessors. Value-position writes, value-class instance write accessors, and mirror accessors are outside the surface.";
 
-const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
+const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null` or `Ref | undefined`. It evaluates `a` once and evaluates `b` only when `a` is absent. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
+
+const UNDEFINED_RESULTS: &str = "`T | undefined` is legal only as the declared result of a module-level function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.";
 
 const USING_DECLARATIONS: &str = "`using x = e` declares an immutable reference-class binding whose class declares `[Symbol.dispose](): void`. The binding can have type `R | null`. Each initializer evaluates once. Scope exits call the hooks in reverse declaration order and skip null bindings. Inner scopes dispose first; a return expression evaluates before disposal. Suspension preserves resources until completion. Member reads through nullable bindings require ordinary null narrowing. A bare `using x = null` needs a type annotation. Traps do not run disposal. `await using`, value-class hooks, and descriptor-class hooks stay rejected.";
 
@@ -125,6 +127,16 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a177-nullish.ts",
             "corpus/reject/r177-nullish-non-nullable-left.ts",
             "corpus/reject/r178-optional-chain-unbound.ts",
+        ],
+    },
+    Feature {
+        title: "Undefined results",
+        prose: UNDEFINED_RESULTS,
+        corpus: &[
+            "corpus/accept/a373-undefined-result.ts",
+            "corpus/reject/r424-undefined-strict-null-compare.ts",
+            "corpus/reject/r428-undefined-local-annotation.ts",
+            "corpus/reject/r435-map-get-nullable-value.ts",
         ],
     },
     Feature {

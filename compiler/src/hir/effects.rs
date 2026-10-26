@@ -173,7 +173,7 @@ impl Expr {
             !matches!(
                 ty,
                 Type::Null
-                    | Type::Nullable(_)
+                    | Type::Nullable(_, _)
                     | Type::TypeParameter(_)
                     | Type::GenericNumber
                     | Type::Error
@@ -250,7 +250,7 @@ impl Expr {
         } = &self.kind
         {
             if declared_globals.map_or_else(
-                || matches!(value.ty, Type::Null | Type::Nullable(_)),
+                || matches!(value.ty, Type::Null | Type::Nullable(_, _)),
                 |globals| !value.non_null_without_facts(classes, globals),
             ) {
                 if let Some(path) = store_path(target) {
@@ -639,7 +639,10 @@ mod tests {
             pos: crate::diag::Pos::new("test.ts", 1, 1),
         };
         assert!(!value.non_null_without_facts(&[], &HashMap::new()));
-        let globals = HashMap::from([(symbol.clone(), Type::Nullable(Box::new(Type::I32)))]);
+        let globals = HashMap::from([(
+            symbol.clone(),
+            Type::Nullable(Box::new(Type::I32), crate::types::Absence::Null),
+        )]);
         assert!(!value.non_null_without_facts(&[], &globals));
         let globals = HashMap::from([(symbol, Type::I32)]);
         assert!(value.non_null_without_facts(&[], &globals));

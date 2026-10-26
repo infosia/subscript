@@ -116,7 +116,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .result
             .ok_or_else(|| internal("BoxBoundaryValue has no result id"))?;
         let result_type = self.value_type(result_id)?.clone();
-        let l::ValueType::Data(Type::Nullable(inner)) = result_type else {
+        let l::ValueType::Data(Type::Nullable(inner, _)) = result_type else {
             return Err(internal("BoxBoundaryValue result is not nullable"));
         };
         let Type::Class(_) = inner.as_ref() else {
@@ -172,7 +172,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     l::ValueType::Data(Type::Class(id)) if self.emitter.is_value_class(*id)? => {
                         format!("&(({}).d{})", operands[0], field.0)
                     }
-                    l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
+                    l::ValueType::Data(Type::Nullable(inner, _)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
                     {
                         format!(
                             "&((({}*)({}))->d{})",
@@ -222,7 +222,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 l::ValueType::Data(Type::Class(id)) if self.emitter.is_value_class(*id)? => {
                     format!("({}).d{}", operands[0], field_id.0)
                 }
-                l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class_id) =>
+                l::ValueType::Data(Type::Nullable(inner, _)) if matches!(inner.as_ref(), Type::Class(id) if *id == class_id) =>
                 {
                     format!(
                         "((({}*)({}))->d{})",

@@ -254,7 +254,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             return Ok(());
         }
         if let (
-            l::ValueType::Data(Type::Nullable(source)),
+            l::ValueType::Data(Type::Nullable(source, _)),
             l::ValueType::Data(Type::Class(target)),
         ) = (operand_type, &result_type)
         {

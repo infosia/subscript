@@ -605,7 +605,7 @@ fn type_name(m: &hir::Module, t: &Type) -> String {
             let name = type_name(m, t);
             if matches!(
                 t.as_ref(),
-                Type::Nullable(_) | Type::GenericUnion(_) | Type::Func(_)
+                Type::Nullable(_, _) | Type::GenericUnion(_) | Type::Func(_)
             ) {
                 format!("({name})[]")
             } else {
@@ -613,10 +613,10 @@ fn type_name(m: &hir::Module, t: &Type) -> String {
             }
         }
         Type::FixedArray(t, n) => format!("FixedArray<{}, {n}>", type_name(m, t)),
-        Type::Nullable(t) if matches!(t.as_ref(), Type::Func(_)) => {
+        Type::Nullable(t, _) if matches!(t.as_ref(), Type::Func(_)) => {
             format!("({}) | null", type_name(m, t))
         }
-        Type::Nullable(t) => format!("{} | null", type_name(m, t)),
+        Type::Nullable(t, _) => format!("{} | null", type_name(m, t)),
         Type::Generator(t) => format!("Generator<{}>", type_name(m, t)),
         Type::Map(k, v) => format!("Map<{}, {}>", type_name(m, k), type_name(m, v)),
         Type::Set(t) => format!("Set<{}>", type_name(m, t)),
@@ -693,7 +693,10 @@ mod tests {
                 .unwrap(),
         ));
         for (element, expected) in [
-            (Type::Nullable(Box::new(class.clone())), "(Box | null)[]"),
+            (
+                Type::Nullable(Box::new(class.clone()), crate::types::Absence::Null),
+                "(Box | null)[]",
+            ),
             (
                 Type::Func(Box::new(crate::types::FuncType {
                     params: vec![Type::I32],

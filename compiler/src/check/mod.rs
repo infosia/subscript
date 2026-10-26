@@ -78,6 +78,7 @@ use snapshot::Shared;
 mod stmt;
 mod type_rules;
 mod tyres;
+mod undefined_spelling;
 mod using_scope;
 
 #[cfg(test)]
@@ -1266,6 +1267,11 @@ pub(crate) struct Checker<'p> {
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
     pub in_boundary: bool,
+    /// True while the next resolved annotation is the declared result of a
+    /// module-level function declaration or a class method, the one
+    /// position of `T | undefined` (compiler.md §195.1 rule 4). The type
+    /// resolution reads and clears it, so a nested position never sees it.
+    pub undefined_result: bool,
     /// True while resolving a boundary position that accepts a wire-mapped
     /// alias: a foreign-function signature, a boundary-struct member, or a
     /// mirror-class constructor parameter (§50.2, §52.2).

@@ -317,9 +317,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.require_expr(argument)?
         };
         match self.operand_type(&value, &argument.pos)? {
-            l::ValueType::Address(_) | l::ValueType::Data(Type::Nullable(_)) => Ok(value),
+            l::ValueType::Address(_) | l::ValueType::Data(Type::Nullable(_, _)) => Ok(value),
             l::ValueType::Data(Type::Class(class))
-                if expected == &Type::Nullable(Box::new(Type::Class(class))) =>
+                if expected
+                    == &Type::Nullable(
+                        Box::new(Type::Class(class)),
+                        subscript_compiler::Absence::Null,
+                    ) =>
             {
                 self.emit(
                     l::InstructionKind::AddressOfValue,

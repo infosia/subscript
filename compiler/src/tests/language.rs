@@ -947,7 +947,7 @@ fn contextual_conditional_uses_nullable_type_in_both_branch_orders() {
             panic!("conditional binding");
         };
         assert!(matches!(init.kind, hir::ExprKind::Cond { .. }));
-        assert!(matches!(init.ty, Type::Nullable(_)));
+        assert!(matches!(init.ty, Type::Nullable(_, _)));
     }
 }
 
@@ -972,7 +972,7 @@ fn nested_conditionals_inherit_the_outer_context() {
     let hir::ExprKind::Cond { then, .. } = &init.kind else {
         panic!("outer conditional");
     };
-    assert!(matches!(init.ty, Type::Nullable(_)));
+    assert!(matches!(init.ty, Type::Nullable(_, _)));
     assert!(matches!(then.kind, hir::ExprKind::Cond { .. }));
     assert_eq!(then.ty, init.ty);
 }
@@ -998,7 +998,7 @@ fn conditional_without_context_joins_nullable_branches_symmetrically() {
             let hir::Stmt::Let { init, .. } = &function.body[0] else {
                 panic!("conditional binding");
             };
-            assert!(matches!(init.ty, Type::Nullable(_)), "{left} : {right}");
+            assert!(matches!(init.ty, Type::Nullable(_, _)), "{left} : {right}");
         }
     }
 }
@@ -1151,7 +1151,7 @@ fn contextual_conditional_accepts_nominally_distinct_reference_arms() {
     let hir::ExprKind::Call { args, .. } = &call.kind else {
         panic!("foreign call");
     };
-    assert!(matches!(&args[0].ty, Type::Nullable(inner) if **inner == Type::Object));
+    assert!(matches!(&args[0].ty, Type::Nullable(inner, _) if **inner == Type::Object));
 }
 
 #[test]

@@ -203,12 +203,24 @@ pub struct TypeParameterType {
     pub constraint: Option<Box<Type>>,
 }
 
+/// The absence spelling of a nullable type (compiler.md §195.1 rule 1).
+///
+/// The two spellings have one representation, the nullable pointer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Absence {
+    /// `T | null`.
+    Null,
+    /// `T | undefined`: a function declaration or class method result only
+    /// (§195.1 rule 4), and the value of such a call.
+    Undefined,
+}
+
 /// A fully resolved language type.
 ///
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
 /// classes are different types); `Nullable` and named string-literal
 /// aliases are the only union forms (`Ref | null`, C7/Q32).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Type {
     /// 8-bit signed integer.
@@ -293,7 +305,12 @@ pub enum Type {
     Func(Box<FuncType>),
     /// `Ref | null` (C7). The inner type is a reference class, `object`,
     /// a function type, or a boxed boundary value class (§33.5).
-    Nullable(Box<Type>),
+    ///
+    /// The [`Absence`] is the absence spelling (compiler.md §195.1 rule 1):
+    /// `Ref | null` or `Ref | undefined`. The derived equality keeps the two
+    /// spellings apart (§195.7 rule 1). HIR carries [`Absence::Null`] only
+    /// (§195.7 rule 2).
+    Nullable(Box<Type>, Absence),
     /// Coroutine object produced by calling a `function*` (C8); yields
     /// the carried type through `.next()`.
     Generator(Box<Type>),
@@ -310,6 +327,68 @@ pub enum Type {
     /// A discovery HIR (`poisoned_imports` non-empty) can contain this type;
     /// a HIR with no poisoned import never does.
     Error,
+}
+
+/// The debug form of a type. `T | null` prints as `Nullable(T)`, so a
+/// text that HIR or LIR prints carries no spelling (compiler.md §195.7
+/// rule 2); `T | undefined` prints its spelling as a second field.
+impl std::fmt::Debug for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let unit = |f: &mut std::fmt::Formatter<'_>, name: &str| f.write_str(name);
+        match self {
+            Self::I8 => unit(f, "I8"),
+            Self::U8 => unit(f, "U8"),
+            Self::I16 => unit(f, "I16"),
+            Self::U16 => unit(f, "U16"),
+            Self::I32 => unit(f, "I32"),
+            Self::U32 => unit(f, "U32"),
+            Self::I64 => unit(f, "I64"),
+            Self::U64 => unit(f, "U64"),
+            Self::F32 => unit(f, "F32"),
+            Self::F64 => unit(f, "F64"),
+            Self::F16 => unit(f, "F16"),
+            Self::Bool => unit(f, "Bool"),
+            Self::Str => unit(f, "Str"),
+            Self::Date => unit(f, "Date"),
+            Self::RegExp => unit(f, "RegExp"),
+            Self::TaskGroup => unit(f, "TaskGroup"),
+            Self::Void => unit(f, "Void"),
+            Self::Null => unit(f, "Null"),
+            Self::Object => unit(f, "Object"),
+            Self::GenericNumber => unit(f, "GenericNumber"),
+            Self::Error => unit(f, "Error"),
+            Self::Class(id) => f.debug_tuple("Class").field(id).finish(),
+            Self::TypeParameter(parameter) => {
+                f.debug_tuple("TypeParameter").field(parameter).finish()
+            }
+            Self::GenericUnion(members) => f.debug_tuple("GenericUnion").field(members).finish(),
+            Self::Enum(id) => f.debug_tuple("Enum").field(id).finish(),
+            Self::StringAlias(id) => f.debug_tuple("StringAlias").field(id).finish(),
+            Self::FixedArray(element, len) => f
+                .debug_tuple("FixedArray")
+                .field(element)
+                .field(len)
+                .finish(),
+            Self::Array(element) => f.debug_tuple("Array").field(element).finish(),
+            Self::Map(key, value) => f.debug_tuple("Map").field(key).field(value).finish(),
+            Self::Set(element) => f.debug_tuple("Set").field(element).finish(),
+            Self::Worker(input, output) => {
+                f.debug_tuple("Worker").field(input).field(output).finish()
+            }
+            Self::Inbox(message) => f.debug_tuple("Inbox").field(message).finish(),
+            Self::Outbox(message) => f.debug_tuple("Outbox").field(message).finish(),
+            Self::Func(signature) => f.debug_tuple("Func").field(signature).finish(),
+            Self::Nullable(inner, Absence::Null) => f.debug_tuple("Nullable").field(inner).finish(),
+            Self::Nullable(inner, Absence::Undefined) => f
+                .debug_tuple("Nullable")
+                .field(inner)
+                .field(&Absence::Undefined)
+                .finish(),
+            Self::Generator(element) => f.debug_tuple("Generator").field(element).finish(),
+            Self::AsyncHandle(value) => f.debug_tuple("AsyncHandle").field(value).finish(),
+            Self::IterResult(value) => f.debug_tuple("IterResult").field(value).finish(),
+        }
+    }
 }
 
 /// The composite type constructors (compiler.md §132 rule 2a).
@@ -385,10 +464,97 @@ impl Type {
     /// `T | null`.
     #[must_use]
     pub fn nullable(inner: Type) -> Type {
+        Self::nullable_spelled(inner, Absence::Null)
+    }
+
+    /// `T | null` or `T | undefined`, by the absence spelling (§195.1).
+    #[must_use]
+    pub fn nullable_spelled(inner: Type, absence: Absence) -> Type {
         if inner == Self::Error {
             return Self::Error;
         }
-        Self::Nullable(Box::new(inner))
+        Self::Nullable(Box::new(inner), absence)
+    }
+
+    /// The absence spelling of a nullable type; `None` for every other type.
+    #[must_use]
+    pub fn absence(&self) -> Option<Absence> {
+        match self {
+            Self::Nullable(_, absence) => Some(*absence),
+            _ => None,
+        }
+    }
+
+    /// Whether the `undefined` spelling occurs in this type, at the top
+    /// level or below it.
+    #[must_use]
+    pub fn holds_undefined(&self) -> bool {
+        matches!(self, Self::Nullable(_, Absence::Undefined)) || self.holds_nested_undefined()
+    }
+
+    /// Whether the `undefined` spelling occurs below the top level of this
+    /// type (§195.1 rule 6).
+    #[must_use]
+    pub fn holds_nested_undefined(&self) -> bool {
+        self.contained_types()
+            .into_iter()
+            .any(Type::holds_undefined)
+    }
+
+    /// Maps every `undefined` spelling in this type to `null` (§195.7 rule 2).
+    pub fn erase_undefined(&mut self) {
+        match self {
+            Self::Nullable(inner, absence) => {
+                *absence = Absence::Null;
+                inner.erase_undefined();
+            }
+            Self::GenericUnion(members) => members.iter_mut().for_each(Type::erase_undefined),
+            Self::FixedArray(inner, _)
+            | Self::Array(inner)
+            | Self::Set(inner)
+            | Self::Inbox(inner)
+            | Self::Outbox(inner)
+            | Self::Generator(inner)
+            | Self::AsyncHandle(inner)
+            | Self::IterResult(inner) => inner.erase_undefined(),
+            Self::Map(key, value) | Self::Worker(key, value) => {
+                key.erase_undefined();
+                value.erase_undefined();
+            }
+            Self::Func(signature) => {
+                signature.params.iter_mut().for_each(Type::erase_undefined);
+                signature.ret.erase_undefined();
+            }
+            Self::TypeParameter(parameter) => {
+                if let Some(constraint) = parameter.constraint.as_mut() {
+                    constraint.erase_undefined();
+                }
+            }
+            Self::I8
+            | Self::U8
+            | Self::I16
+            | Self::U16
+            | Self::I32
+            | Self::U32
+            | Self::I64
+            | Self::U64
+            | Self::F32
+            | Self::F64
+            | Self::F16
+            | Self::Bool
+            | Self::Str
+            | Self::Date
+            | Self::RegExp
+            | Self::TaskGroup
+            | Self::Void
+            | Self::Null
+            | Self::Object
+            | Self::Class(_)
+            | Self::GenericNumber
+            | Self::Enum(_)
+            | Self::StringAlias(_)
+            | Self::Error => {}
+        }
     }
 
     /// `Generator<T>`.
@@ -498,7 +664,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         | Type::Outbox(_)
         | Type::Generator(_)
         | Type::AsyncHandle(_)
-        | Type::Nullable(_)
+        | Type::Nullable(_, _)
         | Type::Null => (8, 8),
         Type::Func(_) => (16, 8),
         Type::Void
@@ -516,7 +682,7 @@ impl Type {
     pub fn function_type(&self) -> Option<&FuncType> {
         match self {
             Self::Func(signature) => Some(signature),
-            Self::Nullable(inner) => match inner.as_ref() {
+            Self::Nullable(inner, _) => match inner.as_ref() {
                 Self::Func(signature) => Some(signature),
                 _ => None,
             },
@@ -534,7 +700,7 @@ impl Type {
             | Self::Set(inner)
             | Self::Inbox(inner)
             | Self::Outbox(inner)
-            | Self::Nullable(inner)
+            | Self::Nullable(inner, _)
             | Self::Generator(inner)
             | Self::AsyncHandle(inner)
             | Self::IterResult(inner) => vec![inner],
@@ -655,7 +821,7 @@ impl Type {
             Type::Func(_) => Some(HandleKind::Func),
             Type::Class(id) => matches!(classes.get(id.0), Some(HandleClass::Reference))
                 .then_some(HandleKind::ReferenceClass),
-            Type::Nullable(inner) => match inner.handle_kind(classes) {
+            Type::Nullable(inner, _) => match inner.handle_kind(classes) {
                 Some(HandleKind::Func) => Some(HandleKind::NullableFunc),
                 Some(kind) => Some(kind),
                 None if matches!(
@@ -741,7 +907,7 @@ impl Type {
             | Type::Date
             | Type::Null
             | Type::Enum(_)
-            | Type::Nullable(_) => true,
+            | Type::Nullable(_, _) => true,
             Type::StringAlias(id) => aliases(*id).is_none_or(|values| values.contains(&0)),
             Type::Str
             | Type::RegExp
@@ -784,10 +950,10 @@ impl Type {
     /// is outside this surface.
     #[must_use]
     pub fn is_reference_shape(&self, classes: &[HandleClass]) -> bool {
-        if matches!(self, Type::Nullable(_)) {
+        if matches!(self, Type::Nullable(_, _)) {
             return false;
         }
-        Type::Nullable(Box::new(self.clone()))
+        Type::Nullable(Box::new(self.clone()), Absence::Null)
             .handle_kind(classes)
             .is_some_and(HandleKind::supports_nullable)
     }
@@ -801,7 +967,7 @@ impl Type {
     /// add one.
     #[must_use]
     pub fn uses_reference_identity(&self, classes: &[HandleClass]) -> bool {
-        !matches!(self, Type::Nullable(_))
+        !matches!(self, Type::Nullable(_, _))
             && self
                 .handle_kind(classes)
                 .is_some_and(HandleKind::uses_reference_identity)
@@ -858,7 +1024,7 @@ pub fn display_type(
             let name = display_type(elem, class_name, enum_name, string_alias_name);
             if matches!(
                 elem.as_ref(),
-                Type::Nullable(_) | Type::GenericUnion(_) | Type::Func(_)
+                Type::Nullable(_, _) | Type::GenericUnion(_) | Type::Func(_)
             ) {
                 format!("({name})[]")
             } else {
@@ -899,12 +1065,16 @@ pub fn display_type(
                 display_type(&f.ret, class_name, enum_name, string_alias_name)
             )
         }
-        Type::Nullable(inner) => {
+        Type::Nullable(inner, absence) => {
             let name = display_type(inner, class_name, enum_name, string_alias_name);
+            let spelling = match absence {
+                Absence::Null => "null",
+                Absence::Undefined => "undefined",
+            };
             if matches!(inner.as_ref(), Type::Func(_)) {
-                format!("({name}) | null")
+                format!("({name}) | {spelling}")
             } else {
-                format!("{name} | null")
+                format!("{name} | {spelling}")
             }
         }
         Type::Generator(y) => format!(
@@ -977,7 +1147,8 @@ mod tests {
             Type::FixedArray(Box::new(Type::StringAlias(StringAliasId(1))), 2),
         ] {
             assert!(!ty.zero_is_value(&classes, &fields, &aliases), "{ty:?}");
-            assert!(Type::Nullable(Box::new(ty)).zero_is_value(&classes, &fields, &aliases));
+            assert!(Type::Nullable(Box::new(ty), Absence::Null)
+                .zero_is_value(&classes, &fields, &aliases));
         }
         for ty in [
             Type::I32,
@@ -990,7 +1161,10 @@ mod tests {
             Type::Class(ClassId(1)),
             Type::FixedArray(Box::new(Type::Class(ClassId(1))), 2),
             Type::FixedArray(Box::new(Type::Str), 0),
-            Type::FixedArray(Box::new(Type::Nullable(Box::new(Type::Str))), 2),
+            Type::FixedArray(
+                Box::new(Type::Nullable(Box::new(Type::Str), Absence::Null)),
+                2,
+            ),
         ] {
             assert!(ty.zero_is_value(&classes, &fields, &aliases), "{ty:?}");
         }
@@ -1028,7 +1202,7 @@ mod tests {
             (Type::worker(i(), i()), Type::Worker(boxed(), boxed())),
             (Type::inbox(i()), Type::Inbox(boxed())),
             (Type::outbox(i()), Type::Outbox(boxed())),
-            (Type::nullable(i()), Type::Nullable(boxed())),
+            (Type::nullable(i()), Type::Nullable(boxed(), Absence::Null)),
             (Type::generator(i()), Type::Generator(boxed())),
             (Type::async_handle(i()), Type::AsyncHandle(boxed())),
             (Type::iter_result(i()), Type::IterResult(boxed())),
@@ -1054,7 +1228,7 @@ mod tests {
             Type::Set(Box::new(single.clone())),
             Type::Inbox(Box::new(single.clone())),
             Type::Outbox(Box::new(single.clone())),
-            Type::Nullable(Box::new(single.clone())),
+            Type::Nullable(Box::new(single.clone()), Absence::Null),
             Type::Generator(Box::new(single.clone())),
             Type::AsyncHandle(Box::new(single.clone())),
             Type::IterResult(Box::new(single.clone())),
@@ -1266,15 +1440,15 @@ mod tests {
             (Type::Outbox(Box::new(Type::I32)), Some(HandleKind::Outbox)),
             (function(), Some(HandleKind::Func)),
             (
-                Type::Nullable(Box::new(function())),
+                Type::Nullable(Box::new(function()), Absence::Null),
                 Some(HandleKind::NullableFunc),
             ),
             (
-                Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+                Type::Nullable(Box::new(Type::Class(ClassId(1))), Absence::Null),
                 Some(HandleKind::BoundaryBox),
             ),
             (
-                Type::Nullable(Box::new(Type::Class(ClassId(2)))),
+                Type::Nullable(Box::new(Type::Class(ClassId(2))), Absence::Null),
                 Some(HandleKind::ReferenceClass),
             ),
             (
@@ -1374,22 +1548,26 @@ mod tests {
             (Type::Inbox(Box::new(Type::I32)), true, false),
             (Type::Outbox(Box::new(Type::I32)), true, false),
             (function(), true, false),
-            (Type::Nullable(Box::new(function())), false, false),
             (
-                Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+                Type::Nullable(Box::new(function()), Absence::Null),
                 false,
                 false,
             ),
             (
-                Type::Nullable(Box::new(Type::Class(ClassId(2)))),
+                Type::Nullable(Box::new(Type::Class(ClassId(1))), Absence::Null),
                 false,
                 false,
             ),
             (
-                Type::Nullable(Box::new(Type::Map(
-                    Box::new(Type::I32),
-                    Box::new(Type::Bool),
-                ))),
+                Type::Nullable(Box::new(Type::Class(ClassId(2))), Absence::Null),
+                false,
+                false,
+            ),
+            (
+                Type::Nullable(
+                    Box::new(Type::Map(Box::new(Type::I32), Box::new(Type::Bool))),
+                    Absence::Null,
+                ),
                 false,
                 false,
             ),
@@ -1455,9 +1633,12 @@ mod tests {
             constraint: None,
         }));
         for (element, expected) in [
-            (Type::Nullable(Box::new(parameter.clone())), "(T | null)[]"),
             (
-                Type::Nullable(Box::new(Type::Class(ClassId(0)))),
+                Type::Nullable(Box::new(parameter.clone()), Absence::Null),
+                "(T | null)[]",
+            ),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(0))), Absence::Null),
                 "(Box | null)[]",
             ),
             (
@@ -1500,7 +1681,7 @@ mod tests {
         );
         assert_eq!(
             display_type(
-                &Type::Nullable(Box::new(Type::Class(ClassId(0)))),
+                &Type::Nullable(Box::new(Type::Class(ClassId(0))), Absence::Null),
                 &names,
                 &enums,
                 &aliases

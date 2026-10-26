@@ -477,7 +477,15 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::UnboundTypeName => WitnessEntry::General { files: &["c-corpus-r169-embedded-header-copy", "c-unknown-type", "unbound-type"], variant: None, reason: "" },
         RejectionSite::TypeNameUnknown => WitnessEntry::General { files: &["a-probe-iterable", "a-s087", "descriptor-options", "unsupported-class-decorator", "c-lib-interface", "new-align-count", "new-align-empty", "new-align-key", "new-align-method", "new-align-object", "new-align-spread", "new-align-string", "new-align-value", "value-type-alignment-outside-set", "descriptor-options-witness-2", "TaggedTemplateExpression"], variant: Some(Divergence::LibTypeName), reason: "" },
         RejectionSite::IntersectionTypeAnnotation => WitnessEntry::General { files: &["intersection-type-annotation", "c-intersection"], variant: Some(Divergence::IntersectionTypeAnnotationForm), reason: "" },
-        RejectionSite::UndefinedUnionMember => WitnessEntry::General { files: &["c-undefined-union"], variant: Some(Divergence::GeneralUnionAndUndefined), reason: "" },
+        RejectionSite::UndefinedUnionMember => WitnessEntry::General { files: &["c-undefined-union"], variant: Some(Divergence::UndefinedResultPosition), reason: "" },
+        RejectionSite::UndefinedNullUnion => WitnessEntry::General { files: &["s195-null-undefined-union"], variant: Some(Divergence::UndefinedNullUnion), reason: "" },
+        RejectionSite::UndefinedSpellingOutsideValue => WitnessEntry::General { files: &["s195-nested-spelling"], variant: Some(Divergence::UndefinedSpellingOutsideValue), reason: "" },
+        RejectionSite::UndefinedResultBareReturn => WitnessEntry::General { files: &["s195-bare-return"], variant: Some(Divergence::UndefinedResultReturn), reason: "" },
+        RejectionSite::UndefinedResultFallThrough => WitnessEntry::General { files: &["s195-fall-through"], variant: Some(Divergence::UndefinedResultReturn), reason: "" },
+        RejectionSite::UndefinedReturnValue => WitnessEntry::General { files: &["s195-return-undefined-null-result"], variant: None, reason: "" },
+        RejectionSite::StrictEqualityAcrossSpellings => WitnessEntry::General { files: &["s195-strict-cross"], variant: Some(Divergence::StrictEqualityAcrossSpellings), reason: "" },
+        RejectionSite::UndefinedResultHostEntry => WitnessEntry::General { files: &["s195-host-entry"], variant: Some(Divergence::UndefinedResultBoundary), reason: "" },
+        RejectionSite::UndefinedResultFunctionValue => WitnessEntry::General { files: &["s195-function-value"], variant: Some(Divergence::UndefinedResultFunctionValue), reason: "" },
         RejectionSite::NullableNonReference => WitnessEntry::General { files: &["nullable-non-reference", "c-nullable-scalar", "c-value-nullable-array-reject"], variant: Some(Divergence::NullableNonReference), reason: "" },
         RejectionSite::ConstructorTypeAnnotation => WitnessEntry::General { files: &["c-constructor-type"], variant: Some(Divergence::ConstructorTypeAnnotationForm), reason: "" },
         RejectionSite::FunctionTypeParameterAnnotationMissing => WitnessEntry::General { files: &["c-function-unannotated"], variant: None, reason: "" },
@@ -1230,6 +1238,18 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             ApiRejectionId::MapNonNullableGet => WitnessEntry::Reachable {
                 files: &["a071.ts", "a071-b.ts"],
                 variant: Divergence::MapNonNullableGet,
+            },
+            ApiRejectionId::MapNullableGet => WitnessEntry::Reachable {
+                files: &["s195-map-get-nullable.ts"],
+                variant: Divergence::NullableElementSearch,
+            },
+            ApiRejectionId::ArrayNullableFind => WitnessEntry::Reachable {
+                files: &["s195-find-nullable.ts"],
+                variant: Divergence::NullableElementSearch,
+            },
+            ApiRejectionId::ArrayNullableFindLast => WitnessEntry::Reachable {
+                files: &["s195-find-last-nullable.ts"],
+                variant: Divergence::NullableElementSearch,
             },
             ApiRejectionId::FormNewMapIterable => WitnessEntry::Reachable {
                 files: &["a072.ts", "a072-b.ts", "s173-map-pairs.ts"],

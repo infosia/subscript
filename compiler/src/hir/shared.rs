@@ -104,7 +104,7 @@ fn receiver_is_shared(ty: &Type, classes: &[ClassDef], boxed: bool) -> bool {
         Type::Class(id) => classes
             .get(id.0)
             .is_some_and(|class| !class.is_value || boxed && class.is_boundary),
-        Type::Nullable(inner) => receiver_is_shared(inner, classes, true),
+        Type::Nullable(inner, _) => receiver_is_shared(inner, classes, true),
         Type::IterResult(_) => false,
         Type::I8
         | Type::U8
@@ -229,7 +229,7 @@ mod tests {
         let blend = class("SGPUProbeBlendState");
         for boxed in [false, true] {
             let storage = if boxed {
-                Type::Nullable(Box::new(target.clone()))
+                Type::Nullable(Box::new(target.clone()), crate::types::Absence::Null)
             } else {
                 target.clone()
             };

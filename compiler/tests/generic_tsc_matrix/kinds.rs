@@ -403,6 +403,18 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             message: "worker message type",
         });
     }
+    if ["api-Array-find-", "api-Array-findLast-", "api-Map-get-"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+    {
+        // compiler.md §195.5 rule 3: a search on a nullable element.
+        records.push(Divergence {
+            code: RuleCode::S014,
+            record: "C7",
+            token: "the `T` of `T | null`",
+            message: "the result needs both `null` and `undefined`",
+        });
+    }
     records.extend(super::destinations::records(cell));
     records
 }

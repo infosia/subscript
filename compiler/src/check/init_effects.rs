@@ -134,7 +134,7 @@ impl<'a> ModuleEffectScanner<'a> {
     fn class_of(ty: &Type) -> Option<ClassId> {
         match ty {
             Type::Class(id) => Some(*id),
-            Type::Nullable(inner) => Self::class_of(inner),
+            Type::Nullable(inner, _) => Self::class_of(inner),
             _ => None,
         }
     }

@@ -148,7 +148,7 @@ impl<'p> Checker<'p> {
                     .collect(),
                 ret: self.numeric_normal_form(&signature.ret),
             })),
-            Type::Nullable(inner) => Type::Nullable(normal(inner)),
+            Type::Nullable(inner, absence) => Type::Nullable(normal(inner), *absence),
             Type::Generator(item) => Type::Generator(normal(item)),
             Type::AsyncHandle(result) => Type::AsyncHandle(normal(result)),
             Type::IterResult(item) => Type::IterResult(normal(item)),

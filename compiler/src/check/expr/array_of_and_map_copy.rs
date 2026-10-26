@@ -109,9 +109,9 @@ impl<'p> Checker<'p> {
                 {
                     return self.err_expr(pos);
                 }
-                if matches!(self.apparent_type(&source.ty), Type::Nullable(_)) {
+                if matches!(self.apparent_type(&source.ty), Type::Nullable(_, _)) {
                     self.reject_subset(
-                        if matches!(self.apparent_type(&source.ty), Type::Nullable(inner) if matches!(self.apparent_type(&inner), Type::Map(..))) { RejectionSite::MapCopyNullableSource } else { RejectionSite::MapCopyNullableNonMap },
+                        if matches!(self.apparent_type(&source.ty), Type::Nullable(inner, _) if matches!(self.apparent_type(&inner), Type::Map(..))) { RejectionSite::MapCopyNullableSource } else { RejectionSite::MapCopyNullableNonMap },
                         format!(
                             "`{}` may be null here; narrow with a null check first",
                             self.type_name(&source.ty)
@@ -180,7 +180,7 @@ impl<'p> Checker<'p> {
                             types[index] = Type::nullable(value.ty.clone());
                         } else if self.apparent_type(&value.ty) == Type::Null
                             && self.apparent_type(&types[index]) != Type::Null
-                            && !matches!(self.apparent_type(&types[index]), Type::Nullable(_))
+                            && !matches!(self.apparent_type(&types[index]), Type::Nullable(_, _))
                         {
                             types[index] = Type::nullable(types[index].clone());
                         }

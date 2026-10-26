@@ -299,9 +299,9 @@ impl Checker<'_> {
         fn visit(checker: &Checker<'_>, ty: &Type, seen: &mut HashSet<ClassId>) -> bool {
             match &checker.apparent_type(ty) {
                 Type::Date => true,
-                Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
-                    visit(checker, element, seen)
-                }
+                Type::Array(element)
+                | Type::FixedArray(element, _)
+                | Type::Nullable(element, _) => visit(checker, element, seen),
                 Type::Class(id) => {
                     seen.insert(*id)
                         && checker.classes[id.0]
@@ -344,7 +344,7 @@ impl Checker<'_> {
                 Type::Array(element) | Type::FixedArray(element, _) => {
                     visit(checker, element, active, done)
                 }
-                Type::Nullable(inner) => {
+                Type::Nullable(inner, _) => {
                     matches!(&checker.apparent_type(inner), Type::Class(id) if !checker.classes[id.0].is_value)
                         && visit(checker, inner, active, done)
                 }
@@ -410,9 +410,9 @@ impl Checker<'_> {
             done: &mut HashSet<ClassId>,
         ) -> bool {
             match &checker.apparent_type(ty) {
-                Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
-                    walk(checker, element, active, done)
-                }
+                Type::Array(element)
+                | Type::FixedArray(element, _)
+                | Type::Nullable(element, _) => walk(checker, element, active, done),
                 Type::Class(id) => {
                     if let Some(start) = active.iter().position(|candidate| candidate == id) {
                         return active[start..]
@@ -528,7 +528,7 @@ impl Checker<'_> {
         let shape = self.apparent_type(ty);
         let ty = &shape;
         match ty {
-            Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
+            Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element, _) => {
                 self.collect_json_types(element, out)
             }
             Type::Class(id) => {
@@ -581,7 +581,7 @@ impl Checker<'_> {
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_body(ty, element, types, names, pos)
             }
-            Type::Nullable(inner) => {
+            Type::Nullable(inner, _) => {
                 let null = hir::Expr {
                     pending_work: None,
                     kind: ExprKind::Null,
@@ -1030,7 +1030,7 @@ impl Checker<'_> {
         match ty {
             Type::Bool => Ok(checked(kind(JsonKind::BOOL), -1)),
             Type::Str => Ok(checked(kind(JsonKind::STRING), -1)),
-            Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
+            Type::Nullable(inner, _) => Ok(vec![hir::Stmt::If {
                 cond: kind(JsonKind::NULL),
                 then: vec![return_value(json_bool(true, pos))],
                 els: Some(vec![
@@ -1301,7 +1301,7 @@ impl Checker<'_> {
                 Type::Str,
                 pos,
             ))]),
-            Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
+            Type::Nullable(inner, _) => Ok(vec![hir::Stmt::If {
                 cond: self.json_call(
                     JsonFn::ParseIsKind,
                     vec![

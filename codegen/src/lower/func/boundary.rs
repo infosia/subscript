@@ -413,7 +413,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             return Ok((kind.size, kind.align));
         }
         Ok(match ty {
-            Type::Func(_) | Type::Object | Type::Nullable(_) => (8, 8),
+            Type::Func(_) | Type::Object | Type::Nullable(_, _) => (8, 8),
             Type::Str | Type::Array(_) => (16, 8),
             // A fixed array in a struct that copies its bytes (§187 rule
             // 10) or in a result (rule 12); `boundary_c_layout_in` rejects
@@ -552,7 +552,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 Type::Func(_)
                 | Type::Object
-                | Type::Nullable(_)
+                | Type::Nullable(_, _)
                 | Type::Class(_)
                 | Type::Map(..)
                 | Type::Set(_) => leaves.push((offset, types::I64)),
