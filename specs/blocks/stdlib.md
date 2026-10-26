@@ -546,7 +546,9 @@ Added by Q27 (2026-07-25):
   which the language does not have; this is a recorded subset, not
   parity
 - `shift(): T` — **traps when empty**, exactly as `pop` already does
-  (Q4/Q15), so JS's `undefined` never has to be represented
+  (Q4/Q15), so JS's `undefined` never has to be represented.
+  *(Amended 2026-10-27 by `compiler.md` §196: on a reference element,
+  `pop()` and `shift()` give `T | undefined` and do not trap.)*
 - `unshift(x: T): i32` — **one element**, matching `push`; returns the
   new length. JS's variadic form is the same missing prerequisite as
   `splice`'s

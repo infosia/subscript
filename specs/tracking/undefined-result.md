@@ -99,3 +99,26 @@ exit 0`.
 Phase Review fix of §195.11: `gate full a955d2ca dirty:12 debug
 2900/0/5 release 2897/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
 exit 0`.
+
+## `pop` and `shift` (§196)
+
+Measured at the pin `b4f5c2ba` with `target/debug/subscript`, `tsc`
+5.9.2, and `node` v24.22.1. The lib declares `pop(): T | undefined`
+and `shift(): T | undefined`.
+
+| Entry | `tsc` | subscript at the pin |
+|---|---|---|
+| `a375-array-pop-shift-undefined` | no error | S012 ×4, S100 ×2 (`==` with `null`; `??` on a non-nullable left operand) |
+| `r439-array-pop-unnarrowed` | TS2532 | no error |
+
+`node` prints the `a375` golden: `first 1`, `last 3`, `sum 2`,
+`true true`, `fallback 9`, `5 4`.
+
+Other APIs whose lib result has `| undefined` and that keep a
+different type, with the reason:
+
+| API | Reason |
+|---|---|
+| `String.at`, `codePointAt`, scalar `pop`/`shift` | `string` and a scalar have no nullable form (§123.1 rule 1) |
+| `Array.at` | the prelude declares `at(index: i32): T`; a `this` overload for a reference element also matches a value class, which has no nullable form |
+| `Map.get`, `find`, `findLast` on a scalar | as `String.at`; S014 |
