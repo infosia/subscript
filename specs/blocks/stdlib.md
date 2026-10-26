@@ -629,11 +629,12 @@ Origin and owner decision as §8.10.
    declares `at(index: i32): T` on `Array<T>`, so `tsc` reads the
    result as `T`. Measured: `[1,2,3].at(0)` 1, `.at(-1)` 3, `.at(3)` and
    `.at(-4)` `undefined`.
-2. `find(f: (v: T, i: i32) => boolean): T | null` and `findLast(…)`
-   for a **reference-class** `T` (and any nullable-capable `T`): `null`
-   on a miss, by the `Map.get` rule (§10.5). The `tsc` view is the lib's
-   `T | undefined`, so a program tests the result with `== null` or
-   `??`, as it does for `Map.get`. A scalar `T` stays rejected. The
+2. `find(f: (v: T, i: i32) => boolean): T | undefined` and
+   `findLast(…)` for a **reference-class** `T` (and any nullable-capable
+   `T`): `undefined` on a miss, by the `Map.get` rule (§10.5). *(Amended
+   2026-10-26 by `compiler.md` §195.5: the result has the `undefined`
+   spelling, and a nullable `T` is rejected.)* A program tests the
+   result with `=== undefined`, `== null`, or `??`. A scalar `T` stays rejected. The
    reason of Q22 ("a scalar has no miss value") does not reach a
    reference element (compiler §103). `findLast` is ES2023, so the
    prelude declares it on `Array<T>`.
@@ -744,8 +745,8 @@ overwrite / delete / re-insert.
 
 ### 10.4 Accepted API
 
-`Map<K, V>`: `new Map<K, V>()`, `size: i32`, `get(k): V | null`
-(reference-class `V`) — see 10.5 for scalars, `set(k, v): Map<K, V>`
+`Map<K, V>`: `new Map<K, V>()`, `size: i32`, `get(k): V | undefined`
+(reference-class `V`; `compiler.md` §195.5) — see 10.5 for scalars, `set(k, v): Map<K, V>`
 (returns the receiver, as the lib does), `has(k): boolean`,
 `delete(k): boolean`, `clear(): void`, `forEach(f: (v: V, k: K) =>
 void): void` (the lib's third `map` callback parameter is not
@@ -822,10 +823,11 @@ earlier text saying so was wrong.
 `get` must report "absent". For a reference-class `V`, `V | null`
 carries it (C7). For a **scalar** `V` there is no miss value — the
 same problem Q22 solved by rejecting `find` in favour of `findIndex`.
-Rule: `get` returns `V | null` **only where `V` is a nullable-capable
-type**: a type whose `| null` form shares its nullable-pointer
-representation (`compiler.md` §123.1 rule 1). For every other `V`, `get` is rejected
-(S014) and the program uses `has` plus a total accessor:
+Rule: `get` returns `V | undefined` **only where `V` is a
+nullable-capable type**: a type whose `| null` form shares its
+nullable-pointer representation (`compiler.md` §123.1 rule 1), and
+that is not itself nullable (`compiler.md` §195.5 rule 3, amended
+2026-10-26). For every other `V`, `get` is rejected (S014) and the program uses `has` plus a total accessor:
 
 - `getOr(k, fallback: V): V` — this contract's addition, not a lib
   member. It is `tsc`-clean because it is declared in the prelude's

@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -236,3 +236,4 @@ Every section, with its status:
 | §192 | A ship link removes unreferenced code | active | [`s192-a-ship-link-removes-unreferenced-code.md`](compiler/s192-a-ship-link-removes-unreferenced-code.md) |
 | §193 | A text module counts graphemes and normalizes to NFC | active | [`s193-a-text-module-counts-graphemes-and-normalizes-to-nfc.md`](compiler/s193-a-text-module-counts-graphemes-and-normalizes-to-nfc.md) |
 | §194 | A JSON mismatch names its path | active | [`s194-a-json-mismatch-names-its-path.md`](compiler/s194-a-json-mismatch-names-its-path.md) |
+| §195 | A reference result can be `undefined` | active | [`s195-a-reference-result-can-be-undefined.md`](compiler/s195-a-reference-result-can-be-undefined.md) |

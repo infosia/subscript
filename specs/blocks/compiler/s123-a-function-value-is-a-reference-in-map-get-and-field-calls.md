@@ -39,6 +39,8 @@ every probe:
    handle). The array case is an existing decision (`a66`); its result
    `T[] | null` is usable in a null test though a declaration cannot
    name it. `get` on any type outside the set is rejected (S014).
+   *(Amended 2026-10-26 by §195.5.)* `get` returns `V | undefined`,
+   and a nullable `V` is outside the set.
 2. The S014 reason names the kind of `V` it rejects. A numeric, a
    boolean, an enum, or a string-literal alias gets "a scalar value
    type has no null miss value". Every other rejected type (`string`,

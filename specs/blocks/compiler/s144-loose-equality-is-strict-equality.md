@@ -49,6 +49,8 @@ no checked program reaches a pair where the two operators differ under
 2. The premise of rule 1 is that the type system has no `undefined` and
    no bigint. A section that adds either one must restate rule 1 first.
    A value that is `undefined` under `node` and `null` here follows C22.
+   *(Amended 2026-10-26.)* §195.3 restates rule 1 for the `undefined`
+   spelling: `===` and `!==` across two spellings are rejected.
 3. `collisions.md` C20 is deleted, with its `Divergence` variant. The
    reject entry `r294-loose-equality` retires
    (`retired:r294-loose-equality`).
