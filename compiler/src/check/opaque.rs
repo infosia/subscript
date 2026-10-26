@@ -301,6 +301,8 @@ impl<'p> Checker<'p> {
     }
 
     /// Builds the result union of a generic operation (§143 rule 1c).
+    /// A union of one type `T` and one absence spelling `s`, with a member
+    /// `T | s`, is `T | s` (compiler.md §195.11 rule 5).
     pub(crate) fn generic_union(&self, left: &Type, right: &Type) -> Type {
         if left == right {
             return left.clone();
@@ -317,7 +319,44 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+        if let Some(joined) = Self::spelled_join(&members) {
+            return joined;
+        }
         Type::GenericUnion(members.into_boxed_slice())
+    }
+
+    /// `T | s` if the members are `T`, `T | s`, and the `null` literal for
+    /// the `null` spelling, with at least one `T | s`; else `None`.
+    fn spelled_join(members: &[Type]) -> Option<Type> {
+        let mut core: Option<&Type> = None;
+        let mut spelling = None;
+        let mut nullable = false;
+        for member in members {
+            let (member_core, member_spelling) = match member {
+                Type::Nullable(inner, absence) => {
+                    nullable = true;
+                    (Some(inner.as_ref()), Some(*absence))
+                }
+                Type::Null => (None, Some(crate::types::Absence::Null)),
+                other => (Some(other), None),
+            };
+            if let Some(absence) = member_spelling {
+                if spelling.is_some_and(|known| known != absence) {
+                    return None;
+                }
+                spelling = Some(absence);
+            }
+            if let Some(member_core) = member_core {
+                if core.is_some_and(|known| known != member_core) {
+                    return None;
+                }
+                core = Some(member_core);
+            }
+        }
+        if !nullable {
+            return None;
+        }
+        Some(Type::nullable_spelled(core?.clone(), spelling?))
     }
 
     /// Checks type overlap for generic equality and case labels (§143 rule 1a).

@@ -822,7 +822,11 @@ impl<'p> Checker<'p> {
         if self.involves_type_parameter(&left.ty) {
             let right = self.check_expr(&binary.right, None, fx);
             let inner = self.non_null_type(&left.ty);
-            let ty = if matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
+            let ty = if self.joins_null_and_undefined(&inner, &right.ty) {
+                // §195.11 rule 5: the join holds both spellings.
+                self.reject_both_spellings(pos.clone());
+                Type::Error
+            } else if matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
                 && self.apparent_type(&right.ty) == Type::Null
             {
                 // §195.4 rule 1: the `null` literal gives `T | null`.
@@ -1554,18 +1558,37 @@ impl<'p> Checker<'p> {
         .then(|| ty.clone())
     }
 
-    /// Whether one branch has the `null` spelling and the other has the
-    /// `undefined` spelling (compiler.md §195.1 rule 3). A branch has the
-    /// `null` spelling if it is the `null` literal or a `T | null` value.
+    /// Whether one operand has the `null` spelling and the other has the
+    /// `undefined` spelling (compiler.md §195.1 rule 3). An operand has the
+    /// `null` spelling if it is the `null` literal or a `T | null` value. A
+    /// generic union has the spelling of each member (§195.11 rule 5).
     fn joins_null_and_undefined(&self, left: &Type, right: &Type) -> bool {
-        let null_spelled = |ty: &Type| {
-            let ty = self.apparent_type(ty);
-            ty == Type::Null || ty.absence() == Some(crate::types::Absence::Null)
+        let spelled = |ty: &Type, absence: crate::types::Absence| {
+            let types = match self.apparent_type(ty) {
+                Type::GenericUnion(types) => types.into_vec(),
+                other => vec![other],
+            };
+            types.iter().any(|member| {
+                member.absence() == Some(absence)
+                    || (*member == Type::Null && absence == crate::types::Absence::Null)
+            })
         };
-        let undefined_spelled =
-            |ty: &Type| self.apparent_type(ty).absence() == Some(crate::types::Absence::Undefined);
-        (null_spelled(left) && undefined_spelled(right))
-            || (null_spelled(right) && undefined_spelled(left))
+        let (null, undefined) = (
+            crate::types::Absence::Null,
+            crate::types::Absence::Undefined,
+        );
+        (spelled(left, null) && spelled(right, undefined))
+            || (spelled(right, null) && spelled(left, undefined))
+    }
+
+    /// Reports the S011 of a join that holds both absence spellings
+    /// (compiler.md §195.1 rule 3).
+    fn reject_both_spellings(&mut self, pos: Pos) {
+        self.reject_subset(
+            RejectionSite::UndefinedNullUnion,
+            "`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`",
+            pos,
+        );
     }
 
     // §146: equal types and legal nullable pairs have a symmetric join.
@@ -1675,13 +1698,10 @@ impl<'p> Checker<'p> {
         fx.ended_shared_narrowing.extend_facts(first_notes);
         fx.finish_narrowing_join(&note_paths);
 
-        let ty = if ctx.is_none() && self.joins_null_and_undefined(&then.ty, &els.ty) {
-            // §195.1 rule 3: `tsc` types the conditional `T | null | undefined`.
-            self.reject_subset(
-                RejectionSite::UndefinedNullUnion,
-                "`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`",
-                pos.clone(),
-            );
+        let ty = if self.joins_null_and_undefined(&then.ty, &els.ty) {
+            // §195.1 rule 3: `tsc` types the conditional `T | null | undefined`,
+            // with or without a contextual type (§195.11 rule 6).
+            self.reject_both_spellings(pos.clone());
             Type::Error
         } else if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty) {
             self.generic_union(&then.ty, &els.ty)

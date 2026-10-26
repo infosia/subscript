@@ -419,3 +419,94 @@ fn an_inferred_type_argument_and_a_closure_result_are_the_nested_row() {
         );
     }
 }
+
+const BOTH: &str = "`T | null | undefined` has no representation";
+
+/// compiler.md §195.11 rule 5: a generic `??` chain keeps one spelling at
+/// each step.
+#[test]
+fn a_generic_nullish_chain_keeps_one_spelling() {
+    let class = "class Layers<V> {\n\
+        \x20 a: Map<string, V> = new Map<string, V>();\n\
+        \x20 b: Map<string, V> = new Map<string, V>();\n\
+        \x20 d: V | null = null;\n";
+    for member in [
+        "look(k: string): V | null { return this.a.get(k) ?? this.b.get(k) ?? this.d; }",
+        "either(k: string): boolean { const x = this.a.get(k) ?? this.b.get(k); return x !== undefined; }",
+        "first(k: string): boolean { const x = this.d ?? this.a.get(k); return x !== undefined; }",
+        "slot(k: string): V | null { return this.a.get(k) ?? null; }",
+        "flip(k: string): V | null { const x = this.a.get(k) ?? null; return x; }",
+    ] {
+        assert_accepted(&format!(
+            "{class}  {member}\n}}\nexport function main(): void {{ const l = new Layers<Box>(); }}"
+        ));
+    }
+    // Control: the spelling of each step is checked.
+    assert_row(
+        &format!(
+            "{class}  either(k: string): boolean {{ const x = this.a.get(k) ?? this.b.get(k); return x !== null; }}\n}}\nexport function main(): void {{ const l = new Layers<Box>(); }}"
+        ),
+        RuleCode::S012,
+        "`!==` compares a `null` and an `undefined` absence",
+    );
+}
+
+/// compiler.md §195.11 rule 6: a conditional with one branch of each
+/// spelling is S011 with a contextual type too, also in a generic body.
+#[test]
+fn a_cross_spelling_conditional_is_s011_with_a_contextual_type() {
+    assert_row(
+        "export function main(): void { const c = true; const x: Box | null = c ? pick() : maybe(); print(`${x === null}`); }",
+        RuleCode::S011,
+        BOTH,
+    );
+    let generic = |body: &str| {
+        format!(
+            "class L<T> {{\n  m: Map<string, T> = new Map<string, T>();\n  n: T | null = null;\n  c0(): boolean {{ return true; }}\n  {body}\n}}\nexport function main(): void {{ const l = new L<Box>(); }}"
+        )
+    };
+    assert_row(
+        &generic(
+            "get(k: string): T | null { const a = this.m.get(k); return this.c0() ? a : this.n; }",
+        ),
+        RuleCode::S011,
+        BOTH,
+    );
+    // Control: two branches of the `null` spelling join under the context.
+    assert_accepted(&generic(
+        "get(k: string): T | null { return this.c0() ? this.n : null; }",
+    ));
+    assert_accepted(
+        "export function main(): void { const c = true; const x: Box | null = c ? maybe() : null; print(`${x === null}`); }",
+    );
+}
+
+/// compiler.md §195.11 acceptance 6: `x ?? null` in the type-parameter
+/// path, and after an optional chain with a non-nullable value.
+#[test]
+fn nullish_null_in_the_generic_and_optional_chain_paths() {
+    // Type-parameter path: the result is `T | null`.
+    assert_accepted(
+        "function slot<T>(m: Map<string, T>, k: string): T | null { const x = m.get(k) ?? null; return x; }\n\
+         export function main(): void { const m = new Map<string, Box>(); print(`${slot(m, \"a\") === null}`); }",
+    );
+    assert_row(
+        "function slot<T>(m: Map<string, T>, k: string): boolean { const x = m.get(k) ?? null; return x === undefined; }\n\
+         export function main(): void { const m = new Map<string, Box>(); print(`${slot(m, \"a\")}`); }",
+        RuleCode::S012,
+        "`===` compares a `null` and an `undefined` absence",
+    );
+    // Optional chain with a non-nullable value: `h?.kid ?? null` is `Leaf | null`.
+    let tree = "class Leaf { v: i32 = 1; }\nclass Tree { kid: Leaf = new Leaf(); }\n";
+    assert_accepted(&format!(
+        "{tree}export function main(): void {{ const h: Tree | null = null; const x: Leaf | null = h?.kid ?? null; const y = h?.kid ?? null; print(`${{x === null}} ${{y === null}}`); }}"
+    ));
+    // Control: the result has the `null` spelling.
+    assert_row(
+        &format!(
+            "{tree}export function main(): void {{ const h: Tree | null = null; const y = h?.kid ?? null; print(`${{y === undefined}}`); }}"
+        ),
+        RuleCode::S012,
+        "`===` compares a `null` and an `undefined` absence",
+    );
+}

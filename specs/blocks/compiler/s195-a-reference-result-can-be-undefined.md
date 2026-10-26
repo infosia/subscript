@@ -273,6 +273,15 @@ Open:
 4. A conversion between the spellings has its own S012 diagnostic
    (§195.8). At the pin it gave S005 with the nominal-type text and a
    false "TypeScript accepts" block.
+5. The join of two types that hold a type parameter (the result of
+   `??` and of a conditional) keeps the spellings. A member `T` and a
+   member `T | s` join to `T | s`, with the spelling `s`. The `null`
+   literal and `T | null` join to `T | null`. A join that holds both
+   spellings is rejected (S011), as §195.1 rule 3 rejects it. At
+   `a955d2ca`, the join listed `V`, `V | undefined`, and `V | null` as
+   three members, so `a.get(k) ?? b.get(k) ?? d` in a generic class
+   gave S100 (Phase Review M1).
+6. §195.1 rule 3 applies with and without a contextual type.
 
 Acceptance:
 
@@ -287,5 +296,27 @@ Acceptance:
 4. A unit test of the `tsc` model calls each relation on the pair
    `Box | undefined`, `Box | null`. The conversion relation gives false
    in each direction. The comparison relation gives true.
-5. No golden moves.
+5. The Phase Review program of rule 5 is an accept entry: it passes
+   `tsc`, and its output under `node` equals its golden. A unit test
+   pins each join of rule 5, and the S011 of a generic conditional
+   with a contextual type.
+6. A unit test pins `x ?? null` in the type-parameter path and in the
+   optional-chain path with a non-nullable value.
+7. No golden moves.
 
+
+Phase Review: *(Added 2026-10-27.)* A fresh review of
+`5d5d7816..a955d2ca` gave one MAJOR and five MINOR findings.
+
+1. MAJOR, realistic, fixed: the generic join (rule 5).
+   `a.get(k) ?? b.get(k) ?? d` in a generic class gave S100. `tsc`
+   accepts it, and `node` prints `true false`. `a376` pins it.
+2. MINOR, fixed: two `?? null` paths had no test (acceptance 6).
+3. MINOR, fixed: a conditional with a contextual type did not give
+   the S011 of §195.1 rule 3 (rule 6).
+4. MINOR, fixed: the tutorial said that `==` and `===` are one
+   operator. Two lines of `collisions.md` said that the language has
+   no `undefined`.
+5. MINOR, fixed: the tracking note had no gate result for `44251653`.
+
+Open: item 4 of §195.10.

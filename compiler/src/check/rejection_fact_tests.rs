@@ -375,3 +375,63 @@ fn a_conversion_across_spellings_has_its_own_site_without_a_block() {
         None,
     );
 }
+
+#[test]
+fn a_generic_join_keeps_one_absence_spelling() {
+    use crate::types::Type;
+    // compiler.md §195.11 rule 5: `T` and `T | s` join to `T | s`, and the
+    // `null` literal and `T | null` join to `T | null`.
+    let runs = observed(BOX_PROGRAM, |checker| {
+        let (undefined, null) = spelled_boxes(checker);
+        let class = checker.non_null_type(&null);
+        let joined = [
+            checker.generic_union(&class, &undefined),
+            checker.generic_union(&undefined, &class),
+            checker.generic_union(&null, &class),
+            checker.generic_union(&Type::Null, &null),
+            checker.generic_union(&null, &Type::Null),
+            checker.generic_union(
+                &Type::GenericUnion(vec![class.clone(), Type::Null].into_boxed_slice()),
+                &null,
+            ),
+        ];
+        // Controls: two spellings, two types, and no `T | s` member stay a union.
+        let union = |members: Vec<Type>| Type::GenericUnion(members.into_boxed_slice());
+        let kept = [
+            (
+                checker.generic_union(&undefined, &null),
+                union(vec![undefined.clone(), null.clone()]),
+            ),
+            (
+                checker.generic_union(&Type::Null, &undefined),
+                union(vec![Type::Null, undefined.clone()]),
+            ),
+            (
+                checker.generic_union(&Type::nullable(Type::Str), &class),
+                union(vec![Type::nullable(Type::Str), class.clone()]),
+            ),
+            (
+                checker.generic_union(&class, &Type::Null),
+                union(vec![class.clone(), Type::Null]),
+            ),
+        ];
+        (undefined, null, joined, kept)
+    });
+    assert!(!runs.is_empty());
+    for (undefined, null, joined, kept) in runs {
+        assert_eq!(
+            joined,
+            [
+                undefined.clone(),
+                undefined,
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null
+            ]
+        );
+        for (actual, expected) in kept {
+            assert_eq!(actual, expected);
+        }
+    }
+}

@@ -213,8 +213,9 @@ when `a` has type `Ref | null`; the result is `Ref` or `Ref | null`
 by the right operand's type. An optional chain `a?.f`, `a?.m()` is
 legal in two positions only: as the left operand of `??`, and as an
 expression statement whose last step is a call. Everywhere else the
-chain has type `T | undefined` in TypeScript, and this language has
-no `undefined`, so the chain fails with S012. A non-nullable left
+chain has type `T | undefined` in TypeScript, and this language
+gives `T | undefined` only to a function result (`compiler.md` §195),
+so the chain fails with S012. A non-nullable left
 operand of `??`, or a non-nullable tested receiver, fails with S100
 (`tsc` accepts; narrowing). Accept: `a177`. Reject: `r177`, `r178`.
 
@@ -226,7 +227,7 @@ token is legal in `return undefined;` of such a function and as an
 operand of an absence comparison. `===` and `!==` across the two
 spellings are rejected: `node` gives `false` there, also when both
 values are absent. Each other position of `| undefined` stays
-rejected. Accept: `a373`, `a374`. Reject: `r422`–`r438`.
+rejected. Accept: `a373`, `a374`, `a376`. Reject: `r422`–`r438`.
 
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
@@ -724,7 +725,7 @@ it as a candidate to accept.
 | # | Form | Rule | Write instead |
 |---|---|---|---|
 | 1 | A truth test (`if`, `while`, `for`, `?:`, `!`, `&&`, `\|\|`) on a value that is not `boolean` | The language has no implicit conversion (C3). A truth test hides which value is false: `0`, `NaN`, `""`, or `null`. A comparison states it. A nullable reference is not an exception: `x !== null` is the one null test (C7). | `n !== 0`, `s !== ""`, `x !== null` |
-| 2 | `var` | `var` binds its name for the whole function, with the value `undefined` before its declaration. The language has no `undefined` (C7), and C14 rejects where scope diverges. | `let`, `const` |
+| 2 | `var` | `var` binds its name for the whole function, with the value `undefined` before its declaration. The language has no `undefined` value outside a function result (C7), and C14 rejects where scope diverges. | `let`, `const` |
 | 3 | A module variable with no initializer; a local `let` with neither an annotation nor an initializer | A function can read it before any assignment runs, and `tsc` does not check that read; the value would be `undefined` (C7). A local takes its type from its annotation or its initializer, not from later assignments (`compiler.md` §158 rule 1). A local with an annotation and no initializer is accepted when it is assigned before every read (§158). | an initializer, or an annotation |
 | 4 | A parameter with no default, a function or method result, or a block-lambda result, with no type annotation; a default of a generic-class method whose type contains a class type parameter | A signature is the contract of a call, and the host binds it by its declared types. A block result and a generic-class default have no inference that agrees with `tsc` for every program (`compiler.md` §156 rule 6). An initializer types every other declaration (§156). | an annotation |
 | 5 | A class, function, enum, type alias, interface, or namespace declared in a function body | No lowering is decided for a local declaration. | a module-level declaration; an arrow for a function |

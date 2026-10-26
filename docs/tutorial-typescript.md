@@ -210,8 +210,10 @@ taught you. Here the compiler requires it.
 `a ?? b` works when `a` has type `Ref | null`. It reads `a` once, and
 it evaluates `b` only when `a` is `null`.
 
-`==` and `!=` mean `===` and `!==` here; `==` and `===` are one operator.
-No coercion happens: `tsc` rejects comparisons of unrelated types.
+`==` and `!=` mean `===` and `!==` here, with one exception: a
+comparison between the `null` and the `undefined` spelling (see
+below). No coercion happens: `tsc` rejects comparisons of unrelated
+types.
 See [`compiler.md` §144](../specs/blocks/compiler.md).
 
 ```ts

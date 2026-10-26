@@ -91,3 +91,11 @@ Measured at the pin `5d5d7816` with `target/debug/subscript`, `tsc`
 
 `node` prints the `a374` golden: `false true`, `hit 7`, `true`,
 `true`, `true`.
+
+Landing of §195.11 at `44251653`: `gate full da46af54 dirty:20 debug
+2896/0/5 release 2893/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`.
+
+Phase Review fix of §195.11: `gate full a955d2ca dirty:12 debug
+2900/0/5 release 2897/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`.

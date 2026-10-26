@@ -554,6 +554,14 @@ const ALLOWLIST: &[AllowGroup] = &[
         sites: &[("expr/operator.rs", "conditional_join", 0x777b9391a80804dc)],
     },
     AllowGroup {
+        name: "absence-spelling-join",
+        reason: "The join reads the absence spelling of each union member and keeps T identity (§195.11 rule 5); the members of an apparent union are apparent shapes.",
+        sites: &[
+            ("expr/operator.rs", "joins_null_and_undefined", 0xec43e1a1bee7238f),
+            ("opaque.rs", "spelled_join", 0x704a65ba76c07d0b),
+        ],
+    },
+    AllowGroup {
         name: "numeric-storage-constraint-identity",
         reason: "The numeric storage walk reads parameter identity to stop recursive constraints; each shape test uses the apparent type (§143 rule 1d).",
         sites: &[("opaque.rs", "instance_restriction", 0xf12696b35ade54b9)],
