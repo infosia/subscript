@@ -169,10 +169,108 @@ fn nullish_result_types_follow_the_right_operand() {
         RuleCode::S012,
         "`===` compares a `null` and an `undefined` absence; use `==`",
     );
-    let mismatch = first_error(
+    // §195.1 rule 2: a `T | undefined` result does not convert to `T | null`.
+    assert_row(
         "export function main(): void { const b: Box | null = maybe() ?? pick(); print(`${b == null}`); }",
+        RuleCode::S005,
+        "nominal types are not interchangeable: the initializer expects `Box | null`, got `Box | undefined`",
     );
-    assert_ne!(mismatch.code, RuleCode::S012, "{mismatch:?}");
+}
+
+const CROSS_LITERAL: &str = "compares a `null` and an `undefined` absence; use `";
+const CROSS_VALUES: &str =
+    "`===` compares a `null` and an `undefined` absence; two absent values are not equal under JavaScript";
+
+#[test]
+fn the_cross_spelling_message_names_a_replacement_only_for_a_literal_operand() {
+    // §195.3 rule 2: the `null` literal or the `undefined` token names `==`.
+    for (body, replacement) in [
+        ("const b = pick() === null;", "use `==`"),
+        ("const b = null !== pick();", "use `!=`"),
+        ("const b = maybe() === undefined;", "use `==`"),
+        ("const b = undefined !== maybe();", "use `!=`"),
+    ] {
+        let diagnostic = assert_row(
+            &format!("export function main(): void {{ {body} }}"),
+            RuleCode::S012,
+            CROSS_LITERAL,
+        );
+        assert!(
+            diagnostic.message.ends_with(replacement),
+            "{body}: {}",
+            diagnostic.message
+        );
+    }
+    // Two values: the message names no replacement.
+    for body in [
+        "const b = pick() === maybe();",
+        "const b = maybe() !== pick();",
+    ] {
+        let diagnostic = first_error(&format!("export function main(): void {{ {body} }}"));
+        assert_eq!(diagnostic.code, RuleCode::S012, "{body}");
+        assert!(
+            diagnostic
+                .message
+                .ends_with("two absent values are not equal under JavaScript"),
+            "{body}: {}",
+            diagnostic.message
+        );
+        assert!(!diagnostic.message.contains("use `"), "{body}");
+    }
+    assert_row(
+        "export function main(): void { const b = pick() === maybe(); }",
+        RuleCode::S012,
+        CROSS_VALUES,
+    );
+}
+
+#[test]
+fn a_rejected_cross_spelling_test_still_narrows() {
+    // §195.3 rule 4: after the S012, the comparison is an absence test, so
+    // the member read in the branch reports nothing more.
+    for test in [
+        "const u = pick(); if (u !== null) { print(`${u.v}`); }",
+        "const n = maybe(); if (n !== undefined) { print(`${n.v}`); }",
+        "const u = pick(); if (null === u) { return; } print(`${u.v}`);",
+    ] {
+        let diagnostics = check(&format!("export function main(): void {{ {test} }}"))
+            .expect_err("a cross-spelling comparison is rejected");
+        assert_eq!(diagnostics.len(), 1, "{test}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S012, "{test}");
+        assert!(diagnostics[0].message.contains(CROSS_LITERAL), "{test}");
+    }
+    // Control: without the comparison, the member read is rejected.
+    let diagnostics = check("export function main(): void { const u = pick(); print(`${u.v}`); }")
+        .expect_err("an unnarrowed member read is rejected");
+    assert_eq!(diagnostics[0].code, RuleCode::S011);
+}
+
+#[test]
+fn a_conditional_does_not_join_the_null_literal_with_the_undefined_spelling() {
+    const BOTH: &str = "`T | null | undefined` has no representation";
+    for join in [
+        "c ? null : pick()",
+        "c ? pick() : null",
+        "c ? pick() : (c ? null : null)",
+        "c ? new Box() : (c ? pick() : null)",
+        "c ? null : new Map<i32, Box>().get(1)",
+    ] {
+        assert_row(
+            &format!(
+                "export function main(): void {{ const c = pick() === undefined; const x = {join}; print(`${{x == null}}`); }}"
+            ),
+            RuleCode::S011,
+            BOTH,
+        );
+    }
+    // Control: the `null` literal joins the `null` spelling and a `T`.
+    assert_accepted(
+        "export function main(): void { const c = true; const x = c ? null : maybe(); const y = c ? new Box() : null; print(`${x === null} ${y === null}`); }",
+    );
+    // Control: a `T` joins the `undefined` spelling.
+    assert_accepted(
+        "export function main(): void { const c = true; const x = c ? new Box() : pick(); print(`${x === undefined}`); }",
+    );
 }
 
 #[test]
@@ -208,7 +306,13 @@ fn a_let_local_takes_a_value_of_the_same_spelling() {
         "export function main(): void { let c = pick(); c = pick(); print(`${c === undefined}`); }",
     );
     // Control: neither `null` nor a `T | null` value converts to the spelling.
-    assert!(check("export function main(): void { let c = pick(); c = null; }").is_err());
+    // `tsc` gives TS2322 for `null`, so the diagnostic carries no block.
+    let diagnostic = assert_row(
+        "export function main(): void { let c = pick(); c = null; }",
+        RuleCode::S100,
+        "type mismatch: the assignment expects `Box | undefined`, got `null`",
+    );
+    assert_eq!(diagnostic.divergence, None);
     assert!(check("export function main(): void { let c = pick(); c = maybe(); }").is_err());
 }
 

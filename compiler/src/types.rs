@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+#[cfg(test)]
+mod absence_tests;
 mod counted;
 pub use counted::CountedType;
 

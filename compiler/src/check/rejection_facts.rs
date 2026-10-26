@@ -469,7 +469,8 @@ impl super::Checker<'_> {
             (Type::Nullable(a, _), Type::Nullable(b, _)) => {
                 self.ts_erased_assignable_inner(a, b, seen, structural_classes)
             }
-            (Type::Null, Type::Nullable(_, _)) => true,
+            // §195.1 rule 2: `tsc` converts `null` to the `null` spelling only.
+            (Type::Null, Type::Nullable(_, spelling)) => *spelling == crate::types::Absence::Null,
             (a, Type::Nullable(b, _)) => {
                 self.ts_erased_assignable_inner(a, b, seen, structural_classes)
             }

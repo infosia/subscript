@@ -81,8 +81,11 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
    `undefined` spelling. A non-nullable operand has no spelling.
 2. If the two operands have different spellings, `===` and `!==` are
    rejected (S012). `node` gives `false` for `===` there, also when
-   both operands are absent. The message names `==` as the
-   replacement for `===`, and `!=` for `!==`.
+   both operands are absent. If one operand is the `null` literal or
+   the `undefined` token, the message names `==` as the replacement
+   for `===`, and `!=` for `!==`. Else the message names no
+   replacement: `==` on two nullable values is rejected at the pin
+   (S100), as it is for two `T | null` values.
 3. Each other pair keeps §144.1 rule 1: `==` has the type rules, the
    result, and the lowering of `===`.
 4. A comparison with the `undefined` token tests absence, as a
@@ -98,7 +101,9 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
 
 1. `a ?? b` accepts a left operand of either spelling (§82.3). If `b`
    is nullable, the result has the type of `b`, with the spelling of
-   `b`. Else the result is `T`. This is the `tsc` result type.
+   `b`. If `b` is the `null` literal, the form is rejected (S100), as
+   it is at the pin; `tsc` gives `T | null` there (open item 1). Else
+   the result is `T`.
 2. An optional chain on a left operand of the `undefined` spelling has
    the two positions of §82.3.
 3. Template interpolation, `!`, and a truth position stay rejected for
@@ -163,7 +168,8 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
 | a nested `undefined` spelling (§195.1 rule 6) | S012 | `` the `undefined` spelling is legal only as the whole type of a value `` |
 | the `undefined` token outside §195.2 rule 1 | S012 | `` `undefined` is legal only in `return undefined;` and in an absence comparison `` |
 | `return;` or the end of the body | S012 | `` a function whose result is `T \| undefined` returns with `return undefined;` `` |
-| `===` or `!==` across spellings | S012 | `` `===` compares a `null` and an `undefined` absence; use `==` `` |
+| `===` or `!==` across spellings, one operand a literal or the token | S012 | `` `===` compares a `null` and an `undefined` absence; use `==` `` |
+| `===` or `!==` across spellings, two values | S012 | `` `===` compares a `null` and an `undefined` absence; two absent values are not equal under JavaScript `` |
 | a scalar `T` | S011 | the existing S011 text, with `undefined` in place of `null` |
 | the boundary | S012 | `` a function that crosses the C boundary has no `T \| undefined` `` |
 | a function value | S100 | `` a function whose result is `T \| undefined` may only be called `` |
@@ -205,3 +211,44 @@ Corpus: accept `a373-undefined-result`; reject
 `r431-undefined-function-value`, `r432-undefined-array-element`,
 `r433-undefined-exported-result`, `r434-undefined-arrow-result`,
 `r435-map-get-nullable-value`.
+
+### 195.10 Phase Review
+
+*(Added 2026-10-26.)* A fresh review of `ee65e587..15a10978` gave one
+MAJOR and seven MINOR findings.
+
+1. MAJOR, realistic, fixed: a conditional `c ? null : u` took the type
+   of `u`, so the `null` literal had the `undefined` spelling.
+   `x === undefined` printed `true`; `node` prints `false`. `tsc`
+   types the conditional `Box | null | undefined`, so §195.1 rule 3
+   rejects it (S011). Reject entry `r436` pins the join.
+2. MINOR, fixed: the replacement in the cross-spelling message
+   (§195.3 rule 2). The fix round found that "always false" is wrong
+   for `!==`, and for one object on both sides; the two-values text
+   says that two absent values are not equal.
+3. MINOR, fixed: two divergence reasons said that the language has no
+   `undefined`.
+4. MINOR, fixed: `u !== null` gave a second diagnostic (S011) after
+   the S012.
+5. MINOR, fixed: the new public items of the type have direct unit
+   tests, and the `??` mismatch test pins its code.
+
+Open:
+
+1. `x ?? null` is rejected (S100) for either spelling of `x`. `tsc`
+   accepts it and gives `T | null`. The form is rejected at the pin.
+   `u === undefined ? null : u` is the accepted spelling.
+2. `c ? u : n` with two spellings gives S100 "conditional branches
+   have no common type", not the S011 of §195.1 rule 3. The program
+   is rejected in both cases.
+3. The `tsc` model of the diagnostic renderer
+   (`compiler/src/check/rejection_facts.rs`) ignores the spelling for
+   a nullable-to-nullable conversion. `const b: Box | null = u ?? v`
+   gives S005 with a "TypeScript accepts" block; `tsc` gives TS2322.
+   The model serves both conversion and comparison, and `tsc` accepts
+   `u == n`, so the fix needs two relations.
+4. The builtin spelling table has no total check: a builtin result
+   that does not read the table gets the `null` spelling. At
+   `15a10978` each nullable builtin result reads the table (`find`,
+   `findLast`, `Map.get`, `Worker.poll`, `Inbox.wait`, `Inbox.poll`).
+

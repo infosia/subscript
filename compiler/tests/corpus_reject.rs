@@ -109,6 +109,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r433-undefined-exported-result.ts", RuleCode::S012, 10),
     ("r434-undefined-arrow-result.ts", RuleCode::S012, 11),
     ("r435-map-get-nullable-value.ts", RuleCode::S014, 13),
+    (
+        "r436-undefined-conditional-null-join.ts",
+        RuleCode::S011,
+        16,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
@@ -692,6 +697,7 @@ fn undefined_entries_give_their_section_195_rows() {
             .lines()
             .any(|line| line == "// questions: compiler.md §195")
             && file != "r13-undefined.ts"
+            && file != "r436-undefined-conditional-null-join.ts"
         {
             continue;
         }
@@ -715,7 +721,7 @@ fn undefined_entries_give_their_section_195_rows() {
         assert_eq!(variant.entry().collision, "C7", "{file}: {variant:?}");
         checked += 1;
     }
-    assert_eq!(checked, 15, "r13 and r422-r435");
+    assert_eq!(checked, 16, "r13 and r422-r436");
 }
 
 /// §79 rule 1 pairs a `tsc: accepts` reject entry with a divergence block.

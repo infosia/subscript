@@ -3,7 +3,7 @@
 // exercises: undefined, equality
 // questions: compiler.md §195
 // tsc: accepts
-// expected-error: S012, `===` compares a `null` and an `undefined` absence; use `==`
+// expected-error: S012, `===` compares a `null` and an `undefined` absence; two absent values are not equal under JavaScript
 class Box {
   v: i32 = 1;
 }

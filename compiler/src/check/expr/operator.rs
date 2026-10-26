@@ -540,8 +540,14 @@ impl<'p> Checker<'p> {
                         (self.operand_spelling(&left), self.operand_spelling(&right))
                     {
                         if l != r {
-                            self.reject_strict_across_spellings(b.op, pos.clone());
-                            return self.err_expr(pos);
+                            let literal = self.apparent_type(&left.ty) == Type::Null
+                                || self.apparent_type(&right.ty) == Type::Null;
+                            self.reject_strict_across_spellings(b.op, literal, pos.clone());
+                            // §195.3 rule 4: a comparison with the `null` literal
+                            // stays an absence test, so narrowing reports nothing more.
+                            if !literal {
+                                return self.err_expr(pos);
+                            }
                         }
                     }
                 }
@@ -1099,8 +1105,9 @@ impl<'p> Checker<'p> {
         if spelling == crate::types::Absence::Null
             && matches!(binary.op, ast::BinaryOp::EqEqEq | ast::BinaryOp::NotEqEq)
         {
-            self.reject_strict_across_spellings(binary.op, pos.clone());
-            return self.err_expr(pos);
+            // §195.3 rule 4: the comparison stays an absence test, so
+            // narrowing reports nothing more.
+            self.reject_strict_across_spellings(binary.op, true, pos.clone());
         }
         let token = hir::Expr {
             pending_work: None,
@@ -1127,20 +1134,23 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn reject_strict_across_spellings(&mut self, op: ast::BinaryOp, pos: Pos) {
-        let loose = if op == ast::BinaryOp::EqEqEq {
-            "=="
+    /// Rejects `===` or `!==` across spellings (compiler.md §195.3 rule 2).
+    /// The message names the loose operator only when one operand is the
+    /// `null` literal or the `undefined` token (`literal`).
+    fn reject_strict_across_spellings(&mut self, op: ast::BinaryOp, literal: bool, pos: Pos) {
+        let (strict, loose) = if op == ast::BinaryOp::EqEqEq {
+            ("===", "==")
         } else {
-            "!="
+            ("!==", "!=")
         };
-        let strict = if op == ast::BinaryOp::EqEqEq {
-            "==="
+        let advice = if literal {
+            format!("use `{loose}`")
         } else {
-            "!=="
+            "two absent values are not equal under JavaScript".to_string()
         };
         self.reject_subset(
             RejectionSite::StrictEqualityAcrossSpellings,
-            format!("`{strict}` compares a `null` and an `undefined` absence; use `{loose}`"),
+            format!("`{strict}` compares a `null` and an `undefined` absence; {advice}"),
             pos,
         );
     }
@@ -1530,7 +1540,17 @@ impl<'p> Checker<'p> {
         .then(|| ty.clone())
     }
 
+    /// Whether one branch is the `null` literal and the other has the
+    /// `undefined` spelling (compiler.md §195.1 rule 3).
+    fn joins_null_and_undefined(&self, left: &Type, right: &Type) -> bool {
+        let undefined = Some(crate::types::Absence::Undefined);
+        (self.apparent_type(left) == Type::Null && self.apparent_type(right).absence() == undefined)
+            || (self.apparent_type(right) == Type::Null
+                && self.apparent_type(left).absence() == undefined)
+    }
+
     // §146: equal types and legal nullable pairs have a symmetric join.
+    // §195.1 rule 2: the `null` literal joins the `null` spelling only.
     fn conditional_join(&self, left: &Type, right: &Type) -> Option<Type> {
         if matches!(left, Type::Error) || matches!(right, Type::Error) {
             return Some(Type::Error);
@@ -1539,14 +1559,18 @@ impl<'p> Checker<'p> {
             return Some(left.clone());
         }
         for (value, other) in [(left, right), (right, left)] {
-            if let Type::Nullable(inner, _) = value {
-                if (other == inner.as_ref() || matches!(other, Type::Null))
+            if let Type::Nullable(inner, spelling) = value {
+                if (other == inner.as_ref()
+                    || (matches!(other, Type::Null) && *spelling == crate::types::Absence::Null))
                     && self.allows_nullable(inner)
                 {
                     return Some(value.clone());
                 }
             }
-            if matches!(other, Type::Null) && self.allows_nullable(value) {
+            if matches!(other, Type::Null)
+                && value.absence().is_none()
+                && self.allows_nullable(value)
+            {
                 return Some(Type::nullable(value.clone()));
             }
         }
@@ -1632,8 +1656,15 @@ impl<'p> Checker<'p> {
         fx.ended_shared_narrowing.extend_facts(first_notes);
         fx.finish_narrowing_join(&note_paths);
 
-        let ty = if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty)
-        {
+        let ty = if ctx.is_none() && self.joins_null_and_undefined(&then.ty, &els.ty) {
+            // §195.1 rule 3: `tsc` types the conditional `T | null | undefined`.
+            self.reject_subset(
+                RejectionSite::UndefinedNullUnion,
+                "`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`",
+                pos.clone(),
+            );
+            Type::Error
+        } else if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty) {
             self.generic_union(&then.ty, &els.ty)
         } else if let Some(context) = ctx {
             self.require_assignable(

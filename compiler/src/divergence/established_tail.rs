@@ -430,7 +430,7 @@ pub(super) const NONPLACENULLISHINITIALIZER: DivergenceEntry = DivergenceEntry {
 pub(super) const OPTIONALCHAINUNBOUND: DivergenceEntry = DivergenceEntry {
                 ts: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value}`);",
                 subscript: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value ?? 0}`);",
-                why: "An unbound optional-chain result needs `undefined`, and this language has only `null`.",
+                why: "An unbound optional-chain result has the type `T | undefined`, which is legal only as a function result (compiler.md §195.1 rule 4).",
                 collision: "C7",
             };
 
@@ -978,7 +978,8 @@ const [first = 1] = xs;
     subscript: "const xs: i32[] = [];\n\
                             const first: i32 = xs.length > 0 ? xs[0] : 1;",
     why: "A default fires on a missing element, which TypeScript reads as \
-                      `undefined`; this language has no `undefined`.",
+                      `undefined`. An array element has no `undefined` spelling \
+                      (compiler.md §195.1 rule 6).",
     collision: "compiler.md §107.3",
 };
 

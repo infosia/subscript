@@ -66,3 +66,14 @@ outputs do not change.
 Gate at the contract `b86970a3` with the implementation in the working
 tree: `gate full … debug 2881/0/5 release 2878/0/5 skips 2/0 clippy
 5/18/11 goldens-moved 0 exit 0`.
+
+## Phase Review
+
+A fresh review of `ee65e587..15a10978` gave one MAJOR and seven MINOR
+findings (`compiler.md` §195.10). The MAJOR: `c ? null : u` printed
+`true` for `x === undefined`; `node` prints `false`. After the fix the
+form gives S011, and `r436` pins it.
+
+Gate after the fixes: `gate full 15a10978 dirty:12 debug 2890/0/5
+release 2887/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
+`tools/hygiene.sh` exit 0.
