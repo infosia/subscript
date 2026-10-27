@@ -156,7 +156,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let mut storage = target.clone();
         self.restore_nullable_storage(&mut storage);
-        let (mut first, mut again) = self.stabilize_logical_place(target, prefix, fx);
+        let (mut first, mut again) = self.stabilize_logical_place(target, op, prefix, fx);
         first.ty = storage.ty.clone();
         again.ty = storage.ty.clone();
         if self.apparent_type(&storage.ty) == Type::Error {
@@ -178,12 +178,11 @@ impl<'p> Checker<'p> {
                 (value, result_ty)
             }
             LogicalAssign::Or | LogicalAssign::And => {
-                if !self.require_logical_boolean(&first, op) {
+                let Some(value) = self.check_logical_boolean_value(a, &first, &storage.ty, op, fx)
+                else {
                     return self.err_expr(pos);
-                }
-                let value = self.check_expr(&a.right, Some(&Type::Bool), fx);
-                let checked = self.require_logical_boolean(&value, op);
-                (value, checked.then_some((Type::Bool, Type::Bool)))
+                };
+                (value, Some((storage.ty.clone(), storage.ty.clone())))
             }
         };
         self.check_function_binding_assignment(&again, &a.right, &value, fx);
@@ -255,6 +254,28 @@ impl<'p> Checker<'p> {
         None
     }
 
+    /// Checks the right operand of `||=` or `&&=` against the type of the
+    /// place, then requires a `boolean` left operand (§199.1 rules 3 and 6).
+    /// A right operand that does not convert fails as `p = v` fails.
+    fn check_logical_boolean_value(
+        &mut self,
+        a: &ast::AssignExpr,
+        left: &hir::Expr,
+        target_ty: &Type,
+        op: LogicalAssign,
+        fx: &mut FnCtx,
+    ) -> Option<hir::Expr> {
+        let value = self.check_expr(&a.right, Some(target_ty), fx);
+        if self.apparent_type(&value.ty) == Type::Error {
+            return None;
+        }
+        if !self.assignable(&value.ty, target_ty) {
+            self.require_expr_assignable(&value, target_ty, fx, "the assignment");
+            return None;
+        }
+        self.require_logical_boolean(left, op).then_some(value)
+    }
+
     /// Requires a `boolean` operand of `||=` or `&&=` (§199.1 rule 6).
     fn require_logical_boolean(&mut self, operand: &hir::Expr, op: LogicalAssign) -> bool {
         if self.instance_restriction(
@@ -283,15 +304,34 @@ impl<'p> Checker<'p> {
     fn stabilize_logical_place(
         &mut self,
         target: hir::Expr,
+        op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
         fx: &mut FnCtx,
     ) -> (hir::Expr, hir::Expr) {
-        let mut first = target.clone();
-        let mut again = target;
+        match &target.kind {
+            ExprKind::Field { .. } | ExprKind::Index { .. } => {
+                self.stabilize_projection(target, op, prefix, fx)
+            }
+            _ => (target.clone(), target),
+        }
+    }
+
+    /// Stabilizes the operands of a field or an element projection. A
+    /// value-class or `FixedArray` receiver is a projection too, so the
+    /// write reaches the storage that the program names; only a
+    /// reference base or an index is bound (§199.1 rule 2).
+    fn stabilize_projection(
+        &mut self,
+        projection: hir::Expr,
+        op: LogicalAssign,
+        prefix: &mut Option<&mut SyntheticPrefix>,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, hir::Expr) {
+        let mut first = projection.clone();
+        let mut again = projection;
         match (&mut first.kind, &mut again.kind) {
             (ExprKind::Field { obj, .. }, ExprKind::Field { obj: later, .. }) => {
-                let (head, tail) =
-                    self.stabilize_logical_operand((**obj).clone(), "receiver", prefix, fx);
+                let (head, tail) = self.stabilize_receiver((**obj).clone(), op, prefix, fx);
                 **obj = head;
                 **later = tail;
             }
@@ -303,18 +343,40 @@ impl<'p> Checker<'p> {
                     ..
                 },
             ) => {
-                let (head, tail) =
-                    self.stabilize_logical_operand((**obj).clone(), "receiver", prefix, fx);
+                let (head, tail) = self.stabilize_receiver((**obj).clone(), op, prefix, fx);
                 **obj = head;
                 **later = tail;
                 let (head, tail) =
-                    self.stabilize_logical_operand((**index).clone(), "index", prefix, fx);
+                    self.stabilize_logical_operand((**index).clone(), "index", op, prefix, fx);
                 **index = head;
                 **later_index = tail;
             }
             _ => {}
         }
         (first, again)
+    }
+
+    /// Stabilizes a receiver. A value-class or `FixedArray` projection is
+    /// never copied into a local: its own operands are stabilized instead.
+    fn stabilize_receiver(
+        &mut self,
+        receiver: hir::Expr,
+        op: LogicalAssign,
+        prefix: &mut Option<&mut SyntheticPrefix>,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, hir::Expr) {
+        let value_typed = self.is_value_class(&receiver.ty)
+            || matches!(self.apparent_type(&receiver.ty), Type::FixedArray(..));
+        if value_typed
+            && !is_place_expr(&receiver)
+            && matches!(
+                receiver.kind,
+                ExprKind::Field { .. } | ExprKind::Index { .. }
+            )
+        {
+            return self.stabilize_projection(receiver, op, prefix, fx);
+        }
+        self.stabilize_logical_operand(receiver, "receiver", op, prefix, fx)
     }
 
     /// Binds a non-place operand to a synthetic local. A statement binds it
@@ -324,6 +386,7 @@ impl<'p> Checker<'p> {
         &mut self,
         operand: hir::Expr,
         label: &str,
+        op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
         fx: &mut FnCtx,
     ) -> (hir::Expr, hir::Expr) {
@@ -351,19 +414,22 @@ impl<'p> Checker<'p> {
             },
             fx,
         );
-        fx.push_synthetic_prefix(hir::Stmt::Let {
-            name: name.clone(),
-            ty: ty.clone(),
-            mutable: true,
-            dispose: false,
-            init: hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Unassigned,
+        fx.push_logical_synthetic_prefix(
+            hir::Stmt::Let {
+                name: name.clone(),
                 ty: ty.clone(),
+                mutable: true,
+                dispose: false,
+                init: hir::Expr {
+                    pending_work: None,
+                    kind: ExprKind::Unassigned,
+                    ty: ty.clone(),
+                    pos: pos.clone(),
+                },
                 pos: pos.clone(),
             },
-            pos: pos.clone(),
-        });
+            op.spelling(),
+        );
         let local = hir::Expr {
             pending_work: None,
             kind: ExprKind::Local(name, ty.clone(), false),
@@ -529,13 +595,10 @@ impl<'p> Checker<'p> {
                 value
             }
             LogicalAssign::Or | LogicalAssign::And => {
-                if !self.require_logical_boolean(&read, op) {
+                let Some(value) = self.check_logical_boolean_value(a, &read, &parameter, op, fx)
+                else {
                     return Checked::Expr(self.err_expr(pos));
-                }
-                let value = self.check_expr(&a.right, Some(&Type::Bool), fx);
-                if !self.require_logical_boolean(&value, op) {
-                    return Checked::Expr(self.err_expr(pos));
-                }
+                };
                 value
             }
         };

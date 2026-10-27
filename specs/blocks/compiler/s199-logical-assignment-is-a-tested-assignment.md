@@ -23,7 +23,12 @@ at the pin: `if (x === null) { x = v; }` and
 2. `p` is a place that a plain assignment accepts: a local, a field,
    a static field, an array element, an accessor, or an index
    signature. The receiver and the index of `p` evaluate once, by
-   §82.1 rule 3. An accessor and an index signature follow §82.1
+   §82.1 rule 3. A synthetic local holds only a value of reference
+   type: the reference base of a value-class or `FixedArray`
+   projection, or an index. A value-class or `FixedArray` projection
+   is never copied into a local, so the write reaches the element or
+   the field that the program names, as a compound assignment does.
+   *(Added 2026-10-27 after the Phase Review, C1.)* An accessor and an index signature follow §82.1
    rules 1 and 4: the read runs once, and the write runs only when
    the assignment runs.
 3. **Types.** For `??=`, `p` must be nullable (`T | null` or
@@ -31,15 +36,18 @@ at the pin: `if (x === null) { x = v; }` and
    type `T`, the expression has type `T`. If `v` has the type of `p`,
    the expression has the type of `p`. Each other type of `v` fails
    as the plain assignment `p = v` fails. For `||=` and `&&=`, `p`
-   and `v` must be `boolean` (C24 row 1), and the expression has type
-   `boolean`.
+   and `v` must be `boolean` (C24 row 1), and the expression has the
+   type of `p`. A `v` that does not convert to the type of `p` fails as
+   the plain assignment `p = v` fails, with no "TypeScript accepts"
+   block. *(Amended 2026-10-27 after the Phase Review, M1 and M3.)*
 4. **Narrowing.** After `p ??= v` in statement position, with `v` of
    type `T`, `p` narrows to `T`, as after
    `if (p === null) { p = v; }`. The narrowing ends where §124 ends
    it.
 5. The expression is legal in statement position and in value
    position. In an initializer that has no statement list, a non-place
-   receiver fails as §82.1 rule 3 states. An accessor or an index
+   receiver or index fails as §82.1 rule 3 states, and the text names
+   the operator that the program wrote. An accessor or an index
    signature place is legal in statement position only, as §82.1
    rule 5 has it for a compound assignment: in value position it fails
    with the existing "cannot be used as a value" text.
@@ -67,3 +75,26 @@ at the pin: `if (x === null) { x = v; }` and
 5. `collisions.md` C24 row 18 drops `&&=` and `||=`. §82.3 rule 4 cites
    this section.
 6. No golden moves.
+
+### 199.3 Phase Review
+
+*(Added 2026-10-27.)* A fresh review of `c3903596..8dee175e` gave one
+CRITICAL and four MINOR findings.
+
+1. CRITICAL, realistic, fixed: `||=` and `&&=` on a field of a
+   value-class element, or on a `FixedArray` field reached through a
+   call, wrote to a synthetic copy. `grid[y * w + x].on ||= x === 1`
+   changed nothing on both tiers; `node` sets the element. The two
+   tiers agreed, so only a golden shows it (principle 12). `a382`
+   pins it. Rule 2 now states what a synthetic local holds.
+2. MINOR, fixed: a right operand that does not convert gave a
+   "TypeScript accepts" block; `tsc` gives TS2322.
+3. MINOR, fixed: a generic `x &&= b` with `x: T` had type `boolean`.
+4. MINOR, fixed: the initializer text named `??` and `?.` only.
+
+Open:
+
+1. Value position does not narrow, and it ends an earlier narrowing
+   of `p`. `(y ??= mk()).v; y.v` gives S011 at `y.v`; `tsc` accepts
+   it. Rule 4 narrows in statement position only.
+

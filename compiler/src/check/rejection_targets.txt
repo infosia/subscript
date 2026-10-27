@@ -523,6 +523,7 @@ AwaitSynchronousMethod	a-s100	S100	method `f` is synchronous and cannot be await
 AwaitMethodTypeArguments	a-s101	S100	method `f` is not generic
 AwaitIndirectCall	a-s102	S100	await requires a call that returns an async handle
 NullishAssignmentNonNullable	a-s013	S100	the left operand of `??=` has type `C`, which is not nullable
+AssignmentTypeMismatch	s199-logical-or-mismatch	S100	type mismatch: the assignment expects `boolean`, got `i32`
 LogicalAssignmentNonBoolean	s199-logical-or-string	S100	`||=` requires a boolean operand, got `string`
 PowerAssignment	a-s014	S100	assignment operator outside the decided surface
 DestructuringAssignment	a-s015	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names

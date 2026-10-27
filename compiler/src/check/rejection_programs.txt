@@ -182,6 +182,11 @@ FILE	E	target/s154/forms/a-s014/main.ts
 export function main(): void { let a: i32 = 2; a **= 2; }
 END FILE
 END PROGRAM
+PROGRAM	s199-logical-or-mismatch	TS2322		0
+FILE	E	target/s199/s199-logical-or-mismatch/main.ts
+export function main(): void { let b: boolean = true; b ||= 1; }
+END FILE
+END PROGRAM
 PROGRAM	s199-logical-or-string			0
 FILE	E	target/s199/s199-logical-or-string/main.ts
 export function main(): void { let s: string = ""; s ||= "d"; }

@@ -930,7 +930,7 @@ impl SyntheticOwnerKind {
 /// Synthetic declarations awaiting placement in their owner's statement list.
 #[derive(Debug, Clone, Default)]
 #[must_use]
-struct SyntheticPrefix(Shared<Vec<hir::Stmt>>);
+struct SyntheticPrefix(Shared<Vec<hir::Stmt>>, Option<&'static str>);
 
 impl SyntheticPrefix {
     fn is_empty(&self) -> bool {
@@ -1076,9 +1076,16 @@ impl FnCtx {
         let mut prefix = self.synthetic_owners.pop().unwrap_or_default();
         self.synthetic_owner_kinds.pop();
         if rejects_prefix && !prefix.is_empty() {
+            let message = match prefix.1 {
+                Some(operator) => format!(
+                    "a non-place receiver or index of `{operator}` cannot be used in an initializer"
+                ),
+                None => "a non-place receiver of `??` or `?.` cannot be used in an initializer"
+                    .to_owned(),
+            };
             let diagnostic = diagnostic(
                 RejectionSite::InitializerNonPlaceOptionalReceiver,
-                "a non-place receiver of `??` or `?.` cannot be used in an initializer",
+                message,
                 pos.clone(),
             );
             self.diagnostics.push(diagnostic);
@@ -1089,6 +1096,16 @@ impl FnCtx {
             }
         }
         (result, prefix)
+    }
+
+    /// Pushes a prefix statement that a logical assignment `operator` needs.
+    fn push_logical_synthetic_prefix(&mut self, statement: hir::Stmt, operator: &'static str) {
+        let owner = self
+            .synthetic_owners
+            .last_mut()
+            .expect("a synthetic prefix must have an owner");
+        owner.1.get_or_insert(operator);
+        owner.push(statement);
     }
 
     fn push_synthetic_prefix(&mut self, statement: hir::Stmt) {

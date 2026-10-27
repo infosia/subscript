@@ -164,11 +164,7 @@ fn boolean_logical_assignment_requires_boolean_operands() {
         left[0].message,
         "`||=` requires a boolean operand, got `string`"
     );
-    let right = diagnostics("  let a: boolean = true;\n  a &&= 1;");
-    assert_eq!(
-        right[0].message,
-        "`&&=` requires a boolean operand, got `i32`"
-    );
+    assert!(left[0].divergence.is_some());
     // Control: two boolean operands check.
     assert!(checks(
         "export function main(): void { let a: boolean = true; a &&= flag(); a ||= false; }"
@@ -205,4 +201,118 @@ fn statement_receiver_call_evaluates_once() {
     let text = format!("{:?}", main.body);
     assert_eq!(text.matches("pick").count(), 1, "{text}");
     assert!(text.contains("[[compound#"), "{text}");
+}
+
+#[test]
+fn boolean_logical_assignment_value_fails_as_the_plain_assignment() {
+    for (declaration, logical, plain) in [
+        ("let a: boolean = true;", "a &&= 1;", "a = 1;"),
+        ("let s: string = \"\";", "s ||= 1;", "s = 1;"),
+    ] {
+        let plain = diagnostics(&format!("  {declaration}\n  {plain}"));
+        let result = diagnostics(&format!("  {declaration}\n  {logical}"));
+        assert_eq!(result[0].code, plain[0].code, "{logical}");
+        assert_eq!(result[0].message, plain[0].message, "{logical}");
+        assert!(result[0].divergence.is_none(), "{logical}");
+    }
+}
+
+#[test]
+fn boolean_logical_assignment_has_the_type_of_the_place() {
+    let generic = |tail: &str| {
+        format!(
+            "function f<T extends boolean>(x: T, y: T, b: boolean): {tail}\nexport function main(): void {{}}\n"
+        )
+    };
+    assert!(checks(&generic("T { return (x ||= y); }")));
+    assert!(!checks(&generic("boolean { return (x &&= b); }")));
+    // Control: a boolean place gives `boolean`.
+    assert!(checks(
+        "function g(a: boolean, b: boolean): boolean { return (a ||= b); }\nexport function main(): void {}\n"
+    ));
+}
+
+#[test]
+fn initializer_rejection_names_the_logical_operator() {
+    let source = "class H { flags: boolean[] = [false]; }\nconst G: H = new H();\nfunction getH(): H { return G; }\nconst z: boolean = (getH().flags[0] ||= true);\nexport function main(): void {}\n";
+    let result = check_program(&[SourceFile::new("test.ts", format!("{BOX}{source}"))])
+        .expect_err("a non-place receiver in an initializer must fail");
+    assert!(
+        result.iter().any(|diagnostic| diagnostic.message
+            == "a non-place receiver or index of `||=` cannot be used in an initializer"),
+        "{result:?}"
+    );
+    // Control: `??` keeps its own text.
+    let nullish = "const y: Box = maybe() ?? make();\nexport function main(): void {}\n";
+    let result = check_program(&[SourceFile::new("test.ts", format!("{BOX}{nullish}"))])
+        .expect_err("a non-place `??` receiver in an initializer must fail");
+    assert!(
+        result.iter().any(|diagnostic| diagnostic.message
+            == "a non-place receiver of `??` or `?.` cannot be used in an initializer"),
+        "{result:?}"
+    );
+}
+
+/// Checks `source` and returns the module and the types of the synthetic
+/// locals of `main`.
+fn synthetic_locals(source: &str) -> (hir::Module, Vec<crate::types::Type>) {
+    fn collect(body: &[hir::Stmt], out: &mut Vec<crate::types::Type>) {
+        for statement in body {
+            if let hir::Stmt::Let { name, ty, .. } = statement {
+                if name.starts_with("[[compound#") {
+                    out.push(ty.clone());
+                }
+            }
+            for child in statement.children() {
+                if let hir::HirChild::Stmt(child) = child {
+                    collect(std::slice::from_ref(child), out);
+                }
+            }
+        }
+    }
+    let module = check_program(&[SourceFile::new("test.ts", format!("{BOX}{source}"))])
+        .expect("the projection program must check");
+    let mut out = Vec::new();
+    let main = module
+        .functions
+        .iter()
+        .find(|function| function.name == "main")
+        .expect("main function");
+    collect(&main.body, &mut out);
+    (module, out)
+}
+
+#[test]
+fn value_projection_receiver_is_never_copied() {
+    let classes = "@ValueType\nclass P { on: boolean = false; }\nclass H { p: P = new P(); flags: FixedArray<boolean, 2> = [false, false]; }\nconst G: H = new H();\nfunction getH(): H { return G; }\nfunction at(i: i32): i32 { return i; }\n";
+    for body in [
+        "const grid: P[] = [new P()]; grid[at(0)].on ||= true;",
+        "const grid: P[] = [new P()]; const v: boolean = (grid[at(0)].on ||= true);",
+        "getH().p.on ||= true;",
+        "const v: boolean = (getH().p.on &&= true);",
+        "getH().flags[at(1)] ||= true;",
+        "const v: boolean = (getH().flags[at(1)] ||= true);",
+    ] {
+        let (module, locals) = synthetic_locals(&format!(
+            "{classes}export function main(): void {{ {body} }}\n"
+        ));
+        // Control: the non-place operand is bound, so the check below sees it.
+        assert!(
+            !locals.is_empty(),
+            "{body}: a non-place operand must be bound"
+        );
+        // The Debug text names the type, so this test reads no type shape.
+        let value_classes: Vec<String> = module
+            .classes
+            .iter()
+            .enumerate()
+            .filter(|(_, class)| class.is_value)
+            .map(|(index, _)| format!("Class(ClassId({index}))"))
+            .collect();
+        for ty in &locals {
+            let text = format!("{ty:?}");
+            let copied = text.starts_with("FixedArray(") || value_classes.contains(&text);
+            assert!(!copied, "{body}: a value projection is copied: {ty:?}");
+        }
+    }
 }
