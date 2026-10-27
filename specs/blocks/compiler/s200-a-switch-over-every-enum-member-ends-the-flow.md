@@ -34,6 +34,13 @@ can pass any integer to an exported function.
    member value never reaches it, so the trap has no cost on a path
    that runs. A switch in a `void` function, or a switch with a case
    that completes normally, does not change.
+2a. The arm is added only to a switch in tail position: the end of the
+   function body follows the end of the switch, and no statement of
+   the body runs between them. A switch followed by `return 3;` does
+   not change, so a value that is not a member still reaches
+   `return 3;`, as in JavaScript. *(Added 2026-10-27 after the
+   implementation round: the first text added the arm to each such
+   switch.)*
 3. A switch that is not exhaustive keeps "not all paths return a
    value", as `tsc` keeps TS2366.
 4. A `CEnum` alias switch keeps its own rules (§50).
@@ -49,6 +56,18 @@ can pass any integer to an exported function.
    on the three execution forms, after it prints `before`.
 4. A unit test shows that a switch with one member missing keeps the
    S100, and that a switch with a `default` adds no trap.
-5. `compiler.md` §42.1 cites this section. The divergence entry
-   `RETURNFLOWCOVERAGE` no longer names an exhaustive enum switch.
+5. `compiler.md` §42.1 cites this section. After rule 1, a
+   default-free switch with a `break` case is the only shape that
+   reached the return-coverage sites, and `tsc` rejects it (TS2366).
+   So `RETURNFLOWCOVERAGE`, `LAMBDARETURNFLOWCOVERAGE`, and their
+   rejection sites are removed; the program gets the `tsc`-rejects
+   text "not all paths return a value". *(Amended 2026-10-27 after the
+   implementation round.)*
 6. No golden moves.
+
+### 200.3 Open
+
+1. A switch at the end of a `try` block with a `finally` is not in
+   tail position (rule 2a): the finalizer runs after it. The function
+   keeps S100 "not all paths return a value", as at the pin. `tsc`
+   accepts it, and after rule 1 the diagnostic has no divergence block.

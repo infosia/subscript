@@ -44,13 +44,6 @@ pub(super) const MODULEINITIALIZERMISSINGFORM: DivergenceEntry = DivergenceEntry
     collision: "C24", // row 3,
 };
 
-pub(super) const RETURNFLOWCOVERAGE: DivergenceEntry = DivergenceEntry {
-    ts: "enum E {a,b} function f(e:E):i32 {switch(e){case E.a:return 1;case E.b:return 2;}}\nexport function main(): void {  }",
-    subscript: "no equivalent; add a default branch",
-    why: "Return-flow analysis proves switch coverage with a default or a closed literal alias only.",
-    collision: "compiler.md §42.1",
-};
-
 pub(super) const LOCALVARDECLARATIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { var x:i32=1; }",
     subscript: "no equivalent; use let or const",
@@ -359,13 +352,6 @@ pub(super) const GENERATORRESULTVALUEWRITEFORM: DivergenceEntry = DivergenceEntr
     subscript: "no equivalent; iterate with for-of and yield each value",
     why: "A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.",
     collision: "C24", // row 16,
-};
-
-pub(super) const LAMBDARETURNFLOWCOVERAGE: DivergenceEntry = DivergenceEntry {
-    ts: "enum E { A, B }\nexport function main(): void { const f = (x: E): i32 => { switch (x) { case E.A: return 1; case E.B: return 2; } }; }",
-    subscript: "no equivalent; add a default branch",
-    why: "Return-flow analysis proves switch coverage with a default or a closed literal alias only.",
-    collision: "compiler.md §42.1",
 };
 
 pub(super) const BIGINTLITERAL: DivergenceEntry = DivergenceEntry {

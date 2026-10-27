@@ -266,6 +266,9 @@ impl<'p> Checker<'p> {
                 for s in &block.stmts {
                     self.check_stmt(s, &mut fx, &mut out);
                 }
+                if !sig.is_generator {
+                    self.end_tail_enum_switches(&sig.ret, &mut out);
+                }
                 out
             }
             None => {
@@ -317,11 +320,7 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.reject_subset(
-                        if self.ts_return_coverage(&body) {
-                            RejectionSite::FunctionReturnCoverage
-                        } else {
-                            RejectionSite::FunctionReturnPathMissing
-                        },
+                        RejectionSite::FunctionReturnPathMissing,
                         "not all paths return a value",
                         pos.clone(),
                     );

@@ -232,33 +232,41 @@ fn pending_local_splits_on_the_lambda_boundary() {
 }
 
 #[test]
-fn s180_finally_keeps_enum_switch_return_coverage_site() {
+fn finally_keeps_the_enum_switch_return_flow() {
     let switch = "switch (e) { case E.A: return 1; case E.B: return 2; }";
     let probe = |body: &str| {
         let source = format!("enum E {{ A, B }} function f(e: E): i32 {{ {body} }} export function main(): void {{}}");
+        check_program(&[SourceFile::entry("coverage.ts", source)]).map(|_| ())
+    };
+    for body in [
+        switch.to_owned(),
+        format!("try {{ print(\"body\"); }} finally {{ {switch} }}"),
+        format!("try {{ {switch} }} catch (error) {{ {switch} }}"),
+    ] {
+        probe(&body).unwrap_or_else(|diagnostics| {
+            panic!("an exhaustive enum switch ends the return flow: {body}: {diagnostics:?}")
+        });
+    }
+    // A finalizer runs after the try block, so its switch is not in tail
+    // position (§200.1 rule 2a).
+    let missing = "switch (e) { case E.A: return 1; }";
+    for body in [
+        format!("try {{ {switch} }} finally {{ print(\"done\"); }}"),
+        missing.to_owned(),
+        format!("try {{ {missing} }} finally {{ print(\"done\"); }}"),
+        format!("try {{ print(\"body\"); }} finally {{ {missing} }}"),
+    ] {
         rejection_total::clear_reached();
-        let diagnostics = check_program(&[SourceFile::entry("coverage.ts", source)])
-            .expect_err("the subset requires an explicit default return");
+        let diagnostics =
+            probe(&body).expect_err("a switch that does not end the flow keeps the rejection");
         let reached = rejection_total::take_reached();
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-        reached
-            .into_iter()
-            .find(|(_, message, pos)| {
-                *message == diagnostics[0].message && *pos == diagnostics[0].pos
-            })
-            .expect("the diagnostic carries its rejection site")
-            .0
-    };
-    let plain = probe(switch);
-    assert_eq!(plain, RejectionSite::FunctionReturnCoverage);
-    let wrapped = probe(&format!(
-        "try {{ {switch} }} finally {{ print(\"done\"); }}"
-    ));
-    assert_eq!(wrapped, plain);
-    let finalizer = probe(&format!(
-        "try {{ print(\"body\"); }} finally {{ {switch} }}"
-    ));
-    assert_eq!(finalizer, plain);
+        assert!(reached.iter().any(|(site, message, pos)| {
+            *site == RejectionSite::FunctionReturnPathMissing
+                && *message == diagnostics[0].message
+                && *pos == diagnostics[0].pos
+        }));
+    }
 }
 
 type CheckerObserver = Box<dyn Fn(&super::Checker<'_>)>;

@@ -364,15 +364,12 @@ impl<'p> Checker<'p> {
                         self.check_stmt(s, fx, &mut out);
                     }
                     if let Some(ret) = &ret {
+                        self.end_tail_enum_switches(ret, &mut out);
                         if !matches!(&self.apparent_type(ret), Type::Void | Type::Error)
                             && crate::check::fallthrough::sequence_can_fall_through(&out)
                         {
                             self.reject_subset(
-                                if self.ts_return_coverage(&out) {
-                                    RejectionSite::LambdaReturnCoverage
-                                } else {
-                                    RejectionSite::LambdaReturnPathMissing
-                                },
+                                RejectionSite::LambdaReturnPathMissing,
                                 "not all paths return a value",
                                 pos.clone(),
                             );

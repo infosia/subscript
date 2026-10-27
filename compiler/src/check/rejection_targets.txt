@@ -47,7 +47,6 @@ FunctionBodyMissing	function-body-missing	S100	function bodies are required
 FunctionImplementationMissing	function-implementation-missing	S100	function bodies are required
 AsyncHandleUnawaited	async-handle-unawaited	S013	an async handle is dropped without any await of its completion
 FunctionReturnPathMissing	function-return-path-missing	S100	not all paths return a value
-FunctionReturnCoverage	function-return-coverage	S100	not all paths return a value
 StaticFieldInitializerMissing	static-field-initializer-missing	S100	static fields require an initializer
 StaticFieldInitializerMissing	static-field-initializer-missing-witness-2	S100	static fields require an initializer
 FieldDefiniteAssertionUnassigned	field-definite-assertion-unassigned	S100	field `x` of `A` asserts with `!` a value that nothing assigns at the constructor's top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
@@ -400,7 +399,6 @@ MapCopyNullableSource	a-s012	S011	`Map<i32, i32> | null` may be null here; narro
 AsyncArrowFunction	r-s167-generic	S100	generic async arrows are not in the decided surface
 AsyncArrowCapture	s167-capture	S009	async arrow captures mutable `n`; copy it into a `const` first, or use a class with a field
 AsyncArrowResultAnnotation	s167-result	S100	an async arrow result annotation must be Promise<T>
-LambdaReturnCoverage	a-s106	S100	not all paths return a value
 RegexLiteralUnicodeSetsFlag	a-s107	S100	the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, "v")`
 BigIntLiteral	a-s109	S100	literal form outside the decided surface
 HalfFloatLiteralRange	a-s110	S008	numeric literal 70000 out of range for `f16`

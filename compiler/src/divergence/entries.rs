@@ -242,7 +242,6 @@ impl Divergence {
                 surface_forms::TEMPLATEINTERPOLATIONKINDFORM
             }
             Divergence::BigIntLiteral => surface_forms::BIGINTLITERAL,
-            Divergence::LambdaReturnFlowCoverage => surface_forms::LAMBDARETURNFLOWCOVERAGE,
             Divergence::GeneratorResultValueWriteForm => {
                 surface_forms::GENERATORRESULTVALUEWRITEFORM
             }
@@ -327,7 +326,6 @@ impl Divergence {
                 surface_forms::LOCALTYPEWITHOUTINITIALIZERFORM
             }
             Divergence::LocalVarDeclarationForm => surface_forms::LOCALVARDECLARATIONFORM,
-            Divergence::ReturnFlowCoverage => surface_forms::RETURNFLOWCOVERAGE,
             Divergence::ModuleInitializerMissingForm => surface_forms::MODULEINITIALIZERMISSINGFORM,
             Divergence::ModuleVarDeclarationForm => surface_forms::MODULEVARDECLARATIONFORM,
             Divergence::LibConstructorName => surface_forms::LIBCONSTRUCTORNAME,

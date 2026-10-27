@@ -189,6 +189,8 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t110-pad-start-cut-inside-sequence" | "t111-pad-end-cut-inside-sequence" => {
             (TrapKind::StringSlice, 13, 23)
         }
+        // compiler.md §200.1 rule 2: the position of the `switch`.
+        "t112-enum-switch-non-member-value" => (TrapKind::UnreachableReached, 20, 3),
         "t106-dropped-generator-local" => (TrapKind::UncaughtException, 12, 39),
         "t103-unstarted-generator-parameter" => (TrapKind::UncaughtException, 22, 5),
         "t104-coroutine-closure-environment" => (TrapKind::UncaughtException, 21, 61),

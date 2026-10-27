@@ -769,13 +769,202 @@ fn defaultless_non_alias_switches_do_not_satisfy_return_flow() {
     for source in [
         "function classify(value: i32): i32 { switch (value) { case 0: return 1; } }\n",
         "function classify(value: string): i32 { switch (value) { case \"a\": return 1; } }\n",
-        "enum Mode { A, B }\nfunction classify(value: Mode): i32 { switch (value) { case Mode.A: return 1; case Mode.B: return 2; } }\n",
+        "enum Mode { A, B }\nfunction classify(value: Mode): i32 { switch (value) { case Mode.A: return 1; } }\n",
+        "enum Mode { A, B }\nfunction classify(value: Mode): i32 { switch (value) { case Mode.A: return 1; case Mode.B: break; } }\n",
+        "enum Mode { A, B }\nfunction classify(value: Mode): i32 { switch (value) { case Mode.A: return 1; case Mode.B: print(\"b\"); } }\n",
     ] {
         let diagnostics = check_one(source)
             .expect_err("default-less non-alias switches retain conservative return flow");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
         assert!(diagnostics[0].message.contains("not all paths return"));
     }
+}
+
+/// The switch statements of one function body, in source order, outside
+/// lambda bodies.
+fn function_switches(module: &crate::hir::Module, name: &str) -> Vec<crate::hir::Stmt> {
+    fn collect(statements: &[crate::hir::Stmt], out: &mut Vec<crate::hir::Stmt>) {
+        for statement in statements {
+            match statement {
+                crate::hir::Stmt::Switch { cases, .. } => {
+                    out.push(statement.clone());
+                    for case in cases {
+                        collect(&case.body, out);
+                    }
+                }
+                crate::hir::Stmt::Block(body) => collect(body, out),
+                _ => {}
+            }
+        }
+    }
+    let function = module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+        .unwrap_or_else(|| panic!("function `{name}`"));
+    let mut out = Vec::new();
+    collect(&function.body, &mut out);
+    out
+}
+
+/// The switch that is the last statement of the `then` branch of the
+/// last statement of a function body.
+fn function_switches_in_if(module: &crate::hir::Module, name: &str) -> crate::hir::Stmt {
+    let function = module
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+        .unwrap_or_else(|| panic!("function `{name}`"));
+    let Some(crate::hir::Stmt::If { then, .. }) = function.body.last() else {
+        panic!("`{name}` ends with an if statement");
+    };
+    let mut statement = then.last().expect("then branch statement");
+    while let crate::hir::Stmt::Block(body) = statement {
+        statement = body.last().expect("block statement");
+    }
+    statement.clone()
+}
+
+/// The test of each arm of a switch, with `None` for `default`.
+fn switch_arm_tests(statement: &crate::hir::Stmt) -> Vec<Option<i64>> {
+    let crate::hir::Stmt::Switch { cases, .. } = statement else {
+        panic!("switch statement");
+    };
+    cases
+        .iter()
+        .map(|case| {
+            case.test.as_ref().map(|test| match test.kind {
+                crate::hir::ExprKind::EnumMember { value, .. } => value,
+                _ => panic!("enum member case test"),
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn exhaustive_enum_switch_ends_the_return_flow_with_a_trap_arm() {
+    let module = check_one(
+        "enum Shape { Circle, Square = 4 }\n\
+         function sides(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle: return 0;\n\
+             case Shape.Square: return 4;\n\
+           }\n\
+         }\n\
+         function grouped(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle:\n\
+             case Shape.Square:\n\
+               switch (s) { case Shape.Circle: return 1; case Shape.Square: return 2; }\n\
+           }\n\
+         }\n\
+         export function main(): void {\n\
+           const f = (s: Shape): i32 => { switch (s) { case Shape.Circle: return 0; case Shape.Square: return 4; } };\n\
+           print(`${sides(Shape.Square)} ${grouped(Shape.Circle)} ${f(Shape.Circle)}`);\n\
+         }\n",
+    )
+    .expect("a value function with a case for each enum member needs no return after the switch");
+    let switches = function_switches(&module, "sides");
+    assert_eq!(switches.len(), 1);
+    assert_eq!(switch_arm_tests(&switches[0]), [Some(0), Some(4), None]);
+    let crate::hir::Stmt::Switch { cases, pos, .. } = &switches[0] else {
+        panic!("switch statement");
+    };
+    assert_eq!((pos.line, pos.col), (3, 1));
+    let [crate::hir::Stmt::Expr(trap)] = cases[2].body.as_slice() else {
+        panic!("one trap statement in the added arm");
+    };
+    assert!(matches!(
+        &trap.kind,
+        crate::hir::ExprKind::Call {
+            callee: crate::hir::Callee::Ambient(crate::hir::AmbientFn::Unreachable),
+            args,
+        } if args.is_empty()
+    ));
+    assert_eq!(&trap.pos, pos);
+    assert_eq!(&cases[2].pos, pos);
+    let nested = function_switches(&module, "grouped");
+    assert_eq!(nested.len(), 2);
+    for statement in &nested {
+        assert_eq!(switch_arm_tests(statement).last(), Some(&None));
+    }
+}
+
+#[test]
+fn enum_switch_trap_arm_needs_a_value_function_and_no_default() {
+    let module = check_one(
+        "enum Shape { Circle, Square }\n\
+         function effect(s: Shape): void {\n\
+           switch (s) {\n\
+             case Shape.Circle: return;\n\
+             case Shape.Square: return;\n\
+           }\n\
+         }\n\
+         function fallback(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle: return 0;\n\
+             case Shape.Square: return 4;\n\
+             default: return 9;\n\
+           }\n\
+         }\n\
+         function partial(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle: return 0;\n\
+             case Shape.Square: break;\n\
+           }\n\
+           return 4;\n\
+         }\n\
+         export function main(): void {\n\
+           effect(Shape.Circle);\n\
+           print(`${fallback(Shape.Square)} ${partial(Shape.Square)}`);\n\
+         }\n",
+    )
+    .expect("each switch keeps its arms");
+    let effect = function_switches(&module, "effect");
+    assert_eq!(switch_arm_tests(&effect[0]), [Some(0), Some(1)]);
+    let fallback = function_switches(&module, "fallback");
+    assert_eq!(switch_arm_tests(&fallback[0]), [Some(0), Some(1), None]);
+    let partial = function_switches(&module, "partial");
+    assert_eq!(switch_arm_tests(&partial[0]), [Some(0), Some(1)]);
+    let module = check_one(
+        "enum Shape { Circle, Square }\n\
+         function later(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle: return 1;\n\
+             case Shape.Square: return 2;\n\
+           }\n\
+           return 3;\n\
+         }\n\
+         function branch(s: Shape, flag: boolean): i32 {\n\
+           if (flag) {\n\
+             switch (s) {\n\
+               case Shape.Circle: return 1;\n\
+               case Shape.Square: return 2;\n\
+             }\n\
+           } else {\n\
+             return 0;\n\
+           }\n\
+         }\n\
+         export function main(): void { print(`${later(Shape.Circle)} ${branch(Shape.Square, true)}`); }\n",
+    )
+    .expect("a tail switch in an if-branch ends the return flow");
+    // §200.1 rule 2a: a statement after the switch keeps the switch unchanged.
+    let later = function_switches(&module, "later");
+    assert_eq!(switch_arm_tests(&later[0]), [Some(0), Some(1)]);
+    let branch = function_switches_in_if(&module, "branch");
+    assert_eq!(switch_arm_tests(&branch), [Some(0), Some(1), None]);
+    let diagnostics = check_one(
+        "enum Shape { Circle, Square, Triangle }\n\
+         function sides(s: Shape): i32 {\n\
+           switch (s) {\n\
+             case Shape.Circle: return 0;\n\
+             case Shape.Square: return 4;\n\
+           }\n\
+         }\n",
+    )
+    .expect_err("a switch with one member missing keeps the return-flow rejection");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert!(diagnostics[0].message.contains("not all paths return"));
 }
 
 #[test]

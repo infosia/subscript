@@ -842,6 +842,7 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     ("t110-pad-start-cut-inside-sequence", "compiler.md §191 padStart cut inside a sequence", "string-slice", 13, 23),
     ("t111-pad-end-cut-inside-sequence", "compiler.md §191 padEnd cut inside a sequence", "string-slice", 13, 23),
+    ("t112-enum-switch-non-member-value", "compiler.md §200.1 rule 2 a non-member value reaches the switch trap", "unreachable-reached", 20, 3),
     ("t105-dropped-generator-break", "break releases the failed task through its generator", "uncaught-exception", 12, 39),
     ("t109-generator-close-throws", "a generator close finalizer traps at its throw", "uncaught-exception", 11, 13),
     ("t106-dropped-generator-local", "the block exit releases the failed task through its generator", "uncaught-exception", 12, 39),

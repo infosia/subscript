@@ -292,9 +292,6 @@ rejection_classes! {
     Self::AsyncHandleUnawaited => {
         (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle))
     }
-    Self::FunctionReturnCoverage => {
-        (RuleCode::S100, Diverges(Divergence::ReturnFlowCoverage))
-    }
     Self::StaticFieldInitializerMissing => (
         RuleCode::S100,
         Diverges(Divergence::StaticFieldInitializerMissing),
@@ -1215,10 +1212,6 @@ rejection_classes! {
         Diverges(Divergence::GenericClassDefaultParameterAnnotationNeeded),
     ),
     Self::InitializerTypeCycle => (RuleCode::S100, TscRejects),
-    Self::LambdaReturnCoverage => (
-        RuleCode::S100,
-        Diverges(Divergence::LambdaReturnFlowCoverage),
-    ),
     Self::RegexLiteralUnicodeSetsFlag => (RuleCode::S100, TscRejects),
     Self::BigIntLiteral => (RuleCode::S100, Diverges(Divergence::BigIntLiteral)),
     Self::HalfFloatLiteralRange => {

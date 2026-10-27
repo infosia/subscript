@@ -1,6 +1,6 @@
 //! One statement-exit predicate for return checks, scope exits, and site facts (§164 rule 1).
 
-use crate::hir::{AmbientFn, Callee, ExprKind, Stmt};
+use crate::hir::{AmbientFn, Callee, ExprKind, Stmt, SwitchCase};
 
 #[derive(Clone, Copy)]
 struct Exits {
@@ -148,24 +148,40 @@ fn exits(statement: &Stmt) -> Exits {
             cases,
             pos: _,
         } => {
-            let mut result = if cases.iter().any(|case| case.test.is_none())
+            let dispatch = if cases.iter().any(|case| case.test.is_none())
                 || matches!(disc.ty, crate::types::Type::StringAlias(_))
             {
                 Exits::STOP
             } else {
                 Exits::NEXT
             };
-            let mut suffix = Exits::NEXT;
-            for case in cases.iter().rev() {
-                suffix = sequence_exits(&case.body).followed_by(suffix);
-                result = result.either(suffix);
-            }
+            let result = dispatch.either(case_exits(cases));
             Exits {
                 next: result.next || result.breaks,
                 breaks: false,
             }
         }
     }
+}
+
+/// The exits of the case bodies of a `switch`, with each case entered by
+/// dispatch and by fall-through from the case before it.
+fn case_exits(cases: &[SwitchCase]) -> Exits {
+    let mut result = Exits::STOP;
+    let mut suffix = Exits::NEXT;
+    for case in cases.iter().rev() {
+        suffix = sequence_exits(&case.body).followed_by(suffix);
+        result = result.either(suffix);
+    }
+    result
+}
+
+/// True when a case of a `switch` completes it normally: a `break` that
+/// leaves the `switch`, or the end of the last case. The dispatch edge
+/// that matches no case is not an exit here (§200.1 rule 2).
+pub(super) fn switch_cases_complete_normally(cases: &[SwitchCase]) -> bool {
+    let result = case_exits(cases);
+    result.next || result.breaks
 }
 
 #[cfg(test)]
@@ -266,6 +282,41 @@ mod tests {
                 }
             ));
             assert!(can_fall_through(statement));
+        }
+    }
+
+    #[test]
+    fn switch_cases_complete_normally_ignores_the_unmatched_dispatch() {
+        let cases = [
+            ("switch (n) { case 0: return; case 1: return; }", false),
+            ("switch (n) { case 0: case 1: return; }", false),
+            (
+                "switch (n) { case 0: { return; } case 1: unreachable(); }",
+                false,
+            ),
+            ("switch (n) { case 0: return; case 1: break; }", true),
+            ("switch (n) { case 0: if (flag) { break; } return; }", true),
+            (
+                "switch (n) { case 0: return; case 1: print(\"end\"); }",
+                true,
+            ),
+            (
+                "switch (n) { case 0: print(\"next\"); case 1: return; }",
+                false,
+            ),
+            ("switch (n) {}", false),
+        ];
+        for (source, expected) in cases {
+            let statements = body(source);
+            let Stmt::Switch {
+                cases,
+                disc: _,
+                pos: _,
+            } = &statements[0]
+            else {
+                panic!("switch fixture: {source}");
+            };
+            assert_eq!(switch_cases_complete_normally(cases), expected, "{source}");
         }
     }
 

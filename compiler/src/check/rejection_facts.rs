@@ -38,59 +38,101 @@ impl super::Checker<'_> {
         })
     }
 
-    /// TypeScript closes a source-enum switch over all declared member values.
-    pub(super) fn ts_return_coverage(&self, body: &[hir::Stmt]) -> bool {
-        use crate::types::Type;
-        !super::fallthrough::sequence_can_fall_through(body)
-            || body.iter().any(|statement| match statement {
-                hir::Stmt::Block(body) => self.ts_return_coverage(body),
-                hir::Stmt::If {
-                    cond,
-                    then,
-                    els,
-                    pos: _,
-                } => match cond.kind {
-                    hir::ExprKind::Bool(true) => self.ts_return_coverage(then),
-                    hir::ExprKind::Bool(false) => els
-                        .as_ref()
-                        .is_some_and(|body| self.ts_return_coverage(body)),
-                    _ => {
-                        self.ts_return_coverage(then)
-                            && els
-                                .as_ref()
-                                .is_some_and(|body| self.ts_return_coverage(body))
-                    }
-                },
-                hir::Stmt::Using {
-                    bindings: _,
-                    body,
-                    finalizer,
-                    pos: _,
-                } => {
-                    self.ts_return_coverage(body)
-                        || finalizer
-                            .as_ref()
-                            .is_some_and(|body| self.ts_return_coverage(body))
+    /// Adds the `default` arm that ends each tail switch over every member
+    /// of a source enum, in a function that returns `ret` (§200.1 rules 1,
+    /// 2, and 2a). The arm traps with `unreachable-reached` at the
+    /// `switch`. A switch is in tail position when the end of the body
+    /// follows its end and no statement runs between them.
+    pub(super) fn end_tail_enum_switches(&self, ret: &crate::types::Type, body: &mut [hir::Stmt]) {
+        if matches!(
+            self.apparent_type(ret),
+            crate::types::Type::Void | crate::types::Type::Error
+        ) {
+            return;
+        }
+        self.end_tail_switch(body);
+    }
+
+    fn end_tail_switch(&self, body: &mut [hir::Stmt]) {
+        let Some(last) = body.last_mut() else {
+            return;
+        };
+        match last {
+            hir::Stmt::Block(body) => self.end_tail_switch(body),
+            hir::Stmt::If {
+                then,
+                els,
+                cond: _,
+                pos: _,
+            } => {
+                self.end_tail_switch(then);
+                if let Some(els) = els {
+                    self.end_tail_switch(els);
                 }
-                hir::Stmt::Switch {
-                    disc,
-                    cases,
-                    pos: _,
-                } => {
-                    let Type::Enum(id) = self.apparent_type(&disc.ty) else {
-                        return false;
-                    };
-                    self.enums[id.0].members.iter().all(|(_, value)| {
-                        cases.iter().any(|case| {
-                            case.test.as_ref().is_some_and(|test| {
-                                matches!(test.kind,
-                    hir::ExprKind::EnumMember { value: actual, .. } if actual == *value)
-                            })
-                        })
-                    }) && cases.iter().all(|case| self.ts_return_coverage(&case.body))
+            }
+            hir::Stmt::Try {
+                body,
+                handler,
+                binding: _,
+                pos: _,
+            } => {
+                self.end_tail_switch(body);
+                self.end_tail_switch(handler);
+            }
+            // A finalizer or a dispose hook runs after the body, so only
+            // the finalizer ends in tail position.
+            hir::Stmt::Using {
+                bindings,
+                body,
+                finalizer,
+                pos: _,
+            } => match finalizer {
+                Some(finalizer) => self.end_tail_switch(finalizer),
+                None if bindings.is_empty() => self.end_tail_switch(body),
+                None => {}
+            },
+            hir::Stmt::Switch { disc, cases, pos } => {
+                if let Some(case) = cases.last_mut() {
+                    self.end_tail_switch(&mut case.body);
                 }
-                _ => false,
-            })
+                if let Some(arm) = self.covered_enum_switch_arm(disc, cases, pos) {
+                    cases.push(arm);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The trap arm of a switch over every member of a source enum whose
+    /// cases do not complete it normally. The arm is `None` when the
+    /// switch has a `default`, misses a member, or has a case that
+    /// completes it normally.
+    fn covered_enum_switch_arm(
+        &self,
+        disc: &hir::Expr,
+        cases: &[hir::SwitchCase],
+        pos: &crate::diag::Pos,
+    ) -> Option<hir::SwitchCase> {
+        if cases.iter().any(|case| case.test.is_none())
+            || !self.source_enum_switch_exhaustive(disc, cases)
+            || super::fallthrough::switch_cases_complete_normally(cases)
+        {
+            return None;
+        }
+        let trap = hir::Expr {
+            pending_work: None,
+            kind: hir::ExprKind::Call {
+                callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
+                args: Vec::new(),
+            },
+            ty: crate::types::Type::Void,
+            pos: pos.clone(),
+        };
+        Some(hir::SwitchCase {
+            test: None,
+            body: vec![hir::Stmt::Expr(trap)],
+            pos: pos.clone(),
+        })
     }
 }
 
