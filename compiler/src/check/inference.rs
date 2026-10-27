@@ -178,6 +178,8 @@ impl<'p> Checker<'p> {
                 }
                 _ => Vec::new(),
             },
+            // A poisoned context already has its diagnostic.
+            Some(Type::Error) => return None,
             _ => Vec::new(),
         };
         let target = InferenceTarget::constructor(&template, source_name(key));
@@ -256,7 +258,9 @@ impl<'p> Checker<'p> {
 
     /// Checks each non-literal once and gives deferred literals the instance's context.
     /// A contextual candidate follows the non-literal candidates and
-    /// precedes the literal defaults (§197 rule 3).
+    /// precedes the literal defaults. A non-literal argument has the
+    /// context of its parameter type when each type parameter that the
+    /// type names has a contextual candidate (§197 rule 3).
     fn infer_arguments(
         &mut self,
         target: &InferenceTarget<'_>,
@@ -269,6 +273,9 @@ impl<'p> Checker<'p> {
         let annotations = &target.annotations;
         let mut candidates = vec![Vec::new(); parameters.len()];
         let mut checked = vec![None; args.len()];
+        let has_context: Vec<bool> = (0..parameters.len())
+            .map(|index| contextual.get(index).is_some_and(Option::is_some))
+            .collect();
         for (index, argument) in args.iter().enumerate() {
             if argument.spread.is_some() || deferred_literal(&argument.expr) {
                 continue;
@@ -278,13 +285,30 @@ impl<'p> Checker<'p> {
                 .copied()
                 .flatten()
                 .and_then(|annotation| {
-                    if type_mentions_missing(annotation, parameters, &vec![false; candidates.len()])
-                    {
+                    if type_mentions_missing(annotation, parameters, &has_context) {
                         None
                     } else {
+                        // §197 rule 3: each contextual candidate replaces its parameter.
                         let file = self.cur_file;
                         self.cur_file = target.file;
+                        let saved: Vec<_> = parameters
+                            .iter()
+                            .zip(contextual)
+                            .filter_map(|(parameter, candidate)| {
+                                let candidate = candidate.clone()?;
+                                Some((
+                                    parameter.clone(),
+                                    self.subst.insert(parameter.clone(), candidate),
+                                ))
+                            })
+                            .collect();
                         let context = self.resolve_type(annotation);
+                        for (parameter, previous) in saved {
+                            match previous {
+                                Some(previous) => self.subst.insert(parameter, previous),
+                                None => self.subst.remove(&parameter),
+                            };
+                        }
                         self.cur_file = file;
                         Some(context)
                     }

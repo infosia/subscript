@@ -213,7 +213,7 @@ pub(super) const BYTE_ARGUMENT_IDENTITY: DivergenceEntry = DivergenceEntry {
     collision: "stdlib.md §18.1",
 };
 
-pub(super) const GENERIC_CONSTRUCTOR_TYPE_ARGUMENTS: DivergenceEntry = DivergenceEntry {
+pub(super) const UNINFERRED_CONTAINER_CONSTRUCTION: DivergenceEntry = DivergenceEntry {
     ts: "export function main(): void { const m = new Map(); }",
     subscript: "export function main(): void { const m: Map<string, i32> = new Map(); }",
     why: "A Map or Set construction with no type arguments and no contextual type has no candidate for its type arguments.",

@@ -62,7 +62,9 @@ check`; `tsc` 5.9.2 accepts every row:
    runtime effect.
 7. Out of scope, still rejected as before: inference for a generic
    method, a generic constructor (`new G(x)`), a callback's parameter
-   types from context, and the return type from context.
+   types from context, and the return type from context. *(Amended
+   2026-10-27 by §197: a generic method and a generic constructor
+   infer their type arguments.)*
 
 ### 149.2 Acceptance
 

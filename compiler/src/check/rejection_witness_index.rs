@@ -746,7 +746,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::DynamicFunctionConstructed => WitnessEntry::General { files: &["a-s066"], variant: Some(Divergence::DynamicObjectModel), reason: "" },
         RejectionSite::PromiseConstructed => WitnessEntry::General { files: &["a-s067"], variant: Some(Divergence::PromiseObject), reason: "" },
         RejectionSite::WorkerEndpointConstructed => WitnessEntry::General { files: &["a-s068"], variant: None, reason: "" },
-        RejectionSite::ContainerConstructorTypeArgumentsMissing => WitnessEntry::General { files: &["a-s069"], variant: Some(Divergence::GenericConstructorTypeArguments), reason: "" },
+        RejectionSite::ContainerConstructorTypeArgumentsMissing => WitnessEntry::General { files: &["a-s069"], variant: Some(Divergence::UninferredContainerConstruction), reason: "" },
         RejectionSite::ContainerConstructorTypeArgumentCount => WitnessEntry::General { files: &["a-s070"], variant: None, reason: "" },
         RejectionSite::SetConstructorSourceCount => WitnessEntry::General { files: &["a-s071"], variant: None, reason: "" },
         RejectionSite::NonGenericConstructorTypeArguments => WitnessEntry::General { files: &["a-s072"], variant: None, reason: "" },

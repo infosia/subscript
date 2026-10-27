@@ -44,7 +44,13 @@ leaves a constructor and a method out, and gives no reason.
    A non-literal argument candidate comes first. The contextual
    candidate comes second. The C4 default of a literal comes last. A
    literal argument is then checked with the inferred type as its
-   context (§149.1 rule 3). The contextual type of a method result
+   context (§149.1 rule 3). A non-literal argument is checked with the
+   context of its parameter type, with each type parameter that has a
+   contextual candidate replaced by that candidate. A type parameter
+   with no contextual candidate gives that argument no context. So
+   `const a: Box<Box<f64>> = new Box(new Box(1))` checks the inner
+   `new Box(1)` with the context `Box<f64>`, as `tsc` does. *(Added
+   2026-10-27 after the Phase Review, MAJOR 1.)* The contextual type of a method result
    gives no candidate (§149.1 rule 7 keeps this out).
 4. A contextual type is the type that the checker gives the expression
    as its context: the annotation of a local, the type of a field with
@@ -72,7 +78,7 @@ leaves a constructor and a method out, and gives no reason.
 3. `r179` and `r186` change to a method type parameter with no
    candidate. At the pin they pinned the rule 7 rejection, which this
    section removes.
-4. The divergence entry `GENERIC_CONSTRUCTOR_TYPE_ARGUMENTS` and the
+4. The divergence entry of the generic constructor (now `UNINFERRED_CONTAINER_CONSTRUCTION`) and the
    rejection sites that only rule 7 reached are removed or changed to
    the §149 texts. The rejection-site total check passes.
 5. A unit test pins the candidate order of rule 3, with controls: a
@@ -80,3 +86,25 @@ leaves a constructor and a method out, and gives no reason.
    error, not a contextual inference.
 6. `stdlib.md` §10.1 cites this section for `new Map()` and `new Set()`.
 7. No golden moves.
+
+### 197.3 Phase Review
+
+*(Added 2026-10-27.)* A fresh review of `14a8fde5..86aad6d8` gave one
+MAJOR and six MINOR findings.
+
+1. MAJOR, realistic, fixed: the contextual candidate did not reach a
+   non-literal argument. `const a: Box<Box<f64>> = new Box(new Box(1))`
+   gave S005 with `Box<Box<i32>>`, and `new Box(new Map())` in a
+   `Box<Map<string, i32>>` context gave the Q24 text. `tsc` accepts
+   both, and `node` prints `1`. Rule 3 now states the context of a
+   non-literal argument.
+2. MINOR, fixed: §82.4 rule 2, §93 rule 4, and §149.1 rule 7 cite this
+   section.
+3. MINOR, fixed: two rejection programs reached only the removed
+   sites.
+4. MINOR, fixed: the new test file stated no cost.
+5. MINOR, fixed: an S011 context gave a second diagnostic.
+6. MINOR, fixed: the divergence variant name.
+
+Open: `compiler/src/check/expr/call.rs` has 1,898 lines.
+

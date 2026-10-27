@@ -489,7 +489,7 @@ pub enum Divergence {
     /// A byte operation reads the exact declared aggregate type; a structurally compatible aggregate has a different storage layout.
     ByteArgumentIdentity,
     /// A Map or Set construction with no type arguments and no contextual type has no candidate for its type arguments.
-    GenericConstructorTypeArguments,
+    UninferredContainerConstruction,
     /// Worker.spawn takes one directly named entry function; a spread argument does not supply that direct source form.
     WorkerSpawnSpread,
     /// A worker entry must directly name a module-level function; a local function value has no entry identity.
@@ -1289,7 +1289,7 @@ impl Divergence {
         Divergence::FractionalIntegerLiteral,
         Divergence::FixedArrayLiteralLength,
         Divergence::ByteArgumentIdentity,
-        Divergence::GenericConstructorTypeArguments,
+        Divergence::UninferredContainerConstruction,
         Divergence::WorkerSpawnSpread,
         Divergence::WorkerEntryLocalValue,
         Divergence::WorkerEntryGeneric,

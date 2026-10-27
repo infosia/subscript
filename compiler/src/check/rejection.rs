@@ -1436,7 +1436,7 @@ rejection_classes! {
     Self::WorkerEndpointConstructed => (RuleCode::S100, TscRejects),
     Self::ContainerConstructorTypeArgumentsMissing => (
         RuleCode::S100,
-        Diverges(Divergence::GenericConstructorTypeArguments),
+        Diverges(Divergence::UninferredContainerConstruction),
     ),
     Self::ContainerConstructorTypeArgumentCount => (RuleCode::S100, TscRejects),
     Self::SetConstructorSourceCount => (RuleCode::S100, TscRejects),

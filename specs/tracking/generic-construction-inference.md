@@ -23,3 +23,7 @@ Tools: `tsc` 5.9.2 with this project's options, `node` v24.22.1, and
 `gate full fc97528f dirty:20 debug 2915/0/5 release 2912/0/5 skips
 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. The §143 matrix gives the
 same verdict as the pin in each of its 39,550 cells.
+
+Phase Review fix (§197.3): `gate full 86aad6d8 dirty:17 debug
+2917/0/5 release 2914/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`.

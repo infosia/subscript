@@ -387,12 +387,6 @@ FILE	E	target/s154/forms/a-s049/main.ts
 export function main(): void { Worker.valueOf(); }
 END FILE
 END PROGRAM
-PROGRAM	a-s050			0
-FILE	E	target/s154/forms/a-s050/main.ts
-class C { id<T>(x: T): T { return x; } }
-export function main(): void { new C().id(1); }
-END FILE
-END PROGRAM
 PROGRAM	a-s051	TS2339		0
 FILE	E	target/s154/forms/a-s051/main.ts
 function f<T>(x: T): void { x.foo(); }
@@ -523,12 +517,6 @@ PROGRAM	a-s072	TS2558		0
 FILE	E	target/s154/forms/a-s072/main.ts
 class C { x: i32 = 1; }
 export function main(): void { new C<i32>(); }
-END FILE
-END PROGRAM
-PROGRAM	a-s073			0
-FILE	E	target/s154/forms/a-s073/main.ts
-class C<T> { constructor(x: T) {} }
-export function main(): void { new C(1); }
 END FILE
 END PROGRAM
 PROGRAM	a-s074			0

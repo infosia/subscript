@@ -56,7 +56,7 @@ program is rejected today, and each one names the wrong rule.
    the instance name `m<A>`.
 4. A call without type arguments fails with S100 "generic method `m`
    requires explicit type arguments" and a divergence block, as §82.4
-   rule 2 has it. The site is the call.
+   rule 2 has it. The site is the call. *(Amended 2026-10-27 by §197: a call without type arguments infers them; a type parameter with no candidate gives the §149 text.)*
 5. A call outside await position drops the handle. The instance
    exists first, so the diagnostic is S013 at the statement, as r100
    has it.

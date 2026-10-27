@@ -295,7 +295,7 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
    `C.m<A>(args)`. A call without them fails with S100 "generic
    method `m` requires explicit type arguments", with a divergence
    block (`tsc` infers; the variant cites §64). A wrong count fails
-   as `instantiate_fn` reports.
+   as `instantiate_fn` reports. *(Amended 2026-10-27 by §197: a call without type arguments infers them; a type parameter with no candidate gives the §149 text.)*
 3. Each distinct type-argument list yields one instance, named
    `m<A>` in the class's instance or static method table, checked
    once at its first call as a method of that class (§64 rule 4).

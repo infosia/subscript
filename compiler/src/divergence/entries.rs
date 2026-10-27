@@ -381,8 +381,8 @@ impl Divergence {
             Divergence::FractionalIntegerLiteral => builtin_calls::FRACTIONAL_INTEGER_LITERAL,
             Divergence::FixedArrayLiteralLength => builtin_calls::FIXED_ARRAY_LITERAL_LENGTH,
             Divergence::ByteArgumentIdentity => builtin_calls::BYTE_ARGUMENT_IDENTITY,
-            Divergence::GenericConstructorTypeArguments => {
-                builtin_calls::GENERIC_CONSTRUCTOR_TYPE_ARGUMENTS
+            Divergence::UninferredContainerConstruction => {
+                builtin_calls::UNINFERRED_CONTAINER_CONSTRUCTION
             }
             Divergence::WorkerSpawnSpread => builtin_calls::WORKER_SPAWN_SPREAD,
             Divergence::WorkerEntryLocalValue => builtin_calls::WORKER_ENTRY_LOCAL_VALUE,
