@@ -1396,6 +1396,9 @@ Accept: `a369`, `a370`. Reject: `r421`.
   **`shift` traps when empty**, which is not a new rule: `pop` already
   traps there (Q4/Q15), so the miss-value objection that keeps `find`
   and `at` out does not reach `shift`.
+  *(Amended 2026-10-27 by `compiler.md` §196: on an element in the
+  `Map.get` set, `pop` and `shift` give `T | undefined` and do not
+  trap; every other element keeps the trap.)*
 
   `Set` algebra takes a `Set<K>`, not JS's "set-like" duck type, which
   would need a protocol the language does not have. Result order is

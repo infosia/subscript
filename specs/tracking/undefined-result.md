@@ -137,3 +137,6 @@ cargo dep-info of the archive.
 
 Landing of §196: `gate full 69f5a656 dirty:31 debug 2908/0/5 release
 2905/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
+
+Phase Review fix of §196: `gate full be60a854 dirty:4 debug 2909/0/5
+release 2906/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.

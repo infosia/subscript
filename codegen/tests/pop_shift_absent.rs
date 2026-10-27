@@ -10,8 +10,9 @@ use subscript_codegen::{
 use subscript_compiler::{check_program, SourceFile};
 
 /// The trap rule of each tier, in the order interpreter, dev JIT, ship C.
-/// `ship` is false for a case where the ship tier runs the unchanged
-/// trap path, so the test does not pay a C compile for it.
+/// If `ship` is false, the test does not run the ship tier. Those cases
+/// keep the trap of compiler.md §196.1 rule 2, and each tier calls the
+/// same trapping runtime entry, so one ship run covers the entry.
 fn trap_rules(name: &str, source: &str, ship: bool) -> Vec<String> {
     let files = [SourceFile::new(format!("{name}.ts"), source)];
     let hir = check_program(&files).unwrap_or_else(|d| panic!("{name}: check: {d:?}"));

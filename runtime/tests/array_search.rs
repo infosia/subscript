@@ -131,3 +131,33 @@ fn at_exports_read_signed_indices_and_preserve_range_traps() {
     }
     assert_eq!(ctx.trap_record().unwrap().kind, TrapKind::IndexOutOfBounds);
 }
+
+/// `arrops::shift` returns true and writes the removed first element on a
+/// non-empty array. On an empty array it returns false, leaves the output
+/// unchanged, and records no trap; the caller owns the trap
+/// (compiler.md §196.1).
+#[test]
+fn shift_reports_an_empty_array_without_a_trap() {
+    let mut ctx = Context::new();
+    let a = ctx.array_new(4, 0);
+    for v in [5i32, 6] {
+        // SAFETY: a live four-byte array and a readable i32.
+        unsafe { ctx.array_push(a, (&raw const v).cast(), 0) };
+    }
+    let p = &mut *ctx as *mut Context;
+    let mut out = 0i32;
+    // SAFETY: a live array; `out` is writable for one i32.
+    assert!(unsafe { arrops::shift(p, a, (&raw mut out).cast(), 1) });
+    assert_eq!(out, 5);
+    // SAFETY: a live array.
+    assert_eq!(unsafe { ctx.array_len(a) }, 1);
+    // SAFETY: as above.
+    assert!(unsafe { arrops::shift(p, a, (&raw mut out).cast(), 2) });
+    assert_eq!(out, 6);
+
+    out = -1;
+    // SAFETY: a live empty array; `out` is writable for one i32.
+    assert!(!unsafe { arrops::shift(p, a, (&raw mut out).cast(), 3) });
+    assert_eq!(out, -1, "an empty array leaves the output unchanged");
+    assert!(ctx.trap_record().is_none(), "shift does not trap");
+}

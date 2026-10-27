@@ -57,3 +57,31 @@ pointer of `T | null`.
    reference element give the `t87` and `t88` results.
 6. The API reference rows of `pop` and `shift` state rules 1 and 2.
 7. No golden moves.
+
+### 196.3 Phase Review
+
+*(Added 2026-10-27.)* A fresh review of `b4f5c2ba..be60a854` gave no
+CRITICAL or MAJOR finding and six MINOR findings. The three execution
+forms and `node` agree on each probe: a field and a module array, a
+generic `Queue<T>`, function, `Map`, `Set`, nested-array, and nullable
+elements, and discarded calls.
+
+1. MINOR, fixed: `collisions.md` said that `shift` traps when empty,
+   with no exception.
+2. MINOR, fixed: `runtime::arrops::shift` returns `bool` and had no
+   direct test.
+3. MINOR, fixed: a test comment cited the former trap path.
+
+Open:
+
+1. A generic container with a scalar `T` that tests `x === undefined`
+   on a `pop` result gets S012 with the text of §195.2. The text does
+   not name rule 2 or the instantiation. `tsc` accepts the program.
+2. The freshness of the runtime archive does not read `Cargo.lock`.
+   When the archive is stale, each concurrent test process still
+   starts `cargo build`.
+3. `build_runtime_staticlib` starts `cargo` in the working directory
+   of the caller when `CARGO` is not set. From a directory outside the
+   repository, `rustup` selects a different toolchain. This is outside
+   the diff.
+
