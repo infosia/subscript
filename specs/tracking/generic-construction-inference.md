@@ -1,6 +1,6 @@
 # A generic constructor and a generic method infer their type arguments — `compiler.md` §197
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `14a8fde5`
 
@@ -17,3 +17,9 @@ Tools: `tsc` 5.9.2 with this project's options, `node` v24.22.1, and
 
 `node` prints the `a377` golden: `5 7 true`, `3 3`, `x 1`, `3 1 1`,
 `8 8`.
+
+## Landing
+
+`gate full fc97528f dirty:20 debug 2915/0/5 release 2912/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 0 exit 0`. The §143 matrix gives the
+same verdict as the pin in each of its 39,550 cells.

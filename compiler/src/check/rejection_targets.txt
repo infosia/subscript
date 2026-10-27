@@ -450,7 +450,6 @@ NonGenericStaticMethodTypeArguments	a-s046	S100	static method `C.f` is not gener
 AsyncHandleUnawaited	a-s047	S013	an async handle is dropped without any await of its completion
 PromiseStaticCall	a-s048	S013	Promise static `Promise.resolve(...)` is not in the language
 WorkerStaticObjectMethod	a-s049	S018	`Worker` has no static method `valueOf`
-GenericMethodTypeArgumentsMissing	a-s050	S100	generic method `id` requires explicit type arguments
 ValueClassMethodMissing	a-probe-unconstrained-object	S018	`T` has no method `toString`
 ValueClassMethodMissing	a-s051	S018	`T` has no method `foo`
 ToStringTypeArguments	a-s052	S100	`toString` is not generic
@@ -474,7 +473,6 @@ ContainerConstructorTypeArgumentsMissing	a-s069	S100	`new Map` requires explicit
 ContainerConstructorTypeArgumentCount	a-s070	S100	`new Set` takes exactly 1 type argument(s)
 SetConstructorSourceCount	a-s071	S100	`new Set` takes at most one source argument
 NonGenericConstructorTypeArguments	a-s072	S100	`C` is not generic
-GenericConstructorTypeArguments	a-s073	S100	generic class `C` requires explicit type arguments
 OpaqueHandleConstructed	a-s075	S100	opaque handle `H` is obtained from the host, not constructed
 AmbientClassConstructed	a-s076	S100	ambient class `C` is obtained from the host, not constructed, because a `declare class` has no constructor body
 DescriptorClassConstructed	a-s077	S100	descriptor class `D` is constructed with an object literal, not `new`

@@ -50,20 +50,23 @@ fn template_read_reports_the_async_value_rule() {
 }
 
 #[test]
-fn missing_type_arguments_report_at_the_call() {
+fn missing_type_arguments_are_inferred_at_the_call() {
     accept(&main_with("await box.load<i32>(1);"));
+    accept(&main_with(
+        "const n: i64 = 1; const m: i64 = await box.load(n);",
+    ));
+    let source = "class Box {\n  async none<T>(): Promise<T | null> {\n    await Context.suspend();\n    return null;\n  }\n}\nexport async function main(): Promise<void> {\n  const box: Box = new Box();\n  await box.none();\n}\n";
     reject(
-        &main_with("await box.load(1);"),
+        source,
         RuleCode::S100,
-        "generic method `load` requires explicit type arguments",
+        "cannot infer type parameter `T` of `Box.none`: no candidate; use explicit type arguments",
         9,
         13,
     );
-    let source = main_with("await box.load(1);");
     let diagnostics = check_program(&[SourceFile::new("test.ts", source)]).unwrap_err();
     assert_eq!(
         diagnostics[0].divergence,
-        Some(Divergence::GenericMethodTypeArguments)
+        Some(Divergence::GenericInferenceMissing)
     );
 }
 

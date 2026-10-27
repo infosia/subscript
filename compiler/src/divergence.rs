@@ -488,7 +488,7 @@ pub enum Divergence {
     FixedArrayLiteralLength,
     /// A byte operation reads the exact declared aggregate type; a structurally compatible aggregate has a different storage layout.
     ByteArgumentIdentity,
-    /// A generic constructor requires explicit type arguments; constructor argument inference is outside the admitted generic-call surface.
+    /// A Map or Set construction with no type arguments and no contextual type has no candidate for its type arguments.
     GenericConstructorTypeArguments,
     /// Worker.spawn takes one directly named entry function; a spread argument does not supply that direct source form.
     WorkerSpawnSpread,
@@ -1004,8 +1004,6 @@ pub enum Divergence {
     GenericInferenceCandidates,
     /// A generic function call with no inference candidate for a parameter.
     GenericInferenceMissing,
-    /// A generic method call that supplies no type arguments.
-    GenericMethodTypeArguments,
     /// A bodiless generic method in a `declare class` from a `.ts` source.
     BodilessDeclareGenericMethod,
     /// A generic method declared on a generic class.
@@ -1555,7 +1553,6 @@ impl Divergence {
         Divergence::EmbeddedHeaderCopy,
         Divergence::GenericInferenceCandidates,
         Divergence::GenericInferenceMissing,
-        Divergence::GenericMethodTypeArguments,
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
         Divergence::GeneratorSingleUse,

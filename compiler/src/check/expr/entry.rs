@@ -909,16 +909,19 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let generic = self.class_sigs[class.0].has_generic_method(&name, false);
+                let mut inferred = None;
                 let name = if generic {
-                    let Some(instance) = self.instantiate_generic_method_call(
+                    let Some((instance, checked)) = self.instantiate_generic_method_call(
                         class,
                         &name,
                         call,
                         false,
+                        fx,
                         method_pos.clone(),
                     ) else {
                         return self.err_expr(pos);
                     };
+                    inferred = checked;
                     instance
                 } else {
                     name
@@ -958,7 +961,7 @@ impl<'p> Checker<'p> {
                     fx,
                     &pos,
                     &name,
-                    None,
+                    inferred,
                     sig.generic,
                 );
                 hir::Expr {

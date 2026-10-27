@@ -689,7 +689,6 @@ impl Divergence {
             Divergence::EmbeddedHeaderCopy => established_tail::EMBEDDEDHEADERCOPY,
             Divergence::GenericInferenceCandidates => established_tail::GENERICINFERENCECANDIDATES,
             Divergence::GenericInferenceMissing => established_tail::GENERICINFERENCEMISSING,
-            Divergence::GenericMethodTypeArguments => established_tail::GENERICMETHODTYPEARGUMENTS,
             Divergence::BodilessDeclareGenericMethod => {
                 established_tail::BODILESSDECLAREGENERICMETHOD
             }

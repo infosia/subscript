@@ -871,17 +871,6 @@ empty<Item>();",
                 collision: "compiler.md §149",
             };
 
-pub(super) const GENERICMETHODTYPEARGUMENTS: DivergenceEntry = DivergenceEntry {
-                ts: "class Box { identity<T>(value: T): T { return value; } }\n\
-                     const box: Box = new Box();\n\
-                     print(`${box.identity(1)}`);",
-                subscript: "class Box { identity<T>(value: T): T { return value; } }\n\
-                            const box: Box = new Box();\n\
-                            print(`${box.identity<i32>(1)}`);",
-                why: "Each explicit type-argument list names one method instance. Generic method calls do not infer type arguments.",
-                collision: "compiler.md §64",
-            };
-
 pub(super) const BODILESSDECLAREGENERICMETHOD: DivergenceEntry = DivergenceEntry {
     ts: "declare class Box { identity<T>(value: T): T; }",
     subscript: "class Box { identity<T>(value: T): T { return value; } }",

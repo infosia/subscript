@@ -4,13 +4,9 @@ use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{
-    source_name, static_member_symbol, Checker, ContainerSlot, FnCtx, ParamSig, ScopeItem,
-};
+use crate::check::{source_name, static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
 use crate::diag::Pos;
-use crate::hir::{
-    self, AmbientFn, AsyncCallee, Callee, ContextBytesFn, ExprKind, MapFn, NumFn, SetFn, WorkerFn,
-};
+use crate::hir::{self, AmbientFn, AsyncCallee, Callee, ContextBytesFn, ExprKind, NumFn, WorkerFn};
 use crate::types::{ClassId, Type};
 
 impl<'p> Checker<'p> {
@@ -788,13 +784,13 @@ impl<'p> Checker<'p> {
         }
         // §82.4 rule 2: a static generic method instantiates at the call.
         if self.class_sigs[class.0].has_generic_method(name, true) {
-            let Some(instance) =
-                self.instantiate_generic_method_call(class, name, call, true, member_pos)
+            let Some((instance, checked)) =
+                self.instantiate_generic_method_call(class, name, call, true, fx, member_pos)
             else {
                 return Some(self.err_expr(pos));
             };
             let symbol = static_member_symbol(class, &self.classes[class.0].name, &instance);
-            return Some(self.check_direct_call(&symbol, call, fx, pos));
+            return Some(self.check_direct_call_with_arguments(&symbol, call, fx, pos, checked));
         }
         if !self.class_sigs[class.0].static_methods.contains_key(name) {
             return None;
@@ -938,29 +934,31 @@ impl<'p> Checker<'p> {
         self.check_method_call_on(recv, prop, c, fx, pos)
     }
 
-    /// Resolves the explicit type arguments of a generic method call and
-    /// instantiates the method (§82.4 rules 2 and 3).
+    /// Resolves or infers the type arguments of a generic method call and
+    /// instantiates the method (§82.4 rules 2 and 3, §197 rule 1). Returns
+    /// the instance name and each argument that inference checked.
     pub(super) fn instantiate_generic_method_call(
         &mut self,
         class: ClassId,
         name: &str,
         call: &ast::CallExpr,
         is_static: bool,
+        fx: &mut FnCtx,
         pos: Pos,
-    ) -> Option<String> {
+    ) -> Option<(String, Option<Vec<Option<hir::Expr>>>)> {
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
             return None;
         }
-        let Some(type_args) = &call.type_args else {
-            self.reject_subset(
-                RejectionSite::GenericMethodTypeArgumentsMissing,
-                format!("generic method `{name}` requires explicit type arguments"),
-                pos,
-            );
-            return None;
+        let (arguments, checked) = match &call.type_args {
+            Some(type_args) => (self.resolve_instance_arguments(type_args), None),
+            None => {
+                let (arguments, checked) =
+                    self.infer_method_arguments(class, name, call, is_static, fx, &pos)?;
+                (arguments, Some(checked))
+            }
         };
-        let arguments = self.resolve_instance_arguments(type_args);
-        self.instantiate_method(class, name, &arguments, is_static, pos)
+        let instance = self.instantiate_method(class, name, &arguments, is_static, pos)?;
+        Some((instance, checked))
     }
 
     /// Checks `receiver.name(...)` from an already-checked receiver.
@@ -991,6 +989,7 @@ impl<'p> Checker<'p> {
         }
         let recv = checker.apparent_expr(recv);
         let mut name = property.sym.to_string();
+        let mut inferred = None;
         let prop_pos = checker.pos(property.span);
         // §143 rule 1a: a method call on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).
@@ -1011,12 +1010,18 @@ impl<'p> Checker<'p> {
                 return checker.err_expr(pos);
             }
             if checker.class_sigs[class.0].has_generic_method(&name, false) {
-                let Some(instance) =
-                    checker.instantiate_generic_method_call(class, &name, c, false, prop_pos.clone())
-                else {
+                let Some((instance, checked)) = checker.instantiate_generic_method_call(
+                    class,
+                    &name,
+                    c,
+                    false,
+                    fx,
+                    prop_pos.clone(),
+                ) else {
                     return checker.err_expr(pos);
                 };
                 name = instance;
+                inferred = checked;
             }
         }
         if checker.is_error_type(&recv.ty) && name == "toString" {
@@ -1370,7 +1375,7 @@ impl<'p> Checker<'p> {
                                 fx,
                                 &pos,
                                 &name,
-                                                        None,
+                                                        inferred.take(),
                             sig.generic,
                             );
                             let origin = fx.register_async_origin(pos.clone());
@@ -1396,7 +1401,7 @@ impl<'p> Checker<'p> {
                             fx,
                             &pos,
                             &name,
-                                                None,
+                                                inferred.take(),
                         sig.generic,
                         );
                         let value = mk(recv, args, sig.ret, pos);
@@ -1589,10 +1594,12 @@ impl<'p> Checker<'p> {
     /// Checks the one source operand of `new Set<K>(source)`
     /// (compiler.md §103.1). `source` is `K[]`, `FixedArray<K, N>`,
     /// `Set<K>`, or, for `Set<string>`, a `string` that yields one code
-    /// point per element. Returns `None` when the form is rejected.
-    fn check_set_source(
+    /// point per element. `checked` is the source that inference checked
+    /// (compiler.md §197 rule 6). Returns `None` when the form is rejected.
+    pub(super) fn check_set_source(
         &mut self,
         argument: &ast::ExprOrSpread,
+        checked: Option<hir::Expr>,
         key: &Type,
         fx: &mut FnCtx,
     ) -> Option<hir::Expr> {
@@ -1605,7 +1612,7 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        let source = self.check_expr(&argument.expr, None, fx);
+        let source = checked.unwrap_or_else(|| self.check_expr(&argument.expr, None, fx));
         let element = match &self.apparent_type(&source.ty) {
             Type::Error => return None,
             // A Map source yields pairs, which need a tuple type.
@@ -1739,98 +1746,9 @@ impl<'p> Checker<'p> {
             return self.check_date_new(n, fx, pos);
         }
         if (name == "Map" || name == "Set") && self.assoc_is_ambient(&name, fx) {
-            if name == "Map" && n.args.as_ref().is_some_and(|args| !args.is_empty()) {
-                return self.check_map_copy(n, ctx, fx, pos, ident_pos);
-            }
-            let Some(type_args) = &n.type_args else {
-                self.reject_subset(
-                    RejectionSite::ContainerConstructorTypeArgumentsMissing,
-                    format!("`new {name}` requires explicit type arguments (Q24)"),
-                    ident_pos.clone(),
-                );
-                return self.err_expr(pos);
-            };
-            let expected = if name == "Map" { 2 } else { 1 };
-            if type_args.params.len() != expected {
-                self.reject_subset(
-                    RejectionSite::ContainerConstructorTypeArgumentCount,
-                    format!("`new {name}` takes exactly {expected} type argument(s)"),
-                    ident_pos.clone(),
-                );
-                return self.err_expr(pos);
-            }
-            let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
-            let saved_context = self.enter_container_context(ctx);
-            let saved = self.in_assoc_key;
-            self.in_assoc_key = true;
-            let key = self.resolve_type(&type_args.params[0]);
-            self.in_assoc_key = saved;
-            let key_slot = if name == "Map" {
-                ContainerSlot::MapKey
-            } else {
-                ContainerSlot::SetElement
-            };
-            let key_pos = self.pos(type_args.params[0].span());
-            let key = self.container_argument(key_slot, key, key_pos);
-            if !self.instance_restriction(
-                crate::check::opaque::InstanceRestriction::AssociativeKey,
-                &key,
-            ) && !matches!(self.apparent_type(&key), Type::Error)
-                && self.assoc_key_kind(&key).is_none()
-            {
-                let key_pos = self.pos(type_args.params[0].span());
-                let key_name = self.type_name(&key);
-                self.reject_subset(
-                    RejectionSite::NewMapSetKey,
-                    format!("`{key_name}` is not a permitted Map/Set key kind (Q24)"),
-                    key_pos,
-                );
-            }
-            if name == "Map" {
-                let value = self.resolve_type(&type_args.params[1]);
-                let value_pos = self.pos(type_args.params[1].span());
-                let value = self.container_argument(ContainerSlot::MapValue, value, value_pos);
-                self.leave_container_context(saved_context);
-                let ty = Type::map(key, value);
-                return hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Call {
-                        callee: Callee::Map(MapFn::New),
-                        args: Vec::new(),
-                    },
-                    ty,
-                    pos,
-                };
-            }
-            self.leave_container_context(saved_context);
-            let ty = Type::set(key.clone());
-            // The arity guard and the source index are one match, so no
-            // caller holds an emptiness precondition for the other.
-            let args = match arguments {
-                [] => Vec::new(),
-                [argument] => match self.check_set_source(argument, &key, fx) {
-                    Some(source) => vec![source],
-                    None => return self.err_expr(pos),
-                },
-                _ => {
-                    self.reject_subset(
-                        RejectionSite::SetConstructorSourceCount,
-                        "`new Set` takes at most one source argument",
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-            };
-            return hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Call {
-                    callee: Callee::Set(SetFn::New),
-                    args,
-                },
-                ty,
-                pos,
-            };
+            return self.check_container_new(&name, n, ctx, fx, pos, ident_pos);
         }
+        let mut checked = None;
         let class_id = match self.scope_item(&name, &ident_pos) {
             Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
                 if let Some(arguments) = &n.args {
@@ -1880,12 +1798,20 @@ impl<'p> Checker<'p> {
                     self.instantiate_class(&key, &arguments, ident_pos.clone())
                 }
                 None => {
-                    self.reject_subset(
-                        RejectionSite::GenericConstructorTypeArguments,
-                        format!("generic class `{}` requires explicit type arguments", name),
-                        ident_pos.clone(),
-                    );
-                    None
+                    let constructor_arguments: &[ast::ExprOrSpread] =
+                        n.args.as_deref().unwrap_or(&[]);
+                    let (arguments, values) = match self.infer_constructor_arguments(
+                        &key,
+                        constructor_arguments,
+                        ctx,
+                        fx,
+                        &ident_pos,
+                    ) {
+                        Some(inferred) => inferred,
+                        None => return self.err_expr(pos),
+                    };
+                    checked = Some(values);
+                    self.instantiate_class(&key, &arguments, ident_pos.clone())
                 }
             },
             _ => {
@@ -1949,13 +1875,15 @@ impl<'p> Checker<'p> {
         let params = self.class_sigs[class_id.0].ctor.clone().unwrap_or_default();
         let empty: Vec<ast::ExprOrSpread> = Vec::new();
         let args_ast = n.args.as_deref().unwrap_or(&empty);
-        let args = self.check_args(
+        let args = self.check_args_with_arguments(
             RejectionSite::ReferenceConstructorArgumentCount,
             &params,
             args_ast,
             fx,
             &pos,
             &name,
+            checked,
+            false,
         );
         hir::Expr {
             pending_work: None,

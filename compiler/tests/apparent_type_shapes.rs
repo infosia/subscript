@@ -541,9 +541,11 @@ const ALLOWLIST: &[AllowGroup] = &[
     },
     AllowGroup {
         name: "inferred-argument-identity",
-        reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1).",
+        reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1). A contextual candidate reads the apparent type that contextual_instance returns (§197 rule 3).",
         sites: &[
-            ("inference.rs", "infer_call_arguments", 0xcff4b07d3f509319),
+            ("inference.rs", "infer_arguments", 0xcff4b07d3f509319),
+            ("inference.rs", "infer_constructor_arguments", 0x3f3f2ff2a4957f7e),
+            ("inference.rs", "infer_container_arguments", 0x7bfed925f60a198f),
             ("inference.rs", "match_inference_type", 0x45a1699ca55a906c),
             ("inference.rs", "inferred_parameter_edges", 0xf0e7cada3029a254),
         ],

@@ -1333,10 +1333,6 @@ rejection_classes! {
         RuleCode::S018,
         Diverges(Divergence::WorkerStaticObjectMethod),
     ),
-    Self::GenericMethodTypeArgumentsMissing => (
-        RuleCode::S100,
-        Diverges(Divergence::GenericMethodTypeArguments),
-    ),
     Self::ValueClassMethodMissing => (RuleCode::S018, TscRejects),
     Self::ToStringTypeArguments => (RuleCode::S100, TscRejects),
     Self::WorkerObjectMethod => (RuleCode::S018, Diverges(Divergence::WorkerObjectMethod)),
@@ -1445,10 +1441,6 @@ rejection_classes! {
     Self::ContainerConstructorTypeArgumentCount => (RuleCode::S100, TscRejects),
     Self::SetConstructorSourceCount => (RuleCode::S100, TscRejects),
     Self::NonGenericConstructorTypeArguments => (RuleCode::S100, TscRejects),
-    Self::GenericConstructorTypeArguments => (
-        RuleCode::S100,
-        Diverges(Divergence::GenericConstructorTypeArguments),
-    ),
     Self::OpaqueHandleConstructed => (RuleCode::S100, TscRejects),
     Self::AmbientClassConstructed => (
         RuleCode::S100,

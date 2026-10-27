@@ -214,10 +214,10 @@ pub(super) const BYTE_ARGUMENT_IDENTITY: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const GENERIC_CONSTRUCTOR_TYPE_ARGUMENTS: DivergenceEntry = DivergenceEntry {
-    ts: "class C<T> { constructor(x: T) {} }\nexport function main(): void { new C(1); }",
-    subscript: "no equivalent; write the constructor type arguments explicitly",
-    why: "A generic constructor requires explicit type arguments; constructor argument inference is outside the admitted generic-call surface.",
-    collision: "compiler.md §149.1",
+    ts: "export function main(): void { const m = new Map(); }",
+    subscript: "export function main(): void { const m: Map<string, i32> = new Map(); }",
+    why: "A Map or Set construction with no type arguments and no contextual type has no candidate for its type arguments.",
+    collision: "compiler.md §197.1",
 };
 
 pub(super) const WORKER_SPAWN_SPREAD: DivergenceEntry = DivergenceEntry {

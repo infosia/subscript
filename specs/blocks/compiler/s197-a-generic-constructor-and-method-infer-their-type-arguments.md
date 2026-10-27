@@ -27,15 +27,17 @@ leaves a constructor and a method out, and gives no reason.
 
 1. `new G(args)` with no type arguments, where `G` is a generic class,
    `Map`, or `Set`, infers the type arguments of `G`. A call
-   `recv.m(args)` of a generic method with no type arguments infers the
-   type arguments of `m`. The class type arguments of `recv` are known
+   `recv.m(args)` or `C.m(args)` of a generic method with no type
+   arguments infers the type arguments of `m`. The class type arguments of `recv` are known
    from the type of `recv`. The result is the same expression with the
    type arguments written explicitly. Each later rule applies to it
    unchanged.
 2. The candidates come from the arguments, by §149.1 rules 2 to 4. For
    a constructor, the parameters are the parameters of its
    `constructor`. A class with no `constructor` has no argument
-   candidate.
+   candidate. `new Set(source)` takes its element candidate from a
+   non-literal `source`; a literal `source` is checked as `T[]` with
+   the inferred `T`.
 3. **The contextual type.** If the expression has a contextual type
    that is `G<A1, …, An>` or `G<A1, …, An> | null`, the contextual type
    gives a candidate `Ai` for each type parameter of a constructor.
@@ -54,7 +56,8 @@ leaves a constructor and a method out, and gives no reason.
    rejected (S100) with the §149.1 rule 4 text. The name in the text is
    the class name for a constructor, and `Class.method` for a method.
    `new Map()` and `new Set()` with no contextual type keep their Q24
-   text.
+   text. With a contextual type that is not a `Map` or a `Set`, they
+   give the no-candidate text for `K` or `T`.
 6. Inference is a check-time step. Each argument is evaluated once, in
    order. The program has no run-time cost.
 7. A generic method of a generic class stays rejected, as at the pin.

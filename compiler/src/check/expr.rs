@@ -6,6 +6,7 @@ mod aggregate;
 mod array_of_and_map_copy;
 mod assign;
 mod call;
+mod container_new;
 mod entry;
 mod lambda;
 mod literal;
