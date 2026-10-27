@@ -9,7 +9,7 @@ mod call;
 mod container_new;
 mod entry;
 mod lambda;
-mod literal;
+pub(super) mod literal;
 mod member;
 mod method;
 mod namespace;

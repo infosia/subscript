@@ -8801,7 +8801,7 @@ END FILE
 END PROGRAM
 PROGRAM	s198-parameter-property-type			0
 FILE	E	main.ts
-class C { constructor(public count = 0) {} }
+class C { constructor(public count = 1 + 1) {} }
 export function main(): void {}
 END FILE
 END PROGRAM

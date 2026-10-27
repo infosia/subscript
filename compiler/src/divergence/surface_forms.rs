@@ -137,9 +137,9 @@ pub(super) const FIELDTYPEWITHOUTINITIALIZER: DivergenceEntry = DivergenceEntry 
 };
 
 pub(super) const PARAMETERPROPERTYTYPEANNOTATION: DivergenceEntry = DivergenceEntry {
-    ts: "class C { constructor(public count = 0) {} }\nexport function main(): void {}",
-    subscript: "class C { constructor(public count: i32 = 0) {} }\nexport function main(): void {}",
-    why: "A field type comes from its declaration before the checker infers a default, so a parameter property needs an annotation.",
+    ts: "class C { constructor(public count = 1 + 1) {} }\nexport function main(): void {}",
+    subscript: "class C { constructor(public count: i32 = 1 + 1) {} }\nexport function main(): void {}",
+    why: "A field type comes from its declaration, so a parameter property with a default that is not a literal needs an annotation.",
     collision: "compiler.md §198",
 };
 

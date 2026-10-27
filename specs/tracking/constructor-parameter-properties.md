@@ -43,3 +43,7 @@ the order `tag`, `a`, `b` gives 16.
 
 `gate full 2324c28b dirty:20 debug 2925/0/5 release 2922/0/5 skips
 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
+
+Phase Review fix (§198.3): `gate full bca8d03d dirty:13 debug
+2928/0/5 release 2925/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. At `bca8d03d`, `r443` was accepted and printed `5`.

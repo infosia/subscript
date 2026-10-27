@@ -506,6 +506,9 @@ impl<'p> Checker<'p> {
                 );
             }
         }
+        // §198.1 rule 5a: the diagnostics of each parameter-property field
+        // annotation, by the span that the field shares with its parameter.
+        let mut shared_annotations: HashMap<swc_common::Span, Vec<Diagnostic>> = HashMap::new();
         for member in &class.body {
             match member {
                 ast::ClassMember::ClassProp(prop) => {
@@ -604,8 +607,6 @@ impl<'p> Checker<'p> {
                     ) {
                         continue;
                     }
-                    // §198: the constructor parameter of a parameter-property
-                    // field reports the diagnostics of the shared annotation.
                     let parameter_property =
                         crate::parse::parameter_property::declares_field(class, prop);
                     let is_defaulted =
@@ -642,7 +643,7 @@ impl<'p> Checker<'p> {
                                 );
                             }
                         }
-                    } else if prop.is_optional && !parameter_property {
+                    } else if prop.is_optional {
                         let pos = self.pos(prop.span);
                         self.reject_subset(
                             RejectionSite::InstanceFieldOptional,
@@ -651,6 +652,13 @@ impl<'p> Checker<'p> {
                         );
                     }
                     let pos = self.pos(key.span);
+                    // §198.1 rule 6: a literal default gives the field its type.
+                    let literal_default_type = if parameter_property && prop.type_ann.is_none() {
+                        crate::parse::parameter_property::parameter_default(class, prop)
+                            .and_then(super::expr::literal::literal_default_type)
+                    } else {
+                        None
+                    };
                     let ty = match &prop.type_ann {
                         Some(ann) => {
                             let allow_wire =
@@ -659,19 +667,23 @@ impl<'p> Checker<'p> {
                             let diagnostics_before = self.diags.len();
                             let ty = self.resolve_type(&ann.type_ann);
                             if parameter_property {
-                                self.diags.truncate(diagnostics_before);
+                                shared_annotations
+                                    .insert(prop.span, self.diags.since(diagnostics_before));
                             }
                             self.allow_wire_alias_boundary = false;
                             ty
                         }
-                        None if parameter_property => {
-                            self.reject_subset(
-                                RejectionSite::ParameterPropertyTypeAnnotation,
-                                "a parameter property requires a type annotation",
-                                pos.clone(),
-                            );
-                            Type::Error
-                        }
+                        None if parameter_property => match literal_default_type.clone() {
+                            Some(ty) => ty,
+                            None => {
+                                self.reject_subset(
+                                    RejectionSite::ParameterPropertyTypeAnnotation,
+                                    "a parameter property requires a type annotation",
+                                    pos.clone(),
+                                );
+                                Type::Error
+                            }
+                        },
                         None => {
                             if prop.value.is_none() {
                                 let site = if !class.body.iter().any(|member| {
@@ -757,7 +769,7 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
-                    if prop.type_ann.is_none() {
+                    if prop.type_ann.is_none() && literal_default_type.is_none() {
                         let initializer = prop
                             .value
                             .as_ref()
@@ -811,7 +823,18 @@ impl<'p> Checker<'p> {
                                 self.allow_wire_alias_boundary = self.in_boundary;
                                 let saved = self.task_group_parameters;
                                 self.task_group_parameters = !self.in_boundary;
+                                let diagnostics_before = self.diags.len();
+                                let instances_before = self.instance_diagnostic_ranges.len();
                                 let resolved = self.resolve_param_pat(&param.pat);
+                                // §198.1 rule 5a: a diagnostic that the field already
+                                // gave for the shared annotation reports once. A new
+                                // instance range indexes these diagnostics, so none
+                                // is dropped then.
+                                if let Some(earlier) = shared_annotations.get(&param.span) {
+                                    if self.instance_diagnostic_ranges.len() == instances_before {
+                                        self.diags.drop_repeats(diagnostics_before, earlier);
+                                    }
+                                }
                                 self.task_group_parameters = saved;
                                 self.allow_wire_alias_boundary = false;
                                 if self.in_boundary

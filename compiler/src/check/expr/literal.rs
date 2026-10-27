@@ -11,6 +11,54 @@ use crate::types::Type;
 
 use super::{path_key, synthesized_int_range};
 
+/// C4: a numeric literal spelled with a `.` or a decimal exponent is
+/// fractional.
+fn is_fractional(n: &ast::Number) -> bool {
+    let raw: &str = n.raw.as_ref().map(|a| a.as_ref()).unwrap_or("");
+    let hex = raw.starts_with("0x") || raw.starts_with("0X");
+    raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')))
+}
+
+/// The type that C4 gives a literal with no context (`compiler.md`
+/// §198.1 rule 6): `i32` or `f64` for a numeric literal, also under a
+/// unary minus as the checker folds it, `string`, or `boolean`. Any
+/// other expression gives `None`.
+pub(in crate::check) fn literal_default_type(expr: &ast::Expr) -> Option<Type> {
+    let mut expr = expr;
+    while let ast::Expr::Paren(paren) = expr {
+        expr = &paren.expr;
+    }
+    if let ast::Expr::Unary(ast::UnaryExpr {
+        op: ast::UnaryOp::Minus,
+        arg,
+        ..
+    }) = expr
+    {
+        let mut arg: &ast::Expr = arg;
+        while let ast::Expr::Paren(paren) = arg {
+            arg = &paren.expr;
+        }
+        return match arg {
+            ast::Expr::Lit(ast::Lit::Num(n)) => Some(numeric_literal_type(n)),
+            _ => None,
+        };
+    }
+    match expr {
+        ast::Expr::Lit(ast::Lit::Num(n)) => Some(numeric_literal_type(n)),
+        ast::Expr::Lit(ast::Lit::Str(_)) => Some(Type::Str),
+        ast::Expr::Lit(ast::Lit::Bool(_)) => Some(Type::Bool),
+        _ => None,
+    }
+}
+
+fn numeric_literal_type(n: &ast::Number) -> Type {
+    if is_fractional(n) {
+        Type::F64
+    } else {
+        Type::I32
+    }
+}
+
 impl<'p> Checker<'p> {
     pub(super) fn check_lit(&mut self, lit: &ast::Lit, ctx: Option<&Type>, pos: Pos) -> hir::Expr {
         match lit {
@@ -153,8 +201,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let raw: &str = n.raw.as_ref().map(|a| a.as_ref()).unwrap_or("");
-        let hex = raw.starts_with("0x") || raw.starts_with("0X");
-        let fractional = raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')));
+        let fractional = is_fractional(n);
         let value = if negate { -n.value } else { n.value };
         let target = match ctx {
             Some(t)
@@ -635,6 +682,52 @@ impl<'p> Checker<'p> {
                     e.ty = self.non_null_type(&e.ty);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::literal_default_type;
+    use crate::types::Type;
+    use swc_ecma_ast as ast;
+
+    fn default_of(source: &str) -> ast::Expr {
+        let program = crate::parse::parse_program(&[crate::SourceFile::entry(
+            "main.ts",
+            &format!("const x = {source};"),
+        )])
+        .expect("parse");
+        let ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::Var(var))) =
+            &program.files[0].module.body[0]
+        else {
+            panic!("the item must be a declaration");
+        };
+        *var.decls[0].init.clone().expect("initializer")
+    }
+
+    #[test]
+    fn literal_default_type_gives_the_c4_type_of_each_literal_kind() {
+        for (source, expected) in [
+            ("1", Some(Type::I32)),
+            ("0x10", Some(Type::I32)),
+            ("-3", Some(Type::I32)),
+            ("(7)", Some(Type::I32)),
+            ("2.5", Some(Type::F64)),
+            ("1e3", Some(Type::F64)),
+            ("-(1.5)", Some(Type::F64)),
+            ("\"s\"", Some(Type::Str)),
+            ("true", Some(Type::Bool)),
+            ("false", Some(Type::Bool)),
+            ("1 + 1", None),
+            ("`s`", None),
+            ("-x", None),
+        ] {
+            assert_eq!(
+                literal_default_type(&default_of(source)),
+                expected,
+                "{source}"
+            );
         }
     }
 }

@@ -366,7 +366,7 @@ pub enum Divergence {
     EnumStringMemberNameForm,
     /// Initializer inference does not infer a field type from constructor assignments.
     FieldTypeWithoutInitializer,
-    /// A parameter-property field takes its type from the annotation, not from the default.
+    /// A parameter-property field takes its type from the annotation or a literal default, not from another default.
     ParameterPropertyTypeAnnotation,
     /// Field names must be identifiers.
     IdentifierFieldName,

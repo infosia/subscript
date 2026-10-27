@@ -104,23 +104,40 @@ pub(crate) fn lower_class(class: &mut ast::Class) {
 /// True if `prop` is the field that a parameter property of `class`
 /// declares: a constructor parameter has its span and its name.
 pub(crate) fn declares_field(class: &ast::Class, prop: &ast::ClassProp) -> bool {
+    parameter_of(class, prop).is_some()
+}
+
+/// The default of the parameter that declares the field `prop`, if
+/// `prop` is a parameter-property field and the parameter has one.
+pub(crate) fn parameter_default<'a>(
+    class: &'a ast::Class,
+    prop: &ast::ClassProp,
+) -> Option<&'a ast::Expr> {
+    match &parameter_of(class, prop)?.pat {
+        ast::Pat::Assign(assign) => Some(&assign.right),
+        _ => None,
+    }
+}
+
+fn parameter_of<'a>(class: &'a ast::Class, prop: &ast::ClassProp) -> Option<&'a ast::Param> {
     let ast::PropName::Ident(key) = &prop.key else {
-        return false;
+        return None;
     };
-    class.body.iter().any(|member| {
+    class.body.iter().find_map(|member| {
         let ast::ClassMember::Constructor(ctor) = member else {
-            return false;
+            return None;
         };
-        ctor.params.iter().any(|parameter| {
+        ctor.params.iter().find_map(|parameter| {
             let ast::ParamOrTsParamProp::Param(param) = parameter else {
-                return false;
+                return None;
             };
             let binding = match &param.pat {
                 ast::Pat::Ident(binding) => Some(binding),
                 ast::Pat::Assign(assign) => assign.left.as_ident(),
                 _ => None,
             };
-            param.span == prop.span && binding.is_some_and(|binding| binding.id.sym == key.sym)
+            (param.span == prop.span && binding.is_some_and(|binding| binding.id.sym == key.sym))
+                .then_some(param)
         })
     })
 }
@@ -294,7 +311,7 @@ mod tests {
         check("y").unwrap_or_else(|diagnostics| panic!("control: {diagnostics:?}"));
     }
 
-    fn diagnostics(class: &str) -> Vec<crate::Diagnostic> {
+    fn rejected(class: &str) -> Vec<crate::Diagnostic> {
         crate::check_program(&[SourceFile::entry(
             "main.ts",
             &format!("{class}\nexport function main(): void {{}}\n"),
@@ -302,11 +319,25 @@ mod tests {
         .expect_err("the program must be rejected")
     }
 
-    /// §198.1 rule 6: an unannotated parameter property is rejected with
-    /// its own text. The control annotates it and is accepted.
+    /// §198.1 rule 6: an unannotated parameter property with a literal
+    /// default takes the C4 type of the literal. The control is a
+    /// non-literal default, which keeps its own text.
     #[test]
-    fn an_unannotated_parameter_property_requires_a_type_annotation() {
-        let diagnostics = diagnostics("class C { constructor(public count = 0) {} }");
+    fn a_literal_default_gives_an_unannotated_parameter_property_its_type() {
+        let source = "class C { constructor(public a = 1, public b = 2.5, public c = \"s\", public d = true, public e = -3, public f = false) {} }\n\
+            export function main(): void { const x = new C(); const a: i32 = x.a; const b: f64 = x.b; const c: string = x.c; const d: boolean = x.d; const e: i32 = x.e; const f: boolean = x.f; }\n";
+        crate::check_program(&[SourceFile::entry("main.ts", source)])
+            .unwrap_or_else(|diagnostics| panic!("{diagnostics:?}"));
+        let mismatch = "class C { constructor(public b = 2.5) {} }\n\
+            export function main(): void { const b: i32 = new C().b; }\n";
+        let diagnostics = crate::check_program(&[SourceFile::entry("main.ts", mismatch)])
+            .expect_err("a fractional default gives f64");
+        assert_eq!(
+            diagnostics[0].code,
+            crate::RuleCode::S007,
+            "{diagnostics:?}"
+        );
+        let diagnostics = rejected("class C { constructor(public count = 1 + 1) {} }");
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         assert_eq!(diagnostics[0].code, crate::RuleCode::S100);
         assert_eq!(
@@ -317,35 +348,79 @@ mod tests {
             diagnostics[0].divergence,
             Some(crate::divergence::Divergence::ParameterPropertyTypeAnnotation)
         );
-        crate::check_program(&[SourceFile::entry(
-            "main.ts",
-            "class C { constructor(public count: i32 = 0) {} }\nexport function main(): void {}\n",
-        )])
-        .unwrap_or_else(|diagnostics| panic!("control: {diagnostics:?}"));
     }
 
-    /// The annotation that a parameter-property field shares with its
-    /// parameter reports each diagnostic once. The control is a declared
+    /// §198.1 rule 5a: a diagnostic that the field and the parameter give
+    /// for the shared annotation reports once. The control is a declared
     /// field and a parameter that each spell the unknown type.
     #[test]
-    fn a_shared_annotation_reports_each_diagnostic_once() {
-        for (class, code) in [
-            (
-                "class C { constructor(public x: Foo) {} }",
-                crate::RuleCode::S016,
-            ),
-            (
-                "class C { constructor(public x?: i32) {} }",
-                crate::RuleCode::S012,
-            ),
-        ] {
-            let diagnostics = diagnostics(class);
-            assert_eq!(diagnostics.len(), 1, "{class}: {diagnostics:?}");
-            assert_eq!(diagnostics[0].code, code, "{class}");
-        }
-        let control = diagnostics("class C { x: Foo; constructor(x: Foo) { this.x = x; } }");
+    fn a_shared_annotation_reports_an_identical_diagnostic_once() {
+        let diagnostics = rejected("class C { constructor(public x: Foo) {} }");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].code, crate::RuleCode::S016);
+        let control = rejected("class C { x: Foo; constructor(x: Foo) { this.x = x; } }");
         assert_eq!(control.len(), 2, "{control:?}");
         assert!(control.iter().all(|d| d.code == crate::RuleCode::S016));
+    }
+
+    /// §198.1 rule 5a: a field diagnostic that the parameter does not
+    /// give stays. Each shape gives the diagnostics of its hand-written
+    /// form.
+    #[test]
+    fn a_parameter_property_field_keeps_each_field_diagnostic() {
+        let slot = "class Enemy { hp: i32 = 1; }\n\
+            @ValueType class Slot<T> { item: T; constructor(item: T) { this.item = item; } }\n";
+        for (property, by_hand) in [
+            (
+                "class World { constructor(public slot: Slot<Enemy>) {} }",
+                "class World { slot: Slot<Enemy>; constructor(slot: Slot<Enemy>) { this.slot = slot; } }",
+            ),
+            (
+                "class A { constructor(private group: TaskGroup) {} }",
+                "class A { private group: TaskGroup; constructor(group: TaskGroup) { this.group = group; } }",
+            ),
+        ] {
+            let messages = |class: &str| -> Vec<(crate::RuleCode, String)> {
+                rejected(&format!("{slot}{class}"))
+                    .into_iter()
+                    .map(|d| (d.code, d.message))
+                    .collect()
+            };
+            let property_messages = messages(property);
+            assert!(!property_messages.is_empty(), "{property}");
+            assert_eq!(property_messages, messages(by_hand), "{property}");
+        }
+        let first = rejected(&format!(
+            "{slot}class World {{ constructor(public slot: Slot<Enemy>) {{}} }}"
+        ));
+        assert!(
+            first[0]
+                .message
+                .starts_with("field type `Enemy` is outside the value-class whitelist"),
+            "{first:?}"
+        );
+    }
+
+    #[test]
+    fn parameter_default_gives_the_default_of_a_parameter_property_field() {
+        let class = class_of(
+            "class C { y: i32 = 1; constructor(public a: i32 = 4, public b: i32, y: i32 = 5) {} }",
+        );
+        let defaults: Vec<bool> = class
+            .body
+            .iter()
+            .filter_map(|member| match member {
+                ast::ClassMember::ClassProp(prop) => {
+                    Some(parameter_default(&class, prop).is_some())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            defaults,
+            [true, false, false],
+            "`a`, `b`, then the declared `y`"
+        );
     }
 
     #[test]

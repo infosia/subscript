@@ -872,9 +872,26 @@ impl DiagnosticSink {
         self.0.borrow().len()
     }
 
-    /// Drops every diagnostic after the first `len`.
-    fn truncate(&self, len: usize) {
-        self.0.borrow_mut().truncate(len);
+    /// A copy of each diagnostic after the first `start`.
+    fn since(&self, start: usize) -> Vec<Diagnostic> {
+        self.0.borrow().get(start..).unwrap_or_default().to_vec()
+    }
+
+    /// Drops each diagnostic after the first `start` that is equal to one
+    /// in `earlier`.
+    fn drop_repeats(&self, start: usize, earlier: &[Diagnostic]) {
+        let mut diagnostics = self.0.borrow_mut();
+        let mut index = 0;
+        diagnostics.retain(|diagnostic| {
+            let keep = index < start
+                || !earlier.iter().any(|first| {
+                    first.code == diagnostic.code
+                        && first.message == diagnostic.message
+                        && first.pos == diagnostic.pos
+                });
+            index += 1;
+            keep
+        });
     }
 
     fn take(&self) -> Vec<Diagnostic> {
