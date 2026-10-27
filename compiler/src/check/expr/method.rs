@@ -682,7 +682,8 @@ impl<'p> Checker<'p> {
                     &pos,
                     "shift",
                 ));
-                mk(args, elem, pos)
+                let ty = self.removal_result(elem, "shift");
+                mk(args, ty, pos)
             }
             A::Unshift => {
                 if c.args.len() > 1 {
@@ -983,6 +984,21 @@ impl<'p> Checker<'p> {
                 mk(vec![recv, cb], ty, pos)
             }
         }
+    }
+
+    /// The result of `pop()` or `shift()` on `T[]` (compiler.md §196.1):
+    /// `T | undefined` for a non-nullable `T` in the `Map.get` set, else `T`.
+    /// A counted `T` (§171) keeps `T`: a nullable counted owner has no
+    /// release.
+    pub(super) fn removal_result(&self, elem: Type, member: &str) -> Type {
+        let shape = self.apparent_type(&elem);
+        if matches!(shape, Type::Nullable(_, _))
+            || shape.counted_type().is_some()
+            || !self.map_get_value_ok(&elem)
+        {
+            return elem;
+        }
+        Type::nullable_spelled(elem, crate::ambient::nullable_result("Array", member))
     }
 
     /// Accepts values with the same nullable-pointer representation (compiler.md §123).

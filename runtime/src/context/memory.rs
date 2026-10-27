@@ -1297,14 +1297,33 @@ impl Context {
     /// must be writable for the array's element size and must not overlap
     /// the array's data storage. The vacated slot is zeroed after the copy.
     pub unsafe fn array_pop(&mut self, handle: *mut u8, dst: *mut u8, pos_id: u32) {
+        // SAFETY: the caller contract of this function.
+        if unsafe { self.array_pop_or_absent(handle, dst, pos_id) } == Some(false) {
+            self.trap(TrapKind::EmptyPop, "pop() on an empty array", pos_id);
+        }
+    }
+
+    /// Removes the last element, copying it to `dst`. An empty array
+    /// leaves `dst` unchanged and returns `Some(false)` (compiler.md
+    /// §196.1). A null or dead handle returns `None`, after the trap of
+    /// the dead handle.
+    ///
+    /// # Safety
+    ///
+    /// The contract of [`Context::array_pop`].
+    pub unsafe fn array_pop_or_absent(
+        &mut self,
+        handle: *mut u8,
+        dst: *mut u8,
+        pos_id: u32,
+    ) -> Option<bool> {
         if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
-            return;
+            return None;
         }
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &mut *(handle as *mut ArrayHeader) };
         if h.len == 0 {
-            self.trap(TrapKind::EmptyPop, "pop() on an empty array", pos_id);
-            return;
+            return Some(false);
         }
         h.len -= 1;
         let elem = h.elem_size as usize;
@@ -1316,6 +1335,7 @@ impl Context {
             std::ptr::copy_nonoverlapping(removed, dst, elem);
             std::ptr::write_bytes(removed, 0, elem);
         }
+        Some(true)
     }
 
     /// Returns the address of element `idx`, or null after an

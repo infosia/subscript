@@ -1450,3 +1450,68 @@ fn trap_line_parsing_is_total() {
     assert!(r.message.contains("empty"));
     assert_eq!(r.stdout, b"before\n");
 }
+
+/// The archive freshness reads cargo's dep-info: a newer file that the
+/// dep-info does not list leaves the archive fresh; a newer listed source,
+/// a newer manifest, and a missing dep-info make it stale.
+///
+/// Cost: under 10 ms. The test writes five small files and sets their
+/// modification times.
+#[test]
+fn staticlib_freshness_reads_the_dep_info() {
+    use std::time::{Duration, SystemTime};
+    let dir = TempDir::new("freshness").expect("temp dir");
+    let root = dir.path.clone();
+    let set = |name: &str, seconds: u64| {
+        let path = root.join(name);
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .expect("open file");
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
+            .expect("set modification time");
+        path
+    };
+    let source = set("listed source.rs", 100);
+    set("Cargo.toml", 100);
+    let archive = set("libsubscript_runtime.a", 200);
+    let dep_info = archive.with_extension("d");
+    std::fs::write(
+        &dep_info,
+        format!(
+            "{}: {}\n",
+            archive.display(),
+            source.display().to_string().replace(' ', "\\ ")
+        ),
+    )
+    .expect("write dep-info");
+    set("tests.rs", 300);
+    assert!(
+        staticlib_is_fresh(&archive, &root),
+        "an unlisted newer file leaves the archive fresh"
+    );
+
+    set("listed source.rs", 300);
+    assert!(
+        !staticlib_is_fresh(&archive, &root),
+        "a newer listed source makes the archive stale"
+    );
+    set("listed source.rs", 100);
+    set("Cargo.toml", 300);
+    assert!(
+        !staticlib_is_fresh(&archive, &root),
+        "a newer manifest makes the archive stale"
+    );
+    set("Cargo.toml", 100);
+    assert!(
+        staticlib_is_fresh(&archive, &root),
+        "the control is fresh again"
+    );
+
+    std::fs::remove_file(&dep_info).expect("remove dep-info");
+    assert!(
+        !staticlib_is_fresh(&archive, &root),
+        "a missing dep-info makes the archive stale"
+    );
+}

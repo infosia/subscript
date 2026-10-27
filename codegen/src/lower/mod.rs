@@ -175,6 +175,10 @@ pub(crate) struct RtFns {
     pub array_len: FuncId,
     pub array_push: FuncId,
     pub array_pop: FuncId,
+    /// `subscript_rt_array_pop_or_absent` (compiler.md §196.1).
+    pub array_pop_or_absent: FuncId,
+    /// `subscript_rt_arr_shift_or_absent` (compiler.md §196.1).
+    pub arr_shift_or_absent: FuncId,
     pub str_data: FuncId,
     pub array_data: FuncId,
     pub assoc_iter_begin: FuncId,
@@ -1101,6 +1105,16 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         array_len: mk("subscript_rt_array_len", &[I64, I64], Some(I32))?,
         array_push: mk("subscript_rt_array_push", &[I64, I64, I64, I32], Some(I32))?,
         array_pop: mk("subscript_rt_array_pop", &[I64, I64, I64, I32], None)?,
+        array_pop_or_absent: mk(
+            "subscript_rt_array_pop_or_absent",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
+        arr_shift_or_absent: mk(
+            "subscript_rt_arr_shift_or_absent",
+            &[I64, I64, I64, I32],
+            None,
+        )?,
         str_data: mk("subscript_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("subscript_rt_array_data", &[I64, I64], Some(I64))?,
         assoc_iter_begin: mk("subscript_rt_assoc_iter_begin", &[I64, I64, I32], Some(I64))?,

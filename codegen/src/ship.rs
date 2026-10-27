@@ -211,33 +211,60 @@ fn build_dir() -> Result<PathBuf, RunError> {
     Ok(dir.to_path_buf())
 }
 
-/// Newest modification time under `dir`, recursively. `None` when the
-/// tree cannot be read; the caller then treats the archive as stale.
-fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
-    let mut newest: Option<std::time::SystemTime> = None;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(p) = stack.pop() {
-        let meta = std::fs::metadata(&p).ok()?;
-        if meta.is_dir() {
-            for e in std::fs::read_dir(&p).ok()? {
-                stack.push(e.ok()?.path());
+/// The prerequisite paths of a cargo dep-info file: every path after the
+/// first target. `None` when the file cannot be read or lists no path.
+/// A backslash before a space or a line end is an escape; each other
+/// backslash is part of a path, as in a Windows path.
+fn dep_info_paths(dep_info: &Path) -> Option<Vec<PathBuf>> {
+    let text = std::fs::read_to_string(dep_info).ok()?;
+    let mut tokens: Vec<String> = Vec::new();
+    let mut token = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&' ') => {
+                token.push(' ');
+                chars.next();
             }
-        } else if let Ok(t) = meta.modified() {
-            newest = Some(newest.map_or(t, |n| n.max(t)));
+            '\\' if matches!(chars.peek(), Some('\n' | '\r')) => {}
+            ' ' | '\t' | '\n' | '\r' => {
+                if !token.is_empty() {
+                    tokens.push(std::mem::take(&mut token));
+                }
+            }
+            other => token.push(other),
         }
     }
-    newest
+    if !token.is_empty() {
+        tokens.push(token);
+    }
+    let target = tokens.iter().position(|t| t.ends_with(':'))?;
+    let paths: Vec<PathBuf> = tokens[target + 1..]
+        .iter()
+        .filter(|t| !t.ends_with(':'))
+        .map(PathBuf::from)
+        .collect();
+    (!paths.is_empty()).then_some(paths)
 }
 
-/// True when `archive` exists and is newer than every runtime source.
+/// True when `archive` exists and is at least as new as every path that
+/// its cargo dep-info lists, and as `runtime_dir/Cargo.toml`. A file
+/// that cargo does not compile into the archive, such as a test-only
+/// module, is not in the dep-info, so it does not make the archive stale.
+/// A missing or unreadable dep-info makes the archive stale.
 fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
     let Ok(built) = std::fs::metadata(archive).and_then(|m| m.modified()) else {
         return false;
     };
-    match newest_mtime(runtime_dir) {
-        Some(source) => built >= source,
-        None => false,
-    }
+    let Some(mut sources) = dep_info_paths(&archive.with_extension("d")) else {
+        return false;
+    };
+    sources.push(runtime_dir.join("Cargo.toml"));
+    sources.iter().all(|source| {
+        std::fs::metadata(source)
+            .and_then(|m| m.modified())
+            .is_ok_and(|modified| modified <= built)
+    })
 }
 
 /// Returns the host runtime static-library filename produced by Cargo.

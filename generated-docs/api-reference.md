@@ -238,7 +238,7 @@
 |---|---|
 | `length: i32` | Returns the element count. |
 | `push(value: T): i32` | Appends one element and returns the new length. |
-| `pop(): T` | Removes the last element; an empty array traps. |
+| `pop(): T \| undefined` | Removes the last element. For a `T` that `Map.get` accepts, an empty array gives `undefined`. For each other `T`, the result is `T`, and an empty array traps. |
 | `toString(): string` | Joins interpolatable elements with a comma. |
 | `indexOf(value: T, fromIndex?: i32): i32` | Returns the first `===`-equal element index, or -1. |
 | `lastIndexOf(value: T, fromIndex?: i32): i32` | Returns the last `===`-equal element index, or -1. |
@@ -258,7 +258,7 @@
 | `sort(comparator: (left: T, right: T) => i32): T[]` | Stable-sorts in place with a required comparator. |
 | `reduceRight<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds right-to-left from a required initial accumulator. |
 | `splice(start: i32, deleteCount?: i32): T[]` | Deletes a clamped range in place and returns the removed elements. |
-| `shift(): T` | Removes the first element; an empty array traps. |
+| `shift(): T \| undefined` | Removes the first element. For a `T` that `Map.get` accepts, an empty array gives `undefined`. For each other `T`, the result is `T`, and an empty array traps. |
 | `unshift(value: T): i32` | Prepends one element and returns the new length. |
 | `copyWithin(target: i32, start: i32, end?: i32): T[]` | Copies a clamped range within the receiver and returns the receiver. |
 | `at(index: i32): T` | Reads a signed index; an out-of-range index traps. |

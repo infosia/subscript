@@ -253,8 +253,32 @@ pub unsafe extern "C" fn subscript_rt_arr_shift(
     out: *mut u8,
     pos_id: u32,
 ) {
+    if a.is_null() || out.is_null() {
+        return;
+    }
     // SAFETY: shared contract.
-    unsafe { crate::arrops::shift(ctx, a, out, pos_id) }
+    if !unsafe { crate::arrops::shift(ctx, a, out, pos_id) } {
+        // SAFETY: shared contract.
+        unsafe { &mut *ctx }.trap(TrapKind::EmptyPop, "shift() on an empty array", pos_id);
+    }
+}
+
+/// `shift()` on an array whose result is `T | undefined`
+/// (compiler.md §196.1): an empty array leaves `out` unchanged, so the
+/// caller's zeroed `out` holds the absent value. It does not trap.
+///
+/// # Safety
+///
+/// The contract of [`subscript_rt_arr_shift`].
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_shift_or_absent(
+    ctx: *mut Context,
+    a: *mut u8,
+    out: *mut u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::shift(ctx, a, out, pos_id) };
 }
 
 /// `unshift(x)`: prepends exactly one element and returns the new

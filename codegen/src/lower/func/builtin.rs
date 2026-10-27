@@ -206,11 +206,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.zero_bytes(output, size.max(8), align.max(8));
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
-                self.call_runtime(
-                    self.ml.rt.array_pop,
-                    &[self.ctx, handle, output, position],
-                    false,
-                )?;
+                // compiler.md §196.1: the zeroed output is the absent value.
+                let absent = crate::lir_types::removal_gives_absent(element, return_type);
+                let function = if absent {
+                    self.ml.rt.array_pop_or_absent
+                } else {
+                    self.ml.rt.array_pop
+                };
+                self.call_runtime(function, &[self.ctx, handle, output, position], false)?;
                 for trap in traps {
                     match trap.kind {
                         l::TrapKind::Allocation | l::TrapKind::Call => {
@@ -219,7 +222,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         _ => {}
                     }
                 }
-                self.load_data(element, output, 0)
+                match return_type {
+                    Some(l::ValueType::Data(result)) if absent => self.load_data(result, output, 0),
+                    _ => self.load_data(element, output, 0),
+                }
             }
             l::BuiltinMethod::StringSlice => {
                 let operation = self

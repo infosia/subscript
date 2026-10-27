@@ -447,6 +447,24 @@ pub unsafe extern "C" fn subscript_rt_array_pop(
     unsafe { (*ctx).array_pop(a, dst, pos_id) }
 }
 
+/// `pop()` on an array whose result is `T | undefined`
+/// (compiler.md §196.1): an empty array leaves `dst` unchanged, so the
+/// caller's zeroed `dst` holds the absent value. It does not trap.
+///
+/// # Safety
+///
+/// The contract of [`subscript_rt_array_pop`].
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_pop_or_absent(
+    ctx: *mut Context,
+    a: *mut u8,
+    dst: *mut u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { (*ctx).array_pop_or_absent(a, dst, pos_id) };
+}
+
 /// Bounds-checked element address; null after an out-of-bounds trap.
 ///
 /// # Safety

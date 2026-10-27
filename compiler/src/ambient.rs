@@ -698,6 +698,16 @@ pub(crate) const NULLABLE_RESULTS: &[NullableResult] = &[
         absence: crate::types::Absence::Undefined,
     },
     NullableResult {
+        declaration: "Array",
+        member: "pop",
+        absence: crate::types::Absence::Undefined,
+    },
+    NullableResult {
+        declaration: "Array",
+        member: "shift",
+        absence: crate::types::Absence::Undefined,
+    },
+    NullableResult {
         declaration: "Worker",
         member: "poll",
         absence: crate::types::Absence::Null,
@@ -1238,8 +1248,8 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             "Appends one element and returns the new length.",
         ),
         (
-            "pop(): T",
-            "Removes the last element; an empty array traps.",
+            "pop(): T | undefined",
+            "Removes the last element. For a `T` that `Map.get` accepts, an empty array gives `undefined`. For each other `T`, the result is `T`, and an empty array traps.",
         ),
     ] {
         out.push(ApiItem {
@@ -1768,7 +1778,7 @@ mod tests {
             ("string", "length: i32"),
             ("T[]", "length: i32"),
             ("T[]", "push(value: T): i32"),
-            ("T[]", "pop(): T"),
+            ("T[]", "pop(): T | undefined"),
             ("FixedArray<T, N>", "length: i32"),
             ("JSON", "stringify<T>(value: T): string"),
             ("JSON", "parse<T>(text: string): T"),

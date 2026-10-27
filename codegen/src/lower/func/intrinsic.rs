@@ -496,8 +496,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     arguments.push(scalar(self, 1)?);
                 }
                 arguments.extend([output, position]);
-                self.call_runtime(function, &arguments, checked)?;
-                self.load_data(&element, output, 0)
+                // compiler.md §196.1: the zeroed output is the absent value.
+                match return_type {
+                    Some(l::ValueType::Data(result))
+                        if name == "Shift"
+                            && crate::lir_types::removal_gives_absent(&element, return_type) =>
+                    {
+                        let function = self.ml.rt.arr_shift_or_absent;
+                        self.call_runtime(function, &arguments, checked)?;
+                        self.load_data(result, output, 0)
+                    }
+                    _ => {
+                        self.call_runtime(function, &arguments, checked)?;
+                        self.load_data(&element, output, 0)
+                    }
+                }
             }
             "Unshift" => {
                 let value = *operands

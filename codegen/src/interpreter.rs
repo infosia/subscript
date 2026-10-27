@@ -1557,10 +1557,17 @@ impl<'m> Interpreter<'m> {
                     .layout_cached(ty)
                     .ok_or_else(|| self.invalid(None, "Array.pop type has no layout"))?;
                 let mut bytes = vec![0; layout.size];
-                // SAFETY: live array and writable element storage.
-                unsafe {
-                    ffi::subscript_rt_array_pop(&mut *self.context, array, bytes.as_mut_ptr(), 0)
+                // compiler.md §196.1: the zeroed bytes are the absent value.
+                let pop = match parameter_types.first() {
+                    Some(l::ValueType::Data(Type::Array(element)))
+                        if crate::lir_types::removal_gives_absent(element, result_ty) =>
+                    {
+                        ffi::subscript_rt_array_pop_or_absent
+                    }
+                    _ => ffi::subscript_rt_array_pop,
                 };
+                // SAFETY: live array and writable element storage.
+                unsafe { pop(&mut *self.context, array, bytes.as_mut_ptr(), 0) };
                 self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
                 self.unpack(ty, &bytes)
             }

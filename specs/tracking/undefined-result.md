@@ -122,3 +122,18 @@ different type, with the reason:
 | `String.at`, `codePointAt`, scalar `pop`/`shift` | `string` and a scalar have no nullable form (§123.1 rule 1) |
 | `Array.at` | the prelude declares `at(index: i32): T`; a `this` overload for a reference element also matches a value class, which has no nullable form |
 | `Map.get`, `find`, `findLast` on a scalar | as `String.at`; S014 |
+
+Two full gates of the §196 round failed with `debug 2906/2/5`. Each
+failure was one ship-tier interop test (counted in two harnesses):
+`clang: error: no such file or directory: .../libsubscript_runtime.a`.
+Cause: the freshness check of the runtime archive
+(`codegen/src/ship.rs`) read every file under `runtime/`. The round
+edited `runtime/src/ffi/tests.rs`, which the library does not compile,
+so the archive stayed older than it. Each ship test then ran
+`cargo build`, which replaced the archive while another test linked.
+A `touch` of the archive did not remove the cause: the gate build
+step put back the archive with its old time. The check now reads the
+cargo dep-info of the archive.
+
+Landing of §196: `gate full 69f5a656 dirty:31 debug 2908/0/5 release
+2905/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`.

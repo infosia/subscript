@@ -1219,7 +1219,8 @@ impl<'p> Checker<'p> {
                         &pos,
                         "pop",
                     );
-                    mk(recv, args, (*elem).clone(), pos)
+                    let ty = checker.removal_result((*elem).clone(), "pop");
+                    mk(recv, args, ty, pos)
                 }
                 other => {
                     // The §9 method intrinsics (stdlib.md §9, Q22).

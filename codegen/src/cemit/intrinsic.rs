@@ -85,9 +85,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 };
                 let destination = result.ok_or_else(|| internal("array pop has no result"))?;
                 let pos = self.emitter.pos_id(&instruction.pos);
+                // compiler.md §196.1: the zeroed destination is the absent value.
+                let symbol = if removal_gives_absent(element, target.return_type.as_ref()) {
+                    let _ = writeln!(out, "    memset(&{destination}, 0, sizeof {destination});");
+                    "subscript_rt_array_pop_or_absent"
+                } else {
+                    "subscript_rt_array_pop"
+                };
                 let call = self.emitter.runtime_call(
                     "void",
-                    "subscript_rt_array_pop",
+                    symbol,
                     &[
                         "void*".into(),
                         "void*".into(),
@@ -101,7 +108,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         format!("{pos}u"),
                     ],
                 );
-                let _ = element;
                 let _ = writeln!(out, "    {call};");
                 self.consume_runtime_traps(out, &instruction.traps, true, true)
             }

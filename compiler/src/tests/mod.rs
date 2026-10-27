@@ -8,6 +8,7 @@ mod collections;
 mod equality;
 mod language;
 mod poisoned_containers;
+mod removal;
 
 #[test]
 fn check_options_reject_an_unknown_enabled_module() {

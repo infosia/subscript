@@ -1900,3 +1900,76 @@ fn ffi_root_ranges_cover_aggregate_globals() {
     assert!(ctx.is_live(a as usize));
     assert!(ctx.is_live(b as usize));
 }
+
+/// compiler.md §196.1: the absent entries leave the zeroed output on an
+/// empty array and do not trap; the trapping entries trap on the same
+/// array. A non-empty array gives its element through each entry.
+#[test]
+fn ffi_pop_and_shift_or_absent_leave_the_output_on_an_empty_array() {
+    let mut ctx = Context::new();
+    let p: *mut Context = &mut *ctx;
+    let array = ctx.array_new(4, 1);
+    for value in [7i32, 8] {
+        // SAFETY: the array is live and the source has one i32.
+        unsafe { subscript_rt_array_push(p, array, (&raw const value).cast(), 1) };
+    }
+    let (mut first, mut last) = (0i32, 0i32);
+    // SAFETY: live array; each output is writable for one i32.
+    unsafe {
+        subscript_rt_arr_shift_or_absent(p, array, (&raw mut first).cast(), 2);
+        subscript_rt_array_pop_or_absent(p, array, (&raw mut last).cast(), 3);
+    }
+    assert_eq!((first, last), (7, 8));
+    // SAFETY: live array.
+    assert_eq!(unsafe { ctx.array_len(array) }, 0);
+    assert!(ctx.trap_record().is_none());
+
+    let (mut first, mut last) = (0i32, 0i32);
+    // SAFETY: live empty array; each output is writable for one i32.
+    unsafe {
+        subscript_rt_arr_shift_or_absent(p, array, (&raw mut first).cast(), 4);
+        subscript_rt_array_pop_or_absent(p, array, (&raw mut last).cast(), 5);
+    }
+    assert_eq!((first, last), (0, 0));
+    assert!(ctx.trap_record().is_none(), "an absent entry does not trap");
+
+    // Control: the trapping entries trap on the same empty array.
+    // SAFETY: live empty array; the output is writable for one i32.
+    unsafe { subscript_rt_array_pop(p, array, (&raw mut last).cast(), 6) };
+    let trap = ctx.trap_record().expect("empty pop traps");
+    assert_eq!((trap.kind, trap.pos_id), (TrapKind::EmptyPop, 6));
+    ctx.clear_trap();
+    // SAFETY: live empty array; the output is writable for one i32.
+    unsafe { subscript_rt_arr_shift(p, array, (&raw mut first).cast(), 7) };
+    let trap = ctx.trap_record().expect("empty shift traps");
+    assert_eq!((trap.kind, trap.pos_id), (TrapKind::EmptyPop, 7));
+    assert_eq!(trap.message, "shift() on an empty array");
+}
+
+/// compiler.md §196.1: `Context::array_pop_or_absent` reports the empty
+/// array, and a removed element, without a trap.
+#[test]
+fn context_array_pop_or_absent_reports_an_empty_array() {
+    let mut ctx = Context::new();
+    let array = ctx.array_new(4, 1);
+    let value = 9i32;
+    let mut out = 0i32;
+    // SAFETY: live array; the source and output hold one i32.
+    unsafe {
+        ctx.array_push(array, (&raw const value).cast(), 1);
+        assert_eq!(
+            ctx.array_pop_or_absent(array, (&raw mut out).cast(), 2),
+            Some(true)
+        );
+        assert_eq!(
+            ctx.array_pop_or_absent(array, (&raw mut out).cast(), 3),
+            Some(false)
+        );
+        assert_eq!(
+            ctx.array_pop_or_absent(std::ptr::null_mut(), (&raw mut out).cast(), 4),
+            None
+        );
+    }
+    assert_eq!(out, 9);
+    assert!(ctx.trap_record().is_none());
+}

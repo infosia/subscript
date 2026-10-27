@@ -201,6 +201,9 @@ impl Interpreter<'_> {
                     .layout_cached(element_ty)
                     .ok_or_else(|| self.invalid(None, "shift element has no layout"))?;
                 let mut bytes = vec![0; layout.size];
+                // compiler.md §196.1: the zeroed bytes are the absent value.
+                let absent = operation == "Shift"
+                    && crate::lir_types::removal_gives_absent(element_ty, result_ty);
                 // SAFETY: live array and writable element storage.
                 unsafe {
                     if operation == "At" {
@@ -211,12 +214,22 @@ impl Interpreter<'_> {
                             bytes.as_mut_ptr(),
                             0,
                         );
+                    } else if absent {
+                        ffi::subscript_rt_arr_shift_or_absent(
+                            context,
+                            array,
+                            bytes.as_mut_ptr(),
+                            0,
+                        );
                     } else {
                         ffi::subscript_rt_arr_shift(context, array, bytes.as_mut_ptr(), 0);
                     }
                 };
                 self.check_runtime(pos)?;
-                self.unpack(element_ty, &bytes)?
+                match result_ty {
+                    Some(l::ValueType::Data(result)) if absent => self.unpack(result, &bytes)?,
+                    _ => self.unpack(element_ty, &bytes)?,
+                }
             }
             "Unshift" => {
                 let value = packed(1)?;

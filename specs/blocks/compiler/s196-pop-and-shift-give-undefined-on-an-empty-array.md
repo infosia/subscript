@@ -27,7 +27,11 @@ pointer of `T | null`.
    array they give `undefined`. They do not trap.
 2. For each other `T`, `pop()` and `shift()` give `T`, and an empty
    array traps, as at the pin. This includes a scalar, `string`, a
-   value class, an async handle, and a nullable `T`. The call is not
+   value class, an async handle, a nullable `T`, and a `T` that owns
+   counted values (§171), such as `Promise<void>[]`. A nullable
+   counted owner has no release: with rule 1 on `Promise<void>[][]`,
+   the `t87` and `t88` shapes stopped trapping, and the removed
+   element was not released (measured by the implementation round). The call is not
    rejected: a discarded call and a scalar read are common, and the
    trap is the existing answer.
 3. The builtin spelling table of §195.5 rule 2 has a row for each of

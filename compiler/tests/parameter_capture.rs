@@ -288,7 +288,10 @@ fn defaults_join_parameter_facts() {
 #[test]
 fn builtin_carrier_results_follow_the_receiver() {
     for (body, escapes) in [
-        ("const v = values.shift(); return v;", true),
+        (
+            "const v = values.shift(); if (v === undefined) { return named; } return v;",
+            true,
+        ),
         ("const v = values.slice(); return v[0];", true),
         ("values.shift(); return named;", false),
     ] {

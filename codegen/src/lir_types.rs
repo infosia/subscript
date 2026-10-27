@@ -91,6 +91,14 @@ pub(crate) fn runtime_trap_site(runtime: TrapKind, sites: &[l::Trap]) -> TrapSit
         .map_or(TrapSite::NoMatch, TrapSite::Site)
 }
 
+/// Whether `pop()` or `shift()` on an array of `element` gives the
+/// absent value on an empty array instead of the trap (compiler.md
+/// §196.1). The result is then `element` made nullable; a nullable
+/// `element` keeps its own type and the trap.
+pub(crate) fn removal_gives_absent(element: &Type, result: Option<&l::ValueType>) -> bool {
+    matches!(result, Some(l::ValueType::Data(Type::Nullable(inner, _))) if **inner == *element)
+}
+
 pub(crate) fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
     match ty {
         l::ValueType::Data(ty) => Ok(ty),
@@ -440,5 +448,21 @@ mod tests {
                 pos: subscript_compiler::Pos::new("call.ts", 7, 11),
             })
         );
+    }
+
+    /// compiler.md §196.1: a result that is the element made nullable
+    /// gives the absent value; a nullable element keeps the trap.
+    ///
+    /// Cost: under 1 ms. The test compares four type pairs.
+    #[test]
+    fn removal_gives_absent_only_for_the_element_made_nullable() {
+        let class = Type::Class(ClassId(0));
+        let nullable = Type::Nullable(Box::new(class.clone()), subscript_compiler::Absence::Null);
+        let data = |ty: &Type| l::ValueType::Data(ty.clone());
+        assert!(removal_gives_absent(&class, Some(&data(&nullable))));
+        assert!(!removal_gives_absent(&class, Some(&data(&class))));
+        assert!(!removal_gives_absent(&nullable, Some(&data(&nullable))));
+        assert!(!removal_gives_absent(&Type::I32, Some(&data(&Type::I32))));
+        assert!(!removal_gives_absent(&class, None));
     }
 }

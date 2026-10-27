@@ -856,23 +856,21 @@ pub unsafe fn splice(
     out
 }
 
-/// `shift()`: removes the first element into `dst`. An empty receiver
-/// traps with the same trap kind used by `pop()`.
+/// `shift()`: removes the first element into `dst`. It returns false
+/// on an empty or dead receiver, and the caller owns the empty trap.
 ///
 /// # Safety
 ///
 /// `h` is a live array of `ctx` (or null); `dst` is writable for the
 /// element size.
-pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
+pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) -> bool {
     if h.is_null() || dst.is_null() {
-        return;
+        return false;
     }
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     if n == 0 {
-        // SAFETY: caller contract.
-        unsafe { &mut *ctx }.trap(TrapKind::EmptyPop, "shift() on an empty array", pos_id);
-        return;
+        return false;
     }
     // SAFETY: element zero exists and `dst` is writable for `esz`.
     let first = unsafe { (*ctx).array_elem_ptr(h, 0, 0) };
@@ -883,6 +881,7 @@ pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
     unsafe { std::ptr::copy(data.add(esz), data, (n - 1) * esz) };
     // SAFETY: `n > 0`; this removes the copied tail slot.
     unsafe { (*ctx).array_truncate(h, n - 1, pos_id) };
+    true
 }
 
 /// `unshift(x)`: prepends exactly one element and returns the new
@@ -2518,7 +2517,7 @@ mod tests {
         let empty = arr_i32(&mut c, &[]);
         let mut out = 0i32;
         // SAFETY: live empty array; `out` is writable for one i32.
-        unsafe { shift(p, empty, (&mut out as *mut i32).cast(), 73) };
+        unsafe { crate::ffi::subscript_rt_arr_shift(p, empty, (&raw mut out).cast(), 73) };
         let trap = c.trap_record().expect("empty shift must trap");
         assert_eq!(trap.kind, TrapKind::EmptyPop);
         assert_eq!(trap.message, "shift() on an empty array");

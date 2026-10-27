@@ -18,7 +18,8 @@ use crate::lir::verify_module;
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, borrowed_capture_parameters,
     boundary_class_contains_pointer, capture_parameters, data_type, explicit_parameters,
-    foreign_parameter_type_matches, operand_type, runtime_trap_kind, value_type,
+    foreign_parameter_type_matches, operand_type, removal_gives_absent, runtime_trap_kind,
+    value_type,
 };
 use crate::position_table::PositionTable;
 use crate::root_storage::{self, RootStoragePlan};

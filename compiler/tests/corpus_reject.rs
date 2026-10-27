@@ -120,6 +120,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         17,
     ),
     ("r438-undefined-to-null-conversion.ts", RuleCode::S012, 15),
+    ("r439-array-pop-unnarrowed.ts", RuleCode::S011, 12),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

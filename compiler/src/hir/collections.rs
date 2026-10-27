@@ -240,7 +240,7 @@ impl ArrFn {
                 "reduceRight<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U"
             }
             ArrFn::Splice => "splice(start: i32, deleteCount?: i32): T[]",
-            ArrFn::Shift => "shift(): T",
+            ArrFn::Shift => "shift(): T | undefined",
             ArrFn::Unshift => "unshift(value: T): i32",
             ArrFn::CopyWithin => "copyWithin(target: i32, start: i32, end?: i32): T[]",
         }
@@ -273,7 +273,7 @@ impl ArrFn {
             ArrFn::Sort => "Stable-sorts in place with a required comparator.",
             ArrFn::ReduceRight => "Folds right-to-left from a required initial accumulator.",
             ArrFn::Splice => "Deletes a clamped range in place and returns the removed elements.",
-            ArrFn::Shift => "Removes the first element; an empty array traps.",
+            ArrFn::Shift => "Removes the first element. For a `T` that `Map.get` accepts, an empty array gives `undefined`. For each other `T`, the result is `T`, and an empty array traps.",
             ArrFn::Unshift => "Prepends one element and returns the new length.",
             ArrFn::CopyWithin => {
                 "Copies a clamped range within the receiver and returns the receiver."

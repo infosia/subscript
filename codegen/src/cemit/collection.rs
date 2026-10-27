@@ -197,6 +197,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 types.extend(["void*".into(), "uint32_t".into()]);
                 args.extend([format!("&{destination}"), format!("{position}u")]);
+                // compiler.md §196.1: the zeroed destination is the absent value.
+                let symbol = if name == "Shift"
+                    && removal_gives_absent(element, target.return_type.as_ref())
+                {
+                    let _ = writeln!(out, "    memset(&{destination}, 0, sizeof {destination});");
+                    "subscript_rt_arr_shift_or_absent"
+                } else {
+                    symbol
+                };
                 let call = self.emitter.runtime_call("void", symbol, &types, &args);
                 let _ = writeln!(out, "    {call};");
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
