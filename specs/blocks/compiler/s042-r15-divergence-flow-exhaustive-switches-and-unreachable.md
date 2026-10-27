@@ -20,7 +20,9 @@ ends in a diverging statement per this section). No runtime or
 type-system change; arms that fall through to a `break` keep the
 existing behavior (the switch then does not diverge). Enum,
 integer, and string switches are unchanged — they have `default`-
-free coverage no analysis can prove.
+free coverage no analysis can prove. *(Amended 2026-10-27 by §200: a source-enum
+switch with a case for each member ends the return flow, and a value
+that is not a member traps at its end.)*
 
 ### 42.2 R15.2 — `unreachable()`
 

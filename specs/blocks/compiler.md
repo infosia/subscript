@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -241,3 +241,4 @@ Every section, with its status:
 | §197 | A generic constructor and a generic method infer their type arguments | active | [`s197-a-generic-constructor-and-method-infer-their-type-arguments.md`](compiler/s197-a-generic-constructor-and-method-infer-their-type-arguments.md) |
 | §198 | A constructor parameter property declares a field | active | [`s198-a-constructor-parameter-property-declares-a-field.md`](compiler/s198-a-constructor-parameter-property-declares-a-field.md) |
 | §199 | Logical assignment is a tested assignment | active | [`s199-logical-assignment-is-a-tested-assignment.md`](compiler/s199-logical-assignment-is-a-tested-assignment.md) |
+| §200 | A switch over every enum member ends the flow | active | [`s200-a-switch-over-every-enum-member-ends-the-flow.md`](compiler/s200-a-switch-over-every-enum-member-ends-the-flow.md) |
