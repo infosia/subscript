@@ -565,7 +565,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn restore_nullable_storage(&self, expression: &mut hir::Expr) {
+    pub(super) fn restore_nullable_storage(&self, expression: &mut hir::Expr) {
         let target = match &expression.kind {
             ExprKind::Assign {
                 op: None, target, ..
@@ -920,7 +920,7 @@ impl<'p> Checker<'p> {
         Type::Error
     }
 
-    fn require_nullable_operand(
+    pub(super) fn require_nullable_operand(
         &mut self,
         operand: &hir::Expr,
         what: &str,
@@ -1006,7 +1006,7 @@ impl<'p> Checker<'p> {
         (self.null_test(assigned, pos), value)
     }
 
-    fn null_test(&self, value: hir::Expr, pos: Pos) -> hir::Expr {
+    pub(super) fn null_test(&self, value: hir::Expr, pos: Pos) -> hir::Expr {
         hir::Expr {
             pending_work: None,
             kind: ExprKind::Binary {

@@ -64,16 +64,7 @@ impl Checker<'_> {
     }
 
     pub(super) fn end_shared_narrowing(&self, expression: &hir::Expr, fx: &mut FnCtx) {
-        if fx.has_narrowing_facts() {
-            self.apply_narrowing_effects(
-                &expression.operation_narrowing_effects(
-                    self.narrowing_classes(),
-                    self.narrowing_helpers(),
-                    None,
-                ),
-                fx,
-            );
-        }
+        self.apply_operation_effects(expression, fx);
         if let hir::ExprKind::Assign {
             op: None,
             target,
@@ -101,6 +92,20 @@ impl Checker<'_> {
                     fx.ended_shared_narrowing.remove(&key);
                 }
             }
+        }
+    }
+
+    /// Applies the effects that the operation of `expression` owns, and adds no fact.
+    pub(super) fn apply_operation_effects(&self, expression: &hir::Expr, fx: &mut FnCtx) {
+        if fx.has_narrowing_facts() {
+            self.apply_narrowing_effects(
+                &expression.operation_narrowing_effects(
+                    self.narrowing_classes(),
+                    self.narrowing_helpers(),
+                    None,
+                ),
+                fx,
+            );
         }
     }
 

@@ -522,8 +522,9 @@ AwaitClassObjectMethod	a-s099	S018	`C` has no method `toString`
 AwaitSynchronousMethod	a-s100	S100	method `f` is synchronous and cannot be awaited
 AwaitMethodTypeArguments	a-s101	S100	method `f` is not generic
 AwaitIndirectCall	a-s102	S100	await requires a call that returns an async handle
-UnsignedShiftAssignment	a-s013	S100	assignment operator outside the decided surface
-LogicalOrPowerAssignment	a-s014	S100	assignment operator outside the decided surface
+NullishAssignmentNonNullable	a-s013	S100	the left operand of `??=` has type `C`, which is not nullable
+LogicalAssignmentNonBoolean	s199-logical-or-string	S100	`||=` requires a boolean operand, got `string`
+PowerAssignment	a-s014	S100	assignment operator outside the decided surface
 DestructuringAssignment	a-s015	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
 IndexAssignmentExpressionValue	a-s016	S100	`a[i] = v` cannot be used as a value
 ReadonlyIndexAssignment	a-s017	S100	`a[i] = v` cannot write through a readonly index signature
@@ -1368,7 +1369,6 @@ DestructuringAssignment	s155-mutable-pattern-object	S100	a destructuring assignm
 ReadonlyFieldWriteOutsideConstructor	s155-readonly-pattern-default	S100	field `x` is readonly in class `A`; writes require `this` directly in its constructor body
 DestructuringAssignment	s155-mutable-pattern-default	S100	a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names
 ReadonlyFieldWriteOutsideConstructor	s155-readonly-nullish	S100	field `s` is readonly in class `A`; writes require `this` directly in its constructor body
-UnsignedShiftAssignment	s155-mutable-nullish	S100	assignment operator outside the decided surface
 OptionalFunctionTypeParameter	s155-optional-field	S012	optional parameters in function types are not supported (C7)
 OptionalFunctionTypeParameter	s155-optional-initialized-field	S012	optional parameters in function types are not supported (C7)
 InitializerTypeCycle	s156-cycle	S100	initializer type depends on its own undecided type

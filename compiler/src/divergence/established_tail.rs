@@ -414,9 +414,9 @@ pub(super) const OPTIONALCHAINNONNULLABLE: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const NULLISHASSIGNMENT: DivergenceEntry = DivergenceEntry {
-                ts: "class Box {}\nlet a: Box | null = null;\na ??= new Box();",
-                subscript: "class Box {}\nlet a: Box | null = null;\nif (a === null) { a = new Box(); }",
-                why: "`??=` has no HIR form, so the explicit null test keeps assignment and evaluation order visible.",
+                ts: "class Box {}\nlet a: Box = new Box();\na ??= new Box();",
+                subscript: "class Box {}\nlet a: Box | null = new Box();\na ??= new Box();",
+                why: "The nullish test must inspect a nullable pointer, so a non-nullable place has no null branch.",
                 collision: "C7",
             };
 

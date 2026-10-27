@@ -208,7 +208,7 @@ impl Divergence {
             }
             Divergence::PrivateMemberAssignmentForm => surface_forms::PRIVATEMEMBERASSIGNMENTFORM,
             Divergence::NonPlaceAssignmentTargetForm => surface_forms::NONPLACEASSIGNMENTTARGETFORM,
-            Divergence::LogicalOrPowerAssignmentForm => surface_forms::LOGICALORPOWERASSIGNMENTFORM,
+            Divergence::PowerAssignmentForm => surface_forms::POWERASSIGNMENTFORM,
             Divergence::FunctionExpressionForm => surface_forms::FUNCTIONEXPRESSIONFORM,
             Divergence::NonNullAssertionExpressionForm => {
                 surface_forms::NONNULLASSERTIONEXPRESSIONFORM

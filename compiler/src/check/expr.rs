@@ -10,6 +10,7 @@ mod container_new;
 mod entry;
 mod lambda;
 pub(super) mod literal;
+mod logical_assign;
 mod member;
 mod method;
 mod namespace;
@@ -349,7 +350,13 @@ fn write_spelling(write: WriteExpression<'_>, target: &str) -> String {
                 ("=", "v".to_string())
             } else {
                 (
-                    assign_op(assign.op).map_or("=", |(_, operator)| operator),
+                    assign_op(assign.op)
+                        .map(|(_, operator)| operator)
+                        .or_else(|| {
+                            logical_assign::LogicalAssign::of(assign.op)
+                                .map(logical_assign::LogicalAssign::spelling)
+                        })
+                        .unwrap_or("="),
                     diagnostic_expr_spelling(&assign.right),
                 )
             };

@@ -24,6 +24,9 @@ impl<'p> Checker<'p> {
         mut prefix: Option<&mut crate::check::SyntheticPrefix>,
     ) -> hir::Expr {
         use ast::AssignOp as A;
+        if let Some(logical) = super::logical_assign::LogicalAssign::of(a.op) {
+            return self.check_logical_assign_value(a, logical, fx, pos);
+        }
         let mut length_place = None;
         if let ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) = &a.left {
             if matches!(&member.prop, ast::MemberProp::Ident(name) if name.sym == "length") {
@@ -83,19 +86,11 @@ impl<'p> Checker<'p> {
             if self.reject_readonly_assignment_target(&a.left, fx) {
                 return self.err_expr(pos);
             }
-            if a.op == A::NullishAssign {
-                self.reject_subset(
-                    RejectionSite::UnsignedShiftAssignment,
-                    "assignment operator outside the decided surface",
-                    pos.clone(),
-                );
-            } else {
-                self.reject_subset(
-                    RejectionSite::LogicalOrPowerAssignment,
-                    "assignment operator outside the decided surface",
-                    pos.clone(),
-                );
-            }
+            self.reject_subset(
+                RejectionSite::PowerAssignment,
+                "assignment operator outside the decided surface",
+                pos.clone(),
+            );
             return self.err_expr(pos);
         };
         // §107.3: a pattern binds new names. A pattern that writes

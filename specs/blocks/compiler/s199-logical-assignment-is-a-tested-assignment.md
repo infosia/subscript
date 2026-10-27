@@ -39,7 +39,10 @@ at the pin: `if (x === null) { x = v; }` and
    it.
 5. The expression is legal in statement position and in value
    position. In an initializer that has no statement list, a non-place
-   receiver fails as §82.1 rule 3 states.
+   receiver fails as §82.1 rule 3 states. An accessor or an index
+   signature place is legal in statement position only, as §82.1
+   rule 5 has it for a compound assignment: in value position it fails
+   with the existing "cannot be used as a value" text.
 6. A left operand that is not nullable fails for `??=` with S100
    "the left operand of `??=` has type `T`, which is not nullable".
    A left operand or a right operand that is not `boolean` fails for

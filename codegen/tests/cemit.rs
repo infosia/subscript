@@ -1959,6 +1959,7 @@ fn main() -> std::process::ExitCode {
             operations::array_element_store_evaluates_the_target_before_the_value,
             operations::field_store_evaluates_the_target_base_before_the_value,
             operations::compound_assignment_evaluates_the_target_base_once,
+            operations::logical_assignment_evaluates_each_operand_once,
             operations::fixed_array_literal_elements_run_left_to_right,
             operations::short_circuit_operands_do_not_run_the_skipped_side,
             operations::short_circuit_in_a_loop_condition_re_runs_per_iteration,

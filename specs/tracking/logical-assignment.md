@@ -1,6 +1,6 @@
 # Logical assignment is a tested assignment — `compiler.md` §199
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `c3903596`
 
@@ -20,3 +20,8 @@ types a local and a field. An array element does not narrow.
 
 `node` prints the `a381` golden. It counts each call of `make` and
 each evaluation of the non-place receiver `pick(h)`.
+
+## Landing
+
+`gate full eb703f25 dirty:25 debug 2939/0/5 release 2936/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 0 exit 0`.

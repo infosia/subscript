@@ -1581,12 +1581,16 @@ rejection_classes! {
     }
     Self::AwaitMethodTypeArguments => (RuleCode::S100, TscRejects),
     Self::AwaitIndirectCall => (RuleCode::S100, Diverges(Divergence::AwaitIndirectCall)),
-    Self::UnsignedShiftAssignment => {
+    Self::NullishAssignmentNonNullable => {
         (RuleCode::S100, Diverges(Divergence::NullishAssignment))
     }
-    Self::LogicalOrPowerAssignment => (
+    Self::LogicalAssignmentNonBoolean => (
         RuleCode::S100,
-        Diverges(Divergence::LogicalOrPowerAssignmentForm),
+        Diverges(Divergence::LogicalNonBooleanOperandForm),
+    ),
+    Self::PowerAssignment => (
+        RuleCode::S100,
+        Diverges(Divergence::PowerAssignmentForm),
     ),
     Self::DestructuringAssignment => {
         (RuleCode::S100, Diverges(Divergence::AssignmentPattern))

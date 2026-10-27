@@ -173,13 +173,18 @@ END PROGRAM
 PROGRAM	a-s013			0
 FILE	E	target/s154/forms/a-s013/main.ts
 class C { x: i32 = 1; }
-export function main(): void { let a: C|null = null; a ??= new C(); }
+export function main(): void { let a: C = new C(); a ??= new C(); }
 END FILE
 END PROGRAM
 PROGRAM	a-s014			0
 FILE	E	target/s154/forms/a-s014/main.ts
 
-export function main(): void { let a: boolean = true; a &&= false; }
+export function main(): void { let a: i32 = 2; a **= 2; }
+END FILE
+END PROGRAM
+PROGRAM	s199-logical-or-string			0
+FILE	E	target/s199/s199-logical-or-string/main.ts
+export function main(): void { let s: string = ""; s ||= "d"; }
 END FILE
 END PROGRAM
 PROGRAM	a-s015			0
@@ -8760,11 +8765,6 @@ END PROGRAM
 PROGRAM	s155-readonly-nullish	TS2540		0
 FILE	E	target/s155/s155-readonly-nullish/main.ts
 class N {} class A { readonly s: N | null = null; } export function main(): void { const a: A = new A(); a.s ??= new N(); }
-END FILE
-END PROGRAM
-PROGRAM	s155-mutable-nullish			0
-FILE	E	target/s155/s155-mutable-nullish/main.ts
-class N {} class A { s: N | null = null; } export function main(): void { const a: A = new A(); a.s ??= new N(); }
 END FILE
 END PROGRAM
 PROGRAM	s155-optional-field			0

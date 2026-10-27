@@ -249,7 +249,7 @@ pub enum Divergence {
     /// No lowering is decided for this operator or expression form.
     NonPlaceAssignmentTargetForm,
     /// No lowering is decided for this operator or expression form.
-    LogicalOrPowerAssignmentForm,
+    PowerAssignmentForm,
     /// A lambda captures const locals only; a function expression binds its own this.
     FunctionExpressionForm,
     /// No lowering is decided for this operator or expression form.
@@ -906,7 +906,7 @@ pub enum Divergence {
     NullishNonNullable,
     /// An optional-chain test on a non-nullable value.
     OptionalChainNonNullable,
-    /// A nullish assignment.
+    /// A nullish assignment to a non-nullable place.
     NullishAssignment,
     /// A non-place nullish receiver in an initializer.
     NonPlaceNullishInitializer,
@@ -1170,7 +1170,7 @@ impl Divergence {
         Divergence::CollectionCallbackTypeMismatchForm,
         Divergence::PrivateMemberAssignmentForm,
         Divergence::NonPlaceAssignmentTargetForm,
-        Divergence::LogicalOrPowerAssignmentForm,
+        Divergence::PowerAssignmentForm,
         Divergence::FunctionExpressionForm,
         Divergence::NonNullAssertionExpressionForm,
         Divergence::ThisInParameterDefaultArrow,

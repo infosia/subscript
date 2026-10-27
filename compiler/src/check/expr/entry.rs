@@ -553,6 +553,14 @@ impl<'p> Checker<'p> {
         }
         let mut prefix = crate::check::SyntheticPrefix::default();
         if let ast::Expr::Assign(assign) = root {
+            if let Some(logical) = super::logical_assign::LogicalAssign::of(assign.op) {
+                return self.check_logical_assign_statement(
+                    assign,
+                    logical,
+                    fx,
+                    self.pos(root.span()),
+                );
+            }
             let checked =
                 self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
             self.end_shared_narrowing(&checked, fx);

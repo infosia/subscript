@@ -192,6 +192,10 @@ fn readonly_assignment_guards_precede_unsupported_write_forms() {
     }
     let source = "class N {} class A { readonly s: N | null = null; } export function main(): void { const a: A = new A(); a.s ??= new N(); }";
     assert!(reject(source, "readonly")[0].divergence.is_none());
-    reject(&source.replace("readonly ", ""), "assignment operator");
+    assert!(check_program(&[SourceFile::entry(
+        "main.ts",
+        source.replace("readonly ", "")
+    )])
+    .is_ok());
     reject("class A { readonly x: i32 = 1; constructor() { this.x **= 2; } } export function main(): void {}", "assignment operator");
 }

@@ -511,9 +511,9 @@ pub(super) const FUNCTIONEXPRESSIONFORM: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 15,
 };
 
-pub(super) const LOGICALORPOWERASSIGNMENTFORM: DivergenceEntry = DivergenceEntry {
-    ts: "export function main(): void { let a: boolean = true; a &&= false; }",
-    subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",
+pub(super) const POWERASSIGNMENTFORM: DivergenceEntry = DivergenceEntry {
+    ts: "export function main(): void { let a: i32 = 2; a **= 2; }",
+    subscript: "no equivalent; use Math.pow",
     why: "No lowering is decided for this operator or expression form.",
     collision: "C24", // row 18,
 };

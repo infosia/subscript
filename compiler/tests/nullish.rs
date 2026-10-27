@@ -110,18 +110,22 @@ fn optional_call_is_legal_in_a_for_update_clause() {
 }
 
 #[test]
-fn nullish_assignment_stays_rejected() {
-    let source = "class Box {}\nfunction run(x: Box | null): void { x ??= new Box(); }\n";
+fn nullish_assignment_on_a_non_nullable_place_renders_its_block() {
+    let source = "class Box {}\nfunction run(x: Box): void { x ??= new Box(); }\n";
     let files = [SourceFile::new("test.ts", source)];
     let result = check_program(&files).expect_err("nullish assignment must fail");
     assert_eq!(result[0].code, RuleCode::S100);
     assert_eq!(
         result[0].message,
-        "assignment operator outside the decided surface"
+        "the left operand of `??=` has type `Box`, which is not nullable"
     );
     let rendered = render_diagnostics(&files, &result);
     assert!(rendered.contains("= TypeScript accepts:"), "{rendered}");
     assert!(rendered.contains("a ??= new Box();"), "{rendered}");
+    // Control: a nullable place checks (compiler.md §199).
+    let nullable = "class Box {}\nfunction run(x: Box | null): void { x ??= new Box(); }\n";
+    check_program(&[SourceFile::new("test.ts", nullable)])
+        .expect("nullish assignment to a nullable place must check");
 }
 
 #[test]

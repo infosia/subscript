@@ -333,6 +333,69 @@ pub(super) fn compound_assignment_evaluates_the_target_base_once() {
     );
 }
 
+pub(super) fn logical_assignment_evaluates_each_operand_once() {
+    // compiler.md §199: a non-place receiver or index evaluates once in
+    // statement and value position, an accessor and an index signature
+    // read once, and the right operand runs only when the write runs.
+    // Cost: one program on two tiers.
+    assert_tiers_print(
+        r#"class Box { v: i32; constructor(v: i32) { this.v = v; } }
+let made: i32 = 0;
+function make(v: i32): Box { made += 1; return new Box(v); }
+class Holder {
+  cache: Box | null = null;
+  static shared: Box | null = null;
+  stored: Box | null = null;
+  on: boolean = false;
+  get item(): Box | null { return this.stored; }
+  set item(value: Box | null) { this.stored = value; }
+  static flagStore: boolean = false;
+  static get flag(): boolean { return Holder.flagStore; }
+  static set flag(value: boolean) { Holder.flagStore = value; }
+}
+class Table {
+  [index: i32]: Box | null;
+  cells: (Box | null)[] = [null, null];
+  get(index: i32): Box | null { return this.cells[index]; }
+  set(index: i32, value: Box | null): void { this.cells[index] = value; }
+}
+let picks: i32 = 0;
+function pick(h: Holder): Holder { picks += 1; return h; }
+let idx: i32 = 0;
+function at(i: i32): i32 { idx += 1; return i; }
+let g: Box | null = null;
+export function main(): void {
+  const h = new Holder();
+  const a = (pick(h).cache ??= make(1));
+  const b = (pick(h).cache ??= make(2));
+  print(`${a.v} ${b.v} ${picks} ${made}`);
+  const xs: (Box | null)[] = [null, null];
+  const c = (xs[at(1)] ??= make(3));
+  const d = (xs[at(1)] ??= make(4));
+  print(`${c.v} ${d.v} ${idx} ${made}`);
+  Holder.shared ??= make(5);
+  Holder.shared ??= make(6);
+  print(`${Holder.shared.v} ${made}`);
+  g ??= make(7);
+  print(`${g.v} ${made}`);
+  pick(h).item ??= make(8);
+  pick(h).item ??= make(9);
+  print(`${h.item?.v ?? -1} ${picks} ${made}`);
+  Holder.flag ||= true;
+  Holder.flag &&= false;
+  print(`${Holder.flag}`);
+  const t = new Table();
+  t[at(0)] ??= make(10);
+  t[at(0)] ??= make(11);
+  print(`${t[0]?.v ?? -1} ${idx} ${made}`);
+  let on: boolean = (h.on ||= true);
+  print(`${on} ${h.on}`);
+}
+"#,
+        "1 1 2 1\n3 3 2 2\n5 3\n7 4\n8 4 5\nfalse\n10 4 6\ntrue true\n",
+    );
+}
+
 pub(super) fn fixed_array_literal_elements_run_left_to_right() {
     assert_order(
         "export function main(): void {\n  const fa: FixedArray<i32, 2> = [mkL(), pick ? mkR() : 0];\n  print(`${log}:${fa[0]}${fa[1]}`);\n}\n",
