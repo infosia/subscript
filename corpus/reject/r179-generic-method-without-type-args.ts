@@ -1,16 +1,16 @@
 // corpus: reject/r179-generic-method-without-type-args
-// purpose: Rejects a generic method call that supplies no type arguments.
+// purpose: Rejects a generic method call whose type parameter has no candidate.
 // exercises: generic-method, type-arguments
-// questions: §82.4, §64
+// questions: §82.4, §64, compiler.md §197
 // tsc: accepts
-// expected-error: S100 at the method name
+// expected-error: S100, cannot infer type parameter `T` of `Box.empty`: no candidate
 class Box {
-  identity<T>(value: T): T {
-    return value;
+  empty<T>(): T[] {
+    return [];
   }
 }
 
 export function main(): void {
   const box: Box = new Box();
-  print(`${box.identity(1)}`);
+  print(`${box.empty().length}`);
 }

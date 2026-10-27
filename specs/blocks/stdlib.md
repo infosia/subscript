@@ -702,7 +702,8 @@ for the accepted subset, `tsc` sees the ES2022 lib).
 `Map<K, V>` and `Set<K>` are **reference classes** (heap, Context
 memory, manual lifetime — C2's plain-`class` side), monomorphized on
 first use exactly as `a12`'s generic value class is. `new Map<K, V>()`
-allocates; `Context.free` frees; `Context.collect()` reclaims an unreachable
+allocates *(`new Map()` with a contextual `Map<K, V>` infers `K` and
+`V`: `compiler.md` §197, 2026-10-27)*; `Context.free` frees; `Context.collect()` reclaims an unreachable
 one. The `K`/`V` monomorphization means there is no boxing and no
 type erasure: a `Map<i32, Vec3>` stores `i32` keys and `Vec3` values
 inline.
