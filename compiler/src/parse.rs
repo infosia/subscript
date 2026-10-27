@@ -10,6 +10,8 @@ use crate::diag::{Diagnostic, Pos};
 use crate::provenance;
 use crate::SourceFile;
 
+pub(crate) mod parameter_property;
+
 /// One parsed source file.
 #[derive(Clone)]
 pub(crate) struct ParsedFile {
@@ -195,7 +197,10 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         let parsed = parser.parse_module();
         let mut errors = parser.take_errors();
         match parsed {
-            Ok(module) => {
+            Ok(mut module) => {
+                if !source.dts {
+                    parameter_property::lower_module(&mut module);
+                }
                 if let Some(err) = errors.drain(..).next() {
                     let pos = lookup(&source_map, &source.name, err.span());
                     diags.push(parser_diagnostic(&err, pos));

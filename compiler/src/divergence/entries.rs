@@ -308,10 +308,10 @@ impl Divergence {
             }
             Divergence::GenericSourceAliasForm => surface_forms::GENERICSOURCEALIASFORM,
             Divergence::EnumStringMemberNameForm => surface_forms::ENUMSTRINGMEMBERNAMEFORM,
-            Divergence::ConstructorParameterPropertyForm => {
-                surface_forms::CONSTRUCTORPARAMETERPROPERTYFORM
-            }
             Divergence::FieldTypeWithoutInitializer => surface_forms::FIELDTYPEWITHOUTINITIALIZER,
+            Divergence::ParameterPropertyTypeAnnotation => {
+                surface_forms::PARAMETERPROPERTYTYPEANNOTATION
+            }
             Divergence::IdentifierFieldName => surface_forms::IDENTIFIERFIELDNAME,
             Divergence::GeneratorMethodForm => surface_forms::GENERATORMETHODFORM,
             Divergence::SwitchDiscriminantKindForm => surface_forms::SWITCHDISCRIMINANTKINDFORM,

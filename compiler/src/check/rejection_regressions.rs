@@ -169,7 +169,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-unassigned-exit-witness-2",
             "nullable-member",
             "enum-string-value",
-            "constructor-parameter-property-witness-2",
             "optional-parameter-witness-2",
             "default-export-declaration-witness-2",
             "default-export-declaration-witness-3",
@@ -193,7 +192,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-unassigned-exit-witness-3",
             "nullable-member-witness-2",
             "enum-string-value-witness-2",
-            "constructor-parameter-property-witness-3",
             "optional-parameter-witness-3",
             "default-export-declaration-witness-4",
             "default-export-declaration-witness-5",
@@ -217,7 +215,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-unassigned-exit-witness-4",
             "nullable-member-witness-3",
             "enum-string-value-witness-3",
-            "constructor-parameter-property-witness-4",
             "optional-parameter-witness-4",
             "default-export-declaration-witness-6",
             "default-export-declaration-witness-7",
@@ -241,7 +238,6 @@ fn first_diagnostics_and_switch_facts() {
             "field-assignment-nested-unassigned-exit-witness-5",
             "nullable-member-witness-4",
             "enum-string-value-witness-4",
-            "constructor-parameter-property-witness-5",
             "optional-parameter-witness-5",
             "default-export-declaration-witness-8",
             "default-export-declaration-witness-9",
@@ -308,17 +304,13 @@ fn first_diagnostics_and_switch_facts() {
 }
 
 #[test]
-fn rejected_parameter_properties_bind_poisoned_parameter_names() {
+fn parameter_properties_bind_their_parameter_names() {
     for source in [
         "class C { constructor(public x:f64) { print(`${x}`); } }",
         "class C { constructor(public x:f64, y:i32) { print(`${x}${y}`); } }",
         "class C { constructor(public x:f64=1.0) { print(`${x}`); } }",
     ] {
-        let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
-        assert_eq!(diagnostics.len(), 1, "{source}: {diagnostics:?}");
-        assert_eq!(
-            diagnostics[0].divergence,
-            Some(crate::divergence::Divergence::ConstructorParameterPropertyForm)
-        );
+        check_program(&[SourceFile::entry("main.ts", source)])
+            .unwrap_or_else(|diagnostics| panic!("{source}: {diagnostics:?}"));
     }
 }

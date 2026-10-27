@@ -362,12 +362,12 @@ pub enum Divergence {
     SourceAliasNotLiteralUnionForm,
     /// No lowering is decided for transparent or generic aliases, or repeated literal members.
     GenericSourceAliasForm,
-    /// No lowering is decided for string-literal enum member names or constructor parameter properties.
+    /// No lowering is decided for string-literal enum member names.
     EnumStringMemberNameForm,
-    /// No lowering is decided for string-literal enum member names or constructor parameter properties.
-    ConstructorParameterPropertyForm,
     /// Initializer inference does not infer a field type from constructor assignments.
     FieldTypeWithoutInitializer,
+    /// A parameter-property field takes its type from the annotation, not from the default.
+    ParameterPropertyTypeAnnotation,
     /// Field names must be identifiers.
     IdentifierFieldName,
     /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
@@ -1228,8 +1228,8 @@ impl Divergence {
         Divergence::SourceAliasNotLiteralUnionForm,
         Divergence::GenericSourceAliasForm,
         Divergence::EnumStringMemberNameForm,
-        Divergence::ConstructorParameterPropertyForm,
         Divergence::FieldTypeWithoutInitializer,
+        Divergence::ParameterPropertyTypeAnnotation,
         Divergence::IdentifierFieldName,
         Divergence::GeneratorMethodForm,
         Divergence::SwitchDiscriminantKindForm,

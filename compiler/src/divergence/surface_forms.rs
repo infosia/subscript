@@ -136,17 +136,17 @@ pub(super) const FIELDTYPEWITHOUTINITIALIZER: DivergenceEntry = DivergenceEntry 
     collision: "compiler.md §156",
 };
 
-pub(super) const CONSTRUCTORPARAMETERPROPERTYFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class A { constructor(public x:i32) {} }\nexport function main(): void {  }",
-    subscript: "no equivalent; write an identifier member or a field and constructor assignment",
-    why: "No lowering is decided for string-literal enum member names or constructor parameter properties.",
-    collision: "C24", // row 8,
+pub(super) const PARAMETERPROPERTYTYPEANNOTATION: DivergenceEntry = DivergenceEntry {
+    ts: "class C { constructor(public count = 0) {} }\nexport function main(): void {}",
+    subscript: "class C { constructor(public count: i32 = 0) {} }\nexport function main(): void {}",
+    why: "A field type comes from its declaration before the checker infers a default, so a parameter property needs an annotation.",
+    collision: "compiler.md §198",
 };
 
 pub(super) const ENUMSTRINGMEMBERNAMEFORM: DivergenceEntry = DivergenceEntry {
     ts: "enum E { \"a\"=1 }\nexport function main(): void {  }",
-    subscript: "no equivalent; write an identifier member or a field and constructor assignment",
-    why: "No lowering is decided for string-literal enum member names or constructor parameter properties.",
+    subscript: "no equivalent; write an identifier member",
+    why: "No lowering is decided for string-literal enum member names.",
     collision: "C24", // row 8,
 };
 

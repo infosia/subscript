@@ -1947,13 +1947,6 @@ FILE	A	target/s154/forms/wire-alias-nested-constructor-parameter/mirror.d.ts
 type W_class_shape_719=CEnum<{a:1}>; declare class A_class_shape_719 { constructor(x:FixedArray<W_class_shape_719,2>); }
 END FILE
 END PROGRAM
-PROGRAM	constructor-parameter-property			0
-FILE	E	target/s154/forms/constructor-parameter-property/main.ts
-
-class A { constructor(public x:i32) {} }
-export function main(): void {  }
-END FILE
-END PROGRAM
 PROGRAM	duplicate-numeric-index-signature	TS2374		0
 FILE	E	target/s154/forms/duplicate-numeric-index-signature/main.ts
 
@@ -7648,12 +7641,6 @@ export {};
 enum Color { Red="red0" } const c:Color=Color.Red; print(c);
 END FILE
 END PROGRAM
-PROGRAM	constructor-parameter-property-witness-2			0
-FILE	E	target/s154/forms/constructor-parameter-property-witness-2/main.ts
-export {};
-class C { constructor(public x:f64) {} } const c:C=new C(0.0);
-END FILE
-END PROGRAM
 PROGRAM	optional-parameter-witness-2			0
 FILE	E	target/s154/forms/optional-parameter-witness-2/main.ts
 export {};
@@ -7805,12 +7792,6 @@ PROGRAM	enum-string-value-witness-2			0
 FILE	E	target/s154/forms/enum-string-value-witness-2/main.ts
 export {};
 enum Color { Red="red1" } const c:Color=Color.Red; print(c);
-END FILE
-END PROGRAM
-PROGRAM	constructor-parameter-property-witness-3			0
-FILE	E	target/s154/forms/constructor-parameter-property-witness-3/main.ts
-export {};
-class C { constructor(public x:f64) {} } const c:C=new C(1.0);
 END FILE
 END PROGRAM
 PROGRAM	optional-parameter-witness-3			0
@@ -7966,12 +7947,6 @@ export {};
 enum Color { Red="red2" } const c:Color=Color.Red; print(c);
 END FILE
 END PROGRAM
-PROGRAM	constructor-parameter-property-witness-4			0
-FILE	E	target/s154/forms/constructor-parameter-property-witness-4/main.ts
-export {};
-class C { constructor(public x:f64) {} } const c:C=new C(2.0);
-END FILE
-END PROGRAM
 PROGRAM	optional-parameter-witness-4			0
 FILE	E	target/s154/forms/optional-parameter-witness-4/main.ts
 export {};
@@ -8123,12 +8098,6 @@ PROGRAM	enum-string-value-witness-4			0
 FILE	E	target/s154/forms/enum-string-value-witness-4/main.ts
 export {};
 enum Color { Red="red3" } const c:Color=Color.Red; print(c);
-END FILE
-END PROGRAM
-PROGRAM	constructor-parameter-property-witness-5			0
-FILE	E	target/s154/forms/constructor-parameter-property-witness-5/main.ts
-export {};
-class C { constructor(public x:f64) {} } const c:C=new C(3.0);
 END FILE
 END PROGRAM
 PROGRAM	optional-parameter-witness-5			0
@@ -8827,6 +8796,12 @@ END PROGRAM
 PROGRAM	s156-constructor-field-type			0
 FILE	E	main.ts
 class C { x; constructor() { this.x = 1; } }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s198-parameter-property-type			0
+FILE	E	main.ts
+class C { constructor(public count = 0) {} }
 export function main(): void {}
 END FILE
 END PROGRAM

@@ -604,6 +604,10 @@ impl<'p> Checker<'p> {
                     ) {
                         continue;
                     }
+                    // §198: the constructor parameter of a parameter-property
+                    // field reports the diagnostics of the shared annotation.
+                    let parameter_property =
+                        crate::parse::parameter_property::declares_field(class, prop);
                     let is_defaulted =
                         is_descriptor && prop.is_optional && prop.value.is_some() && !prop.definite;
                     if is_descriptor {
@@ -638,7 +642,7 @@ impl<'p> Checker<'p> {
                                 );
                             }
                         }
-                    } else if prop.is_optional {
+                    } else if prop.is_optional && !parameter_property {
                         let pos = self.pos(prop.span);
                         self.reject_subset(
                             RejectionSite::InstanceFieldOptional,
@@ -652,9 +656,21 @@ impl<'p> Checker<'p> {
                             let allow_wire =
                                 self.in_boundary && self.boundary_classes.contains(&id);
                             self.allow_wire_alias_boundary = allow_wire;
+                            let diagnostics_before = self.diags.len();
                             let ty = self.resolve_type(&ann.type_ann);
+                            if parameter_property {
+                                self.diags.truncate(diagnostics_before);
+                            }
                             self.allow_wire_alias_boundary = false;
                             ty
+                        }
+                        None if parameter_property => {
+                            self.reject_subset(
+                                RejectionSite::ParameterPropertyTypeAnnotation,
+                                "a parameter property requires a type annotation",
+                                pos.clone(),
+                            );
+                            Type::Error
                         }
                         None => {
                             if prop.value.is_none() {
@@ -809,14 +825,9 @@ impl<'p> Checker<'p> {
                                 }
                                 params.push(resolved);
                             }
-                            ast::ParamOrTsParamProp::TsParamProp(pp) => {
-                                let pos = self.pos(pp.span);
-                                self.reject_subset(
-                                    RejectionSite::ConstructorParameterProperty,
-                                    "constructor parameter properties are not decided",
-                                    pos,
-                                );
-                            }
+                            // §198: the front end lowers each parameter property
+                            // to a parameter, a field, and an assignment.
+                            ast::ParamOrTsParamProp::TsParamProp(_) => {}
                         }
                     }
                     self.class_sigs[id.0].ctor = Some(params);

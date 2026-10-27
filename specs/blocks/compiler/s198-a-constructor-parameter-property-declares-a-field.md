@@ -35,7 +35,12 @@ decided").
    (TS2729).
 5. A field and a parameter property with the same name are rejected
    (S017), as `tsc` rejects them (TS2300).
-6. The form has no run-time cost. It lowers to the field and the
+6. A parameter property needs a type annotation. Without one it is
+   rejected (S100) with "a parameter property requires a type
+   annotation". `tsc` accepts `constructor(public count = 0)` and
+   takes the type of the default; the field type comes from the
+   declaration before the checker infers the default.
+7. The form has no run-time cost. It lowers to the field and the
    assignment that a program writes by hand.
 
 ### 198.2 Acceptance

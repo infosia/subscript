@@ -872,6 +872,11 @@ impl DiagnosticSink {
         self.0.borrow().len()
     }
 
+    /// Drops every diagnostic after the first `len`.
+    fn truncate(&self, len: usize) {
+        self.0.borrow_mut().truncate(len);
+    }
+
     fn take(&self) -> Vec<Diagnostic> {
         std::mem::take(&mut *self.0.borrow_mut())
     }

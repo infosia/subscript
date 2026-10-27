@@ -132,7 +132,6 @@ ContextAffineInstanceField	context-affine-instance-field	S100	Worker, Inbox, and
 ValueFieldOutsideWhitelist	value-field-outside-whitelist	S100	field type `string` is outside the value-class whitelist (sized numerics, boolean, value classes, FixedArray, enums)
 DescriptorConstructor	descriptor-constructor	S100	descriptor classes cannot declare constructors
 WireAliasNestedConstructorParameter	wire-alias-nested-constructor-parameter	S100	wire-mapped aliases are supported only as direct mirror-constructor parameters or array-pair elements; parameter `x` nests one inside another boundary type
-ConstructorParameterProperty	constructor-parameter-property	S100	constructor parameter properties are not decided
 DuplicateNumericIndexSignature	duplicate-numeric-index-signature	S100	a class can declare at most one index signature
 ClassIndexSignatureCount	class-index-signature-count	S100	a class can declare at most one index signature
 ClassIndexSignatureNonReference	class-index-signature-non-reference	S100	only reference classes can declare an index signature
@@ -1189,7 +1188,6 @@ FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-w
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-2	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value	S100	enum members must have integer literal values
-ConstructorParameterProperty	constructor-parameter-property-witness-2	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-2	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-2	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-2	S100	only named imports are in the decided surface
@@ -1215,7 +1213,6 @@ FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-w
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-3	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-2	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-2	S100	enum members must have integer literal values
-ConstructorParameterProperty	constructor-parameter-property-witness-3	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-3	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-4	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-4	S100	only named imports are in the decided surface
@@ -1241,7 +1238,6 @@ FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-w
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-4	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-3	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-3	S100	enum members must have integer literal values
-ConstructorParameterProperty	constructor-parameter-property-witness-4	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-4	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-6	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-6	S100	only named imports are in the decided surface
@@ -1267,7 +1263,6 @@ FieldAssignmentNestedEveryNormalExit	field-assignment-nested-every-normal-exit-w
 FieldAssignmentNestedUnassignedExit	field-assignment-nested-unassigned-exit-witness-5	S100	field `x` of `C` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 NullableMember	nullable-member-witness-4	S011	`C | null` may be null here; narrow with a null check first
 EnumStringValue	enum-string-value-witness-4	S100	enum members must have integer literal values
-ConstructorParameterProperty	constructor-parameter-property-witness-5	S100	constructor parameter properties are not decided
 OptionalParameter	optional-parameter-witness-5	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-8	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-8	S100	only named imports are in the decided surface
@@ -1378,6 +1373,7 @@ OptionalFunctionTypeParameter	s155-optional-field	S012	optional parameters in fu
 OptionalFunctionTypeParameter	s155-optional-initialized-field	S012	optional parameters in function types are not supported (C7)
 InitializerTypeCycle	s156-cycle	S100	initializer type depends on its own undecided type
 FieldTypeWithoutInitializer	s156-constructor-field-type	S100	fields without an initializer require a type annotation
+ParameterPropertyTypeAnnotation	s198-parameter-property-type	S100	a parameter property requires a type annotation
 UnassignedFieldTypeWithoutInitializer	s156-unassigned-field-type	S100	fields without an initializer require a type annotation
 StaticFieldTypeWithoutInitializer	s156-static-field-type	S100	static fields without an initializer require a type annotation
 FunctionValueParameterAnnotationNeeded	s156-function-value-parameter	S100	avoid a recursive function value in the parameter default

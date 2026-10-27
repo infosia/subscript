@@ -1,6 +1,6 @@
 # A constructor parameter property declares a field — `compiler.md` §198
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `27093316`
 
@@ -38,3 +38,8 @@ with one name give TS2300.
 `node` prints the `a379` golden. The `a380` golden is derived by
 hand: the C layout of `a: i32`, `b: f64`, `tag: i32` is 24 bytes, and
 the order `tag`, `a`, `b` gives 16.
+
+## Landing
+
+`gate full 2324c28b dirty:20 debug 2925/0/5 release 2922/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 0 exit 0`.

@@ -630,19 +630,6 @@ impl<'p> Checker<'p> {
                     fx.parameter_default = true;
                     let mut hir_params = Vec::new();
                     let mut patterns = Vec::new();
-                    for parameter in &ctor.params {
-                        if let ast::ParamOrTsParamProp::TsParamProp(property) = parameter {
-                            match &property.param {
-                                ast::TsParamPropParam::Ident(binding) => {
-                                    self.bind_error_names(&[binding], &mut fx)
-                                }
-                                ast::TsParamPropParam::Assign(assignment) => self.bind_error_names(
-                                    &pattern::collect_names(&assignment.left),
-                                    &mut fx,
-                                ),
-                            }
-                        }
-                    }
                     for (i, param) in ctor
                         .params
                         .iter()

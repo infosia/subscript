@@ -518,10 +518,6 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::WireAliasNestedConstructorParameter),
     ),
-    Self::ConstructorParameterProperty => (
-        RuleCode::S100,
-        Diverges(Divergence::ConstructorParameterPropertyForm),
-    ),
     Self::ClassIndexSignatureCount => (
         RuleCode::S100,
         Diverges(Divergence::ClassIndexSignatureCount),
@@ -1199,6 +1195,10 @@ rejection_classes! {
     Self::FieldTypeWithoutInitializer => (
         RuleCode::S100,
         Diverges(Divergence::FieldTypeWithoutInitializer),
+    ),
+    Self::ParameterPropertyTypeAnnotation => (
+        RuleCode::S100,
+        Diverges(Divergence::ParameterPropertyTypeAnnotation),
     ),
     Self::UnassignedFieldTypeWithoutInitializer => (RuleCode::S100, TscRejects),
     Self::StaticFieldTypeWithoutInitializer => (RuleCode::S100, TscRejects),

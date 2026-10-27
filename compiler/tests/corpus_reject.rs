@@ -131,6 +131,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
+    (
+        "r442-parameter-property-read-by-field-initializer.ts",
+        RuleCode::S100,
+        8,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
