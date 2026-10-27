@@ -201,7 +201,8 @@ Corpus:
 3. The left operand evaluates once. The right operand evaluates
    only when the left is `null`.
 4. `??=` keeps its S100, with a divergence block (`tsc` accepts;
-   C7). *(Block added 2026-09-02 after the review.)*
+   C7). *(Block added 2026-09-02 after the review.)* *(Superseded 2026-10-27 by §199: `??=` is a tested
+   assignment.)*
 5. `??` establishes no narrowing outside itself.
 
 `?.`:
