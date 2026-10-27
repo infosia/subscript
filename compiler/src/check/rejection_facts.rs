@@ -40,9 +40,11 @@ impl super::Checker<'_> {
 
     /// Adds the `default` arm that ends each tail switch over every member
     /// of a source enum, in a function that returns `ret` (§200.1 rules 1,
-    /// 2, and 2a). The arm traps with `unreachable-reached` at the
+    /// 2, 2a, and 2b). The arm traps with `unreachable-reached` at the
     /// `switch`. A switch is in tail position when the end of the body
-    /// follows its end and no statement runs between them.
+    /// follows its end and no statement runs between them. A trap runs
+    /// no finalizer, so a `finally` block or a dispose hook does not end
+    /// tail position.
     pub(super) fn end_tail_enum_switches(&self, ret: &crate::types::Type, body: &mut [hir::Stmt]) {
         if matches!(
             self.apparent_type(ret),
@@ -79,18 +81,17 @@ impl super::Checker<'_> {
                 self.end_tail_switch(body);
                 self.end_tail_switch(handler);
             }
-            // A finalizer or a dispose hook runs after the body, so only
-            // the finalizer ends in tail position.
             hir::Stmt::Using {
-                bindings,
                 body,
                 finalizer,
+                bindings: _,
                 pos: _,
-            } => match finalizer {
-                Some(finalizer) => self.end_tail_switch(finalizer),
-                None if bindings.is_empty() => self.end_tail_switch(body),
-                None => {}
-            },
+            } => {
+                self.end_tail_switch(body);
+                if let Some(finalizer) = finalizer {
+                    self.end_tail_switch(finalizer);
+                }
+            }
             hir::Stmt::Switch { disc, cases, pos } => {
                 if let Some(case) = cases.last_mut() {
                     self.end_tail_switch(&mut case.body);
@@ -105,15 +106,19 @@ impl super::Checker<'_> {
 
     /// The trap arm of a switch over every member of a source enum whose
     /// cases do not complete it normally. The arm is `None` when the
-    /// switch has a `default`, misses a member, or has a case that
-    /// completes it normally.
+    /// switch has a `default`, misses a member, has a case that completes
+    /// it normally, or switches on an enum with no member (§200.1 rule 2b).
     fn covered_enum_switch_arm(
         &self,
         disc: &hir::Expr,
         cases: &[hir::SwitchCase],
         pos: &crate::diag::Pos,
     ) -> Option<hir::SwitchCase> {
-        if cases.iter().any(|case| case.test.is_none())
+        let crate::types::Type::Enum(id) = self.apparent_type(&disc.ty) else {
+            return None;
+        };
+        if self.enums[id.0].members.is_empty()
+            || cases.iter().any(|case| case.test.is_none())
             || !self.source_enum_switch_exhaustive(disc, cases)
             || super::fallthrough::switch_cases_complete_normally(cases)
         {
@@ -133,6 +138,65 @@ impl super::Checker<'_> {
             body: vec![hir::Stmt::Expr(trap)],
             pos: pos.clone(),
         })
+    }
+}
+
+impl super::Checker<'_> {
+    /// True when TypeScript proves that a body returns on each path: each
+    /// switch over every member of a source enum whose cases do not
+    /// complete it normally ends the flow, at any position (§200.2 item
+    /// 5). The body is the checked body that falls through.
+    pub(super) fn ts_return_coverage(&self, body: &[hir::Stmt]) -> bool {
+        let mut body = body.to_vec();
+        self.end_every_enum_switch(&mut body);
+        !super::fallthrough::sequence_can_fall_through(&body)
+    }
+
+    fn end_every_enum_switch(&self, body: &mut [hir::Stmt]) {
+        for statement in body {
+            match statement {
+                hir::Stmt::Block(body)
+                | hir::Stmt::While { body, .. }
+                | hir::Stmt::ForOf { body, .. }
+                | hir::Stmt::GeneratorForOf { body, .. } => self.end_every_enum_switch(body),
+                hir::Stmt::For {
+                    init, step, body, ..
+                } => {
+                    if let Some(init) = init {
+                        self.end_every_enum_switch(std::slice::from_mut(&mut **init));
+                    }
+                    self.end_every_enum_switch(step);
+                    self.end_every_enum_switch(body);
+                }
+                hir::Stmt::If { then, els, .. } => {
+                    self.end_every_enum_switch(then);
+                    if let Some(els) = els {
+                        self.end_every_enum_switch(els);
+                    }
+                }
+                hir::Stmt::Try { body, handler, .. } => {
+                    self.end_every_enum_switch(body);
+                    self.end_every_enum_switch(handler);
+                }
+                hir::Stmt::Using {
+                    body, finalizer, ..
+                } => {
+                    self.end_every_enum_switch(body);
+                    if let Some(finalizer) = finalizer {
+                        self.end_every_enum_switch(finalizer);
+                    }
+                }
+                hir::Stmt::Switch { disc, cases, pos } => {
+                    for case in cases.iter_mut() {
+                        self.end_every_enum_switch(&mut case.body);
+                    }
+                    if let Some(arm) = self.covered_enum_switch_arm(disc, cases, pos) {
+                        cases.push(arm);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 

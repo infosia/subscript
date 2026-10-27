@@ -320,7 +320,11 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.reject_subset(
-                        RejectionSite::FunctionReturnPathMissing,
+                        if self.ts_return_coverage(&body) {
+                            RejectionSite::FunctionReturnCoverage
+                        } else {
+                            RejectionSite::FunctionReturnPathMissing
+                        },
                         "not all paths return a value",
                         pos.clone(),
                     );

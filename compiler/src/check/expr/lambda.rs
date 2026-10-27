@@ -369,7 +369,11 @@ impl<'p> Checker<'p> {
                             && crate::check::fallthrough::sequence_can_fall_through(&out)
                         {
                             self.reject_subset(
-                                RejectionSite::LambdaReturnPathMissing,
+                                if self.ts_return_coverage(&out) {
+                                    RejectionSite::LambdaReturnCoverage
+                                } else {
+                                    RejectionSite::LambdaReturnPathMissing
+                                },
                                 "not all paths return a value",
                                 pos.clone(),
                             );

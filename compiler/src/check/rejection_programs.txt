@@ -723,6 +723,12 @@ FILE	E	target/s154/forms/a-s105/main.ts
 export function main(): void { const f = () => { return 1; }; }
 END FILE
 END PROGRAM
+PROGRAM	a-s106			0
+FILE	E	target/s154/forms/a-s106/main.ts
+enum E { A, B }
+export function main(): void { const f = (x: E): i32 => { switch (x) { case E.A: return 1; case E.B: return 2; } print("after"); }; }
+END FILE
+END PROGRAM
 PROGRAM	a-s107	TS1501		0
 FILE	E	target/s154/forms/a-s107/main.ts
 
@@ -1528,6 +1534,12 @@ END PROGRAM
 PROGRAM	function-return-path-missing	TS2366		0
 FILE	E	target/s154/forms/function-return-path-missing/main.ts
 function f(c:boolean):i32 {if(c)return 1;}
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	function-return-coverage			0
+FILE	E	target/s154/forms/function-return-coverage/main.ts
+enum E {a,b} function f(e:E):i32 {switch(e){case E.a:return 1;case E.b:return 2;} print("after");}
 export function main(): void {  }
 END FILE
 END PROGRAM

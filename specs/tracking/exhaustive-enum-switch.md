@@ -32,3 +32,11 @@ an OS update. §200 changes HIR only, and neither `a22` nor `collect`
 has an enum or a switch. With the load average at 1.97, the perf gate
 alone passed: `cargo test --release -p subscript-benchmarks --test
 perf_gate`, 2 passed, exit 0.
+The owner asked for the perf gate alone after the load fell
+(2026-10-27).
+
+Phase Review fix (§200.3): `gate full 5d6d8878 dirty:17 debug
+2949/0/5 release 2946/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. Two earlier runs of this round stopped at the build step
+(`debug 0/0/0`) on `xcrun` cache warnings after the OS update; the
+owner ran the `xcrun` lookups outside the sandbox.

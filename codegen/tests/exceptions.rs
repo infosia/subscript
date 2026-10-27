@@ -1164,3 +1164,82 @@ export async function main(): Promise<void> {
         "caught\ncaught\n",
     );
 }
+
+const ENUM_SWITCH_PRELUDE: &str = r#"enum Shape {
+  Circle,
+  Square,
+}
+
+@ValueType
+class Wire {
+  shape: Shape = Shape.Circle;
+}
+
+function later(s: Shape): i32 {
+  switch (s) {
+    case Shape.Circle:
+      return 1;
+    case Shape.Square:
+      return 2;
+  }
+  return 3;
+}
+
+function branch(s: Shape, flag: boolean): i32 {
+  if (flag) {
+    switch (s) {
+      case Shape.Circle:
+        return 1;
+      case Shape.Square:
+        return 2;
+    }
+  } else {
+    return 0;
+  }
+}
+
+function guarded(s: Shape): i32 {
+  try {
+    switch (s) {
+      case Shape.Circle:
+        return 1;
+      case Shape.Square:
+        return 2;
+    }
+  } finally {
+    print("finally");
+  }
+}
+
+export function main(): void {
+  const bytes: u8[] = [9, 0, 0, 0];
+  const w = Context.fromBytes<Wire>(bytes, 0);
+  print(`${later(w.shape)} ${branch(w.shape, false)}`);
+"#;
+
+/// §200.1 rules 2 and 2a: a non-member enum value reaches the statement
+/// after a switch that is not in tail position, and traps at a tail
+/// switch, also at the end of a `try` block with a `finally`, whose
+/// finalizer does not run (C6).
+///
+/// Cost: two interpreter runs of one small module; no C compile and no
+/// JIT. Isolated Apple arm64 cost: 0.03 s, excluding the Rust build.
+#[test]
+fn a_non_member_enum_value_traps_only_at_a_tail_switch() {
+    for (call, line, col) in [
+        ("branch(w.shape, true)", 23, 5),
+        ("guarded(w.shape)", 36, 5),
+    ] {
+        let source = format!("{ENUM_SWITCH_PRELUDE}  print(`${{{call}}}`);\n}}\n");
+        let error = interpreted(&sources(&source)).expect_err("the tail switch traps");
+        assert_eq!(error.output(), b"3 0\n", "{call}");
+        let InterpretError::Execution { source, .. } = error else {
+            panic!("{call}: the interpreter keeps the output before the trap");
+        };
+        let InterpretError::Trap { kind, pos, .. } = *source else {
+            panic!("{call}: the interpreter reports a semantic trap");
+        };
+        assert_eq!(kind, "unreachable-reached", "{call}");
+        assert_eq!((pos.line, pos.col), (line, col), "{call}");
+    }
+}

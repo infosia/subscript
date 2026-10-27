@@ -292,6 +292,8 @@ pub enum Divergence {
     TemplateInterpolationKindForm,
     /// The language uses i64 and u64 and has no BigInt.
     BigIntLiteral,
+    /// An exhaustive enum switch ends the return flow only in tail position.
+    LambdaReturnFlowCoverage,
     /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
     GeneratorResultValueWriteForm,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
@@ -388,6 +390,8 @@ pub enum Divergence {
     LocalTypeWithoutInitializerForm,
     /// The language has no undefined value for the function-wide var binding.
     LocalVarDeclarationForm,
+    /// An exhaustive enum switch ends the return flow only in tail position.
+    ReturnFlowCoverage,
     /// A binding needs an initializer because the language has no undefined value.
     ModuleInitializerMissingForm,
     /// The language has no undefined value for the function-wide var binding.
@@ -1188,6 +1192,7 @@ impl Divergence {
         Divergence::GenericFunctionValue,
         Divergence::TemplateInterpolationKindForm,
         Divergence::BigIntLiteral,
+        Divergence::LambdaReturnFlowCoverage,
         Divergence::GeneratorResultValueWriteForm,
         Divergence::GeneratorResultDoneWriteForm,
         Divergence::StringMethodValueForm,
@@ -1236,6 +1241,7 @@ impl Divergence {
         Divergence::GeneratorReturnValue,
         Divergence::LocalTypeWithoutInitializerForm,
         Divergence::LocalVarDeclarationForm,
+        Divergence::ReturnFlowCoverage,
         Divergence::ModuleInitializerMissingForm,
         Divergence::ModuleVarDeclarationForm,
         Divergence::LibConstructorName,

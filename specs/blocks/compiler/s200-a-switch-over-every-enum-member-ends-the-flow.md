@@ -40,7 +40,15 @@ can pass any integer to an exported function.
    not change, so a value that is not a member still reaches
    `return 3;`, as in JavaScript. *(Added 2026-10-27 after the
    implementation round: the first text added the arm to each such
-   switch.)*
+   switch.)* A `finally` block and a `using` dispose hook do not end
+   tail position: a trap runs no finalizer (C6), so the arm adds no
+   path through them. A switch at the end of a `try` block with a
+   `finally`, or at the end of a `using` scope, gets the arm. *(Added
+   2026-10-27 after the Phase Review, MINOR 4.)*
+2b. An enum with no member has no exhaustive switch: rule 1 needs at
+   least one member. *(Added 2026-10-27 after the Phase Review,
+   MINOR 3: `tsc` gives TS2355 for `switch (e) {}` on an empty
+   enum.)*
 3. A switch that is not exhaustive keeps "not all paths return a
    value", as `tsc` keeps TS2366.
 4. A `CEnum` alias switch keeps its own rules (§50).
@@ -56,18 +64,34 @@ can pass any integer to an exported function.
    on the three execution forms, after it prints `before`.
 4. A unit test shows that a switch with one member missing keeps the
    S100, and that a switch with a `default` adds no trap.
-5. `compiler.md` §42.1 cites this section. After rule 1, a
-   default-free switch with a `break` case is the only shape that
-   reached the return-coverage sites, and `tsc` rejects it (TS2366).
-   So `RETURNFLOWCOVERAGE`, `LAMBDARETURNFLOWCOVERAGE`, and their
-   rejection sites are removed; the program gets the `tsc`-rejects
-   text "not all paths return a value". *(Amended 2026-10-27 after the
-   implementation round.)*
+5. `compiler.md` §42.1 cites this section. A default-free switch with
+   a `break` case gets the `tsc`-rejects text "not all paths return a
+   value"; `tsc` gives TS2366. An exhaustive switch whose cases do not
+   complete normally, followed by a statement that can fall off the
+   end, keeps S100 with a divergence block: `tsc` accepts it, because
+   it treats the code after the switch as unreachable, and rule 2a
+   adds no arm there. *(Amended 2026-10-27 after the Phase Review,
+   MINOR 1: the first text said that the `break` case was the only
+   shape.)*
 6. No golden moves.
 
-### 200.3 Open
+### 200.3 Phase Review
 
-1. A switch at the end of a `try` block with a `finally` is not in
-   tail position (rule 2a): the finalizer runs after it. The function
-   keeps S100 "not all paths return a value", as at the pin. `tsc`
-   accepts it, and after rule 1 the diagnostic has no divergence block.
+*(Added 2026-10-27.)* A fresh review of `409a05f5..5d6d8878` gave no
+CRITICAL or MAJOR finding and six MINOR findings. The three execution
+forms and `node` agree on each accepted probe, and each non-member
+probe traps at the switch.
+
+1. MINOR, fixed: an exhaustive switch followed by a statement had no
+   divergence block (acceptance 5).
+2. MINOR, fixed: an empty enum gave an arm (rule 2b).
+3. MINOR, fixed: `try`/`finally` and `using` had different tail rules
+   (rule 2a). This closes the first open item of the contract text.
+4. MINOR, fixed: the new test binary stated no cost.
+
+Open:
+
+1. `tsc` narrows the discriminant before it checks coverage. After
+   `if (f === F.X) { return 0; }`, a switch over the other members
+   gives S100 with no divergence block; `tsc` accepts it. This is the
+   behaviour at the pin.

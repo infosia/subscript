@@ -231,42 +231,109 @@ fn pending_local_splits_on_the_lambda_boundary() {
     rejected("export function main(): void { const read = (): i32 => x; const x: i32 = 4; print(`${read()}`); }", "BlockPendingReadWithoutProgramShadow", Some("DeclarationScope"));
 }
 
+/// The rejection site of the one diagnostic of a rejected probe.
+fn return_flow_site(source: &str) -> RejectionSite {
+    rejection_total::clear_reached();
+    let diagnostics = check_program(&[SourceFile::entry("coverage.ts", source)])
+        .expect_err("the return-flow probe is rejected");
+    let reached = rejection_total::take_reached();
+    assert_eq!(diagnostics.len(), 1, "{source}: {diagnostics:?}");
+    reached
+        .into_iter()
+        .find(|(_, message, pos)| *message == diagnostics[0].message && *pos == diagnostics[0].pos)
+        .expect("the diagnostic carries its rejection site")
+        .0
+}
+
+fn return_flow_probe(body: &str) -> String {
+    format!("enum E {{ A, B }} class D {{ [Symbol.dispose](): void {{ print(\"dispose\"); }} }} function f(e: E): i32 {{ {body} }} export function main(): void {{}}")
+}
+
 #[test]
-fn finally_keeps_the_enum_switch_return_flow() {
+fn finally_and_using_keep_the_enum_switch_return_flow() {
     let switch = "switch (e) { case E.A: return 1; case E.B: return 2; }";
-    let probe = |body: &str| {
-        let source = format!("enum E {{ A, B }} function f(e: E): i32 {{ {body} }} export function main(): void {{}}");
-        check_program(&[SourceFile::entry("coverage.ts", source)]).map(|_| ())
-    };
+    // §200.1 rule 2a: a trap runs no finalizer, so a finally block or a
+    // dispose hook does not end tail position.
     for body in [
         switch.to_owned(),
+        format!("try {{ {switch} }} finally {{ print(\"done\"); }}"),
         format!("try {{ print(\"body\"); }} finally {{ {switch} }}"),
         format!("try {{ {switch} }} catch (error) {{ {switch} }}"),
+        format!("{{ using d = new D(); {switch} }}"),
     ] {
-        probe(&body).unwrap_or_else(|diagnostics| {
-            panic!("an exhaustive enum switch ends the return flow: {body}: {diagnostics:?}")
-        });
+        check_program(&[SourceFile::entry("coverage.ts", return_flow_probe(&body))])
+            .unwrap_or_else(|diagnostics| {
+                panic!("an exhaustive enum switch ends the return flow: {body}: {diagnostics:?}")
+            });
     }
-    // A finalizer runs after the try block, so its switch is not in tail
-    // position (§200.1 rule 2a).
+    // Control: one member missing keeps the rejection at each position.
     let missing = "switch (e) { case E.A: return 1; }";
     for body in [
-        format!("try {{ {switch} }} finally {{ print(\"done\"); }}"),
         missing.to_owned(),
         format!("try {{ {missing} }} finally {{ print(\"done\"); }}"),
         format!("try {{ print(\"body\"); }} finally {{ {missing} }}"),
+        format!("{{ using d = new D(); {missing} }}"),
     ] {
-        rejection_total::clear_reached();
-        let diagnostics =
-            probe(&body).expect_err("a switch that does not end the flow keeps the rejection");
-        let reached = rejection_total::take_reached();
-        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-        assert!(reached.iter().any(|(site, message, pos)| {
-            *site == RejectionSite::FunctionReturnPathMissing
-                && *message == diagnostics[0].message
-                && *pos == diagnostics[0].pos
-        }));
+        assert_eq!(
+            return_flow_site(&return_flow_probe(&body)),
+            RejectionSite::FunctionReturnPathMissing,
+            "{body}"
+        );
     }
+}
+
+#[test]
+fn a_statement_after_an_exhaustive_switch_keeps_the_divergence() {
+    let switch = "switch (e) { case E.A: return 1; case E.B: return 2; }";
+    // §200.2 item 5: TypeScript skips the code after the switch.
+    assert_eq!(
+        return_flow_site(&return_flow_probe(&format!("{switch} print(\"after\");"))),
+        RejectionSite::FunctionReturnCoverage
+    );
+    assert_eq!(
+        return_flow_site(&return_flow_probe(&format!(
+            "if (e === E.A) {{ {switch} print(\"after\"); }} else {{ return 0; }}"
+        ))),
+        RejectionSite::FunctionReturnCoverage
+    );
+    assert_eq!(
+        return_flow_site(&format!(
+            "enum E {{ A, B }} export function main(): void {{ const f = (e: E): i32 => {{ {switch} print(\"after\"); }}; }}"
+        )),
+        RejectionSite::LambdaReturnCoverage
+    );
+    // Control: a break case, a missing member, or a case that completes
+    // normally gives the tsc-rejects site.
+    for switch in [
+        "switch (e) { case E.A: return 1; case E.B: break; }",
+        "switch (e) { case E.A: return 1; }",
+        "switch (e) { case E.A: return 1; case E.B: print(\"b\"); }",
+    ] {
+        for body in [switch.to_owned(), format!("{switch} print(\"after\");")] {
+            assert_eq!(
+                return_flow_site(&return_flow_probe(&body)),
+                RejectionSite::FunctionReturnPathMissing,
+                "{body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_enum_with_no_member_has_no_exhaustive_switch() {
+    // §200.1 rule 2b: tsc gives TS2355 for this body.
+    assert_eq!(
+        return_flow_site(
+            "enum Empty {} function f(e: Empty): i32 { switch (e) {} } export function main(): void {}"
+        ),
+        RejectionSite::FunctionReturnPathMissing
+    );
+    // Control: one member is enough for the arm.
+    check_program(&[SourceFile::entry(
+        "coverage.ts",
+        "enum One { A } function f(e: One): i32 { switch (e) { case One.A: return 1; } } export function main(): void {}",
+    )])
+    .expect("a switch over the one member ends the return flow");
 }
 
 type CheckerObserver = Box<dyn Fn(&super::Checker<'_>)>;
