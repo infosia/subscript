@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -239,3 +239,4 @@ Every section, with its status:
 | §195 | A reference result can be `undefined` | active | [`s195-a-reference-result-can-be-undefined.md`](compiler/s195-a-reference-result-can-be-undefined.md) |
 | §196 | `pop` and `shift` give `undefined` on an empty array | active | [`s196-pop-and-shift-give-undefined-on-an-empty-array.md`](compiler/s196-pop-and-shift-give-undefined-on-an-empty-array.md) |
 | §197 | A generic constructor and a generic method infer their type arguments | active | [`s197-a-generic-constructor-and-method-infer-their-type-arguments.md`](compiler/s197-a-generic-constructor-and-method-infer-their-type-arguments.md) |
+| §198 | A constructor parameter property declares a field | active | [`s198-a-constructor-parameter-property-declares-a-field.md`](compiler/s198-a-constructor-parameter-property-declares-a-field.md) |
