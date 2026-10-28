@@ -14,8 +14,7 @@ interchangeable"), and the checker does not compare the members of `B`
 with the members of `A`. `tsc` 5.9.2 checks the members, and it
 converts a `B` value to `A` because its types are structural. So a
 reader of the source sees a contract that the language does not keep.
-`interface` is already rejected (C24 row 6), so the clause can name
-only a class.
+Rule 1 applies to every clause, whatever it names.
 
 ### 205.1 Rules
 
@@ -40,3 +39,17 @@ only a class.
    clause with two names, with a control: the same class with no
    clause is accepted.
 5. No golden moves.
+
+### 205.3 Phase Review
+
+*(Added 2026-10-28.)* A fresh review of `40cf8887..cc0864f4` gave no
+CRITICAL or MAJOR finding and three MINOR findings.
+
+1. MINOR, realistic, open: a class with `extends` and `implements`
+   reports the `implements` diagnostic before the `extends` diagnostic,
+   which has an earlier column. §156 rule 12 permits this order.
+2. MINOR, fixed: the problem statement said that the clause can name
+   only a class. It can also name an enum, an alias, an unknown name,
+   and a generic instance. Each gets the rule 1 diagnostic.
+3. MINOR, contrived, open: a mirror `declare class Q implements P`
+   gives no diagnostic. bindgen does not write the clause.
