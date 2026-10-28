@@ -336,6 +336,10 @@ impl<'p> Checker<'p> {
         let check_body = satisfied && self.instance_body_is_checked(args, root);
         let sig = self.resolve_fn_sig(&template.function, pos.clone());
         self.fn_sigs.insert(name.clone(), sig);
+        // §207.1 rule 2a: an instance keeps the class body of its template.
+        if let Some(class) = self.local_function_classes.get(key).cloned() {
+            self.local_function_classes.insert(name.clone(), class);
+        }
         self.decide_function_parameters(&name);
         let sig = self.fn_sigs[&name].clone();
         if check_body && self.deciding_type {

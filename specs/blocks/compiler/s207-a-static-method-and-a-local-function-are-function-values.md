@@ -39,6 +39,14 @@ function with a name that only its block can see.
    block that declares it, in the whole block, as in JavaScript: a call
    before the declaration is legal. It can call itself and another
    local function of the same block.
+2a. A lifted local function keeps every fact of the place that
+   declares it that a check of its body reads: the class body that
+   encloses it, for `private` and `#x` member access, and the scope of
+   its block, for the duplicate-declaration rule. Two local functions
+   with one name in one block, or a local function and a local with one
+   name, fail with S017 "duplicate declaration of `f` in one scope", as
+   `tsc` TS2393 and TS2300 do. *(Added 2026-10-28 after the Phase
+   Review, M1 and M2.)*
 3. A local function is a function value, as a module function is. Its C name
    cannot equal the C name of any source declaration, and two local
    functions with one name in different blocks have different C names.
@@ -46,7 +54,11 @@ function with a name that only its block can see.
    enclosing function fails with S100 "local function `f` reads the
    local `k` of its enclosing function". The text names the first such
    read. A type parameter of an enclosing function or class, and a call
-   of a local function that stays in its block, count as reads.
+   of a local function that stays in its block, count as reads. A write
+   to a local counts too, and the text says "writes" for it. In a
+   module-level block, the text says "of its enclosing block". A name
+   that a rejected local declaration (rule 5) binds gives no second
+   diagnostic.
    *(Amended 2026-10-28: the coding agent measured both cases.)* The diagnostic carries a "TypeScript accepts" block. The
    replacement is a `const` lambda.
 5. A local class, enum, type alias, interface, and namespace stay
@@ -75,3 +87,25 @@ function with a name that only its block can see.
 5. `collisions.md` C24 rows 5 and 13 cite this section.
 6. No golden moves. The LIR text snapshot grows by the `a392` section
    only, because `a392` has a generator.
+
+### 207.3 Phase Review
+
+*(Added 2026-10-28.)* A fresh review of `20534f71..88718091` gave two
+MAJOR and four MINOR findings.
+
+1. MAJOR, realistic, fixed: a lifted local function lost the class
+   body that encloses it. In a static method, `function countOf(c:
+   Counter) { return c.count; }` gave "member `count` is private in
+   class `Counter`"; `tsc` accepts it, and `node` runs it. The lift
+   removed each fact of the declaring place. Rule 2a now states what
+   the lifted function keeps. `a393` pins it.
+2. MAJOR, realistic, fixed: the lift moved a local function out of its
+   block before the duplicate-declaration check. Two `function f` in
+   one block were accepted; `tsc` gives TS2393. Rule 2a. `r454` pins
+   it.
+3. MINOR, fixed: a write to a local was reported as a read.
+4. MINOR, fixed: a rejected local type alias or class gave a second
+   diagnostic at the local function that names it.
+5. MINOR, contrived, fixed: in a module-level block, the text named an
+   enclosing function.
+6. MINOR, fixed: a test name still described the old rejection.

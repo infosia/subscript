@@ -100,6 +100,13 @@ impl Checker<'_> {
     }
 
     fn inside_class_body(&self, class: ClassId, fx: &FnCtx) -> bool {
+        if fx.lexical_template.as_ref().is_some_and(|template| {
+            self.instance_arguments
+                .get(&class)
+                .is_some_and(|(key, _)| key == template)
+        }) {
+            return true;
+        }
         fx.lexical_class.is_some_and(|owner| {
             owner == class
                 || matches!(

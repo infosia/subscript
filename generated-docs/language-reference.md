@@ -324,19 +324,19 @@ const n: i32 = zz;
 
 One namespace cannot contain two declarations of the same name.
 
-Pinned corpus: [`corpus/reject/r164-duplicate-static-member-name.ts`](../corpus/reject/r164-duplicate-static-member-name.ts), line 9.
+Pinned corpus: [`corpus/reject/r454-local-function-declared-twice.ts`](../corpus/reject/r454-local-function-declared-twice.ts), line 11.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS2300
-// expected-error: S017 at the second declaration
+// tsc: rejects TS2393
+// expected-error: S017, duplicate declaration of `f` in one scope
 ```
 
 ```ts
-class C {
-  static value: i32 = 1;
-  static value(): i32 {
+    return 1;
+  }
+  function f(): i32 {
     return 2;
   }
 ```

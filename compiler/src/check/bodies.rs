@@ -212,6 +212,21 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Gives `fx` the class body that encloses a moved local function
+    /// (§207.1 rule 2a). A check of its body reads it for `private` and
+    /// `#x` access.
+    pub(crate) fn enter_local_function_class(&self, function: &str, fx: &mut FnCtx) {
+        let Some((file, class)) = self.local_function_classes.get(function) else {
+            return;
+        };
+        let symbol = self.declaration_symbol(*file, class);
+        if let Some(&id) = self.class_ids.get(&symbol) {
+            fx.lexical_class = Some(id);
+        } else if self.generic_classes.contains_key(&symbol) {
+            fx.lexical_template = Some(symbol);
+        }
+    }
+
     /// Checks a function body against its resolved signature and builds
     /// the HIR function. Returns `None` for poisoned signatures.
     pub(crate) fn check_function(
@@ -245,6 +260,9 @@ impl<'p> Checker<'p> {
             self.diags.clone(),
         );
         fx.lexical_class = lexical_class;
+        if lexical_class.is_none() {
+            self.enter_local_function_class(name, &mut fx);
+        }
         fx.frames[0].missing_this_site = missing_this_site;
         fx.frames[0].static_this_class = static_this_class;
         fx.frames[0].is_async = sig.is_async;

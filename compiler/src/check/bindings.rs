@@ -12,6 +12,22 @@ impl<'p> Checker<'p> {
                 continue;
             };
             if let ast::Decl::Fn(function) = declaration {
+                // §207.1 rule 2a: a duplicate local function binds its
+                // name at its declaration, so the later declaration of
+                // the name reports the duplicate. A read before it is a
+                // read of a rejected name.
+                if matches!(
+                    self.prog
+                        .local_functions
+                        .outcomes
+                        .get(&function.ident.span.lo),
+                    Some(crate::parse::local_function::LocalFunctionOutcome::Duplicate)
+                ) {
+                    scope
+                        .rejected_local_names
+                        .insert(function.ident.sym.to_string());
+                    continue;
+                }
                 scope.insert_local(
                     function.ident.sym.to_string(),
                     Local {

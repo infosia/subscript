@@ -29,3 +29,11 @@ module scope. Its hidden name is `[[identity:local:HEX]]f`, where HEX
 encodes the enclosing chain and the same-name ordinal. No source
 identifier contains `[`, and an edit outside the chain does not change
 the name, so a reload keeps the function identity.
+
+Phase Review fix (§207.3): `gate full 88718091 dirty:20 debug
+3005/0/5 release 3002/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. At `88718091`, `a393` gave four S100 "member … is private in
+class `Counter`" texts, and `r454` gave no diagnostic; `tsc` gives
+TS2393 for `r454`, and `node` prints the `a393` golden. The class body
+is the only fact of the declaring place that the checker reads for a
+lifted body: type parameters and `this` are rule 4 reads.

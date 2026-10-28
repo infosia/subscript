@@ -28,6 +28,49 @@ pub(super) fn root_of(key: &str) -> &str {
 }
 
 impl<'p> Checker<'p> {
+    /// compiler.md §207.1 rules 2a and 4: the front end moves each local
+    /// function that reads no binding of an enclosing function, and
+    /// records why each other one stays in its block. Binds the name and
+    /// returns true if the front end has a record for the declaration.
+    fn check_local_function_outcome(&mut self, function: &ast::FnDecl, fx: &mut FnCtx) -> bool {
+        use crate::parse::local_function::LocalFunctionOutcome;
+        let Some(outcome) = self
+            .prog
+            .local_functions
+            .outcomes
+            .get(&function.ident.span.lo)
+        else {
+            return false;
+        };
+        let name = function.ident.sym.as_ref();
+        let local = Local {
+            annotated: false,
+            ty: Type::Error,
+            mutable: false,
+            async_origins: HashSet::new(),
+            caught: false,
+            function_value_required: None,
+        };
+        match outcome {
+            LocalFunctionOutcome::Duplicate => {
+                let pos = self.pos(function.ident.span);
+                self.declare_local(name, local, pos, fx);
+            }
+            LocalFunctionOutcome::Poisoned => {
+                self.declare_in_context(name, local, fx);
+            }
+            LocalFunctionOutcome::Reads(read) => {
+                self.declare_in_context(name, local, fx);
+                self.reject_subset(
+                    RejectionSite::LocalFunctionReadsEnclosingBinding,
+                    format!("local function `{}` {}", read.function, read.read),
+                    self.prog.pos_at(read.at),
+                );
+            }
+        }
+        true
+    }
+
     /// Checks one statement into `out`. Returns true when the statement
     /// always terminates the enclosing flow (return/break/continue).
     pub(crate) fn check_stmt(
@@ -65,6 +108,11 @@ impl<'p> Checker<'p> {
                     false
                 }
                 ast::Stmt::Decl(other) => {
+                    if let ast::Decl::Fn(function) = other {
+                        if self.check_local_function_outcome(function, fx) {
+                            return false;
+                        }
+                    }
                     let pos = self.pos(other.span());
                     for name in super::exports::declaration_names(other) {
                         self.declare_in_context(
@@ -79,24 +127,6 @@ impl<'p> Checker<'p> {
                             },
                             fx,
                         );
-                    }
-                    // compiler.md §207.1 rule 4: the front end moves each
-                    // local function that reads no binding of an enclosing
-                    // function, and records the first read of each other.
-                    if let ast::Decl::Fn(function) = other {
-                        if let Some(read) =
-                            self.prog.local_function_reads.get(&function.ident.span.lo)
-                        {
-                            self.reject_subset(
-                                RejectionSite::LocalFunctionReadsEnclosingBinding,
-                                format!(
-                                    "local function `{}` reads {} of its enclosing function",
-                                    read.function, read.read
-                                ),
-                                self.prog.pos_at(read.at),
-                            );
-                            return false;
-                        }
                     }
                     self.reject_subset(
                         match other {

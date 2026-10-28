@@ -17,11 +17,20 @@
 //! two local functions with one name never share `K`, and an edit in
 //! another declaration leaves `K` unchanged.
 //!
-//! A local function that reads a binding of an enclosing function stays
-//! in its block. The result records the first such read, and the
-//! checker rejects the declaration with it (§207.1 rule 4). A call to a
-//! local function that stays in its block is such a read, so the rule
-//! applies until no function changes.
+//! A moved function keeps each fact of its declaring place that a check
+//! of its body reads (§207.1 rule 2a). The result names the class body
+//! that encloses it, for `private` and `#x` member access. A local
+//! function whose name a declaration of its block or a parameter also
+//! binds stays in its block, so the checker reports the duplicate
+//! declaration in that scope.
+//!
+//! A local function that reads or writes a binding of an enclosing
+//! function stays in its block. The result records the first such read,
+//! and the checker rejects the declaration with it (§207.1 rule 4). A
+//! call to a local function that stays in its block is such a read, so
+//! the rule applies until no function changes. A name that a rejected
+//! local declaration binds is not a read: the function stays in its
+//! block with no diagnostic of its own, because the declaration has one.
 //!
 //! The walk does not enter a form that the checker rejects as a whole:
 //! a function expression, a class expression, an object literal method
@@ -40,34 +49,63 @@ use swc_ecma_ast as ast;
 pub(crate) struct LocalFunctionRead {
     /// The source name of the local function.
     pub function: String,
-    /// The binding that the function reads, as the diagnostic names it:
-    /// "the local `k`", "the parameter `p`", or "`this`".
+    /// The access as the diagnostic states it, for example "reads the
+    /// local `k` of its enclosing function".
     pub read: String,
     /// The start of the read.
     pub at: BytePos,
 }
 
+/// Why a local function that the checker reaches stays in its block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LocalFunctionOutcome {
+    /// It reads a binding of an enclosing function (§207.1 rule 4).
+    Reads(LocalFunctionRead),
+    /// Another declaration of its scope binds its name (§207.1 rule 2a).
+    Duplicate,
+    /// It names a binding of a rejected local declaration, which has a
+    /// diagnostic of its own (§207.1 rule 4).
+    Poisoned,
+}
+
+/// The facts that the front end gives the checker about local functions.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LocalFunctions {
+    /// The outcome of each local function that stays in its block, keyed
+    /// by the start of its name.
+    pub outcomes: HashMap<BytePos, LocalFunctionOutcome>,
+    /// The class body that encloses each moved local function, keyed by
+    /// the start of its name (§207.1 rule 2a).
+    pub classes: HashMap<BytePos, String>,
+}
+
 /// Moves each local function that reads no binding of an enclosing
-/// function to module scope. Returns the first read of each local
-/// function that stays in its block, keyed by the start of its name.
-pub(crate) fn lower_module(module: &mut ast::Module) -> HashMap<BytePos, LocalFunctionRead> {
+/// function to module scope.
+pub(crate) fn lower_module(module: &mut ast::Module) -> LocalFunctions {
     let mut walker = Walker::default();
     for item in &mut module.body {
         walker.module_item(item);
     }
     let status = walker.decide();
-    let mut reads = HashMap::new();
+    let mut facts = LocalFunctions::default();
     for (record, decision) in walker.records.iter().zip(&status) {
-        if let Decision::Stays(Some((at, read))) = decision {
-            reads.insert(
-                record.declared_at,
-                LocalFunctionRead {
-                    function: record.name.clone(),
-                    read: read.clone(),
-                    at: *at,
-                },
-            );
-        }
+        let outcome = match decision {
+            Decision::Lifted => {
+                if let Some(class) = &record.class {
+                    facts.classes.insert(record.declared_at, class.clone());
+                }
+                continue;
+            }
+            Decision::Buried => continue,
+            Decision::Reads(at, read) => LocalFunctionOutcome::Reads(LocalFunctionRead {
+                function: record.name.clone(),
+                read: read.clone(),
+                at: *at,
+            }),
+            Decision::Duplicate => LocalFunctionOutcome::Duplicate,
+            Decision::Poisoned => LocalFunctionOutcome::Poisoned,
+        };
+        facts.outcomes.insert(record.declared_at, outcome);
     }
     walker.lifted = status
         .iter()
@@ -87,7 +125,7 @@ pub(crate) fn lower_module(module: &mut ast::Module) -> HashMap<BytePos, LocalFu
         }
         module.body.push(item);
     }
-    reads
+    facts
 }
 
 /// One local function.
@@ -99,17 +137,36 @@ struct Record {
     parent: Option<usize>,
     /// The function level of the parameters and the body.
     body_level: usize,
-    /// Reads of a binding of an enclosing function.
+    /// The class body that encloses the function.
+    class: Option<String>,
+    /// Another declaration of its scope binds its name.
+    duplicate: bool,
+    /// It names a binding of a rejected local declaration.
+    poisoned: bool,
+    /// Reads and writes of a binding of an enclosing function, as the
+    /// diagnostic states them.
     reads: Vec<(BytePos, String)>,
-    /// References to a local function that an enclosing block declares.
-    calls: Vec<(BytePos, usize)>,
+    /// References to a local function that an enclosing block declares,
+    /// with the text that states the reference as a read.
+    calls: Vec<(BytePos, usize, String)>,
 }
 
 enum Decision {
     Lifted,
-    /// The function stays in its block. `None` if an enclosing local
-    /// function stays in its block, so the checker does not reach it.
-    Stays(Option<(BytePos, String)>),
+    /// An enclosing local function stays in its block, so the checker
+    /// does not reach this one.
+    Buried,
+    Reads(BytePos, String),
+    Duplicate,
+    Poisoned,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum State {
+    Lifted,
+    Reads,
+    Silent,
+    Duplicate,
 }
 
 #[derive(Clone, Copy)]
@@ -117,17 +174,21 @@ enum Value {
     Local,
     Parameter,
     Function(usize),
+    /// A name that a rejected local declaration binds.
+    Rejected,
 }
 
 #[derive(Clone, Copy)]
 enum TypeName {
-    Local,
     Parameter,
+    Rejected,
 }
 
 #[derive(Default)]
 struct Scope {
     level: usize,
+    /// The declaration that owns the scope, as the diagnostic names it.
+    owner: &'static str,
     values: HashMap<String, Value>,
     types: HashMap<String, TypeName>,
 }
@@ -143,6 +204,8 @@ struct Walker {
     open: Vec<usize>,
     /// The local function whose `this` the current position reads.
     this_owner: Option<usize>,
+    /// The class body that encloses the current position.
+    class: Option<String>,
     path: Vec<String>,
     ordinals: HashMap<String, usize>,
     records: Vec<Record>,
@@ -174,15 +237,44 @@ fn prop_label(key: &ast::PropName) -> String {
 }
 
 impl Walker {
-    /// Decides which local functions move (§207.1 rules 2 and 4).
+    /// Decides which local functions move (§207.1 rules 2, 2a, and 4).
     fn decide(&self) -> Vec<Decision> {
-        let count = self.records.len();
-        let mut stays: Vec<bool> = self.records.iter().map(|r| !r.reads.is_empty()).collect();
+        let mut state: Vec<State> = self
+            .records
+            .iter()
+            .map(|record| {
+                if record.duplicate {
+                    State::Duplicate
+                } else if !record.reads.is_empty() {
+                    State::Reads
+                } else if record.poisoned {
+                    State::Silent
+                } else {
+                    State::Lifted
+                }
+            })
+            .collect();
         loop {
             let mut changed = false;
-            for index in 0..count {
-                if !stays[index] && self.records[index].calls.iter().any(|(_, g)| stays[*g]) {
-                    stays[index] = true;
+            for index in 0..self.records.len() {
+                let calls = &self.records[index].calls;
+                let next = match state[index] {
+                    State::Lifted | State::Silent
+                        if calls.iter().any(|(_, g, _)| state[*g] == State::Reads) =>
+                    {
+                        State::Reads
+                    }
+                    State::Lifted
+                        if calls.iter().any(|(_, g, _)| {
+                            matches!(state[*g], State::Silent | State::Duplicate)
+                        }) =>
+                    {
+                        State::Silent
+                    }
+                    current => current,
+                };
+                if next != state[index] {
+                    state[index] = next;
                     changed = true;
                 }
             }
@@ -190,45 +282,50 @@ impl Walker {
                 break;
             }
         }
-        (0..count)
+        (0..self.records.len())
             .map(|index| {
                 let mut parent = self.records[index].parent;
                 while let Some(enclosing) = parent {
-                    if stays[enclosing] {
-                        return Decision::Stays(None);
+                    if state[enclosing] != State::Lifted {
+                        return Decision::Buried;
                     }
                     parent = self.records[enclosing].parent;
                 }
-                if !stays[index] {
-                    return Decision::Lifted;
-                }
                 let record = &self.records[index];
-                let calls = record
-                    .calls
-                    .iter()
-                    .filter(|(_, g)| stays[*g])
-                    .map(|(at, g)| {
-                        (
-                            *at,
-                            format!("the local function `{}`", self.records[*g].name),
-                        )
-                    });
-                Decision::Stays(
-                    record
-                        .reads
-                        .iter()
-                        .cloned()
-                        .chain(calls)
-                        .min_by_key(|(at, _)| *at),
-                )
+                match state[index] {
+                    State::Lifted => Decision::Lifted,
+                    State::Silent => Decision::Poisoned,
+                    State::Duplicate => Decision::Duplicate,
+                    State::Reads => {
+                        let calls = record
+                            .calls
+                            .iter()
+                            .filter(|(_, g, _)| state[*g] == State::Reads)
+                            .map(|(at, _, read)| (*at, read.clone()));
+                        record
+                            .reads
+                            .iter()
+                            .cloned()
+                            .chain(calls)
+                            .min_by_key(|(at, _)| *at)
+                            .map_or(Decision::Poisoned, |(at, read)| Decision::Reads(at, read))
+                    }
+                }
             })
             .collect()
     }
 
     fn push_scope(&mut self) {
+        // A module-level block belongs to no function (§207.1 rule 4).
+        let owner = if self.level == 0 { "block" } else { "function" };
+        self.push_owned_scope(owner);
+    }
+
+    fn push_owned_scope(&mut self, owner: &'static str) {
         if !self.apply {
             self.scopes.push(Scope {
                 level: self.level,
+                owner,
                 ..Scope::default()
             });
         }
@@ -240,9 +337,19 @@ impl Walker {
         }
     }
 
+    /// Declares a value name. A local function and another declaration
+    /// of one name in one scope are a duplicate declaration (§207.1 rule
+    /// 2a), so each local function with the name stays in its block.
     fn declare_value(&mut self, name: &str, value: Value) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.values.insert(name.to_owned(), value);
+        let Some(scope) = self.scopes.last_mut() else {
+            return;
+        };
+        if let Some(previous) = scope.values.insert(name.to_owned(), value) {
+            for declared in [previous, value] {
+                if let Value::Function(record) = declared {
+                    self.records[record].duplicate = true;
+                }
+            }
         }
     }
 
@@ -270,16 +377,26 @@ impl Walker {
 
     /// Records a read of a binding at `level` by every open local
     /// function that the binding encloses.
-    fn read(&mut self, level: usize, at: BytePos, read: String) {
+    fn read(&mut self, level: usize, at: BytePos, read: &str) {
         for &open in &self.open {
             if self.records[open].body_level > level {
-                self.records[open].reads.push((at, read.clone()));
+                self.records[open].reads.push((at, read.to_owned()));
             }
         }
     }
 
-    /// Resolves a value reference, or gives it its hidden name.
-    fn value(&mut self, id: &mut ast::Ident) {
+    /// Records a name of a rejected local declaration at `level`.
+    fn poison(&mut self, level: usize) {
+        for &open in &self.open {
+            if self.records[open].body_level > level {
+                self.records[open].poisoned = true;
+            }
+        }
+    }
+
+    /// Resolves a value reference, or gives it its hidden name. `write`
+    /// marks an assignment target.
+    fn value(&mut self, id: &mut ast::Ident, write: bool) {
         if self.apply {
             if let Some(&record) = self.references.get(&id.span.lo) {
                 if self.lifted[record] {
@@ -289,22 +406,35 @@ impl Walker {
             return;
         }
         let name = id.sym.as_ref();
-        let Some((level, value)) = self
-            .scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.values.get(name).map(|value| (scope.level, *value)))
-        else {
+        let Some((level, owner, value)) = self.scopes.iter().rev().find_map(|scope| {
+            scope
+                .values
+                .get(name)
+                .map(|value| (scope.level, scope.owner, *value))
+        }) else {
             return;
         };
+        let verb = if write { "writes" } else { "reads" };
         match value {
-            Value::Local => self.read(level, id.span.lo, format!("the local `{name}`")),
-            Value::Parameter => self.read(level, id.span.lo, format!("the parameter `{name}`")),
+            Value::Local => self.read(
+                level,
+                id.span.lo,
+                &format!("{verb} the local `{name}` of its enclosing {owner}"),
+            ),
+            Value::Parameter => self.read(
+                level,
+                id.span.lo,
+                &format!("{verb} the parameter `{name}` of its enclosing {owner}"),
+            ),
+            Value::Rejected => self.poison(level),
             Value::Function(record) => {
                 self.references.insert(id.span.lo, record);
+                let read = format!("reads the local function `{name}` of its enclosing {owner}");
                 for &open in &self.open {
                     if open != record && self.records[open].body_level > level {
-                        self.records[open].calls.push((id.span.lo, record));
+                        self.records[open]
+                            .calls
+                            .push((id.span.lo, record, read.clone()));
                     }
                 }
             }
@@ -316,19 +446,22 @@ impl Walker {
             return;
         }
         let name = id.sym.as_ref();
-        let Some((level, kind)) = self
-            .scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.types.get(name).map(|kind| (scope.level, *kind)))
-        else {
+        let Some((level, owner, kind)) = self.scopes.iter().rev().find_map(|scope| {
+            scope
+                .types
+                .get(name)
+                .map(|kind| (scope.level, scope.owner, *kind))
+        }) else {
             return;
         };
-        let read = match kind {
-            TypeName::Local => format!("the local `{name}`"),
-            TypeName::Parameter => format!("the type parameter `{name}`"),
-        };
-        self.read(level, id.span.lo, read);
+        match kind {
+            TypeName::Rejected => self.poison(level),
+            TypeName::Parameter => self.read(
+                level,
+                id.span.lo,
+                &format!("reads the type parameter `{name}` of its enclosing {owner}"),
+            ),
+        }
     }
 
     fn module_item(&mut self, item: &mut ast::ModuleItem) {
@@ -355,7 +488,9 @@ impl Walker {
             }
             ast::Decl::Class(class) => {
                 self.path = vec![class.ident.sym.to_string()];
+                self.class = Some(class.ident.sym.to_string());
                 self.class(&mut class.class);
+                self.class = None;
             }
             ast::Decl::Var(var) => {
                 self.path = vec![var
@@ -388,7 +523,7 @@ impl Walker {
 
     fn class(&mut self, class: &mut ast::Class) {
         let class_path = self.path.clone();
-        self.push_scope();
+        self.push_owned_scope("class");
         self.declare_type_params(class.type_params.as_deref_mut());
         for member in &mut class.body {
             match member {
@@ -459,7 +594,7 @@ impl Walker {
             }
         }
         if let Some(body) = &mut constructor.body {
-            self.block(&mut body.stmts);
+            self.body(&mut body.stmts);
         }
         self.pop_scope();
         self.leave_level(saved);
@@ -477,7 +612,7 @@ impl Walker {
             self.ty(&mut return_type.type_ann);
         }
         if let Some(body) = &mut function.body {
-            self.block(&mut body.stmts);
+            self.body(&mut body.stmts);
         }
         self.pop_scope();
         self.leave_level(saved);
@@ -534,6 +669,9 @@ impl Walker {
                         declared_at: function.ident.span.lo,
                         parent: self.open.last().copied(),
                         body_level: self.level + 1,
+                        class: self.class.clone(),
+                        duplicate: false,
+                        poisoned: false,
                         reads: Vec::new(),
                         calls: Vec::new(),
                     });
@@ -541,22 +679,22 @@ impl Walker {
                     self.declare_value(&name, Value::Function(record));
                 }
                 ast::Decl::Class(class) => {
-                    self.declare_value(class.ident.sym.as_ref(), Value::Local);
-                    self.declare_type(class.ident.sym.as_ref(), TypeName::Local);
+                    self.declare_value(class.ident.sym.as_ref(), Value::Rejected);
+                    self.declare_type(class.ident.sym.as_ref(), TypeName::Rejected);
                 }
                 ast::Decl::TsEnum(enumeration) => {
-                    self.declare_value(enumeration.id.sym.as_ref(), Value::Local);
-                    self.declare_type(enumeration.id.sym.as_ref(), TypeName::Local);
+                    self.declare_value(enumeration.id.sym.as_ref(), Value::Rejected);
+                    self.declare_type(enumeration.id.sym.as_ref(), TypeName::Rejected);
                 }
                 ast::Decl::TsInterface(interface) => {
-                    self.declare_type(interface.id.sym.as_ref(), TypeName::Local);
+                    self.declare_type(interface.id.sym.as_ref(), TypeName::Rejected);
                 }
                 ast::Decl::TsTypeAlias(alias) => {
-                    self.declare_type(alias.id.sym.as_ref(), TypeName::Local);
+                    self.declare_type(alias.id.sym.as_ref(), TypeName::Rejected);
                 }
                 ast::Decl::TsModule(namespace) => {
                     if let ast::TsModuleName::Ident(id) = &namespace.id {
-                        self.declare_value(id.sym.as_ref(), Value::Local);
+                        self.declare_value(id.sym.as_ref(), Value::Rejected);
                     }
                 }
             }
@@ -592,9 +730,15 @@ impl Walker {
     /// leaves the list.
     fn block(&mut self, stmts: &mut Vec<ast::Stmt>) {
         self.push_scope();
+        self.body(stmts);
+        self.pop_scope();
+    }
+
+    /// A statement list in the current scope: a function body shares
+    /// the scope of its parameters.
+    fn body(&mut self, stmts: &mut Vec<ast::Stmt>) {
         self.declare_block(stmts.iter());
         self.block_items(stmts);
-        self.pop_scope();
     }
 
     fn block_items(&mut self, stmts: &mut Vec<ast::Stmt>) {
@@ -826,7 +970,7 @@ impl Walker {
     /// An assignment pattern: each name is a reference.
     fn assign_pat(&mut self, target: &mut ast::Pat) {
         match target {
-            ast::Pat::Ident(binding) => self.value(&mut binding.id),
+            ast::Pat::Ident(binding) => self.value(&mut binding.id, true),
             ast::Pat::Array(array) => {
                 for element in array.elems.iter_mut().flatten() {
                     self.assign_pat(element);
@@ -851,7 +995,7 @@ impl Walker {
                     self.assign_pat(&mut prop.value);
                 }
                 ast::ObjectPatProp::Assign(prop) => {
-                    self.value(&mut prop.key.id);
+                    self.value(&mut prop.key.id, true);
                     if let Some(default) = &mut prop.value {
                         self.expr(default);
                     }
@@ -915,7 +1059,7 @@ impl Walker {
                 if let ast::TsTypeQueryExpr::TsEntityName(ast::TsEntityName::Ident(id)) =
                     &mut query.expr_name
                 {
-                    self.value(id);
+                    self.value(id, false);
                 }
                 self.type_args(query.type_args.as_deref_mut());
             }
@@ -1020,7 +1164,7 @@ impl Walker {
             self.ty(&mut return_type.type_ann);
         }
         match &mut *arrow.body {
-            ast::BlockStmtOrExpr::BlockStmt(body) => self.block(&mut body.stmts),
+            ast::BlockStmtOrExpr::BlockStmt(body) => self.body(&mut body.stmts),
             ast::BlockStmtOrExpr::Expr(body) => self.expr(body),
         }
         self.pop_scope();
@@ -1029,12 +1173,13 @@ impl Walker {
 
     fn expr(&mut self, e: &mut ast::Expr) {
         match e {
-            ast::Expr::Ident(id) => self.value(id),
+            ast::Expr::Ident(id) => self.value(id, false),
             ast::Expr::This(this) => {
                 if let (Some(owner), false) = (self.this_owner, self.apply) {
-                    self.records[owner]
-                        .reads
-                        .push((this.span.lo, "`this`".to_owned()));
+                    self.records[owner].reads.push((
+                        this.span.lo,
+                        "reads `this` of its enclosing function".to_owned(),
+                    ));
                 }
             }
             ast::Expr::Member(target) => self.member(target),
@@ -1068,7 +1213,10 @@ impl Walker {
                 }
             }
             ast::Expr::Unary(target) => self.expr(&mut target.arg),
-            ast::Expr::Update(target) => self.expr(&mut target.arg),
+            ast::Expr::Update(target) => match &mut *target.arg {
+                ast::Expr::Ident(id) => self.value(id, true),
+                arg => self.expr(arg),
+            },
             ast::Expr::Bin(binary) => {
                 self.expr(&mut binary.left);
                 self.expr(&mut binary.right);
@@ -1172,7 +1320,7 @@ impl Walker {
                         ast::Prop::Shorthand(id) => {
                             let key = ast::IdentName::new(id.sym.clone(), id.span);
                             let mut value = id.clone();
-                            self.value(&mut value);
+                            self.value(&mut value, false);
                             (value.sym != id.sym).then_some((key, value))
                         }
                         // The checker rejects a method or an accessor in
@@ -1193,7 +1341,7 @@ impl Walker {
 
     fn simple_target(&mut self, target: &mut ast::SimpleAssignTarget) {
         match target {
-            ast::SimpleAssignTarget::Ident(binding) => self.value(&mut binding.id),
+            ast::SimpleAssignTarget::Ident(binding) => self.value(&mut binding.id, true),
             ast::SimpleAssignTarget::Member(target) => self.member(target),
             ast::SimpleAssignTarget::SuperProp(target) => {
                 if let ast::SuperProp::Computed(computed) = &mut target.prop {
@@ -1268,8 +1416,8 @@ function f(): void {
     #[test]
     fn each_reference_takes_the_name_of_the_function_its_block_declares() {
         let mut module = parse();
-        let reads = lower_module(&mut module);
-        assert!(reads.is_empty(), "{reads:?}");
+        let facts = lower_module(&mut module);
+        assert!(facts.outcomes.is_empty(), "{facts:?}");
         let names = function_names(&module);
         assert_eq!(names.len(), 4, "{names:?}");
         let (local_sq, local_g) = (&names[1], &names[2]);

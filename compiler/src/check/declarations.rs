@@ -463,6 +463,10 @@ impl<'p> Checker<'p> {
     fn collect_fn(&mut self, file: usize, f: &ast::FnDecl) {
         let name = f.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
+        if let Some(class) = self.prog.local_functions.classes.get(&f.ident.span.lo) {
+            self.local_function_classes
+                .insert(symbol.clone(), (file, class.clone()));
+        }
         let pos = self.pos(f.ident.span);
         if f.function
             .type_params

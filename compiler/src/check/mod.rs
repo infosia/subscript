@@ -829,6 +829,9 @@ type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
 pub(crate) struct FnCtx {
     pub frames: Shared<Vec<Frame>>,
     pub lexical_class: Option<ClassId>,
+    /// The generic class template whose body encloses a moved local
+    /// function: its instances share that body (§207.1 rule 2a).
+    pub lexical_template: Option<String>,
     parameter_decisions: Shared<HashSet<(usize, String)>>,
     /// Defaults execute in the caller, outside the receiver's method frame.
     parameter_default: bool,
@@ -1035,6 +1038,7 @@ impl FnCtx {
     ) -> Self {
         FnCtx {
             lexical_class: None,
+            lexical_template: None,
             parameter_decisions: HashSet::new().into(),
             parameter_default: false,
             constructor_body: false,
@@ -1275,6 +1279,9 @@ pub(crate) struct Checker<'p> {
     function_value_decision: bool,
     initializer_root: Option<swc_common::Span>,
     static_method_owners: HashMap<String, (ClassId, String)>,
+    /// The file and the class name of the class body that encloses each
+    /// moved local function, by function symbol (§207.1 rule 2a).
+    local_function_classes: HashMap<String, (usize, String)>,
     next_deferred_id: usize,
     expression_work: Vec<Option<usize>>,
     deferred_expressions: Vec<DeferredExpression>,

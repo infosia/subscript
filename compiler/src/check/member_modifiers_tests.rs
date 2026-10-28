@@ -121,7 +121,7 @@ fn optional_function_types_poison_calls_without_follow_ons() {
 }
 
 #[test]
-fn unsupported_nested_functions_keep_the_declaration_rejection() {
+fn a_local_function_that_reads_a_parameter_is_rejected_before_member_access() {
     for write in ["other.x = 3;", "print(`${other.x}`);"] {
         let source = format!("class A {{ private readonly x: i32 = 1; constructor(other: A) {{ function nested(): void {{ {write} }} nested(); }} }} export function main(): void {{}}");
         reject(

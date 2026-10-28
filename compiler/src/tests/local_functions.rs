@@ -1,7 +1,7 @@
 //! A static method and a local function are function values
 //! (compiler.md §207).
 //!
-//! Cost: eighteen checker calls on one-file or two-file programs, with no
+//! Cost: thirty-three checker calls on one-file or two-file programs, with no
 //! code generation and no external process.
 
 use super::*;
@@ -234,4 +234,137 @@ fn a_diagnostic_names_a_local_function_by_its_source_name() {
     let diagnostic =
         only("export function main(): void { function f(x: i32): i32 { return x; } f<i32>(1); }\n");
     assert_eq!(diagnostic.message, "`f` is not generic");
+}
+
+/// Rule 2a: a moved local function keeps the class body that encloses
+/// it, for `private` and `#x` access, also in a generic class and in a
+/// generic local function.
+#[test]
+fn a_local_function_keeps_its_class_body() {
+    assert!(check(
+        "class C {\n\
+           private n: i32 = 1;\n\
+           #x: i32 = 2;\n\
+           static sum(c: C): i32 {\n\
+             function read(o: C): i32 { return o.n + o.#x; }\n\
+             function pick<U>(o: C, u: U): i32 { return o.n; }\n\
+             return read(c) + pick<i32>(c, 0);\n\
+           }\n\
+         }\n\
+         class Box<T> {\n\
+           private n: i32 = 1;\n\
+           v: T;\n\
+           constructor(v: T) { this.v = v; }\n\
+           count(o: Box<i32>): i32 { function read(b: Box<i32>): i32 { return b.n; } return read(o); }\n\
+         }\n\
+         export function main(): void { print(`${C.sum(new C())} ${new Box<i32>(1).count(new Box<i32>(2))}`); }\n"
+    )
+    .is_ok());
+    // Control: a module function outside the class body gets the
+    // `private` text.
+    let diagnostic = only(
+        "class C { private n: i32 = 1; }\n\
+         function read(o: C): i32 { return o.n; }\n\
+         export function main(): void { print(`${read(new C())}`); }\n",
+    );
+    assert_eq!(diagnostic.message, "member `n` is private in class `C`");
+}
+
+/// Rule 2a: a local function and another declaration of its name in one
+/// scope fail with S017 at the later declaration.
+#[test]
+fn a_duplicate_local_function_is_a_duplicate_declaration() {
+    for (source, line, col) in [
+        (
+            "export function main(): void {\n f();\n function f(): void {}\n function f(): void {}\n}\n",
+            4,
+            11,
+        ),
+        (
+            "export function main(): void {\n let f: i32 = 1;\n function f(): void {}\n}\n",
+            3,
+            11,
+        ),
+        (
+            "export function main(): void {\n function f(): void {}\n let f: i32 = 1;\n}\n",
+            3,
+            6,
+        ),
+        (
+            "function g(f: i32): void {\n function f(): void {}\n}\n",
+            2,
+            11,
+        ),
+    ] {
+        let diagnostic = only(source);
+        assert_eq!(diagnostic.code, RuleCode::S017, "{source}");
+        assert_eq!(
+            diagnostic.message, "duplicate declaration of `f` in one scope",
+            "{source}"
+        );
+        assert_eq!(
+            (diagnostic.pos.line, diagnostic.pos.col),
+            (line, col),
+            "{source}"
+        );
+    }
+    // Control: one name in two blocks is two declarations.
+    assert!(check(
+        "export function main(): void {\n\
+           { function f(): i32 { return 1; } print(`${f()}`); }\n\
+           { function f(): i32 { return 2; } print(`${f()}`); }\n\
+         }\n"
+    )
+    .is_ok());
+}
+
+/// Rule 4: a write to a local says "writes".
+#[test]
+fn a_write_to_a_local_says_writes() {
+    for (body, name) in [("k = 4;", "k"), ("k++;", "k"), ("k += 1;", "k")] {
+        let diagnostic = read(&format!(
+            "export function main(): void {{ let k: i32 = 1; function f(): void {{ {body} }} f(); }}\n"
+        ));
+        assert_eq!(
+            diagnostic.message,
+            format!("local function `f` writes the local `{name}` of its enclosing function")
+        );
+    }
+}
+
+/// Rule 4: a name of a rejected local declaration gives no second
+/// diagnostic, also at a function that calls the one that names it.
+#[test]
+fn a_rejected_local_declaration_poisons_its_name() {
+    for declaration in ["type A = i32;", "class A {}", "enum A { X }"] {
+        let use_site = if declaration.starts_with("type") {
+            "function f(x: A): void {}"
+        } else {
+            "function f(): void { const a = A; }"
+        };
+        let diagnostic = only(&format!(
+            "export function main(): void {{ {declaration} {use_site} function g(): void {{ f(); }} g(); }}\n"
+        ));
+        assert_eq!(
+            diagnostic.message, "nested declarations are not in the decided surface",
+            "{declaration}"
+        );
+    }
+}
+
+/// Rule 4: in a module-level block, the text names the enclosing block.
+#[test]
+fn a_read_in_a_module_level_block_names_the_block() {
+    let diagnostic = read("{ const b: i32 = 1; function f(): i32 { return b; } }\n");
+    assert_eq!(
+        diagnostic.message,
+        "local function `f` reads the local `b` of its enclosing block"
+    );
+    // Control: in a function, the text names the function.
+    let control =
+        read("function g(): void { const b: i32 = 1; function f(): i32 { return b; } }\n");
+    assert_eq!(
+        control.message,
+        "local function `f` reads the local `b` of its enclosing function"
+    );
 }

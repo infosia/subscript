@@ -251,6 +251,7 @@ fn run_with_effects(
         function_value_decision: false,
         initializer_root: None,
         static_method_owners: HashMap::new(),
+        local_function_classes: HashMap::new(),
         next_deferred_id: 0,
         expression_work: Vec::new(),
         deferred_expressions: Vec::new(),

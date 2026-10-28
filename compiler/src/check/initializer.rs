@@ -458,6 +458,7 @@ impl<'p> Checker<'p> {
             return;
         }
         let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+        self.enter_local_function_class(name, &mut fx);
         self.decide_parameters_in(
             &mut sig.params,
             &mut fx,
