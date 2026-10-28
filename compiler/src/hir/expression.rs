@@ -318,6 +318,12 @@ impl Stmt {
                 children.extend(body.iter().map(HirChild::Stmt));
                 children
             }
+            Stmt::DoWhile { body, cond, pos: _ } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.extend(body.iter().map(HirChild::Stmt));
+                children.push(HirChild::Expr(cond));
+                children
+            }
             Stmt::For {
                 init,
                 cond,
@@ -410,6 +416,12 @@ impl Stmt {
                 let mut children = Vec::with_capacity(1 + body.len());
                 children.push(HirChildMut::Expr(cond));
                 children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children
+            }
+            Stmt::DoWhile { body, cond, pos: _ } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children.push(HirChildMut::Expr(cond));
                 children
             }
             Stmt::For {

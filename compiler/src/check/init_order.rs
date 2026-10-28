@@ -82,6 +82,11 @@ pub(super) fn statement_pos(statement: &crate::hir::Stmt) -> Option<&crate::Pos>
             cond: _,
             body: _,
         }
+        | Stmt::DoWhile {
+            pos,
+            body: _,
+            cond: _,
+        }
         | Stmt::For {
             pos,
             init: _,

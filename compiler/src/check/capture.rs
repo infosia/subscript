@@ -100,6 +100,10 @@ impl<'a> Analysis<'a> {
                 self.expr(cond, env);
                 self.scoped_sequence(body, &mut env.clone());
             }
+            Stmt::DoWhile { body, cond, pos: _ } => {
+                self.scoped_sequence(body, &mut env.clone());
+                self.expr(cond, env);
+            }
             Stmt::For {
                 init,
                 cond,

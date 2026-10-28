@@ -348,7 +348,6 @@ rejection_classes! {
     Self::BreakOutsideLoopOrSwitch => (RuleCode::S100, TscRejects),
     Self::LabeledContinue => (RuleCode::S100, TscRejects),
     Self::ContinueOutsideLoop => (RuleCode::S100, TscRejects),
-    Self::DoWhileStatement => (RuleCode::S100, Diverges(Divergence::DoWhileStatement)),
     Self::ForInStatement => (RuleCode::S100, Diverges(Divergence::ForInStatement)),
     Self::LabeledStatement => (RuleCode::S100, Diverges(Divergence::LabeledStatement)),
     Self::DebuggerStatement => (RuleCode::S100, Diverges(Divergence::DebuggerStatement)),

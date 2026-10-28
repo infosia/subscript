@@ -333,16 +333,17 @@ fn map_and_set_callbacks_end_shared_narrowing() {
 }
 
 #[test]
-fn do_while_remains_outside_the_language() {
-    let diagnostics =
-        checked_body("do { continue; if (h.c === null) { return; } } while (h.c.v > 0);")
-            .expect_err("do-while is unsupported");
+fn a_do_while_test_joins_the_body_end_and_each_continue() {
+    // compiler.md §203.1 rule 4: the body end narrows the test.
+    checked_body("do { if (h.c === null) { return; } } while (h.c.v > 0);")
+        .expect("the body end narrows the test");
+    // A `continue` before the check reaches the test without the narrowing.
+    let diagnostics = checked_body(
+        "do { if (local === null) { continue; } if (h.c === null) { return; } } while (h.c.v > 0);",
+    )
+    .expect_err("the continue edge has no narrowing");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!(
-        diagnostics[0].divergence,
-        Some(subscript_compiler::divergence::Divergence::DoWhileStatement)
-    );
+    assert_eq!(diagnostics[0].code, RuleCode::S011);
 }
 
 #[test]

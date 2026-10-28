@@ -86,6 +86,10 @@ impl AddressTaken<'_> {
                 self.expr(cond);
                 self.scoped(body);
             }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                self.scoped(body);
+                self.expr(cond);
+            }
             hir::Stmt::For {
                 init,
                 cond,

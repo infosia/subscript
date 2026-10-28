@@ -42,12 +42,6 @@ pub(super) const SOURCENAMESPACEDECLARATION: DivergenceEntry = DivergenceEntry {
     why: "The module surface excludes namespace declarations.",
     collision: "C18",
 };
-pub(super) const DOWHILESTATEMENT: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { do {} while(false); }",
-    subscript: "no equivalent; use a while loop with an explicit first iteration",
-    why: "No lowering is decided for do-while statements.",
-    collision: "C24", // row 29,
-};
 pub(super) const FORINSTATEMENT: DivergenceEntry = DivergenceEntry {
     ts: "function f(): void { for (const k in [1]) {} }",
     subscript: "no equivalent; iterate an admitted collection with for-of",

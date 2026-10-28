@@ -112,6 +112,7 @@ fn stmt(statement: &mut Stmt, visit: &mut dyn FnMut(&mut Type, TypeSlot, &Pos)) 
         | Stmt::Return { .. }
         | Stmt::If { .. }
         | Stmt::While { .. }
+        | Stmt::DoWhile { .. }
         | Stmt::For { .. }
         | Stmt::Switch { .. }
         | Stmt::Break(_)

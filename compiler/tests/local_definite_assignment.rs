@@ -129,6 +129,36 @@ fn assignment_paths_and_controls() {
         ),
         ("while-zero", "while(c()) { x=1; }", false),
         ("while-false", "while(false) { print(`${x}`); } x=1;", true),
+        // compiler.md §203.1 rule 3: the body runs once; a continue skips to the test.
+        ("do-once", "do { x=1; } while(c());", true),
+        ("do-false", "do { x=1; } while(false);", true),
+        (
+            "do-continue",
+            "do { if(c()) { continue; } x=1; } while(false);",
+            false,
+        ),
+        (
+            "do-continue-control",
+            "do { if(c()) { print(`${n()}`); } x=1; } while(false);",
+            true,
+        ),
+        (
+            "do-continue-read-in-test",
+            "do { if(c()) { continue; } x=1; } while(x>0); x=2;",
+            false,
+        ),
+        (
+            "do-break",
+            "do { if(c()) { break; } x=1; } while(c());",
+            false,
+        ),
+        ("do-true-break", "do { x=1;break; } while(true);", true),
+        (
+            "do-return",
+            "do { if(c()) { return; } x=1; } while(c());",
+            true,
+        ),
+        ("do-assign-in-test", "do {} while((x=n())>0);", true),
         ("for", "for(let i:i32=0;i<2;i++) { x=1; }", false),
         ("for-of", "for(const i of [1,2]) { x=i; }", false),
         ("conditional", "x=c()?1:2; x+=1;", true),

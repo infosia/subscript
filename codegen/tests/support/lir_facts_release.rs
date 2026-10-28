@@ -266,6 +266,12 @@ impl Walk<'_> {
                 self.sequence(body);
                 self.controls.pop();
             }
+            S::DoWhile { body, cond, pos: _ } => {
+                self.controls.push((self.hooks.len(), true));
+                self.sequence(body);
+                self.controls.pop();
+                self.expression(cond);
+            }
             S::For {
                 init,
                 cond,

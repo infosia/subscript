@@ -181,7 +181,6 @@ pub(crate) enum RejectionSite {
     BreakOutsideLoopOrSwitch,
     LabeledContinue,
     ContinueOutsideLoop,
-    DoWhileStatement,
     ForInStatement,
     LabeledStatement,
     DebuggerStatement,

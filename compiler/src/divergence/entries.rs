@@ -192,7 +192,6 @@ impl Divergence {
             Divergence::DebuggerStatement => expression_forms::DEBUGGERSTATEMENT,
             Divergence::LabeledStatement => expression_forms::LABELEDSTATEMENT,
             Divergence::ForInStatement => expression_forms::FORINSTATEMENT,
-            Divergence::DoWhileStatement => expression_forms::DOWHILESTATEMENT,
             Divergence::SourceNamespaceDeclaration => expression_forms::SOURCENAMESPACEDECLARATION,
             Divergence::SourceInterfaceDeclaration => expression_forms::SOURCEINTERFACEDECLARATION,
             Divergence::LocalInterfaceDeclaration => expression_forms::LOCALINTERFACEDECLARATION,

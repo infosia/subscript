@@ -379,6 +379,11 @@ impl Stmt {
                 body: _,
                 pos: _,
             }
+            | Stmt::DoWhile {
+                body: _,
+                cond: _,
+                pos: _,
+            }
             | Stmt::For {
                 init: _,
                 cond: _,
@@ -435,6 +440,11 @@ impl Stmt {
                 }
             }
             Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::DoWhile {
                 body,
                 cond: _,
                 pos: _,

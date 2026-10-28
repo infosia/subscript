@@ -79,6 +79,11 @@ fn nested(statement: Stmt, ids: &mut usize) -> Stmt {
             body: structure(body, ids),
             pos,
         },
+        Stmt::DoWhile { body, cond, pos } => Stmt::DoWhile {
+            body: structure(body, ids),
+            cond,
+            pos,
+        },
         Stmt::For {
             init,
             cond,

@@ -149,6 +149,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r446-type-alias-refers-to-itself.ts", RuleCode::S100, 7),
     ("r447-type-alias-rejected-annotation.ts", RuleCode::S011, 7),
+    (
+        "r448-do-while-continue-skips-assignment.ts",
+        RuleCode::S100,
+        16,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

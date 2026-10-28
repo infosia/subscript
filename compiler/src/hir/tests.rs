@@ -336,6 +336,14 @@ fn stmt_children_yield_every_child() {
             vec![1, 2],
         ),
         (
+            Stmt::DoWhile {
+                body: vec![child_stmt(1)],
+                cond: child_expr(2),
+                pos: pos.clone(),
+            },
+            vec![1, 2],
+        ),
+        (
             Stmt::For {
                 init: Some(Box::new(child_stmt(1))),
                 cond: Some(child_expr(2)),

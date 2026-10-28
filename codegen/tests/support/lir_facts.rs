@@ -645,6 +645,10 @@ fn walk_statement_expression_roots_mode<'a>(
                 visit(cond);
                 walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
             }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                walk_statement_expression_roots_mode(hir, body, visit, lexical_finalizers);
+                visit(cond);
+            }
             hir::Stmt::For {
                 init,
                 cond,
@@ -1213,6 +1217,11 @@ fn collect_return_positions<'a>(
                 cond: _,
                 pos: _,
             }
+            | hir::Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | hir::Stmt::For {
                 body,
                 init: _,
@@ -1348,22 +1357,26 @@ fn walk_placed_module_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnM
 struct SequenceExits {
     next: bool,
     breaks: bool,
+    continues: bool,
 }
 
 impl SequenceExits {
     const NEXT: Self = Self {
         next: true,
         breaks: false,
+        continues: false,
     };
     const STOP: Self = Self {
         next: false,
         breaks: false,
+        continues: false,
     };
 
     fn union(self, other: Self) -> Self {
         Self {
             next: self.next || other.next,
             breaks: self.breaks || other.breaks,
+            continues: self.continues || other.continues,
         }
     }
 
@@ -1372,6 +1385,7 @@ impl SequenceExits {
             Self {
                 next: other.next,
                 breaks: self.breaks || other.breaks,
+                continues: self.continues || other.continues,
             }
         } else {
             self
@@ -1387,9 +1401,12 @@ fn sequence_exits(hir: &hir::Module, body: &[hir::Stmt]) -> SequenceExits {
 
 fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
     match statement {
-        hir::Stmt::Return { .. } | hir::Stmt::Continue(_) | hir::Stmt::Throw { .. } => {
-            SequenceExits::STOP
-        }
+        hir::Stmt::Return { .. } | hir::Stmt::Throw { .. } => SequenceExits::STOP,
+        hir::Stmt::Continue(_) => SequenceExits {
+            next: false,
+            breaks: false,
+            continues: true,
+        },
         // The lowering emits the handler only when a raise site of the
         // `try` block reaches it (compiler.md §115.6 rule 2).
         hir::Stmt::Try {
@@ -1420,11 +1437,13 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
             SequenceExits {
                 next: prior.next && tail.next,
                 breaks: tail.breaks || (tail.next && prior.breaks),
+                continues: tail.continues || (tail.next && prior.continues),
             }
         }
         hir::Stmt::Break(_) => SequenceExits {
             next: false,
             breaks: true,
+            continues: false,
         },
         hir::Stmt::Expr(expr) => {
             if matches!(
@@ -1476,6 +1495,7 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
             SequenceExits {
                 next: exits.next || exits.breaks,
                 breaks: false,
+                continues: exits.continues,
             }
         }
         hir::Stmt::For {
@@ -1495,13 +1515,26 @@ fn statement_exits(hir: &hir::Module, statement: &hir::Stmt) -> SequenceExits {
             init.then(SequenceExits {
                 next,
                 breaks: false,
+                continues: false,
             })
         }
         hir::Stmt::While { cond, body, pos: _ } => SequenceExits {
             next: !matches!(cond.kind, hir::ExprKind::Bool(true))
                 || sequence_exits(hir, body).breaks,
             breaks: false,
+            continues: false,
         },
+        // The test runs after the body end and after each `continue`.
+        hir::Stmt::DoWhile { body, cond, pos: _ } => {
+            let body = sequence_exits(hir, body);
+            SequenceExits {
+                next: body.breaks
+                    || ((body.next || body.continues)
+                        && !matches!(cond.kind, hir::ExprKind::Bool(true))),
+                breaks: false,
+                continues: false,
+            }
+        }
         hir::Stmt::Let { .. }
         | hir::Stmt::ForOf {
             name: _,
@@ -1559,6 +1592,9 @@ fn try_body_raises(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
             }
             hir::Stmt::While { cond, body, pos: _ } => {
                 raises_in_expression(hir, cond) || raises_in_sequence(hir, body)
+            }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                raises_in_sequence(hir, body) || raises_in_expression(hir, cond)
             }
             hir::Stmt::For {
                 init,

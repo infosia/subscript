@@ -237,6 +237,11 @@ impl Analysis {
             cond: _,
             body: _,
         }
+        | hir::Stmt::DoWhile {
+            pos,
+            body: _,
+            cond: _,
+        }
         | hir::Stmt::For {
             pos,
             init: _,

@@ -204,6 +204,11 @@ impl<'a> ModuleEffectScanner<'a> {
                 body: _,
                 pos: _,
             }
+            | S::DoWhile {
+                body: _,
+                cond: _,
+                pos: _,
+            }
             | S::For {
                 init: _,
                 cond: _,

@@ -202,7 +202,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::BreakOutsideLoopOrSwitch => WitnessEntry::General { files: &[], variant: None, reason: "The guard requires zero loop and switch depth. The parser rejects an unlabelled break outside these statements." },
         RejectionSite::LabeledContinue => WitnessEntry::General { files: &[], variant: None, reason: "A valid target label encloses the continue. The checker rejects that labelled statement without entry into its body. An unknown label fails in the parser." },
         RejectionSite::ContinueOutsideLoop => WitnessEntry::General { files: &[], variant: None, reason: "The guard requires zero loop depth. The parser rejects an unlabelled continue outside a loop." },
-        RejectionSite::DoWhileStatement => WitnessEntry::General { files: &["DoWhileStatement"], variant: Some(Divergence::DoWhileStatement), reason: "" },
         RejectionSite::ForInStatement => WitnessEntry::General { files: &["ForInStatement"], variant: Some(Divergence::ForInStatement), reason: "" },
         RejectionSite::LabeledStatement => WitnessEntry::General { files: &["LabeledStatement"], variant: Some(Divergence::LabeledStatement), reason: "" },
         RejectionSite::DebuggerStatement => WitnessEntry::General { files: &["debugger-statement", "DebuggerStatement"], variant: Some(Divergence::DebuggerStatement), reason: "" },

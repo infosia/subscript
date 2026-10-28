@@ -5659,12 +5659,6 @@ export {};
 namespace N {}
 END FILE
 END PROGRAM
-PROGRAM	DoWhileStatement			0
-FILE	E	target/s154/forms/DoWhileStatement/main.ts
-export {};
-function f(): void { do {} while(false); }
-END FILE
-END PROGRAM
 PROGRAM	ForInStatement			0
 FILE	E	target/s154/forms/ForInStatement/main.ts
 export {};

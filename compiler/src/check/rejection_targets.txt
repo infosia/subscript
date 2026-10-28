@@ -938,7 +938,6 @@ QueryAnnotation	QueryAnnotation	S100	type annotation form outside the decided su
 IndexedAnnotation	IndexedAnnotation	S100	type annotation form outside the decided surface
 ModuleInitializerMissing	worker-endpoint-module-global	S100	module-level variables require an initializer
 ParserSyntaxError	WithStatement	S100	parse error: The 'with' statement is not supported. All symbols in a 'with' block will have type 'any'.
-DoWhileStatement	DoWhileStatement	S100	statement form outside the decided surface
 LiteralAliasToString	LiteralAliasToString	S100	type mismatch: the return value expects `string`, got `A`
 BooleanMember	a-s157	S100	`boolean` has no member `valueOf`
 BooleanMember	BooleanMember	S100	`boolean` has no member `toString`

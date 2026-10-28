@@ -150,7 +150,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::BreakOutsideLoopOrSwitch,
     RejectionSite::LabeledContinue,
     RejectionSite::ContinueOutsideLoop,
-    RejectionSite::DoWhileStatement,
     RejectionSite::ForInStatement,
     RejectionSite::LabeledStatement,
     RejectionSite::DebuggerStatement,

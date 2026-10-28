@@ -122,6 +122,13 @@ impl Analyzer {
                 self.expr(cond);
                 self.scoped_stmts(body);
             }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                // A body-local binding shadows a counter only in the body.
+                let saved = self.ranges.clone();
+                self.stmts(body);
+                self.ranges = saved;
+                self.expr(cond);
+            }
             hir::Stmt::For {
                 init,
                 cond,

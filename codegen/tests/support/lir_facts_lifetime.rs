@@ -159,6 +159,11 @@ pub(super) fn statements(
                 cond: _,
                 pos: _,
             }
+            | S::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | S::Block(body)
             | S::Using {
                 body,

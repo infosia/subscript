@@ -108,6 +108,10 @@ impl<'p> Checker<'p> {
                     self.check_while(w, fx, out);
                     false
                 }
+                ast::Stmt::DoWhile(d) => {
+                    self.check_do_while(d, fx, out);
+                    false
+                }
                 ast::Stmt::For(f) => {
                     self.check_for(f, fx, out);
                     false
@@ -208,7 +212,6 @@ impl<'p> Checker<'p> {
                     let pos = self.pos(other.span());
                     self.reject_subset(
                         match other {
-                            ast::Stmt::DoWhile(_) => RejectionSite::DoWhileStatement,
                             ast::Stmt::ForIn(_) => RejectionSite::ForInStatement,
                             ast::Stmt::Labeled(_) => RejectionSite::LabeledStatement,
                             ast::Stmt::Debugger(_) => RejectionSite::DebuggerStatement,
@@ -822,6 +825,49 @@ impl<'p> Checker<'p> {
         Self::join_loop_exits(fx, false_exit);
 
         out.push(hir::Stmt::While { cond, body, pos });
+    }
+
+    /// Checks `do { body } while (test);` (`compiler.md` §203): the body
+    /// runs first, and the test sees the join of the body end and each
+    /// `continue`.
+    fn check_do_while(&mut self, d: &ast::DoWhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+        let pos = self.pos(d.span);
+        self.end_loop_narrowing(&pos, fx);
+        let kept = fx.narrowed.clone();
+        fx.loop_depth += 1;
+        fx.loop_break_facts
+            .push((fx.scopes.len(), Vec::new(), Vec::new()));
+        let (body, terminates) = self.check_branch(&d.body, fx);
+        let mut test_edges = fx
+            .loop_break_facts
+            .last()
+            .map_or_else(Vec::new, |(_, _, edges)| edges.clone());
+        if !terminates {
+            test_edges.push(super::LoopEdge {
+                facts: fx.narrowed.clone(),
+                notes: fx.ended_shared_narrowing.clone(),
+            });
+        }
+        Self::join_flow_edges(fx, test_edges);
+        let cond = self.check_truth_expr(&d.test, fx);
+        self.require_bool(&cond);
+        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
+        let mut false_exit = fx.narrowed.clone();
+        if !then_extra.is_empty() {
+            false_exit.retain(|key| !then_extra.contains(key));
+        }
+        if !else_extra.is_empty() {
+            false_exit.extend_facts(else_extra);
+        }
+        let false_exit = (!matches!(cond.kind, ExprKind::Bool(true))).then_some(super::LoopEdge {
+            facts: false_exit,
+            notes: fx.ended_shared_narrowing.clone(),
+        });
+        self.check_loop_stores(&body, std::iter::once(&cond), &kept);
+        fx.loop_depth -= 1;
+        Self::join_loop_exits(fx, false_exit);
+
+        out.push(hir::Stmt::DoWhile { body, cond, pos });
     }
 
     fn check_for(&mut self, f: &ast::ForStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {

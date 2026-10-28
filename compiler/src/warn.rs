@@ -136,6 +136,11 @@ fn walk_statements<S: Clone>(
                 cond: _,
                 pos: _,
             }
+            | Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | Stmt::ForOf {
                 body,
                 name: _,
@@ -607,6 +612,11 @@ impl WarningChecker<'_> {
                     cond: _,
                     pos: _,
                 }
+                | Stmt::DoWhile {
+                    body,
+                    cond: _,
+                    pos: _,
+                }
                 | Stmt::For {
                     body,
                     init: _,
@@ -681,6 +691,10 @@ impl WarningChecker<'_> {
                 } | Stmt::While {
                     cond: _,
                     body: _,
+                    pos: _
+                } | Stmt::DoWhile {
+                    body: _,
+                    cond: _,
                     pos: _
                 } | Stmt::For {
                     init: _,
@@ -944,6 +958,11 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
                 cond: _,
                 pos: _,
             }
+            | Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | Stmt::Block(body) => {
                 count_w004_bound_names(body, counts);
             }
@@ -1034,6 +1053,11 @@ fn collect_synthesized_origins(stmts: &[Stmt], origins: &mut HashMap<String, Str
                 }
             }
             Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::DoWhile {
                 body,
                 cond: _,
                 pos: _,
@@ -1214,6 +1238,11 @@ fn collect_w004_local_bindings(
                 }
             }
             Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | Stmt::DoWhile {
                 body,
                 cond: _,
                 pos: _,
@@ -1737,6 +1766,11 @@ fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
                 pos: _,
             }
             | Stmt::While {
+                cond: _,
+                body: _,
+                pos: _,
+            }
+            | Stmt::DoWhile {
                 cond: _,
                 body: _,
                 pos: _,

@@ -1086,6 +1086,11 @@ fn stmt_pos(statement: &hir::Stmt) -> Pos {
             cond: _,
             body: _,
         }
+        | hir::Stmt::DoWhile {
+            pos,
+            body: _,
+            cond: _,
+        }
         | hir::Stmt::For {
             pos,
             init: _,

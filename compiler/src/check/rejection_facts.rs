@@ -157,6 +157,7 @@ impl super::Checker<'_> {
             match statement {
                 hir::Stmt::Block(body)
                 | hir::Stmt::While { body, .. }
+                | hir::Stmt::DoWhile { body, .. }
                 | hir::Stmt::ForOf { body, .. }
                 | hir::Stmt::GeneratorForOf { body, .. } => self.end_every_enum_switch(body),
                 hir::Stmt::For {

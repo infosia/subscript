@@ -142,6 +142,11 @@ fn collect_for_of_bounds(
                 cond: _,
                 pos: _,
             }
+            | hir::Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | hir::Stmt::For {
                 body,
                 init: _,

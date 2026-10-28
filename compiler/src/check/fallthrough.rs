@@ -6,22 +6,26 @@ use crate::hir::{AmbientFn, Callee, ExprKind, Stmt, SwitchCase};
 struct Exits {
     next: bool,
     breaks: bool,
+    continues: bool,
 }
 
 impl Exits {
     const NEXT: Self = Self {
         next: true,
         breaks: false,
+        continues: false,
     };
     const STOP: Self = Self {
         next: false,
         breaks: false,
+        continues: false,
     };
 
     fn followed_by(self, tail: Self) -> Self {
         Self {
             next: self.next && tail.next,
             breaks: self.breaks || (self.next && tail.breaks),
+            continues: self.continues || (self.next && tail.continues),
         }
     }
 
@@ -29,6 +33,7 @@ impl Exits {
         Self {
             next: self.next || other.next,
             breaks: self.breaks || other.breaks,
+            continues: self.continues || other.continues,
         }
     }
 }
@@ -57,6 +62,19 @@ fn loop_exits(condition: Option<&crate::hir::Expr>, body: &[Stmt]) -> Exits {
         next: condition.is_some_and(|cond| !matches!(cond.kind, ExprKind::Bool(true)))
             || sequence_exits(body).breaks,
         breaks: false,
+        continues: false,
+    }
+}
+
+/// A `do…while` reaches its test from the end of its body and from each
+/// `continue` (§203.1 rule 2).
+fn do_while_exits(body: &[Stmt], condition: &crate::hir::Expr) -> Exits {
+    let body = sequence_exits(body);
+    let tested = body.next || body.continues;
+    Exits {
+        next: body.breaks || (tested && !matches!(condition.kind, ExprKind::Bool(true))),
+        breaks: false,
+        continues: false,
     }
 }
 
@@ -79,10 +97,16 @@ fn exits(statement: &Stmt) -> Exits {
             body: _,
             pos: _,
         } => Exits::NEXT,
-        Stmt::Return { .. } | Stmt::Continue(_) | Stmt::Throw { .. } => Exits::STOP,
+        Stmt::Return { .. } | Stmt::Throw { .. } => Exits::STOP,
+        Stmt::Continue(_) => Exits {
+            next: false,
+            breaks: false,
+            continues: true,
+        },
         Stmt::Break(_) => Exits {
             next: false,
             breaks: true,
+            continues: false,
         },
         Stmt::Expr(expr) => match &expr.kind {
             ExprKind::Call {
@@ -108,6 +132,7 @@ fn exits(statement: &Stmt) -> Exits {
             Exits {
                 next: body.next && tail.next,
                 breaks: tail.breaks || (tail.next && body.breaks),
+                continues: tail.continues || (tail.next && body.continues),
             }
         }
         // The handler runs after a raise anywhere in the body, so each
@@ -133,6 +158,7 @@ fn exits(statement: &Stmt) -> Exits {
             }
         }
         Stmt::While { cond, body, pos: _ } => loop_exits(Some(cond), body),
+        Stmt::DoWhile { body, cond, pos: _ } => do_while_exits(body, cond),
         Stmt::For {
             init,
             cond,
@@ -159,6 +185,7 @@ fn exits(statement: &Stmt) -> Exits {
             Exits {
                 next: result.next || result.breaks,
                 breaks: false,
+                continues: result.continues,
             }
         }
     }
@@ -228,6 +255,16 @@ mod tests {
             ("for (; true;) {}", false),
             ("for (;;) { break; }", true),
             ("for (let i: i32 = 0;; i += 1) { return; }", false),
+            ("do { return; } while (flag);", false),
+            ("do { return; } while (false);", false),
+            ("do {} while (flag);", true),
+            ("do {} while (true);", false),
+            ("do { break; } while (true);", true),
+            ("do { if (flag) { continue; } return; } while (flag);", true),
+            (
+                "do { if (flag) { continue; } return; } while (true);",
+                false,
+            ),
             ("switch (n) { case 0: return; }", true),
             ("switch (n) { case 0: return; default: return; }", false),
             ("switch (n) { case 0: default: return; }", false),
@@ -344,8 +381,11 @@ mod tests {
             ("if (flag) { continue; } else { break; }", true),
         ];
         for (inner, expected) in cases {
-            for loop_head in ["for (;;)", "while (true)"] {
-                let source = format!("{loop_head} {{ {inner} }}");
+            for source in [
+                format!("for (;;) {{ {inner} }}"),
+                format!("while (true) {{ {inner} }}"),
+                format!("do {{ {inner} }} while (true);"),
+            ] {
                 let statements = body(&source);
                 assert_eq!(can_fall_through(&statements[0]), expected, "{source}");
             }

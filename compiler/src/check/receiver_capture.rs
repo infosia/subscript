@@ -81,6 +81,12 @@ fn walk(
                     scope(body, facts, out, exceptional);
                 });
             }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                loop_facts(locals, out, |facts, out| {
+                    scope(body, facts, out, exceptional);
+                    walk(hir::HirChild::Expr(cond), facts, out, exceptional);
+                });
+            }
             hir::Stmt::For {
                 init,
                 cond,

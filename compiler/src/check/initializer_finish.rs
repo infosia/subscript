@@ -51,6 +51,11 @@ impl Checker<'_> {
                 cond: _,
                 pos: _,
             }
+            | hir::Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | hir::Stmt::ForOf {
                 body,
                 name: _,

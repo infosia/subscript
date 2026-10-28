@@ -113,6 +113,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 pos,
             } => self.lower_if(cond, then, els.as_deref().unwrap_or(&[]), pos)?,
             hir::Stmt::While { cond, body, pos } => self.lower_while(cond, body, pos)?,
+            hir::Stmt::DoWhile { body, cond, pos } => self.lower_do_while(body, cond, pos)?,
             hir::Stmt::For {
                 init,
                 cond,
@@ -252,6 +253,58 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.current = None;
         }
         self.controls.pop();
+        if self.block_reachable(exit) {
+            self.enter_block(exit)?;
+        } else {
+            self.current = None;
+        }
+        Ok(())
+    }
+
+    /// `do…while` (`compiler.md` §203.1 rule 5): the body block first,
+    /// then the test block, which branches back to the body. `continue`
+    /// targets the test block.
+    fn lower_do_while(
+        &mut self,
+        body: &[hir::Stmt],
+        cond: &hir::Expr,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let body_block = self.new_state_block(Vec::new(), Some("do.body".to_string()), &[]);
+        let test_block = self.new_state_block(Vec::new(), Some("do.cond".to_string()), &[]);
+        let exit = self.new_state_block(Vec::new(), Some("do.exit".to_string()), &[]);
+        let edge = self.block_target(body_block, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), pos)?;
+        self.enter_block(body_block)?;
+        self.controls.push(self.control(exit, Some(test_block)));
+        self.lower_scoped(body)?;
+        if self.current.is_some() {
+            let edge = self.block_target(test_block, Vec::new())?;
+            self.terminate(l::Terminator::Branch(edge), pos)?;
+        }
+        self.controls.pop();
+        if self.block_reachable(test_block) {
+            self.enter_block(test_block)?;
+            let condition = self.require_expr(cond)?;
+            let body_target = self.block_target(body_block, Vec::new())?;
+            let exit_target = self.block_target(exit, Vec::new())?;
+            self.terminate(
+                match cond.kind {
+                    hir::ExprKind::Bool(true) => l::Terminator::Branch(body_target),
+                    hir::ExprKind::Bool(false) => l::Terminator::Branch(exit_target),
+                    _ => l::Terminator::ConditionalBranch {
+                        condition,
+                        then_target: body_target,
+                        else_target: exit_target,
+                    },
+                },
+                pos,
+            )?;
+        } else {
+            self.current = None;
+        }
+        // A `do…while (true)` with no reachable `break` has no exit edge
+        // (compiler.md §164 rule 3).
         if self.block_reachable(exit) {
             self.enter_block(exit)?;
         } else {

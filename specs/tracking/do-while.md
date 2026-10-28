@@ -1,6 +1,6 @@
 # `do…while` runs its body before its test — `compiler.md` §203
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `0b4f11b0`
 
@@ -21,3 +21,14 @@ Definite assignment (§158) runs on the HIR
 a `for` loop with a first-iteration flag gives that pass a loop that
 can run zero times, so `let n: i32; do { n = 3; } while (false);`
 would stay rejected. §203.1 rule 5 adds a HIR form for this reason.
+
+## Landing
+
+`gate full 3bea61ef dirty:47 debug 2975/0/5 release 2972/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 1 exit 0`. The moved golden is
+`codegen/tests/lir-goldens/corpus.txt`: it grows by the `a388`
+section only, and no existing line changes.
+
+The HIR form is `Stmt::DoWhile` in `compiler/src/hir/statement.rs`.
+`do { return 1; } while (c)` ends the flow; `tsc` 5.9.2 accepts that
+form too.

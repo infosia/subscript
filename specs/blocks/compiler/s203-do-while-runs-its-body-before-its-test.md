@@ -54,4 +54,4 @@ acceptance 10 keeps it out. Neither gives a reason.
    `continue` does not count.
 6. `collisions.md` C24 row 29 drops `do…while`. §124 acceptance 10
    cites this section.
-7. No golden moves.
+7. No golden moves. The LIR text snapshot grows by the `a388` section only, because `a388` has a generator.

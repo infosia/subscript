@@ -311,6 +311,23 @@ impl Flow<'_, '_> {
                     &[],
                 );
             }
+            hir::Stmt::DoWhile { body, cond, pos: _ } => {
+                // The body runs once before the first test (§203.1 rule 3).
+                let mut exits = Vec::new();
+                for exit in self.scope(body, state) {
+                    match exit {
+                        Exit::Break(state) => exits.push(Exit::Next(state)),
+                        Exit::Return(state) => exits.push(Exit::Return(state)),
+                        Exit::Next(mut state) | Exit::Continue(mut state) => {
+                            self.expression(cond, &mut state);
+                            if !matches!(cond.kind, hir::ExprKind::Bool(true)) {
+                                exits.push(Exit::Next(state));
+                            }
+                        }
+                    }
+                }
+                return exits;
+            }
             hir::Stmt::For {
                 init,
                 cond,
@@ -464,6 +481,11 @@ impl<'a> LocalStatements<'a> {
                     body: _,
                     pos: _,
                 }
+                | hir::Stmt::DoWhile {
+                    body: _,
+                    cond: _,
+                    pos: _,
+                }
                 | hir::Stmt::For {
                     init: _,
                     cond: _,
@@ -510,6 +532,11 @@ impl<'a> LocalStatements<'a> {
                 hir::Stmt::While {
                     cond: _,
                     body: _,
+                    pos: _,
+                }
+                | hir::Stmt::DoWhile {
+                    body: _,
+                    cond: _,
                     pos: _,
                 }
                 | hir::Stmt::For {

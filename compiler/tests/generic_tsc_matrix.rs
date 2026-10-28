@@ -563,13 +563,6 @@ struct Divergence {
     message: &'static str,
 }
 
-const DO_WHILE: Divergence = Divergence {
-    code: RuleCode::S100,
-    record: "C24",
-    message: "statement form outside the decided surface",
-    token: "`do…while`, a labeled statement",
-};
-
 const VALUE_FIELD: Divergence = Divergence {
     code: RuleCode::S100,
     record: "C2",
@@ -750,6 +743,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "logical-relational",
             "nullish-relational",
             "while-condition",
+            "do-condition",
             "for-condition",
             "assert-to-parameter",
         ],
@@ -794,6 +788,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "logical-relational",
             "nullish-relational",
             "while-condition",
+            "do-condition",
             "for-condition",
             "assert-to-parameter",
             "nested-constraint",
@@ -874,6 +869,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "logical-relational",
             "nullish-relational",
             "while-condition",
+            "do-condition",
             "for-condition",
             "assert-to-parameter",
             "nested-constraint",
@@ -950,6 +946,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "logical-relational",
             "nullish-relational",
             "while-condition",
+            "do-condition",
             "for-condition",
             "assert-to-parameter",
             "nested-constraint",
@@ -994,6 +991,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "if-condition" => ("boolean", "true"),
             "logical-and-right" => ("boolean", "true"),
             "while-condition" => ("boolean", "true"),
+            "do-condition" => ("boolean", "true"),
             "for-condition" => ("boolean", "true"),
             "nullish-same" => ("Box | null", "null"),
             "nullish-box" => ("Box | null", "null"),
@@ -1012,11 +1010,6 @@ fn cells() -> Vec<Cell> {
         for form in FORMS {
             let name = format!("{}-{}", kind.name, form.name);
             let declaration = form_declaration(kind, form);
-            let divergence = if form.name == "do-condition" {
-                Some(DO_WHILE)
-            } else {
-                None
-            };
             for instance in [false, true] {
                 let main_body = if instance {
                     let Some((ty, value)) = instance_argument(kind, form) else {
@@ -1050,7 +1043,7 @@ fn cells() -> Vec<Cell> {
                     } else {
                         None
                     },
-                    divergence,
+                    divergence: None,
                 }));
             }
         }

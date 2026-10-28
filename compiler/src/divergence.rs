@@ -222,8 +222,6 @@ pub enum Divergence {
     LabeledStatement,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
     ForInStatement,
-    /// No lowering is decided for these statements; for-in reads dynamic properties.
-    DoWhileStatement,
     /// The admitted surface excludes this source form.
     SourceNamespaceDeclaration,
     /// An interface is structural, and types are nominal.
@@ -1157,7 +1155,6 @@ impl Divergence {
         Divergence::DebuggerStatement,
         Divergence::LabeledStatement,
         Divergence::ForInStatement,
-        Divergence::DoWhileStatement,
         Divergence::SourceNamespaceDeclaration,
         Divergence::SourceInterfaceDeclaration,
         Divergence::LocalInterfaceDeclaration,

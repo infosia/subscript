@@ -290,6 +290,11 @@ impl Module {
                 body: _,
                 pos: _,
             }
+            | Stmt::DoWhile {
+                cond: _,
+                body: _,
+                pos: _,
+            }
             | Stmt::For {
                 init: _,
                 cond: _,

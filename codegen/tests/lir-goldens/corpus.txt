@@ -48833,6 +48833,598 @@ fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     AsyncHandleArrayRelease(%12) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a367-destructured-call-result-awaited.ts", line: 10, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a367-destructured-call-result-awaited.ts", line: 10, col: 23 } }] @ a367-destructured-call-result-awaited.ts:10:23
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a367-destructured-call-result-awaited.ts", line: 10, col: 23 } }] @ a367-destructured-call-result-awaited.ts:10:23
     -> Unreachable { pos: Pos { file: "a367-destructured-call-result-awaited.ts", line: 10, col: 23 } }
+===== a388-do-while =====
+module initializer=Some(FunctionId(6))
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "Item" value=false descriptor=false boundary=false align=None @ a388-do-while.ts:6:7
+  field d3 "v": I32 defaulted=false absence=false foreign=None @ a388-do-while.ts:7:3
+  method m1 "constructor" -> f1
+global g0 "tests": I32 mutable=true @ a388-do-while.ts:13:5
+global g1 "made": I32 mutable=true @ a388-do-while.ts:20:5
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "constructor" kind=Constructor { class: ClassId(1), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a388-do-while.ts:8:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a388-do-while.ts:8:3
+  param %1 "v": Data(I32) kind=Explicit storage=None @ a388-do-while.ts:8:15
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(I32) name=Some("v")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 9, col: 5 } }] @ a388-do-while.ts:9:10
+    StoreAddress(%2, %1) @ a388-do-while.ts:9:10
+    -> Return { value: None, pos: Pos { file: "a388-do-while.ts", line: 8, col: 3 } }
+fn f2 "more" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a388-do-while.ts:15:10
+  param %0 "i": Data(I32) kind=Explicit storage=None @ a388-do-while.ts:15:15
+  value %0: Data(I32) name=Some("i")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = LoadGlobal(GlobalId(0))() @ a388-do-while.ts:16:3
+    %2: Data(I32) = Binary(Add)(%1, Integer(1):I32) @ a388-do-while.ts:16:3
+    StoreGlobal(GlobalId(0))(%2) @ a388-do-while.ts:16:3
+    %3: Data(Bool) = Binary(Lt)(%0, Integer(5):I32) @ a388-do-while.ts:17:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a388-do-while.ts", line: 17, col: 3 } }
+fn f3 "maybe" kind=Free exported=false generator=false async=false -> Nullable(Class(ClassId(1))) entry=b0 @ a388-do-while.ts:22:10
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Nullable(Class(ClassId(1)))) name=None
+  value %5: Data(Nullable(Class(ClassId(1)))) name=None
+  value %6: Data(Class(ClassId(1))) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Nullable(Class(ClassId(1)))) name=None
+  b0 Some("entry"):
+    %0: Data(I32) = LoadGlobal(GlobalId(1))() @ a388-do-while.ts:23:3
+    %1: Data(I32) = Binary(Add)(%0, Integer(1):I32) @ a388-do-while.ts:23:3
+    StoreGlobal(GlobalId(1))(%1) @ a388-do-while.ts:23:3
+    %2: Data(I32) = LoadGlobal(GlobalId(1))() @ a388-do-while.ts:24:10
+    %3: Data(Bool) = Binary(Lt)(%2, Integer(3):I32) @ a388-do-while.ts:24:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %5: Data(Nullable(Class(ClassId(1)))) = Coerce(Null:Null) @ a388-do-while.ts:24:21
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5))], ownership: [false] })
+  b2 Some("cond.else"):
+    %6: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 24, col: 28 } }] @ a388-do-while.ts:24:28
+    %7: Data(I32) = LoadGlobal(GlobalId(1))() @ a388-do-while.ts:24:37
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(1))), Data(I32)], return_type: None })(%6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 24, col: 28 } }] @ a388-do-while.ts:24:28
+    %8: Data(Nullable(Class(ClassId(1)))) = Coerce(%6) @ a388-do-while.ts:24:28
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(8))], ownership: [false] })
+  b3(%4: Data(Nullable(Class(ClassId(1))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a388-do-while.ts", line: 24, col: 3 } }
+fn f4 "countdown" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a388-do-while.ts:27:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 27, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(1)): []
+  param %0 "from": Data(I32) kind=Explicit storage=None @ a388-do-while.ts:27:21
+  value %0: Data(I32) name=Some("from")
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Bool) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(0))], ownership: [false, false] })
+  b1(%1: Data(I32), %2: Data(I32)) Some("do.body"):
+    -> Suspend { kind: Yield(Some(ValueId(2))), pos: Pos { file: "a388-do-while.ts", line: 30, col: 5 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false], invalidates: [], traps: [] }
+  b2(%3: Data(I32), %4: Data(I32)) Some("do.cond"):
+    %15: Data(Bool) = Binary(Gt)(%4, Integer(0):I32) @ a388-do-while.ts:32:12
+    -> ConditionalBranch { condition: Value(ValueId(15)), then_target: BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(4))], ownership: [false, false] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(3)), Value(ValueId(4))], ownership: [false, false] } }
+  b3(%5: Data(I32), %6: Data(I32)) Some("do.exit"):
+    -> Return { value: None, pos: Pos { file: "a388-do-while.ts", line: 27, col: 11 } }
+  b4(%7: Data(I32), %8: Data(I32)) Some("yield.resume"):
+    %9: Data(Bool) = GeneratorIsClosing() @ a388-do-while.ts:30:5
+    -> ConditionalBranch { condition: Value(ValueId(9)), then_target: BlockTarget { block: BlockId(5), arguments: [Value(ValueId(7)), Value(ValueId(8))], ownership: [false, false] }, else_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(7)), Value(ValueId(8))], ownership: [false, false] } }
+  b5(%10: Data(I32), %11: Data(I32)) Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a388-do-while.ts", line: 30, col: 5 } }
+  b6(%12: Data(I32), %13: Data(I32)) Some("generator.next"):
+    %14: Data(I32) = Binary(Sub)(%13, Integer(1):I32) @ a388-do-while.ts:31:5
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(12)), Value(ValueId(14))], ownership: [false, false] })
+fn f5 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a388-do-while.ts:35:17
+  value %0: Data(I32) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Bool) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Bool) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(I32) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(I32) name=None
+  value %41: Data(I32) name=None
+  value %42: Data(Str) name=None
+  value %43: Data(Nullable(Class(ClassId(1)))) name=None
+  value %44: Data(I32) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(I32) name=None
+  value %47: Data(I32) name=None
+  value %48: Data(Nullable(Class(ClassId(1)))) name=None
+  value %49: Data(I32) name=None
+  value %50: Data(I32) name=None
+  value %51: Data(I32) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(Nullable(Class(ClassId(1)))) name=None
+  value %54: Data(I32) name=None
+  value %55: Data(I32) name=None
+  value %56: Data(I32) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(Nullable(Class(ClassId(1)))) name=None
+  value %59: Data(Nullable(Class(ClassId(1)))) name=None
+  value %60: Data(Bool) name=None
+  value %61: Data(Class(ClassId(1))) name=None
+  value %62: Data(I32) name=None
+  value %63: Data(I32) name=None
+  value %64: Data(Str) name=None
+  value %65: Data(Str) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(I32) name=None
+  value %68: Data(I32) name=None
+  value %69: Data(I32) name=None
+  value %70: Data(Nullable(Class(ClassId(1)))) name=None
+  value %71: Data(Str) name=None
+  value %72: Data(I32) name=None
+  value %73: Data(I32) name=None
+  value %74: Data(I32) name=None
+  value %75: Data(I32) name=None
+  value %76: Data(I32) name=None
+  value %77: Data(Nullable(Class(ClassId(1)))) name=None
+  value %78: Data(Str) name=None
+  value %79: Data(I32) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(I32) name=None
+  value %82: Data(I32) name=None
+  value %83: Data(I32) name=None
+  value %84: Data(Nullable(Class(ClassId(1)))) name=None
+  value %85: Data(Str) name=None
+  value %86: Data(I32) name=None
+  value %87: Data(I32) name=None
+  value %88: Data(I32) name=None
+  value %89: Data(I32) name=None
+  value %90: Data(I32) name=None
+  value %91: Data(Nullable(Class(ClassId(1)))) name=None
+  value %92: Data(Str) name=None
+  value %93: Data(I32) name=None
+  value %94: Data(I32) name=None
+  value %95: Data(I32) name=None
+  value %96: Data(I32) name=None
+  value %97: Data(I32) name=None
+  value %98: Data(I32) name=None
+  value %99: Data(Nullable(Class(ClassId(1)))) name=None
+  value %100: Data(Str) name=None
+  value %101: Data(I32) name=None
+  value %102: Data(I32) name=None
+  value %103: Data(I32) name=None
+  value %104: Data(I32) name=None
+  value %105: Data(I32) name=None
+  value %106: Data(I32) name=None
+  value %107: Data(Nullable(Class(ClassId(1)))) name=None
+  value %108: Data(Str) name=None
+  value %109: Data(I32) name=None
+  value %110: Data(I32) name=None
+  value %111: Data(Str) name=None
+  value %112: Data(Str) name=None
+  value %113: Data(I32) name=None
+  value %114: Data(Bool) name=None
+  value %115: Data(I32) name=None
+  value %116: Data(Bool) name=None
+  value %117: Data(Array(I32)) name=None
+  value %118: Data(Generator(I32)) name=None
+  value %119: Data(I32) name=None
+  value %120: Data(I32) name=None
+  value %121: Data(I32) name=None
+  value %122: Data(I32) name=None
+  value %123: Data(Nullable(Class(ClassId(1)))) name=None
+  value %124: Data(Str) name=None
+  value %125: Data(I32) name=None
+  value %126: Data(I32) name=None
+  value %127: Data(I32) name=None
+  value %128: Data(I32) name=None
+  value %129: Data(I32) name=None
+  value %130: Data(Nullable(Class(ClassId(1)))) name=None
+  value %131: Data(Str) name=None
+  value %132: Data(I32) name=None
+  value %133: Data(I32) name=None
+  value %134: Data(I32) name=None
+  value %135: Data(I32) name=None
+  value %136: Data(I32) name=None
+  value %137: Data(Nullable(Class(ClassId(1)))) name=None
+  value %138: Data(Str) name=None
+  value %139: Data(I32) name=None
+  value %140: Data(I32) name=None
+  value %141: Data(I32) name=None
+  value %142: Data(I32) name=None
+  value %143: Data(I32) name=None
+  value %144: Data(Nullable(Class(ClassId(1)))) name=None
+  value %145: Data(Str) name=None
+  value %146: Data(I32) name=None
+  value %147: Data(IterResult(I32)) name=None
+  value %148: Data(Bool) name=None
+  value %149: Data(I32) name=None
+  value %150: Data(I32) name=None
+  value %151: Data(Str) name=None
+  value %152: Data(Str) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false] })
+  b1(%0: Data(I32), %1: Data(I32)) Some("do.body"):
+    %6: Data(I32) = Binary(Add)(%0, Integer(1):I32) @ a388-do-while.ts:39:5
+    %7: Data(Bool) = Binary(Eq)(%6, Integer(2):I32) @ a388-do-while.ts:40:9
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b2(%2: Data(I32), %3: Data(I32)) Some("do.cond"):
+    %14: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(Bool)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 47, col: 12 } }] @ a388-do-while.ts:47:12
+    -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(1), arguments: [Value(ValueId(2)), Value(ValueId(3))], ownership: [false, false] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(2)), Value(ValueId(3))], ownership: [false, false] } }
+  b3(%4: Data(I32), %5: Data(I32)) Some("do.exit"):
+    %15: Data(I32) = LoadGlobal(GlobalId(0))() @ a388-do-while.ts:48:24
+    %16: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%4, %5, %15) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 48, col: 9 } }] @ a388-do-while.ts:48:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) @ a388-do-while.ts:48:3
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(4)), Value(ValueId(5)), Constant(Constant { ty: I32, kind: Integer(10) })], ownership: [false, false, false] })
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(6)), Value(ValueId(1))], ownership: [false, false] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(6)), Value(ValueId(1))], ownership: [false, false] })
+  b6(%8: Data(I32), %9: Data(I32)) Some("if.join"):
+    %10: Data(Bool) = Binary(Eq)(%8, Integer(4):I32) @ a388-do-while.ts:43:9
+    -> ConditionalBranch { condition: Value(ValueId(10)), then_target: BlockTarget { block: BlockId(7), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b7 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(8)), Value(ValueId(9))], ownership: [false, false] })
+  b8 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(8)), Value(ValueId(9))], ownership: [false, false] })
+  b9(%11: Data(I32), %12: Data(I32)) Some("if.join"):
+    %13: Data(I32) = Binary(Add)(%12, %11) @ a388-do-while.ts:46:5
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(11)), Value(ValueId(13))], ownership: [false, false] })
+  b10(%17: Data(I32), %18: Data(I32), %19: Data(I32)) Some("do.body"):
+    %26: Data(I32) = Binary(Add)(%19, Integer(1):I32) @ a388-do-while.ts:52:5
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [Value(ValueId(17)), Value(ValueId(18)), Value(ValueId(26))], ownership: [false, false, false] })
+  b11(%20: Data(I32), %21: Data(I32), %22: Data(I32)) Some("do.cond"):
+    %27: Data(Bool) = Binary(Lt)(%22, Integer(5):I32) @ a388-do-while.ts:53:12
+    -> ConditionalBranch { condition: Value(ValueId(27)), then_target: BlockTarget { block: BlockId(10), arguments: [Value(ValueId(20)), Value(ValueId(21)), Value(ValueId(22))], ownership: [false, false, false] }, else_target: BlockTarget { block: BlockId(12), arguments: [Value(ValueId(20)), Value(ValueId(21)), Value(ValueId(22))], ownership: [false, false, false] } }
+  b12(%23: Data(I32), %24: Data(I32), %25: Data(I32)) Some("do.exit"):
+    %28: Data(Str) = Template([Operand { index: 0, format: I32 }])(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 54, col: 12 } }] @ a388-do-while.ts:54:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) @ a388-do-while.ts:54:3
+    %29: Data(I32) = Zero() @ a388-do-while.ts:56:7
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(25)), Value(ValueId(29))], ownership: [false, false, false, false] })
+  b13(%30: Data(I32), %31: Data(I32), %32: Data(I32), %33: Data(I32)) Some("do.body"):
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(32)), Constant(Constant { ty: I32, kind: Integer(3) })], ownership: [false, false, false, false] })
+  b14(%34: Data(I32), %35: Data(I32), %36: Data(I32), %37: Data(I32)) Some("do.cond"):
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(34)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(37))], ownership: [false, false, false, false] })
+  b15(%38: Data(I32), %39: Data(I32), %40: Data(I32), %41: Data(I32)) Some("do.exit"):
+    %42: Data(Str) = Template([Operand { index: 0, format: I32 }])(%41) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 60, col: 12 } }] @ a388-do-while.ts:60:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%42) @ a388-do-while.ts:60:3
+    %43: Data(Nullable(Class(ClassId(1)))) = Coerce(Null:Null) @ a388-do-while.ts:62:7
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [Value(ValueId(38)), Value(ValueId(39)), Value(ValueId(40)), Value(ValueId(41)), Value(ValueId(43))], ownership: [false, false, false, false, false] })
+  b16(%44: Data(I32), %45: Data(I32), %46: Data(I32), %47: Data(I32), %48: Data(Nullable(Class(ClassId(1))))) Some("do.body"):
+    %59: Data(Nullable(Class(ClassId(1)))) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(Nullable(Class(ClassId(1))))) })() traps=[Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 64, col: 10 } }] @ a388-do-while.ts:64:10
+    -> Branch(BlockTarget { block: BlockId(17), arguments: [Value(ValueId(44)), Value(ValueId(45)), Value(ValueId(46)), Value(ValueId(47)), Value(ValueId(59))], ownership: [false, false, false, false, false] })
+  b17(%49: Data(I32), %50: Data(I32), %51: Data(I32), %52: Data(I32), %53: Data(Nullable(Class(ClassId(1))))) Some("do.cond"):
+    %60: Data(Bool) = Binary(Eq)(%53, Null:Null) @ a388-do-while.ts:65:12
+    -> ConditionalBranch { condition: Value(ValueId(60)), then_target: BlockTarget { block: BlockId(16), arguments: [Value(ValueId(49)), Value(ValueId(50)), Value(ValueId(51)), Value(ValueId(52)), Value(ValueId(53))], ownership: [false, false, false, false, false] }, else_target: BlockTarget { block: BlockId(18), arguments: [Value(ValueId(49)), Value(ValueId(50)), Value(ValueId(51)), Value(ValueId(52)), Value(ValueId(53))], ownership: [false, false, false, false, false] } }
+  b18(%54: Data(I32), %55: Data(I32), %56: Data(I32), %57: Data(I32), %58: Data(Nullable(Class(ClassId(1))))) Some("do.exit"):
+    %61: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%58) @ a388-do-while.ts:66:12
+    %62: Data(I32) = LoadField(Class(FieldId(3)))(%61) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 66, col: 12 } }] @ a388-do-while.ts:66:15
+    %63: Data(I32) = LoadGlobal(GlobalId(1))() @ a388-do-while.ts:66:20
+    %64: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%62, %63) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 66, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 66, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 66, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 66, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 66, col: 9 } }] @ a388-do-while.ts:66:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%64) @ a388-do-while.ts:66:3
+    %65: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 68, col: 14 } }] @ a388-do-while.ts:68:14
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(54)), Value(ValueId(55)), Value(ValueId(56)), Value(ValueId(57)), Value(ValueId(58)), Value(ValueId(65)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false, false, false, false, false, false] })
+  b19(%66: Data(I32), %67: Data(I32), %68: Data(I32), %69: Data(I32), %70: Data(Nullable(Class(ClassId(1)))), %71: Data(Str), %72: Data(I32)) Some("do.body"):
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(66)), Value(ValueId(67)), Value(ValueId(68)), Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71)), Value(ValueId(72)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false, false, false, false, false, false, false] })
+  b20(%73: Data(I32), %74: Data(I32), %75: Data(I32), %76: Data(I32), %77: Data(Nullable(Class(ClassId(1)))), %78: Data(Str), %79: Data(I32)) Some("do.cond"):
+    %116: Data(Bool) = Binary(Lt)(%79, Integer(2):I32) @ a388-do-while.ts:77:12
+    -> ConditionalBranch { condition: Value(ValueId(116)), then_target: BlockTarget { block: BlockId(19), arguments: [Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79))], ownership: [false, false, false, false, false, false, false] }, else_target: BlockTarget { block: BlockId(21), arguments: [Value(ValueId(73)), Value(ValueId(74)), Value(ValueId(75)), Value(ValueId(76)), Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79))], ownership: [false, false, false, false, false, false, false] } }
+  b21(%80: Data(I32), %81: Data(I32), %82: Data(I32), %83: Data(I32), %84: Data(Nullable(Class(ClassId(1)))), %85: Data(Str), %86: Data(I32)) Some("do.exit"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%85) @ a388-do-while.ts:78:3
+    %117: Data(Array(I32)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 80, col: 23 } }] @ a388-do-while.ts:80:23
+    %118: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(3):I32) invalidates=[ValueId(117)] traps=[Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 81, col: 19 } }] @ a388-do-while.ts:81:19
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(80)), Value(ValueId(81)), Value(ValueId(82)), Value(ValueId(83)), Value(ValueId(84)), Value(ValueId(85)), Value(ValueId(86))], ownership: [false, false, false, false, false, false, false] })
+  b22(%87: Data(I32), %88: Data(I32), %89: Data(I32), %90: Data(I32), %91: Data(Nullable(Class(ClassId(1)))), %92: Data(Str), %93: Data(I32), %94: Data(I32)) Some("do.body"):
+    %111: Data(Str) = Template([Operand { index: 0, format: I32 }, Operand { index: 1, format: I32 }, Text(" ")])(%93, %94) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 15 } }] @ a388-do-while.ts:73:15
+    %112: Data(Str) = Binary(Add)(%92, %111) traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 73, col: 7 } }] @ a388-do-while.ts:73:7
+    %113: Data(I32) = Binary(Add)(%94, Integer(1):I32) @ a388-do-while.ts:74:7
+    -> Branch(BlockTarget { block: BlockId(23), arguments: [Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(89)), Value(ValueId(90)), Value(ValueId(91)), Value(ValueId(112)), Value(ValueId(93)), Value(ValueId(113))], ownership: [false, false, false, false, false, false, false, false] })
+  b23(%95: Data(I32), %96: Data(I32), %97: Data(I32), %98: Data(I32), %99: Data(Nullable(Class(ClassId(1)))), %100: Data(Str), %101: Data(I32), %102: Data(I32)) Some("do.cond"):
+    %114: Data(Bool) = Binary(Lt)(%102, Integer(2):I32) @ a388-do-while.ts:75:14
+    -> ConditionalBranch { condition: Value(ValueId(114)), then_target: BlockTarget { block: BlockId(22), arguments: [Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(97)), Value(ValueId(98)), Value(ValueId(99)), Value(ValueId(100)), Value(ValueId(101)), Value(ValueId(102))], ownership: [false, false, false, false, false, false, false, false] }, else_target: BlockTarget { block: BlockId(24), arguments: [Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(97)), Value(ValueId(98)), Value(ValueId(99)), Value(ValueId(100)), Value(ValueId(101)), Value(ValueId(102))], ownership: [false, false, false, false, false, false, false, false] } }
+  b24(%103: Data(I32), %104: Data(I32), %105: Data(I32), %106: Data(I32), %107: Data(Nullable(Class(ClassId(1)))), %108: Data(Str), %109: Data(I32), %110: Data(I32)) Some("do.exit"):
+    %115: Data(I32) = Binary(Add)(%109, Integer(1):I32) @ a388-do-while.ts:76:5
+    -> Branch(BlockTarget { block: BlockId(20), arguments: [Value(ValueId(103)), Value(ValueId(104)), Value(ValueId(105)), Value(ValueId(106)), Value(ValueId(107)), Value(ValueId(108)), Value(ValueId(115))], ownership: [false, false, false, false, false, false, false] })
+  b25(%119: Data(I32), %120: Data(I32), %121: Data(I32), %122: Data(I32), %123: Data(Nullable(Class(ClassId(1)))), %124: Data(Str), %125: Data(I32)) Some("generator-for-of.next"):
+    %147: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%118) invalidates=[ValueId(117)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 81, col: 19 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a388-do-while.ts", line: 81, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 81, col: 3 } }] @ a388-do-while.ts:81:3
+    %148: Data(Bool) = LoadField(IterDone)(%147) @ a388-do-while.ts:81:3
+    -> ConditionalBranch { condition: Value(ValueId(148)), then_target: BlockTarget { block: BlockId(27), arguments: [Value(ValueId(119)), Value(ValueId(120)), Value(ValueId(121)), Value(ValueId(122)), Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(125))], ownership: [false, false, false, false, false, false, false] }, else_target: BlockTarget { block: BlockId(26), arguments: [], ownership: [] } }
+  b26 Some("generator-for-of.body"):
+    %149: Data(I32) = LoadField(IterValue)(%147) @ a388-do-while.ts:81:3
+    %150: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%117, %149) invalidates=[ValueId(117)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 82, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 82, col: 5 } }] @ a388-do-while.ts:82:5
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(119)), Value(ValueId(120)), Value(ValueId(121)), Value(ValueId(122)), Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(125))], ownership: [false, false, false, false, false, false, false] })
+  b27(%126: Data(I32), %127: Data(I32), %128: Data(I32), %129: Data(I32), %130: Data(Nullable(Class(ClassId(1)))), %131: Data(Str), %132: Data(I32)) Some("generator-for-of.exhausted"):
+    -> Branch(BlockTarget { block: BlockId(29), arguments: [Value(ValueId(126)), Value(ValueId(127)), Value(ValueId(128)), Value(ValueId(129)), Value(ValueId(130)), Value(ValueId(131)), Value(ValueId(132))], ownership: [false, false, false, false, false, false, false] })
+  b28(%133: Data(I32), %134: Data(I32), %135: Data(I32), %136: Data(I32), %137: Data(Nullable(Class(ClassId(1)))), %138: Data(Str), %139: Data(I32)) Some("generator-for-of.consumer-exit"):
+    -> Unreachable { pos: Pos { file: "a388-do-while.ts", line: 35, col: 17 } }
+  b29(%140: Data(I32), %141: Data(I32), %142: Data(I32), %143: Data(I32), %144: Data(Nullable(Class(ClassId(1)))), %145: Data(Str), %146: Data(I32)) Some("generator-for-of.exit"):
+    AsyncHandleArrayRelease(%118) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 81, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 81, col: 3 } }] @ a388-do-while.ts:81:3
+    %151: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a388-do-while.ts", line: 84, col: 19 } }] @ a388-do-while.ts:84:19
+    %152: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%117, %151) invalidates=[ValueId(117)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a388-do-while.ts", line: 84, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a388-do-while.ts", line: 84, col: 9 } }] @ a388-do-while.ts:84:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%152) invalidates=[ValueId(117)] @ a388-do-while.ts:84:3
+    -> Return { value: None, pos: Pos { file: "a388-do-while.ts", line: 35, col: 17 } }
+fn f6 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a388-do-while.ts:13:5
+  b0 Some("entry"):
+    StoreGlobal(GlobalId(0))(Integer(0):I32) @ a388-do-while.ts:13:5
+    StoreGlobal(GlobalId(1))(Integer(0):I32) @ a388-do-while.ts:20:5
+    -> Return { value: None, pos: Pos { file: "a388-do-while.ts", line: 13, col: 5 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

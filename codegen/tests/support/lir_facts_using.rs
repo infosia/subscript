@@ -105,6 +105,11 @@ fn leaves(hir: &hir::Module, statements: &[hir::Stmt], loops: usize, switches: u
                 cond: _,
                 pos: _,
             }
+            | hir::Stmt::DoWhile {
+                body,
+                cond: _,
+                pos: _,
+            }
             | hir::Stmt::For {
                 body,
                 init: _,
@@ -175,12 +180,14 @@ fn leaves(hir: &hir::Module, statements: &[hir::Stmt], loops: usize, switches: u
 struct Arrival {
     next: bool,
     breaks: bool,
+    continues: bool,
 }
 
 fn arrives(statements: &[hir::Stmt]) -> Arrival {
     let mut result = Arrival {
         next: true,
         breaks: false,
+        continues: false,
     };
     for statement in statements {
         if !result.next {
@@ -190,6 +197,7 @@ fn arrives(statements: &[hir::Stmt]) -> Arrival {
         result = Arrival {
             next: exits.next,
             breaks: result.breaks || exits.breaks,
+            continues: result.continues || exits.continues,
         };
     }
     result
@@ -199,10 +207,12 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
     const NEXT: Arrival = Arrival {
         next: true,
         breaks: false,
+        continues: false,
     };
     const STOP: Arrival = Arrival {
         next: false,
         breaks: false,
+        continues: false,
     };
     let literal_true = |cond: &hir::Expr| matches!(cond.kind, hir::ExprKind::Bool(true));
     match statement {
@@ -223,10 +233,16 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             body: _,
             pos: _,
         } => NEXT,
-        hir::Stmt::Return { .. } | hir::Stmt::Continue(_) | hir::Stmt::Throw { .. } => STOP,
+        hir::Stmt::Return { .. } | hir::Stmt::Throw { .. } => STOP,
+        hir::Stmt::Continue(_) => Arrival {
+            next: false,
+            breaks: false,
+            continues: true,
+        },
         hir::Stmt::Break(_) => Arrival {
             next: false,
             breaks: true,
+            continues: false,
         },
         hir::Stmt::Expr(expression) => {
             if matches!(
@@ -253,6 +269,7 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             Arrival {
                 next: head.next && tail.next,
                 breaks: tail.breaks || (tail.next && head.breaks),
+                continues: tail.continues || (tail.next && head.continues),
             }
         }
         hir::Stmt::Try {
@@ -265,6 +282,7 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             Arrival {
                 next: body.next || handler.next,
                 breaks: body.breaks || handler.breaks,
+                continues: body.continues || handler.continues,
             }
         }
         hir::Stmt::If {
@@ -281,13 +299,24 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
                 _ => Arrival {
                     next: then.next || els.next,
                     breaks: then.breaks || els.breaks,
+                    continues: then.continues || els.continues,
                 },
             }
         }
         hir::Stmt::While { cond, body, pos: _ } => Arrival {
             next: !literal_true(cond) || arrives(body).breaks,
             breaks: false,
+            continues: false,
         },
+        // The test runs after the body end and after each `continue`.
+        hir::Stmt::DoWhile { body, cond, pos: _ } => {
+            let body = arrives(body);
+            Arrival {
+                next: body.breaks || ((body.next || body.continues) && !literal_true(cond)),
+                breaks: false,
+                continues: false,
+            }
+        }
         hir::Stmt::For {
             init,
             cond,
@@ -302,6 +331,7 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             Arrival {
                 next: cond.as_ref().is_some_and(|cond| !literal_true(cond)) || arrives(body).breaks,
                 breaks: init.breaks,
+                continues: init.continues,
             }
         }
         hir::Stmt::Switch {
@@ -310,13 +340,17 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             pos: _,
         } => {
             let mut next = !cases.iter().any(|case| case.test.is_none());
+            // Dispatch enters each arm, so each `continue` of an arm is reached.
+            let mut continues = false;
             let mut suffix = NEXT;
             for case in cases.iter().rev() {
                 let arm = arrives(&case.body);
+                continues |= arm.continues;
                 suffix = if arm.next {
                     Arrival {
                         next: suffix.next,
                         breaks: arm.breaks || suffix.breaks,
+                        continues: false,
                     }
                 } else {
                     arm
@@ -326,6 +360,7 @@ fn arrives_after(statement: &hir::Stmt) -> Arrival {
             Arrival {
                 next,
                 breaks: false,
+                continues,
             }
         }
     }
@@ -391,6 +426,11 @@ impl Walk<'_> {
                 }
             }
             hir::Stmt::While {
+                body,
+                cond: _,
+                pos: _,
+            }
+            | hir::Stmt::DoWhile {
                 body,
                 cond: _,
                 pos: _,
