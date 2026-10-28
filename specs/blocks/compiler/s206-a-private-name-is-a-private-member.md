@@ -8,8 +8,8 @@ the owner selected it as the sixth section of the second group. The
 measurement is in `specs/tracking/private-names.md`.
 
 Problem, measured at the pin `0ac9c22c`: a `#name` member gives S100
-"class member form outside the decided surface" at the declaration and
-S100 "private names are not in the decided surface" at each access.
+"class member form outside the decided surface" at the declaration.
+Each access gives S100 "private names are not in the decided surface".
 `tsc` 5.9.2 accepts the members, and `node` runs them. `collisions.md`
 C24 row 11 gives "No lowering is decided" as the reason. The
 `s154-undecided-sites` note T10 states that a run-time brand is not
@@ -55,8 +55,24 @@ necessary, because classes are nominal (C1).
 5. `collisions.md` C24 row 11 drops the `#name` member.
 6. No golden moves.
 
-### 206.3 Open
+### 206.3 Phase Review
+
+*(Added 2026-10-28.)* A fresh review of `0ac9c22c..06e24f05` gave no
+CRITICAL or MAJOR finding, two MINOR findings, and three notes.
+
+1. MINOR, contrived, fixed: a static and an instance member with one
+   private name were accepted. `tsc` gives TS2804.
+2. MINOR, realistic, fixed: the `JSON.stringify` text did not name the
+   `#x` field whose type blocks the serialization.
+3. Note, fixed: the member read and the assignment kept an arm for a
+   private name that the front-end pass removes. A miss of the pass
+   now gives an internal error.
+4. Note, open: `#x in o` gives the general operator text.
+5. Note, fixed: two sentences of this section did not follow STE.
+
+Open:
+
 
 1. `JSON.stringify` omits a `#x` field, but the type of that field
-   must still be a JSON type. A class with a `#m: Map<…>` field cannot
-   be serialized; `node` omits the field.
+   must still be a JSON type. `JSON.stringify` rejects a class with a
+   `#m: Map<…>` field; `node` omits the field.

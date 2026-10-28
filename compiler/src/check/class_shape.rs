@@ -13,6 +13,21 @@ impl<'p> Checker<'p> {
         use ClassMemberDeclaration::{Field, Method, ReadAccessor, WriteAccessor};
         use ClassMemberNamespaceEntry::Accessor;
 
+        // §206.1 rule 1: one private name names one member, so a static
+        // and an instance member cannot share it.
+        let other = if is_static {
+            &self.class_sigs[id.0].member_namespace
+        } else {
+            &self.class_sigs[id.0].static_member_namespace
+        };
+        if crate::parse::private_name::is_private_name(name) && other.contains_key(name) {
+            self.reject_subset(
+                RejectionSite::PrivateNameStaticAndInstance,
+                format!("static and instance members cannot share the private name `{name}`"),
+                pos,
+            );
+            return false;
+        }
         let namespace = if is_static {
             &self.class_sigs[id.0].static_member_namespace
         } else {

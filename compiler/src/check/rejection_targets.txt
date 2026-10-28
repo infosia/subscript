@@ -123,6 +123,8 @@ DescriptorPrivateName	descriptor-private-name	S100	descriptor classes cannot dec
 MirrorPrivateName	mirror-private-name	S100	mirror classes cannot declare the private name `#x`
 MirrorPrivateName	mirror-private-method	S100	mirror classes cannot declare the private name `#f`
 JsonParsePrivateName	json-parse-private-name	S100	`JSON.parse` cannot set the private name `#x` of `C`
+PrivateNameStaticAndInstance	private-name-static-and-instance	S100	static and instance members cannot share the private name `#x`
+PrivateNameStaticAndInstance	private-name-static-and-instance-accessor	S100	static and instance members cannot share the private name `#v`
 JsonParsePrivateName	json-parse-nested-private-name	S100	`JSON.parse` cannot set the private name `#x` of `Inner`
 StaticFieldOptional	static-field-optional	S012	optional static fields imply `undefined`; use `T | null`
 ContextAffineStaticField	context-affine-static-field	S100	Worker, Inbox, and Outbox values may not be static fields

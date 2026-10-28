@@ -1,6 +1,6 @@
 //! A private name is a private member (compiler.md §206).
 //!
-//! Cost: fourteen checker calls on one-file or two-file programs, with no
+//! Cost: twenty-one checker calls on one-file or two-file programs, with no
 //! code generation and no external process.
 
 use super::*;
@@ -129,4 +129,66 @@ fn an_optional_chain_and_an_in_operand_keep_their_rejection() {
          export function main(): void {}\n",
     );
     assert_eq!(diagnostic.message, "operator outside the decided surface");
+}
+
+/// Rule 1: a static and an instance member cannot share a private name.
+#[test]
+fn a_static_and_an_instance_member_cannot_share_a_private_name() {
+    for (members, name, column) in [
+        ("static #x: i32 = 1; #x: i32 = 2;", "#x", 31),
+        ("#x: i32 = 2; static #x: i32 = 1;", "#x", 31),
+        (
+            "get #v(): i32 { return 1; } static get #v(): i32 { return 2; }",
+            "#v",
+            50,
+        ),
+        ("static #f(): void {} #f(): void {}", "#f", 32),
+    ] {
+        let diagnostic = only(&format!(
+            "class A {{ {members} }}\nexport function main(): void {{}}\n"
+        ));
+        assert_eq!(diagnostic.code, RuleCode::S100, "{members}");
+        assert_eq!(
+            diagnostic.message,
+            format!("static and instance members cannot share the private name `{name}`"),
+            "{members}"
+        );
+        assert_eq!(
+            (diagnostic.pos.line, diagnostic.pos.col),
+            (1, column),
+            "{members}"
+        );
+        assert_eq!(diagnostic.divergence, None, "{members}");
+    }
+    // Control: a static and an instance member can share a plain name.
+    assert!(
+        check("class A { static x: i32 = 1; x: i32 = 2; }\nexport function main(): void {}\n")
+            .is_ok()
+    );
+}
+
+/// Rule 5: a private name field outside the JSON types blocks
+/// `JSON.stringify`, and the text names it.
+#[test]
+fn json_stringify_names_the_private_field_that_blocks_it() {
+    let diagnostic = only(
+        "class Holder { #m: Map<string, i32> = new Map<string, i32>(); y: i32 = 1; }\n\
+         export function main(): void { print(JSON.stringify([new Holder()])); }\n",
+    );
+    assert_eq!(diagnostic.code, RuleCode::S014);
+    assert_eq!(
+        diagnostic.message,
+        "`JSON.stringify` cannot serialize `Holder[]`; the private field `#m` has type \
+         `Map<string, i32>`, which `JSON.stringify` cannot serialize"
+    );
+    // Control: a public field outside the JSON types keeps the domain text.
+    let diagnostic = only(
+        "class Holder { m: Map<string, i32> = new Map<string, i32>(); }\n\
+         export function main(): void { print(JSON.stringify(new Holder())); }\n",
+    );
+    assert!(
+        diagnostic.message.ends_with("classes, and Ref | null"),
+        "{}",
+        diagnostic.message
+    );
 }

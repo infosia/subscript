@@ -107,15 +107,18 @@ impl Checker<'_> {
                 return self.err_expr(pos);
             }
             let name = self.type_name(&value.ty);
-            self.reject_subset(
-                RejectionSite::JsonStringifyDomain,
-                format!(
+            let message = match self.json_blocking_private_field(&value.ty) {
+                Some((field, ty)) => format!(
+                    "`JSON.stringify` cannot serialize `{name}`; the private field `{field}` \
+                     has type `{ty}`, which `JSON.stringify` cannot serialize"
+                ),
+                None => format!(
                     "`JSON.stringify` cannot serialize `{name}`; P13 accepts sized numerics \
                      except f16, boolean, string, Date, arrays, @ValueType values, reference \
                      classes, and Ref | null"
                 ),
-                member_pos,
-            );
+            };
+            self.reject_subset(RejectionSite::JsonStringifyDomain, message, member_pos);
             return self.err_expr(pos);
         }
 
@@ -301,6 +304,37 @@ impl Checker<'_> {
         );
     }
 
+    /// The first private name field that the document of `ty` reaches
+    /// and whose type is not a JSON type, with that type's name. The
+    /// field is not in the document, but it blocks the serializer.
+    fn json_blocking_private_field(&self, ty: &Type) -> Option<(String, String)> {
+        fn visit(
+            checker: &Checker<'_>,
+            ty: &Type,
+            seen: &mut HashSet<ClassId>,
+        ) -> Option<(String, String)> {
+            match &checker.apparent_type(ty) {
+                Type::Array(element)
+                | Type::FixedArray(element, _)
+                | Type::Nullable(element, _) => visit(checker, element, seen),
+                Type::Class(id) if seen.insert(*id) => {
+                    checker.classes[id.0].fields.iter().find_map(|field| {
+                        if !crate::parse::private_name::is_private_name(&field.name) {
+                            visit(checker, &field.ty, seen)
+                        } else if checker.json_serializable(&field.ty) {
+                            None
+                        } else {
+                            Some((field.name.clone(), checker.type_name(&field.ty)))
+                        }
+                    })
+                }
+                _ => None,
+            }
+        }
+
+        visit(self, ty, &mut HashSet::new())
+    }
+
     /// The first class with a private name field that a parse target
     /// reaches, and that field: `JSON.parse` cannot set it.
     fn json_private_name(&self, ty: &Type) -> Option<(String, String)> {
@@ -400,9 +434,11 @@ impl Checker<'_> {
                         return true;
                     }
                     active.insert(*id);
-                    // A private name field is not in the document. Its type must
-                    // still be a JSON type, because a helper takes no carrier
-                    // parameter (§119.1 rule 4).
+                    // A private name field is not in the document. §119.1 rule 4:
+                    // a helper takes no parameter that carries a closure
+                    // environment, so a function-typed private name field must
+                    // reject the class. This check also rejects every other
+                    // private name field type outside the JSON types.
                     let ok = class
                         .fields
                         .iter()

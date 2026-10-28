@@ -137,11 +137,10 @@ impl<'p> Checker<'p> {
                 return self.check_index(obj, index, pos, fx);
             }
             ast::MemberProp::Ident(prop) => (prop.sym.to_string(), self.pos(prop.span)),
-            // §206.1 rule 2: a private name names the member `#x`.
-            ast::MemberProp::PrivateName(prop) => (
-                crate::parse::private_name::member_name(prop),
-                self.pos(prop.span),
-            ),
+            ast::MemberProp::PrivateName(prop) => {
+                self.reject_unlowered_private_name(prop);
+                return self.err_expr(pos);
+            }
         };
         if let Some(handled) =
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)

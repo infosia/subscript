@@ -85,6 +85,20 @@ fn restricted(accessibility: ast::Accessibility) -> Option<&'static str> {
 }
 
 impl Checker<'_> {
+    /// §206: the front end lowers each member expression with a private
+    /// name outside an optional chain, so the checker never reads one.
+    /// A private name here means that the pass missed a position.
+    pub(super) fn reject_unlowered_private_name(&mut self, name: &ast::PrivateName) {
+        self.reject_subset(
+            RejectionSite::PrivateNameUnlowered,
+            format!(
+                "internal error: the front end did not lower the private name `{}`",
+                crate::parse::private_name::member_name(name)
+            ),
+            self.pos(name.span),
+        );
+    }
+
     fn inside_class_body(&self, class: ClassId, fx: &FnCtx) -> bool {
         fx.lexical_class.is_some_and(|owner| {
             owner == class

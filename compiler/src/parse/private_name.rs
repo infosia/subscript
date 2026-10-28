@@ -546,3 +546,64 @@ fn simple_target(target: &mut ast::SimpleAssignTarget) {
         ast::SimpleAssignTarget::Ident(_) | ast::SimpleAssignTarget::Invalid(_) => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use swc_common::{FileName, SourceMap};
+    use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+
+    use super::*;
+
+    /// A private name in each position that the walk visits, then the two
+    /// positions that keep it: an optional chain member and an `in` operand.
+    const SOURCE: &str = "
+class C {
+  #a: i32 = 1;
+  static #s: i32 = 2;
+  b: i32 = this.#a;
+  #m(): i32 { return this.#a; }
+  get #g(): i32 { return C.#s; }
+  set #g(v: i32) { this.#a = v; }
+  constructor(p: i32 = C.#s) { this.#a = p; }
+  f(o: C): void {
+    const k = (): i32 => o.#a + [o.#a][0] + { v: o.#a }.v;
+    for (let i = o.#a; i < o.#a; i++) { o.#a += `${o.#m()}`.length; }
+    if (o.#a > 0) { o.#a++; } else { switch (o.#a) { case 1: break; } }
+    try { throw new Error(`${o.#g}`); } catch (e) { o.#g = o.#a ? 1 : 2; }
+    k();
+  }
+  h(o: C | null): boolean { return o?.#a === 1 && #a in o; }
+}
+export default class { #d: i32 = 3; e(): i32 { return this.#d; } }
+";
+
+    const MARK: &str = "PrivateName {";
+
+    fn parse() -> ast::Module {
+        let source_map = SourceMap::default();
+        let file = source_map.new_source_file(FileName::Anon.into(), SOURCE.to_string());
+        let syntax = Syntax::Typescript(TsSyntax {
+            decorators: true,
+            ..TsSyntax::default()
+        });
+        let lexer = Lexer::new(
+            syntax,
+            ast::EsVersion::Es2022,
+            StringInput::from(&*file),
+            None,
+        );
+        Parser::new_from(lexer).parse_module().expect("parses")
+    }
+
+    #[test]
+    fn the_walk_lowers_each_private_name_outside_a_chain_and_an_in_operand() {
+        let mut module = parse();
+        // Control: the parser gives a private name at every position.
+        assert!(format!("{module:?}").matches(MARK).count() > 20);
+        lower_module(&mut module);
+        let lowered = format!("{module:?}");
+        assert_eq!(lowered.matches(MARK).count(), 2, "{lowered}");
+        assert!(lowered.contains("sym: \"#a\""));
+        assert!(lowered.contains("sym: \"#d\""));
+    }
+}

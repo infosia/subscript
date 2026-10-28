@@ -248,6 +248,8 @@ pub(crate) enum RejectionSite {
     DescriptorPrivateName,
     MirrorPrivateName,
     JsonParsePrivateName,
+    PrivateNameStaticAndInstance,
+    PrivateNameUnlowered,
     StaticFieldOptional,
     ContextAffineStaticField,
     DescriptorOptionalDefaultMissing,

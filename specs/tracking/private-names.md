@@ -31,3 +31,7 @@ member a `private` member named `#x`. Emitted C names a struct member
 `d<field id>`, so `#x` and `x` get two C names, and no source name
 reaches a program C member name. `r452` reports at 13:14, the column
 of the member name, as for a `private` member.
+
+Phase Review fix (§206.3): `gate full 06e24f05 dirty:15 debug
+2991/0/5 release 2988/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`.

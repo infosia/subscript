@@ -217,6 +217,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::DescriptorPrivateName,
     RejectionSite::MirrorPrivateName,
     RejectionSite::JsonParsePrivateName,
+    RejectionSite::PrivateNameStaticAndInstance,
+    RejectionSite::PrivateNameUnlowered,
     RejectionSite::StaticFieldOptional,
     RejectionSite::ContextAffineStaticField,
     RejectionSite::DescriptorOptionalDefaultMissing,

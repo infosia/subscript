@@ -269,6 +269,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::DescriptorPrivateName => WitnessEntry::General { files: &["descriptor-private-name"], variant: Some(Divergence::DescriptorPrivateName), reason: "" },
         RejectionSite::MirrorPrivateName => WitnessEntry::General { files: &["mirror-private-name", "mirror-private-method"], variant: Some(Divergence::MirrorPrivateName), reason: "" },
         RejectionSite::JsonParsePrivateName => WitnessEntry::General { files: &["json-parse-private-name", "json-parse-nested-private-name"], variant: Some(Divergence::JsonParsePrivateName), reason: "" },
+        RejectionSite::PrivateNameStaticAndInstance => WitnessEntry::General { files: &["private-name-static-and-instance", "private-name-static-and-instance-accessor"], variant: None, reason: "" },
+        RejectionSite::PrivateNameUnlowered => WitnessEntry::General { files: &[], variant: None, reason: "The front end lowers each member with a private name outside an optional chain, and an optional chain member reaches check_optional_member." },
         RejectionSite::StaticFieldOptional => WitnessEntry::General { files: &["static-field-optional"], variant: Some(Divergence::StaticFieldOptional), reason: "" },
         RejectionSite::ContextAffineStaticField => WitnessEntry::General { files: &["context-affine-static-field"], variant: Some(Divergence::ContextAffineStaticField), reason: "" },
         RejectionSite::DescriptorOptionalDefaultMissing => WitnessEntry::General { files: &[], variant: Some(Divergence::OptionalDescriptorMember), reason: "The guard requires both definite and optional flags, with no initializer. The parser rejects the combined spelling." },

@@ -705,12 +705,9 @@ impl<'p> Checker<'p> {
                 let obj = self.check_write_receiver(m, fx);
                 self.check_named_member_place(m, obj, &name, prop_pos, fx)
             }
-            // §206.1 rule 2: a private name names the member `#x`.
             ast::MemberProp::PrivateName(prop) => {
-                let name = crate::parse::private_name::member_name(prop);
-                let prop_pos = self.pos(prop.span);
-                let obj = self.check_write_receiver(m, fx);
-                self.check_named_member_place(m, obj, &name, prop_pos, fx)
+                self.reject_unlowered_private_name(prop);
+                Place::Field(self.err_expr(pos))
             }
         }
     }

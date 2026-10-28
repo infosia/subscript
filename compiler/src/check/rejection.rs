@@ -475,6 +475,8 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::DescriptorPrivateName))
     }
     Self::MirrorPrivateName => (RuleCode::S100, Diverges(Divergence::MirrorPrivateName)),
+    Self::PrivateNameStaticAndInstance => (RuleCode::S100, TscRejects),
+    Self::PrivateNameUnlowered => (RuleCode::S100, TscRejects),
     Self::JsonParsePrivateName => {
         (RuleCode::S100, Diverges(Divergence::JsonParsePrivateName))
     }

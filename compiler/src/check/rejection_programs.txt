@@ -9711,3 +9711,15 @@ class Outer { inner: Inner = new Inner(); }
 export function main(): void { JSON.parse<Outer[]>("[]"); }
 END FILE
 END PROGRAM
+PROGRAM	private-name-static-and-instance	TS2804		0
+FILE	E	target/s154/forms/private-name-static-and-instance/main.ts
+class A { static #x: i32 = 1; #x: i32 = 2; }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	private-name-static-and-instance-accessor	TS2804		0
+FILE	E	target/s154/forms/private-name-static-and-instance-accessor/main.ts
+class A { get #v(): i32 { return 1; } static get #v(): i32 { return 2; } }
+export function main(): void {  }
+END FILE
+END PROGRAM
