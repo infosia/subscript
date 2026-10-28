@@ -1343,6 +1343,10 @@ pub(crate) struct Checker<'p> {
     /// Module-level transparent aliases (compiler.md §202), in
     /// declaration order.
     pub source_aliases: Vec<source_alias::SourceAlias>,
+    /// True while the aliases resolve: an instance defers its members.
+    pub defer_instance_shapes: bool,
+    /// Instances whose members wait for every alias (§202.1 rule 3).
+    pub pending_instance_shapes: Vec<generics::PendingInstanceShape>,
     /// True while resolving mirror declarations: the boundary null forms
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).

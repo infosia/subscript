@@ -353,6 +353,8 @@ pub(crate) enum RejectionSite {
     GenericSourceAlias,
     SourceAliasCircular,
     SourceAliasRecursive,
+    SourceAliasReadBeforeResolution,
+    AliasTypeArguments,
     LiteralAliasDiscriminantLimit,
     DuplicateLiteralAliasMember,
     WireEnumEmpty,

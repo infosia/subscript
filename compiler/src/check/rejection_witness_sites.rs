@@ -322,6 +322,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::GenericSourceAlias,
     RejectionSite::SourceAliasCircular,
     RejectionSite::SourceAliasRecursive,
+    RejectionSite::SourceAliasReadBeforeResolution,
+    RejectionSite::AliasTypeArguments,
     RejectionSite::LiteralAliasDiscriminantLimit,
     RejectionSite::DuplicateLiteralAliasMember,
     RejectionSite::WireEnumEmpty,

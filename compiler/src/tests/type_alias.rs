@@ -1,7 +1,8 @@
 //! Transparent type aliases (compiler.md §202).
 //!
-//! Cost: twelve checker calls on one-file programs, with no code
-//! generation and no external process; about 0.02 s in a debug build.
+//! Cost: nineteen checker calls on programs of one or two files, with
+//! no code generation and no external process; about 0.03 s in a debug
+//! build.
 
 use super::*;
 use crate::divergence::Divergence;
@@ -167,4 +168,91 @@ fn an_alias_of_a_literal_union_is_the_same_closed_set() {
         "{:?}",
         tag.params[0].ty
     );
+}
+
+#[test]
+fn an_alias_of_a_generic_instance_resolves_before_its_members() {
+    // A member names a later alias.
+    let module = check_program(&[SourceFile::entry(
+        "main.ts",
+        "type Stack = Pile<i32>;\ntype Count = i32;\n\
+         class Pile<T> { n: Count = 0; }\n\
+         export function main(): void { const s: Stack = new Pile<i32>(); print(`${s.n}`); }\n",
+    )])
+    .expect("an instance member can name a later alias");
+    let n = module
+        .classes
+        .iter()
+        .flat_map(|class| &class.fields)
+        .find(|field| field.name == "n")
+        .expect("n");
+    assert_eq!(n.ty, Type::I32);
+    // A member names the alias that names its own instance.
+    let module = check_program(&[SourceFile::entry(
+        "main.ts",
+        "type List = Link<i32>;\n\
+         class Link<T> { v: T; next: List | null = null; constructor(v: T) { this.v = v; } }\n\
+         export function main(): void { const a: List = new Link<i32>(1); print(`${a.v}`); }\n",
+    )])
+    .expect("an instance member can name the alias of that instance");
+    let link = module
+        .classes
+        .iter()
+        .find(|class| class.fields.iter().any(|field| field.name == "next"))
+        .expect("Link<i32>");
+    let next = link
+        .fields
+        .iter()
+        .find(|field| field.name == "next")
+        .expect("next");
+    assert!(
+        !format!("{:?}", next.ty).contains("Error"),
+        "member type {:?}",
+        next.ty
+    );
+}
+
+#[test]
+fn a_type_argument_on_an_alias_is_rejected() {
+    let diagnostics =
+        rejection("type Id = i32;\nexport function main(): void { const x: Id<i32> = 1; }\n");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].message, "type alias `Id` is not generic");
+    assert_eq!(diagnostics[0].divergence, None);
+    // A mirror alias follows the same rule.
+    let mirror = SourceFile::ambient(
+        "flags.d.ts",
+        "// @subscript-c-header include=\"flags.h\"\ntype Flags = u64;\n",
+    );
+    let diagnostics = check_program(&[
+        mirror.clone(),
+        SourceFile::entry(
+            "main.ts",
+            "export function main(): void { const f: Flags<i32> = 1; }\n",
+        ),
+    ])
+    .expect_err("type argument on a mirror alias");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].message, "type alias `Flags` is not generic");
+    // Control: the alias with no type argument checks.
+    check_program(&[
+        mirror,
+        SourceFile::entry(
+            "main.ts",
+            "export function main(): void { const f: Flags = 1; print(`${f}`); }\n",
+        ),
+    ])
+    .expect("mirror alias with no type argument");
+}
+
+#[test]
+fn constructing_an_alias_is_a_value_use() {
+    for src in [
+        "class Point { x: i32 = 0; }\ntype P = Point;\nexport function main(): void { new P(); }\n",
+        "class Point { static make(): i32 { return 1; } }\ntype P = Point;\nexport function main(): void { P.make(); }\n",
+    ] {
+        let diagnostics = rejection(src);
+        assert_eq!(diagnostics.len(), 1, "{src}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].message, "type alias `P` used as a value", "{src}");
+    }
 }

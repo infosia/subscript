@@ -373,6 +373,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::EnumNonIntegerMember => WitnessEntry::General { files: &["enum-non-integer-member"], variant: Some(Divergence::IntegerLiteralRange), reason: "" },
         RejectionSite::GenericSourceAlias => WitnessEntry::General { files: &["generic-source-alias", "c-array-two-alias", "c-async-arity-alias", "c-fixed-one-alias", "c-pattern-iterator-extended", "c-promise-arity-alias"], variant: Some(Divergence::GenericSourceAliasForm), reason: "" },
         RejectionSite::SourceAliasCircular => WitnessEntry::General { files: &["source-alias-circular", "source-alias-circular-union"], variant: None, reason: "" },
+        RejectionSite::SourceAliasReadBeforeResolution => WitnessEntry::General { files: &[], variant: None, reason: "Every alias resolves before the signature pass, and an instance named during alias resolution defers its members until then." },
+        RejectionSite::AliasTypeArguments => WitnessEntry::General { files: &["alias-type-arguments"], variant: None, reason: "" },
         RejectionSite::SourceAliasRecursive => WitnessEntry::General { files: &["source-alias-recursive", "source-alias-recursive-mutual"], variant: Some(Divergence::SourceAliasRecursiveForm), reason: "" },
         RejectionSite::LiteralAliasDiscriminantLimit => WitnessEntry::General { files: &[], variant: None, reason: "The guard requires more than 2147483647 string members. Their minimum source size exceeds the 32-bit source-position domain." },
         RejectionSite::DuplicateLiteralAliasMember => WitnessEntry::General { files: &["duplicate-literal-alias-member"], variant: Some(Divergence::DuplicateLiteralAliasMemberForm), reason: "" },

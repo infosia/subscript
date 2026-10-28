@@ -160,7 +160,7 @@ pub(super) const GENERICSOURCEALIASFORM: DivergenceEntry = DivergenceEntry {
 pub(super) const SOURCEALIASRECURSIVEFORM: DivergenceEntry = DivergenceEntry {
     ts: "type L = L[];\nexport function main(): void {  }",
     subscript: "class L { items: L[] = []; }\nexport function main(): void {  }",
-    why: "A nested array of unbounded depth has no finite type in this language.",
+    why: "A type of unbounded depth has no finite type in this language.",
     collision: "compiler.md §202",
 };
 

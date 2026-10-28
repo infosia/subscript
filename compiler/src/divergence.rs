@@ -356,7 +356,7 @@ pub enum Divergence {
     MirrorModuleDeclarationForm,
     /// No lowering is decided for generic aliases or repeated literal members.
     DuplicateLiteralAliasMemberForm,
-    /// A nested array of unbounded depth has no finite type in this language.
+    /// A type of unbounded depth has no finite type in this language.
     SourceAliasRecursiveForm,
     /// No lowering is decided for generic aliases or repeated literal members.
     GenericSourceAliasForm,

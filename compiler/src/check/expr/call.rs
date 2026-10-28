@@ -1755,6 +1755,18 @@ impl<'p> Checker<'p> {
                 }
                 Some(class_id)
             }
+            Some(ScopeItem::TypeAlias(_) | ScopeItem::SourceAlias(_)) => {
+                // §202.1 rule 3a: an alias names a type, not a value.
+                self.reject_subset(
+                    RejectionSite::MirrorTypeAliasValue,
+                    format!("type alias `{name}` used as a value"),
+                    ident_pos.clone(),
+                );
+                if let Some(arguments) = &n.args {
+                    self.check_poisoned_arguments(arguments, fx);
+                }
+                return self.err_expr(pos);
+            }
             Some(ScopeItem::GenericClass(key)) => match &n.type_args {
                 Some(type_args) => {
                     let arguments = self.resolve_instance_arguments(type_args);

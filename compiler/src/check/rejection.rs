@@ -720,6 +720,8 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::GenericSourceAliasForm))
     }
     Self::SourceAliasCircular => (RuleCode::S100, TscRejects),
+    Self::SourceAliasReadBeforeResolution => (RuleCode::S100, TscRejects),
+    Self::AliasTypeArguments => (RuleCode::S100, TscRejects),
     Self::SourceAliasRecursive => (
         RuleCode::S100,
         Diverges(Divergence::SourceAliasRecursiveForm),

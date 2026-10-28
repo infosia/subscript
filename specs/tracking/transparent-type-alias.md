@@ -33,3 +33,9 @@ groups separate rejection sites.
 A host entry with parameters of alias types (`i32`, `f64`, `boolean`,
 `u8`) gives the same `subscript boundary` output, `program.h`, and
 `entry.c` as the written types.
+
+Phase Review fix (§202.3): `gate full cbdcc307 dirty:20 debug
+2972/0/5 release 2969/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. At `cbdcc307`, `a387` passed `check`, and `run` stopped with
+"internal lowering error: … template operand Error is not
+formattable"; `node` prints the golden.

@@ -8,7 +8,7 @@
 use swc_ecma_ast as ast;
 
 use super::{module_decl, Checker, ScopeItem};
-use crate::check::rejection::RejectionSite;
+use crate::check::rejection::{diagnostic, RejectionSite};
 use crate::diag::Pos;
 use crate::types::Type;
 
@@ -92,27 +92,49 @@ fn references<'a>(ty: &'a ast::TsType, direct: bool, out: &mut Vec<(&'a str, boo
     }
 }
 
+/// The item of a resolved alias. An alias that is not resolved has none.
+fn resolved_item(state: &State) -> Option<ScopeItem> {
+    match state {
+        State::Resolved(item) => Some(item.clone()),
+        State::Pending | State::Resolving => None,
+    }
+}
+
 impl<'p> Checker<'p> {
     /// The item that a scope binding names. A transparent alias names
-    /// its resolved item; before it resolves, it names nothing usable.
+    /// its resolved item. A read of an alias that is not resolved is an
+    /// internal error (§202.1 rule 3).
     pub(crate) fn binding_item(&self, item: &ScopeItem) -> ScopeItem {
         let ScopeItem::SourceAlias(id) = item else {
             return item.clone();
         };
-        match self.source_aliases.get(*id).map(|alias| &alias.state) {
-            Some(State::Resolved(resolved)) => resolved.clone(),
-            _ => ScopeItem::Poisoned,
-        }
+        let Some(alias) = self.source_aliases.get(*id) else {
+            return ScopeItem::Poisoned;
+        };
+        resolved_item(&alias.state).unwrap_or_else(|| {
+            self.diags.push(diagnostic(
+                RejectionSite::SourceAliasReadBeforeResolution,
+                format!(
+                    "internal error: type alias `{}` is read before it resolves",
+                    alias.name
+                ),
+                alias.pos.clone(),
+            ));
+            ScopeItem::Poisoned
+        })
     }
 
     /// Resolves every transparent alias of the program (§202.1).
     pub(super) fn resolve_source_aliases(&mut self) {
         let saved = self.cur_file;
         self.subst.clear();
+        self.defer_instance_shapes = true;
         for id in 0..self.source_aliases.len() {
             self.resolve_source_alias(id, &mut Vec::new());
         }
+        self.defer_instance_shapes = false;
         self.cur_file = saved;
+        self.complete_pending_instance_shapes();
     }
 
     /// The aliased type of alias `id`, read from the program form that
@@ -228,5 +250,19 @@ impl<'p> Checker<'p> {
             message,
             pos,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_resolved_alias_has_an_item() {
+        assert!(resolved_item(&State::Pending).is_none());
+        assert!(resolved_item(&State::Resolving).is_none());
+        // Control: a resolved alias gives its item.
+        let item = resolved_item(&State::Resolved(ScopeItem::Poisoned));
+        assert!(matches!(item, Some(ScopeItem::Poisoned)), "{item:?}");
     }
 }

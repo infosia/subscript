@@ -224,6 +224,7 @@ EnumNonIntegerMember	enum-non-integer-member	S100	enum members must have integer
 GenericSourceAlias	generic-source-alias	S100	source type aliases cannot be generic
 SourceAliasCircular	source-alias-circular	S100	type alias `A` refers to itself
 SourceAliasCircular	source-alias-circular-union	S100	type alias `U` refers to itself
+AliasTypeArguments	alias-type-arguments	S100	type alias `Id` is not generic
 SourceAliasRecursive	source-alias-recursive	S100	type alias `L` refers to itself
 SourceAliasRecursive	source-alias-recursive-mutual	S100	type alias `C` refers to itself
 DuplicateLiteralAliasMember	duplicate-literal-alias-member	S100	duplicate string-literal union member `a`

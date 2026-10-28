@@ -1,6 +1,18 @@
 use super::*;
 use crate::check::rejection::RejectionSite;
 
+/// A generic-class instance that an alias named before every alias
+/// resolved. Its members resolve after the aliases (§202.1 rule 3).
+pub(crate) struct PendingInstanceShape {
+    id: ClassId,
+    key: String,
+    types: Vec<Type>,
+    positions: Vec<Pos>,
+    pos: Pos,
+    root: bool,
+    chain: Vec<instance_chain::InstanceRequest>,
+}
+
 impl<'p> Checker<'p> {
     // ----- generic monomorphization (in HIR: templates never survive) -----
 
@@ -542,6 +554,21 @@ impl<'p> Checker<'p> {
             self.instance_chain.pop();
             return Some(id);
         }
+        if self.defer_instance_shapes {
+            // §202.1 rule 3: the members resolve after every alias.
+            let id = self.register_instance(key, &name, &template, args);
+            self.pending_instance_shapes.push(PendingInstanceShape {
+                id,
+                key: key.to_string(),
+                types: args.to_vec(),
+                positions: positions.to_vec(),
+                pos,
+                root: std::mem::take(&mut self.opaque_root),
+                chain: self.instance_chain.clone(),
+            });
+            self.instance_chain.pop();
+            return Some(id);
+        }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
         let saved_context = self.suspend_container_context();
@@ -559,11 +586,30 @@ impl<'p> Checker<'p> {
             &pos,
         );
         let check_body = satisfied && self.instance_body_is_checked(args, root);
+        let id = self.register_instance(key, &name, &template, args);
+        self.complete_instance(id, &template, check_body);
+        self.instance_diagnostic_ranges
+            .push(diagnostics..self.diags.len());
+        self.cur_file = saved_file;
+        self.subst = saved_subst;
+        self.leave_container_context(saved_context);
+        self.instance_chain.pop();
+        Some(id)
+    }
+
+    /// Declares the instance class `name` of template `key` at `args`.
+    fn register_instance(
+        &mut self,
+        key: &str,
+        name: &str,
+        template: &GenericClass,
+        args: &[Type],
+    ) -> ClassId {
         let id = self.new_class(
-            &name,
+            name,
             template.is_value,
             template.is_descriptor,
-            template.alignment_override,
+            template.alignment_override.clone(),
             template.pos.clone(),
         );
         self.instance_arguments
@@ -574,6 +620,11 @@ impl<'p> Checker<'p> {
         {
             self.opaque_instances.insert(id);
         }
+        id
+    }
+
+    /// Resolves the members of instance `id` and checks or queues its body.
+    fn complete_instance(&mut self, id: ClassId, template: &GenericClass, check_body: bool) {
         self.resolve_class_shape(id, &template.class, template.declared);
         if check_body && (!self.signatures_resolved || self.deciding_type) {
             self.pending_instance_bodies
@@ -583,13 +634,49 @@ impl<'p> Checker<'p> {
         } else if check_body {
             self.check_class_body(id, &template.class, template.declared);
         }
-        self.instance_diagnostic_ranges
-            .push(diagnostics..self.diags.len());
-        self.cur_file = saved_file;
-        self.subst = saved_subst;
-        self.leave_container_context(saved_context);
-        self.instance_chain.pop();
-        Some(id)
+    }
+
+    /// Completes each instance that an alias named while the aliases
+    /// resolved (§202.1 rule 3). Every alias is resolved here.
+    pub(crate) fn complete_pending_instance_shapes(&mut self) {
+        for pending in std::mem::take(&mut self.pending_instance_shapes) {
+            let Some(template) = self.generic_classes.get(&pending.key).cloned() else {
+                self.reject_subset(
+                    RejectionSite::DeferredInstanceTemplateMissing,
+                    "internal error: deferred instance has no generic template",
+                    Pos::new("", 1, 1),
+                );
+                continue;
+            };
+            let saved_file = self.cur_file;
+            let saved_subst = std::mem::take(&mut self.subst);
+            let saved_context = self.suspend_container_context();
+            let saved_chain = std::mem::replace(&mut self.instance_chain, pending.chain);
+            self.cur_file = template.file;
+            self.subst = template
+                .type_params
+                .iter()
+                .cloned()
+                .zip(pending.types.iter().cloned())
+                .collect();
+            let diagnostics = self.diags.len();
+            let satisfied = self.apply_type_parameter_constraints(
+                template.class.type_params.as_deref(),
+                &pending.types,
+                pending.root,
+                &pending.positions,
+                &pending.pos,
+            );
+            let check_body =
+                satisfied && self.instance_body_is_checked(&pending.types, pending.root);
+            self.complete_instance(pending.id, &template, check_body);
+            self.instance_diagnostic_ranges
+                .push(diagnostics..self.diags.len());
+            self.instance_chain = saved_chain;
+            self.cur_file = saved_file;
+            self.subst = saved_subst;
+            self.leave_container_context(saved_context);
+        }
     }
 
     /// Checks deferred instance bodies with all module signatures (§138 rule 1).

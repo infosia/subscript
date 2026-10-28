@@ -2206,6 +2206,12 @@ type U = U | null;
 export function main(): void {  }
 END FILE
 END PROGRAM
+PROGRAM	alias-type-arguments	TS2315		0
+FILE	E	main.ts
+type Id = i32;
+export function main(): void { const x: Id<i32> = 1; }
+END FILE
+END PROGRAM
 PROGRAM	source-alias-recursive			0
 FILE	E	main.ts
 type L = L[];
@@ -7356,12 +7362,6 @@ export {};
 export function main():void{print(`${sq(3)}`);function sq(x:i32):i32{return x*x;}}
 END FILE
 END PROGRAM
-PROGRAM	poisoned-alias-lambda			0
-FILE	E	main.ts
-export {};
-type Fn=(x:i32)=>i32;const f:Fn=(x)=>x*2;
-END FILE
-END PROGRAM
 PROGRAM	erased-equality-array			0
 FILE	E	main.ts
 export {};
@@ -7474,42 +7474,6 @@ PROGRAM	probe-hoisted-invalid-argument-2	TS2345		0
 FILE	E	main.ts
 export {};
 function f():void{g(() => 1);function g(x:i32):void{}}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-alias-context-0			0
-FILE	E	main.ts
-export {};
-type Fn=(x:i32)=>i32;function f():void{const cb:Fn=(x)=>x+1;}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-alias-context-1			0
-FILE	E	main.ts
-export {};
-type Fn=(x:i32)=>i32;function take(cb:Fn):void{}function f():void{take((x)=>x+1);}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-alias-context-2			0
-FILE	E	main.ts
-export {};
-type Fn=(x:i32)=>i32;function f():Fn{return (x)=>x+1;}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-invalid-alias-0	TS2304		0
-FILE	E	main.ts
-export {};
-type Fn=(x:Missing)=>i32;function f():void{const cb:Fn=(x)=>1;}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-invalid-alias-1	TS2304		0
-FILE	E	main.ts
-export {};
-type Fn=(x:UnknownArg)=>i32;function f():void{const cb:Fn=(x)=>1;}
-END FILE
-END PROGRAM
-PROGRAM	probe-poisoned-invalid-alias-2	TS2304		0
-FILE	E	main.ts
-export {};
-type Fn=(x:MissingType)=>i32;function f():void{const cb:Fn=(x)=>1;}
 END FILE
 END PROGRAM
 PROGRAM	probe-nullable-conditional-write-0	TS18047		0

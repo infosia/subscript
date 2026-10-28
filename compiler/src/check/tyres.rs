@@ -265,6 +265,15 @@ impl<'p> Checker<'p> {
         // `u64` aliases) resolve to their aliased language type (§12.2).
         if name != "Array" {
             if let Some(ScopeItem::TypeAlias(alias)) = self.type_scope_item(name) {
+                // §202.1 rule 3a: an alias has no type parameters.
+                if r.type_params.is_some() {
+                    self.reject_subset(
+                        RejectionSite::AliasTypeArguments,
+                        format!("type alias `{name}` is not generic"),
+                        pos,
+                    );
+                    return Type::Error;
+                }
                 return alias;
             }
         }

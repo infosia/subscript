@@ -300,6 +300,8 @@ fn run_with_effects(
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         source_aliases: Vec::new(),
+        defer_instance_shapes: false,
+        pending_instance_shapes: Vec::new(),
         in_boundary: false,
         undefined_result: false,
         allow_wire_alias_boundary: false,
