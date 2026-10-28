@@ -1029,7 +1029,8 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::TaskGroup { .. }
         | hir::ExprKind::AsyncAll { .. }
         | hir::ExprKind::AsyncHandleTransfer { .. }
-        | hir::ExprKind::Cond { .. } => None,
+        | hir::ExprKind::Cond { .. }
+        | hir::ExprKind::Seq { .. } => None,
     })
 }
 

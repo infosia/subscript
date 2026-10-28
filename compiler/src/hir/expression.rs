@@ -17,6 +17,7 @@ impl ExprKind {
             Self::Cond { then, els, .. } => {
                 then.kind.produces_fresh_async_owner() && els.kind.produces_fresh_async_owner()
             }
+            Self::Seq { value, .. } => value.kind.produces_fresh_async_owner(),
             _ => false,
         }
     }
@@ -76,6 +77,7 @@ impl Expr {
                     collect(then, leaves);
                     collect(els, leaves);
                 }
+                ExprKind::Seq { value, .. } => collect(value, leaves),
                 ExprKind::ArrayLit(elements) => {
                     for element in elements {
                         collect(element, leaves);
@@ -167,6 +169,11 @@ impl Expr {
                 HirChild::Expr(then),
                 HirChild::Expr(els),
             ],
+            K::Seq { effects, value } => effects
+                .iter()
+                .chain(std::iter::once(&**value))
+                .map(HirChild::Expr)
+                .collect(),
             K::Int(_)
             | K::Float(_)
             | K::Bool(_)
@@ -262,6 +269,11 @@ impl Expr {
                 HirChildMut::Expr(then),
                 HirChildMut::Expr(els),
             ],
+            K::Seq { effects, value } => effects
+                .iter_mut()
+                .chain(std::iter::once(&mut **value))
+                .map(HirChildMut::Expr)
+                .collect(),
             K::Int(_)
             | K::Float(_)
             | K::Bool(_)

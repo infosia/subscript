@@ -48,7 +48,8 @@ impl Expr {
             | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. } => false,
+            | K::Cond { .. }
+            | K::Seq { .. } => false,
         }
     }
 
@@ -94,7 +95,8 @@ impl Expr {
             | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. } => &self.ty,
+            | K::Cond { .. }
+            | K::Seq { .. } => &self.ty,
         }
     }
 }

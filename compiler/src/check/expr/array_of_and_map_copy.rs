@@ -15,8 +15,10 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
-        if call.args.len() > 1 || call.args.iter().any(|arg| arg.spread.is_some()) {
-            self.reject_api_form("Array", "of(value, …)", "Array.of", prop_pos);
+        // A spread argument keeps its rejection; any fixed argument list is
+        // the array literal of its arguments (compiler.md §201.1 rules 3 and 5).
+        if call.args.iter().any(|arg| arg.spread.is_some()) {
+            self.reject_api_form("Array", "of(...values)", "Array.of", prop_pos);
             self.check_poisoned_arguments(&call.args, fx);
             return self.err_expr(pos);
         }

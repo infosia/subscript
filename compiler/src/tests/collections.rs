@@ -628,7 +628,7 @@ fn the_other_array_members_carry_their_own_rejection() {
     let cases = [
         ("const flag: boolean = Array.isArray(xs);", "statically"),
         (
-            "const made: i32[] = Array.of<i32>(1, 2);",
+            "const made: i32[] = Array.of<i32>(...[1, 2]);",
             "variadic-parameter prerequisite",
         ),
         ("const sized: i32[] = new Array<i32>(3);", "array hole"),

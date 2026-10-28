@@ -732,8 +732,8 @@ mod tests {
                 "export function main(): void {\n  const value: i32 = 1;\n  print(value.toFixed(2));\n}\n"
                     .to_string()
             }
-            ("Math", "max/min/hypot with more than two arguments") => {
-                "export function main(): void {\n  print(`${Math.max(1, 2, 3)}`);\n}\n"
+            ("Math", "hypot with more than two arguments") => {
+                "export function main(): void {\n  print(`${Math.hypot(1, 2, 3)}`);\n}\n"
                     .to_string()
             }
             ("Math", "Math used as a value") => {
@@ -795,8 +795,8 @@ mod tests {
                 "export function main(): void {\n  const values: i32[] = [1];\n  Array.isArray(values);\n}\n"
                     .to_string()
             }
-            ("Array", "of(value, …)") => {
-                "export function main(): void {\n  Array.of<i32>(1, 2);\n}\n".to_string()
+            ("Array", "of(...values)") => {
+                "export function main(): void {\n  Array.of<i32>(...[1, 2]);\n}\n".to_string()
             }
             ("Array", "new Array(length)") => {
                 "export function main(): void {\n  new Array<i32>(3);\n}\n".to_string()

@@ -371,10 +371,11 @@ impl<'p> Checker<'p> {
         self.err_expr(prop_pos)
     }
 
-    /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity
-    /// (Q19 — the lib's variadic `max`/`min`/`hypot` beyond two are out
-    /// of subset). The binary32 bit-access members use their sized
-    /// signatures from stdlib.md §17.1.
+    /// A `Math.<fn>(…)` intrinsic call (stdlib.md §1): exact arity, except
+    /// that `max` and `min` fold any argument count (compiler.md §201.1
+    /// rule 2) and `hypot` beyond two arguments is rejected (rule 6). The
+    /// binary32 bit-access members use their sized signatures from
+    /// stdlib.md §17.1.
     pub(super) fn check_math_call(
         &mut self,
         f: MathFn,
@@ -382,13 +383,16 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if let Some(folded) = self.check_math_fold(f, c, fx, &pos) {
+            return folded;
+        }
         let arity = f.arity();
         if c.args.len() != arity {
-            if matches!(f, MathFn::Hypot | MathFn::Max | MathFn::Min)
+            if f == MathFn::Hypot
                 && c.args.len() > 2
                 && self.reject_api_form(
                     "Math",
-                    "max/min/hypot with more than two arguments",
+                    "hypot with more than two arguments",
                     f.name(),
                     pos.clone(),
                 )

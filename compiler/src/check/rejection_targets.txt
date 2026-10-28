@@ -943,8 +943,6 @@ InstanceMethodArgumentCount	InstanceMethodArgumentCount	S100	`f` expects 0 argum
 EnumMethod	EnumMethod	S100	`E` has no method `toString`
 FunctionMethod	FunctionMethod	S100	`() => void` has no method `call`
 ForeignReturnProvenance	wire-alias-nested-foreign-return	S100	mirror `target/s154/forms/wire-alias-nested-foreign-return/mirror.d.ts` foreign function `f_signatures_60` returns an array descriptor; foreign string-view, descriptor, and callback returns are unsupported because return provenance cannot be represented by the boundary vocabulary
-ArrayPushArgumentCount	a-s063	S100	`push` expects 1 argument(s) (1 required), got 2
-ArrayPushArgumentCount	ArrayPushArgumentCount	S100	`push` expects 1 argument(s) (1 required), got 2
 ExponentOperator	a-s216	S100	operator outside the decided surface
 ExponentOperator	ExponentOperator	S100	operator outside the decided surface
 DateUtcArgumentCount	DateUtcArgumentCount	S100	`Date.UTC` expects 7 argument(s) (1 required), got 8
@@ -1324,7 +1322,7 @@ Api(FormNumberValue, NumberCoercionAndArguments)	b-probe-conversions	S014	`Numbe
 Api(FormSpliceStartDeleteCountItems, VariadicArguments)	ArraySpliceArgumentCount	S014	`splice with inserted elements` is rejected: Variadic parameters are the missing prerequisite for insertion through `splice`. (Q27)
 Api(FormUnshiftValueValues, VariadicArguments)	ArrayUnshiftArgumentCount	S014	`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
 Api(MapScalarGet, MapScalarGet)	MapGetArgumentCount	S014	`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)
-Api(FormMaxMinHypotWithMoreThanTwoArguments, MathSubset)	MathMethodArgumentCount	S014	`max` is rejected: Variadic parameters are outside the language. (Q19)
+Api(FormHypotWithMoreThanTwoArguments, MathSubset)	MathMethodArgumentCount	S014	`hypot` is rejected: Three or more arguments need the N-argument form, and a fold of `Math.hypot` rounds differently from it (compiler.md §201). (Q19)
 RestrictedMemberOutsideClass	s155-private-field	S100	member `x` is private in class `A`
 RestrictedMemberOutsideClass	s155-private-method	S100	member `f` is private in class `A`
 RestrictedMemberOutsideClass	s155-private-static-field	S100	member `n` is private in class `A`

@@ -1,6 +1,6 @@
 # `push`, `Math.max`, `Math.min`, and `Array.of` take any argument count — `compiler.md` §201
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `43526876`
 
@@ -21,3 +21,15 @@ gives `[1, 1, 1]`: every argument is evaluated before the first append.
 `node`. `Math.max()` is `-Infinity`, `Math.min()` is `Infinity`,
 `Math.max(-0)` is `-0`, `Math.max(1, NaN, 3)` is `NaN`, and
 `Math.max(-0, 0, -0)` is `+0`.
+
+## Landing
+
+`gate full 1abd9cb1 dirty:46 debug 2961/0/5 release 2958/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
+
+A value-position `push` with two or more arguments lowers to one HIR
+`Seq` (§201.1 rule 4a). Each synthetic local is declared unassigned in
+the owner prefix, so the LIR has one `Zero()` per local and no branch
+or extra call. A literal, an enum member, a function reference, or a
+lambda argument gets no synthetic local: a lambda captures `const`
+locals only (C5), so its value does not depend on the order.

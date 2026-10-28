@@ -134,7 +134,8 @@ impl Expr {
             | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. } => None,
+            | K::Cond { .. }
+            | K::Seq { .. } => None,
         };
         let narrowed = self.is_shared_location(&module.classes)
             && matches!(declared, Some(Type::Nullable(inner, _)) if inner.as_ref() == &self.ty);
@@ -563,7 +564,8 @@ impl Expr {
             | K::Lambda { .. }
             | K::Yield(_)
             | K::AsyncSuspend
-            | K::AsyncHandleTransfer { .. } => Vec::new(),
+            | K::AsyncHandleTransfer { .. }
+            | K::Seq { .. } => Vec::new(),
         };
         if narrowed {
             sites.push(TrapSite::NullNarrowing {

@@ -36,6 +36,48 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         result
     }
 
+    /// Lowers an expression whose result is discarded. A `Seq` lowers as its
+    /// effects and its value, each discarded (compiler.md §201.1 rule 4a).
+    pub(super) fn lower_discarded_expr(&mut self, expr: &hir::Expr) -> Result<(), LowerError> {
+        if let hir::ExprKind::Seq { effects, value } = &expr.kind {
+            for effect in effects {
+                self.lower_discarded_expr(effect)?;
+            }
+            return self.lower_discarded_expr(value);
+        }
+        let result = if let hir::ExprKind::Call { callee, args } = &expr.kind {
+            self.lower_call(callee, args, expr, false)?
+        } else if let hir::ExprKind::Assign {
+            op,
+            target,
+            value,
+            update,
+        } = &expr.kind
+        {
+            Some(self.lower_assignment(*op, *update, target, value, expr, false)?)
+        } else if matches!(
+            expr.kind,
+            hir::ExprKind::Field { .. } | hir::ExprKind::Index { .. } | hir::ExprKind::Length(_)
+        ) {
+            self.lower_read_expr(expr, false)?
+        } else {
+            self.lower_expr(expr)?
+        };
+        if matches!(&result, Some(l::Operand::Value(id)) if self.values.get(id.0 as usize).is_some_and(|value| value.fresh_owner) && !self.moved_async_owners.contains(id))
+            && is_async_owner_type(&l::ValueType::Data(expr.ty.clone()))
+        {
+            if let Some(value) = result {
+                self.discard_owner(
+                    hir::AsyncCopySite::DiscardedResult,
+                    value,
+                    &l::ValueType::Data(expr.ty.clone()),
+                    &expr.pos,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn lower_statement(&mut self, statement: &hir::Stmt) -> Result<(), LowerError> {
         match statement {
             hir::Stmt::Let {
@@ -56,40 +98,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     Some(hir::AsyncCopySite::Binding),
                 )?;
             }
-            hir::Stmt::Expr(expr) => {
-                let result = if let hir::ExprKind::Call { callee, args } = &expr.kind {
-                    self.lower_call(callee, args, expr, false)?
-                } else if let hir::ExprKind::Assign {
-                    op,
-                    target,
-                    value,
-                    update,
-                } = &expr.kind
-                {
-                    Some(self.lower_assignment(*op, *update, target, value, expr, false)?)
-                } else if matches!(
-                    expr.kind,
-                    hir::ExprKind::Field { .. }
-                        | hir::ExprKind::Index { .. }
-                        | hir::ExprKind::Length(_)
-                ) {
-                    self.lower_read_expr(expr, false)?
-                } else {
-                    self.lower_expr(expr)?
-                };
-                if matches!(&result, Some(l::Operand::Value(id)) if self.values.get(id.0 as usize).is_some_and(|value| value.fresh_owner) && !self.moved_async_owners.contains(id))
-                    && is_async_owner_type(&l::ValueType::Data(expr.ty.clone()))
-                {
-                    if let Some(value) = result {
-                        self.discard_owner(
-                            hir::AsyncCopySite::DiscardedResult,
-                            value,
-                            &l::ValueType::Data(expr.ty.clone()),
-                            &expr.pos,
-                        )?;
-                    }
-                }
-            }
+            hir::Stmt::Expr(expr) => self.lower_discarded_expr(expr)?,
             hir::Stmt::Return { value, pos } => {
                 let value = value
                     .as_ref()

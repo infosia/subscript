@@ -13,6 +13,7 @@ pub(super) mod literal;
 mod logical_assign;
 mod member;
 mod method;
+mod multi_argument;
 mod namespace;
 mod operator;
 

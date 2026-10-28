@@ -52,6 +52,8 @@ fn fixed_arity_forms_check_and_invalid_forms_keep_their_reasons() {
         "Array.of<i32>()",
         "Array.of(7)",
         "Array.of<i32>(7)",
+        "Array.of(1, 2)",
+        "Array.of<i32>(1, 2, 3)",
         "new Map(m)",
         "new Map<string, i32>(m)",
     ] {
@@ -63,8 +65,6 @@ fn fixed_arity_forms_check_and_invalid_forms_keep_their_reasons() {
     }
     for (form, reason) in [
         ("Array.of()", "empty array literal without context"),
-        ("Array.of(1, 2)", "variadic-parameter prerequisite"),
-        ("Array.of<i32>(1, 2, 3)", "variadic-parameter prerequisite"),
         ("Array.of<i32, i32>(1)", "exactly one type argument"),
         ("Array.of<i32>(\"wrong\")", "array element"),
         ("Array.of(...[1])", "variadic-parameter prerequisite"),

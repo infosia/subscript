@@ -469,12 +469,6 @@ FILE	E	target/s154/forms/a-s062/main.ts
 export function main(): void { true.valueOf(); }
 END FILE
 END PROGRAM
-PROGRAM	a-s063			0
-FILE	E	target/s154/forms/a-s063/main.ts
-
-export function main(): void { const a: i32[] = [1]; a.push(1,2); }
-END FILE
-END PROGRAM
 PROGRAM	a-s064			0
 FILE	E	target/s154/forms/a-s064/main.ts
 class C {}
@@ -6119,12 +6113,6 @@ export {};
 class M {} function f(w: Outbox<M>): void { w.post(new M(), new M()); }
 END FILE
 END PROGRAM
-PROGRAM	ArrayPushArgumentCount			0
-FILE	E	target/s154/forms/ArrayPushArgumentCount/main.ts
-export {};
-function f(): void { const xs: i32[] = []; xs.push(1,2); }
-END FILE
-END PROGRAM
 PROGRAM	ArrayPopArgumentCount	TS2554		0
 FILE	E	target/s154/forms/ArrayPopArgumentCount/main.ts
 export {};
@@ -6290,7 +6278,7 @@ END PROGRAM
 PROGRAM	MathMethodArgumentCount			0
 FILE	E	target/s154/forms/MathMethodArgumentCount/main.ts
 export {};
-function f(): void { const x: f64 = 1; Math.max(x,x,x); }
+function f(): void { const x: f64 = 1; Math.hypot(x,x,x); }
 END FILE
 END PROGRAM
 PROGRAM	RegexConstructorArgumentCount	TS2554		0

@@ -1917,6 +1917,13 @@ pub enum ExprKind {
         /// Value when false.
         els: Box<Expr>,
     },
+    /// Runs `effects` in order, then `value`, which gives the type (compiler.md §201.1 rule 4a).
+    Seq {
+        /// Effects, in evaluation order; each result is discarded.
+        effects: Vec<Expr>,
+        /// The result.
+        value: Box<Expr>,
+    },
 }
 
 /// Target of a direct async call in await position (§26, §37).

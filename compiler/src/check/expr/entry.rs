@@ -83,6 +83,7 @@ impl<'p> Checker<'p> {
                 .into_iter()
                 .chain(self.expr_async_origins(els, fx))
                 .collect(),
+            K::Seq { value, .. } => self.expr_async_origins(value, fx),
             _ => HashSet::new(),
         }
     }

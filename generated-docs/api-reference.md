@@ -416,7 +416,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | f32 / f64 | `toString()` | S014 | Q26 | `toString(radix)` | An explicit radix is required. | `r49-number-to-string-radix.ts` |
 | f32 / f64 | `toPrecision()` | S014 | Q26 | `toPrecision(digits)` | An explicit digit count is required. | `r48-number-to-precision.ts` |
 | sized integers | `toFixed/toString/toExponential/toPrecision` | S014 | Q25/Q26 | `convert to f32 or f64 first` | Number formatting methods are accepted only on floating-point receivers. | — |
-| Math | `max/min/hypot with more than two arguments` | S014 | Q19 | — | Variadic parameters are outside the language. | `r16-math-variadic-max.ts` |
+| Math | `hypot with more than two arguments` | S014 | Q19 | — | Three or more arguments need the N-argument form, and a fold of `Math.hypot` rounds differently from it (compiler.md §201). | `r16-math-variadic-max.ts` |
 | Math | `Math used as a value` | S014 | Q19 | `Math.<member>` | Math is a compiler-owned namespace. | `r18-math-value.ts` |
 | Date | `Date.parse` | S014 | Q20 | `Date.UTC` | Parsing depends on timezone rules the runtime does not provide. | — |
 | Date | `new Date()` | S014 | Q20 | `new Date(Date.now())` | The zero-argument constructor reads nondeterministic current time. | `r23-date-zero-arg-ctor.ts` |
@@ -444,7 +444,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Array | `Array.from(Map)` | S014 | Q22 | `push map.keys() or map.values() into an array with a for…of loop` | Map traversal binds `K`; a `[K, V]` pair has no tuple representation in the language (compiler.md §104.1). | `r206-array-from-bare-map.ts` |
 | Array | `Array.from(Generator<T>)` | S014 | Q22 | `collect the generator with for…of, then push` | A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4). | `r207-array-from-generator.ts` |
 | Array | `isArray(value)` | S014 | Q22 | — | A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). | `r210-array-is-array.ts` |
-| Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3). | `r211-array-of-variadic.ts` |
+| Array | `of(...values)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3). | — |
 | Array | `new Array(length)` | S014 | Q22 | `an array literal, or push in a loop` | The language has no array hole and no missing-element value (compiler.md §105.3). | `r212-new-array-length.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | — |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | — |

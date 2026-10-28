@@ -96,8 +96,6 @@ pub enum Divergence {
     ArrayConcatArgumentCount,
     /// The coroutine next call drives the frame without an input value.
     GeneratorNextArgumentCount,
-    /// The array push surface appends exactly one element.
-    ArrayPushArgumentCount,
     /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
     FunctionParameterIdentity,
     /// The admitted surface excludes this source form.
@@ -954,7 +952,7 @@ pub enum Divergence {
     GrowingInstanceChain,
     /// A static member on a generic class, and `this` in a static method.
     StaticMemberSurface,
-    /// `Math` as a value, and the variadic `Math.max`.
+    /// `Math` as a value, and `Math.hypot` beyond two arguments.
     MathSubset,
     /// Local-time, mutable, and current-clock `Date` forms.
     DateSubset,
@@ -1018,7 +1016,7 @@ pub enum Divergence {
     ArrayFromMapper,
     /// `Array.isArray`.
     ArrayIsArray,
-    /// `Array.of` at variable arity.
+    /// `Array.of` with a spread argument.
     ArrayOfArity,
     /// `new Array<T>(length)`.
     ArrayHoleConstruction,
@@ -1094,7 +1092,6 @@ impl Divergence {
         Divergence::StringConcatArgumentCount,
         Divergence::ArrayConcatArgumentCount,
         Divergence::GeneratorNextArgumentCount,
-        Divergence::ArrayPushArgumentCount,
         Divergence::FunctionParameterIdentity,
         Divergence::ArrayToFixedArray,
         Divergence::EnumToInteger,

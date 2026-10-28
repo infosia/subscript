@@ -289,7 +289,8 @@ pub(super) fn collect_trap_expression(
             | hir::ExprKind::TaskGroup { .. }
             | hir::ExprKind::AsyncAll { .. }
             | hir::ExprKind::AsyncHandleTransfer { .. }
-            | hir::ExprKind::Cond { .. } => {}
+            | hir::ExprKind::Cond { .. }
+            | hir::ExprKind::Seq { .. } => {}
         }
     }
 }

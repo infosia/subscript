@@ -623,10 +623,11 @@ pub(super) const STATICMEMBERSURFACE: DivergenceEntry = DivergenceEntry {
 
 pub(super) const MATHSUBSET: DivergenceEntry = DivergenceEntry {
     ts: "const m = Math;\n\
-                     print(`${Math.max(1, 2, 3)}`);",
-    subscript: "print(`${Math.max(Math.max(1, 2), 3)}`);",
+                     print(`${Math.hypot(1, 2, 3)}`);",
+    subscript: "print(`${Math.sqrt(1 * 1 + 2 * 2 + 3 * 3)}`);",
     why: "`Math` is a compiler namespace that lowers to intrinsics, so it is \
-                      not a value and it takes no variadic call.",
+                      not a value. A fold of `hypot` rounds differently from its \
+                      N-argument form.",
     collision: "stdlib.md §1",
 };
 
@@ -943,7 +944,7 @@ pub(super) const ARRAYISARRAY: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const ARRAYOFARITY: DivergenceEntry = DivergenceEntry {
-    ts: "const xs: i32[] = Array.of<i32>(1, 2);",
+    ts: "const xs: i32[] = Array.of<i32>(...[1, 2]);",
     subscript: "const xs: i32[] = [1, 2];",
     why: "Variable arity needs the variadic-parameter prerequisite.",
     collision: "compiler.md §105.3",

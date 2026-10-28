@@ -1203,18 +1203,7 @@ impl<'p> Checker<'p> {
                 }
             }
             Type::Array(elem) => match name.as_str() {
-                "push" => {
-                    let params = [ParamSig::positional((*elem).clone())];
-                    let args = checker.check_args(
-                        RejectionSite::ArrayPushArgumentCount,
-                        &params,
-                        &c.args,
-                        fx,
-                        &pos,
-                        "push",
-                    );
-                    mk(recv, args, Type::I32, pos)
-                }
+                "push" => checker.check_array_push(recv, (*elem).clone(), c, fx, pos),
                 "pop" => {
                     let args = checker.check_args(
                         RejectionSite::ArrayPopArgumentCount,

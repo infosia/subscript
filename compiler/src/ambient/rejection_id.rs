@@ -52,7 +52,7 @@ pub(crate) enum ApiRejectionId {
     FormToString,
     FormToPrecision,
     FormToFixedToStringToExponentialToPrecision,
-    FormMaxMinHypotWithMoreThanTwoArguments,
+    FormHypotWithMoreThanTwoArguments,
     FormMathUsedAsAValue,
     FormDateParse,
     FormNewDate,

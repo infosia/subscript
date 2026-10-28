@@ -141,7 +141,8 @@ impl Expr {
             | ExprKind::ArraySpreadLit(_)
             | ExprKind::Template(_)
             | ExprKind::Lambda { .. }
-            | ExprKind::Cond { .. } => false,
+            | ExprKind::Cond { .. }
+            | ExprKind::Seq { .. } => false,
         }
     }
 
@@ -193,6 +194,7 @@ impl Expr {
                 then.non_null_without_facts(classes, globals)
                     && els.non_null_without_facts(classes, globals)
             }
+            ExprKind::Seq { value, .. } => value.non_null_without_facts(classes, globals),
             ExprKind::Assign {
                 op: None, value, ..
             } => value.non_null_without_facts(classes, globals),

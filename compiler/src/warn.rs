@@ -427,6 +427,13 @@ impl WarningChecker<'_> {
                 self.scan_w001_expr(els, loop_depth, collect_mutes, sink);
                 return;
             }
+            ExprKind::Seq { effects, value } => {
+                for effect in effects {
+                    self.scan_w001_expr(effect, loop_depth, collect_mutes, AllocationSink::Use);
+                }
+                self.scan_w001_expr(value, loop_depth, collect_mutes, sink);
+                return;
+            }
             _ => {}
         }
         for child in expr.children() {

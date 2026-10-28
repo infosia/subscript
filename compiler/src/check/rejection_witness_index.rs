@@ -694,7 +694,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::AsyncMethodArgumentCount => WitnessEntry::General { files: &["AsyncMethodArgumentCount"], variant: None, reason: "" },
         RejectionSite::GeneratorNextArgumentCount => WitnessEntry::General { files: &["GeneratorNextArgumentCount"], variant: Some(Divergence::GeneratorNextArgumentCount), reason: "" },
         RejectionSite::ArrayPopArgumentCount => WitnessEntry::General { files: &["ArrayPopArgumentCount"], variant: None, reason: "" },
-        RejectionSite::ArrayPushArgumentCount => WitnessEntry::General { files: &["a-s063", "ArrayPushArgumentCount"], variant: Some(Divergence::ArrayPushArgumentCount), reason: "" },
         RejectionSite::FixedArrayPushArgumentCount => WitnessEntry::General { files: &["FixedArrayPushArgumentCount"], variant: None, reason: "" },
         RejectionSite::OutboxPostArgumentCount => WitnessEntry::General { files: &["OutboxPostArgumentCount"], variant: None, reason: "" },
         RejectionSite::InboxWaitArgumentCount => WitnessEntry::General { files: &["InboxWaitArgumentCount"], variant: None, reason: "" },
@@ -739,7 +738,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::RegexConstructorArgumentCount => WitnessEntry::General { files: &["RegexConstructorArgumentCount"], variant: None, reason: "" },
         RejectionSite::GlobalNumberArgumentCount => WitnessEntry::General { files: &[], variant: None, reason: "The Number global call returns unless c.args.len() equals params.len(); all parameters are required." },
         RejectionSite::NumberPredicateArgumentCount => WitnessEntry::General { files: &[], variant: None, reason: "The Number predicate returns unless c.args.len() is 1, matching its single required parameter." },
-        RejectionSite::MathMethodArgumentCount => WitnessEntry::General { files: &[], variant: None, reason: "The Math call returns unless c.args.len() equals arity; params contains arity required parameters." },
+        RejectionSite::MathMethodArgumentCount => WitnessEntry::General { files: &[], variant: None, reason: "Each Math call passes one required parameter for each argument: the fold builds one per argument, and the arity path returns unless c.args.len() equals arity." },
         RejectionSite::UriCodecArgumentCount => WitnessEntry::General { files: &["UriCodecArgumentCount"], variant: None, reason: "" },
         RejectionSite::ConstructorNotNamedClass => WitnessEntry::General { files: &["a-s064"], variant: Some(Divergence::ConstructorNotNamedClassForm), reason: "" },
         RejectionSite::LocalValueConstructed => WitnessEntry::General { files: &["a-s065"], variant: None, reason: "" },
@@ -1171,7 +1170,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
                     variant: Divergence::MethodTypeDomain,
                 }
             }
-            ApiRejectionId::FormMaxMinHypotWithMoreThanTwoArguments => WitnessEntry::Reachable {
+            ApiRejectionId::FormHypotWithMoreThanTwoArguments => WitnessEntry::Reachable {
                 files: &["a055.ts", "a055-b.ts"],
                 variant: Divergence::MathSubset,
             },

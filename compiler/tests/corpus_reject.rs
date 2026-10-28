@@ -415,7 +415,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r208-array-from-keys-view.ts", RuleCode::S014, 10),
     ("r209-array-from-mapper.ts", RuleCode::S014, 9),
     ("r210-array-is-array.ts", RuleCode::S014, 9),
-    ("r211-array-of-variadic.ts", RuleCode::S014, 8),
     ("r212-new-array-length.ts", RuleCode::S014, 8),
     ("r213-for-of-bare-map-pair.ts", RuleCode::S014, 10),
     ("r214-pattern-over-entries.ts", RuleCode::S014, 10),
@@ -1494,10 +1493,6 @@ fn q22_array_namespace_rejections_each_name_their_own_record() {
         (
             "r210-array-is-array.ts",
             &["statically", "runtime classification"][..],
-        ),
-        (
-            "r211-array-of-variadic.ts",
-            &["variadic-parameter prerequisite"][..],
         ),
         (
             "r212-new-array-length.ts",

@@ -1369,9 +1369,6 @@ rejection_classes! {
         Diverges(Divergence::GeneratorNextArgumentCount),
     ),
     Self::ArrayPopArgumentCount => (RuleCode::S100, TscRejects),
-    Self::ArrayPushArgumentCount => {
-        (RuleCode::S100, Diverges(Divergence::ArrayPushArgumentCount))
-    }
     Self::FixedArrayPushArgumentCount => (RuleCode::S100, TscRejects),
     Self::OutboxPostArgumentCount => (RuleCode::S100, TscRejects),
     Self::InboxWaitArgumentCount => (RuleCode::S100, TscRejects),

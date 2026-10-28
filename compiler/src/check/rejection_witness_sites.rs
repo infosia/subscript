@@ -633,7 +633,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::AsyncMethodArgumentCount,
     RejectionSite::GeneratorNextArgumentCount,
     RejectionSite::ArrayPopArgumentCount,
-    RejectionSite::ArrayPushArgumentCount,
     RejectionSite::FixedArrayPushArgumentCount,
     RejectionSite::OutboxPostArgumentCount,
     RejectionSite::InboxWaitArgumentCount,

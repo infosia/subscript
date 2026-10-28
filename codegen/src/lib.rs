@@ -873,6 +873,9 @@ export function main(): void {}
 #[cfg(test)]
 mod postfix_update_tests;
 
+#[cfg(test)]
+mod seq_lowering_tests;
+
 mod async_inspection;
 pub use async_inspection::AsyncTaskInfo;
 

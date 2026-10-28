@@ -678,6 +678,13 @@ impl<'a> Validator<'a> {
                 self.validate_expr_frame(els, destination, frame);
                 return;
             }
+            K::Seq { effects, value } => {
+                for effect in effects {
+                    self.validate_expr_frame(effect, false, frame);
+                }
+                self.validate_expr_frame(value, destination, frame);
+                return;
+            }
             _ => {}
         }
 

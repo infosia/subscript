@@ -236,9 +236,9 @@ a054.ts	FORM_REJECTIONS/sized integers / toFixed/toString/toExponential/toPrecis
 `toFixed` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
 export function main(): void { const x: i32 = 1; x.toFixed(2); }
 ===
-a055.ts	FORM_REJECTIONS/Math / max/min/hypot with more than two arguments		S014		
-`max` is rejected: Variadic parameters are outside the language. (Q19)
-export function main(): void { Math.max(1, 2, 3); }
+a055.ts	FORM_REJECTIONS/Math / hypot with more than two arguments		S014		
+`hypot` is rejected: Three or more arguments need the N-argument form, and a fold of `Math.hypot` rounds differently from it (compiler.md §201). (Q19)
+export function main(): void { Math.hypot(1, 2, 3); }
 ===
 a056.ts	FORM_REJECTIONS/Math / Math used as a value		S014		
 `Math used as a value` is rejected: Math is a compiler-owned namespace; use `Math.<member>` (Q19)
@@ -352,9 +352,9 @@ a079.ts	FORM_REJECTIONS/Array / isArray(value)		S014
 `Array.isArray` is rejected: A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). (Q22)
 export function main(): void { Array.isArray([1]); }
 ===
-a080.ts	FORM_REJECTIONS/Array / of(value, …)		S014		
+a080.ts	FORM_REJECTIONS/Array / of(...values)		S014		
 `Array.of` is rejected: Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3); use `an array literal` (Q22)
-export function main(): void { Array.of<i32>(1, 2); }
+export function main(): void { Array.of<i32>(...[1, 2]); }
 ===
 a081.ts	FORM_REJECTIONS/Array / new Array(length)		S014		
 `new Array(length)` is rejected: The language has no array hole and no missing-element value (compiler.md §105.3); use `an array literal, or push in a loop` (Q22)
@@ -867,9 +867,9 @@ a054-b.ts	FORM_REJECTIONS/sized integers / toFixed/toString/toExponential/toPrec
 `toFixed` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
 export function main(): void { const x: i32 = 1; x.toFixed("two"); }
 ===
-a055-b.ts	FORM_REJECTIONS/Math / max/min/hypot with more than two arguments	TS2345	S014		
-`max` is rejected: Variadic parameters are outside the language. (Q19)
-export function main(): void { Math.max(1, 2, "3"); }
+a055-b.ts	FORM_REJECTIONS/Math / hypot with more than two arguments	TS2345	S014		
+`hypot` is rejected: Three or more arguments need the N-argument form, and a fold of `Math.hypot` rounds differently from it (compiler.md §201). (Q19)
+export function main(): void { Math.hypot(1, 2, "3"); }
 ===
 a056-b.ts	FORM_REJECTIONS/Math / Math used as a value	TS2322	S014		
 `Math used as a value` is rejected: Math is a compiler-owned namespace; use `Math.<member>` (Q19)
@@ -965,9 +965,9 @@ a079-b.ts	FORM_REJECTIONS/Array / isArray(value)	TS2554	S014
 `Array.isArray` is rejected: A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). (Q22)
 export function main(): void { Array.isArray(); }
 ===
-a080-b.ts	FORM_REJECTIONS/Array / of(value, …)	TS2345	S014		
+a080-b.ts	FORM_REJECTIONS/Array / of(...values)	TS2345	S014		
 `Array.of` is rejected: Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3); use `an array literal` (Q22)
-export function main(): void { Array.of<i32>(1, "two"); }
+export function main(): void { Array.of<i32>(...[1, "two"]); }
 ===
 a081-b.ts	FORM_REJECTIONS/Array / new Array(length)	TS2769	S014		
 `new Array(length)` is rejected: The language has no array hole and no missing-element value (compiler.md §105.3); use `an array literal, or push in a loop` (Q22)
@@ -1117,8 +1117,8 @@ s046-b.ts	expr/namespace.rs:331 check_math_member	TS2322	S014
 export function main(): void { const held: i32 = Math.sin; }
 ===
 s048-b.ts	expr/namespace.rs:375 check_math_call		S014		
-`Math.max` takes exactly 2 f64 argument(s), got 1 (Q19: the lib's variadic forms are out of subset)
-export function main(): void { Math.max(1.0); }
+`Math.hypot` takes exactly 2 f64 argument(s), got 1 (Q19: the lib's variadic forms are out of subset)
+export function main(): void { Math.hypot(1.0); }
 ===
 s049-b.ts	expr/namespace.rs:422 check_number_member		S014		
 `Number.isFinite` is read-only (Q25)

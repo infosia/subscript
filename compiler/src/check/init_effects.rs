@@ -699,7 +699,8 @@ impl<'a> ModuleEffectScanner<'a> {
             | K::TaskGroup { .. }
             | K::AsyncAll { .. }
             | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. } => {}
+            | K::Cond { .. }
+            | K::Seq { .. } => {}
         }
         for child in expression.children() {
             match child {

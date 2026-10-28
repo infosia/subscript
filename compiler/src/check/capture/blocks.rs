@@ -78,6 +78,7 @@ impl<'a> Analysis<'a> {
             E::Index { obj, .. } => visit(obj),
             E::Cast(v) | E::Assign { value: v, .. } => visit(v),
             E::Cond { then, els, .. } => visit(then) || visit(els),
+            E::Seq { value, .. } => visit(value),
             E::New { args, .. } | E::ArrayLit(args) => args.iter().any(visit),
             E::ArraySpreadLit(values) => values.iter().any(|v| visit(&v.expr)),
             E::DescriptorLit { fields, .. } => fields.iter().flatten().any(visit),

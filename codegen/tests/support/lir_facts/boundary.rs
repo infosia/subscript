@@ -299,7 +299,8 @@ pub(super) fn compare_boundary_boxes(
             | hir::ExprKind::TaskGroup { .. }
             | hir::ExprKind::AsyncAll { .. }
             | hir::ExprKind::AsyncHandleTransfer { .. }
-            | hir::ExprKind::Cond { .. } => {}
+            | hir::ExprKind::Cond { .. }
+            | hir::ExprKind::Seq { .. } => {}
         }
     });
 }
@@ -474,7 +475,8 @@ fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
         | K::TaskGroup { .. }
         | K::AsyncAll { .. }
         | K::AsyncHandleTransfer { .. }
-        | K::Cond { .. } => false,
+        | K::Cond { .. }
+        | K::Seq { .. } => false,
     }
 }
 

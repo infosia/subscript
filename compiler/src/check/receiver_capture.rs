@@ -18,6 +18,7 @@ pub(super) fn carries_receiver(expression: &hir::Expr, locals: &HashMap<String, 
         hir::ExprKind::Cond { then, els, .. } => {
             carries_receiver(then, locals) || carries_receiver(els, locals)
         }
+        hir::ExprKind::Seq { value, .. } => carries_receiver(value, locals),
         _ => false,
     }
 }

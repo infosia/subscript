@@ -590,6 +590,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             K::AsyncHandleTransfer { value, .. } => self.lower_expr(value)?,
             K::Cond { cond, then, els } => Some(self.lower_cond(cond, then, els, expr)?),
+            K::Seq { effects, value } => {
+                for effect in effects {
+                    self.lower_discarded_expr(effect)?;
+                }
+                self.lower_expr(value)?
+            }
         };
         Ok(result)
     }

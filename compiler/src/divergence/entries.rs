@@ -129,7 +129,6 @@ impl Divergence {
             Divergence::StringConcatArgumentCount => surface_forms::STRINGCONCATARGUMENTCOUNT,
             Divergence::ArrayConcatArgumentCount => surface_forms::ARRAYCONCATARGUMENTCOUNT,
             Divergence::GeneratorNextArgumentCount => surface_forms::GENERATORNEXTARGUMENTCOUNT,
-            Divergence::ArrayPushArgumentCount => surface_forms::ARRAYPUSHARGUMENTCOUNT,
             Divergence::FunctionParameterIdentity => expression_forms::FUNCTIONPARAMETERIDENTITY,
             Divergence::ArrayToFixedArray => expression_forms::ARRAYTOFIXEDARRAY,
             Divergence::EnumToInteger => expression_forms::ENUMTOINTEGER,

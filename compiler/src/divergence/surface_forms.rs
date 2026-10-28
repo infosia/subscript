@@ -545,12 +545,6 @@ pub(super) const TYPEPARAMETERDEFAULT: DivergenceEntry = DivergenceEntry {
     why: "No lowering is decided for type-parameter defaults.",
     collision: "C24", // row 28,
 };
-pub(super) const ARRAYPUSHARGUMENTCOUNT: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { const xs: i32[] = []; xs.push(1,2); }",
-    subscript: "no equivalent; call push once per element",
-    why: "The array push surface appends exactly one element.",
-    collision: "collisions.md Q27",
-};
 pub(super) const GENERATORNEXTARGUMENTCOUNT: DivergenceEntry = DivergenceEntry {
     ts: "function* g(): Generator<i32> { yield 1; } function f(): void { g().next(1); }",
     subscript: "no equivalent; call next without arguments",

@@ -667,7 +667,6 @@ pub(crate) enum RejectionSite {
     AsyncMethodArgumentCount,
     GeneratorNextArgumentCount,
     ArrayPopArgumentCount,
-    ArrayPushArgumentCount,
     FixedArrayPushArgumentCount,
     OutboxPostArgumentCount,
     InboxWaitArgumentCount,
