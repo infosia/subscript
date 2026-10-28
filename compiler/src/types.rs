@@ -205,6 +205,17 @@ pub struct TypeParameterType {
     pub constraint: Option<Box<Type>>,
 }
 
+/// The identity and source name of a type-only interface (compiler.md
+/// §208). The type is the constraint of a type parameter only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct InterfaceType {
+    /// The index of the interface in the checker.
+    pub identity: usize,
+    /// The source name of the interface.
+    pub name: String,
+}
+
 /// The absence spelling of a nullable type (compiler.md §195.1 rule 1).
 ///
 /// The two spellings have one representation, the nullable pointer.
@@ -274,6 +285,9 @@ pub enum Type {
     Class(ClassId),
     /// A type parameter with its declaration identity and constraint (§143).
     TypeParameter(Box<TypeParameterType>),
+    /// A type-only interface (§208). It is the constraint of a type
+    /// parameter only, so no instance and no HIR carries it.
+    Interface(Box<InterfaceType>),
     /// The `number` result of an operation on a type parameter (§143 rule 1c).
     GenericNumber,
     /// A union result inside a generic body (§143 rule 1c).
@@ -363,6 +377,7 @@ impl std::fmt::Debug for Type {
             Self::TypeParameter(parameter) => {
                 f.debug_tuple("TypeParameter").field(parameter).finish()
             }
+            Self::Interface(interface) => f.debug_tuple("Interface").field(interface).finish(),
             Self::GenericUnion(members) => f.debug_tuple("GenericUnion").field(members).finish(),
             Self::Enum(id) => f.debug_tuple("Enum").field(id).finish(),
             Self::StringAlias(id) => f.debug_tuple("StringAlias").field(id).finish(),
@@ -552,6 +567,7 @@ impl Type {
             | Self::Null
             | Self::Object
             | Self::Class(_)
+            | Self::Interface(_)
             | Self::GenericNumber
             | Self::Enum(_)
             | Self::StringAlias(_)
@@ -672,6 +688,7 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         Type::Void
         | Type::Error
         | Type::TypeParameter(_)
+        | Type::Interface(_)
         | Type::GenericNumber
         | Type::GenericUnion(_) => (0, 1),
         _ => return None,
@@ -736,6 +753,7 @@ impl Type {
             | Self::StringAlias(_)
             | Self::Error
             | Self::TypeParameter(_)
+            | Self::Interface(_)
             | Self::GenericNumber => Vec::new(),
         }
     }
@@ -937,6 +955,7 @@ impl Type {
             // These types have no executable zero representation.
             Type::Void
             | Type::TypeParameter(_)
+            | Type::Interface(_)
             | Type::GenericNumber
             | Type::GenericUnion(_)
             | Type::Error => false,
@@ -1009,6 +1028,7 @@ pub fn display_type(
         Type::Object => "object".to_string(),
         Type::Class(id) => class_name(*id),
         Type::TypeParameter(parameter) => parameter.name.clone(),
+        Type::Interface(interface) => interface.name.clone(),
         Type::GenericNumber => "number".to_string(),
         Type::GenericUnion(members) => members
             .iter()

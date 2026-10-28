@@ -216,9 +216,13 @@ pub enum Divergence {
     ForInStatement,
     /// The admitted surface excludes this source form.
     SourceNamespaceDeclaration,
-    /// An interface is structural, and types are nominal.
-    SourceInterfaceDeclaration,
-    /// An `implements` clause gives no conversion, because types are nominal.
+    /// An interface declares methods and read accessors only.
+    InterfaceMemberForm,
+    /// A value of an interface type needs a dispatch on the run-time class.
+    InterfaceValueType,
+    /// A type argument for an interface constraint declares the interface.
+    InterfaceConstraintUndeclared,
+    /// An `implements` clause names an interface.
     ClassImplementsClause,
     /// No lowering is decided for a local declaration.
     LocalInterfaceDeclaration,
@@ -1148,7 +1152,9 @@ impl Divergence {
         Divergence::LabeledStatement,
         Divergence::ForInStatement,
         Divergence::SourceNamespaceDeclaration,
-        Divergence::SourceInterfaceDeclaration,
+        Divergence::InterfaceMemberForm,
+        Divergence::InterfaceValueType,
+        Divergence::InterfaceConstraintUndeclared,
         Divergence::ClassImplementsClause,
         Divergence::LocalInterfaceDeclaration,
         Divergence::LocalAliasDeclaration,

@@ -38,6 +38,10 @@ impl<'p> Checker<'p> {
         ) {
             return Some(ScopeItem::Poisoned);
         }
+        if matches!(self.type_scope_item(name), Some(ScopeItem::Interface(_))) {
+            self.reject_interface_value_use(name, pos);
+            return Some(ScopeItem::Poisoned);
+        }
         if matches!(
             self.type_scope_item(name),
             Some(ScopeItem::Namespace { .. })
@@ -59,7 +63,11 @@ impl<'p> Checker<'p> {
     pub(crate) fn peek_scope_item(&self, name: &str) -> Option<ScopeItem> {
         match self.scope_binding(name) {
             Some(binding) if binding.type_only => Some(ScopeItem::Poisoned),
-            _ => self.type_scope_item(name),
+            // An interface names a type only (compiler.md §208).
+            _ => match self.type_scope_item(name) {
+                Some(ScopeItem::Interface(_)) => Some(ScopeItem::Poisoned),
+                item => item,
+            },
         }
     }
 

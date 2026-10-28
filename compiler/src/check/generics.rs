@@ -61,7 +61,7 @@ impl<'p> Checker<'p> {
             let Some(constraint) = &parameter.constraint else {
                 continue;
             };
-            let constraint = self.resolve_type(constraint);
+            let constraint = self.resolve_constraint(constraint);
             if self.apparent_type(&constraint) == Type::Error {
                 satisfied = false;
             }
@@ -73,12 +73,17 @@ impl<'p> Checker<'p> {
                 continue;
             }
             satisfied = false;
+            let position = positions.get(index).cloned().unwrap_or_else(|| pos.clone());
+            if let Type::Interface(interface) = &constraint {
+                self.reject_undeclared_interface(argument, interface, position);
+                continue;
+            }
             let argument_name = self.type_name(argument);
             let constraint_name = self.type_name(&constraint);
             self.reject_subset(if matches!((&self.apparent_type(argument), &self.apparent_type(&constraint)), (Type::Class(_), Type::Class(_))) { RejectionSite::GenericConstraintIdentity } else { RejectionSite::GenericConstraintMismatch }, format!(
                     "type argument `{argument_name}` does not satisfy the constraint `{constraint_name}` of `{}`",
                     parameter.name.sym
-                ), positions.get(index).cloned().unwrap_or_else(|| pos.clone()));
+                ), position);
         }
         if root {
             for (parameter, argument) in declaration.params.iter().zip(args) {
@@ -126,6 +131,9 @@ impl<'p> Checker<'p> {
             });
             seen.pop();
             return result;
+        }
+        if let Type::Interface(interface) = constraint {
+            return self.declares_interface(argument, interface.identity);
         }
         self.assignable(
             &self.numeric_normal_form(argument),

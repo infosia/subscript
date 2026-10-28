@@ -468,6 +468,7 @@ impl Checker<'_> {
                 | Type::IterResult(_)
                 | Type::Error
                 | Type::TypeParameter(_)
+                | Type::Interface(_)
                 | Type::GenericNumber
                 | Type::GenericUnion(_) => false,
             }

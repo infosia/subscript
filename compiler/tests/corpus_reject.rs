@@ -160,6 +160,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r452-private-name-outside-its-class.ts", RuleCode::S100, 13),
     ("r453-local-function-reads-a-local.ts", RuleCode::S100, 10),
     ("r454-local-function-declared-twice.ts", RuleCode::S017, 11),
+    ("r455-interface-value-type.ts", RuleCode::S100, 17),
+    ("r456-class-does-not-implement.ts", RuleCode::S100, 11),
+    ("r457-constraint-needs-implements.ts", RuleCode::S100, 22),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

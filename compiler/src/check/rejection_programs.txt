@@ -2072,6 +2072,40 @@ interface A { x:i32; }
 export function main(): void {  }
 END FILE
 END PROGRAM
+PROGRAM	interface-result-annotation-missing	TS7010		0
+FILE	E	target/s154/forms/interface-result-annotation-missing/main.ts
+interface I { f(); }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	interface-value-type			0
+FILE	E	target/s154/forms/interface-value-type/main.ts
+interface I { f(): i32; }
+function g(x: I): i32 { return x.f(); }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	interface-value-use	TS2693		0
+FILE	E	target/s154/forms/interface-value-use/main.ts
+interface I { f(): i32; }
+export function main(): void { print(`${I}`); }
+END FILE
+END PROGRAM
+PROGRAM	interface-member-missing	TS2420		0
+FILE	E	target/s154/forms/interface-member-missing/main.ts
+interface I { f(): i32; }
+class C implements I { g(): i32 { return 1; } }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	interface-constraint-undeclared			0
+FILE	E	target/s154/forms/interface-constraint-undeclared/main.ts
+interface I { f(): i32; }
+class C { f(): i32 { return 1; } }
+function g<T extends I>(x: T): i32 { return x.f(); }
+export function main(): void { print(`${g(new C())}`); }
+END FILE
+END PROGRAM
 PROGRAM	class-implements-clause			0
 FILE	E	target/s154/forms/class-implements-clause/main.ts
 class A {}
@@ -5610,8 +5644,8 @@ export {};
 function f(): void { namespace N {} }
 END FILE
 END PROGRAM
-PROGRAM	SourceInterfaceDeclaration			0
-FILE	E	target/s154/forms/SourceInterfaceDeclaration/main.ts
+PROGRAM	InterfaceMemberForm			0
+FILE	E	target/s154/forms/InterfaceMemberForm/main.ts
 export {};
 interface I { x: i32; }
 END FILE

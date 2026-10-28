@@ -409,7 +409,7 @@ fn rejected_declarations_keep_names_through_every_export_edge() {
     for (declaration, names, message, col, divergence) in [
         ("type Num = Num[];", "Num", "type alias `Num` refers to itself", 6, Some(Divergence::SourceAliasRecursiveForm)),
         ("type Label<T> = 'ready' | 'done';", "Label", "source type aliases cannot be generic", 6, Some(Divergence::GenericSourceAliasForm)),
-        ("interface I {}", "I", "declaration form outside the decided surface", 1, Some(Divergence::SourceInterfaceDeclaration)),
+        ("interface I { x: i32; }", "I", "interface `I` has a member form outside the decided surface", 15, Some(Divergence::InterfaceMemberForm)),
         ("const [a, b] = [1, 2];", "a, b", "a binding pattern binds inside a function body; a declaration outside one binds one name", 7, Some(Divergence::ModuleLevelPattern)),
     ] {
         for local in [false, true] {

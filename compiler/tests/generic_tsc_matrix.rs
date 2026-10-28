@@ -1,13 +1,13 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 39,160 cells in 24.999 seconds; 28.17 seconds with cleanup.
+//! Measured cost: 40,174 cells in 30.46 seconds; the interface kind adds 629 cells and 0.7 seconds.
 //! One TypeScript process checks all cells.
 //! The API axis reads prelude/lang.d.ts: 96 positions across 42 callables; eight declarations need other forms.
 //! ES-lib methods admitted by method.rs have role/site cells only where a site names them.
 //! The product keeps +=, -=, and &=, one per checker arm; a separate 396-cell test covers all operators.
 //! The other compound operators had identical verdicts in all 633 measured groups (§143 rule 4).
 //! TypeScript runs beside at most eight scoped checker workers.
-//! Nine current kinds retain every role/site pair. The 27 added kinds have every site with x: T and T | null.
-//! Numeric added kinds also have x + 1. This cut bounds debug cost below 30 seconds as the kind axis grows.
+//! Nine current kinds retain every role/site pair. The 28 added kinds have every site with x: T and T | null.
+//! Numeric added kinds also have x + 1. This cut keeps one added kind near 0.7 seconds of debug cost.
 //! types.rs supplies the variants; kinds.rs supplies each named constraint or a reason that source cannot name it.
 //! The destination axis adds 17 constructors in both directions for each constrained kind.
 //! Each destination has initializer, return, and argument sites.

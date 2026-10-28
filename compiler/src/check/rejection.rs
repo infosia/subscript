@@ -675,9 +675,17 @@ rejection_classes! {
         Diverges(Divergence::UnsupportedModuleDeclaration),
     ),
     Self::ModuleUsing => (RuleCode::S100, Diverges(Divergence::ModuleUsing)),
-    Self::SourceInterfaceDeclaration => (
+    Self::InterfaceMemberForm => (
         RuleCode::S100,
-        Diverges(Divergence::SourceInterfaceDeclaration),
+        Diverges(Divergence::InterfaceMemberForm),
+    ),
+    Self::InterfaceResultAnnotationMissing => (RuleCode::S100, TscRejects),
+    Self::InterfaceValueType => (RuleCode::S100, Diverges(Divergence::InterfaceValueType)),
+    Self::InterfaceValueUse => (RuleCode::S100, TscRejects),
+    Self::InterfaceMemberMissing => (RuleCode::S100, TscRejects),
+    Self::InterfaceConstraintUndeclared => (
+        RuleCode::S100,
+        Diverges(Divergence::InterfaceConstraintUndeclared),
     ),
     Self::ClassImplementsClause => (RuleCode::S100, Diverges(Divergence::ClassImplementsClause)),
     Self::SourceNamespaceDeclaration => (

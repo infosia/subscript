@@ -53,6 +53,7 @@ mod generics;
 mod inference;
 mod initializer;
 mod initializer_finish;
+mod interface;
 mod receiver_capture;
 #[cfg(test)]
 mod receiver_capture_tests;
@@ -482,6 +483,9 @@ pub(crate) enum ScopeItem {
     GenericFunc(String),
     Class(ClassId),
     GenericClass(String),
+    /// A type-only interface (compiler.md §208), an index into
+    /// [`Checker::interfaces`].
+    Interface(usize),
     Enum(EnumId),
     StringAlias(StringAliasId),
     TypeAlias(Type),
@@ -1305,6 +1309,10 @@ pub(crate) struct Checker<'p> {
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,
+    /// Every module-level interface declaration, in source order (§208).
+    pub(crate) interfaces: Vec<interface::InterfaceDef>,
+    /// The interfaces that each implementing class declares (§208.1 rule 3).
+    pub(crate) implements: interface::ImplementsClauses,
     pub instance_symbols: HashMap<String, String>,
     pub file_scopes: Vec<HashMap<String, ScopeBinding>>,
     pub exports: Vec<HashMap<String, ScopeItem>>,

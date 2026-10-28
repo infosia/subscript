@@ -621,6 +621,9 @@ pub(super) fn declared_field_type<'a>(
         | Type::AsyncHandle(_)
         | Type::Error => None,
         // §143: no type parameter reaches the HIR.
-        Type::TypeParameter(_) | Type::GenericNumber | Type::GenericUnion(_) => None,
+        Type::TypeParameter(_)
+        | Type::Interface(_)
+        | Type::GenericNumber
+        | Type::GenericUnion(_) => None,
     }
 }

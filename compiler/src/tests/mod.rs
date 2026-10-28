@@ -7,6 +7,7 @@ fn check_one(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
 mod collections;
 mod equality;
 mod implements_clause;
+mod interface_constraint;
 mod language;
 mod local_functions;
 mod poisoned_containers;

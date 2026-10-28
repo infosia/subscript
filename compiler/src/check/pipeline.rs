@@ -274,6 +274,8 @@ fn run_with_effects(
         globals: Vec::new(),
         generic_fns: HashMap::new(),
         generic_classes: HashMap::new(),
+        interfaces: Vec::new(),
+        implements: interface::ImplementsClauses::default(),
         instance_symbols: HashMap::new(),
         file_scopes: Vec::new(),
         exports: Vec::new(),
@@ -390,6 +392,8 @@ fn run_with_effects(
         ck.resolve_namespace_program(program);
         ck.prog = program;
     }
+    // §208.1 rule 3: a clause reads names that every module binds.
+    ck.collect_implements_clauses();
     // Pass B: signatures. Mirror files first, in a boundary context (so
     // the boundary null forms resolve), then program files.
     ck.in_boundary = true;
@@ -405,6 +409,7 @@ fn run_with_effects(
     ck.in_boundary = false;
     // §202 rule 3: every name is bound before an alias resolves.
     ck.resolve_source_aliases();
+    ck.resolve_interface_signatures();
     for i in 0..prog.files.len() {
         if !prog.files[i].dts {
             ck.cur_file = i;
@@ -414,6 +419,7 @@ fn run_with_effects(
     }
     ck.signatures_resolved = true;
     ck.decide_declarations();
+    ck.check_class_implements();
     // §149: symbolic inference records §140 edges before concrete bodies request instances.
     let opaque_diagnostics = ck.check_generic_bodies_opaque();
     while !ck.pending_instance_bodies.is_empty() || !ck.pending_function_bodies.is_empty() {

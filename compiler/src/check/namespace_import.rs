@@ -85,6 +85,9 @@ impl<'p> Checker<'p> {
                             }
                         }
                     }
+                    Some(ast::Decl::TsInterface(decl)) => {
+                        self.replace_interface_declaration(file, decl);
+                    }
                     _ => {}
                 }
             }
@@ -242,8 +245,26 @@ impl Resolver<'_, '_> {
                     }
                 }
             }
-            // Interfaces and TS namespaces have no accepted bodies.
-            ast::Decl::TsInterface(_) | ast::Decl::TsModule(_) => {}
+            ast::Decl::TsInterface(interface) => {
+                for element in &mut interface.body.body {
+                    match element {
+                        ast::TsTypeElement::TsMethodSignature(method) => {
+                            for parameter in &mut method.params {
+                                if let ast::TsFnParam::Ident(binding) = parameter {
+                                    self.ann(&mut binding.type_ann);
+                                }
+                            }
+                            self.ann(&mut method.type_ann);
+                        }
+                        ast::TsTypeElement::TsGetterSignature(getter) => {
+                            self.ann(&mut getter.type_ann);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // TS namespaces have no accepted bodies.
+            ast::Decl::TsModule(_) => {}
         }
     }
 
@@ -259,6 +280,15 @@ impl Resolver<'_, '_> {
     fn class(&mut self, class: &mut ast::Class) {
         self.params(&mut class.type_params);
         self.args(&mut class.super_type_params);
+        // §208.1 rule 3: a clause can name an interface through a namespace.
+        for clause in &mut class.implements {
+            if let ast::Expr::Member(member) = &mut *clause.expr {
+                if let Some(ident) = self.member(member) {
+                    *clause.expr = ast::Expr::Ident(ident);
+                }
+            }
+            self.args(&mut clause.type_args);
+        }
         if let Some(e) = &mut class.super_class {
             self.expr(e);
         }

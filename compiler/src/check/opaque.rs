@@ -591,7 +591,9 @@ impl<'p> Checker<'p> {
                 let parameters = generic.type_params.clone();
                 let pos = generic.pos.clone();
                 let arguments = self.opaque_arguments(&parameters, &pos);
-                self.instantiate_class(&key, &arguments, pos);
+                if let Some(id) = self.instantiate_class(&key, &arguments, pos) {
+                    self.check_template_implements(&key, id);
+                }
             }
             OpaqueTemplate::Method {
                 class,

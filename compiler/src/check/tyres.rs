@@ -639,6 +639,7 @@ impl<'p> Checker<'p> {
                 }
             }
             Some(ScopeItem::Enum(id)) => Type::Enum(id),
+            Some(ScopeItem::Interface(_)) => self.reject_interface_value_type(name, pos),
             Some(ScopeItem::StringAlias(id)) => {
                 if self.in_boundary {
                     let wire_mapped = self

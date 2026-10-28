@@ -5,7 +5,28 @@ use super::DivergenceEntry;
 pub(super) const CLASSIMPLEMENTSCLAUSE: DivergenceEntry = DivergenceEntry {
     ts: "class A {}\nclass B implements A {}",
     subscript: "class A {}\nclass B {}",
-    why: "Types are nominal, so an implements clause gives no conversion from the class to the named type.",
+    why: "An implements clause names an interface; types are nominal, so a clause that names a class gives no conversion.",
+    collision: "C24", // row 6,
+};
+
+pub(super) const INTERFACEMEMBERFORM: DivergenceEntry = DivergenceEntry {
+    ts: "interface I { x: i32; }",
+    subscript: "interface I { get x(): i32; }",
+    why: "An interface declares method and read accessor signatures only, so each member is a direct call in each generic instance.",
+    collision: "C24", // row 6,
+};
+
+pub(super) const INTERFACEVALUETYPE: DivergenceEntry = DivergenceEntry {
+    ts: "interface I { f(): i32; }\nfunction g(x: I): i32 { return x.f(); }",
+    subscript: "interface I { f(): i32; }\nfunction g<T extends I>(x: T): i32 { return x.f(); }",
+    why: "A value of an interface type needs a dispatch on the run-time class; a constraint gives a direct call in each instance.",
+    collision: "C24", // row 6,
+};
+
+pub(super) const INTERFACECONSTRAINTUNDECLARED: DivergenceEntry = DivergenceEntry {
+    ts: "interface I { f(): i32; }\nclass C { f(): i32 { return 1; } }\nfunction g<T extends I>(x: T): i32 { return x.f(); }\nfunction h(): i32 { return g(new C()); }",
+    subscript: "interface I { f(): i32; }\nclass C implements I { f(): i32 { return 1; } }\nfunction g<T extends I>(x: T): i32 { return x.f(); }\nfunction h(): i32 { return g(new C()); }",
+    why: "Types are nominal (C1), so a class satisfies an interface constraint only when it declares the interface.",
     collision: "C24", // row 6,
 };
 

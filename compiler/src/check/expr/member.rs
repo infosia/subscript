@@ -358,6 +358,9 @@ impl<'p> Checker<'p> {
         let obj = self.apparent_expr(obj);
         match self.apparent_type(&obj.ty.clone()) {
             Type::Error => self.err_expr(prop_pos),
+            Type::Interface(interface) => {
+                self.check_interface_member_read(obj, &interface, name, prop_pos, for_write)
+            }
             Type::Class(id) => {
                 if self.reject_instance_modifier(id, name, write, fx, prop_pos.clone()) {
                     return self.err_expr(prop_pos);

@@ -35,6 +35,10 @@ const UNEXPRESSED: &[(&str, &str)] = &[
         "IterResult",
         "The iterator result has no named declaration type.",
     ),
+    (
+        "Interface",
+        "An interface has no component type; its payload is its identity and name.",
+    ),
 ];
 
 fn uncovered(source: &str) -> Vec<&str> {
@@ -139,8 +143,8 @@ pub(super) fn cells() -> Vec<Cell> {
     // C21 excludes concrete destinations that use void outside a result type.
     // S013 excludes those with a parameter that holds a handle and is not
     // discharged (compiler.md §188.1 rule 2).
-    assert_eq!(omitted, 1494, "destination instance admission changed");
-    eprintln!("destination axis: 35 constrained kinds, 17 constructors, 2 directions, 3 sites, {} cells, {omitted} omitted instances", cells.len());
+    assert_eq!(omitted, 1596, "destination instance admission changed");
+    eprintln!("destination axis: 36 constrained kinds, 17 constructors, 2 directions, 3 sites, {} cells, {omitted} omitted instances", cells.len());
     cells
 }
 
@@ -268,6 +272,15 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
                 "class field, array element, or lambda capture rejects",
             ));
         }
+    }
+    // §208.1 rule 5: a destination that names an interface is not a constraint.
+    if kind.name == "interface" {
+        records.push(Divergence {
+            code: RuleCode::S100,
+            record: "C24",
+            token: "`interface`",
+            message: "is a constraint only",
+        });
     }
     records
 }

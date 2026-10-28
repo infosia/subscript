@@ -102,6 +102,10 @@ const NAMED: &[(&str, Kind)] = &[
         "AsyncHandle",
         kind!("async-handle", "Promise<i32>", "Promise<i32>", "promised()"),
     ),
+    (
+        "Interface",
+        kind!("interface", "Shape", "Square", "new Square()"),
+    ),
 ];
 
 // These variants have no legal constraint spelling in the project surface.
@@ -215,6 +219,9 @@ pub(super) fn prelude(kind: &Kind) -> &'static str {
         "outbox" => "function outbox(): Outbox<Box> { throw new Error(\"unused\"); }",
         "generator" => "function* generate(): Generator<i32> { yield 1; }",
         "async-handle" => "async function promised(): Promise<i32> { return 1; }",
+        "interface" => {
+            "interface Shape { get(): i32; } class Square implements Shape { v: i32 = 1; get(): i32 { return 2; } }"
+        }
         _ => "",
     }
 }
@@ -242,8 +249,8 @@ pub(super) fn numeric(kind: &Kind) -> bool {
 fn every_type_variant_has_a_constraint_or_a_reason() {
     let source = include_str!("../../src/types.rs");
     assert!(uncovered(source).is_empty(), "{:?}", uncovered(source));
-    assert_eq!(variants(source).len(), 38);
-    assert_eq!(additional().len(), 27);
+    assert_eq!(variants(source).len(), 39);
+    assert_eq!(additional().len(), 28);
     assert_eq!(uncovered("pub enum Type {\nFuture,\n}"), ["Future"]);
 }
 

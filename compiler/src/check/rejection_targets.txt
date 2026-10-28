@@ -810,10 +810,15 @@ TupleAnnotation	TupleAnnotation	S100	type annotation form outside the decided su
 DescriptorRequiredMemberMissing	a-s003	S100	descriptor literal for `D` is missing required member `x`
 DescriptorRequiredMemberMissing	a-s005	S100	descriptor literal for `D` is missing required member `x`
 LocalAggregateFrameLimit	c-corpus-r69-closure-environment-layout-too-large	S100	local aggregate storage makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
-SourceInterfaceDeclaration	source-interface-declaration	S100	declaration form outside the decided surface
-SourceInterfaceDeclaration	c-nullable-function-class	S100	declaration form outside the decided surface
-SourceInterfaceDeclaration	SourceInterfaceDeclaration	S100	declaration form outside the decided surface
-ClassImplementsClause	class-implements-clause	S100	a class cannot declare `implements`: types are nominal (C1), so the clause gives no conversion
+InterfaceMemberForm	source-interface-declaration	S100	interface `A` has a member form outside the decided surface
+InterfaceMemberForm	c-nullable-function-class	S100	interface `C` has a member form outside the decided surface
+InterfaceMemberForm	InterfaceMemberForm	S100	interface `I` has a member form outside the decided surface
+InterfaceResultAnnotationMissing	interface-result-annotation-missing	S100	interface members require a result type annotation
+InterfaceValueType	interface-value-type	S100	interface `I` is a constraint only; write a type parameter `T extends I`
+InterfaceValueUse	interface-value-use	S100	interface `I` is a type; it has no value
+InterfaceMemberMissing	interface-member-missing	S100	class `C` does not implement `f` of interface `I`
+InterfaceConstraintUndeclared	interface-constraint-undeclared	S100	`C` does not declare `implements I`
+ClassImplementsClause	class-implements-clause	S100	`implements` names an interface; `A` is not an interface
 DescriptorConstructor	descriptor-required-without-definite	S100	descriptor classes cannot declare constructors
 StringRelationalOperand	StringRelationalOperand	S100	operator not defined for `string` and `string`
 FunctionBodyMissing	class-member-name-clash	S100	function bodies are required

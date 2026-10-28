@@ -494,7 +494,9 @@ impl<'p> Checker<'p> {
         }
         let item = self.scope_item(&name, &pos);
         match item {
-            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => self.err_expr(pos),
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
+                self.err_expr(pos)
+            }
             Some(ScopeItem::Global(g)) => {
                 // A mirror flag member (§13.2) folds to its C value here, so
                 // both tiers emit an immediate rather than reading a global.

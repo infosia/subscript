@@ -141,7 +141,10 @@ fn receiver_is_shared(ty: &Type, classes: &[ClassDef], boxed: bool) -> bool {
         | Type::AsyncHandle(_)
         | Type::Error => false,
         // §143: no type parameter reaches the HIR.
-        Type::TypeParameter(_) | Type::GenericNumber | Type::GenericUnion(_) => false,
+        Type::TypeParameter(_)
+        | Type::Interface(_)
+        | Type::GenericNumber
+        | Type::GenericUnion(_) => false,
     }
 }
 

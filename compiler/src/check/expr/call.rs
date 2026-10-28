@@ -119,7 +119,9 @@ impl<'p> Checker<'p> {
                 );
             }
             match item {
-                Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
+                Some(
+                    ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_),
+                ) => {
                     checker.check_poisoned_arguments(&c.args, fx);
                     checker.err_expr(pos)
                 }
@@ -1058,6 +1060,9 @@ impl<'p> Checker<'p> {
                 checker.check_number_method(recv, &name, c, fx, pos, prop_pos)
             }
             Type::TaskGroup => checker.check_task_group_method(recv, &name, c, fx, pos),
+            Type::Interface(interface) => {
+                checker.check_interface_method_call(recv, &interface, property, c, fx, pos)
+            }
             Type::Date => checker.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
                 checker.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
@@ -1435,7 +1440,11 @@ impl<'p> Checker<'p> {
         })
     }
 
-    pub(super) fn check_poisoned_arguments(&mut self, args: &[ast::ExprOrSpread], fx: &mut FnCtx) {
+    pub(in crate::check) fn check_poisoned_arguments(
+        &mut self,
+        args: &[ast::ExprOrSpread],
+        fx: &mut FnCtx,
+    ) {
         for argument in args {
             let _ = self.check_expr(&argument.expr, None, fx);
         }
@@ -1736,7 +1745,7 @@ impl<'p> Checker<'p> {
         }
         let mut checked = None;
         let class_id = match self.scope_item(&name, &ident_pos) {
-            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
                 if let Some(arguments) = &n.args {
                     self.check_poisoned_arguments(arguments, fx);
                 }

@@ -54,7 +54,7 @@ pub(super) fn compare_iterator_bounds(
             _ => None,
         };
         if let Some(fact) = fact {
-            expected.insert(pos_key(&expr.pos), fact);
+            require(&mut expected, pos_key(&expr.pos), fact);
         }
     });
 
@@ -93,6 +93,19 @@ pub(super) fn compare_iterator_bounds(
     }
 }
 
+/// Adds the cursors of one HIR spelling. Each generic instance repeats
+/// the source position of its template, so the counts add.
+fn require(
+    expected: &mut BTreeMap<(String, u32, u32), ExpectedIteratorBound>,
+    key: (String, u32, u32),
+    fact: ExpectedIteratorBound,
+) {
+    expected
+        .entry(key)
+        .and_modify(|known| known.count += fact.count)
+        .or_insert(fact);
+}
+
 fn collect_for_of_bounds(
     hir: &hir::Module,
     statements: &[hir::Stmt],
@@ -108,7 +121,8 @@ fn collect_for_of_bounds(
                 subject: _,
                 kind: _,
             } => {
-                expected.insert(
+                require(
+                    expected,
                     pos_key(pos),
                     ExpectedIteratorBound {
                         bound: l::IteratorBoundKind::Live,

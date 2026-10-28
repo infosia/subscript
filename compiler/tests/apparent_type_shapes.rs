@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
 //! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
-//! Measured cost: 521 sites in 0.26 seconds; 19 named groups pin 49 justified raw-test functions.
+//! Measured cost: 828 sites in 0.44 seconds; 25 named groups pin 66 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -600,8 +600,12 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "instance-identity", reason: "Instance keys compare declared type arguments and preserve T identity (§143 rule 1b).", sites: &[
         ("generics.rs", "numeric_normal_form", 0x717a414a03404ca1),
         ("generics.rs", "same_normal_form", 0x13ce99814da5bbaa),
-        ("generics.rs", "satisfies_constraint_through_parameters", 0x967a092b7f73d8c0),
         ("instance_chain.rs", "argument_has_error", 0xa9def2fd9d81a55),
+    ] },
+    AllowGroup { name: "interface-constraint", reason: "An interface is a declared constraint form, and a type argument declares an interface by its class identity; T identity stays (§143 rule 1b, §208.1 rule 4).", sites: &[
+        ("generics.rs", "apply_type_parameter_constraints", 0x919e7cf47f45b1c4),
+        ("generics.rs", "satisfies_constraint_through_parameters", 0x70ed506a5277da01),
+        ("interface.rs", "declares_interface", 0x592deb6e367505cd),
     ] },
     AllowGroup { name: "concrete-initializers", reason: "Initializer effect analysis runs on the final concrete HIR (§135 rule 1).", sites: &[
         ("init_effects.rs", "class_of", 0x4e311ebca16a4080),
@@ -658,6 +662,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("class_shape.rs", "resolve_class_shape", 0xf61b779abfbd6fdd),
             ("expr/lambda.rs", "check_lambda_with", 0x6501432f76082482),
             ("initializer.rs", "decided", 0x31bbf142683fd569),
+            ("interface.rs", "poisoned", 0x367674974abeebbd),
         ],
     },
     AllowGroup {

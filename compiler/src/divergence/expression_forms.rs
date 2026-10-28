@@ -30,12 +30,6 @@ pub(super) const LOCALINTERFACEDECLARATION: DivergenceEntry = DivergenceEntry {
     why: "No lowering is decided for a local declaration.",
     collision: "C24", // row 5,
 };
-pub(super) const SOURCEINTERFACEDECLARATION: DivergenceEntry = DivergenceEntry {
-    ts: "interface I { x: i32; }",
-    subscript: "no equivalent; declare a nominal class",
-    why: "An interface is structural, and types are nominal.",
-    collision: "C24", // row 6,
-};
 pub(super) const SOURCENAMESPACEDECLARATION: DivergenceEntry = DivergenceEntry {
     ts: "namespace N {}",
     subscript: "no equivalent; use the admitted type or operation",

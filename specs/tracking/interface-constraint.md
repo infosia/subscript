@@ -1,6 +1,6 @@
 # An interface is a constraint — `compiler.md` §208
 
-Status: contract.
+Status: landed.
 
 ## Facts that the design reads
 
@@ -29,3 +29,17 @@ from the pin.
 | `r457-constraint-needs-implements` | no error | S100 "declaration form outside the decided surface" |
 
 `node` prints the `a394` golden.
+
+## Landing
+
+`gate full 5a186b31 dirty:42 debug 3008/0/5 release 3005/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 0 exit 0`.
+
+`Type::Interface` is a checker-only constraint type; the HIR never
+carries it, because each instance substitutes the class. `a394` is the
+first corpus entry with two instances of one generic function that
+contains a `for…of`. The LIR fact model in
+`codegen/tests/support/lir_facts/iteration.rs` keyed the expected
+cursors by source position and expected one cursor where the LIR has
+two; it now counts each HIR occurrence. The generic tsc matrix adds
+629 cells for the interface constraint kind (40,174 cells in 30.46 s).
