@@ -4284,6 +4284,20 @@ class C{x:i32=1;} function maybe():C|null{return new C();} const x:C=maybe()??ne
 export function main(): void {}
 END FILE
 END PROGRAM
+PROGRAM	c-push-initializer-receiver			0
+FILE	E	target/s154/forms/c-push-initializer-receiver/main.ts
+const store: i32[] = []; function make(): i32[] { return store; }
+class Holder { size: i32 = make().push(1, 2); }
+export function main(): void { print(`${new Holder().size}`); }
+END FILE
+END PROGRAM
+PROGRAM	c-push-initializer-argument			0
+FILE	E	target/s154/forms/c-push-initializer-argument/main.ts
+const store: i32[] = []; function next(): i32 { return 1; }
+class Holder { size: i32 = store.push(next(), 2); }
+export function main(): void { print(`${new Holder().size}`); }
+END FILE
+END PROGRAM
 PROGRAM	c-type-only-local-class			0
 FILE	E	target/s154/forms/c-type-only-local-class/type-only-local-class.ts
 import type {C} from "./type-only-local-class-lib"; export function main():void { class C{}; new C(); }

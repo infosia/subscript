@@ -908,6 +908,8 @@ pub enum Divergence {
     NullishAssignment,
     /// A non-place nullish receiver in an initializer.
     NonPlaceNullishInitializer,
+    /// A `push` with two or more arguments in an initializer that needs a synthetic local.
+    PushInitializerSyntheticLocal,
     /// An optional chain that will bind `undefined` in TypeScript.
     OptionalChainUnbound,
     /// A computed optional-chain step.
@@ -1493,6 +1495,7 @@ impl Divergence {
         Divergence::OptionalChainNonNullable,
         Divergence::NullishAssignment,
         Divergence::NonPlaceNullishInitializer,
+        Divergence::PushInitializerSyntheticLocal,
         Divergence::OptionalChainUnbound,
         Divergence::OptionalChainIndex,
         Divergence::LiteralUnionAlias,

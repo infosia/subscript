@@ -641,6 +641,9 @@ impl Divergence {
             Divergence::OptionalChainNonNullable => established_tail::OPTIONALCHAINNONNULLABLE,
             Divergence::NullishAssignment => established_tail::NULLISHASSIGNMENT,
             Divergence::NonPlaceNullishInitializer => established_tail::NONPLACENULLISHINITIALIZER,
+            Divergence::PushInitializerSyntheticLocal => {
+                established_tail::PUSHINITIALIZERSYNTHETICLOCAL
+            }
             Divergence::OptionalChainUnbound => established_tail::OPTIONALCHAINUNBOUND,
             Divergence::OptionalChainIndex => established_tail::OPTIONALCHAININDEX,
             Divergence::LiteralUnionAlias => established_tail::LITERALUNIONALIAS,

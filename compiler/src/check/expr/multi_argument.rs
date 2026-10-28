@@ -4,12 +4,12 @@
 use swc_ecma_ast as ast;
 
 use crate::check::rejection::RejectionSite;
-use crate::check::{Checker, FnCtx, ParamSig};
+use crate::check::{Checker, FnCtx, ParamSig, SyntheticUse};
 use crate::diag::Pos;
 use crate::hir::{self, Callee, ExprKind, MathFn};
 use crate::types::Type;
 
-/// The operator name that a rejected synthetic local names (§201.1 rule 4).
+/// The method name of an append.
 const PUSH: &str = "push";
 
 impl<'p> Checker<'p> {
@@ -72,9 +72,11 @@ impl<'p> Checker<'p> {
         (!spread).then_some(checked)
     }
 
-    /// Builds the `Seq` of §201.1 rule 4a. A receiver that is not a local,
-    /// a global, or `this`, and each argument that is not order-free, is
-    /// stored in a synthetic local at its evaluation.
+    /// Builds the `Seq` of §201.1 rule 4a. Each argument that is not free
+    /// of order is stored in a synthetic local at its evaluation. If one
+    /// is, the receiver is read into a synthetic local before the first
+    /// argument, whatever its kind (§201.1 rule 4). Otherwise only a
+    /// non-place receiver is stored, so that it evaluates once.
     fn push_sequence(
         &mut self,
         recv: hir::Expr,
@@ -83,22 +85,31 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let mut effects = Vec::new();
-        let recv = if matches!(
-            recv.kind,
-            ExprKind::Local(..) | ExprKind::Global(_) | ExprKind::This
-        ) {
-            recv
+        let ordered = !args.iter().all(is_order_free);
+        let role = if super::is_place_expr(&recv) {
+            ordered.then_some(SyntheticUse::PushArgument)
         } else {
-            let (store, read) = self.bind_synthetic_operand(recv, "receiver", PUSH, fx);
-            effects.push(store);
-            read
+            Some(SyntheticUse::PushReceiver)
+        };
+        let recv = match role {
+            Some(role) => {
+                let (store, read) = self.bind_synthetic_operand(recv, "receiver", role, fx);
+                effects.push(store);
+                read
+            }
+            None => recv,
         };
         let mut values = Vec::with_capacity(args.len());
         for argument in args {
             if is_order_free(&argument) {
                 values.push(argument);
             } else {
-                let (store, read) = self.bind_synthetic_operand(argument, "argument", PUSH, fx);
+                let (store, read) = self.bind_synthetic_operand(
+                    argument,
+                    "argument",
+                    SyntheticUse::PushArgument,
+                    fx,
+                );
                 effects.push(store);
                 values.push(read);
             }
@@ -121,8 +132,9 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks `Math.max` or `Math.min` with any argument count other than
-    /// two (§201.1 rule 2). Returns `None` for every other call, which the
-    /// two-argument path checks.
+    /// two (§201.1 rule 2), or with a spread argument, which gives the
+    /// call-spread text (rule 5). Returns `None` for every other call,
+    /// which the two-argument path checks.
     pub(super) fn check_math_fold(
         &mut self,
         f: MathFn,
@@ -130,10 +142,8 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Option<hir::Expr> {
-        if !matches!(f, MathFn::Max | MathFn::Min)
-            || c.args.len() == 2
-            || c.args.iter().any(|argument| argument.spread.is_some())
-        {
+        let spread = c.args.iter().any(|argument| argument.spread.is_some());
+        if !matches!(f, MathFn::Max | MathFn::Min) || (c.args.len() == 2 && !spread) {
             return None;
         }
         let params = vec![ParamSig::positional(Type::F64); c.args.len()];
@@ -145,6 +155,9 @@ impl<'p> Checker<'p> {
             pos,
             &format!("Math.{}", f.name()),
         );
+        if spread {
+            return Some(self.err_expr(pos.clone()));
+        }
         let mut args = args.into_iter();
         let Some(first) = args.next() else {
             let empty = if f == MathFn::Max {

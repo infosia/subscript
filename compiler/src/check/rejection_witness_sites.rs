@@ -294,6 +294,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::MirrorAnonymousCallback,
     RejectionSite::MirrorCallbackProvenanceMissing,
     RejectionSite::InitializerNonPlaceOptionalReceiver,
+    RejectionSite::InitializerPushSyntheticLocal,
     RejectionSite::GenericInstanceExpansionLimit,
     RejectionSite::TopLevelNameClash,
     RejectionSite::TopLevelOverloadImplementationMissing,

@@ -325,6 +325,7 @@ pub(crate) enum RejectionSite {
     MirrorAnonymousCallback,
     MirrorCallbackProvenanceMissing,
     InitializerNonPlaceOptionalReceiver,
+    InitializerPushSyntheticLocal,
     GenericInstanceExpansionLimit,
     TopLevelNameClash,
     TopLevelOverloadImplementationMissing,

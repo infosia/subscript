@@ -427,6 +427,13 @@ pub(super) const NONPLACENULLISHINITIALIZER: DivergenceEntry = DivergenceEntry {
                 collision: "C7",
             };
 
+pub(super) const PUSHINITIALIZERSYNTHETICLOCAL: DivergenceEntry = DivergenceEntry {
+    ts: "const store: i32[] = [];\nfunction next(): i32 { return 1; }\nclass Holder { size: i32 = store.push(next(), 2); }",
+    subscript: "const store: i32[] = [];\nfunction next(): i32 { return 1; }\nclass Holder { size: i32 = 0; constructor() { this.size = store.push(next(), 2); } }",
+    why: "An argument that is not free of order needs a synthetic local, and an initializer has no statement list that can declare it.",
+    collision: "compiler.md §201.1",
+};
+
 pub(super) const OPTIONALCHAINUNBOUND: DivergenceEntry = DivergenceEntry {
                 ts: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value}`);",
                 subscript: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value ?? 0}`);",
@@ -624,7 +631,7 @@ pub(super) const STATICMEMBERSURFACE: DivergenceEntry = DivergenceEntry {
 pub(super) const MATHSUBSET: DivergenceEntry = DivergenceEntry {
     ts: "const m = Math;\n\
                      print(`${Math.hypot(1, 2, 3)}`);",
-    subscript: "print(`${Math.sqrt(1 * 1 + 2 * 2 + 3 * 3)}`);",
+    subscript: "no equivalent; `Math.hypot` takes at most two arguments, and no other form gives its N-argument result",
     why: "`Math` is a compiler namespace that lowers to intrinsics, so it is \
                       not a value. A fold of `hypot` rounds differently from its \
                       N-argument form.",

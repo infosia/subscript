@@ -346,6 +346,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::MirrorAnonymousCallback => WitnessEntry::General { files: &["c-callback-anonymous-field"], variant: Some(Divergence::MirrorAnonymousCallback), reason: "" },
         RejectionSite::MirrorCallbackProvenanceMissing => WitnessEntry::General { files: &["c-callback-alias-field"], variant: Some(Divergence::MirrorCallbackProvenanceMissing), reason: "" },
         RejectionSite::InitializerNonPlaceOptionalReceiver => WitnessEntry::General { files: &["c-synthetic-global"], variant: Some(Divergence::NonPlaceNullishInitializer), reason: "" },
+        RejectionSite::InitializerPushSyntheticLocal => WitnessEntry::General { files: &["c-push-initializer-receiver", "c-push-initializer-argument"], variant: Some(Divergence::PushInitializerSyntheticLocal), reason: "" },
         RejectionSite::GenericInstanceExpansionLimit => WitnessEntry::General { files: &["c-corpus-r288-growing-instance-chain"], variant: Some(Divergence::GrowingInstanceChain), reason: "" },
         RejectionSite::TopLevelNameClash => WitnessEntry::General { files: &["top-level-name-clash"], variant: Some(Divergence::TopLevelNameClash), reason: "" },
         RejectionSite::TopLevelOverloadImplementationMissing => WitnessEntry::General { files: &[], variant: None, reason: "The first bodyless overload has an earlier FunctionImplementationMissing diagnostic; the duplicate declaration is a follow-on." },

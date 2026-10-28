@@ -930,7 +930,44 @@ impl SyntheticOwnerKind {
 /// Synthetic declarations awaiting placement in their owner's statement list.
 #[derive(Debug, Clone, Default)]
 #[must_use]
-struct SyntheticPrefix(Shared<Vec<hir::Stmt>>, Option<&'static str>);
+struct SyntheticPrefix(Shared<Vec<hir::Stmt>>, Option<SyntheticUse>);
+
+/// The operand whose synthetic local an initializer cannot declare
+/// (§82.1 rule 3, §201.1 rule 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SyntheticUse {
+    /// A non-place receiver or index of the named operator.
+    Operand(&'static str),
+    /// The receiver of a `push` with two or more arguments.
+    PushReceiver,
+    /// An argument of a `push` with two or more arguments.
+    PushArgument,
+}
+
+impl SyntheticUse {
+    /// The rejection site and text in an initializer with no statement list.
+    fn initializer_rejection(self) -> (RejectionSite, String) {
+        match self {
+            Self::Operand(operator) => (
+                RejectionSite::InitializerNonPlaceOptionalReceiver,
+                format!(
+                    "a non-place receiver or index of `{operator}` cannot be used in an initializer"
+                ),
+            ),
+            Self::PushReceiver => (
+                RejectionSite::InitializerPushSyntheticLocal,
+                "a non-place receiver or index of `push` cannot be used in an initializer"
+                    .to_owned(),
+            ),
+            Self::PushArgument => (
+                RejectionSite::InitializerPushSyntheticLocal,
+                "an argument of a `push` with two or more arguments needs a synthetic local, \
+                 which an initializer cannot declare"
+                    .to_owned(),
+            ),
+        }
+    }
+}
 
 impl SyntheticPrefix {
     fn is_empty(&self) -> bool {
@@ -1076,18 +1113,15 @@ impl FnCtx {
         let mut prefix = self.synthetic_owners.pop().unwrap_or_default();
         self.synthetic_owner_kinds.pop();
         if rejects_prefix && !prefix.is_empty() {
-            let message = match prefix.1 {
-                Some(operator) => format!(
-                    "a non-place receiver or index of `{operator}` cannot be used in an initializer"
+            let (site, message) = match prefix.1 {
+                Some(operand) => operand.initializer_rejection(),
+                None => (
+                    RejectionSite::InitializerNonPlaceOptionalReceiver,
+                    "a non-place receiver of `??` or `?.` cannot be used in an initializer"
+                        .to_owned(),
                 ),
-                None => "a non-place receiver of `??` or `?.` cannot be used in an initializer"
-                    .to_owned(),
             };
-            let diagnostic = diagnostic(
-                RejectionSite::InitializerNonPlaceOptionalReceiver,
-                message,
-                pos.clone(),
-            );
+            let diagnostic = diagnostic(site, message, pos.clone());
             self.diagnostics.push(diagnostic);
             prefix = SyntheticPrefix::default();
             if let Some(expression) = result.expression_mut() {
@@ -1098,13 +1132,13 @@ impl FnCtx {
         (result, prefix)
     }
 
-    /// Pushes a prefix statement that a logical assignment `operator` needs.
-    fn push_logical_synthetic_prefix(&mut self, statement: hir::Stmt, operator: &'static str) {
+    /// Pushes a prefix statement that the operand `operand` needs.
+    fn push_logical_synthetic_prefix(&mut self, statement: hir::Stmt, operand: SyntheticUse) {
         let owner = self
             .synthetic_owners
             .last_mut()
             .expect("a synthetic prefix must have an owner");
-        owner.1.get_or_insert(operator);
+        owner.1.get_or_insert(operand);
         owner.push(statement);
     }
 

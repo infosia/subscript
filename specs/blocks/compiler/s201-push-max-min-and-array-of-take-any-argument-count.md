@@ -47,33 +47,48 @@ one-argument or two-argument form.
    the type argument, as the literal gets it (`stdlib.md` §9.11
    rule 2).
 4. The receiver and the arguments evaluate once, by §82.1 rule 3. A
-   synthetic local holds only what §199.1 rule 2 lets it hold. In an
-   initializer that has no statement list, a `push` with two or more
-   arguments fails as §82.1 rule 3 states, if the form needs a
-   synthetic local.
+   synthetic local holds the receiver reference or an argument value.
+   An argument value is copied into it, as the append copies it. If
+   an argument is not free of order, the receiver is read into a
+   synthetic local before the first argument, whatever its kind: a
+   local, a global, or a static field. So an argument that assigns
+   the receiver does not change the array that the appends reach, as
+   in JavaScript. *(Amended 2026-10-28 after the Phase Review, M1.)*
+   An argument is free of order if it is a literal, an enum member,
+   a function reference, or a lambda (C5 lets a lambda capture
+   `const` locals only). In an initializer that has no statement
+   list, a `push` with two or more arguments fails if the form needs
+   a synthetic local. The text names the operand that needs it: the
+   receiver or an argument.
 4a. **The sequence form.** The HIR carries an expression
    `Seq { effects, value }`: it runs each effect in order, then
-   evaluates `value`, and its type is the type of `value`. Rule 1 in
-   value position lowers to one `Seq`: the effects store `a1` to `ak`
+   evaluates `value`, and its type is the type of `value`. Rule 1
+   lowers to one `Seq` in statement position and in value position: the effects store `a1` to `ak`
    in synthetic locals and run the first `k - 1` appends, and the
    value is the last append. The HIR→LIR lowering writes a `Seq` as its
    effects followed by its value, so it adds no run-time operation.
    Each HIR walker treats a `Seq` as its parts in order. No source form
    other than this section lowers to a `Seq`.
 5. A spread argument (`xs.push(...ys)`, `Math.max(...xs)`) stays
-   rejected with its existing text.
+   rejected. Each spread argument gives the call-spread text, which
+   names the variadic parameter that the call needs. *(Amended
+   2026-10-28 after the Phase Review, m1: the `Math.max` and
+   `Math.min` spread texts named a two-argument limit.)*
 6. These stay rejected, each with a text that names its own reason:
    - `Math.hypot` with three or more arguments. A fold of
      `Math.hypot` rounds differently from the N-argument form: 80,198
-     of 200,000 random triples differ under `node`.
+     of 200,000 random triples differ under `node`. The divergence
+     entry names no replacement: `Math.sqrt` of the sum of squares
+     also rounds differently.
    - `unshift` with two or more arguments, and the insert form of
      `splice`. The texts do not change. A sequence of one-element
      `unshift` calls moves the elements once for each argument
      (principle 16), so this form needs a runtime insert of `k`
      elements.
    - `concat` with two or more arrays. The text does not change.
-7. The forms have no run-time cost beyond the calls that the source
-   names.
+7. The forms add no call and no branch. Each synthetic local is a
+   stack slot with one store, and a value-class argument is copied
+   once into it.
 
 ### 201.2 Acceptance
 
@@ -101,3 +116,28 @@ one-argument or two-argument form.
    `collisions.md` Q19 and the spread paragraph that cites Q19 state
    the new limit.
 7. No golden moves.
+
+### 201.3 Phase Review
+
+*(Added 2026-10-28.)* A fresh review of `43526876..bc606770` gave one
+MAJOR and five MINOR findings.
+
+1. MAJOR, realistic, fixed: a `push` with two or more arguments read
+   a global, a static-field, or a local receiver again after its
+   arguments. `g.push(1, reset())`, where `reset` assigns `g = []`,
+   appended to the new array on both tiers; `node` appends to the old
+   one. The two tiers agreed, so only a golden shows it (principle
+   12). Rule 4 now binds the receiver.
+2. MINOR, fixed: `Math.max(...xs)` named a two-argument limit. Rule 5
+   now gives the call-spread text.
+3. MINOR, fixed: the initializer text named the receiver when only an
+   argument needed a synthetic local.
+4. MINOR, fixed: rule 4 cited §199.1 rule 2, which does not cover an
+   argument value. Rule 4a named value position only. Rule 7 did not
+   state the store of a synthetic local.
+5. MINOR, fixed: the `Math.hypot` divergence entry gave
+   `Math.sqrt(1 * 1 + 2 * 2 + 3 * 3)` as the replacement. It prints
+   `3.7416573867739413`, and `node` `Math.hypot(1, 2, 3)` prints
+   `3.741657386773941`.
+
+Open: `compiler/src/hir.rs` has 2,000 lines.

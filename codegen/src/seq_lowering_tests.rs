@@ -40,14 +40,14 @@ fn main_operations(body: &str) -> Vec<String> {
 fn value_position_push_lowers_as_its_effects_then_its_value() {
     let sequence = main_operations("const n = xs.push(g(), g());\nprint(`${n}`);");
     let spelled = main_operations(
-        "let a: i32;\nlet b: i32;\na = g();\nb = g();\nxs.push(a);\nconst n = xs.push(b);\nprint(`${n}`);",
+        "let r: i32[];\nlet a: i32;\nlet b: i32;\nr = xs;\na = g();\nb = g();\nr.push(a);\nconst n = r.push(b);\nprint(`${n}`);",
     );
     assert_eq!(sequence, spelled);
     // The sequence adds no block, so it adds no branch.
     assert_eq!(sequence.iter().filter(|line| *line == "block").count(), 1);
     // Control: the spelled form that appends before the second call differs.
     let interleaved = main_operations(
-        "let a: i32;\nlet b: i32;\na = g();\nxs.push(a);\nb = g();\nconst n = xs.push(b);\nprint(`${n}`);",
+        "let r: i32[];\nlet a: i32;\nlet b: i32;\nr = xs;\na = g();\nr.push(a);\nb = g();\nconst n = r.push(b);\nprint(`${n}`);",
     );
     assert_ne!(sequence, interleaved);
 }

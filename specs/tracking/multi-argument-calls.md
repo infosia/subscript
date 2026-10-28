@@ -33,3 +33,8 @@ the owner prefix, so the LIR has one `Zero()` per local and no branch
 or extra call. A literal, an enum member, a function reference, or a
 lambda argument gets no synthetic local: a lambda captures `const`
 locals only (C5), so its value does not depend on the order.
+
+Phase Review fix (§201.3): `gate full e7412b09 dirty:19 debug
+2962/0/5 release 2959/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. At `e7412b09`, `a385` printed ` | 1,7`, `3  | 2,8,3`, and
+` | 9,4,1` on the dev tier; `node` prints the golden.

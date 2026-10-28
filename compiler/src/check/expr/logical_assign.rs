@@ -397,18 +397,23 @@ impl<'p> Checker<'p> {
             let local = self.stabilize_compound_operand(operand, label, prefix);
             return (local.clone(), local);
         }
-        self.bind_synthetic_operand(operand, label, op.spelling(), fx)
+        self.bind_synthetic_operand(
+            operand,
+            label,
+            crate::check::SyntheticUse::Operand(op.spelling()),
+            fx,
+        )
     }
 
     /// Binds `operand` to a synthetic local that the owner prefix declares.
     /// Returns the store, which runs at the first evaluation, and the later
     /// read. The owner rejects the prefix in an initializer with no
-    /// statement list, and the text names `operator` (§82.1 rule 3).
+    /// statement list, and the text names `role` (§82.1 rule 3).
     pub(super) fn bind_synthetic_operand(
         &mut self,
         operand: hir::Expr,
         label: &str,
-        operator: &'static str,
+        role: crate::check::SyntheticUse,
         fx: &mut FnCtx,
     ) -> (hir::Expr, hir::Expr) {
         let id = self.next_compound_local_id;
@@ -442,7 +447,7 @@ impl<'p> Checker<'p> {
                 },
                 pos: pos.clone(),
             },
-            operator,
+            role,
         );
         let local = hir::Expr {
             pending_work: None,

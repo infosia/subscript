@@ -198,6 +198,8 @@ MirrorParameterProvenanceMismatch	c-prov-incompatible	S100	mirror `target/s154/f
 MirrorAnonymousCallback	c-callback-anonymous-field	S100	mirror `target/s154/forms/c-callback-anonymous-field/callback-anonymous-field.d.ts` has an anonymous callback type without `@subscript-c-callback` provenance
 MirrorCallbackProvenanceMissing	c-callback-alias-field	S100	mirror `target/s154/forms/c-callback-alias-field/callback-alias-field.d.ts` callback type `Callback` has no `@subscript-c-callback` provenance record
 InitializerNonPlaceOptionalReceiver	c-synthetic-global	S100	a non-place receiver of `??` or `?.` cannot be used in an initializer
+InitializerPushSyntheticLocal	c-push-initializer-receiver	S100	a non-place receiver or index of `push` cannot be used in an initializer
+InitializerPushSyntheticLocal	c-push-initializer-argument	S100	an argument of a `push` with two or more arguments needs a synthetic local, which an initializer cannot declare
 GenericInstanceExpansionLimit	c-corpus-r288-growing-instance-chain	S100	generic template `nest`: the chain of instances grows without bound from `nest<T>` to `nest<W<T>>` through argument `W<T>`
 TopLevelNameClash	top-level-name-clash	S017	duplicate top-level name `f`
 DuplicateTopLevelClass	duplicate-top-level-class	S017	duplicate top-level name `A`

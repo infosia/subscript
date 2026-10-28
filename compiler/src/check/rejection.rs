@@ -660,6 +660,10 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::NonPlaceNullishInitializer),
     ),
+    Self::InitializerPushSyntheticLocal => (
+        RuleCode::S100,
+        Diverges(Divergence::PushInitializerSyntheticLocal),
+    ),
     Self::GenericInstanceExpansionLimit => {
         (RuleCode::S100, Diverges(Divergence::GrowingInstanceChain))
     }
