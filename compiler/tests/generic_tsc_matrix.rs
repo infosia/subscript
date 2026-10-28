@@ -1736,7 +1736,7 @@ fn restriction_records_resolve_each_supported_source() {
     for (record, token) in [
         ("C2", VALUE_FIELD.token),
         ("Q3", "non-negative integer literal"),
-        ("compiler.md §124", "do…while"),
+        ("compiler.md §124", "a lambda captures only `const`"),
         (
             "stdlib.md §18.1",
             "The argument `value` has type `T` (nominal equality)",

@@ -832,8 +832,10 @@ impl<'p> Checker<'p> {
     /// `continue`.
     fn check_do_while(&mut self, d: &ast::DoWhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(d.span);
+        let before = fx.narrowed.clone();
         self.end_loop_narrowing(&pos, fx);
         let kept = fx.narrowed.clone();
+        self.enter_do_while_body(&pos, &before, fx);
         fx.loop_depth += 1;
         fx.loop_break_facts
             .push((fx.scopes.len(), Vec::new(), Vec::new()));

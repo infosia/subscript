@@ -28,8 +28,9 @@ opaque `boolean`):
 | `x = cond() ? 1 : 2; x += 1;` | accepts |
 | `s = t = "a"` | accepts |
 
-`finally` (§115 rule 2, C6) and `do…while` (C24 row 29) are outside the
-subset, so no row uses them. Every row is in the subset when the local
+`finally` (§115 rule 2, C6) and `do…while` (C24 row 29) were outside
+the subset when the table was measured, so no row uses them. *(Amended
+2026-10-28: `do…while` is in the subset by §203.)* Every row is in the subset when the local
 has an initializer (measured at `34566a91`).
 
 ### 158.1 Rules

@@ -332,6 +332,35 @@ fn map_and_set_callbacks_end_shared_narrowing() {
     }
 }
 
+/// compiler.md §203.1 rule 4: a body fact holds before the loop and on
+/// the edge from the test back to the body.
+#[test]
+fn a_do_while_test_narrows_the_body_on_the_back_edge() {
+    let check = |body: &str| {
+        check_program(&[SourceFile::new(
+            "test.ts",
+            format!(
+                "class Node {{ v: i32 = 0; next: Node | null = null; }}
+                 function other(): boolean {{ return false; }}
+                 function maybe(): Node | null {{ return null; }}
+                 function read(start: Node): void {{ let n: Node | null = start; {body} }}"
+            ),
+        )])
+    };
+    check("do { print(`${n.v}`); } while ((n = n.next) !== null);")
+        .expect("the test re-establishes the fact on the back edge");
+    // Control: the body stores a nullable value, and the test checks nothing.
+    let stored = check("do { print(`${n.v}`); n = maybe(); } while (other());")
+        .expect_err("the store ends the fact on the back edge");
+    assert_eq!(stored.len(), 1, "{stored:?}");
+    assert_eq!(stored[0].code, RuleCode::S011);
+    // Control: the test gives the fact, but it does not hold before the loop.
+    let first = check("n = maybe(); do { print(`${n.v}`); } while ((n = maybe()) !== null);")
+        .expect_err("the first run has no fact");
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert_eq!(first[0].code, RuleCode::S011);
+}
+
 #[test]
 fn a_do_while_test_joins_the_body_end_and_each_continue() {
     // compiler.md §203.1 rule 4: the body end narrows the test.

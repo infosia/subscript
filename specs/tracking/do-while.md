@@ -32,3 +32,9 @@ section only, and no existing line changes.
 The HIR form is `Stmt::DoWhile` in `compiler/src/hir/statement.rs`.
 `do { return 1; } while (c)` ends the flow; `tsc` 5.9.2 accepts that
 form too.
+
+Phase Review fix (§203.3): `gate full 25c1dc8d dirty:11 debug
+2976/0/5 release 2973/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. At `25c1dc8d`, `a389` gave S011 "`Node | null` may be null
+here" at the body read; `tsc` accepts it, and `node` prints the
+golden.

@@ -171,6 +171,8 @@ pub(super) struct Analysis {
     globals: std::collections::HashMap<hir::Symbol, Type>,
     helpers: std::collections::HashSet<hir::Symbol>,
     loops: std::collections::HashMap<(String, u32, u32), hir::NarrowingEffects>,
+    /// The test of each `do…while`, by loop position (compiler.md §203.1 rule 4).
+    do_while_tests: std::collections::HashMap<(String, u32, u32), hir::Expr>,
 }
 
 fn position_key(pos: &Pos) -> (String, u32, u32) {
@@ -209,6 +211,9 @@ impl Analysis {
     pub(super) fn merge_loops(&mut self, other: Self) {
         for (key, effects) in other.loops {
             self.loops.entry(key).or_default().merge(effects);
+        }
+        for (key, test) in other.do_while_tests {
+            self.do_while_tests.entry(key).or_insert(test);
         }
     }
 
@@ -270,6 +275,9 @@ impl Analysis {
                 .entry(position_key(pos))
                 .or_default()
                 .merge(statement.narrowing_effects(classes, &self.helpers, Some(&self.globals)));
+        }
+        if let hir::Stmt::DoWhile { cond, pos, body: _ } = statement {
+            self.do_while_tests.insert(position_key(pos), cond.clone());
         }
         for child in statement.children() {
             self.child(child, classes);
@@ -392,6 +400,38 @@ impl Checker<'_> {
             .and_then(|analysis| analysis.loops.get(&position_key(pos)))
         {
             self.apply_flow_effects(effects, fx, true);
+        }
+    }
+
+    /// Adds each fact of `before` that the `do…while` test at `pos` gives
+    /// on `true` (compiler.md §203.1 rule 4). The test of the resolved HIR
+    /// supplies the facts, because the body is checked before the test.
+    /// Such a fact holds before the loop and on the edge from the test
+    /// back to the body.
+    pub(super) fn enter_do_while_body(
+        &self,
+        pos: &Pos,
+        before: &super::NarrowingFacts,
+        fx: &mut FnCtx,
+    ) {
+        let Some(test) = self
+            .narrowing_analysis
+            .as_ref()
+            .and_then(|analysis| analysis.do_while_tests.get(&position_key(pos)))
+        else {
+            return;
+        };
+        let notes = fx.ended_shared_narrowing.clone();
+        let (on_true, _) = self.narrowing_paths(test, fx);
+        fx.ended_shared_narrowing = notes;
+        for fact in on_true {
+            if before
+                .get(fact.key.as_str())
+                .is_some_and(|prior| prior.kind == fact.kind)
+            {
+                fx.ended_shared_narrowing.remove(&fact.key);
+                fx.narrowed.replace_fact(fact);
+            }
         }
     }
 
