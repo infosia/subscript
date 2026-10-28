@@ -953,6 +953,9 @@ Predicates, all `(value: f64): boolean` with ECMA semantics:
 The **global** `isNaN`/`isFinite` are rejected (S014): they coerce
 their argument, and coercion is not in this language. `Number.*` is
 the spelling.
+*(Amended 2026-10-28 by `compiler.md` §204: `tsc` accepts only a
+number argument, so the global forms are `Number.isNaN` and
+`Number.isFinite`.)*
 
 `MAX_SAFE_INTEGER` describes `f64` integer precision and stays
 meaningful as such; it is **not** a bound on `i64`/`u64`, which are
