@@ -420,10 +420,13 @@ impl<'p> Checker<'p> {
             }
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
             // compiler.md §204 rule 3: `x satisfies T` is `x`, checked as
-            // the initializer of a `T` local.
+            // the initializer of a `T` local. An operand that holds an
+            // empty array literal is checked with no context, as `tsc`
+            // does not give `T` to that literal.
             ast::Expr::TsSatisfies(s) => {
                 let target = self.resolve_type(&s.type_ann);
-                let value = self.check_expr(&s.expr, Some(&target), fx);
+                let context = (!holds_empty_array_literal(&s.expr)).then_some(&target);
+                let value = self.check_expr(&s.expr, context, fx);
                 self.require_expr_assignable(&value, &target, fx, "the initializer");
                 value
             }
@@ -1003,5 +1006,35 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
         }
+    }
+}
+
+/// True when `e` holds an empty array literal at a position that the
+/// context of `e` reaches (compiler.md §204 rule 3).
+fn holds_empty_array_literal(e: &ast::Expr) -> bool {
+    match e {
+        ast::Expr::Array(array) => {
+            array.elems.is_empty()
+                || array
+                    .elems
+                    .iter()
+                    .flatten()
+                    .any(|element| holds_empty_array_literal(&element.expr))
+        }
+        ast::Expr::Paren(paren) => holds_empty_array_literal(&paren.expr),
+        ast::Expr::Cond(cond) => {
+            holds_empty_array_literal(&cond.cons) || holds_empty_array_literal(&cond.alt)
+        }
+        ast::Expr::Bin(binary) => {
+            holds_empty_array_literal(&binary.left) || holds_empty_array_literal(&binary.right)
+        }
+        ast::Expr::Object(object) => object.props.iter().any(|property| {
+            matches!(property, ast::PropOrSpread::Prop(prop)
+                if matches!(&**prop, ast::Prop::KeyValue(pair) if holds_empty_array_literal(&pair.value)))
+        }),
+        ast::Expr::Arrow(arrow) => {
+            matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body) if holds_empty_array_literal(body))
+        }
+        _ => false,
     }
 }

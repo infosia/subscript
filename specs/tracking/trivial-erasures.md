@@ -28,3 +28,8 @@ pin.
 `Mode[]` array, which `join` rejects (§204.3), so the line lost
 `on,off`. `r46-number-global-isnan` is removed: `isNaN(1.0)` is
 accepted.
+
+Phase Review fix (§204.3): `gate full d433a4a7 dirty:6 debug 2980/0/5
+release 2977/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. At
+`d433a4a7`, `const xs = [] satisfies string[]; xs.push("a");` passed
+`check`; `tsc` gives TS2345.

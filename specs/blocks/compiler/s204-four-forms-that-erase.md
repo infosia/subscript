@@ -34,7 +34,11 @@ run-time meaning.
    this rule.
 3. `x satisfies T` checks `x` with the context `T`. The type of `x`
    must convert to `T` as in the assignment of `x` to a `T` local, or
-   the expression fails with the text of that assignment. The
+   the expression fails with the text of that assignment. If `x`
+   contains an empty array literal at any depth, `x` is checked with
+   no context: `tsc` types `[]` as `never[]` there, so the empty
+   literal gives its no-context diagnostic. *(Amended 2026-10-28 after
+   the Phase Review, M1.)* The
    expression is `x`, and its type is the type of `x`. It adds no
    run-time operation.
 4. `debugger;` is an empty statement. It adds no run-time operation.
@@ -63,9 +67,31 @@ run-time meaning.
    reached are removed. The rejection-site total check passes.
 6. `stdlib.md` §11.1 and `collisions.md` C24 rows 18, 22, and 29 cite
    this section.
-7. No golden moves.
+7. No golden moves, except the `a390` golden, which loses the
+   `Mode[]` field (§204.3).
 
-### 204.3 Open
+### 204.3 Phase Review
+
+*(Added 2026-10-28.)* A fresh review of `c258a296..d433a4a7` gave no
+CRITICAL or MAJOR finding and six MINOR findings.
+
+1. MINOR, realistic, fixed: `[] satisfies string[]` gave the literal
+   the type `string[]`, so a later `push("a")` was accepted. `tsc`
+   types it `never[]` and gives TS2345. Rule 3 now checks such an
+   operand with no context.
+2. MINOR, contrived, open: `(this satisfies C).x = 1` in a
+   constructor counts as the field assignment. `tsc` gives TS2564.
+3. MINOR, fixed: `collisions.md` Q25 and the rule-boundary list, and
+   `stdlib.md` §11.6 and §11.7, still named the global `isNaN` as a
+   coercing form.
+4. MINOR, fixed: C24 row 22 did not name the `FixedArray` operand.
+5. MINOR, fixed: acceptance 7 did not name the `a390` golden change.
+6. MINOR, open: a diagnostic names the form that rule 1 or rule 3
+   gives: `isNaN()` names `Number.isNaN`, and a `satisfies` mismatch
+   says "the initializer expects". `tsc` gives TS1360 "does not
+   satisfy the expected type".
+
+Open:
 
 1. `join` rejects an array of a string-literal alias (`Mode[]`), so
    `` `${ms}` `` fails with the `join` text. `node` prints `on,off`. A

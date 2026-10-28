@@ -1082,10 +1082,11 @@ rejected under a one-spelling rule; measured on node, they are the same
 function objects as the globals (`Number.parseInt === parseInt`), and a
 second spelling is not grounds for rejection.
 
-`Number` as a constructor or a coercing call (`Number(x)`) and the
-global `isNaN`/`isFinite` (§11.1) — these **coerce**, which is the
+`Number` as a constructor or a coercing call (`Number(x)`) — this
+**coerces**, which is the
 unsoundness the language exists to reject; adding them would import it,
-so neither the Q26 nor the Q27 rule reaches them. `toLocaleString`
+so neither the Q26 nor the Q27 rule reaches it. The global
+`isNaN`/`isFinite` are the `Number` forms (`compiler.md` §204). `toLocaleString`
 (needs locale data; `js-alignment-audit.md` records that Boa needs the
 same thing, so this is a missing prerequisite, not a cost question).
 
@@ -1102,7 +1103,7 @@ negative values, `NaN`/`±Infinity`, radix 10 shown equal to the Q14
 template form; `toExponential` with and without `digits`, including
 the unpadded-exponent case `(0).toExponential(2)`; `toPrecision`
 across the fixed/exponential switchover; and `Math.clz32` at `0`, `1`,
-`2^31` and an all-ones input. Rejects: the global `isNaN`, `Number(x)`,
+`2^31` and an all-ones input. Rejects: `Number(x)`,
 a `parseInt` without a radix, a `toString` without a radix, and a
 `toPrecision` without `digits` —
 each S014 at a pinned position; plus a radix-out-of-range trap and a

@@ -100,3 +100,25 @@ fn a_global_predicate_is_its_number_form() {
         main_body("const b = isFinite(1.5);")
     );
 }
+
+/// The code and text of each diagnostic of `main` with `body`.
+fn errors(body: &str) -> Vec<(crate::RuleCode, String)> {
+    let source = format!("export function main(): void {{\n{body}\n}}\n");
+    check_program(&[SourceFile::new("erasure.ts", source)])
+        .expect_err("the program must fail")
+        .iter()
+        .map(|error| (error.code, error.message.clone()))
+        .collect()
+}
+
+#[test]
+fn an_empty_array_operand_of_satisfies_has_no_context() {
+    let plain = errors("const xs = [];");
+    assert_eq!(plain.len(), 1);
+    assert_eq!(errors("const xs = [] satisfies string[];"), plain);
+    assert_eq!(errors("const xs = [[]] satisfies i32[][];"), plain);
+    // Control: an operand with no empty array literal keeps the context.
+    let literal = main_body("const xs = [1] satisfies i32[];\nprint(`${xs}`);");
+    let annotated = main_body("const xs: i32[] = [1];\nprint(`${xs}`);");
+    assert_eq!(literal[0], annotated[0]);
+}

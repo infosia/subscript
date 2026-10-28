@@ -745,7 +745,7 @@ it as a candidate to accept.
 | 19 | Arithmetic or comparison outside the operand rules: enum arithmetic, `string` with a non-`string` operand, an `as` that is an identity or converts an integer or a `string` to an enum or alias | The language has no implicit conversion (C3), and an `as` does not check membership. | `as` to the integer; a template |
 | 20 | An index that is not `i32`; a constant index outside a `FixedArray` length; an index on a `string` | An index is `i32` (C3). A constant index outside the length always traps (Q3). `s[i]` gives `undefined` out of range (C7). | `as i32`; `s.at(i)` |
 | 21 | A spread, a quoted key, an accessor, or a method in a descriptor literal | A descriptor literal fills data members by identifier (Q33). | the identifier member |
-| 22 | A class in a template interpolation; an array that `join` rejects | Interpolation formats scalars, strings, enums, and literal aliases (Q14). An array is its `join` (`compiler.md` §204). | a method call |
+| 22 | A class or a `FixedArray` in a template interpolation; an array that `join` rejects | Interpolation formats scalars, strings, enums, and literal aliases (Q14). An array is its `join` (`compiler.md` §204). | a method call |
 | 23 | An empty array literal with no context | The language has no `any[]` and no evolving array type (C4, S001). | `const xs: i32[] = [];` |
 | 24 | A `switch` on `boolean`; `for await` over values that are not handles; a `for…of` head that assigns an existing binding | A `switch` dispatches on integer, enum, string, or alias constants (§41). `for await` reads async iteration (§26.1). No lowering is decided for an assigning head. | `if`; `await` in the body; a `const` head |
 | 25 | Instances or function types with other type arguments or parameter types | Types match only when their arguments are identical: no implicit conversion (C3), no structural substitution (C1), and no variance. | the identical type |
@@ -1256,9 +1256,10 @@ Accept: `a369`, `a370`. Reject: `r421`.
 
 - **Q25 (`Number`, parsing, `toFixed`)** — accepted per `stdlib.md`
   §11. `Number`'s constants and the four `Number.is*` predicates are
-  accepted with ECMA semantics; the **coercing** globals `isNaN`/
-  `isFinite` and `Number(x)` are rejected (coercion is not in this
-  language). `parseInt` **requires an explicit radix** (2–36; out of
+  accepted with ECMA semantics; `Number(x)` is rejected (coercion is
+  not in this language). The globals `isNaN`/`isFinite` are the
+  `Number` forms (`compiler.md` §204): `tsc` accepts only a number
+  argument, so they do not coerce. `parseInt` **requires an explicit radix** (2–36; out of
   range traps): ECMA's default is context-dependent, the same
   arity-changes-meaning hazard Q22 rejected for `reduce`/`sort`.
   `parseInt`/`parseFloat` return **`f64` with `NaN` as the failure
@@ -1333,7 +1334,7 @@ Accept: `a369`, `a370`. Reject: `r421`.
 
   What this rule does **not** reach, and why the boundary is not
   arbitrary:
-  - `Number(x)`, global `isNaN`/`isFinite` (Q25) — they **coerce**.
+  - `Number(x)` (Q25) — it **coerces**.
     Adding them adds the unsoundness the language exists to reject, so
     the cost is not the objection.
   - *(Superseded 2026-07-25.)* This bullet listed `Math.imul`/`fround`
