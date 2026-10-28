@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -246,3 +246,4 @@ Every section, with its status:
 | §202 | A type alias names its aliased type | active | [`s202-a-type-alias-names-its-aliased-type.md`](compiler/s202-a-type-alias-names-its-aliased-type.md) |
 | §203 | `do…while` runs its body before its test | active | [`s203-do-while-runs-its-body-before-its-test.md`](compiler/s203-do-while-runs-its-body-before-its-test.md) |
 | §204 | Global `isNaN` and `isFinite`, an array in a template, `satisfies`, and `debugger` | active | [`s204-four-forms-that-erase.md`](compiler/s204-four-forms-that-erase.md) |
+| §205 | A class cannot declare `implements` | active | [`s205-a-class-cannot-declare-implements.md`](compiler/s205-a-class-cannot-declare-implements.md) |
