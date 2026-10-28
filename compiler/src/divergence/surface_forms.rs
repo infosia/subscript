@@ -153,21 +153,21 @@ pub(super) const ENUMSTRINGMEMBERNAMEFORM: DivergenceEntry = DivergenceEntry {
 pub(super) const GENERICSOURCEALIASFORM: DivergenceEntry = DivergenceEntry {
     ts: "type A<T> = \"a\" | \"b\";\nexport function main(): void {  }",
     subscript: "no equivalent; use the aliased type directly",
-    why: "No lowering is decided for transparent or generic aliases, or repeated literal members.",
+    why: "No lowering is decided for generic aliases or repeated literal members.",
     collision: "C24", // row 7,
 };
 
-pub(super) const SOURCEALIASNOTLITERALUNIONFORM: DivergenceEntry = DivergenceEntry {
-    ts: "type A = i32;\nexport function main(): void {  }",
-    subscript: "no equivalent; use the aliased type directly",
-    why: "No lowering is decided for transparent or generic aliases, or repeated literal members.",
-    collision: "C24", // row 7,
+pub(super) const SOURCEALIASRECURSIVEFORM: DivergenceEntry = DivergenceEntry {
+    ts: "type L = L[];\nexport function main(): void {  }",
+    subscript: "class L { items: L[] = []; }\nexport function main(): void {  }",
+    why: "A nested array of unbounded depth has no finite type in this language.",
+    collision: "compiler.md §202",
 };
 
 pub(super) const DUPLICATELITERALALIASMEMBERFORM: DivergenceEntry = DivergenceEntry {
     ts: "type A = \"a\" | \"a\";\nexport function main(): void {  }",
     subscript: "no equivalent; use the aliased type directly",
-    why: "No lowering is decided for transparent or generic aliases, or repeated literal members.",
+    why: "No lowering is decided for generic aliases or repeated literal members.",
     collision: "C24", // row 7,
 };
 

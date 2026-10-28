@@ -719,9 +719,10 @@ rejection_classes! {
     Self::GenericSourceAlias => {
         (RuleCode::S100, Diverges(Divergence::GenericSourceAliasForm))
     }
-    Self::SourceAliasNotLiteralUnion => (
+    Self::SourceAliasCircular => (RuleCode::S100, TscRejects),
+    Self::SourceAliasRecursive => (
         RuleCode::S100,
-        Diverges(Divergence::SourceAliasNotLiteralUnionForm),
+        Diverges(Divergence::SourceAliasRecursiveForm),
     ),
     Self::LiteralAliasDiscriminantLimit => (RuleCode::S100, TscRejects),
     Self::DuplicateLiteralAliasMember => (

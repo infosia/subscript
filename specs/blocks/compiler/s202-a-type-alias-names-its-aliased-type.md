@@ -30,10 +30,16 @@ lowering exists.
    an enum, or an alias that a later declaration in the module
    declares.
 4. An alias that reaches itself fails with S100 "type alias `N`
-   refers to itself". This includes `type A = B; type B = A;`, which
-   `tsc` rejects with TS2456, and `type L = L[];`, which `tsc`
-   accepts. A nested array of unbounded depth has no finite type in
-   this language.
+   refers to itself". The text is given once, at the alias that the
+   cycle reaches again. Two cases have different `tsc` results:
+   - A cycle whose every edge is a direct reference, through a union
+     or parentheses only (`type A = B; type B = A;`,
+     `type U = U | null;`): `tsc` rejects it with TS2456.
+   - Any other cycle, through an array, a type argument, or a function
+     type (`type L = L[];`, `type M = Map<string, M>;`): `tsc` accepts
+     it. A type of unbounded depth has no finite type in this
+     language, so this is a divergence.
+   *(Amended 2026-10-28: the coding agent measured the second case.)*
 5. `export type N = T;` exports the alias. `import { N }` and
    `import type { N }` import it, as for a string-literal alias
    (§128). A re-export follows §128.

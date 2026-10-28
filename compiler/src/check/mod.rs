@@ -74,6 +74,7 @@ pub(crate) use pipeline::run;
 pub(crate) mod pattern;
 mod signatures;
 mod snapshot;
+mod source_alias;
 use snapshot::Shared;
 mod stmt;
 mod type_rules;
@@ -484,6 +485,9 @@ pub(crate) enum ScopeItem {
     Enum(EnumId),
     StringAlias(StringAliasId),
     TypeAlias(Type),
+    /// A module-level transparent alias (compiler.md §202), an index
+    /// into [`Checker::source_aliases`]. A lookup reads its resolved item.
+    SourceAlias(usize),
     Global(String),
     /// A foreign C-ABI function declared by an ambient mirror (§12.2);
     /// callable but not usable as a value.
@@ -1336,6 +1340,9 @@ pub(crate) struct Checker<'p> {
     /// Mirror `type` aliases (function-pointer typedefs, flag-set `u64`
     /// aliases), resolved to language types.
     pub type_aliases: HashMap<String, Type>,
+    /// Module-level transparent aliases (compiler.md §202), in
+    /// declaration order.
+    pub source_aliases: Vec<source_alias::SourceAlias>,
     /// True while resolving mirror declarations: the boundary null forms
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).

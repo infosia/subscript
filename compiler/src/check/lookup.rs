@@ -17,7 +17,7 @@ impl<'p> Checker<'p> {
             return Some(ScopeItem::Poisoned);
         }
         let type_only = self.scope_binding(name).is_some_and(|binding| {
-            binding.type_only && !matches!(binding.item, ScopeItem::Poisoned)
+            binding.type_only && !matches!(self.binding_item(&binding.item), ScopeItem::Poisoned)
         });
         if type_only
             && self
@@ -74,7 +74,7 @@ impl<'p> Checker<'p> {
             return Some(ScopeItem::Poisoned);
         }
         self.scope_binding(name)
-            .map(|binding| binding.item.clone())
+            .map(|binding| self.binding_item(&binding.item))
             .or_else(|| {
                 self.type_aliases
                     .get(name)

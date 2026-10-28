@@ -74,7 +74,7 @@ fn rejected_local_declarations_bind_poisoned_names() {
         "function f(): i32 { return g(2); function g(x:i32):i32 {return x;} }",
         "class A { f():void { g(); function g():void {} } }",
         "function f():void { { g(); function g():void {} } }",
-        "type Fn = (x:i32)=>i32; const f:Fn=(x)=>x*2;",
+        "type Fn = Fn[]; const f: Fn = [];",
         "function f(): void { type Map = i32; const x: Map = 1; }",
         "function f(): void { var x: i32 = 1; x; }",
         "function f(): void { let x; x = 1; print(`${x}`); }",

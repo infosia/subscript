@@ -299,6 +299,7 @@ fn run_with_effects(
         type_handle_classes: Vec::new(),
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
+        source_aliases: Vec::new(),
         in_boundary: false,
         undefined_result: false,
         allow_wire_alias_boundary: false,
@@ -399,6 +400,8 @@ fn run_with_effects(
     // §187 rule 3: a result can name a class that a later mirror declares.
     ck.check_foreign_result_reads();
     ck.in_boundary = false;
+    // §202 rule 3: every name is bound before an alias resolves.
+    ck.resolve_source_aliases();
     for i in 0..prog.files.len() {
         if !prog.files[i].dts {
             ck.cur_file = i;

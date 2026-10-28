@@ -9,6 +9,7 @@ mod equality;
 mod language;
 mod poisoned_containers;
 mod removal;
+mod type_alias;
 
 #[test]
 fn check_options_reject_an_unknown_enabled_module() {

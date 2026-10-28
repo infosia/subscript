@@ -675,6 +675,7 @@ impl<'p> Checker<'p> {
                 "a type alias cannot hold a TaskGroup",
                 pos.clone(),
             );
+            return;
         }
         if let ast::TsType::TsUnionOrIntersectionType(
             ast::TsUnionOrIntersectionType::TsUnionType(union),
@@ -694,11 +695,16 @@ impl<'p> Checker<'p> {
             }
         }
         let Some(members) = string_alias_members(&alias.type_ann) else {
-            self.reject_subset(
-                RejectionSite::SourceAliasNotLiteralUnion,
-                "type aliases are limited to a union of two or more string literals",
-                pos,
-            );
+            // §202 rule 1: a second name of the aliased type, which
+            // resolves after every module name is bound (rule 3).
+            let id = self.source_aliases.len();
+            self.source_aliases
+                .push(super::source_alias::SourceAlias::new(
+                    file,
+                    &name,
+                    pos.clone(),
+                ));
+            self.register_scope_item(file, &name, ScopeItem::SourceAlias(id), pos);
             return;
         };
         if members.len() > i32::MAX as usize {

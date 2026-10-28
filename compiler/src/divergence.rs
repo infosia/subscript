@@ -354,11 +354,11 @@ pub enum Divergence {
     NamespaceImportTargetMissingForm,
     /// A mirror declares C header items, and C has no namespace.
     MirrorModuleDeclarationForm,
-    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
+    /// No lowering is decided for generic aliases or repeated literal members.
     DuplicateLiteralAliasMemberForm,
-    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
-    SourceAliasNotLiteralUnionForm,
-    /// No lowering is decided for transparent or generic aliases, or repeated literal members.
+    /// A nested array of unbounded depth has no finite type in this language.
+    SourceAliasRecursiveForm,
+    /// No lowering is decided for generic aliases or repeated literal members.
     GenericSourceAliasForm,
     /// No lowering is decided for string-literal enum member names.
     EnumStringMemberNameForm,
@@ -1224,7 +1224,7 @@ impl Divergence {
         Divergence::NamespaceImportTargetMissingForm,
         Divergence::MirrorModuleDeclarationForm,
         Divergence::DuplicateLiteralAliasMemberForm,
-        Divergence::SourceAliasNotLiteralUnionForm,
+        Divergence::SourceAliasRecursiveForm,
         Divergence::GenericSourceAliasForm,
         Divergence::EnumStringMemberNameForm,
         Divergence::FieldTypeWithoutInitializer,

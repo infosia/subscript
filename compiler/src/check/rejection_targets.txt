@@ -222,7 +222,10 @@ EnumStringMemberName	enum-string-member-name	S100	string enum member names are n
 EnumImplicitValueOverflow	enum-implicit-value-overflow	S008	implicit value for enum member `b` overflows i32
 EnumNonIntegerMember	enum-non-integer-member	S100	enum members must have integer literal values
 GenericSourceAlias	generic-source-alias	S100	source type aliases cannot be generic
-SourceAliasNotLiteralUnion	source-alias-not-literal-union	S100	type aliases are limited to a union of two or more string literals
+SourceAliasCircular	source-alias-circular	S100	type alias `A` refers to itself
+SourceAliasCircular	source-alias-circular-union	S100	type alias `U` refers to itself
+SourceAliasRecursive	source-alias-recursive	S100	type alias `L` refers to itself
+SourceAliasRecursive	source-alias-recursive-mutual	S100	type alias `C` refers to itself
 DuplicateLiteralAliasMember	duplicate-literal-alias-member	S100	duplicate string-literal union member `a`
 WireEnumEmpty	wire-enum-empty	S100	wire-mapped string-literal union must have at least one member
 WireEnumMethodMember	wire-enum-method-member	S100	CEnum mappings contain only named properties with integer-literal values
@@ -852,7 +855,6 @@ ArraySliceArgumentCount	ArraySliceArgumentCount	S100	`slice` expects 2 argument(
 ArrayAtArgumentCount	ArrayAtArgumentCount	S100	`at` expects 1 argument(s) (1 required), got 2
 InOperator	InOperator	S100	operator outside the decided surface
 NullableClassAssertion	NullableClassAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C | null` to `C`
-SourceAliasNotLiteralUnion	c-async-alias	S100	type aliases are limited to a union of two or more string literals
 AngleAssertionExpression	AngleAssertionExpression	S100	expression form outside the decided surface
 InboxWaitArgumentCount	InboxWaitArgumentCount	S100	`post` expects 1 argument(s) (1 required), got 2
 AssignmentTypeMismatch	c-assign-rejected	S100	type mismatch: the initializer expects `string`, got `i32`
@@ -1139,7 +1141,6 @@ NullableCall	noncallable-1	S100	type `string` is not callable
 NullableCall	noncallable-2	S100	type `boolean` is not callable
 NullableCall	noncallable-3	S100	type `i32[]` is not callable
 LocalFunctionDeclaration	hoisted-local-call	S100	nested declarations are not in the decided surface
-SourceAliasNotLiteralUnion	poisoned-alias-lambda	S100	type aliases are limited to a union of two or more string literals
 ErasedAssignableEquality	erased-equality-array	S100	operator `===` not defined for `i32[]` and `f64[]`
 ErasedAssignableEquality	probe-equality-erased-0	S100	operator `===` not defined for `f64[]` and `i64[]`
 ErasedAssignableEquality	probe-equality-erased-1	S100	operator `===` not defined for `i32[][]` and `f64[][]`
@@ -1159,12 +1160,6 @@ LocalFunctionDeclaration	probe-hoisted-local-2	S100	nested declarations are not 
 LocalFunctionDeclaration	probe-hoisted-invalid-argument-0	S100	nested declarations are not in the decided surface
 LocalFunctionDeclaration	probe-hoisted-invalid-argument-1	S100	nested declarations are not in the decided surface
 LocalFunctionDeclaration	probe-hoisted-invalid-argument-2	S100	nested declarations are not in the decided surface
-SourceAliasNotLiteralUnion	probe-poisoned-alias-context-0	S100	type aliases are limited to a union of two or more string literals
-SourceAliasNotLiteralUnion	probe-poisoned-alias-context-1	S100	type aliases are limited to a union of two or more string literals
-SourceAliasNotLiteralUnion	probe-poisoned-alias-context-2	S100	type aliases are limited to a union of two or more string literals
-SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-0	S100	type aliases are limited to a union of two or more string literals
-SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-1	S100	type aliases are limited to a union of two or more string literals
-SourceAliasNotLiteralUnion	probe-poisoned-invalid-alias-2	S100	type aliases are limited to a union of two or more string literals
 NullableMember	probe-nullable-conditional-write-0	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-1	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-2	S011	`A | null` may be null here; narrow with a null check first

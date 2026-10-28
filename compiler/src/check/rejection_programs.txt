@@ -2194,9 +2194,27 @@ type A<T> = "a" | "b";
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	source-alias-not-literal-union			0
-FILE	E	target/s154/forms/source-alias-not-literal-union/main.ts
-type A = i32;
+PROGRAM	source-alias-circular	TS2456		0
+FILE	E	main.ts
+type A = B; type B = A;
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	source-alias-circular-union	TS2456		0
+FILE	E	main.ts
+type U = U | null;
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	source-alias-recursive			0
+FILE	E	main.ts
+type L = L[];
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	source-alias-recursive-mutual			0
+FILE	E	main.ts
+type C = D[]; type D = C;
 export function main(): void {  }
 END FILE
 END PROGRAM

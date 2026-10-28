@@ -407,7 +407,7 @@ fn rejected_declarations_keep_names_through_every_export_edge() {
     // Eight rejected programs and eight controls check export edges without code generation.
     let start = std::time::Instant::now();
     for (declaration, names, message, col, divergence) in [
-        ("type Num = i32;", "Num", "type aliases are limited to a union of two or more string literals", 6, Some(Divergence::SourceAliasNotLiteralUnionForm)),
+        ("type Num = Num[];", "Num", "type alias `Num` refers to itself", 6, Some(Divergence::SourceAliasRecursiveForm)),
         ("type Label<T> = 'ready' | 'done';", "Label", "source type aliases cannot be generic", 6, Some(Divergence::GenericSourceAliasForm)),
         ("interface I {}", "I", "declaration form outside the decided surface", 1, Some(Divergence::SourceInterfaceDeclaration)),
         ("const [a, b] = [1, 2];", "a, b", "a binding pattern binds inside a function body; a declaration outside one binds one name", 7, Some(Divergence::ModuleLevelPattern)),

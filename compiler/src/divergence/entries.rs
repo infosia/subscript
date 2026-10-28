@@ -302,9 +302,7 @@ impl Divergence {
             Divergence::DuplicateLiteralAliasMemberForm => {
                 surface_forms::DUPLICATELITERALALIASMEMBERFORM
             }
-            Divergence::SourceAliasNotLiteralUnionForm => {
-                surface_forms::SOURCEALIASNOTLITERALUNIONFORM
-            }
+            Divergence::SourceAliasRecursiveForm => surface_forms::SOURCEALIASRECURSIVEFORM,
             Divergence::GenericSourceAliasForm => surface_forms::GENERICSOURCEALIASFORM,
             Divergence::EnumStringMemberNameForm => surface_forms::ENUMSTRINGMEMBERNAMEFORM,
             Divergence::FieldTypeWithoutInitializer => surface_forms::FIELDTYPEWITHOUTINITIALIZER,

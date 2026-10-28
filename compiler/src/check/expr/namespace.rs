@@ -274,7 +274,7 @@ impl<'p> Checker<'p> {
                     }
                 }
             }
-            Some(ScopeItem::TypeAlias(_)) => {
+            Some(ScopeItem::TypeAlias(_) | ScopeItem::SourceAlias(_)) => {
                 self.reject_subset(
                     RejectionSite::MirrorAliasStaticValue,
                     format!("type alias `{name}` used as a value"),

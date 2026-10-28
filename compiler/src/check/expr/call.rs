@@ -167,7 +167,7 @@ impl<'p> Checker<'p> {
                     );
                     checker.err_expr(pos)
                 }
-                Some(ScopeItem::TypeAlias(_)) => {
+                Some(ScopeItem::TypeAlias(_) | ScopeItem::SourceAlias(_)) => {
                     checker.reject_subset(
                         RejectionSite::MirrorTypeAliasCalled,
                         format!("type alias `{name}` used as a value"),
