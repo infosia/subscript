@@ -140,7 +140,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::ConstructorThisBeforeFieldValues,
     RejectionSite::LambdaUsingDeclaration,
     RejectionSite::LocalClassDeclaration,
-    RejectionSite::LocalFunctionDeclaration,
+    RejectionSite::LocalFunctionReadsEnclosingBinding,
     RejectionSite::LocalEnumDeclaration,
     RejectionSite::LocalAliasDeclaration,
     RejectionSite::LocalInterfaceDeclaration,

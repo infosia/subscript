@@ -226,8 +226,8 @@ pub enum Divergence {
     LocalAliasDeclaration,
     /// No lowering is decided for a local declaration.
     LocalEnumDeclaration,
-    /// No lowering is decided for a local declaration.
-    LocalFunctionDeclaration,
+    /// A local function is a module function, which has no environment for a binding of a function.
+    LocalFunctionReadsEnclosingBinding,
     /// No lowering is decided for a local declaration.
     LocalClassDeclaration,
     /// No lowering is decided for type-parameter defaults.
@@ -1153,7 +1153,7 @@ impl Divergence {
         Divergence::LocalInterfaceDeclaration,
         Divergence::LocalAliasDeclaration,
         Divergence::LocalEnumDeclaration,
-        Divergence::LocalFunctionDeclaration,
+        Divergence::LocalFunctionReadsEnclosingBinding,
         Divergence::LocalClassDeclaration,
         Divergence::TypeParameterDefault,
         Divergence::CollectionCallbackTypeMismatchForm,

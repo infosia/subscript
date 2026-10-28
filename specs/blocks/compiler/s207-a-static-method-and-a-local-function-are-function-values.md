@@ -45,7 +45,9 @@ function with a name that only its block can see.
 4. A local function that reads a local, a parameter, or `this` of an
    enclosing function fails with S100 "local function `f` reads the
    local `k` of its enclosing function". The text names the first such
-   read. The diagnostic carries a "TypeScript accepts" block. The
+   read. A type parameter of an enclosing function or class, and a call
+   of a local function that stays in its block, count as reads.
+   *(Amended 2026-10-28: the coding agent measured both cases.)* The diagnostic carries a "TypeScript accepts" block. The
    replacement is a `const` lambda.
 5. A local class, enum, type alias, interface, and namespace stay
    rejected with the existing text (C24 row 5).

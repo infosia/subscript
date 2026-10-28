@@ -158,6 +158,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r450-template-nested-array.ts", RuleCode::S014, 9),
     ("r451-class-implements.ts", RuleCode::S100, 13),
     ("r452-private-name-outside-its-class.ts", RuleCode::S100, 13),
+    ("r453-local-function-reads-a-local.ts", RuleCode::S100, 10),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

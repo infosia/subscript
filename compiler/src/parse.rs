@@ -10,6 +10,7 @@ use crate::diag::{Diagnostic, Pos};
 use crate::provenance;
 use crate::SourceFile;
 
+pub(crate) mod local_function;
 pub(crate) mod parameter_property;
 pub(crate) mod private_name;
 
@@ -41,6 +42,9 @@ pub(crate) struct ParsedProgram {
     /// derives its one reservation from it
     /// (`specs/blocks/compiler.md` §110 rule 3).
     pub source_bytes: usize,
+    /// The first read of each local function that stays in its block,
+    /// keyed by the start of its name (compiler.md §207.1 rule 4).
+    pub local_function_reads: std::collections::HashMap<BytePos, local_function::LocalFunctionRead>,
     source_map: std::rc::Rc<SourceMap>,
 }
 
@@ -164,6 +168,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
     let source_map = SourceMap::default();
     let mut files = Vec::new();
     let mut diags = Vec::new();
+    let mut local_function_reads = std::collections::HashMap::new();
 
     for source in sources {
         let provenance = if source.dts {
@@ -202,6 +207,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
                 if !source.dts {
                     parameter_property::lower_module(&mut module);
                     private_name::lower_module(&mut module);
+                    local_function_reads.extend(local_function::lower_module(&mut module));
                 }
                 if let Some(err) = errors.drain(..).next() {
                     let pos = lookup(&source_map, &source.name, err.span());
@@ -229,6 +235,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         Ok(ParsedProgram {
             files,
             source_bytes,
+            local_function_reads,
             source_map: std::rc::Rc::new(source_map),
         })
     } else {

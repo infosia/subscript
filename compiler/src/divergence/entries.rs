@@ -194,7 +194,7 @@ impl Divergence {
             Divergence::LocalInterfaceDeclaration => expression_forms::LOCALINTERFACEDECLARATION,
             Divergence::LocalAliasDeclaration => expression_forms::LOCALALIASDECLARATION,
             Divergence::LocalEnumDeclaration => expression_forms::LOCALENUMDECLARATION,
-            Divergence::LocalFunctionDeclaration => expression_forms::LOCALFUNCTIONDECLARATION,
+            Divergence::LocalFunctionReadsEnclosingBinding => expression_forms::LOCALFUNCTIONREADSENCLOSINGBINDING,
             Divergence::LocalClassDeclaration => expression_forms::LOCALCLASSDECLARATION,
             Divergence::RestParameter => super::type_flow::RESTPARAMETER,
             Divergence::TypeParameterDefault => surface_forms::TYPEPARAMETERDEFAULT,

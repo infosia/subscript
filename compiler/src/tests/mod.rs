@@ -8,6 +8,7 @@ mod collections;
 mod equality;
 mod implements_clause;
 mod language;
+mod local_functions;
 mod poisoned_containers;
 mod private_names;
 mod removal;

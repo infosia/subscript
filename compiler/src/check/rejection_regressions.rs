@@ -69,11 +69,11 @@ fn type_parameter_defaults_reject_declarations_without_use_cascades() {
 fn rejected_local_declarations_bind_poisoned_names() {
     for source in [
         "function f(): void { class C {} const x: C = new C(); }",
-        "function f(): void { function g(): void {} g(); }",
-        "function f(): void { g(); function g(): void {} }",
-        "function f(): i32 { return g(2); function g(x:i32):i32 {return x;} }",
-        "class A { f():void { g(); function g():void {} } }",
-        "function f():void { { g(); function g():void {} } }",
+        "function f(p: i32): void { function g(): i32 { return p; } g(); }",
+        "function f(p: i32): void { g(); function g(): i32 { return p; } }",
+        "function f(p: i32): i32 { return g(2); function g(x:i32):i32 {return x + p;} }",
+        "class A { f(p: i32):void { g(); function g():i32 { return p; } } }",
+        "function f(p: i32):void { { g(); function g():i32 { return p; } } }",
         "type Fn = Fn[]; const f: Fn = [];",
         "function f(): void { type Map = i32; const x: Map = 1; }",
         "function f(): void { var x: i32 = 1; x; }",

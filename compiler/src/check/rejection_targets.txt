@@ -28,7 +28,6 @@ TypeOnlyImportValueUse	c-type-only-local-class	S100	`C` cannot be used as a valu
 NamespaceAsValue	c-namespace-call	S100	namespace import `ns` is a static qualifier and cannot be used as a value
 NamespaceAsValue	c-namespace-construction	S100	namespace import `ns` is a static qualifier and cannot be used as a value
 NamespaceAsValue	c-namespace-assign	S100	namespace import `ns` is a static qualifier and cannot be used as a value
-NamespaceAsValue	c-namespace-local-function	S100	namespace import `ns` is a static qualifier and cannot be used as a value
 SwitchCaseRead	c-lookup-switch-read	S100	`x` is read from a different switch case
 SwitchCaseClosureRead	c-lookup-switch-let-closure	S100	`x` is read from a different switch case
 SwitchCaseClosureRead	c-lookup-switch-const-closure	S100	`x` is read from a different switch case
@@ -251,7 +250,6 @@ InitializerRouteRead	c-root-initializer-recursive	S100	`value` is accessed befor
 InitializerRouteRead	c-root-initializer-callback	S100	`y` is accessed before its declaration, through an indirect call
 ContextAffineArrayElement	c-worker-array	S100	Worker, Inbox, and Outbox values may not be array elements
 UriCodecTypeArguments	c-uri-generic	S100	`encodeURI` is not generic
-UriCodecTypeArguments	c-uri-local-generic	S100	`encodeURI` is not generic
 WireAliasNestedForeignParameter	wire-alias-nested-foreign-parameter	S100	wire-mapped aliases are supported only as direct foreign-function parameters or array-descriptor elements; `x` nests one inside another boundary type
 WireAliasNestedForeignReturn	wire-alias-nested-foreign-return	S100	wire-mapped aliases are supported only as direct foreign-function returns
 ForeignDirectCallback	foreign-direct-callback	S100	mirror `target/s154/forms/foreign-direct-callback/mirror.d.ts` foreign function `f_signatures_79` parameter `cb` is a direct callback; callbacks are supported only as fields of mirrored boundary structs
@@ -786,9 +784,6 @@ OperatorAnnotation	OperatorAnnotation	S100	type annotation form outside the deci
 BooleanLiteralAnnotation	BooleanLiteralAnnotation	S100	type annotation form outside the decided surface
 BigIntConversionArgumentCount	BigIntConversionArgumentCount	S100	`toISOString` expects 0 argument(s) (0 required), got 1
 AutoAccessorDeclaration	AutoAccessorDeclaration	S100	class member form outside the decided surface
-LocalFunctionDeclaration	c-namespace-local-function	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	c-uri-local-generic	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	LocalFunctionDeclaration	S100	nested declarations are not in the decided surface
 BindingPatternUnsupportedRoot	new-align-count	S100	a nested binding pattern needs recursive type checks and ordered effects
 BindingPatternUnsupportedRoot	new-align-empty	S100	a nested binding pattern needs recursive type checks and ordered effects
 BindingPatternUnsupportedRoot	new-align-key	S100	a nested binding pattern needs recursive type checks and ordered effects
@@ -839,6 +834,9 @@ AmbientFunctionArgumentCount	AmbientFunctionArgumentCount	S100	`print` expects 1
 LocalClassDeclaration	local-class-declaration	S100	nested declarations are not in the decided surface
 LocalClassDeclaration	c-type-only-local-class	S100	nested declarations are not in the decided surface
 LocalClassDeclaration	LocalClassDeclaration	S100	nested declarations are not in the decided surface
+LocalFunctionReadsEnclosingBinding	local-function-reads-a-local	S100	local function `addK` reads the local `k` of its enclosing function
+LocalFunctionReadsEnclosingBinding	local-function-reads-a-parameter	S100	local function `times` reads the parameter `n` of its enclosing function
+LocalFunctionReadsEnclosingBinding	s155-readonly-constructor-function	S100	local function `write` reads the parameter `other` of its enclosing function
 ObjectLiteralWithoutDescriptorContext	await-using-declaration	S100	object literals are not in the decided surface
 BooleanMethod	a-s062	S100	`boolean` has no method `valueOf`
 BooleanMethod	BooleanMethod	S100	`boolean` has no method `toString`
@@ -1137,7 +1135,6 @@ NullableCall	noncallable-0	S100	type `i32` is not callable
 NullableCall	noncallable-1	S100	type `string` is not callable
 NullableCall	noncallable-2	S100	type `boolean` is not callable
 NullableCall	noncallable-3	S100	type `i32[]` is not callable
-LocalFunctionDeclaration	hoisted-local-call	S100	nested declarations are not in the decided surface
 ErasedAssignableEquality	erased-equality-array	S100	operator `===` not defined for `i32[]` and `f64[]`
 ErasedAssignableEquality	probe-equality-erased-0	S100	operator `===` not defined for `f64[]` and `i64[]`
 ErasedAssignableEquality	probe-equality-erased-1	S100	operator `===` not defined for `i32[][]` and `f64[][]`
@@ -1151,12 +1148,6 @@ AssignmentTypeMismatch	probe-function-result-distinct-2	S100	type mismatch: the 
 BinaryInvalidOperand	probe-enum-invalid-0	S100	operator `===` not defined for `E` and `boolean`
 BinaryInvalidOperand	probe-enum-invalid-1	S100	operator not defined for `E` and `boolean`
 BinaryInvalidOperand	probe-enum-invalid-2	S100	operator not defined for `E` and `boolean`
-LocalFunctionDeclaration	probe-hoisted-local-0	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	probe-hoisted-local-1	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	probe-hoisted-local-2	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	probe-hoisted-invalid-argument-0	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	probe-hoisted-invalid-argument-1	S100	nested declarations are not in the decided surface
-LocalFunctionDeclaration	probe-hoisted-invalid-argument-2	S100	nested declarations are not in the decided surface
 NullableMember	probe-nullable-conditional-write-0	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-1	S011	`A | null` may be null here; narrow with a null check first
 NullableMember	probe-nullable-conditional-write-2	S011	`A | null` may be null here; narrow with a null check first
@@ -1344,7 +1335,6 @@ ReadonlyFieldWriteOutsideConstructor	s155-readonly-static-method	S100	field `x` 
 OptionalFunctionTypeParameter	s155-optional-one	S012	optional parameters in function types are not supported (C7)
 OptionalFunctionTypeParameter	s155-optional-two	S012	optional parameters in function types are not supported (C7)
 OptionalFunctionTypeParameter	s155-optional-argument	S012	optional parameters in function types are not supported (C7)
-LocalFunctionDeclaration	s155-readonly-constructor-function	S100	nested declarations are not in the decided surface
 RestrictedMemberOutsideClass	s155-instance-private-setter-write	S100	member `x` is private in class `A`
 RestrictedMemberOutsideClass	s155-static-private-setter-write	S100	member `x` is private in class `A`
 RestrictedMemberOutsideClass	s155-instance-protected-setter-write	S100	member `x` is protected in class `A`

@@ -200,13 +200,19 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     });
                 }
-                if self.class_sigs[id.0].static_methods.contains_key(prop) {
-                    self.reject_subset(
-                        RejectionSite::StaticMethodValue,
-                        format!("static method `{class_name}.{prop}` may only be called"),
-                        prop_pos.clone(),
-                    );
-                    return Some(self.err_expr(prop_pos));
+                if let Some(signature) = self.class_sigs[id.0].static_methods.get(prop) {
+                    // compiler.md §207.1 rule 1: a static generator method
+                    // and an assignment target keep their own text.
+                    if signature.is_generator || for_write {
+                        self.reject_subset(
+                            RejectionSite::StaticMethodValue,
+                            format!("static method `{class_name}.{prop}` may only be called"),
+                            prop_pos.clone(),
+                        );
+                        return Some(self.err_expr(prop_pos));
+                    }
+                    let symbol = static_member_symbol(id, &class_name, prop);
+                    return Some(self.module_function_value(symbol, false, prop_pos));
                 }
                 self.reject_subset(
                     if super::is_function_member(prop) {

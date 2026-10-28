@@ -124,7 +124,10 @@ fn optional_function_types_poison_calls_without_follow_ons() {
 fn unsupported_nested_functions_keep_the_declaration_rejection() {
     for write in ["other.x = 3;", "print(`${other.x}`);"] {
         let source = format!("class A {{ private readonly x: i32 = 1; constructor(other: A) {{ function nested(): void {{ {write} }} nested(); }} }} export function main(): void {{}}");
-        reject(&source, "nested declarations");
+        reject(
+            &source,
+            "local function `nested` reads the parameter `other`",
+        );
     }
 }
 

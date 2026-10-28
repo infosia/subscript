@@ -477,7 +477,7 @@ pub(super) const CONSTRUCTORNOTNAMEDCLASSFORM: DivergenceEntry = DivergenceEntry
 };
 
 pub(super) const STATICMETHODVALUEFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class C { static f(): void {} }\nexport function main(): void { const f = C.f; }",
+    ts: "class C { static *g(): Generator<i32> { yield 1; } }\nexport function main(): void { const f = C.g; }",
     subscript: "no equivalent; use a lambda that calls the target",
     why: "No first-class value is decided for a direct call target.",
     collision: "C24", // row 13,

@@ -28,7 +28,10 @@ impl RejectionClass {
 }
 
 pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: Pos) -> Diagnostic {
-    let message = message.into();
+    // A message names a declaration by its source spelling: a hidden
+    // local function name (compiler.md §207.1 rule 3) and every other
+    // identity marker leave the text.
+    let message = crate::hir::source_name(&message.into());
     #[cfg(test)]
     crate::check::rejection_total::record_site(site, &message, &pos);
     let (code, class) = site.class();

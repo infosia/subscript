@@ -365,6 +365,58 @@ impl<'p> Checker<'p> {
         self.check_method_call_on(operand, &property, &call, fx, pos)
     }
 
+    /// The value of a module function or a static method (compiler.md
+    /// §207.1 rule 1): a function pointer (C5). `direct_value` marks the
+    /// whole initializer of a module variable.
+    pub(super) fn module_function_value(
+        &mut self,
+        f: String,
+        direct_value: bool,
+        pos: Pos,
+    ) -> hir::Expr {
+        let value_decision = std::mem::replace(&mut self.function_value_decision, direct_value);
+        self.decide_function_parameters(&f);
+        self.function_value_decision = value_decision;
+        let Some(sig) = self.fn_sigs.get(&f).cloned() else {
+            return self.err_expr(pos);
+        };
+        if sig
+            .params
+            .iter()
+            .any(|p| matches!(p.state, crate::check::initializer::TypeState::InProgress))
+        {
+            if direct_value {
+                self.parameter_value_cycle(pos.clone());
+            } else {
+                self.cycle(pos.clone());
+            }
+            return self.err_expr(pos);
+        }
+        if sig.is_generator {
+            self.reject_subset(
+                RejectionSite::GeneratorFunctionValue,
+                "generators may only be called, not passed as values",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        if self.undefined_result_value(&sig.ret, &pos) {
+            return self.err_expr(pos);
+        }
+        let result = if sig.is_async {
+            Type::AsyncHandle(Box::new(sig.ret))
+        } else {
+            sig.ret
+        };
+        let ty = Type::func(sig.params.iter().map(|p| p.ty().clone()).collect(), result);
+        hir::Expr {
+            pending_work: None,
+            kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),
+            ty,
+            pos,
+        }
+    }
+
     pub(super) fn check_ident(
         &mut self,
         id: &ast::Ident,
@@ -466,48 +518,7 @@ impl<'p> Checker<'p> {
             }
             Some(ScopeItem::Func(f)) => {
                 let direct_value = self.initializer_root == Some(id.span);
-                let value_decision =
-                    std::mem::replace(&mut self.function_value_decision, direct_value);
-                self.decide_function_parameters(&f);
-                self.function_value_decision = value_decision;
-                let Some(sig) = self.fn_sigs.get(&f).cloned() else {
-                    return self.err_expr(pos);
-                };
-                if sig
-                    .params
-                    .iter()
-                    .any(|p| matches!(p.state, crate::check::initializer::TypeState::InProgress))
-                {
-                    if direct_value {
-                        self.parameter_value_cycle(pos.clone());
-                    } else {
-                        self.cycle(pos.clone());
-                    }
-                    return self.err_expr(pos);
-                }
-                if sig.is_generator {
-                    self.reject_subset(
-                        RejectionSite::GeneratorFunctionValue,
-                        "generators may only be called, not passed as values",
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                if self.undefined_result_value(&sig.ret, &pos) {
-                    return self.err_expr(pos);
-                }
-                let result = if sig.is_async {
-                    Type::AsyncHandle(Box::new(sig.ret))
-                } else {
-                    sig.ret
-                };
-                let ty = Type::func(sig.params.iter().map(|p| p.ty().clone()).collect(), result);
-                hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),
-                    ty,
-                    pos,
-                }
+                self.module_function_value(f, direct_value, pos)
             }
             Some(ScopeItem::GenericFunc(_)) => {
                 self.reject_subset(

@@ -1162,7 +1162,7 @@ END FILE
 END PROGRAM
 PROGRAM	a-s181			0
 FILE	E	target/s154/forms/a-s181/main.ts
-class C { static f(): void {} }
+class C { static *f(): Generator<i32> { yield 1; } }
 export function main(): void { const f = C.f; }
 END FILE
 END PROGRAM
@@ -4044,14 +4044,6 @@ FILE	N	target/s154/forms/c-namespace-default-export/namespace-default-export-lib
 export default function f():void {}
 END FILE
 END PROGRAM
-PROGRAM	c-namespace-local-function			0
-FILE	E	target/s154/forms/c-namespace-local-function/namespace-local-function.ts
-import * as ns from "./namespace-local-function-lib"; export function main():void { function ns():void {} ns(); }
-END FILE
-FILE	N	target/s154/forms/c-namespace-local-function/namespace-local-function-lib.ts
-export function f():void {}
-END FILE
-END PROGRAM
 PROGRAM	c-namespace-missing	TS2339		0
 FILE	E	target/s154/forms/c-namespace-missing/namespace-missing.ts
 import * as ns from "./namespace-missing-lib"; export function main(): void { ns.missing(); }
@@ -4347,11 +4339,6 @@ END PROGRAM
 PROGRAM	c-uri-generic	TS2558		0
 FILE	E	target/s154/forms/c-uri-generic/uri-generic.ts
 export function main(): void { encodeURI<i32>("x"); }
-END FILE
-END PROGRAM
-PROGRAM	c-uri-local-generic			0
-FILE	E	target/s154/forms/c-uri-local-generic/uri-local-generic.ts
-export function main():void {function encodeURI<T>(x:T):string{return "x";} encodeURI<string>("x");}
 END FILE
 END PROGRAM
 PROGRAM	c-value-nullable-array-reject	TS2740		0
@@ -5597,12 +5584,6 @@ PROGRAM	LocalClassDeclaration			0
 FILE	E	target/s154/forms/LocalClassDeclaration/main.ts
 export {};
 function f(): void { class C {} }
-END FILE
-END PROGRAM
-PROGRAM	LocalFunctionDeclaration			0
-FILE	E	target/s154/forms/LocalFunctionDeclaration/main.ts
-export {};
-function f(): void { function g(): void {} }
 END FILE
 END PROGRAM
 PROGRAM	LocalEnumDeclaration			0
@@ -7308,12 +7289,6 @@ export {};
 class N{} class Cache{item:N|null=null;get():N{if(this.item===null){this.item=new N();}return this.item;}}
 END FILE
 END PROGRAM
-PROGRAM	hoisted-local-call			0
-FILE	E	main.ts
-export {};
-export function main():void{print(`${sq(3)}`);function sq(x:i32):i32{return x*x;}}
-END FILE
-END PROGRAM
 PROGRAM	erased-equality-array			0
 FILE	E	main.ts
 export {};
@@ -7390,42 +7365,6 @@ PROGRAM	probe-enum-invalid-2	TS2365		0
 FILE	E	main.ts
 export {};
 enum E{A} function f(b:boolean):void{E.A < b;}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-local-0			0
-FILE	E	main.ts
-export {};
-function f():void{g();function g():void{}}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-local-1			0
-FILE	E	main.ts
-export {};
-function f():i32{return g(2);function g(x:i32):i32{return x;}}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-local-2			0
-FILE	E	main.ts
-export {};
-class A{f():void{g();function g():void{}}}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-invalid-argument-0	TS2345		0
-FILE	E	main.ts
-export {};
-function f():void{g("s");function g(x:i32):void{}}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-invalid-argument-1	TS2345		0
-FILE	E	main.ts
-export {};
-function f():void{g(true);function g(x:i32):void{}}
-END FILE
-END PROGRAM
-PROGRAM	probe-hoisted-invalid-argument-2	TS2345		0
-FILE	E	main.ts
-export {};
-function f():void{g(() => 1);function g(x:i32):void{}}
 END FILE
 END PROGRAM
 PROGRAM	probe-nullable-conditional-write-0	TS18047		0
@@ -9721,5 +9660,16 @@ PROGRAM	private-name-static-and-instance-accessor	TS2804		0
 FILE	E	target/s154/forms/private-name-static-and-instance-accessor/main.ts
 class A { get #v(): i32 { return 1; } static get #v(): i32 { return 2; } }
 export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	local-function-reads-a-local			0
+FILE	E	main.ts
+export function main(): void { const k: i32 = 10; function addK(x: i32): i32 { return x + k; } print(`${addK(1)}`); }
+END FILE
+END PROGRAM
+PROGRAM	local-function-reads-a-parameter			0
+FILE	E	main.ts
+function scale(n: i32): i32 { function times(x: i32): i32 { return x * n; } return times(2); }
+export function main(): void { print(`${scale(3)}`); }
 END FILE
 END PROGRAM

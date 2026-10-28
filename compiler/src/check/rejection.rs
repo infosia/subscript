@@ -328,9 +328,9 @@ rejection_classes! {
     Self::LocalClassDeclaration => {
         (RuleCode::S100, Diverges(Divergence::LocalClassDeclaration))
     }
-    Self::LocalFunctionDeclaration => (
+    Self::LocalFunctionReadsEnclosingBinding => (
         RuleCode::S100,
-        Diverges(Divergence::LocalFunctionDeclaration),
+        Diverges(Divergence::LocalFunctionReadsEnclosingBinding),
     ),
     Self::LocalEnumDeclaration => {
         (RuleCode::S100, Diverges(Divergence::LocalEnumDeclaration))

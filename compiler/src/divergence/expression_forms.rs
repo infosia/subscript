@@ -6,11 +6,11 @@ pub(super) const LOCALCLASSDECLARATION: DivergenceEntry = DivergenceEntry {
     why: "No lowering is decided for a local declaration.",
     collision: "C24", // row 5,
 };
-pub(super) const LOCALFUNCTIONDECLARATION: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { function g(): void {} }",
-    subscript: "no equivalent; declare the item at module scope",
-    why: "No lowering is decided for a local declaration.",
-    collision: "C24", // row 5,
+pub(super) const LOCALFUNCTIONREADSENCLOSINGBINDING: DivergenceEntry = DivergenceEntry {
+    ts: "function f(): i32 { const k: i32 = 1; function g(): i32 { return k; } return g(); }",
+    subscript: "function f(): i32 { const k: i32 = 1; const g = (): i32 => k; return g(); }",
+    why: "A local function is a module function, which has no environment for a binding of a function.",
+    collision: "compiler.md §207",
 };
 pub(super) const LOCALENUMDECLARATION: DivergenceEntry = DivergenceEntry {
     ts: "function f(): void { enum E { A } }",

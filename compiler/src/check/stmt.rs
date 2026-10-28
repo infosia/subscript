@@ -80,10 +80,27 @@ impl<'p> Checker<'p> {
                             fx,
                         );
                     }
+                    // compiler.md §207.1 rule 4: the front end moves each
+                    // local function that reads no binding of an enclosing
+                    // function, and records the first read of each other.
+                    if let ast::Decl::Fn(function) = other {
+                        if let Some(read) =
+                            self.prog.local_function_reads.get(&function.ident.span.lo)
+                        {
+                            self.reject_subset(
+                                RejectionSite::LocalFunctionReadsEnclosingBinding,
+                                format!(
+                                    "local function `{}` reads {} of its enclosing function",
+                                    read.function, read.read
+                                ),
+                                self.prog.pos_at(read.at),
+                            );
+                            return false;
+                        }
+                    }
                     self.reject_subset(
                         match other {
                             ast::Decl::Class(_) => RejectionSite::LocalClassDeclaration,
-                            ast::Decl::Fn(_) => RejectionSite::LocalFunctionDeclaration,
                             ast::Decl::TsEnum(_) => RejectionSite::LocalEnumDeclaration,
                             ast::Decl::TsTypeAlias(_) => RejectionSite::LocalAliasDeclaration,
                             ast::Decl::TsInterface(_) => RejectionSite::LocalInterfaceDeclaration,

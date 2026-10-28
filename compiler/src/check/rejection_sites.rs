@@ -171,7 +171,7 @@ pub(crate) enum RejectionSite {
     ConstructorThisBeforeFieldValues,
     LambdaUsingDeclaration,
     LocalClassDeclaration,
-    LocalFunctionDeclaration,
+    LocalFunctionReadsEnclosingBinding,
     LocalEnumDeclaration,
     LocalAliasDeclaration,
     LocalInterfaceDeclaration,
