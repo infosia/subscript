@@ -35,7 +35,7 @@ fn string_literals_and_static_template_parts_accept_long_data() {
 fn independent_literal_and_template_diagnostics_remain() {
     for (expression, code) in [
         ("256", RuleCode::S008),
-        ("`value=${[1, 2]}`", RuleCode::S100),
+        ("`value=${[[1], [2]]}`", RuleCode::S014),
     ] {
         let source = if expression == "256" {
             format!("export function main(): void {{ const x: u8 = {expression}; }}")

@@ -595,8 +595,6 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
 ];
 
 const FORM_REJECTIONS: &[ApiRejection] = &[
-    rejection((ApiRejectionId::FormIsNaNValue, Divergence::NumberCoercionAndArguments), "global", "isNaN(value)", "Q25", Some("Number.isNaN"), "The global form coerces its argument.", Some("r46-number-global-isnan.ts")),
-    rejection((ApiRejectionId::FormIsFiniteValue, Divergence::NumberCoercionAndArguments), "global", "isFinite(value)", "Q25", Some("Number.isFinite"), "The global form coerces its argument.", None),
     rejection((ApiRejectionId::FormParseIntValue, Divergence::NumberCoercionAndArguments), "global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
     rejection((ApiRejectionId::FormNumberValue, Divergence::NumberCoercionAndArguments), "Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
     rejection((ApiRejectionId::FormNewNumberValue, Divergence::NumberCoercionAndArguments), "Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),

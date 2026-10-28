@@ -204,7 +204,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::ContinueOutsideLoop => WitnessEntry::General { files: &[], variant: None, reason: "The guard requires zero loop depth. The parser rejects an unlabelled continue outside a loop." },
         RejectionSite::ForInStatement => WitnessEntry::General { files: &["ForInStatement"], variant: Some(Divergence::ForInStatement), reason: "" },
         RejectionSite::LabeledStatement => WitnessEntry::General { files: &["LabeledStatement"], variant: Some(Divergence::LabeledStatement), reason: "" },
-        RejectionSite::DebuggerStatement => WitnessEntry::General { files: &["debugger-statement", "DebuggerStatement"], variant: Some(Divergence::DebuggerStatement), reason: "" },
         RejectionSite::WithStatement => WitnessEntry::General { files: &[], variant: None, reason: "parse uses strict TypeScript mode, which rejects a with statement before checking." },
         RejectionSite::UnsupportedStatementKind => WitnessEntry::General { files: &[], variant: None, reason: "The outer statement match handles all remaining Stmt variants; the inner match names each rejected variant." },
         RejectionSite::LocalVarDeclaration => WitnessEntry::General { files: &["local-var-declaration", "c-lookup-switch-var-read"], variant: Some(Divergence::LocalVarDeclarationForm), reason: "" },
@@ -791,7 +790,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::NonNullAssertionExpression => WitnessEntry::General { files: &["a-s085"], variant: Some(Divergence::NonNullAssertionExpressionForm), reason: "" },
         RejectionSite::FunctionExpression => WitnessEntry::General { files: &["a-s104"], variant: Some(Divergence::FunctionExpressionForm), reason: "" },
         RejectionSite::AngleAssertionExpression => WitnessEntry::General { files: &["AngleAssertionExpression"], variant: Some(Divergence::AngleAssertionExpression), reason: "" },
-        RejectionSite::SatisfiesExpression => WitnessEntry::General { files: &["SatisfiesExpression"], variant: Some(Divergence::SatisfiesExpression), reason: "" },
         RejectionSite::InstantiationExpression => WitnessEntry::General { files: &["InstantiationExpression"], variant: Some(Divergence::InstantiationExpression), reason: "" },
         RejectionSite::CommaExpression => WitnessEntry::General { files: &["CommaExpression"], variant: Some(Divergence::CommaExpression), reason: "" },
         RejectionSite::TaggedTemplateExpression => WitnessEntry::General { files: &["a-s087", "TaggedTemplateExpression"], variant: Some(Divergence::TaggedTemplateExpression), reason: "" },
@@ -1135,14 +1133,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
                 files: &["a045.ts", "a045-b.ts"],
                 variant: Divergence::JsonSubset,
             },
-            ApiRejectionId::FormIsNaNValue => WitnessEntry::Reachable {
-                files: &["a046.ts", "a046-b.ts"],
-                variant: Divergence::NumberCoercionAndArguments,
-            },
-            ApiRejectionId::FormIsFiniteValue => WitnessEntry::Reachable {
-                files: &["a047.ts", "a047-b.ts"],
-                variant: Divergence::NumberCoercionAndArguments,
-            },
             ApiRejectionId::FormParseIntValue => WitnessEntry::Reachable {
                 files: &["a048.ts", "a048-b.ts"],
                 variant: Divergence::NumberCoercionAndArguments,
@@ -1389,12 +1379,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             variant: Divergence::CompilerOwnedValue,
         },
         RejectionSite::NumberGlobalValue => WitnessEntry::Reachable {
-            files: &["s020.ts", "s020-b.ts"],
+            files: &["s020.ts", "s020-b.ts", "s021.ts", "s021-b.ts"],
             variant: Divergence::CompilerOwnedValue,
-        },
-        RejectionSite::CoercingGlobalValue => WitnessEntry::Reachable {
-            files: &["s021.ts", "s021-b.ts"],
-            variant: Divergence::NumberCoercionAndArguments,
         },
         RejectionSite::RegexMember => WitnessEntry::Reachable {
             files: &["s022.ts", "s022-b.ts"],
@@ -1674,7 +1660,6 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::DateValue,
     RejectionSite::MapSetValue,
     RejectionSite::NumberGlobalValue,
-    RejectionSite::CoercingGlobalValue,
     RejectionSite::RegexMember,
     RejectionSite::DateMemberWrite,
     RejectionSite::DateMethodValue,

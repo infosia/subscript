@@ -133,8 +133,6 @@ pub enum Divergence {
     /// No lowering is decided for this operator or expression form.
     InstantiationExpression,
     /// No lowering is decided for this operator or expression form.
-    SatisfiesExpression,
-    /// No lowering is decided for this operator or expression form.
     AngleAssertionExpression,
     /// The language has no implicit conversion, and an assertion does not check membership.
     StringAliasAssertion,
@@ -216,8 +214,6 @@ pub enum Divergence {
     PrivateMethodDeclaration,
     /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
     PrivateFieldDeclaration,
-    /// No lowering is decided for these statements; for-in reads dynamic properties.
-    DebuggerStatement,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
     LabeledStatement,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
@@ -1110,7 +1106,6 @@ impl Divergence {
         Divergence::TaggedTemplateExpression,
         Divergence::CommaExpression,
         Divergence::InstantiationExpression,
-        Divergence::SatisfiesExpression,
         Divergence::AngleAssertionExpression,
         Divergence::StringAliasAssertion,
         Divergence::NullableClassAssertion,
@@ -1152,7 +1147,6 @@ impl Divergence {
         Divergence::StaticBlockDeclaration,
         Divergence::PrivateMethodDeclaration,
         Divergence::PrivateFieldDeclaration,
-        Divergence::DebuggerStatement,
         Divergence::LabeledStatement,
         Divergence::ForInStatement,
         Divergence::SourceNamespaceDeclaration,

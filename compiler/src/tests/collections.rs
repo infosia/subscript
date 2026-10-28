@@ -385,8 +385,6 @@ fn number_q25_q26_surface_types_and_rejections() {
     .expect("accepted Q25/Q26 surface");
 
     for body in [
-        "isNaN(1.0);",
-        "isFinite(1.0);",
         "Number(1.0);",
         "parseInt(\"1\");",
         "Number.parseInt(\"1\");",

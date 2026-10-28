@@ -300,7 +300,10 @@ impl<'p> Checker<'p> {
                 parts.push(TplPart::Text(text));
             }
             if let Some(e) = tpl.exprs.get(i) {
-                let checked = self.check_expr(e, None, fx);
+                let mut checked = self.check_expr(e, None, fx);
+                if matches!(self.apparent_type(&checked.ty), Type::Array(_)) {
+                    checked = self.template_array_join(checked, e.span(), fx);
+                }
                 let printable = self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::TemplateInterpolation,
                     &checked.ty,
@@ -335,6 +338,31 @@ impl<'p> Checker<'p> {
             ty: Type::Str,
             pos,
         }
+    }
+
+    /// compiler.md §204 rule 2: an `Array` operand of a template is
+    /// `operand.join(",")`. The checked operand is the receiver, so it
+    /// evaluates once. A `FixedArray` operand is not in this rule.
+    fn template_array_join(
+        &mut self,
+        operand: hir::Expr,
+        span: swc_common::Span,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        // `join` with no argument takes the separator ",".
+        let call = ast::CallExpr {
+            span,
+            ctxt: Default::default(),
+            callee: ast::Callee::Expr(Box::new(ast::Expr::Invalid(ast::Invalid { span }))),
+            args: Vec::new(),
+            type_args: None,
+        };
+        let property = ast::IdentName {
+            span,
+            sym: "join".into(),
+        };
+        let pos = operand.pos.clone();
+        self.check_method_call_on(operand, &property, &call, fx, pos)
     }
 
     pub(super) fn check_ident(
@@ -637,19 +665,13 @@ impl<'p> Checker<'p> {
                         pos.clone(),
                     );
                     self.err_expr(pos)
-                } else if crate::ambient::number_global(&name).is_some() {
+                } else if crate::ambient::number_global(&name).is_some()
+                    || name == "isNaN"
+                    || name == "isFinite"
+                {
                     self.reject_subset(
                         RejectionSite::NumberGlobalValue,
                         format!("`{name}` may only be called, not read as a value (Q25)"),
-                        pos.clone(),
-                    );
-                    self.err_expr(pos)
-                } else if name == "isNaN" || name == "isFinite" {
-                    self.reject_subset(
-                        RejectionSite::CoercingGlobalValue,
-                        format!(
-                            "the coercing global `{name}` is rejected; use `Number.{name}` (Q25)"
-                        ),
                         pos.clone(),
                     );
                     self.err_expr(pos)
@@ -731,3 +753,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "erasure_tests.rs"]
+mod erasure_tests;

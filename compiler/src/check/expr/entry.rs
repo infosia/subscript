@@ -419,6 +419,14 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
+            // compiler.md §204 rule 3: `x satisfies T` is `x`, checked as
+            // the initializer of a `T` local.
+            ast::Expr::TsSatisfies(s) => {
+                let target = self.resolve_type(&s.type_ann);
+                let value = self.check_expr(&s.expr, Some(&target), fx);
+                self.require_expr_assignable(&value, &target, fx, "the initializer");
+                value
+            }
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
             ast::Expr::Await(a) => {
                 // §188.1 rule 2: an `await` result that holds a handle is
@@ -448,7 +456,6 @@ impl<'p> Checker<'p> {
                 self.reject_subset(
                     match other {
                         ast::Expr::TsTypeAssertion(_) => RejectionSite::AngleAssertionExpression,
-                        ast::Expr::TsSatisfies(_) => RejectionSite::SatisfiesExpression,
                         ast::Expr::TsInstantiation(_) => RejectionSite::InstantiationExpression,
                         ast::Expr::Seq(_) => RejectionSite::CommaExpression,
                         ast::Expr::TaggedTpl(_) => RejectionSite::TaggedTemplateExpression,

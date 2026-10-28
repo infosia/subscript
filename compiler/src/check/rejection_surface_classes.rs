@@ -256,10 +256,6 @@ macro_rules! rejection_classes {
                     Self::DateValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::MapSetValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::NumberGlobalValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
-                    Self::CoercingGlobalValue => (
-                        RuleCode::S014,
-                        Diverges(Divergence::NumberCoercionAndArguments),
-                    ),
                     Self::RegexMember => (RuleCode::S014, Diverges(Divergence::RegExpSubset)),
                     Self::DateMemberWrite => (RuleCode::S014, Diverges(Divergence::DateSubset)),
                     Self::DateMethodValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),

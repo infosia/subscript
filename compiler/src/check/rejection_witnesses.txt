@@ -200,14 +200,6 @@ export function main(): void {
   JSON.parse<Date>('"2020-01-01T00:00:00.000Z"');
 }
 ===
-a046.ts	FORM_REJECTIONS/global / isNaN(value)		S014		
-`isNaN(value)` is rejected: The global form coerces its argument; use `Number.isNaN` (Q25)
-export function main(): void { isNaN(1.0); }
-===
-a047.ts	FORM_REJECTIONS/global / isFinite(value)		S014		
-`isFinite(value)` is rejected: The global form coerces its argument; use `Number.isFinite` (Q25)
-export function main(): void { isFinite(1.0); }
-===
 a048.ts	FORM_REJECTIONS/global / parseInt(value)		S014		
 `parseInt(value)` is rejected: The radix is a required `i32` argument; use `parseInt(value, radix)` (Q25)
 export function main(): void { parseInt("1"); }
@@ -468,7 +460,7 @@ s020.ts	expr/literal.rs:540 check_ident		S014
 export function main(): void { const held = parseInt; }
 ===
 s021.ts	expr/literal.rs:547 check_ident		S014		
-the coercing global `isFinite` is rejected; use `Number.isFinite` (Q25)
+`isFinite` may only be called, not read as a value (Q25)
 export function main(): void { const held = isFinite; }
 ===
 s022.ts	expr/member.rs:545 member_on		S014		
@@ -831,14 +823,6 @@ a045-b.ts	JSON_REJECTIONS/JSON / parse<Date>(text)	TS2345	S014
 `JSON.parse<Date>` is rejected: An untagged ISO string cannot identify a Date, so the target could never match. (Q28)
 export function main(): void { JSON.parse<Date>(1); }
 ===
-a046-b.ts	FORM_REJECTIONS/global / isNaN(value)	TS2345	S014		
-`isNaN(value)` is rejected: The global form coerces its argument; use `Number.isNaN` (Q25)
-export function main(): void { isNaN("one"); }
-===
-a047-b.ts	FORM_REJECTIONS/global / isFinite(value)	TS2345	S014		
-`isFinite(value)` is rejected: The global form coerces its argument; use `Number.isFinite` (Q25)
-export function main(): void { isFinite("one"); }
-===
 a048-b.ts	FORM_REJECTIONS/global / parseInt(value)	TS2345	S014		
 `parseInt(value)` is rejected: The radix is a required `i32` argument; use `parseInt(value, radix)` (Q25)
 export function main(): void { parseInt(1); }
@@ -1029,7 +1013,7 @@ s020-b.ts	expr/literal.rs:540 check_ident	TS2322	S014
 export function main(): void { const held: i32 = parseInt; }
 ===
 s021-b.ts	expr/literal.rs:547 check_ident	TS2322	S014		
-the coercing global `isFinite` is rejected; use `Number.isFinite` (Q25)
+`isFinite` may only be called, not read as a value (Q25)
 export function main(): void { const held: i32 = isFinite; }
 ===
 s022-b.ts	expr/member.rs:545 member_on	TS2322	S014		

@@ -134,7 +134,7 @@ const CONSUMERS: &[Consumer] = &[
         "interpolation",
         "function f(a: {E}[]): void { const s: string = `${a}`; }",
         "",
-        Some(RuleCode::S100),
+        None,
         true,
     ),
     consumer(

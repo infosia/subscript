@@ -511,7 +511,7 @@ fn ast_field_on_normal_exit(body: &[swc_ecma_ast::Stmt], field: &str) -> Option<
     fn represented(body: &[ast::Stmt], field: &str) -> bool {
         body.iter().all(|statement| match statement {
             ast::Stmt::Expr(expression) => assigned(&expression.expr, field) || matches!(&*expression.expr, ast::Expr::Assign(assignment) if assignment.op == ast::AssignOp::Assign && matches!(&*assignment.right, ast::Expr::Ident(_) | ast::Expr::Lit(_))),
-            ast::Stmt::Throw(_) | ast::Stmt::Empty(_) => true,
+            ast::Stmt::Throw(_) | ast::Stmt::Empty(_) | ast::Stmt::Debugger(_) => true,
             ast::Stmt::Return(return_) => return_.arg.is_none(),
             ast::Stmt::Block(block) => represented(&block.stmts, field),
             ast::Stmt::If(branch) => matches!(&*branch.test, ast::Expr::Ident(_) | ast::Expr::Lit(_)) && represented(std::slice::from_ref(&*branch.cons), field) && branch.alt.as_deref().is_none_or(|alternative| represented(std::slice::from_ref(alternative), field)),

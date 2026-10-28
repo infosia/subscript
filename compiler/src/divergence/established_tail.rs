@@ -722,11 +722,9 @@ pub(super) const NOTUPLETYPE: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const NUMBERCOERCIONANDARGUMENTS: DivergenceEntry = DivergenceEntry {
-    ts: "print(`${isNaN(1.0)}`);\n\
-                     const value: f64 = Number(\"1\");\n\
+    ts: "const value: f64 = Number(\"1\");\n\
                      print(value.toPrecision());",
-    subscript: "print(`${Number.isNaN(1.0)}`);\n\
-                            const value: f64 = parseFloat(\"1\");\n\
+    subscript: "const value: f64 = parseFloat(\"1\");\n\
                             print(value.toPrecision(3));",
     why: "A coercing call reads any run-time type, and an omitted radix or \
                       digit count changes the output silently.",

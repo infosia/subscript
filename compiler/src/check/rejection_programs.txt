@@ -2809,12 +2809,6 @@ FILE	E	target/s154/forms/parser-syntax-error-witness-10/main.ts
 export function main(): void { break; }
 END FILE
 END PROGRAM
-PROGRAM	debugger-statement			0
-FILE	E	target/s154/forms/debugger-statement/main.ts
-
-export function main(): void { debugger; }
-END FILE
-END PROGRAM
 PROGRAM	local-var-declaration			0
 FILE	E	target/s154/forms/local-var-declaration/main.ts
 
@@ -5671,12 +5665,6 @@ export {};
 function f(): void { outer: while (true) { break outer; } }
 END FILE
 END PROGRAM
-PROGRAM	DebuggerStatement			0
-FILE	E	target/s154/forms/DebuggerStatement/main.ts
-export {};
-function f(): void { debugger; }
-END FILE
-END PROGRAM
 PROGRAM	WithStatement	TS1101,TS2410		0
 FILE	E	target/s154/forms/WithStatement/main.ts
 export {};
@@ -5951,12 +5939,6 @@ PROGRAM	AngleAssertionExpression			0
 FILE	E	target/s154/forms/AngleAssertionExpression/main.ts
 export {};
 function f(n: i32): void { <i32>n; }
-END FILE
-END PROGRAM
-PROGRAM	SatisfiesExpression			0
-FILE	E	target/s154/forms/SatisfiesExpression/main.ts
-export {};
-function f(n: i32): void { n satisfies i32; }
 END FILE
 END PROGRAM
 PROGRAM	InstantiationExpression			0

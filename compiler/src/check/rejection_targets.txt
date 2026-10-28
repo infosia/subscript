@@ -849,8 +849,6 @@ UnaryPlusOperator	UnaryPlusOperator	S100	unary operator outside the decided surf
 StringAliasAssertion	StringAliasAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `string` to `A`
 ArrayReverseArgumentCount	ArrayReverseArgumentCount	S100	`reverse` expects 0 argument(s) (0 required), got 1
 StringLiteralAnnotation	StringLiteralAnnotation	S100	type annotation form outside the decided surface
-DebuggerStatement	debugger-statement	S100	statement form outside the decided surface
-DebuggerStatement	DebuggerStatement	S100	statement form outside the decided surface
 FunctionMember	FunctionMember	S100	`() => void` has no member `length`
 ArraySliceArgumentCount	ArraySliceArgumentCount	S100	`slice` expects 2 argument(s) (0 required), got 3
 ArrayAtArgumentCount	ArrayAtArgumentCount	S100	`at` expects 1 argument(s) (1 required), got 2
@@ -981,7 +979,6 @@ FunctionTypeRestParameter	FunctionTypeRestParameter	S100	function type parameter
 RegexExecArgumentCount	RegexExecArgumentCount	S100	`test` expects 1 argument(s) (1 required), got 2
 FixedArrayAtArgumentCount	FixedArrayAtArgumentCount	S100	`slice` expects 2 argument(s) (0 required), got 3
 CommaExpression	CommaExpression	S100	expression form outside the decided surface
-SatisfiesExpression	SatisfiesExpression	S100	expression form outside the decided surface
 IdentityAssertion	a-s234	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
 IdentityAssertion	IdentityAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `C` to `C`
 FunctionParameterIdentity	FunctionParameterIdentity	S100	type mismatch: the argument expects `(i64) => void`, got `(i32) => void`

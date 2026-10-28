@@ -350,7 +350,6 @@ rejection_classes! {
     Self::ContinueOutsideLoop => (RuleCode::S100, TscRejects),
     Self::ForInStatement => (RuleCode::S100, Diverges(Divergence::ForInStatement)),
     Self::LabeledStatement => (RuleCode::S100, Diverges(Divergence::LabeledStatement)),
-    Self::DebuggerStatement => (RuleCode::S100, Diverges(Divergence::DebuggerStatement)),
     Self::WithStatement => (RuleCode::S100, TscRejects),
     Self::UnsupportedStatementKind => (RuleCode::S100, TscRejects),
     Self::LocalVarDeclaration => (
@@ -1530,9 +1529,6 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::AngleAssertionExpression),
     ),
-    Self::SatisfiesExpression => {
-        (RuleCode::S100, Diverges(Divergence::SatisfiesExpression))
-    }
     Self::InstantiationExpression => (
         RuleCode::S100,
         Diverges(Divergence::InstantiationExpression),

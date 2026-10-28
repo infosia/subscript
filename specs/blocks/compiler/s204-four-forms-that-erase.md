@@ -38,6 +38,9 @@ run-time meaning.
    expression is `x`, and its type is the type of `x`. It adds no
    run-time operation.
 4. `debugger;` is an empty statement. It adds no run-time operation.
+4a. A value read of the global `isNaN` or `isFinite` fails with the
+   text of the `Number` form: "`isNaN` may only be called, not read as
+   a value".
 5. These stay rejected with their existing texts: `<T>x`, `string +`
    an array, `String(xs)`, and a template operand of a class type.
 
@@ -48,7 +51,8 @@ run-time meaning.
    `r450-template-nested-array` fail their expected errors at the pin.
    The tracking note records each result.
 2. `a390` passes `tsc`, and its output under `node` equals its golden.
-   It interpolates an array of each element kind that `join` accepts,
+   It interpolates an array of each element kind that `join` accepts
+   (a string-literal alias element is not one of them, see §204.3),
    an empty array, and an array that a call gives (evaluated once).
 3. `r449` gives the assignment mismatch text. `tsc` rejects it with
    TS1360. `r450` gives the `join` text.
@@ -60,3 +64,10 @@ run-time meaning.
 6. `stdlib.md` §11.1 and `collisions.md` C24 rows 18, 22, and 29 cite
    this section.
 7. No golden moves.
+
+### 204.3 Open
+
+1. `join` rejects an array of a string-literal alias (`Mode[]`), so
+   `` `${ms}` `` fails with the `join` text. `node` prints `on,off`. A
+   literal-alias element is an `i32` index at run time, so `join`
+   needs a new format kind in the runtime formatter.

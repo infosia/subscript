@@ -1,6 +1,6 @@
 # Four forms that erase — `compiler.md` §204
 
-Status: contract.
+Status: landed.
 
 ## Measurement at the pin `c258a296`
 
@@ -19,3 +19,12 @@ as `never[]`: `satisfies` does not give its type to the expression.
 `i32[][]` `join` gives S014 "`join` formats elements by the Q14
 interpolation rules; `i32[]` elements are not interpolatable" at the
 pin.
+
+## Landing
+
+`gate full 73591190 dirty:32 debug 2979/0/5 release 2976/0/5 skips
+2/0 clippy 5/18/11 goldens-moved 1 exit 0`. The moved golden is
+`a390-trivial-erasures.expected`: the contract entry interpolated a
+`Mode[]` array, which `join` rejects (§204.3), so the line lost
+`on,off`. `r46-number-global-isnan` is removed: `isNaN(1.0)` is
+accepted.

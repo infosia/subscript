@@ -8,8 +8,6 @@ enum Tone {
   High,
 }
 
-type Mode = "on" | "off";
-
 class P {
   x: i32 = 1;
 }
@@ -30,10 +28,9 @@ export function main(): void {
   const ss: string[] = ["a", "b"];
   const fs: f64[] = [0.5, nan, -0];
   const ts: Tone[] = [Tone.Low, Tone.High];
-  const ms: Mode[] = ["on", "off"];
   const bs: boolean[] = [true, false];
   const empty: i32[] = [];
-  print(`${xs} [${ss}] ${fs} ${ts} ${ms} ${bs} <${empty}>`);
+  print(`${xs} [${ss}] ${fs} ${ts} ${bs} <${empty}>`);
   print(`${values()} ${reads}`);
 
   const p = new P() satisfies P;

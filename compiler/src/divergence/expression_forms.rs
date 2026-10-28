@@ -54,12 +54,6 @@ pub(super) const LABELEDSTATEMENT: DivergenceEntry = DivergenceEntry {
     why: "No lowering is decided for labeled statements.",
     collision: "C24", // row 29,
 };
-pub(super) const DEBUGGERSTATEMENT: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { debugger; }",
-    subscript: "no equivalent; use the host debugger",
-    why: "No lowering is decided for debugger statements.",
-    collision: "C24", // row 29,
-};
 pub(super) const PRIVATEFIELDDECLARATION: DivergenceEntry = DivergenceEntry {
  ts: "class C { #x: i32 = 1; }", subscript: "no equivalent; use TypeScript private or a static generator method", why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.", collision: "C24", // row 11,
 };
@@ -290,12 +284,6 @@ pub(super) const STRINGALIASASSERTION: DivergenceEntry = DivergenceEntry {
 };
 pub(super) const ANGLEASSERTIONEXPRESSION: DivergenceEntry = DivergenceEntry {
     ts: "function f(n: i32): void { <i32>n; }",
-    subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",
-    why: "No lowering is decided for this operator or expression form.",
-    collision: "C24", // row 18,
-};
-pub(super) const SATISFIESEXPRESSION: DivergenceEntry = DivergenceEntry {
-    ts: "function f(n: i32): void { n satisfies i32; }",
     subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",
     why: "No lowering is decided for this operator or expression form.",
     collision: "C24", // row 18,

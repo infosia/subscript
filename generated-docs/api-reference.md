@@ -407,8 +407,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | JSON | `stringify(function)` | S014 | Q28 | — | Function values are not JSON data. | `r59-json-stringify-function.ts` |
 | JSON | `stringify(f16)` | S014 | Q28 | — | f16 is a storage-only type with no arithmetic/formatting domain. | — |
 | JSON | `parse<Date>(text)` | S014 | Q28 | — | An untagged ISO string cannot identify a Date, so the target could never match. | `r61-json-parse-date.ts` |
-| global | `isNaN(value)` | S014 | Q25 | `Number.isNaN` | The global form coerces its argument. | `r46-number-global-isnan.ts` |
-| global | `isFinite(value)` | S014 | Q25 | `Number.isFinite` | The global form coerces its argument. | — |
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |
 | Number | `Number(value)` | S014 | Q25 | `value as f64` | Numeric coercion is not part of the language. | `r47-number-coercion.ts` |
 | Number | `new Number(value)` | S014 | Q25 | `value as f64` | Boxed numbers and numeric coercion are unavailable. | — |

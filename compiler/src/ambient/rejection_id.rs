@@ -43,8 +43,6 @@ pub(crate) enum ApiRejectionId {
     JsonStringifyFunction,
     JsonStringifyF16,
     JsonParseDateText,
-    FormIsNaNValue,
-    FormIsFiniteValue,
     FormParseIntValue,
     FormNumberValue,
     FormNewNumberValue,

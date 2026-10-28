@@ -207,14 +207,14 @@ impl<'p> Checker<'p> {
                     self.check_for_of(for_of, fx, out);
                     false
                 }
-                ast::Stmt::Empty(_) => false,
+                // compiler.md §204 rule 4: `debugger;` is an empty statement.
+                ast::Stmt::Empty(_) | ast::Stmt::Debugger(_) => false,
                 other => {
                     let pos = self.pos(other.span());
                     self.reject_subset(
                         match other {
                             ast::Stmt::ForIn(_) => RejectionSite::ForInStatement,
                             ast::Stmt::Labeled(_) => RejectionSite::LabeledStatement,
-                            ast::Stmt::Debugger(_) => RejectionSite::DebuggerStatement,
                             ast::Stmt::With(_) => RejectionSite::WithStatement,
                             _ => RejectionSite::UnsupportedStatementKind,
                         },

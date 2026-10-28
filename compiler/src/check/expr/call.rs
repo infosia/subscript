@@ -207,14 +207,11 @@ impl<'p> Checker<'p> {
                         );
                         return checker.err_expr(pos);
                     }
-                    if name == "isNaN" || name == "isFinite" {
-                        let surface = if name == "isNaN" {
-                            "isNaN(value)"
-                        } else {
-                            "isFinite(value)"
-                        };
-                        checker.reject_api_form("global", surface, surface, pos.clone());
-                        return checker.err_expr(pos);
+                    // compiler.md §204 rule 1: the global predicate is the `Number` form.
+                    if let Some(f @ (NumFn::IsNaN | NumFn::IsFinite)) =
+                        crate::ambient::number_static(&name)
+                    {
+                        return checker.check_number_predicate_call(f, c, fx, pos);
                     }
                     if let Some(ambient) = crate::ambient::ambient_fn(&name) {
                         if ambient == AmbientFn::Unreachable && !unreachable_statement {
