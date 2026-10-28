@@ -1087,6 +1087,10 @@ Accept: `a369`, `a370`. Reject: `r421`.
   is not grounds for rejection when JS has the name. Variadic
   `max`/`min`/`hypot` stay rejected: the language has no variadic
   parameters, a missing prerequisite rather than a cost.
+  *(Amended 2026-10-28 by `compiler.md` §201: `max` and `min` take any
+  argument count as a fold. `hypot` beyond two arguments stays
+  rejected, because a fold rounds differently from the N-argument
+  form.)*
   `Math.random` diverges from JS: Context-seeded deterministic PRNG,
   host-reseedable (`stdlib.md` §2).
 - **Q20 (`Date`)** — the checker accepts the UTC-deterministic subset
@@ -1546,8 +1550,10 @@ Accept: `a369`, `a370`. Reject: `r421`.
   **Spread is accepted in an array literal only** — `[...xs]`,
   `[0, ...xs, 9]` — where the element count is a runtime value the
   literal can grow into. **`f(...xs)` is rejected**: it needs variadic
-  parameters, which the language does not have (the same missing
-  prerequisite that keeps `Math.max` at two arguments, Q19).
+  parameters, which the language does not have. *(Amended 2026-10-28
+  by `compiler.md` §201: a call with a fixed argument list does not
+  need one, so `push`, `Math.max`, `Math.min`, and `Array.of` take any
+  argument count.)*
 
   **Construction from an iterable is accepted for `Set` and rejected
   for `Map`.** *(Revised 2026-09-10 by `compiler.md` §103.1. This

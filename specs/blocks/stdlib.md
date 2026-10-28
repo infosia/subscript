@@ -64,7 +64,9 @@ because the sized aliases erase to `number`):
   sinh, sqrt, tan, tanh, trunc`
 - Binary: `atan2(y, x)`, `hypot(a, b)`, `pow(base, exp)`, `max(a, b)`,
   `min(a, b)` — exactly two arguments (the lib's variadic
-  `max`/`min`/`hypot` beyond two are rejected, Q19)
+  `max`/`min`/`hypot` beyond two are rejected, Q19).
+  *(Amended 2026-10-28 by `compiler.md` §201: `max` and `min` take
+  any argument count as a fold. `hypot` stays at two arguments.)*
 - `random(): f64` — §2
 - Constants: `E, LN2, LN10, LOG2E, LOG10E, PI, SQRT1_2, SQRT2`, folded
   by the compiler to `f64` literals with the IEEE-754 bit patterns of
@@ -87,6 +89,8 @@ Rejected members (S-code + reject-corpus entries): variadic
 `max`/`min`/`hypot` beyond two arguments — the language has no
 variadic parameters, which is a missing prerequisite rather than a
 cost.
+*(Amended 2026-10-28 by `compiler.md` §201: only `hypot` beyond two
+arguments stays rejected, because a fold rounds differently.)*
 
 ECMA edge semantics, pinned by golden: `round` is half-toward-+∞
 (`round(-2.5) === -2`); `sign(±0) === ±0`; `max`/`min` propagate `NaN`
@@ -551,7 +555,10 @@ Added by Q27 (2026-07-25):
   `pop()` and `shift()` give `T | undefined` and do not trap.)*
 - `unshift(x: T): i32` — **one element**, matching `push`; returns the
   new length. JS's variadic form is the same missing prerequisite as
-  `splice`'s
+  `splice`'s.
+  *(Amended 2026-10-28 by `compiler.md` §201: `push` takes any
+  argument count. `unshift` stays at one element: a sequence of
+  one-element calls moves the elements once per argument.)*
 - `copyWithin(target: i32, start: i32, end?: i32): T[]` — JS
   negative/clamp rules, in place, returns the receiver
 - **the index parameter on callbacks**: `f(v: T, i: i32)` is accepted
@@ -669,6 +676,8 @@ dispatch and inference cost.
    argument.
 3. Two or more arguments stay rejected: the variadic prerequisite of
    Q19/Q27 is unchanged.
+   *(Amended 2026-10-28 by `compiler.md` §201: two or more arguments
+   give the array literal of the arguments.)*
 4. The measurement §105.3 asks for: each form lowers to the LIR of the
    array literal it equals, so the runtime cost is that literal's; the
    checker's time over the corpus is measured before and after and
