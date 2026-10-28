@@ -191,3 +191,4 @@ header).
    set (paired, the same run count) and recorded. The cost of any
    second checker pass is measured and stated, or the pass is removed.
 10. The language surface does not grow: `do…while` stays outside it.
+    *(Amended 2026-10-28 by §203: `do…while` is in the language.)*
