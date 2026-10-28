@@ -205,6 +205,27 @@ pub(super) const DESCRIPTORSTATICFIELD: DivergenceEntry = DivergenceEntry {
     collision: "compiler.md §71.1",
 };
 
+pub(super) const DESCRIPTORPRIVATENAME: DivergenceEntry = DivergenceEntry {
+    ts: "@Descriptor\nclass A { #x!: i32; }\nexport function main(): void {  }",
+    subscript: "no equivalent; declare a public descriptor member",
+    why: "A descriptor member is a public data member that a literal fills by name.",
+    collision: "compiler.md §206",
+};
+
+pub(super) const MIRRORPRIVATENAME: DivergenceEntry = DivergenceEntry {
+    ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ndeclare class A_private_name { #x: i32; }",
+    subscript: "no equivalent; declare the member that the C struct declares",
+    why: "A mirror class member names a member of a C struct, and C has no private member.",
+    collision: "compiler.md §206",
+};
+
+pub(super) const JSONPARSEPRIVATENAME: DivergenceEntry = DivergenceEntry {
+    ts: "class C { #x: i32 = 1; }\nexport function main(): void { JSON.parse<C>(\"{}\"); }",
+    subscript: "no equivalent; declare the member with `private` to parse it",
+    why: "`JSON.stringify` omits a private name, so a document has no key that sets it.",
+    collision: "compiler.md §206",
+};
+
 pub(super) const MIRRORSTATICFIELD: DivergenceEntry = DivergenceEntry {
                 ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ndeclare class A_class_shape_493 { static x:i32; }",
                 subscript: "no equivalent; access host data through a foreign function",

@@ -228,6 +228,15 @@ impl Checker<'_> {
             self.reject_json_error_type("JSON.parse", &target, member_pos);
             return self.err_expr(pos);
         }
+        // §206.1 rule 5: a document has no key that sets a private name.
+        if let Some((class, field)) = self.json_private_name(&target) {
+            self.reject_subset(
+                RejectionSite::JsonParsePrivateName,
+                format!("`JSON.parse` cannot set the private name `{field}` of `{class}`"),
+                member_pos,
+            );
+            return self.err_expr(pos);
+        }
         if self.json_type_contains_date(&target) {
             let rejection = crate::ambient::json_parse_date_rejection();
             let actual = if self.apparent_type(&(target)) == Type::Date {
@@ -290,6 +299,35 @@ impl Checker<'_> {
             ),
             pos,
         );
+    }
+
+    /// The first class with a private name field that a parse target
+    /// reaches, and that field: `JSON.parse` cannot set it.
+    fn json_private_name(&self, ty: &Type) -> Option<(String, String)> {
+        fn visit(
+            checker: &Checker<'_>,
+            ty: &Type,
+            seen: &mut HashSet<ClassId>,
+        ) -> Option<(String, String)> {
+            match &checker.apparent_type(ty) {
+                Type::Array(element)
+                | Type::FixedArray(element, _)
+                | Type::Nullable(element, _) => visit(checker, element, seen),
+                Type::Class(id) if seen.insert(*id) => {
+                    let class = &checker.classes[id.0];
+                    class.fields.iter().find_map(|field| {
+                        if crate::parse::private_name::is_private_name(&field.name) {
+                            Some((class.name.clone(), field.name.clone()))
+                        } else {
+                            visit(checker, &field.ty, seen)
+                        }
+                    })
+                }
+                _ => None,
+            }
+        }
+
+        visit(self, ty, &mut HashSet::new())
     }
 
     /// True when a parse target contains Date at any depth. JSON has no
@@ -362,6 +400,9 @@ impl Checker<'_> {
                         return true;
                     }
                     active.insert(*id);
+                    // A private name field is not in the document. Its type must
+                    // still be a JSON type, because a helper takes no carrier
+                    // parameter (§119.1 rule 4).
                     let ok = class
                         .fields
                         .iter()
@@ -423,9 +464,7 @@ impl Checker<'_> {
                         return false;
                     }
                     active.push(*id);
-                    let cyclic = checker.classes[id.0]
-                        .fields
-                        .iter()
+                    let cyclic = json_fields(&checker.classes[id.0].fields)
                         .any(|field| walk(checker, &field.ty, active, done));
                     active.pop();
                     if !cyclic {
@@ -532,7 +571,7 @@ impl Checker<'_> {
                 self.collect_json_types(element, out)
             }
             Type::Class(id) => {
-                for field in &self.classes[id.0].fields {
+                for field in json_fields(&self.classes[id.0].fields) {
                     self.collect_json_types(&field.ty, out);
                 }
             }
@@ -764,7 +803,7 @@ impl Checker<'_> {
             ))
         };
         let mut body = vec![raw("{")];
-        for (index, field) in self.classes[id.0].fields.iter().enumerate() {
+        for (index, field) in json_fields(&self.classes[id.0].fields).enumerate() {
             if index != 0 {
                 body.push(raw(","));
             }
@@ -1519,6 +1558,14 @@ impl Checker<'_> {
         });
         Ok(body)
     }
+}
+
+/// The fields that a JSON document holds: §206.1 rule 5 omits each
+/// private name, as `JSON.stringify` in JavaScript does.
+fn json_fields(fields: &[hir::Field]) -> impl Iterator<Item = &hir::Field> {
+    fields
+        .iter()
+        .filter(|field| !crate::parse::private_name::is_private_name(&field.name))
 }
 
 fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, RejectionFailure> {

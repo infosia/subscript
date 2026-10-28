@@ -792,7 +792,7 @@ impl<'p> Checker<'p> {
                 let pos = self.pos(member.span);
                 self.reject_subset(
                     RejectionSite::OptionalPrivateMember,
-                    "private names are not in the decided surface",
+                    "an optional chain cannot contain a private name",
                     pos.clone(),
                 );
                 self.err_expr(pos)

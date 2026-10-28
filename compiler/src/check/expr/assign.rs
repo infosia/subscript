@@ -705,13 +705,12 @@ impl<'p> Checker<'p> {
                 let obj = self.check_write_receiver(m, fx);
                 self.check_named_member_place(m, obj, &name, prop_pos, fx)
             }
-            ast::MemberProp::PrivateName(_) => {
-                self.reject_subset(
-                    RejectionSite::PrivateMemberAssignment,
-                    "private names are not in the decided surface",
-                    pos.clone(),
-                );
-                Place::Field(self.err_expr(pos))
+            // §206.1 rule 2: a private name names the member `#x`.
+            ast::MemberProp::PrivateName(prop) => {
+                let name = crate::parse::private_name::member_name(prop);
+                let prop_pos = self.pos(prop.span);
+                let obj = self.check_write_receiver(m, fx);
+                self.check_named_member_place(m, obj, &name, prop_pos, fx)
             }
         }
     }

@@ -272,12 +272,6 @@ class C { set x(v: i32) {} }
 export function main(): void { new C().x = 1; }
 END FILE
 END PROGRAM
-PROGRAM	a-s030			0
-FILE	E	target/s154/forms/a-s030/main.ts
-class C { #x: i32 = 1; f(): void { this.#x = 2; } }
-export function main(): void { new C().f(); }
-END FILE
-END PROGRAM
 PROGRAM	a-s031	TS2540		0
 FILE	E	target/s154/forms/a-s031/main.ts
 class C { static readonly x: i32 = 1; }
@@ -872,12 +866,6 @@ PROGRAM	a-s130			0
 FILE	E	target/s154/forms/a-s130/main.ts
 type L = "a"|"b"; @Descriptor class D { x?: L; }
 export function main(): void { const d: D = {}; print(`${d.x}`); }
-END FILE
-END PROGRAM
-PROGRAM	a-s131			0
-FILE	E	target/s154/forms/a-s131/main.ts
-class C { #x: i32 = 1; f(): i32 { return this.#x; } }
-export function main(): void { new C().f(); }
 END FILE
 END PROGRAM
 PROGRAM	a-s132			0
@@ -2055,13 +2043,6 @@ PROGRAM	class-member-name-clash			0
 FILE	E	target/s154/forms/class-member-name-clash/main.ts
 
 class A { f(v:i32):void; f(v:i32):void {} }
-export function main(): void {  }
-END FILE
-END PROGRAM
-PROGRAM	private-field-declaration			0
-FILE	E	target/s154/forms/private-field-declaration/main.ts
-
-class A { #x:i32=1; }
 export function main(): void {  }
 END FILE
 END PROGRAM
@@ -5676,18 +5657,6 @@ PROGRAM	WithStatement	TS1101,TS2410		0
 FILE	E	target/s154/forms/WithStatement/main.ts
 export {};
 function f(): void { with ({}) {} }
-END FILE
-END PROGRAM
-PROGRAM	PrivateFieldDeclaration			0
-FILE	E	target/s154/forms/PrivateFieldDeclaration/main.ts
-export {};
-class C { #x: i32 = 1; }
-END FILE
-END PROGRAM
-PROGRAM	PrivateMethodDeclaration			0
-FILE	E	target/s154/forms/PrivateMethodDeclaration/main.ts
-export {};
-class C { #f(): void {} }
 END FILE
 END PROGRAM
 PROGRAM	StaticBlockDeclaration			0
@@ -9702,5 +9671,43 @@ FILE	E	main.ts
 class Box { v: i32 = 1; }
 function pick(): Box | undefined { return undefined; }
 export function main(): void { const f = pick; print(`${f() === undefined}`); }
+END FILE
+END PROGRAM
+PROGRAM	descriptor-private-name			0
+FILE	E	target/s154/forms/descriptor-private-name/main.ts
+@Descriptor
+class D { #x!: i32; }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	mirror-private-name			0
+FILE	E	target/s154/forms/mirror-private-name/main.ts
+
+export function main(): void {  }
+END FILE
+FILE	A	target/s154/forms/mirror-private-name/mirror.d.ts
+declare class A_private_name { #x: i32; }
+END FILE
+END PROGRAM
+PROGRAM	mirror-private-method			0
+FILE	E	target/s154/forms/mirror-private-method/main.ts
+
+export function main(): void {  }
+END FILE
+FILE	A	target/s154/forms/mirror-private-method/mirror.d.ts
+declare class A_private_method { #f(): void; }
+END FILE
+END PROGRAM
+PROGRAM	json-parse-private-name			0
+FILE	E	target/s154/forms/json-parse-private-name/main.ts
+class C { #x: i32 = 1; y: i32 = 2; }
+export function main(): void { JSON.parse<C>("{\"y\":2}"); }
+END FILE
+END PROGRAM
+PROGRAM	json-parse-nested-private-name			0
+FILE	E	target/s154/forms/json-parse-nested-private-name/main.ts
+class Inner { #x: i32 = 1; }
+class Outer { inner: Inner = new Inner(); }
+export function main(): void { JSON.parse<Outer[]>("[]"); }
 END FILE
 END PROGRAM

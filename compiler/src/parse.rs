@@ -11,6 +11,7 @@ use crate::provenance;
 use crate::SourceFile;
 
 pub(crate) mod parameter_property;
+pub(crate) mod private_name;
 
 /// One parsed source file.
 #[derive(Clone)]
@@ -200,6 +201,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             Ok(mut module) => {
                 if !source.dts {
                     parameter_property::lower_module(&mut module);
+                    private_name::lower_module(&mut module);
                 }
                 if let Some(err) = errors.drain(..).next() {
                     let pos = lookup(&source_map, &source.name, err.span());

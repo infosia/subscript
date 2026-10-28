@@ -206,14 +206,10 @@ pub enum Divergence {
     ThisAnnotation,
     /// The admitted surface excludes this source form.
     TupleAnnotation,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
     AutoAccessorDeclaration,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
     StaticBlockDeclaration,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
-    PrivateMethodDeclaration,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
-    PrivateFieldDeclaration,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
     LabeledStatement,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
@@ -238,8 +234,6 @@ pub enum Divergence {
     TypeParameterDefault,
     /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
     CollectionCallbackTypeMismatchForm,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
-    PrivateMemberAssignmentForm,
     /// No lowering is decided for this operator or expression form.
     NonPlaceAssignmentTargetForm,
     /// No lowering is decided for this operator or expression form.
@@ -310,8 +304,6 @@ pub enum Divergence {
     FixedArrayIndexNotIntForm,
     /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
     ArrayIndexNotIntForm,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
-    PrivateMemberReadForm,
     /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
     YieldDelegationForm,
     /// The language has no implicit conversion in a truth test.
@@ -364,7 +356,7 @@ pub enum Divergence {
     ParameterPropertyTypeAnnotation,
     /// Field names must be identifiers.
     IdentifierFieldName,
-    /// No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.
+    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
     GeneratorMethodForm,
     /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
     SwitchDiscriminantKindForm,
@@ -583,6 +575,12 @@ pub enum Divergence {
     DescriptorStaticField,
     /// A mirror class describes C instance storage and has no static field.
     MirrorStaticField,
+    /// A descriptor member is a public data member that a literal fills by name.
+    DescriptorPrivateName,
+    /// A mirror class member names a member of a C struct, and C has no private member.
+    MirrorPrivateName,
+    /// `JSON.stringify` omits a private name, so a document has no key that sets it.
+    JsonParsePrivateName,
     /// A static field cannot represent undefined; optional fields belong only to the descriptor surface.
     StaticFieldOptional,
     /// Worker, Inbox, and Outbox values belong to one Context and cannot enter static field storage.
@@ -1147,8 +1145,6 @@ impl Divergence {
         Divergence::TupleAnnotation,
         Divergence::AutoAccessorDeclaration,
         Divergence::StaticBlockDeclaration,
-        Divergence::PrivateMethodDeclaration,
-        Divergence::PrivateFieldDeclaration,
         Divergence::LabeledStatement,
         Divergence::ForInStatement,
         Divergence::SourceNamespaceDeclaration,
@@ -1161,7 +1157,6 @@ impl Divergence {
         Divergence::LocalClassDeclaration,
         Divergence::TypeParameterDefault,
         Divergence::CollectionCallbackTypeMismatchForm,
-        Divergence::PrivateMemberAssignmentForm,
         Divergence::NonPlaceAssignmentTargetForm,
         Divergence::PowerAssignmentForm,
         Divergence::FunctionExpressionForm,
@@ -1197,7 +1192,6 @@ impl Divergence {
         Divergence::FixedArrayConstantIndexBoundsForm,
         Divergence::FixedArrayIndexNotIntForm,
         Divergence::ArrayIndexNotIntForm,
-        Divergence::PrivateMemberReadForm,
         Divergence::YieldDelegationForm,
         Divergence::ConditionalNonBooleanConditionForm,
         Divergence::LogicalNonBooleanOperandForm,
@@ -1326,6 +1320,9 @@ impl Divergence {
         Divergence::ReferenceClassInheritance,
         Divergence::DescriptorStaticField,
         Divergence::MirrorStaticField,
+        Divergence::DescriptorPrivateName,
+        Divergence::MirrorPrivateName,
+        Divergence::JsonParsePrivateName,
         Divergence::StaticFieldOptional,
         Divergence::ContextAffineStaticField,
         Divergence::DescriptorInitializerWithoutOptional,

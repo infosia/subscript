@@ -881,3 +881,6 @@ pub use async_inspection::AsyncTaskInfo;
 
 #[cfg(test)]
 mod finally_tests;
+
+#[cfg(test)]
+mod private_name_tests;

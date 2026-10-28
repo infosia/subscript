@@ -54,3 +54,9 @@ necessary, because classes are nominal (C1).
    reached are removed. The rejection-site total check passes.
 5. `collisions.md` C24 row 11 drops the `#name` member.
 6. No golden moves.
+
+### 206.3 Open
+
+1. `JSON.stringify` omits a `#x` field, but the type of that field
+   must still be a JSON type. A class with a `#m: Map<…>` field cannot
+   be serialized; `node` omits the field.

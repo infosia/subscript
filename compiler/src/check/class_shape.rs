@@ -532,6 +532,18 @@ impl<'p> Checker<'p> {
                             self.pos(key.span),
                         );
                     }
+                    // §206.1 rule 6: a descriptor member is a public data member.
+                    if is_descriptor && crate::parse::private_name::is_private_name(&key.sym) {
+                        self.reject_subset(
+                            RejectionSite::DescriptorPrivateName,
+                            format!(
+                                "descriptor classes cannot declare the private name `{}`",
+                                key.sym
+                            ),
+                            self.pos(key.span),
+                        );
+                        continue;
+                    }
                     if prop.is_static {
                         let pos = self.pos(key.span);
                         if is_descriptor {
@@ -951,16 +963,23 @@ impl<'p> Checker<'p> {
                     });
                 }
                 ast::ClassMember::Empty(_) => {}
+                // §206.1 rule 6: the front end lowers the private names of a
+                // program file only, so a mirror class keeps each one.
+                ast::ClassMember::PrivateProp(ast::PrivateProp { key, .. })
+                | ast::ClassMember::PrivateMethod(ast::PrivateMethod { key, .. }) => {
+                    self.reject_subset(
+                        RejectionSite::MirrorPrivateName,
+                        format!(
+                            "mirror classes cannot declare the private name `{}`",
+                            crate::parse::private_name::member_name(key)
+                        ),
+                        self.pos(key.span),
+                    );
+                }
                 other => {
                     let pos = self.pos(other.span());
                     self.reject_subset(
                         match other {
-                            ast::ClassMember::PrivateProp(_) => {
-                                RejectionSite::PrivateFieldDeclaration
-                            }
-                            ast::ClassMember::PrivateMethod(_) => {
-                                RejectionSite::PrivateMethodDeclaration
-                            }
                             ast::ClassMember::StaticBlock(_) => {
                                 RejectionSite::StaticBlockDeclaration
                             }

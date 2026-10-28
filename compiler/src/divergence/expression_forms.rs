@@ -54,17 +54,19 @@ pub(super) const LABELEDSTATEMENT: DivergenceEntry = DivergenceEntry {
     why: "No lowering is decided for labeled statements.",
     collision: "C24", // row 29,
 };
-pub(super) const PRIVATEFIELDDECLARATION: DivergenceEntry = DivergenceEntry {
- ts: "class C { #x: i32 = 1; }", subscript: "no equivalent; use TypeScript private or a static generator method", why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.", collision: "C24", // row 11,
-};
-pub(super) const PRIVATEMETHODDECLARATION: DivergenceEntry = DivergenceEntry {
- ts: "class C { #f(): void {} }", subscript: "no equivalent; use TypeScript private or a static generator method", why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.", collision: "C24", // row 11,
-};
 pub(super) const STATICBLOCKDECLARATION: DivergenceEntry = DivergenceEntry {
- ts: "class C { static {} }", subscript: "no equivalent; use TypeScript private or a static generator method", why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.", collision: "C24", // row 11,
+    ts: "class C { static {} }",
+    subscript: "no equivalent; use TypeScript private or a static generator method",
+    why:
+        "No lowering is decided for static blocks, accessor fields, or instance generator methods.",
+    collision: "C24", // row 11,
 };
 pub(super) const AUTOACCESSORDECLARATION: DivergenceEntry = DivergenceEntry {
- ts: "class C { accessor x: i32 = 1; }", subscript: "no equivalent; use TypeScript private or a static generator method", why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.", collision: "C24", // row 11,
+    ts: "class C { accessor x: i32 = 1; }",
+    subscript: "no equivalent; use TypeScript private or a static generator method",
+    why:
+        "No lowering is decided for static blocks, accessor fields, or instance generator methods.",
+    collision: "C24", // row 11,
 };
 pub(super) const TUPLEANNOTATION: DivergenceEntry = DivergenceEntry {
     ts: "function f(x: [i32, i32]): void {}",

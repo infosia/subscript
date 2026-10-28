@@ -471,6 +471,13 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::DescriptorStaticField))
     }
     Self::MirrorStaticField => (RuleCode::S100, Diverges(Divergence::MirrorStaticField)),
+    Self::DescriptorPrivateName => {
+        (RuleCode::S100, Diverges(Divergence::DescriptorPrivateName))
+    }
+    Self::MirrorPrivateName => (RuleCode::S100, Diverges(Divergence::MirrorPrivateName)),
+    Self::JsonParsePrivateName => {
+        (RuleCode::S100, Diverges(Divergence::JsonParsePrivateName))
+    }
     Self::StaticFieldOptional => {
         (RuleCode::S012, Diverges(Divergence::StaticFieldOptional))
     }
@@ -535,14 +542,6 @@ rejection_classes! {
         Diverges(Divergence::ClassIndexSignatureIndexType),
     ),
     Self::IndexSignatureElementAnnotationMissing => (RuleCode::S100, TscRejects),
-    Self::PrivateFieldDeclaration => (
-        RuleCode::S100,
-        Diverges(Divergence::PrivateFieldDeclaration),
-    ),
-    Self::PrivateMethodDeclaration => (
-        RuleCode::S100,
-        Diverges(Divergence::PrivateMethodDeclaration),
-    ),
     Self::StaticBlockDeclaration => {
         (RuleCode::S100, Diverges(Divergence::StaticBlockDeclaration))
     }
@@ -1111,9 +1110,6 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::OptionalDescriptorMember),
     ),
-    Self::PrivateMemberRead => {
-        (RuleCode::S100, Diverges(Divergence::PrivateMemberReadForm))
-    }
     Self::ArrayIndexNotInt => (RuleCode::S100, Diverges(Divergence::ArrayIndexNotIntForm)),
     Self::FixedArrayIndexNotInt => (
         RuleCode::S100,
@@ -1620,10 +1616,6 @@ rejection_classes! {
     Self::WriteSetterOnlyAccessor => (
         RuleCode::S100,
         Diverges(Divergence::WriteAccessorWithoutRead),
-    ),
-    Self::PrivateMemberAssignment => (
-        RuleCode::S100,
-        Diverges(Divergence::PrivateMemberAssignmentForm),
     ),
     Self::ConstStaticFieldAssignment => (RuleCode::S100, TscRejects),
     Self::WriteStaticSetterOnlyAccessor => (

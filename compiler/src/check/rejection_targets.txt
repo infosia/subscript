@@ -119,6 +119,11 @@ ComputedFieldUnboundName	computed-field-unbound-name	S100	computed or non-identi
 ComputedFieldUnboundName	computed-field-unbound-name-witness-2	S100	computed or non-identifier field names are not decided
 DescriptorStaticField	descriptor-static-field	S100	descriptor classes cannot declare static fields
 MirrorStaticField	mirror-static-field	S100	mirror classes cannot declare static fields
+DescriptorPrivateName	descriptor-private-name	S100	descriptor classes cannot declare the private name `#x`
+MirrorPrivateName	mirror-private-name	S100	mirror classes cannot declare the private name `#x`
+MirrorPrivateName	mirror-private-method	S100	mirror classes cannot declare the private name `#f`
+JsonParsePrivateName	json-parse-private-name	S100	`JSON.parse` cannot set the private name `#x` of `C`
+JsonParsePrivateName	json-parse-nested-private-name	S100	`JSON.parse` cannot set the private name `#x` of `Inner`
 StaticFieldOptional	static-field-optional	S012	optional static fields imply `undefined`; use `T | null`
 ContextAffineStaticField	context-affine-static-field	S100	Worker, Inbox, and Outbox values may not be static fields
 DescriptorRequiredInitializer	descriptor-required-initializer	S100	a required descriptor member (`name!: T`) cannot have an initializer
@@ -356,7 +361,7 @@ OptionalMemberValueWithoutFallback	a-s218	S012	an optional chain has type `i32 |
 OptionalComputedMember	a-s219	S100	an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`
 OptionalMethodCall	a-s220	S100	an optional call through `?.()` is not in the decided surface
 OptionalFunctionCall	a-s221	S100	an optional call through `?.()` is not in the decided surface
-OptionalPrivateMember	a-s222	S100	private names are not in the decided surface
+OptionalPrivateMember	a-s222	S100	an optional chain cannot contain a private name
 UndefinedEqualityPair	a-s224	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member
 UndefinedEqualityNonMember	a-s225	S012	`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member
 BinaryMixedNumericTypes	a-s227	S007	mixed-type arithmetic (`i64` and `i32`) requires an explicit `as` conversion
@@ -371,7 +376,6 @@ FieldInitializerUninitializedRead	a-s128	S100	§147 rule 2: `this.a` must read a
 FieldInitializerDeclaredRead	c-corpus-r307-current-field	S100	§147 rule 2: `this.x` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden
 FieldInitializerSelfRead	a-s129	S100	§147 rule 2: `this.f` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden
 DescriptorAbsentMemberRead	a-s130	S100	an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`
-PrivateMemberRead	a-s131	S100	private names are not in the decided surface
 ArrayIndexNotInt	a-s132	S100	array indices are `i32`, got `i64`
 FixedArrayIndexNotInt	a-s133	S100	array indices are `i32`, got `i64`
 FixedArrayConstantIndexBounds	a-s134	S100	index 2 out of bounds for FixedArray length 1
@@ -545,7 +549,6 @@ ConstGlobalAssignment	a-s026	S100	cannot rebind `const` binding `x`
 NonVariableAssignmentTarget	a-s027	S100	`f` is not an assignable binding
 NonPlaceAssignmentTarget	a-s028	S100	assignment target outside the decided surface
 WriteSetterOnlyAccessor	a-s029	S100	read accessor `x` has no checker signature
-PrivateMemberAssignment	a-s030	S100	private names are not in the decided surface
 ConstStaticFieldAssignment	a-s031	S100	cannot rebind `const` binding `C.x`
 WriteStaticSetterOnlyAccessor	a-s032	S018	static read accessor `C.x` is missing
 NumericObjectMethod	a-s158	S018	`f64` has no method `valueOf`
@@ -805,7 +808,6 @@ ArrayJoinArgumentCount	ArrayJoinArgumentCount	S100	`join` expects 1 argument(s) 
 SetAddOrHasArgumentCount	SetAddOrHasArgumentCount	S100	`Set.add` expects 1 argument(s) (1 required), got 2
 SourceNamespaceDeclaration	unsupported-module-declaration	S100	declaration form outside the decided surface
 SourceNamespaceDeclaration	SourceNamespaceDeclaration	S100	declaration form outside the decided surface
-PrivateMethodDeclaration	PrivateMethodDeclaration	S100	class member form outside the decided surface
 TupleAnnotation	a-s191	S100	type annotation form outside the decided surface
 TupleAnnotation	TupleAnnotation	S100	type annotation form outside the decided surface
 DescriptorRequiredMemberMissing	a-s003	S100	descriptor literal for `D` is missing required member `x`
@@ -871,11 +873,6 @@ MirrorModuleDeclaration	named-import-member-missing-witness-2	S100	mirror declar
 BigIntAnnotation	BigIntAnnotation	S100	keyword type outside the decided surface
 AwaitMethodArgumentCount	AwaitMethodArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
 UnknownAnnotation	UnknownAnnotation	S100	keyword type outside the decided surface
-PrivateFieldDeclaration	a-s030	S100	class member form outside the decided surface
-PrivateFieldDeclaration	a-s131	S100	class member form outside the decided surface
-PrivateFieldDeclaration	a-s222	S100	class member form outside the decided surface
-PrivateFieldDeclaration	private-field-declaration	S100	class member form outside the decided surface
-PrivateFieldDeclaration	PrivateFieldDeclaration	S100	class member form outside the decided surface
 BinaryStringOperand	BinaryStringOperand	S100	operator not defined for `string` and `i32`
 WorkerTypeArgumentCount	static-field-initializer-missing-witness-2	S100	`Worker` takes exactly 2 type argument(s)
 LocalNamespaceDeclaration	LocalNamespaceDeclaration	S100	nested declarations are not in the decided surface
@@ -1262,7 +1259,7 @@ OptionalParameter	optional-parameter-witness-5	S012	optional parameters imply `u
 DefaultExportDeclaration	default-export-declaration-witness-8	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-8	S100	only named imports are in the decided surface
 DefaultExportDeclaration	default-export-declaration-witness-9	S100	the module surface requires named exports
-OptionalPrivateMember	optional-private-member	S100	private names are not in the decided surface
+OptionalPrivateMember	optional-private-member	S100	an optional chain cannot contain a private name
 UnknownClassConstructor	unknown-class-constructor	S016	unknown class `Missing`
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable	S100	call form outside the decided surface
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-2	S100	call form outside the decided surface

@@ -9,6 +9,7 @@ mod equality;
 mod implements_clause;
 mod language;
 mod poisoned_containers;
+mod private_names;
 mod removal;
 mod type_alias;
 

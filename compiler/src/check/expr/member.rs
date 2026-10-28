@@ -111,7 +111,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        match &m.prop {
+        let (name, prop_pos) = match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
                 let index_context = match &self.apparent_type(&obj.ty) {
@@ -134,39 +134,33 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;
                 }
-                self.check_index(obj, index, pos, fx)
+                return self.check_index(obj, index, pos, fx);
             }
-            ast::MemberProp::Ident(prop) => {
-                let name = prop.sym.to_string();
-                let prop_pos = self.pos(prop.span);
-                if let Some(handled) =
-                    self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
-                {
-                    return handled;
-                }
-                let obj = self.check_receiver(&m.obj, fx);
-                let mut expr = self.member_on_context(obj, &name, prop_pos, None, truth_test, fx);
-                self.apply_narrowing(&mut expr, fx);
-                let narrowed = path_key(&expr).is_some_and(|key| {
-                    fx.narrowed
-                        .get(&key)
-                        .is_some_and(|fact| fact.narrows_type())
-                });
-                if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
-                    self.reject_subset(RejectionSite::DescriptorAbsentMemberRead, "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`", expr.pos.clone());
-                    expr.ty = Type::Error;
-                }
-                expr
-            }
-            ast::MemberProp::PrivateName(_) => {
-                self.reject_subset(
-                    RejectionSite::PrivateMemberRead,
-                    "private names are not in the decided surface",
-                    pos.clone(),
-                );
-                self.err_expr(pos)
-            }
+            ast::MemberProp::Ident(prop) => (prop.sym.to_string(), self.pos(prop.span)),
+            // §206.1 rule 2: a private name names the member `#x`.
+            ast::MemberProp::PrivateName(prop) => (
+                crate::parse::private_name::member_name(prop),
+                self.pos(prop.span),
+            ),
+        };
+        if let Some(handled) =
+            self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
+        {
+            return handled;
         }
+        let obj = self.check_receiver(&m.obj, fx);
+        let mut expr = self.member_on_context(obj, &name, prop_pos, None, truth_test, fx);
+        self.apply_narrowing(&mut expr, fx);
+        let narrowed = path_key(&expr).is_some_and(|key| {
+            fx.narrowed
+                .get(&key)
+                .is_some_and(|fact| fact.narrows_type())
+        });
+        if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
+            self.reject_subset(RejectionSite::DescriptorAbsentMemberRead, "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`", expr.pos.clone());
+            expr.ty = Type::Error;
+        }
+        expr
     }
 
     pub(super) fn is_absence_capable_member_expr(&self, expr: &hir::Expr) -> bool {

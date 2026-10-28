@@ -186,8 +186,6 @@ impl Divergence {
             Divergence::TupleAnnotation => expression_forms::TUPLEANNOTATION,
             Divergence::AutoAccessorDeclaration => expression_forms::AUTOACCESSORDECLARATION,
             Divergence::StaticBlockDeclaration => expression_forms::STATICBLOCKDECLARATION,
-            Divergence::PrivateMethodDeclaration => expression_forms::PRIVATEMETHODDECLARATION,
-            Divergence::PrivateFieldDeclaration => expression_forms::PRIVATEFIELDDECLARATION,
             Divergence::LabeledStatement => expression_forms::LABELEDSTATEMENT,
             Divergence::ForInStatement => expression_forms::FORINSTATEMENT,
             Divergence::SourceNamespaceDeclaration => expression_forms::SOURCENAMESPACEDECLARATION,
@@ -203,7 +201,6 @@ impl Divergence {
             Divergence::CollectionCallbackTypeMismatchForm => {
                 surface_forms::COLLECTIONCALLBACKTYPEMISMATCHFORM
             }
-            Divergence::PrivateMemberAssignmentForm => surface_forms::PRIVATEMEMBERASSIGNMENTFORM,
             Divergence::NonPlaceAssignmentTargetForm => surface_forms::NONPLACEASSIGNMENTTARGETFORM,
             Divergence::PowerAssignmentForm => surface_forms::POWERASSIGNMENTFORM,
             Divergence::FunctionExpressionForm => surface_forms::FUNCTIONEXPRESSIONFORM,
@@ -255,7 +252,6 @@ impl Divergence {
             }
             Divergence::FixedArrayIndexNotIntForm => surface_forms::FIXEDARRAYINDEXNOTINTFORM,
             Divergence::ArrayIndexNotIntForm => surface_forms::ARRAYINDEXNOTINTFORM,
-            Divergence::PrivateMemberReadForm => surface_forms::PRIVATEMEMBERREADFORM,
             Divergence::YieldDelegationForm => surface_forms::YIELDDELEGATIONFORM,
             Divergence::ConditionalNonBooleanConditionForm => {
                 surface_forms::CONDITIONALNONBOOLEANCONDITIONFORM
@@ -441,6 +437,9 @@ impl Divergence {
             Divergence::ReferenceClassInheritance => established::REFERENCECLASSINHERITANCE,
             Divergence::DescriptorStaticField => established::DESCRIPTORSTATICFIELD,
             Divergence::MirrorStaticField => established::MIRRORSTATICFIELD,
+            Divergence::DescriptorPrivateName => established::DESCRIPTORPRIVATENAME,
+            Divergence::MirrorPrivateName => established::MIRRORPRIVATENAME,
+            Divergence::JsonParsePrivateName => established::JSONPARSEPRIVATENAME,
             Divergence::StaticFieldOptional => established::STATICFIELDOPTIONAL,
             Divergence::ContextAffineStaticField => established::CONTEXTAFFINESTATICFIELD,
             Divergence::DescriptorInitializerWithoutOptional => {

@@ -125,7 +125,8 @@ pub(super) const SWITCHDISCRIMINANTKINDFORM: DivergenceEntry = DivergenceEntry {
 pub(super) const GENERATORMETHODFORM: DivergenceEntry = DivergenceEntry {
     ts: "class A { *f():Generator<i32> {yield 1;} }\nexport function main(): void {  }",
     subscript: "no equivalent; use TypeScript private or a static generator method",
-    why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.",
+    why:
+        "No lowering is decided for static blocks, accessor fields, or instance generator methods.",
     collision: "C24", // row 11,
 };
 
@@ -282,13 +283,6 @@ pub(super) const YIELDDELEGATIONFORM: DivergenceEntry = DivergenceEntry {
     subscript: "no equivalent; iterate with for-of and yield each value",
     why: "A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.",
     collision: "C24", // row 16,
-};
-
-pub(super) const PRIVATEMEMBERREADFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class C { #x: i32 = 1; f(): i32 { return this.#x; } }\nexport function main(): void { new C().f(); }",
-    subscript: "no equivalent; use TypeScript private or a static generator method",
-    why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.",
-    collision: "C24", // row 11,
 };
 
 pub(super) const ARRAYINDEXNOTINTFORM: DivergenceEntry = DivergenceEntry {
@@ -530,13 +524,6 @@ pub(super) const NONPLACEASSIGNMENTTARGETFORM: DivergenceEntry = DivergenceEntry
     subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",
     why: "No lowering is decided for this operator or expression form.",
     collision: "C24", // row 18,
-};
-
-pub(super) const PRIVATEMEMBERASSIGNMENTFORM: DivergenceEntry = DivergenceEntry {
-    ts: "class C { #x: i32 = 1; f(): void { this.#x = 2; } }\nexport function main(): void { new C().f(); }",
-    subscript: "no equivalent; use TypeScript private or a static generator method",
-    why: "No lowering is decided for ECMAScript private members, static blocks, accessor fields, or instance generator methods.",
-    collision: "C24", // row 11,
 };
 
 pub(super) const COLLECTIONCALLBACKTYPEMISMATCHFORM: DivergenceEntry = DivergenceEntry {
