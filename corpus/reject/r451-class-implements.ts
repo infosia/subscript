@@ -1,9 +1,9 @@
 // corpus: reject/r451-class-implements
 // purpose: An implements clause gives no conversion between nominal classes, so the checker rejects it.
 // exercises: class-declarations, nominal-types
-// questions: compiler.md §205
+// questions: compiler.md §205, §208
 // tsc: accepts
-// expected-error: S100, a class cannot declare `implements`
+// expected-error: S100, `implements` names an interface; `Shape` is not an interface
 class Shape {
   area(): f64 {
     return 0;

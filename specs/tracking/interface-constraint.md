@@ -1,0 +1,31 @@
+# An interface is a constraint — `compiler.md` §208
+
+Status: contract.
+
+## Facts that the design reads
+
+- A generic function takes a class constraint at the pin:
+  `function total<T extends Sq>(xs: T[])` checks, and a call of
+  `x.area()` on an unconstrained `T` gives S018 "`T` has no method
+  `area`".
+- Each generic instance is a separate function (§140, §149), so a
+  call through a constraint is a direct call.
+- A reference object has a 16-byte header with a class id
+  (`runtime/src/context.rs`, `HEADER_SIZE`, `header_class_id`), and the
+  counted-owner release reads it (`runtime/src/context/counted.rs`). A
+  stage 2 interface value can use it; this section does not.
+
+## Measurement at the pin `3e9bd6c7`
+
+Tools: `tsc` 5.9.2 with this project's options, `node` v24.22.1
+(`corpus/node/run-js-corpus.cjs`), and `target/debug/subscript` built
+from the pin.
+
+| Entry | `tsc` | subscript at the pin |
+|---|---|---|
+| `a394-interface-constraint` | no error | 3 × S100 "declaration form outside the decided surface"; 3 × the §205 `implements` text |
+| `r455-interface-value-type` | no error | S100 "declaration form outside the decided surface", then the §205 text |
+| `r456-class-does-not-implement` | TS2420 at 11:7 | as `r455` |
+| `r457-constraint-needs-implements` | no error | S100 "declaration form outside the decided surface" |
+
+`node` prints the `a394` golden.

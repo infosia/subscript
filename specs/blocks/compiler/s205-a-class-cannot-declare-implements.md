@@ -23,6 +23,9 @@ Rule 1 applies to every clause, whatever it names.
    the clause gives no conversion". The diagnostic is at the clause.
    This applies to a reference class, a value class, a generic class,
    and a clause with more than one name.
+   *(Amended 2026-10-29 by §208: the rule applies to a name that is not
+   an interface, and the text is "`implements` names an interface; `A`
+   is not an interface".)*
 2. The diagnostic carries a "TypeScript accepts" block. The
    replacement is the same class with no clause.
 3. `collisions.md` C24 row 6 names the `implements` clause.
