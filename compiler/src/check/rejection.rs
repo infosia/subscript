@@ -678,6 +678,7 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::SourceInterfaceDeclaration),
     ),
+    Self::ClassImplementsClause => (RuleCode::S100, Diverges(Divergence::ClassImplementsClause)),
     Self::SourceNamespaceDeclaration => (
         RuleCode::S100,
         Diverges(Divergence::SourceNamespaceDeclaration),

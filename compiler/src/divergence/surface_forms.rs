@@ -2,6 +2,13 @@
 
 use super::DivergenceEntry;
 
+pub(super) const CLASSIMPLEMENTSCLAUSE: DivergenceEntry = DivergenceEntry {
+    ts: "class A {}\nclass B implements A {}",
+    subscript: "class A {}\nclass B {}",
+    why: "Types are nominal, so an implements clause gives no conversion from the class to the named type.",
+    collision: "C24", // row 6,
+};
+
 pub(super) const SYNCHRONOUSMETHODVALUEFORM: DivergenceEntry = DivergenceEntry {
     ts: "class C { f(): i32 { return 1; } } export function main(): void { new C().f; }",
     subscript: "no equivalent; use a lambda that calls the method",

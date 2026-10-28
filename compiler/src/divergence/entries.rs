@@ -192,6 +192,7 @@ impl Divergence {
             Divergence::ForInStatement => expression_forms::FORINSTATEMENT,
             Divergence::SourceNamespaceDeclaration => expression_forms::SOURCENAMESPACEDECLARATION,
             Divergence::SourceInterfaceDeclaration => expression_forms::SOURCEINTERFACEDECLARATION,
+            Divergence::ClassImplementsClause => surface_forms::CLASSIMPLEMENTSCLAUSE,
             Divergence::LocalInterfaceDeclaration => expression_forms::LOCALINTERFACEDECLARATION,
             Divergence::LocalAliasDeclaration => expression_forms::LOCALALIASDECLARATION,
             Divergence::LocalEnumDeclaration => expression_forms::LOCALENUMDECLARATION,

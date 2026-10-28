@@ -2091,6 +2091,13 @@ interface A { x:i32; }
 export function main(): void {  }
 END FILE
 END PROGRAM
+PROGRAM	class-implements-clause			0
+FILE	E	target/s154/forms/class-implements-clause/main.ts
+class A {}
+class B implements A {}
+export function main(): void {  }
+END FILE
+END PROGRAM
 PROGRAM	builtin-value-type-alignment-outside-set	TS1238,TS2322		0
 FILE	E	target/s154/forms/builtin-value-type-alignment-outside-set/main.ts
 @ValueType({align:3})

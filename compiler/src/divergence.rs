@@ -222,6 +222,8 @@ pub enum Divergence {
     SourceNamespaceDeclaration,
     /// An interface is structural, and types are nominal.
     SourceInterfaceDeclaration,
+    /// An `implements` clause gives no conversion, because types are nominal.
+    ClassImplementsClause,
     /// No lowering is decided for a local declaration.
     LocalInterfaceDeclaration,
     /// No lowering is decided for a local declaration.
@@ -1151,6 +1153,7 @@ impl Divergence {
         Divergence::ForInStatement,
         Divergence::SourceNamespaceDeclaration,
         Divergence::SourceInterfaceDeclaration,
+        Divergence::ClassImplementsClause,
         Divergence::LocalInterfaceDeclaration,
         Divergence::LocalAliasDeclaration,
         Divergence::LocalEnumDeclaration,

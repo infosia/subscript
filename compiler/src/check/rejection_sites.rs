@@ -334,6 +334,7 @@ pub(crate) enum RejectionSite {
     ExternalImportEqualsDeclaration,
     ModuleUsing,
     SourceInterfaceDeclaration,
+    ClassImplementsClause,
     SourceNamespaceDeclaration,
     DescriptorOptions,
     BuiltinDescriptorOptions,

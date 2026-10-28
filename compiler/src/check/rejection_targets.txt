@@ -814,6 +814,7 @@ LocalAggregateFrameLimit	c-corpus-r69-closure-environment-layout-too-large	S100	
 SourceInterfaceDeclaration	source-interface-declaration	S100	declaration form outside the decided surface
 SourceInterfaceDeclaration	c-nullable-function-class	S100	declaration form outside the decided surface
 SourceInterfaceDeclaration	SourceInterfaceDeclaration	S100	declaration form outside the decided surface
+ClassImplementsClause	class-implements-clause	S100	a class cannot declare `implements`: types are nominal (C1), so the clause gives no conversion
 DescriptorConstructor	descriptor-required-without-definite	S100	descriptor classes cannot declare constructors
 StringRelationalOperand	StringRelationalOperand	S100	operator not defined for `string` and `string`
 FunctionBodyMissing	class-member-name-clash	S100	function bodies are required

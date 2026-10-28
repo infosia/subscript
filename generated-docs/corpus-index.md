@@ -832,6 +832,7 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r449-satisfies-mismatch`](../corpus/reject/r449-satisfies-mismatch.ts) | `x satisfies T` requires the type of x to convert to T, as an assignment does. | satisfies | compiler.md §204.1 rule 3 |
 | [`reject/r45-map-nested-object-value`](../corpus/reject/r45-map-nested-object-value.ts) | Keeps boundary-only object from leaking through a nested key type. | map-key-resolution, boundary-only-object | Q24, C7 |
 | [`reject/r450-template-nested-array`](../corpus/reject/r450-template-nested-array.ts) | An array in a template is its join, so an element that join cannot format is rejected with the join text. | template-literal, array-join | compiler.md §204.1 rule 2 |
+| [`reject/r451-class-implements`](../corpus/reject/r451-class-implements.ts) | An implements clause gives no conversion between nominal classes, so the checker rejects it. | class-declarations, nominal-types | compiler.md §205 |
 | [`reject/r47-number-coercion`](../corpus/reject/r47-number-coercion.ts) | Rejects Number(x) coercion; explicit `as` is the conversion. | rejected-number-coercion | Q25 |
 | [`reject/r48-number-to-precision`](../corpus/reject/r48-number-to-precision.ts) | Rejects toPrecision without its required digit count. | required-number-formatting-argument | Q26 |
 | [`reject/r49-number-to-string-radix`](../corpus/reject/r49-number-to-string-radix.ts) | Rejects numeric toString without its required radix. | required-number-formatting-argument | Q26 |

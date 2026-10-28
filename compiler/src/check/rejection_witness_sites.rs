@@ -303,6 +303,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::ExternalImportEqualsDeclaration,
     RejectionSite::ModuleUsing,
     RejectionSite::SourceInterfaceDeclaration,
+    RejectionSite::ClassImplementsClause,
     RejectionSite::SourceNamespaceDeclaration,
     RejectionSite::DescriptorOptions,
     RejectionSite::BuiltinDescriptorOptions,

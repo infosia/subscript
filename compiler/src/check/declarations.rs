@@ -337,6 +337,14 @@ impl<'p> Checker<'p> {
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class, &name);
+        // §205.1 rule 1: one diagnostic per declaration, at the clause.
+        if let Some(first) = c.class.implements.first() {
+            self.reject_subset(
+                RejectionSite::ClassImplementsClause,
+                "a class cannot declare `implements`: types are nominal (C1), so the clause gives no conversion",
+                self.pos(first.span),
+            );
+        }
         if c.class
             .type_params
             .as_deref()

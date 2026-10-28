@@ -355,6 +355,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::ExternalImportEqualsDeclaration => WitnessEntry::General { files: &["external-import-equals-declaration"], variant: None, reason: "" },
         RejectionSite::ModuleUsing => WitnessEntry::General { files: &["module-using"], variant: Some(Divergence::ModuleUsing), reason: "" },
         RejectionSite::SourceInterfaceDeclaration => WitnessEntry::General { files: &["source-interface-declaration", "c-nullable-function-class", "SourceInterfaceDeclaration"], variant: Some(Divergence::SourceInterfaceDeclaration), reason: "" },
+        RejectionSite::ClassImplementsClause => WitnessEntry::General { files: &["class-implements-clause"], variant: Some(Divergence::ClassImplementsClause), reason: "" },
         RejectionSite::SourceNamespaceDeclaration => WitnessEntry::General { files: &["unsupported-module-declaration", "SourceNamespaceDeclaration"], variant: Some(Divergence::SourceNamespaceDeclaration), reason: "" },
         RejectionSite::DescriptorOptions => WitnessEntry::General { files: &["descriptor-options", "descriptor-options-witness-2"], variant: Some(Divergence::DescriptorOptions), reason: "" },
         RejectionSite::BuiltinDescriptorOptions => WitnessEntry::General { files: &["builtin-descriptor-options", "builtin-descriptor-options-witness-2"], variant: None, reason: "" },
