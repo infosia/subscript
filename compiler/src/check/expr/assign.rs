@@ -111,7 +111,8 @@ impl<'p> Checker<'p> {
             }
             _ => PlaceSource::Unsupported,
         };
-        let place = length_place.unwrap_or_else(|| self.check_assign_target(source, fx, &pos));
+        let place = length_place
+            .unwrap_or_else(|| self.check_assign_target(source, op.is_some(), fx, &pos));
         #[cfg(test)]
         if self.narrowing_analysis.is_some() {
             place.record_kind();
@@ -440,9 +441,12 @@ impl<'p> Checker<'p> {
         assigned
     }
 
+    /// `arithmetic` is true for the target of a compound assignment, an
+    /// increment, or a decrement (§209.1 rule 3).
     pub(super) fn check_assign_target(
         &mut self,
         target: PlaceSource<'_>,
+        arithmetic: bool,
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Place {
@@ -467,7 +471,9 @@ impl<'p> Checker<'p> {
         if let Some(context) = &mut fx.field_initializer {
             context.write = writes_this;
         }
+        let previous_arithmetic = std::mem::replace(&mut fx.arithmetic_write, arithmetic);
         let place = self.check_assign_target_inner(target, fx, pos);
+        fx.arithmetic_write = previous_arithmetic;
         if let Some(context) = &mut fx.field_initializer {
             context.write = previous;
         }

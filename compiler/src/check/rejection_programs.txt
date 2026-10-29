@@ -1173,6 +1173,58 @@ function two(): i32 { return 2; }
 export function main(): void { C.s = two; }
 END FILE
 END PROGRAM
+PROGRAM	static-method-compound-assignment	TS2365		0
+FILE	E	target/s154/forms/static-method-compound-assignment/main.ts
+class C { static s(): i32 { return 1; } }
+export function main(): void { C.s += 1; }
+END FILE
+END PROGRAM
+PROGRAM	static-method-update	TS2356		0
+FILE	E	target/s154/forms/static-method-update/main.ts
+class C { static s(): i32 { return 1; } }
+export function main(): void { C.s++; }
+END FILE
+END PROGRAM
+PROGRAM	static-private-method-assignment	TS2803		0
+FILE	E	target/s154/forms/static-private-method-assignment/main.ts
+class C { static #s(): i32 { return 1; } static w(): void { C.#s = two; } }
+function two(): i32 { return 2; }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	method-logical-assignment			0
+FILE	E	target/s154/forms/method-logical-assignment/main.ts
+class C { v(): i32 { return 1; } }
+function two(): i32 { return 2; }
+export function main(): void { const c = new C(); c.v ||= two; }
+END FILE
+END PROGRAM
+PROGRAM	method-compound-assignment	TS2365		0
+FILE	E	target/s154/forms/method-compound-assignment/main.ts
+class C { v(): i32 { return 1; } }
+export function main(): void { const c = new C(); c.v += 1; }
+END FILE
+END PROGRAM
+PROGRAM	method-update	TS2356		0
+FILE	E	target/s154/forms/method-update/main.ts
+class C { v(): i32 { return 1; } }
+export function main(): void { const c = new C(); c.v++; }
+END FILE
+END PROGRAM
+PROGRAM	method-compound-assignment-constraint	TS2365		0
+FILE	E	target/s154/forms/method-compound-assignment-constraint/main.ts
+interface I { v(): i32; }
+function f<T extends I>(t: T): void { t.v += 1; }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	private-method-assignment	TS2803		0
+FILE	E	target/s154/forms/private-method-assignment/main.ts
+class C { #v(): i32 { return 1; } w(): void { this.#v = two; } }
+function two(): i32 { return 2; }
+export function main(): void {  }
+END FILE
+END PROGRAM
 PROGRAM	method-assignment			0
 FILE	E	target/s154/forms/method-assignment/main.ts
 class C { v(): i32 { return 1; } }

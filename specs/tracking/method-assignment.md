@@ -16,3 +16,9 @@ Status: landed.
 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. Rule 2 also covers a static generic method as a write
 target, which gave S018 "class `C` has no static member `s`" at the
 pin.
+
+Phase Review fix (§209.3): `gate full cf813d89 dirty:17 debug
+3017/0/5 release 3014/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0
+exit 0`. `tsc` 5.9.2 gives TS2365 for `c.v += 1`, TS2356 for `c.v++`,
+and TS2803 for `this.#v = two`; it accepts `=`, `||=`, `&&=`, and
+`??=` on a method.

@@ -202,7 +202,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Member(member) => PlaceSource::Member(member),
             _ => PlaceSource::Unsupported,
         };
-        let place = self.check_assign_target(source, fx, &pos);
+        let place = self.check_assign_target(source, true, fx, &pos);
         #[cfg(test)]
         place.record_kind();
         if !statement_position {

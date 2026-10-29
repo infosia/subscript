@@ -358,9 +358,14 @@ impl<'p> Checker<'p> {
         let obj = self.apparent_expr(obj);
         match self.apparent_type(&obj.ty.clone()) {
             Type::Error => self.err_expr(prop_pos),
-            Type::Interface(interface) => {
-                self.check_interface_member_read(obj, &interface, name, prop_pos, for_write)
-            }
+            Type::Interface(interface) => self.check_interface_member_read(
+                obj,
+                &interface,
+                name,
+                prop_pos,
+                for_write,
+                fx.arithmetic_write,
+            ),
             Type::Class(id) => {
                 if self.reject_instance_modifier(id, name, write, fx, prop_pos.clone()) {
                     return self.err_expr(prop_pos);
@@ -418,9 +423,9 @@ impl<'p> Checker<'p> {
                     && (self.class_sigs[id.0].methods.contains_key(name)
                         || self.class_sigs[id.0].generic_methods.contains_key(name))
                 {
-                    // compiler.md §209.1 rule 1: the target names the method.
+                    // compiler.md §209.1 rules 1 and 3: the target names the method.
                     self.reject_subset(
-                        RejectionSite::MethodAssignment,
+                        super::method_write_site(name, false, fx.arithmetic_write),
                         format!(
                             "method `{name}` of `{class_name}` cannot be assigned: a method is a function, not a field"
                         ),

@@ -100,7 +100,7 @@ impl<'p> Checker<'p> {
             }
             _ => PlaceSource::Unsupported,
         };
-        let place = self.check_assign_target(source, fx, &pos);
+        let place = self.check_assign_target(source, false, fx, &pos);
         match place {
             Place::IndexSignature { .. } | Place::Accessor { .. } => match prefix {
                 Some(prefix) => self.check_logical_call_write(a, op, place, fx, pos, prefix),

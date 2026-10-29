@@ -204,9 +204,9 @@ impl<'p> Checker<'p> {
                     && (self.class_sigs[id.0].static_methods.contains_key(prop)
                         || self.class_sigs[id.0].has_generic_method(prop, true))
                 {
-                    // compiler.md §209.1 rule 2: the target names the static method.
+                    // compiler.md §209.1 rules 2 and 3: the target names the static method.
                     self.reject_subset(
-                        RejectionSite::StaticMethodAssignment,
+                        super::method_write_site(prop, true, fx.arithmetic_write),
                         format!(
                             "static method `{class_name}.{prop}` cannot be assigned: a method is a function, not a field"
                         ),

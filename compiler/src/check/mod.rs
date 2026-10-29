@@ -843,6 +843,9 @@ pub(crate) struct FnCtx {
     field_initializer: Option<field_initializer::FieldInitializer>,
     descriptor_default: Option<Type>,
     descriptor_numeric_operand: bool,
+    /// The assignment target in check is the target of a compound
+    /// assignment, an increment, or a decrement (§209.1 rule 3).
+    arithmetic_write: bool,
     pub scopes: Shared<Vec<Scope>>,
     pub narrowed: NarrowingFacts,
     /// Scope indices that contain hidden path facts.
@@ -1049,6 +1052,7 @@ impl FnCtx {
             field_initializer: None,
             descriptor_default: None,
             descriptor_numeric_operand: false,
+            arithmetic_write: false,
             frames: vec![Frame {
                 ret,
                 is_generator,

@@ -631,7 +631,9 @@ impl<'p> Checker<'p> {
     }
 
     /// `x.g` where the apparent type of `x` is an interface: a read
-    /// accessor signature is a read (§208.1 rule 4).
+    /// accessor signature is a read (§208.1 rule 4). `arithmetic` is true
+    /// for the target of a compound assignment, an increment, or a
+    /// decrement (§209.1 rule 3).
     pub(super) fn check_interface_member_read(
         &mut self,
         obj: hir::Expr,
@@ -639,6 +641,7 @@ impl<'p> Checker<'p> {
         name: &str,
         prop_pos: Pos,
         for_write: bool,
+        arithmetic: bool,
     ) -> hir::Expr {
         let member = self.interface_member(interface, name);
         match member {
@@ -674,9 +677,9 @@ impl<'p> Checker<'p> {
                 self.err_expr(prop_pos)
             }
             Some(member) if !member.accessor => {
-                // compiler.md §209.1 rule 1: the target names the method.
+                // compiler.md §209.1 rules 1 and 3: the target names the method.
                 self.reject_subset(
-                    RejectionSite::MethodAssignment,
+                    super::expr::method_write_site(name, false, arithmetic),
                     format!(
                         "method `{name}` of `{}` cannot be assigned: a method is a function, not a field",
                         interface.name

@@ -1,6 +1,6 @@
 //! An assignment to a method names the method (compiler.md §209).
 //!
-//! Cost: 7 checker calls on one-file programs, with no code generation
+//! Cost: 9 checker calls on one-file programs, with no code generation
 //! and no external process.
 
 use super::*;
@@ -20,15 +20,12 @@ fn first(src: &str) -> Diagnostic {
 }
 
 /// Asserts the S100 text and the divergence of the first diagnostic.
-fn assert_rejected(src: &str, message: &str) {
+/// `divergence` is `None` for a form that `tsc` rejects (§209.1 rule 3).
+fn assert_rejected(src: &str, message: &str, divergence: Option<Divergence>) {
     let diagnostic = first(src);
     assert_eq!(diagnostic.code, RuleCode::S100, "{src}");
     assert_eq!(diagnostic.message, message, "{src}");
-    assert_eq!(
-        diagnostic.divergence,
-        Some(Divergence::MethodAssignment),
-        "{src}"
-    );
+    assert_eq!(diagnostic.divergence, divergence, "{src}");
 }
 
 const CLASS: &str = "class C { v(): i32 { return 1; } }\n\
@@ -41,10 +38,12 @@ fn an_instance_method_target_names_the_class() {
     assert_rejected(
         &format!("{CLASS}export function main(): void {{ const c = new C(); c.v = two; }}\n"),
         message,
+        Some(Divergence::MethodAssignment),
     );
     assert_rejected(
         &format!("{CLASS}export function main(): void {{ const c = new C(); c.v += 1; }}\n"),
         message,
+        None,
     );
 }
 
@@ -59,6 +58,7 @@ fn a_constrained_method_target_names_the_interface() {
              export function main(): void {{}}\n"
         ),
         message,
+        Some(Divergence::MethodAssignment),
     );
     assert_rejected(
         &format!(
@@ -66,6 +66,7 @@ fn a_constrained_method_target_names_the_interface() {
              export function main(): void {{}}\n"
         ),
         message,
+        None,
     );
 }
 
@@ -78,10 +79,32 @@ fn a_static_method_target_names_the_static_method() {
     assert_rejected(
         &format!("{class}export function main(): void {{ C.s = two; }}\n"),
         message,
+        Some(Divergence::MethodAssignment),
     );
     assert_rejected(
         &format!("{class}export function main(): void {{ C.s += 1; }}\n"),
         message,
+        None,
+    );
+}
+
+/// Rule 3: an assignment to a `#x` method carries no block, because
+/// `tsc` rejects it (TS2803).
+#[test]
+fn a_private_method_target_has_no_block() {
+    assert_rejected(
+        "class C { #v(): i32 { return 1; } w(): void { this.#v = two; } }\n\
+         function two(): i32 { return 2; }\n\
+         export function main(): void {}\n",
+        "method `#v` of `C` cannot be assigned: a method is a function, not a field",
+        None,
+    );
+    assert_rejected(
+        "class C { static #s(): i32 { return 1; } static w(): void { C.#s = two; } }\n\
+         function two(): i32 { return 2; }\n\
+         export function main(): void {}\n",
+        "static method `C.#s` cannot be assigned: a method is a function, not a field",
+        None,
     );
 }
 

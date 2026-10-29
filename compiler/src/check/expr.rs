@@ -450,6 +450,25 @@ fn is_object_member(name: &str) -> bool {
     )
 }
 
+/// The site of an assignment to the method `name` (§209.1 rule 3).
+/// `tsc` accepts a plain or logical assignment to a method that is not a
+/// `#x` method. It rejects an arithmetic write (TS2365, TS2356) and a
+/// write to a `#x` method (TS2803).
+pub(super) fn method_write_site(
+    name: &str,
+    is_static: bool,
+    arithmetic: bool,
+) -> super::rejection::RejectionSite {
+    use super::rejection::RejectionSite;
+    let tsc_rejects = arithmetic || name.starts_with('#');
+    match (is_static, tsc_rejects) {
+        (false, false) => RejectionSite::MethodAssignment,
+        (false, true) => RejectionSite::MethodAssignmentTscRejects,
+        (true, false) => RejectionSite::StaticMethodAssignment,
+        (true, true) => RejectionSite::StaticMethodAssignmentTscRejects,
+    }
+}
+
 /// The Function names in TypeScript's class-constructor view.
 fn is_function_member(name: &str) -> bool {
     is_object_member(name)
