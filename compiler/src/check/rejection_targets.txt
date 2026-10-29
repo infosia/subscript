@@ -488,6 +488,9 @@ DescriptorClassConstructed	a-s077	S100	descriptor class `D` is constructed with 
 NamespaceClassPrototypeRead	a-s178	S003	no prototype mutation
 ReadStaticSetterOnlyAccessor	a-s180	S018	static read accessor `C.x` is missing
 StaticMethodValue	a-s181	S100	static method `C.f` may only be called
+StaticMethodAssignment	static-method-assignment	S100	static method `C.s` cannot be assigned: a method is a function, not a field
+MethodAssignment	method-assignment	S100	method `v` of `C` cannot be assigned: a method is a function, not a field
+MethodAssignment	method-assignment-constraint	S100	method `v` of `I` cannot be assigned: a method is a function, not a field
 ClassRuntimeMember	a-s182	S018	class `C` has no static member `name`
 NamespacePrototypeRead	a-s183	S003	no prototype mutation
 GenericClassRuntimeMember	a-s184	S018	generic class `C` has no static member `name`

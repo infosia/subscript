@@ -768,6 +768,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::NamespaceConstFieldWrite => WitnessEntry::General { files: &[], variant: None, reason: "All class static-field writes stop in check_namespace_place before this for_write guard." },
         RejectionSite::ReadStaticSetterOnlyAccessor => WitnessEntry::General { files: &["a-s180"], variant: Some(Divergence::WriteAccessorWithoutRead), reason: "" },
         RejectionSite::StaticMethodValue => WitnessEntry::General { files: &["a-s181"], variant: Some(Divergence::StaticMethodValueForm), reason: "" },
+        RejectionSite::StaticMethodAssignment => WitnessEntry::General { files: &["static-method-assignment"], variant: Some(Divergence::MethodAssignment), reason: "" },
+        RejectionSite::MethodAssignment => WitnessEntry::General { files: &["method-assignment", "method-assignment-constraint"], variant: Some(Divergence::MethodAssignment), reason: "" },
         RejectionSite::ClassRuntimeMember => WitnessEntry::General { files: &["a-s182"], variant: Some(Divergence::ClassRuntimeObject), reason: "" },
         RejectionSite::NamespacePrototypeRead => WitnessEntry::General { files: &["a-s183"], variant: Some(Divergence::DynamicObjectModel), reason: "" },
         RejectionSite::GenericClassRuntimeMember => WitnessEntry::General { files: &["a-s184"], variant: Some(Divergence::ClassRuntimeObject), reason: "" },

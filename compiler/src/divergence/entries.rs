@@ -214,6 +214,7 @@ impl Divergence {
             Divergence::ThisInValueTypeArrow => surface_forms::THISINVALUETYPEARROW,
             Divergence::EnumObjectMember => surface_forms::ENUMOBJECTMEMBER,
             Divergence::StaticMethodValueForm => surface_forms::STATICMETHODVALUEFORM,
+            Divergence::MethodAssignment => surface_forms::METHODASSIGNMENT,
             Divergence::ConstructorNotNamedClassForm => surface_forms::CONSTRUCTORNOTNAMEDCLASSFORM,
             Divergence::CoroutineReturnOrThrowCallForm => {
                 surface_forms::COROUTINERETURNORTHROWCALLFORM

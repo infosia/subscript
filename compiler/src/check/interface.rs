@@ -673,6 +673,18 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(prop_pos)
             }
+            Some(member) if !member.accessor => {
+                // compiler.md §209.1 rule 1: the target names the method.
+                self.reject_subset(
+                    RejectionSite::MethodAssignment,
+                    format!(
+                        "method `{name}` of `{}` cannot be assigned: a method is a function, not a field",
+                        interface.name
+                    ),
+                    prop_pos.clone(),
+                );
+                self.err_expr(prop_pos)
+            }
             _ if for_write => {
                 self.reject_subset(
                     RejectionSite::ClassUndeclaredPropertyWrite,

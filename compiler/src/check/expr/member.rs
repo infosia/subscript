@@ -414,7 +414,19 @@ impl<'p> Checker<'p> {
                         ), prop_pos.clone());
                     return self.err_expr(prop_pos);
                 }
-                if for_write {
+                if for_write
+                    && (self.class_sigs[id.0].methods.contains_key(name)
+                        || self.class_sigs[id.0].generic_methods.contains_key(name))
+                {
+                    // compiler.md §209.1 rule 1: the target names the method.
+                    self.reject_subset(
+                        RejectionSite::MethodAssignment,
+                        format!(
+                            "method `{name}` of `{class_name}` cannot be assigned: a method is a function, not a field"
+                        ),
+                        prop_pos.clone(),
+                    );
+                } else if for_write {
                     self.reject_subset(
                         if id == self.error_class && matches!(name, "stack" | "cause") {
                             RejectionSite::ErrorMemberOutsideSurface

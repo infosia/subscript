@@ -1166,6 +1166,28 @@ class C { static *f(): Generator<i32> { yield 1; } }
 export function main(): void { const f = C.f; }
 END FILE
 END PROGRAM
+PROGRAM	static-method-assignment			0
+FILE	E	target/s154/forms/static-method-assignment/main.ts
+class C { static s(): i32 { return 1; } }
+function two(): i32 { return 2; }
+export function main(): void { C.s = two; }
+END FILE
+END PROGRAM
+PROGRAM	method-assignment			0
+FILE	E	target/s154/forms/method-assignment/main.ts
+class C { v(): i32 { return 1; } }
+function two(): i32 { return 2; }
+export function main(): void { const c = new C(); c.v = two; }
+END FILE
+END PROGRAM
+PROGRAM	method-assignment-constraint			0
+FILE	E	target/s154/forms/method-assignment-constraint/main.ts
+interface I { v(): i32; }
+function two(): i32 { return 2; }
+function f<T extends I>(t: T): void { t.v = two; }
+export function main(): void {  }
+END FILE
+END PROGRAM
 PROGRAM	a-s182			0
 FILE	E	target/s154/forms/a-s182/main.ts
 class C {}

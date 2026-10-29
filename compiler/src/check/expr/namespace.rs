@@ -200,10 +200,24 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     });
                 }
+                if for_write
+                    && (self.class_sigs[id.0].static_methods.contains_key(prop)
+                        || self.class_sigs[id.0].has_generic_method(prop, true))
+                {
+                    // compiler.md §209.1 rule 2: the target names the static method.
+                    self.reject_subset(
+                        RejectionSite::StaticMethodAssignment,
+                        format!(
+                            "static method `{class_name}.{prop}` cannot be assigned: a method is a function, not a field"
+                        ),
+                        prop_pos.clone(),
+                    );
+                    return Some(self.err_expr(prop_pos));
+                }
                 if let Some(signature) = self.class_sigs[id.0].static_methods.get(prop) {
                     // compiler.md §207.1 rule 1: a static generator method
-                    // and an assignment target keep their own text.
-                    if signature.is_generator || for_write {
+                    // keeps its own text.
+                    if signature.is_generator {
                         self.reject_subset(
                             RejectionSite::StaticMethodValue,
                             format!("static method `{class_name}.{prop}` may only be called"),

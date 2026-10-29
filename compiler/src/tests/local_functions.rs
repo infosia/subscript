@@ -202,7 +202,7 @@ fn a_local_class_keeps_its_text() {
 }
 
 /// Rule 1: a static method is a function value; a static generator
-/// method and an assignment target keep their text.
+/// method keeps its text, and an assignment target names the method (§209).
 #[test]
 fn a_static_method_is_a_function_value() {
     let module = check(
@@ -220,12 +220,15 @@ fn a_static_method_is_a_function_value() {
         diagnostic.divergence,
         Some(Divergence::StaticMethodValueForm)
     );
-    // An assignment to a static method keeps the text.
+    // An assignment to a static method names the method (§209.1 rule 2).
     let write = only(
         "class M { static twice(x: i32): i32 { return x * 2; } }\n\
          export function main(): void { M.twice = M.twice; }\n",
     );
-    assert_eq!(write.message, "static method `M.twice` may only be called");
+    assert_eq!(
+        write.message,
+        "static method `M.twice` cannot be assigned: a method is a function, not a field"
+    );
 }
 
 /// A diagnostic in a local function names it by its source name.

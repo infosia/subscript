@@ -1471,6 +1471,8 @@ rejection_classes! {
     Self::StaticMethodValue => {
         (RuleCode::S100, Diverges(Divergence::StaticMethodValueForm))
     }
+    Self::StaticMethodAssignment => (RuleCode::S100, Diverges(Divergence::MethodAssignment)),
+    Self::MethodAssignment => (RuleCode::S100, Diverges(Divergence::MethodAssignment)),
     Self::ClassRuntimeMember => (RuleCode::S018, Diverges(Divergence::ClassRuntimeObject)),
     Self::NamespacePrototypeRead => {
         (RuleCode::S003, Diverges(Divergence::DynamicObjectModel))

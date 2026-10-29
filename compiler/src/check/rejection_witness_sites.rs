@@ -707,6 +707,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::NamespaceConstFieldWrite,
     RejectionSite::ReadStaticSetterOnlyAccessor,
     RejectionSite::StaticMethodValue,
+    RejectionSite::StaticMethodAssignment,
+    RejectionSite::MethodAssignment,
     RejectionSite::ClassRuntimeMember,
     RejectionSite::NamespacePrototypeRead,
     RejectionSite::GenericClassRuntimeMember,

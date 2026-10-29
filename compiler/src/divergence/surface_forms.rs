@@ -511,6 +511,13 @@ pub(super) const STATICMETHODVALUEFORM: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 13,
 };
 
+pub(super) const METHODASSIGNMENT: DivergenceEntry = DivergenceEntry {
+    ts: "class C { v(): i32 { return 1; } }\nfunction two(): i32 { return 2; }\nfunction f(c: C): void { c.v = two; }",
+    subscript: "class C { v: () => i32 = (): i32 => 1; }\nfunction two(): i32 { return 2; }\nfunction f(c: C): void { c.v = two; }",
+    why: "A method is a C function with no slot in the instance, so an assignment cannot replace it; a function field has a slot.",
+    collision: "C24", // row 12,
+};
+
 pub(super) const ENUMOBJECTMEMBER: DivergenceEntry = DivergenceEntry {
     ts: "enum E { A }\nexport function main(): void { E.toString; }",
     subscript: "no equivalent; use a directly named class or enum member",

@@ -10,6 +10,7 @@ mod implements_clause;
 mod interface_constraint;
 mod language;
 mod local_functions;
+mod method_assignment;
 mod poisoned_containers;
 mod private_names;
 mod removal;

@@ -741,6 +741,8 @@ pub(crate) enum RejectionSite {
     NamespaceConstFieldWrite,
     ReadStaticSetterOnlyAccessor,
     StaticMethodValue,
+    StaticMethodAssignment,
+    MethodAssignment,
     ClassRuntimeMember,
     NamespacePrototypeRead,
     GenericClassRuntimeMember,

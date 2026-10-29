@@ -256,6 +256,8 @@ pub enum Divergence {
     EnumObjectMember,
     /// No first-class value is decided for a direct call target.
     StaticMethodValueForm,
+    /// A method is a C function with no slot, so an assignment cannot replace it.
+    MethodAssignment,
     /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
     ConstructorNotNamedClassForm,
     /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
@@ -1174,6 +1176,7 @@ impl Divergence {
         Divergence::ThisInValueTypeArrow,
         Divergence::EnumObjectMember,
         Divergence::StaticMethodValueForm,
+        Divergence::MethodAssignment,
         Divergence::ConstructorNotNamedClassForm,
         Divergence::CoroutineReturnOrThrowCallForm,
         Divergence::GeneratorYieldTypeNotKnownForm,
