@@ -123,7 +123,8 @@ MAJOR and five MINOR findings.
 5. MINOR, fixed: rule 2 did not list a write accessor, a rest
    parameter, and an overload, and rule 4 did not list a constrained
    type parameter as a type argument.
-6. MINOR, contrived, open: `t.v = t.v`, where `v` is a method of `I`,
-   gives "`I` has no property `v`".
+6. MINOR, contrived, fixed by §209: `t.v = t.v`, where `v` is a method
+   of `I`, gave "`I` has no property `v`". A class receiver gave the
+   same text.
 7. MINOR, realistic, fixed: the "does not implement" text did not give
    the types. The text for a member with other types now gives both.
