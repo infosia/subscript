@@ -24,6 +24,7 @@ program type-checks under stock `tsc --strict`.
 | `number` | `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64` |
 | Structural types | Nominal types; same shape is not the same type |
 | `class` | Reference class (`new`, heap) or `@ValueType` value class (copied) |
+| `interface` | A constraint for `T extends I`, which a class opts into with `implements I`; no value of an interface type |
 | `undefined`, `T \| U` | `Ref \| null`, narrowed before use; `Ref \| undefined` as a function result only |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
 | Garbage collection | Nothing collects unbidden. The easiest start writes no release code and lets the host collect at a step boundary. `Context.free` and `using` are also available |
@@ -194,8 +195,177 @@ export function main(): void {
 7 a
 ```
 
-Explicit type arguments are required. The compiler emits one function
-per argument list, which is how a call stays a direct call.
+The compiler emits one function per argument list, which is how a
+call stays a direct call. A call can omit the type arguments when the
+arguments give them: `p.first([7, 8])` is `p.first<i32>([7, 8])`. A
+generic constructor infers its type arguments in the same way, from
+its arguments or from the type that the context expects
+(`const b: Box<i64> = new Box(7)`).
+
+## Interfaces are constraints
+
+An `interface` names a set of methods and read accessors. A class
+opts into it with `implements`, and the checker verifies that the
+class has each member with the same types. A generic function or class
+then takes `T extends I` and calls the members on a `T`:
+
+```ts
+interface Shape {
+  area(): f64;
+  get name(): string;
+}
+
+class Square implements Shape {
+  side: f64;
+  constructor(side: f64) {
+    this.side = side;
+  }
+  area(): f64 {
+    return this.side * this.side;
+  }
+  get name(): string {
+    return "square";
+  }
+}
+
+class Circle implements Shape {
+  name: string = "circle";
+  r: f64;
+  constructor(r: f64) {
+    this.r = r;
+  }
+  area(): f64 {
+    return 3 * this.r * this.r;
+  }
+}
+
+function total<T extends Shape>(shapes: T[]): f64 {
+  let sum: f64 = 0;
+  for (const s of shapes) {
+    sum += s.area();
+  }
+  return sum;
+}
+
+function label<T extends Shape>(s: T): string {
+  return `${s.name}=${s.area()}`;
+}
+
+export function main(): void {
+  print(`${total([new Square(1), new Square(2)])} ${total([new Circle(1)])}`);
+  print(`${label(new Square(3))} ${label(new Circle(2))}`);
+}
+```
+
+```text
+5 3
+square=9 circle=12
+```
+
+Each call of `total` is compiled for its own `T`, so `s.area()` is a
+direct call to `Square.area` or `Circle.area`. Nothing is looked up at
+run time, and an interface has no layout. Three rules follow from
+nominal types:
+
+- A type argument for `T extends Shape` must be a class that declares
+  `implements Shape`. A class with the same members and no clause is
+  rejected, although `tsc` accepts it.
+- An interface is not a value type. A parameter, a field, or an array
+  element of type `Shape` is rejected; write `T extends Shape`. A list
+  that holds squares and circles together is not in the language.
+- A member must have exactly the interface's types. A method with
+  another integer width, or with an extra default parameter, is
+  rejected. An `async` method implements a member that returns
+  `Promise<R>`.
+
+An interface member is a method or a `get` accessor. Fields, optional
+members, index signatures, and `extends` on an interface are rejected.
+
+## More TypeScript forms that work
+
+These forms mean what they mean in TypeScript. Each one compiles to
+the code that the longer spelling gives, with no run-time cost of its
+own:
+
+```ts
+type Id = i32;
+
+enum Level {
+  Low,
+  High,
+}
+
+class Counter {
+  #count: Id = 0;
+  constructor(readonly name: string, private step: Id) {}
+
+  bump(times: i32): Id {
+    let i: i32 = 0;
+    do {
+      this.#count += this.step;
+      i += 1;
+    } while (i < times);
+    return this.#count;
+  }
+
+  static make(name: string): Counter {
+    return new Counter(name, 2);
+  }
+}
+
+function weight(level: Level): i32 {
+  switch (level) {
+    case Level.Low:
+      return 1;
+    case Level.High:
+      return 10;
+  }
+}
+
+export function main(): void {
+  const makers = [Counter.make];
+  const c = makers[0]("c");
+  print(`${c.name} ${c.bump(3)}`);
+
+  function square(x: i32): i32 {
+    return x * x;
+  }
+  const xs: i32[] = [];
+  xs.push(square(2), square(3), weight(Level.High));
+  print(`${xs} ${Math.max(1.5, 4, 2.5)}`);
+
+  let cache: Counter | null = null;
+  cache ??= Counter.make("lazy");
+  print(`${cache.name} ${isNaN(0 / 0)}`);
+}
+```
+
+```text
+c 6
+4,9,10 4
+lazy true
+```
+
+- `type Id = i32;` is a second name for `i32`. A generic alias
+  (`type P<T> = …`) is rejected.
+- A constructor parameter with `readonly`, `private`, `public`, or
+  `protected` declares a field.
+- A `#name` member is a `private` member. `JSON.stringify` leaves it
+  out, as JavaScript does.
+- `do…while` runs its body before the test. A `continue` goes to the
+  test.
+- A `switch` that returns from a case for every enum member ends the
+  function. A value outside the enum traps.
+- A static method is a function value, as a module function is. A
+  local `function` that reads no local of its enclosing function is
+  one too. A local `function` that reads a local is rejected; write a
+  `const` lambda.
+- `??=`, `||=`, and `&&=` assign only when the test passes.
+  `push`, `Math.max`, and `Math.min` take any number of arguments.
+  `${xs}` formats an array as `xs.join(",")`.
+- `isNaN` and `isFinite` take a number, as `Number.isNaN` does.
+  `x satisfies T` checks `x` and keeps its type. `debugger;` does
+  nothing.
 
 ## `Ref | null` is the only union, and narrowing is mandatory
 
@@ -1320,10 +1490,12 @@ reads the system UTC clock by default, and the host pins it to a
 value it chooses. A program that pins the clock and the seed produces
 one output for one input.
 
-**A scalar has no miss value.** `T[].find` is absent, because a
-missing `i32` has nothing to return; `findIndex` returns `-1`.
-`Map.get` returns `V | null` for a reference value, and `Map.getOr`
-takes the fallback for a scalar value. `JSON.parse<T>` returns a `T`
+**A scalar has no miss value.** `find` on a scalar array is rejected,
+because a missing `i32` has nothing to return; `findIndex` returns
+`-1`. On a reference element, `find`, `pop`, and `shift` return
+`T | undefined`. `Map.get` returns `V | undefined` for a reference
+value, and `Map.getOr` takes the fallback for a scalar value. `pop`
+and `shift` on an empty scalar array trap. `JSON.parse<T>` returns a `T`
 against a class you declare, not an `any`, and raises `TypeError` when
 the document does not match it.
 

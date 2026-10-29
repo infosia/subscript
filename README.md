@@ -150,6 +150,9 @@ export function main(): void {
 `f32`/`i32`/`u32`/`i64`/`u64`/`f64` are sized numerics with C conversion
 semantics; a plain `class` is a heap reference type with manual lifetime.
 There is no default `number` type — a sized type is always required.
+An `interface` is a compile-time constraint: a class opts in with
+`implements`, and a generic `T extends I` calls the members directly in
+each instance, so no virtual dispatch and no vtable exist.
 
 ### C-ABI-identical data layout
 
