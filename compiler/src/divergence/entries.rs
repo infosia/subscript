@@ -192,6 +192,7 @@ impl Divergence {
             Divergence::InterfaceMemberForm => surface_forms::INTERFACEMEMBERFORM,
             Divergence::InterfaceValueType => surface_forms::INTERFACEVALUETYPE,
             Divergence::InterfaceConstraintUndeclared => surface_forms::INTERFACECONSTRAINTUNDECLARED,
+            Divergence::InterfaceMemberType => surface_forms::INTERFACEMEMBERTYPE,
             Divergence::ClassImplementsClause => surface_forms::CLASSIMPLEMENTSCLAUSE,
             Divergence::LocalInterfaceDeclaration => expression_forms::LOCALINTERFACEDECLARATION,
             Divergence::LocalAliasDeclaration => expression_forms::LOCALALIASDECLARATION,

@@ -31,16 +31,27 @@ forms. A generic function already takes a constraint
    block: a property signature, an optional member, a call, construct,
    or index signature, a generic method signature, a type parameter on
    the interface, `extends` on the interface, and a second declaration
-   of one name (`tsc` merges it). An interface in a function body
+   of one name (`tsc` merges it), a write accessor signature, a rest
+   parameter, and an overload signature. An interface in a function body
    keeps the C24 row 5 text.
 3. **`implements`.** `class C implements I, J` declares that `C` has
    each member of `I` and `J`. For each method signature, `C` has an
    instance method with that name, the same parameter types, and the
    same result type. For each read accessor signature, `C` has an
    instance read accessor or an instance field with that name and
-   type. A `private` member and a static member do not count. A
-   missing or different member fails with S100 "class `C` does not
-   implement `m` of interface `I`", as `tsc` TS2420 does. A value
+   type. A `private` member and a static member do not count. A method
+   signature with the result `Promise<R>` is implemented by an `async`
+   method with the result `Promise<R>`, and a call through a
+   constraint can `await` it. A missing member fails with S100 "class
+   `C` does not implement `m` of interface `I`", as `tsc` TS2420 does.
+   A member with other types fails with S100 "class `C` implements `m`
+   of interface `I` with type `X`; the interface requires `Y`". `tsc`
+   accepts many of these members (a different integer width, an extra
+   default parameter, a sync member for an async one) and gives TS2416
+   for others, so this diagnostic carries a "TypeScript accepts" block
+   (C24 row 6). A class member that failed its own check gives no
+   second diagnostic here. *(Amended 2026-10-29 after the Phase Review,
+   M1 and M2.)* A value
    class and a generic class can declare `implements`. An
    `implements` clause that names something other than an interface
    fails with the §205 diagnostic, and its text changes to
@@ -49,10 +60,12 @@ forms. A generic function already takes a constraint
 4. **A constraint.** A type parameter `T extends I` of a function, a
    method, or a class can call each member of `I` on a value of type
    `T`. A type argument for `T` is a class that declares
-   `implements I`. Another type argument fails with S100 "`A` does not
-   declare `implements I`", also if `A` has the members (C1). `tsc`
-   accepts such a class, so the diagnostic carries a "TypeScript
-   accepts" block. The rule applies to an inferred type argument
+   `implements I`, or a type parameter whose constraint is `I` or a
+   class that declares `implements I`. Another type argument fails
+   with S100 "`A` does not declare `implements I`", also if `A` has the
+   members (C1). `tsc` accepts such a class, so the diagnostic carries
+   a "TypeScript accepts" block. A type parameter with no such
+   constraint gets no block: `tsc` rejects it with TS2345. The rule applies to an inferred type argument
    (§149, §197) and to a written one.
 5. **No value type.** An interface in any other type position fails
    with S100 "interface `I` is a constraint only; write a type
@@ -88,4 +101,29 @@ forms. A generic function already takes a constraint
 6. `collisions.md` C24 row 6 states the stage 1 form. §205 cites this
    section: its rejection now covers an `implements` clause that names
    a class.
-7. No golden moves.
+7. No golden moves. The LIR text snapshot grows by the `a395` section
+   only, because `a395` has async functions.
+
+### 208.3 Phase Review
+
+*(Added 2026-10-29.)* A fresh review of `3e9bd6c7..48aae770` gave two
+MAJOR and five MINOR findings.
+
+1. MAJOR, realistic, fixed: a member with a `Promise` result had no
+   implementation. An `async` method did not count, and a sync method
+   could not be awaited through a constraint. Rule 3 now accepts an
+   `async` method. `a395` pins it.
+2. MAJOR, realistic, fixed: a member with other types gave no
+   "TypeScript accepts" block, but `tsc` accepts many such members. Rule
+   3 now has two diagnostics, and C24 row 6 names the divergence.
+3. MINOR, realistic, fixed: a class member that failed its own check
+   also gave "does not implement".
+4. MINOR, realistic, fixed: an unconstrained type parameter as a type
+   argument got a "TypeScript accepts" block; `tsc` gives TS2345.
+5. MINOR, fixed: rule 2 did not list a write accessor, a rest
+   parameter, and an overload, and rule 4 did not list a constrained
+   type parameter as a type argument.
+6. MINOR, contrived, open: `t.v = t.v`, where `v` is a method of `I`,
+   gives "`I` has no property `v`".
+7. MINOR, realistic, fixed: the "does not implement" text did not give
+   the types. The text for a member with other types now gives both.

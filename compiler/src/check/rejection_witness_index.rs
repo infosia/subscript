@@ -362,6 +362,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::InterfaceValueType => WitnessEntry::General { files: &["interface-value-type"], variant: Some(Divergence::InterfaceValueType), reason: "" },
         RejectionSite::InterfaceValueUse => WitnessEntry::General { files: &["interface-value-use"], variant: None, reason: "" },
         RejectionSite::InterfaceMemberMissing => WitnessEntry::General { files: &["interface-member-missing"], variant: None, reason: "" },
+        RejectionSite::InterfaceMemberType => WitnessEntry::General { files: &["interface-member-type", "interface-member-other-type"], variant: Some(Divergence::InterfaceMemberType), reason: "" },
+        RejectionSite::InterfaceConstraintParameter => WitnessEntry::General { files: &["interface-constraint-parameter"], variant: None, reason: "" },
         RejectionSite::InterfaceConstraintUndeclared => WitnessEntry::General { files: &["interface-constraint-undeclared"], variant: Some(Divergence::InterfaceConstraintUndeclared), reason: "" },
         RejectionSite::ClassImplementsClause => WitnessEntry::General { files: &["class-implements-clause"], variant: Some(Divergence::ClassImplementsClause), reason: "" },
         RejectionSite::SourceNamespaceDeclaration => WitnessEntry::General { files: &["unsupported-module-declaration", "SourceNamespaceDeclaration"], variant: Some(Divergence::SourceNamespaceDeclaration), reason: "" },

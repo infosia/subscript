@@ -683,6 +683,8 @@ rejection_classes! {
     Self::InterfaceValueType => (RuleCode::S100, Diverges(Divergence::InterfaceValueType)),
     Self::InterfaceValueUse => (RuleCode::S100, TscRejects),
     Self::InterfaceMemberMissing => (RuleCode::S100, TscRejects),
+    Self::InterfaceMemberType => (RuleCode::S100, Diverges(Divergence::InterfaceMemberType)),
+    Self::InterfaceConstraintParameter => (RuleCode::S100, TscRejects),
     Self::InterfaceConstraintUndeclared => (
         RuleCode::S100,
         Diverges(Divergence::InterfaceConstraintUndeclared),

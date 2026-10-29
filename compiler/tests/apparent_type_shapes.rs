@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
 //! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
-//! Measured cost: 828 sites in 0.44 seconds; 25 named groups pin 66 justified raw-test functions.
+//! Measured cost: 832 sites in 0.46 seconds; 25 named groups pin 66 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -662,7 +662,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("class_shape.rs", "resolve_class_shape", 0xf61b779abfbd6fdd),
             ("expr/lambda.rs", "check_lambda_with", 0x6501432f76082482),
             ("initializer.rs", "decided", 0x31bbf142683fd569),
-            ("interface.rs", "poisoned", 0x367674974abeebbd),
+            ("interface.rs", "poisoned", 0x9726368d86a6ab58),
         ],
     },
     AllowGroup {

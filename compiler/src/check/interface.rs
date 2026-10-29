@@ -19,11 +19,24 @@ pub(crate) struct InterfaceMember {
 }
 
 impl InterfaceMember {
-    /// True when a member type is the error type: its diagnostic is
-    /// already reported.
-    fn poisoned(&self) -> bool {
-        self.ret == Type::Error || self.params.contains(&Type::Error)
+    /// The type of the member: a function type for a method signature,
+    /// and the result type for a read accessor signature.
+    fn ty(&self) -> Type {
+        if self.accessor {
+            self.ret.clone()
+        } else {
+            Type::Func(Box::new(crate::types::FuncType {
+                params: self.params.clone(),
+                ret: self.ret.clone(),
+            }))
+        }
     }
+}
+
+/// True when `ty` contains the error type: the declaration that gives
+/// it already reported its diagnostic.
+fn poisoned(ty: &Type) -> bool {
+    *ty == Type::Error || ty.contained_types().into_iter().any(poisoned)
 }
 
 /// A module-level interface declaration (§208.1 rule 1).
@@ -297,13 +310,14 @@ impl<'p> Checker<'p> {
     /// declare the interface of its constraint.
     pub(crate) fn reject_undeclared_interface(
         &mut self,
+        site: RejectionSite,
         argument: &Type,
         interface: &InterfaceType,
         pos: Pos,
     ) {
         let argument = self.type_name(argument);
         self.reject_subset(
-            RejectionSite::InterfaceConstraintUndeclared,
+            site,
             format!(
                 "`{argument}` does not declare `implements {}`",
                 interface.name
@@ -410,35 +424,62 @@ impl<'p> Checker<'p> {
         for &index in &class.interfaces {
             let interface = self.interfaces[index].clone();
             for member in &interface.members {
-                if member.poisoned() || self.class_has_member(id, member, &class.pos) {
+                let required = member.ty();
+                if poisoned(&required) {
                     continue;
                 }
-                self.reject_subset(
-                    RejectionSite::InterfaceMemberMissing,
-                    format!(
-                        "class `{}` does not implement `{}` of interface `{}`",
-                        class.name, member.name, interface.name
+                let found = match self.class_member_type(id, member, &class.pos) {
+                    Some(found) if found == required || poisoned(&found) => continue,
+                    found => found,
+                };
+                match found {
+                    Some(found) => {
+                        let (found, required) = (self.type_name(&found), self.type_name(&required));
+                        self.reject_subset(
+                            RejectionSite::InterfaceMemberType,
+                            format!(
+                                "class `{}` implements `{}` of interface `{}` with type `{found}`; \
+                                 the interface requires `{required}`",
+                                class.name, member.name, interface.name
+                            ),
+                            class.pos.clone(),
+                        );
+                    }
+                    None => self.reject_subset(
+                        RejectionSite::InterfaceMemberMissing,
+                        format!(
+                            "class `{}` does not implement `{}` of interface `{}`",
+                            class.name, member.name, interface.name
+                        ),
+                        class.pos.clone(),
                     ),
-                    class.pos.clone(),
-                );
+                }
             }
         }
     }
 
-    /// True when the class has a public instance member with the name and
-    /// the exact types of `member` (§208.1 rule 3).
-    fn class_has_member(&mut self, id: ClassId, member: &InterfaceMember, pos: &Pos) -> bool {
+    /// The type of the public instance member of the class that `member`
+    /// names, in the form of [`InterfaceMember::ty`] (§208.1 rule 3). An
+    /// `async` method with result `R` has the type of a member with
+    /// result `Promise<R>`. `None` when the class has no member of the
+    /// same kind.
+    fn class_member_type(
+        &mut self,
+        id: ClassId,
+        member: &InterfaceMember,
+        pos: &Pos,
+    ) -> Option<Type> {
         let name = member.name.as_str();
         let signatures = &self.class_sigs[id.0];
         if !signatures.modifiers.structural_member_is_public(name) {
-            return false;
+            return None;
         }
         if member.accessor {
             if signatures.has_read_accessor(name) {
                 return signatures
                     .methods
                     .get(name)
-                    .is_some_and(|accessor| accessor.ret == member.ret);
+                    .map(|accessor| accessor.ret.clone());
             }
             if signatures.has_accessor(name)
                 || !self.classes[id.0]
@@ -446,24 +487,41 @@ impl<'p> Checker<'p> {
                     .iter()
                     .any(|field| field.name == name)
             {
-                return false;
+                return None;
             }
-            return self.decide_field(id, name, pos.clone()) == member.ret;
+            return Some(self.decide_field(id, name, pos.clone()));
         }
         if signatures.has_accessor(name) {
-            return false;
+            return None;
         }
-        signatures.methods.get(name).is_some_and(|method| {
-            !method.is_async
-                && !method.generic
-                && method.ret == member.ret
-                && method.params.len() == member.params.len()
-                && method
-                    .params
-                    .iter()
-                    .zip(&member.params)
-                    .all(|(parameter, ty)| parameter.ty() == ty)
-        })
+        let Some(method) = signatures
+            .methods
+            .get(name)
+            .filter(|method| !method.generic)
+        else {
+            // A declared method with no signature failed its own check.
+            let declared = matches!(
+                signatures.member_namespace.get(name),
+                Some(ClassMemberNamespaceEntry::Method { .. })
+            );
+            return (declared && !signatures.generic_methods.contains_key(name))
+                .then_some(Type::Error);
+        };
+        if method.is_generator && !method.yield_known {
+            return Some(Type::Error);
+        }
+        Some(Type::Func(Box::new(crate::types::FuncType {
+            params: method
+                .params
+                .iter()
+                .map(|parameter| parameter.ty().clone())
+                .collect(),
+            ret: if method.is_async {
+                Type::AsyncHandle(Box::new(method.ret.clone()))
+            } else {
+                method.ret.clone()
+            },
+        })))
     }
 
     fn interface_member(&self, interface: &InterfaceType, name: &str) -> Option<InterfaceMember> {
@@ -527,6 +585,49 @@ impl<'p> Checker<'p> {
             ty: member.ret,
             pos,
         }
+    }
+
+    /// `await x.m(...)` where the apparent type of `x` is an interface: a
+    /// member with result `Promise<R>` gives `R` (§208.1 rule 3).
+    pub(super) fn await_interface_method(
+        &mut self,
+        recv: hir::Expr,
+        interface: &InterfaceType,
+        property: &ast::IdentName,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let recv = self.apparent_expr(recv);
+        let handle = self.check_interface_method_call(
+            recv,
+            interface,
+            property,
+            call,
+            fx,
+            self.pos(call.span),
+        );
+        if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
+            let origins = self.expr_async_origins(&handle, fx);
+            fx.handle_async_origins(&origins);
+            return hir::Expr {
+                pending_work: None,
+                kind: hir::ExprKind::AsyncHandleAwait(Box::new(handle)),
+                ty: *value,
+                pos,
+            };
+        }
+        if self.apparent_type(&handle.ty) != Type::Error {
+            self.reject_subset(
+                RejectionSite::AwaitSynchronousMethod,
+                format!(
+                    "method `{}` is synchronous and cannot be awaited",
+                    property.sym
+                ),
+                self.pos(property.span),
+            );
+        }
+        self.err_expr(pos)
     }
 
     /// `x.g` where the apparent type of `x` is an interface: a read

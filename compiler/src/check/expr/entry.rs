@@ -911,6 +911,10 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 };
+                if let Type::Interface(interface) = self.apparent_type(&receiver.ty) {
+                    return self
+                        .await_interface_method(receiver, &interface, method, call, fx, pos);
+                }
                 let name = method.sym.to_string();
                 let method_pos = self.pos(method.span);
                 let Type::Class(class) = self.apparent_type(&receiver.ty.clone()) else {

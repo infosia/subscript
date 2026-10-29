@@ -341,6 +341,8 @@ pub(crate) enum RejectionSite {
     InterfaceValueType,
     InterfaceValueUse,
     InterfaceMemberMissing,
+    InterfaceMemberType,
+    InterfaceConstraintParameter,
     InterfaceConstraintUndeclared,
     ClassImplementsClause,
     SourceNamespaceDeclaration,

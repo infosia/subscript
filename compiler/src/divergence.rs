@@ -222,6 +222,8 @@ pub enum Divergence {
     InterfaceValueType,
     /// A type argument for an interface constraint declares the interface.
     InterfaceConstraintUndeclared,
+    /// A class member that implements an interface member has its exact types.
+    InterfaceMemberType,
     /// An `implements` clause names an interface.
     ClassImplementsClause,
     /// No lowering is decided for a local declaration.
@@ -1155,6 +1157,7 @@ impl Divergence {
         Divergence::InterfaceMemberForm,
         Divergence::InterfaceValueType,
         Divergence::InterfaceConstraintUndeclared,
+        Divergence::InterfaceMemberType,
         Divergence::ClassImplementsClause,
         Divergence::LocalInterfaceDeclaration,
         Divergence::LocalAliasDeclaration,

@@ -817,6 +817,9 @@ InterfaceResultAnnotationMissing	interface-result-annotation-missing	S100	interf
 InterfaceValueType	interface-value-type	S100	interface `I` is a constraint only; write a type parameter `T extends I`
 InterfaceValueUse	interface-value-use	S100	interface `I` is a type; it has no value
 InterfaceMemberMissing	interface-member-missing	S100	class `C` does not implement `f` of interface `I`
+InterfaceMemberType	interface-member-other-type	S100	class `C` implements `f` of interface `I` with type `(string) => i32`; the interface requires `(i32) => i32`
+InterfaceMemberType	interface-member-type	S100	class `C` implements `f` of interface `I` with type `(i64) => i32`; the interface requires `(i32) => i32`
+InterfaceConstraintParameter	interface-constraint-parameter	S100	`U` does not declare `implements I`
 InterfaceConstraintUndeclared	interface-constraint-undeclared	S100	`C` does not declare `implements I`
 ClassImplementsClause	class-implements-clause	S100	`implements` names an interface; `A` is not an interface
 DescriptorConstructor	descriptor-required-without-definite	S100	descriptor classes cannot declare constructors

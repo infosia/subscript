@@ -2098,6 +2098,28 @@ class C implements I { g(): i32 { return 1; } }
 export function main(): void {  }
 END FILE
 END PROGRAM
+PROGRAM	interface-member-other-type	TS2416		0
+FILE	E	target/s154/forms/interface-member-other-type/main.ts
+interface I { f(x: i32): i32; }
+class C implements I { f(x: string): i32 { return 1; } }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	interface-member-type			0
+FILE	E	target/s154/forms/interface-member-type/main.ts
+interface I { f(x: i32): i32; }
+class C implements I { f(x: i64): i32 { return 1; } }
+export function main(): void {  }
+END FILE
+END PROGRAM
+PROGRAM	interface-constraint-parameter	TS2345		0
+FILE	E	target/s154/forms/interface-constraint-parameter/main.ts
+interface I { f(): i32; }
+function g<T extends I>(x: T): i32 { return x.f(); }
+function h<U>(x: U): i32 { return g(x); }
+export function main(): void {  }
+END FILE
+END PROGRAM
 PROGRAM	interface-constraint-undeclared			0
 FILE	E	target/s154/forms/interface-constraint-undeclared/main.ts
 interface I { f(): i32; }

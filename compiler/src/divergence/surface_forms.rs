@@ -23,6 +23,13 @@ pub(super) const INTERFACEVALUETYPE: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 6,
 };
 
+pub(super) const INTERFACEMEMBERTYPE: DivergenceEntry = DivergenceEntry {
+    ts: "interface I { a(x: i32): i32; }\nclass C implements I { a(x: i64): i32 { return 1; } }",
+    subscript: "interface I { a(x: i32): i32; }\nclass C implements I { a(x: i32): i32 { return 1; } }",
+    why: "Each instance calls the class member directly with the interface types, so the class member has the exact types; sized types do not convert.",
+    collision: "C24", // row 6,
+};
+
 pub(super) const INTERFACECONSTRAINTUNDECLARED: DivergenceEntry = DivergenceEntry {
     ts: "interface I { f(): i32; }\nclass C { f(): i32 { return 1; } }\nfunction g<T extends I>(x: T): i32 { return x.f(); }\nfunction h(): i32 { return g(new C()); }",
     subscript: "interface I { f(): i32; }\nclass C implements I { f(): i32 { return 1; } }\nfunction g<T extends I>(x: T): i32 { return x.f(); }\nfunction h(): i32 { return g(new C()); }",

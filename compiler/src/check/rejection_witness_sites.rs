@@ -310,6 +310,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::InterfaceValueType,
     RejectionSite::InterfaceValueUse,
     RejectionSite::InterfaceMemberMissing,
+    RejectionSite::InterfaceMemberType,
+    RejectionSite::InterfaceConstraintParameter,
     RejectionSite::InterfaceConstraintUndeclared,
     RejectionSite::ClassImplementsClause,
     RejectionSite::SourceNamespaceDeclaration,

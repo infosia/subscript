@@ -75,7 +75,14 @@ impl<'p> Checker<'p> {
             satisfied = false;
             let position = positions.get(index).cloned().unwrap_or_else(|| pos.clone());
             if let Type::Interface(interface) = &constraint {
-                self.reject_undeclared_interface(argument, interface, position);
+                // §208.1 rule 4: `tsc` also rejects a type parameter
+                // argument that has no satisfying constraint.
+                let site = if self.is_type_parameter(argument) {
+                    RejectionSite::InterfaceConstraintParameter
+                } else {
+                    RejectionSite::InterfaceConstraintUndeclared
+                };
+                self.reject_undeclared_interface(site, argument, interface, position);
                 continue;
             }
             let argument_name = self.type_name(argument);

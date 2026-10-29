@@ -43,3 +43,12 @@ contains a `for…of`. The LIR fact model in
 cursors by source position and expected one cursor where the LIR has
 two; it now counts each HIR occurrence. The generic tsc matrix adds
 629 cells for the interface constraint kind (40,174 cells in 30.46 s).
+
+Phase Review fix (§208.3): `gate full 48aae770 dirty:20 debug
+3012/0/5 release 3009/0/5 skips 2/0 clippy 5/18/11 goldens-moved 1
+exit 0`. The moved golden is `codegen/tests/lir-goldens/corpus.txt`:
+it grows by the `a395` section only. At `48aae770`, `a395` gave "class
+`Double` does not implement `run` of interface `Job`" and S018 "type
+`Job` has no async method `run`"; `tsc` accepts it, and `node` prints
+the golden. `tsc` accepts a member of type `(x: i64) => void` for
+`(x: i32) => void` and gives TS2416 for `string` against `i32`.
