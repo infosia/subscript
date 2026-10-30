@@ -51,7 +51,7 @@ leaves a constructor and a method out, and gives no reason.
    `const a: Box<Box<f64>> = new Box(new Box(1))` checks the inner
    `new Box(1)` with the context `Box<f64>`, as `tsc` does. *(Added
    2026-10-27 after the Phase Review, MAJOR 1.)* The contextual type of a method result
-   gives no candidate (§149.1 rule 7 keeps this out).
+   gives a candidate by §212. *(Amended 2026-10-30.)*
 4. A contextual type is the type that the checker gives the expression
    as its context: the annotation of a local, the type of a field with
    an initializer, the parameter type of an argument, the result type
