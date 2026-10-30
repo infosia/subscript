@@ -44,24 +44,28 @@ results, on the toolchain that §11c selects.
    layout and its word count, and `subscript_rt_shadow_push` keeps its
    signature.
 
-### 210.2 The candidates
+### 210.2 The form
 
-The round measures these candidates first, and it reverts each one.
-`volatile` on the frame is candidate A. It is the selected form if it
-meets §210.4 rule 3. A narrower emission form replaces A only if the
-reduction shows that the form closes the trigger of rule 2.
+The tracking note holds the reduced trigger and the measured cost of
+two forms that fail §210.4 rule 3: a `volatile` frame, and
+`/d2SSAOptimizer-`. Neither form lands.
 
-- A: the emitted frame `struct` is `volatile` on MSVC.
-- B: `/d2SSAOptimizer-` in `add_c11_optimized_flags`. This flag is
-  not documented. B is measured for comparison, and rule 1 of §210.1
-  forbids it as the only fix.
-- C: a narrower emission form, if the reduction finds one.
+1. **A clear of a shadow root is a store through a `volatile` lvalue**
+   on MSVC. A read of the slot and a store of a value do not change.
+2. **Every clear uses this form.** A clear is a store of null to a
+   frame slot, whatever its spelling: `roots.vN = 0`, a member of the
+   frame reached through a pointer, or `memset` over slots. The emitter
+   has one function for this store, so that a new clear site cannot
+   omit the form.
+3. **The form closes the trigger of the tracking note.** If a clear
+   site, or a storage class that shows the trigger, cannot use the form,
+   the landing stops and reports.
 
 ### 210.3 Corpus
 
 No new entry. `a383-exhaustive-enum-switch` is Red at the pin on MSVC.
 Its golden does not move. A unit test reads the emitted text for the
-frame and the MSVC condition. Any moved corpus golden is a stop.
+clear and the MSVC condition. Any moved corpus golden is a stop.
 
 ### 210.4 Exit criteria
 
@@ -74,7 +78,7 @@ frame and the MSVC condition. Any moved corpus golden is a stop.
 3. Cost: the ship column of the cross-language benchmark on MSVC, at
    the pin and after, for each workload. If the median of a workload
    is more than 5% slower, the landing stops and reports the numbers.
-   The tracking note records each pair for A, B, and any C.
+   The tracking note records each pair.
 4. `tools/gate.sh full` is green.
 5. The Phase Review has no open CRITICAL or MAJOR, and
    `tools/hygiene.sh` is clean.

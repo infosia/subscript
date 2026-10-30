@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. Candidates A and B exceed the cost limit of §210.4 rule 3.
+Status: open. The `volatile` clear of §210.2 is next. Candidates A and B exceed the cost limit.
 
 ## Measurement at the pin `c7bb7e55`
 
