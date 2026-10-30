@@ -77,15 +77,13 @@ Its golden does not move. A unit test reads the emitted text for the
 2. The standalone reproducer in the tracking note fails at `/O2` with
    the emitted function of the pin. It prints `9` with the emitted
    function of the landing.
-3. Cost, in two parts. The ten cross-language workloads emit no
-   `switch`. For each one, the emitted C of the pin and of the landing
-   differs only in the macro definition, so the form has no cost there.
-   A new workload dispatches through an enum `switch` of eight cases, in
-   a loop, in a method with a shadow frame. The pin binary and the
-   landing binary alternate, 3 warm-up runs and 11 runs of each, in one
-   session, on the ship tier with `cl`. If the median is more than 5%
-   slower, the landing stops and reports. Both numbers go in the
-   tracking note.
+3. Cost. The ten cross-language workloads emit no `switch`. For each
+   one, the emitted C of the pin and of the landing differs only in the
+   macro definition. On a dispatch-only workload, the form costs 0.19 ns
+   for each `switch` on MSVC (+45.127%, tracking note). On 2026-10-30
+   the owner accepted this cost, because the form is simple and it does
+   not depend on the reduced shapes. Other compilers pay nothing. The
+   5% limit of the first text is removed.
 4. `tools/gate.sh full` is green.
 5. The Phase Review has no open CRITICAL or MAJOR, and
    `tools/hygiene.sh` is clean.

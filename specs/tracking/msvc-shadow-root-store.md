@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The `volatile` scrutinee on every `switch` exceeds the 5% limit on the dispatch workload. No production change landed.
+Status: open. The owner accepted the cost of the `volatile` scrutinee on every `switch`. Implementation is next.
 
 ## Measurement at the pin `c7bb7e55`
 
