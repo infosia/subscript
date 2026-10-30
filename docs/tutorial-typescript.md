@@ -200,7 +200,9 @@ call stays a direct call. A call can omit the type arguments when the
 arguments give them: `p.first([7, 8])` is `p.first<i32>([7, 8])`. A
 generic constructor infers its type arguments in the same way, from
 its arguments or from the type that the context expects
-(`const b: Box<i64> = new Box(7)`).
+(`const b: Box<i64> = new Box(7)`). A generic function or method call
+also takes a type argument from the type that the context expects:
+`const b: Box<i64> = emptyBox()` is `emptyBox<i64>()`.
 
 ## Interfaces are constraints
 

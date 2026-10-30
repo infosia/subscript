@@ -107,6 +107,8 @@ impl<'p> Checker<'p> {
                 let mut elem_ty = first.ty.clone();
                 let mut out = vec![first];
                 for e in &elems[1..] {
+                    // §212 rule 1a: the type of the first element is a hint.
+                    self.mark_operand_calls(&e.expr);
                     let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
                     let checked = self.check_expr(&e.expr, context, fx);
                     if self.involves_type_parameter(&elem_ty)
@@ -305,6 +307,10 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let is_spread = slot.spread.is_some();
+            if context_elem.is_none() {
+                // §212 rule 1a: the type of an earlier element is a hint.
+                self.mark_operand_calls(&slot.expr);
+            }
             let expr = self.check_expr(
                 &slot.expr,
                 if is_spread { None } else { inferred.as_ref() },

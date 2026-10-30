@@ -1,6 +1,6 @@
 # A generic call infers from its contextual result type — `compiler.md` §212
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 ## Measurement at the pin `b1ec9a9b`
 
@@ -44,3 +44,20 @@ was 12.57 over 15 minutes. `git diff` shows no change in `codegen/` or
 `runtime/`. With the load average at 1.6, the perf gate alone passed:
 `cargo test --release -p subscript-benchmarks --test perf_gate`, 2
 passed, exit 0. The owner asked for the perf gate alone (2026-10-31).
+
+## Phase Review
+
+`compiler.md` §212.3 records the findings. A context for the right
+operand of `??` in a generic body changed `a ?? 1` from `T | i32` to
+`T | number`, and a form limited to call values rejected
+`a ?? id(b ? 1 : 2)`, which the pin accepts. The change is reverted, and
+§212.4 item 6a records the form.
+
+`tsc` 5.9.2, measured: `nb(null)` with `nb<T>(x: Buf<T> | null)` and
+`fa(null)` with `fa<T>(x: T[] | null)` give no error. `fn(null)` with
+`fn<T>(x: T | null)` and `fb(null)` with `fb<T>(x: T)` give TS2322.
+`fa(null)` stays S011 here: an array in a union is outside the subset,
+with or without §212.
+
+`gate full ea1514c1 dirty:9 debug 3042/0/5 release 3039/0/5 skips 2/0
+clippy 5/18/11 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0.

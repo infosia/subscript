@@ -1286,8 +1286,8 @@ pub(crate) struct Checker<'p> {
     active_call: Option<swc_common::Span>,
     /// The contextual type of the active call (§212 rule 1).
     active_call_context: Option<Type>,
-    /// Each call that an operator operand or an index holds. Such a call
-    /// has no contextual type (§212 rule 1).
+    /// Each call that `mark_operand_calls` marks. Such a call has no
+    /// contextual type (§212 rule 1a).
     operand_calls: HashSet<swc_common::Span>,
     function_value_decision: bool,
     initializer_root: Option<swc_common::Span>,

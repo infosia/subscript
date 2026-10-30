@@ -1,7 +1,7 @@
 //! A generic call infers from its contextual result type (`compiler.md` §212).
 //!
 //! Cost: each test runs the checker on one short program, with no code
-//! generation and no external process. The whole file took 0.03 s in a
+//! generation and no external process. The whole file took 0.07 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
@@ -22,6 +22,9 @@ function zero<T>(): T { throw new Error("zero"); }
 function fromNullable<T>(x: T | null): T[] { return []; }
 function fromPlain<T>(x: T): T[] { return []; }
 function lead<T>(x: T | null, b: Buf<T>): T[] { return []; }
+function nullBuf<T>(x: Buf<T> | null): Buf<T> { return new Buf<T>(); }
+function trail<T>(b: Buf<T>, x: T | null): Buf<T> { return b; }
+function run(f: () => void): void { f(); }
 function same<T>(): Two<T, T> { throw new Error("same"); }
 class Factory { make<T>(): Buf<T> { return new Buf<T>(); } }
 "#;
@@ -105,6 +108,32 @@ fn a_null_argument_keeps_the_no_candidate_diagnostic() {
     accept("const p: P | null = new P(); const x: P[] = fromNullable(p);");
 }
 
+/// Rule 3: a `null` argument for another shape gives no candidate, so the
+/// context decides the parameter.
+#[test]
+fn a_null_argument_of_another_shape_keeps_the_context() {
+    accept("const b: Buf<P> = nullBuf(null);");
+    // The control: the same call with no context.
+    reject(
+        "const b = nullBuf(null);",
+        RuleCode::S100,
+        &no_candidate("T", "nullBuf"),
+    );
+}
+
+/// Rule 3: an argument that the checker reads before the `null` keeps its
+/// context.
+#[test]
+fn an_argument_before_the_null_keeps_its_context() {
+    accept("const b: Buf<P> = trail(empty(), null);");
+    // The control: the same callee with no context.
+    reject(
+        "const b = trail(empty(), null);",
+        RuleCode::S100,
+        &no_candidate("T", "empty"),
+    );
+}
+
 /// Rule 5: a call with no context keeps the diagnostic.
 #[test]
 fn a_call_with_no_context_keeps_the_diagnostic() {
@@ -182,6 +211,100 @@ fn only_a_contextual_position_gives_a_candidate() {
     );
     // The control: the same callee in a contextual position.
     accept("const x: i32 = zero();");
+}
+
+/// Rule 1a: each hint position gives no candidate, also through a
+/// conditional branch. A reject here fails if its mark is removed.
+#[test]
+fn a_literal_hint_gives_no_candidate() {
+    let no_zero = no_candidate("T", "zero");
+    reject("const a: i32 = ~zero();", RuleCode::S100, &no_zero);
+    reject(
+        "const a: i32 = 1; switch (a) { case zero(): break; default: break; }",
+        RuleCode::S100,
+        &no_zero,
+    );
+    reject(
+        "const c: boolean = true; const x: i32 = -(c ? zero() : 1);",
+        RuleCode::S100,
+        &no_zero,
+    );
+    // The control: the same conditional in a contextual position.
+    accept("const c: boolean = true; const x: i32 = c ? zero() : 1;");
+}
+
+/// Rule 1a: an earlier element of an array literal is a hint.
+#[test]
+fn an_earlier_array_element_gives_no_candidate() {
+    let no_zero = no_candidate("T", "zero");
+    reject("const xs = [new P(), zero()];", RuleCode::S100, &no_zero);
+    reject("const xs = [1, zero()];", RuleCode::S100, &no_zero);
+    reject(
+        "const ys: i32[] = [1]; const xs = [...ys, zero()];",
+        RuleCode::S100,
+        &no_zero,
+    );
+    reject("const xs = [[1], [zero()]];", RuleCode::S100, &no_zero);
+    // The control: the context of the literal gives the candidate.
+    accept("const xs: P[] = [new P(), zero()];");
+    accept("const ys: i32[] = [1]; const xs: i32[] = [...ys, zero()];");
+    // The hint still types a literal.
+    accept("const a: i64 = 1; const xs = [a, 2];");
+}
+
+/// Rule 1a: the right operand of `??`, a conditional branch, and the
+/// operand of `satisfies` keep the context.
+#[test]
+fn a_contextual_operand_keeps_the_context() {
+    accept("const a: Buf<P> | null = null; const b = a ?? empty();");
+    accept("const b: Buf<P> = empty() satisfies Buf<P>;");
+    accept("const c: boolean = true; const b: Buf<P> = c ? empty() : new Buf<P>();");
+}
+
+/// §212.3 item 6a: the right operand of `??` has no context in a generic
+/// body, so a call there has no candidate.
+#[test]
+fn a_nullish_right_operand_in_a_generic_body_has_no_context() {
+    let source = format!(
+        "{PRELUDE}
+function f<U>(a: Buf<U> | null): Buf<U> {{ return a ?? empty(); }}
+export function main(): void {{}}
+"
+    );
+    let errors =
+        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+    assert_eq!(errors[0].message, no_candidate("T", "empty"));
+    // The control: a literal default decides the same position.
+    let source = format!(
+        "{PRELUDE}
+function g<U>(a: U | null): void {{ const r = a ?? id(1); }}
+export function main(): void {{}}
+"
+    );
+    check_program(&[SourceFile::new("test.ts", source.as_str())])
+        .unwrap_or_else(|errors| panic!("{errors:?}"));
+}
+
+/// Rule 1: `void` gives no candidate, so the call keeps the text of its
+/// literal default.
+#[test]
+fn void_gives_no_candidate() {
+    let body = "type mismatch: the lambda body expects `void`, got `i32`";
+    reject("run(() => id(1));", RuleCode::S100, body);
+    reject(
+        "const xs: i32[] = [1]; xs.forEach((x: i32) => id(x));",
+        RuleCode::S100,
+        body,
+    );
+    reject(
+        "const f: () => void = () => zero();",
+        RuleCode::S100,
+        &no_candidate("T", "zero"),
+    );
+    // The control: a call with no result takes the same context.
+    accept("run(() => { id(1); });");
 }
 
 /// Rule 1: the context of a call does not reach a call that it holds.

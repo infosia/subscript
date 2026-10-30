@@ -60,12 +60,10 @@ check`; `tsc` 5.9.2 accepts every row:
 6. Explicit type arguments override inference. Each argument is
    evaluated once, in order; inference is a check-time step with no
    runtime effect.
-7. Out of scope, still rejected as before: inference for a generic
-   method, a generic constructor (`new G(x)`), a callback's parameter
-   types from context, and the return type from context. *(Amended
-   2026-10-27 by §197: a generic method and a generic constructor
-   infer their type arguments.)* *(Amended 2026-10-30 by §212: the contextual
-   type gives a candidate through the result type.)*
+7. Out of scope, still rejected as before: a callback's parameter
+   types from context. §197 gives inference for a generic method and a
+   generic constructor (`new G(x)`). §212 gives a candidate through the
+   result type. *(Amended 2026-10-27 and 2026-10-31.)*
 
 ### 149.2 Acceptance
 

@@ -873,7 +873,7 @@ pub(super) const GENERICINFERENCEMISSING: DivergenceEntry = DivergenceEntry {
                 subscript: "class Item {}
 function empty<T>(): T | null { return null; }
 empty<Item>();",
-                why: "Inference needs an argument candidate for each type parameter. Supply explicit type arguments when no argument gives a candidate.",
+                why: "A type parameter with no candidate from the arguments or the contextual result type needs explicit type arguments.",
                 collision: "compiler.md §149",
             };
 

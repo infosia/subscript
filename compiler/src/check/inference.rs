@@ -170,8 +170,8 @@ impl<'p> Checker<'p> {
     }
 
     /// Records the contextual type of the call that starts, and returns
-    /// the context of the enclosing call. A call that an operator operand
-    /// or an index holds has no contextual type (§212 rule 1).
+    /// the context of the enclosing call. A call that `mark_operand_calls`
+    /// marks has no contextual type (§212 rule 1a).
     pub(super) fn enter_call_context(
         &mut self,
         call: &ast::CallExpr,
@@ -183,8 +183,9 @@ impl<'p> Checker<'p> {
     }
 
     /// Marks each call whose value `expr` gives. The context that an
-    /// operator operand or an index receives types a literal. `tsc` gives
-    /// such an operand no contextual type, so it decides no type argument.
+    /// operator operand, an index, or a later element of an array literal
+    /// receives types a literal. `tsc` gives such an expression no
+    /// contextual type, so it decides no type argument (§212 rule 1a).
     pub(super) fn mark_operand_calls(&mut self, expr: &ast::Expr) {
         match unparen_expr(expr) {
             ast::Expr::Call(call) => {
@@ -194,6 +195,11 @@ impl<'p> Checker<'p> {
                 self.mark_operand_calls(&conditional.cons);
                 self.mark_operand_calls(&conditional.alt);
             }
+            ast::Expr::Array(array) => {
+                for element in array.elems.iter().flatten() {
+                    self.mark_operand_calls(&element.expr);
+                }
+            }
             _ => {}
         }
     }
@@ -201,7 +207,8 @@ impl<'p> Checker<'p> {
     /// Matches the declared result type against the contextual type of
     /// `call` (§212 rule 1). The match goes through `C | null` in the
     /// contextual type. A shape that does not match gives no candidate.
-    /// The first match of a type parameter is its candidate.
+    /// The first match of a type parameter is its candidate. `void` gives
+    /// no candidate.
     fn contextual_result_candidates(
         &mut self,
         target: &InferenceTarget<'_>,
@@ -223,7 +230,12 @@ impl<'p> Checker<'p> {
         self.cur_file = file;
         candidates
             .into_iter()
-            .map(|values| values.into_iter().next())
+            .map(|values| {
+                values
+                    .into_iter()
+                    .next()
+                    .filter(|value| self.apparent_type(value) != Type::Void)
+            })
             .collect()
     }
 
@@ -392,15 +404,13 @@ impl<'p> Checker<'p> {
                 return None;
             }
             if let Some(Some(annotation)) = annotations.get(index) {
-                // §212 rule 3: a `null` argument keeps the context of the
-                // result from deciding a type parameter that it mentions.
+                // §212 rule 3: `null` is the candidate of a parameter that
+                // is the annotation, or a direct member of its union.
                 if target.result.is_some() && value.ty == Type::Null {
-                    for (parameter, candidate) in contextual.iter_mut().enumerate() {
-                        let mut others = vec![true; parameters.len()];
-                        others[parameter] = false;
-                        if type_mentions_missing(annotation, parameters, &others) {
+                    for (index, candidate) in contextual.iter_mut().enumerate() {
+                        if accepts_null_as_parameter(annotation, &parameters[index]) {
                             *candidate = None;
-                            has_context[parameter] = false;
+                            has_context[index] = false;
                         }
                     }
                 }
@@ -664,6 +674,27 @@ impl<'p> Checker<'p> {
         for component in components {
             self.inferred_parameter_edges(component, true, edges);
         }
+    }
+}
+
+/// Whether `ty` is the type parameter `parameter`, or a union with that
+/// parameter as a direct member.
+fn accepts_null_as_parameter(ty: &ast::TsType, parameter: &str) -> bool {
+    match ty {
+        ast::TsType::TsTypeRef(reference) => {
+            reference.type_params.is_none()
+                && matches!(&reference.type_name, ast::TsEntityName::Ident(name) if name.sym.as_ref() == parameter)
+        }
+        ast::TsType::TsParenthesizedType(parenthesized) => {
+            accepts_null_as_parameter(&parenthesized.type_ann, parameter)
+        }
+        ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(
+            union,
+        )) => union
+            .types
+            .iter()
+            .any(|ty| accepts_null_as_parameter(ty, parameter)),
+        _ => false,
     }
 }
 
