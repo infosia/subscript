@@ -252,3 +252,4 @@ Every section, with its status:
 | §208 | An interface is a constraint | active | [`s208-an-interface-is-a-constraint.md`](compiler/s208-an-interface-is-a-constraint.md) |
 | §209 | An assignment to a method names the method | active | [`s209-an-assignment-to-a-method-names-the-method.md`](compiler/s209-an-assignment-to-a-method-names-the-method.md) |
 | §210 | A store to a shadow root reaches the MSVC output | active | [`s210-a-store-to-a-shadow-root-reaches-msvc-output.md`](compiler/s210-a-store-to-a-shadow-root-reaches-msvc-output.md) |
+| §211 | A `switch` with no case test is a branch | active | [`s211-a-switch-with-no-case-test-is-a-branch.md`](compiler/s211-a-switch-with-no-case-test-is-a-branch.md) |
