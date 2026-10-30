@@ -45,8 +45,10 @@ results, on the toolchain that §11c selects.
 ### 210.2 The form
 
 The tracking note holds the reduced trigger and the measured cost of
-three forms that fail §210.4 rule 3: a `volatile` frame,
-`/d2SSAOptimizer-`, and a `volatile` clear. None of them lands.
+three other forms: a `volatile` frame, `/d2SSAOptimizer-`, and a
+`volatile` clear. That measurement cannot separate a cost from the
+noise of the benchmark. The form below is the smallest change, and it
+does not touch code that has no `switch`.
 
 1. **The value of an emitted `switch` is a `volatile` local on MSVC.**
    The local `_disc` is `volatile`. The clears do not change.
@@ -75,10 +77,15 @@ Its golden does not move. A unit test reads the emitted text for the
 2. The standalone reproducer in the tracking note fails at `/O2` with
    the emitted function of the pin. It prints `9` with the emitted
    function of the landing.
-3. Cost: the ship column of the cross-language benchmark on MSVC, at
-   the pin and after, for each workload. If the median of a workload
-   is more than 5% slower, the landing stops and reports the numbers.
-   The tracking note records each pair.
+3. Cost, in two parts. The ten cross-language workloads emit no
+   `switch`. For each one, the emitted C of the pin and of the landing
+   differs only in the macro definition, so the form has no cost there.
+   A new workload dispatches through an enum `switch` of eight cases, in
+   a loop, in a method with a shadow frame. The pin binary and the
+   landing binary alternate, 3 warm-up runs and 11 runs of each, in one
+   session, on the ship tier with `cl`. If the median is more than 5%
+   slower, the landing stops and reports. Both numbers go in the
+   tracking note.
 4. `tools/gate.sh full` is green.
 5. The Phase Review has no open CRITICAL or MAJOR, and
    `tools/hygiene.sh` is clean.

@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The `volatile` scrutinee of §210.2 is next.
+Status: open. The cost method of §210.4 rule 3 is corrected. The `volatile` scrutinee is measured next.
 
 ## Measurement at the pin `c7bb7e55`
 
@@ -126,9 +126,9 @@ change landed.
 | callbacks | 57.9118 | 67.9834 | +17.391% |
 | collect | 59.6419 | 80.1281 | +34.349% |
 
-Three workloads exceed the 5% limit of §210.4 rule 3. `&roots.env_v0`
+Three workloads exceed the 5% limit by this table. See "Correction" below. `&roots.env_v0`
 through a typed pointer printed `9` with this form, so the form was
-correct and too slow.
+correct.
 
 ## A `volatile` scrutinee, correctness only
 
@@ -145,3 +145,24 @@ do not change. `cl /O2`, with the stubs in a second file:
 
 The six-case shape does not show the defect at `/O2`. No cost is
 measured yet.
+
+## Correction: the cost tables above do not separate cost from noise
+
+The tables compare one pin run with a later run. No run alternates the
+two binaries. The `volatile` scrutinee round showed the error:
+
+- The ten workloads emit 0 `switch`. For them, the form changes only a
+  macro definition, so the expected change is zero.
+- The same round reported particles +12.244%, collect +10.536%,
+  mandelbrot +6.674%, fib-loop +6.650%, and queen +5.052%.
+- The C subject does not change in any round. Its median still moved:
+
+| Workload | A | B | `volatile` clear | `volatile` scrutinee |
+|---|---|---|---|---|
+| tree | +6.1% | +12.5% | +13.7% | +16.0% |
+| callbacks | +2.8% | +3.9% | +41.5% | +4.2% |
+| collect | +29.8% | +22.3% | +106.0% | +58.7% |
+
+The earlier statements that A, B, and the `volatile` clear exceed the
+limit are not established. The two binaries must alternate in one
+session, as the §194 cost measurement did.
