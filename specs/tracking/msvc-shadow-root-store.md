@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The `volatile` clear of §210.2 is next. Candidates A and B exceed the cost limit.
+Status: open. The `volatile` clear of §210.2 exceeds the cost limit. A `volatile` scrutinee is the next form.
 
 ## Measurement at the pin `c7bb7e55`
 
@@ -106,3 +106,42 @@ A: `sort` +17.62%, `particles` +27.85%. B: `sort` +10.23%, `particles`
 
 The barrier does not close the trigger. The `volatile` clear has no
 cost measurement yet.
+
+## Cost of the `volatile` clear
+
+The prototype routed 23 clear sites through one function, on MSVC only.
+Ship column, compiled with `cl`, median in ms, 11 samples. No production
+change landed.
+
+| Workload | Pin | Prototype | Change |
+|---|---|---|---|
+| fib-recursive | 3.5186 | 3.5400 | +0.608% |
+| fib-loop | 21.0964 | 21.1768 | +0.381% |
+| mandelbrot | 78.9971 | 77.2457 | -2.217% |
+| primes | 33.2701 | 33.5896 | +0.960% |
+| sort | 22.7659 | 22.7254 | -0.178% |
+| tree | 115.4227 | 118.0332 | +2.262% |
+| queen | 23.8509 | 23.3071 | -2.280% |
+| particles | 90.9711 | 100.2837 | +10.237% |
+| callbacks | 57.9118 | 67.9834 | +17.391% |
+| collect | 59.6419 | 80.1281 | +34.349% |
+
+Three workloads exceed the 5% limit of §210.4 rule 3. `&roots.env_v0`
+through a typed pointer printed `9` with this form, so the form was
+correct and too slow.
+
+## A `volatile` scrutinee, correctness only
+
+The form copies the `switch` value to a `volatile` local. The clears
+do not change. `cl /O2`, with the stubs in a second file:
+
+| Shape | Plain | `volatile` scrutinee |
+|---|---|---|
+| one case and `default` | `0xc0000005` | prints `9` |
+| three cases and `default` | `0xc0000005` | prints `9` |
+| a statement before each clear | `0xc0000005` | prints `9` |
+| six cases and `default` | prints `9` | prints `9` |
+| emitted `Tile.area` | `0xc0000005` | prints `9` |
+
+The six-case shape does not show the defect at `/O2`. No cost is
+measured yet.
