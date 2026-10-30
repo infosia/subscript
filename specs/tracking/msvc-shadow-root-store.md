@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The cost method of §210.4 rule 3 is corrected. The `volatile` scrutinee is measured next.
+Status: open. The `volatile` scrutinee on every `switch` exceeds the 5% limit on the dispatch workload. No production change landed.
 
 ## Measurement at the pin `c7bb7e55`
 
@@ -166,3 +166,22 @@ two binaries. The `volatile` scrutinee round showed the error:
 The earlier statements that A, B, and the `volatile` clear exceed the
 limit are not established. The two binaries must alternate in one
 session, as the §194 cost measurement did.
+
+## Cost of the `volatile` scrutinee, paired
+
+Part one: for each of the ten workloads, the emitted `program.c` of the
+pin and of the prototype differs only in the macro definition.
+
+Part two: a class method with a shadow frame dispatches through an enum
+`switch` of eight cases, 40,000,000 times. The checksum is the same in
+every run. Ship tier, `cl`, 3 warm-up runs, then the two binaries
+alternate for 11 runs of each. The time is the whole process.
+
+| Binary | Median | Q1 | Q3 | IQR |
+|---|---|---|---|---|
+| pin | 16.5191 ms | 16.2947 ms | 16.6246 ms | 0.3299 ms |
+| prototype | 23.9736 ms | 23.5766 ms | 25.1839 ms | 1.6073 ms |
+
+The change is +7.4545 ms, +45.127%, or 0.19 ns for each dispatch. Each
+IQR is smaller than the change. This workload does no other work, so it
+gives the largest relative cost that the form can have.
