@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: contract committed. Measurement and implementation are next.
+Status: open. Candidates A and B exceed the cost limit of §210.4 rule 3.
 
 ## Measurement at the pin `c7bb7e55`
 
@@ -27,7 +27,7 @@ Optimized assembly of `Tile.area`, standalone. `a0` arrives in `rdx`:
     mov  edx, DWORD PTR [rbx]
 
 In the failed function, every `switch` successor begins with
-`roots.v0 = 0;`. The trigger is not yet reduced.
+`roots.v0 = 0;`.
 
 The standalone reproducer is the emitted function of `Tile.area`, a
 `main` that calls it with a stack object, and the stubs of
@@ -40,3 +40,69 @@ With the frame `volatile`, in the reproducer only, the program prints
 
 No other compiler was run: this machine has no clang. No other MSVC
 version was run.
+
+## Reduced trigger
+
+The defect needs no struct and no `goto`. With `push` and `pop` in a
+second file, this function fails at `/O2`:
+
+    __declspec(noinline) int test(int* arg) {
+        int* slot = 0;
+        push(&slot);
+        slot = arg;
+        switch (*slot) {
+        case 1:  slot = 0; pop(); return 9;
+        default: slot = 0; pop(); return 0;
+        }
+    }
+
+| Change | Result |
+|---|---|
+| a struct member in place of the local | `0xc0000005` |
+| remove the initializer | `0xc0000005` |
+| `memset` in place of the clear | `0xc0000005` |
+| keep the clear in one successor only | prints `9` |
+| remove every clear | prints `9` |
+| remove the first address use | prints `9` |
+| remove the call after the clear | prints `9` |
+| `if` in place of `switch` | prints `9` |
+| no branch | prints `9` |
+| `slot` is `volatile` | prints `9` |
+
+`&roots.env_v0` through a typed pointer shows the defect too. With a
+`volatile` frame, that access still fails, because the cast removes the
+qualifier. Candidate A therefore does not cover that storage as written.
+
+## Cost of candidates A and B
+
+Ship column of the cross-language benchmark, compiled with `cl`, median
+in ms, 11 samples. A measurement copy of the runner used `cl`, because
+the runner selects clang for the ship subject.
+
+| Workload | Pin | A | B |
+|---|---|---|---|
+| fib-recursive | 3.5186 | 3.5230 | 3.5490 |
+| fib-loop | 21.0964 | 21.7468 | 22.0341 |
+| mandelbrot | 78.9971 | 76.9674 | 77.9725 |
+| primes | 33.2701 | 33.2566 | 34.1495 |
+| sort | 22.7659 | 26.7771 | 25.0954 |
+| tree | 115.4227 | 117.2487 | 114.8184 |
+| queen | 23.8509 | 24.0538 | 23.1838 |
+| particles | 90.9711 | 116.3063 | 118.4842 |
+| callbacks | 57.9118 | 59.7351 | 59.3565 |
+| collect | 59.6419 | 62.5629 | 56.9723 |
+
+A: `sort` +17.62%, `particles` +27.85%. B: `sort` +10.23%, `particles`
++30.25%. The limit is 5%. No production change landed.
+
+## Narrower forms, correctness only
+
+| Form | Reduced function | Emitted `Tile.area` |
+|---|---|---|
+| no change | `0xc0000005` | `0xc0000005` |
+| each clear is a store through `volatile`, reads unchanged | prints `9` | prints `9` |
+| `_ReadWriteBarrier()` before the `switch` | `0xc0000005` | prints `9` |
+| `_ReadWriteBarrier()` before each clear | `0xc0000005` | not run |
+
+The barrier does not close the trigger. The `volatile` clear has no
+cost measurement yet.
