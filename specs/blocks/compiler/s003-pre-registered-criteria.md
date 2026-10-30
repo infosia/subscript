@@ -153,8 +153,10 @@
   the published comparison, where 5% is the claim. A gate reports a
   regression. `perf-gate` read 1.35× and 19.64× on a quiet machine and
   1.38× and 20.17× on a loaded one, so run-to-run variation is about 3%.
-  Every limit here keeps at least 11% headroom. Noise does not trip a
-  limit, and the regression this gate exists to catch was 32%.
+  Every limit here keeps at least 11% headroom, and the regression this
+  gate exists to catch was 32%. Load above one busy process per CPU moves
+  a median past a limit, so a gate run compares the fastest runs
+  (§213). *(Amended 2026-10-31.)*
 
   **`perf-gate` serves two runs, and they are not the same run.**
   *(Added 2026-08-28, after the first round removed §9's void from
@@ -164,14 +166,15 @@
                  ±20% has its timing withheld and the run is void,
                  exit 2. Every number this project publishes comes
                  from this run.
-      --gate     a gate run. §3's thresholds decide the exit status,
-                 and spread is reported and never voids. The test
-                 target passes this flag.
+      --gate     a gate run. §3's thresholds decide the exit status
+                 on the minimum of the timed runs (§213), and spread
+                 is reported and never voids. The test target passes
+                 this flag.
 
   The two must not merge. A gate that voids on a loaded machine fails
   for a reason that is not a regression. A reporting run that prints an
   invalid timing breaks §9, which says the timing is withheld.
 
-  If the gate run proves unstable in practice, the answer is more
-  headroom or a serialized run. It is not a weaker check. Record the
-  measurement that shows the instability first.
+  If the gate run proves unstable in practice, record the measurement
+  that shows the instability first. The answer is not a weaker check.
+  §213 records one such measurement.

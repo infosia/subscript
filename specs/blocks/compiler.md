@@ -30,7 +30,7 @@ The stages of the current form and the sections that hold their rules:
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152 |
-| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100 |
+| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213 |
 
 Every section, with its status:
 
@@ -254,3 +254,4 @@ Every section, with its status:
 | §210 | A store to a shadow root reaches the MSVC output | active | [`s210-a-store-to-a-shadow-root-reaches-msvc-output.md`](compiler/s210-a-store-to-a-shadow-root-reaches-msvc-output.md) |
 | §211 | A `switch` with no case test is a branch | active | [`s211-a-switch-with-no-case-test-is-a-branch.md`](compiler/s211-a-switch-with-no-case-test-is-a-branch.md) |
 | §212 | A generic call infers from its contextual result type | active | [`s212-a-generic-call-infers-from-its-contextual-result-type.md`](compiler/s212-a-generic-call-infers-from-its-contextual-result-type.md) |
+| §213 | A gate run compares the fastest runs | active | [`s213-a-gate-run-compares-the-fastest-runs.md`](compiler/s213-a-gate-run-compares-the-fastest-runs.md) |

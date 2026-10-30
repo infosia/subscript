@@ -63,4 +63,5 @@ pins *how* the numbers are produced, before any number exists.
   meet them. It does not have to: every §3 limit keeps at least 11%
   headroom over its measurement, and run-to-run variation is about 3%.
   A gate reports a regression. A number this project publishes comes
-  from a §9 run, and a gate result is never published as one.
+  from a §9 run, and a gate result is never published as one. A gate
+  run compares the minimum, not the median (§213).
