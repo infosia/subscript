@@ -2,6 +2,109 @@
 
 use super::*;
 
+/// Verifies the finished text before the emitter returns its program.
+pub(super) fn verify_emitted_c(program: CProgram) -> Result<CProgram, String> {
+    verify_no_empty_aggregate(&program)?;
+    verify_no_label_before_declaration(&program)?;
+    verify_switch_volatile(&program)?;
+    Ok(program)
+}
+
+/// Checks every switch in the finished text against the MSVC local form.
+pub(super) fn verify_switch_volatile(program: &CProgram) -> Result<(), String> {
+    let mut found = Vec::new();
+    for (text, source) in [
+        ("the program", &program.source),
+        ("the host header", &program.host_header),
+        (
+            "the allocation metadata header",
+            &program.allocation_metadata_header,
+        ),
+        (
+            "the allocation metadata source",
+            &program.allocation_metadata_source,
+        ),
+    ] {
+        if let Err(lines) = switch_volatile_sites(source) {
+            found.extend(
+                lines
+                    .into_iter()
+                    .map(|line| format!("  {text} line {line}: switch")),
+            );
+        }
+    }
+    if found.is_empty() {
+        return Ok(());
+    }
+    Err(internal(format!(
+        "the emitted C has {} switch(es) without the MSVC volatile local form or its preceding macro definition (compiler.md §210):\n{}",
+        found.len(), found.join("\n")
+    )))
+}
+
+// Export names can contain '$' and UTF-8 bytes in the emitted C.
+fn is_switch_identifier_byte(byte: Option<u8>) -> bool {
+    is_identifier_byte(byte) || matches!(byte, Some(b'$' | 0x80..=0xff))
+}
+
+fn switch_volatile_sites(source: &str) -> Result<usize, Vec<usize>> {
+    let scan = without_comments_and_literals(source);
+    let bytes = scan.as_bytes();
+    let definition = scan
+        .split_inclusive('\n')
+        .scan(0, |offset, line| {
+            let start = *offset;
+            *offset += line.len();
+            Some((start, line))
+        })
+        .find_map(|(start, line)| {
+            line.split_whitespace()
+                .eq(["#define", "SUBSCRIPT_SWITCH_VOLATILE", "volatile"])
+                .then_some(start)
+        });
+    let mut count = 0;
+    let mut found = Vec::new();
+    for (start, _) in scan.match_indices("switch") {
+        let after = start + "switch".len();
+        if is_switch_identifier_byte(start.checked_sub(1).map(|index| bytes[index]))
+            || is_switch_identifier_byte(bytes.get(after).copied())
+        {
+            continue;
+        }
+        count += 1;
+        let form = scan[after..]
+            .trim_start()
+            .strip_prefix('(')
+            .and_then(|tail| tail.trim_start().strip_prefix("_disc"))
+            .and_then(|tail| tail.trim_start().strip_prefix(')'))
+            .is_some_and(|tail| tail.trim_start().starts_with('{'));
+        let prefix = scan[..start].trim_end();
+        let declaration = prefix.strip_suffix(';').unwrap_or("");
+        let boundary = declaration
+            .rfind([';', '{', '}'])
+            .map_or(0, |index| index + 1);
+        let declaration_start =
+            boundary + declaration[boundary..].len() - declaration[boundary..].trim_start().len();
+        let declaration = declaration[boundary..].trim();
+        let local = declaration
+            .strip_prefix("SUBSCRIPT_SWITCH_VOLATILE ")
+            .and_then(|rest| rest.split_once('='))
+            .is_some_and(|(name, value)| {
+                let words = name.split_whitespace().collect::<Vec<_>>();
+                words.len() >= 2 && words.last() == Some(&"_disc") && !value.trim().is_empty()
+            });
+        if !form || !local || definition.is_none_or(|index| index >= declaration_start) {
+            let line = scan[..start].bytes().filter(|byte| *byte == b'\n').count() + 1;
+            found.push(line);
+        }
+    }
+    if found.is_empty() {
+        Ok(count)
+    } else {
+        Err(found)
+    }
+}
+
 /// Reports every emitted type with no member, in one message
 /// (`specs/blocks/compiler.md` §11d).
 ///
@@ -498,5 +601,108 @@ mod label_statement_tests {
             "{error}"
         );
         assert!(error.contains("C11 6.8.1"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod switch_volatile_tests {
+    use super::*;
+    const MACRO: &str = "#define SUBSCRIPT_SWITCH_VOLATILE volatile\n";
+
+    #[test]
+    fn export_identifier_bytes_do_not_form_switch_keywords() {
+        // Cost: Scan small C strings; no compiler or corpus walk.
+        for name in [
+            "$switch",
+            "a$switch",
+            "éswitch",
+            "switché",
+            "éswitché",
+            "switch$",
+        ] {
+            let source = format!("void subscript_export_{name}(void) {{}}\n");
+            assert_eq!(switch_volatile_sites(&source), Ok(0), "{name}");
+        }
+    }
+
+    #[test]
+    fn finished_text_verification_reports_every_site_in_each_output() {
+        // Cost: Verify small CProgram texts; no compiler or corpus walk.
+        let clean = CProgram {
+            source: format!("{MACRO}void f() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 1; switch(_disc) {{}} }}\n"),
+            host_header: String::new(),
+            positions: PositionTable::new(),
+            allocation_metadata_header: String::new(),
+            allocation_metadata_source: String::new(),
+            foreign_symbols: Vec::new(),
+        };
+        verify_emitted_c(clean.clone()).expect("the complete form passes final verification");
+        let bad = "void f() { switch(1) {} }\nvoid g() { switch (2) {} }\n";
+        let mut all_bad = clean.clone();
+        for text in [
+            "the program",
+            "the host header",
+            "the allocation metadata header",
+            "the allocation metadata source",
+        ] {
+            let mut perturbed = clean.clone();
+            match text {
+                "the program" => {
+                    perturbed.source = bad.to_string();
+                    all_bad.source = bad.to_string();
+                }
+                "the host header" => {
+                    perturbed.host_header = bad.to_string();
+                    all_bad.host_header = bad.to_string();
+                }
+                "the allocation metadata header" => {
+                    perturbed.allocation_metadata_header = bad.to_string();
+                    all_bad.allocation_metadata_header = bad.to_string();
+                }
+                _ => {
+                    perturbed.allocation_metadata_source = bad.to_string();
+                    all_bad.allocation_metadata_source = bad.to_string();
+                }
+            }
+            let error =
+                verify_emitted_c(perturbed).expect_err("both switches lack the required form");
+            assert!(error.contains("2 switch(es)"), "{error}");
+            for line in [1, 2] {
+                assert!(
+                    error.contains(&format!("{text} line {line}: switch")),
+                    "{error}"
+                );
+            }
+        }
+        let error = verify_emitted_c(all_bad).expect_err("all outputs contain invalid switches");
+        assert!(error.contains("8 switch(es)"), "{error}");
+    }
+
+    #[test]
+    fn every_switch_spelling_requires_the_local_and_prior_definition() {
+        // Cost: Scan small C strings; no compiler or corpus walk.
+        for source in [
+            format!("{MACRO}void f() {{ switch(1) {{}} }}"),
+            format!("{MACRO}void f() {{ int _disc = 1; switch (_disc) {{}} }}"),
+            format!("void f() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 1; switch(_disc) {{}} }}\n{MACRO}"),
+            format!("{MACRO}void f() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 1; switch(2) {{}} }}"),
+            format!("{MACRO}void f() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 1; switch(_disc) {{}} switch(2) {{}} }}"),
+        ] {
+            assert!(switch_volatile_sites(&source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn valid_switches_are_counted_and_literals_do_not_count() {
+        // Cost: Scan one small C string; no compiler or corpus walk.
+        let source = format!("{MACRO}const char *s = \"switch(1) {{}}\"; /* switch(2) {{}} */\nvoid f() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 1; switch(_disc) {{}} }}\nvoid g() {{ SUBSCRIPT_SWITCH_VOLATILE int _disc = 2; switch (_disc) {{}} }}");
+        assert_eq!(
+            switch_volatile_sites(&source).expect("valid local forms"),
+            2
+        );
+        assert_eq!(
+            switch_volatile_sites("// switch(1) {}\nconst char *s = \"switch\";").unwrap(),
+            0
+        );
     }
 }

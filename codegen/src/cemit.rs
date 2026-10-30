@@ -53,8 +53,7 @@ use self::analysis::{
     removable_block_parameter_copies,
 };
 use self::verify::{
-    runtime_traps, script_call_requires_pending_check, verify_no_empty_aggregate,
-    verify_no_label_before_declaration, verify_trap_consumption,
+    runtime_traps, script_call_requires_pending_check, verify_emitted_c, verify_trap_consumption,
 };
 
 /// An emitted C translation unit and its source-position metadata.
@@ -100,9 +99,7 @@ pub(crate) fn emit_lir_c(module: &l::Module, require_main: bool) -> Result<CProg
         )
     })?;
     let program = Emitter::new(module)?.emit(require_main)?;
-    verify_no_empty_aggregate(&program)?;
-    verify_no_label_before_declaration(&program)?;
-    Ok(program)
+    verify_emitted_c(program)
 }
 
 /// One emitted type whose member list is empty.

@@ -53,7 +53,9 @@ does not touch code that has no `switch`.
 1. **The value of an emitted `switch` is a `volatile` local on MSVC.**
    The local `_disc` is `volatile`. The clears do not change.
 2. **Every emitted `switch` uses this form.** One emitter site writes
-   the local, so that a new `switch` cannot omit the form.
+   the local. A total check on the finished C text reports every
+   `switch` that omits the form, and every use before the macro
+   definition, at each emit.
 3. **The form closes the shapes of the tracking note.** The defect
    needs a `switch` in each shape that fails. If a reduction shows the
    defect without a `switch`, the landing stops and reports.

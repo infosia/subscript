@@ -1566,6 +1566,7 @@ fn a115_string_literal_union_switch_emits_integer_c_switches() {
     let hir = check_program(&[SourceFile::new("a115-switch-literal-union.ts", source)])
         .expect("a115 checks cleanly");
     let c = emit_c(&hir).expect("a115 emits C").source;
+    assert!(c.contains("#if defined(_MSC_VER) && !defined(__clang__)\n#define SUBSCRIPT_SWITCH_VOLATILE volatile\n#else\n#define SUBSCRIPT_SWITCH_VOLATILE\n#endif\n"));
     assert_eq!(
         c.matches("int32_t _disc =").count(),
         2,
