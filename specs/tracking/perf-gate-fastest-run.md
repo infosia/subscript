@@ -1,6 +1,6 @@
 # A gate run compares the fastest runs — `compiler.md` §213
 
-Status: contract.
+Status: implemented; Phase Review open.
 
 ## Measurement at the pin `1ffbb18d`
 
@@ -24,3 +24,20 @@ The two gate misses in the record:
 |---|---|---|
 | §200 | 1.53x | not recorded |
 | §212 | 1.87x | 6.635 / 5.018 = 1.32x |
+
+## Rerun with the minimum
+
+The harness of §213.1 rule 1, the same five runs per load. Each exit
+status is the one that the minimum predicted at the pin.
+
+| N | `a22` ship min ratio | `a22` dev min | Exit status |
+|---|---|---|---|
+| 0 | 1.33–1.34 | 19.8–19.9 | 0 × 5 |
+| 4 | 1.33–1.36 | 21.0–21.9 | 0 × 5 |
+| 8 | 1.33–1.38 | 19.7–22.1 | 0 × 5 |
+| 16 | 1.34–1.38 | 50.1–55.1 | 1 × 5 |
+
+The miss at N = 16 is `a22` dev-JIT against 25x (§213.1 rule 7).
+
+Red: with the gate figure set to the median, the unit test of the §212
+samples fails with 1.87x against the 1.32x it expects.

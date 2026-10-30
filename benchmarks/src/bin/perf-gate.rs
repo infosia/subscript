@@ -30,9 +30,11 @@
 //! The binary serves two runs:
 //!
 //! - The default is a §9 reporting run. Excessive spread withholds that
-//!   subject's timing, voids the run, and returns status 2.
+//!   subject's timing, voids the run, and returns status 2. The §3 thresholds
+//!   compare medians.
 //! - `--gate` selects the automatic gate run. Spread stays visible but does
-//!   not control the result. The §3 thresholds return status 0 or 1.
+//!   not control the result. The §3 thresholds compare the minimum of the
+//!   timed runs (§213) and return status 0 or 1.
 //!
 //! Output or toolchain errors return status 2 in both runs.
 //!
@@ -313,7 +315,7 @@ struct OneShotSubject {
 struct Stats {
     /// Median sample (the reported figure, §9).
     median: f64,
-    /// Fastest sample.
+    /// Fastest sample (the figure that a gate run compares, §213).
     min: f64,
     /// Slowest sample.
     max: f64,
@@ -356,6 +358,62 @@ impl Stats {
 /// Formats a duration in milliseconds with three decimals.
 fn ms(seconds: f64) -> String {
     format!("{:.3} ms", seconds * 1000.0)
+}
+
+/// The figure of `stats` that a threshold compares: the minimum in a gate
+/// run (§213) and the median in a reporting run.
+fn compared_figure(mode: RunMode, stats: &Stats) -> f64 {
+    match mode {
+        RunMode::Gate => stats.min,
+        RunMode::Reporting => stats.median,
+    }
+}
+
+/// One threshold comparison.
+struct Comparison {
+    /// The figure that the comparison tested.
+    figure: f64,
+    /// Whether the figure is within the limit.
+    met: bool,
+}
+
+/// Compares the figure of `stats`, in seconds, against `limit`.
+fn compare_time(mode: RunMode, stats: &Stats, limit: f64) -> Comparison {
+    let figure = compared_figure(mode, stats);
+    Comparison {
+        figure,
+        met: figure <= limit,
+    }
+}
+
+/// Compares the ratio of the `subject` figure to the `baseline` figure
+/// against `limit`. It returns `None` if the baseline figure is zero.
+fn compare_ratio(
+    mode: RunMode,
+    subject: &Stats,
+    baseline: &Stats,
+    limit: f64,
+) -> Option<Comparison> {
+    let divisor = compared_figure(mode, baseline);
+    if divisor <= 0.0 {
+        return None;
+    }
+    let figure = compared_figure(mode, subject) / divisor;
+    Some(Comparison {
+        figure,
+        met: figure <= limit,
+    })
+}
+
+/// The header of the threshold lines, which states the compared figure of a
+/// gate run (§213).
+fn thresholds_header(mode: RunMode) -> &'static str {
+    match mode {
+        RunMode::Gate => {
+            "thresholds (compiler.md §3, pre-registered), minimum of the timed runs (compiler.md §213):"
+        }
+        RunMode::Reporting => "thresholds (compiler.md §3, pre-registered):",
+    }
 }
 
 /// Selects the run result from the threshold result and observed spreads.
@@ -879,10 +937,7 @@ fn write_report(
     }
 
     w(report, format_args!(""))?;
-    w(
-        report,
-        format_args!("thresholds (compiler.md §3, pre-registered):"),
-    )?;
+    w(report, format_args!("{}", thresholds_header(mode)))?;
     for workload in WORKLOADS.iter().filter(|w| w.ship_limit.is_scoped()) {
         w(
             report,
@@ -910,18 +965,17 @@ fn write_report(
                 run.workload.name
             ));
         };
-        if baseline.median <= 0.0 {
+        let ship_limit = run.workload.ship_limit.here();
+        let (Some(ship_check), Some(dev_check)) = (
+            compare_ratio(mode, ship, baseline, ship_limit),
+            compare_ratio(mode, dev, baseline, run.workload.dev_limit),
+        ) else {
             return Err(format!(
                 "{} C baseline measured zero time; the clock is unusable",
                 run.workload.name
             ));
-        }
-        let ship_ratio = ship.median / baseline.median;
-        let dev_ratio = dev.median / baseline.median;
-        let ship_limit = run.workload.ship_limit.here();
-        let ship_met = ship_ratio <= ship_limit;
-        let dev_met = dev_ratio <= run.workload.dev_limit;
-        thresholds_met = thresholds_met && ship_met && dev_met;
+        };
+        thresholds_met = thresholds_met && ship_check.met && dev_check.met;
         let baseline_withheld = timing_is_withheld(mode, baseline.spread());
         if baseline_withheld || timing_is_withheld(mode, ship.spread()) {
             w(
@@ -938,9 +992,9 @@ fn write_report(
                     "  {:<9} {:<15} {:>7.2}x of C, limit {:.2}x  {}",
                     run.workload.name,
                     "ship-tier",
-                    ship_ratio,
+                    ship_check.figure,
                     ship_limit,
-                    if ship_met { "MET" } else { "MISSED" }
+                    if ship_check.met { "MET" } else { "MISSED" }
                 ),
             )?;
         }
@@ -959,16 +1013,16 @@ fn write_report(
                     "  {:<9} {:<15} {:>7.2}x of C, limit {:.2}x  {}",
                     run.workload.name,
                     "dev-JIT",
-                    dev_ratio,
+                    dev_check.figure,
                     run.workload.dev_limit,
-                    if dev_met { "MET" } else { "MISSED" }
+                    if dev_check.met { "MET" } else { "MISSED" }
                 ),
             )?;
         }
     }
-    let iteration_met = iteration_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
-    let reload_met = reload_stats.median <= DEV_ITERATION_LIMIT.as_secs_f64();
-    thresholds_met = thresholds_met && iteration_met && reload_met;
+    let iteration_check = compare_time(mode, iteration_stats, DEV_ITERATION_LIMIT.as_secs_f64());
+    let reload_check = compare_time(mode, reload_stats, DEV_ITERATION_LIMIT.as_secs_f64());
+    thresholds_met = thresholds_met && iteration_check.met && reload_check.met;
     if timing_is_withheld(mode, iteration_stats.spread()) {
         w(
             report,
@@ -987,9 +1041,9 @@ fn write_report(
                 "  {:<9} {:<15} {:>10}, limit {}  {}",
                 "a22",
                 iteration.name,
-                ms(iteration_stats.median),
+                ms(iteration_check.figure),
                 ms(DEV_ITERATION_LIMIT.as_secs_f64()),
-                if iteration_met { "MET" } else { "MISSED" }
+                if iteration_check.met { "MET" } else { "MISSED" }
             ),
         )?;
     }
@@ -1011,9 +1065,9 @@ fn write_report(
                 "  {:<9} {:<15} {:>10}, limit {}  {}",
                 "a22",
                 reload.name,
-                ms(reload_stats.median),
+                ms(reload_check.figure),
                 ms(DEV_ITERATION_LIMIT.as_secs_f64()),
-                if reload_met { "MET" } else { "MISSED" }
+                if reload_check.met { "MET" } else { "MISSED" }
             ),
         )?;
     }
@@ -1597,6 +1651,92 @@ mod tests {
             decide_run(RunMode::Gate, true, &spreads),
             RunDecision::Passed
         );
+    }
+
+    /// The ship-tier limit of `a22` on aarch64.
+    const SHIP_LIMIT: f64 = 1.50;
+
+    /// The statistics of `samples`, given in milliseconds.
+    fn stats_of(samples: &[f64]) -> Stats {
+        let samples: Vec<Duration> = samples
+            .iter()
+            .map(|sample| Duration::from_secs_f64(sample / 1000.0))
+            .collect();
+        Stats::of(&samples).expect("the samples are not empty")
+    }
+
+    /// The ship-tier comparison of `ship` against `c`, in milliseconds.
+    fn ship_comparison(mode: RunMode, ship: &[f64], c: &[f64]) -> Comparison {
+        compare_ratio(mode, &stats_of(ship), &stats_of(c), SHIP_LIMIT)
+            .expect("the baseline figure is not zero")
+    }
+
+    /// Asserts `actual` to the two decimals of a report line.
+    fn assert_ratio(actual: f64, expected: &str) {
+        assert_eq!(format!("{actual:.2}"), expected);
+    }
+
+    const MISS_C: [f64; 11] = [
+        5.044, 11.807, 5.018, 6.159, 5.030, 11.245, 7.192, 6.577, 5.050, 12.464, 6.264,
+    ];
+    const MISS_SHIP: [f64; 11] = [
+        8.497, 6.674, 13.860, 11.739, 6.662, 14.336, 13.750, 6.651, 14.099, 6.635, 13.938,
+    ];
+    const QUIET_C: [f64; 11] = [
+        3.872, 3.847, 3.882, 3.858, 3.874, 3.849, 3.973, 3.881, 3.909, 3.849, 3.987,
+    ];
+    const QUIET_SHIP: [f64; 11] = [
+        5.138, 5.230, 5.155, 5.152, 5.141, 5.154, 5.133, 5.129, 5.266, 5.148, 5.169,
+    ];
+
+    #[test]
+    fn a_gate_run_meets_the_loaded_samples_that_a_reporting_run_misses() {
+        let gate = ship_comparison(RunMode::Gate, &MISS_SHIP, &MISS_C);
+        assert_ratio(gate.figure, "1.32");
+        assert!(gate.met);
+
+        let reporting = ship_comparison(RunMode::Reporting, &MISS_SHIP, &MISS_C);
+        assert_ratio(reporting.figure, "1.87");
+        assert!(!reporting.met);
+    }
+
+    #[test]
+    fn a_gate_run_meets_quiet_samples() {
+        assert!(ship_comparison(RunMode::Gate, &QUIET_SHIP, &QUIET_C).met);
+    }
+
+    #[test]
+    fn a_gate_run_misses_a_slowdown_of_every_run() {
+        let slowed = QUIET_SHIP.map(|sample| sample * 1.32);
+        assert!(!ship_comparison(RunMode::Gate, &slowed, &QUIET_C).met);
+    }
+
+    #[test]
+    fn a_one_shot_figure_follows_the_run_mode() {
+        let stats = stats_of(&[
+            12.0, 13.0, 12.5, 31.0, 30.0, 32.0, 12.2, 30.5, 31.5, 13.5, 33.0,
+        ]);
+        let limit = DEV_ITERATION_LIMIT.as_secs_f64();
+        assert!(stats.median > limit);
+        assert!(stats.min <= limit);
+
+        assert!(compare_time(RunMode::Gate, &stats, limit).met);
+        assert!(!compare_time(RunMode::Reporting, &stats, limit).met);
+    }
+
+    #[test]
+    fn the_zero_time_check_tests_the_figure_that_the_ratio_divides_by() {
+        let subject = stats_of(&[1.0, 1.0, 1.0]);
+        let baseline = stats_of(&[0.0, 1.0, 1.0]);
+
+        assert!(compare_ratio(RunMode::Gate, &subject, &baseline, SHIP_LIMIT).is_none());
+        assert!(compare_ratio(RunMode::Reporting, &subject, &baseline, SHIP_LIMIT).is_some());
+    }
+
+    #[test]
+    fn only_the_gate_header_names_the_minimum() {
+        assert!(thresholds_header(RunMode::Gate).contains("minimum"));
+        assert!(!thresholds_header(RunMode::Reporting).contains("minimum"));
     }
 }
 

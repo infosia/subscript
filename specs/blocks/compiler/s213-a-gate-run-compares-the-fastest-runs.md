@@ -38,7 +38,7 @@ neither answer applies.
    minimum. The table of medians stays in both runs.
 6. A miss stays a stop: a perf miss is not re-run by repetition.
 7. A gate can still miss on a loaded machine. At two busy processes
-   per CPU, the minimum of `a22` dev-JIT is 47x to 53x against 25x, because
+   per CPU, the minimum of `a22` dev-JIT is 47x to 55x against 25x, because
    each of its runs lasts 77 ms and the scheduler preempts each one.
 
 ### 213.2 Acceptance
