@@ -195,19 +195,7 @@ export function main(): void {
 }
 
 #[test]
-fn return_context_and_untyped_callbacks_do_not_supply_candidates() {
-    let errors = check_program(&[SourceFile::new(
-        "test.ts",
-        r#"
-function id<T>(x: T): T { return x; }
-export function main(): void { const value: i64 = id(7); }
-"#,
-    )])
-    .expect_err("the return context cannot override the i32 default");
-    assert!(
-        errors.iter().any(|error| error.message.contains("i32")),
-        "{errors:?}"
-    );
+fn untyped_callbacks_do_not_supply_candidates() {
     let errors = check_program(&[SourceFile::new(
         "test.ts",
         r#"
@@ -396,7 +384,7 @@ mod construction {
     }
 
     #[test]
-    fn generic_methods_infer_from_arguments_only() {
+    fn generic_methods_infer_from_arguments_and_context() {
         let class = "class K {\n\
                      static make<T>(x: T): T[] { return [x]; }\n\
                      pick<T>(a: T, b: T): T { return a; }\n\
@@ -416,9 +404,12 @@ mod construction {
             "cannot infer type parameter `T` of `K.pick`: conflicting candidates `i32` and `f64`; use explicit type arguments",
             Some(Divergence::GenericInferenceCandidates),
         );
-        // The result context gives no candidate for a method.
+        // §212: the result context gives a candidate. With no context, none exists.
+        accept(&format!(
+            "{class}export function main(): void {{ const k = new K(); const xs: i32[] = k.none(); }}\n"
+        ));
         reject(
-            &format!("{class}export function main(): void {{ const k = new K(); const xs: i32[] = k.none(); }}\n"),
+            &format!("{class}export function main(): void {{ const k = new K(); k.none(); }}\n"),
             RuleCode::S100,
             "cannot infer type parameter `T` of `K.none`: no candidate; use explicit type arguments",
             Some(Divergence::GenericInferenceMissing),

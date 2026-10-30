@@ -28,6 +28,15 @@ to a constructor and leaves out a function and a method.
    contextual type. Each match gives that type parameter a contextual
    candidate. A shape that does not match gives no candidate and no
    diagnostic.
+1a. A context that is only a literal hint is not a contextual type
+   here. A call at an arithmetic operand, a unary `-` or `~` operand,
+   an index, a compound assignment value, or a `switch` case test takes
+   no contextual candidate, also through parentheses and a conditional
+   branch. `const x: i32 = -zero();` and `xs[zero()]` stay rejected, as
+   `tsc` TS2571 and TS2538 do. The right operand of `??`, a conditional
+   branch in a position of rule 1, and the operand of `satisfies` keep
+   the context. *(Added 2026-10-30: the coding agent measured these
+   forms.)*
 2. The order is the order of §197 rule 3. A non-literal argument
    candidate comes first, the contextual candidate second, and the C4
    default of a literal last. A non-literal argument is checked with
@@ -35,7 +44,9 @@ to a constructor and leaves out a function and a method.
    replaced, so `const b: Buffer<Buffer<P>> = wrap(empty());` checks
    `empty()` with the context `Buffer<P>`.
 3. A contextual candidate does not decide a type parameter if a `null`
-   argument mentions that parameter. `tsc` takes `null` as the
+   argument mentions that parameter. An argument that the checker
+   reads before the `null` keeps its context: `g(empty(), null)` is
+   accepted, as `tsc` accepts it. A constructor keeps §197. `tsc` takes `null` as the
    candidate there: `const x: P[] = f(null);`, `f<T>(x: T | null): T[]`,
    gives TS2322. The call keeps the §149.1 rule 5 diagnostic.
 4. An argument candidate that disagrees with the contextual type stays
@@ -70,3 +81,10 @@ to a constructor and leaves out a function and a method.
 5. The rejection-site total check passes.
 6. No golden moves. The LIR text snapshot does not move: `a397` has no
    generator and no async function.
+
+### 212.3 Open
+
+1. `k?.make()` with a context takes no contextual candidate: the
+   optional call has no context. `tsc` accepts it.
+2. `await af()` with a `Promise<T>` result takes no contextual
+   candidate: `Promise` is not a §149.1 rule 2 form. `tsc` accepts it.

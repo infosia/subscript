@@ -37,6 +37,7 @@ impl<'p> Checker<'p> {
                 if let ast::Expr::Lit(ast::Lit::Num(n)) = arg {
                     return self.check_num_lit(n, true, ctx, pos);
                 }
+                self.mark_operand_calls(&u.arg);
                 let operand = self.check_expr(&u.arg, ctx, fx);
                 let apparent = self.apparent_type(&operand.ty);
                 let parameter = self.instance_restriction(
@@ -100,6 +101,7 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::UnaryOp::Tilde => {
+                self.mark_operand_calls(&u.arg);
                 let operand = self.check_expr(&u.arg, ctx, fx);
                 let apparent = self.apparent_type(&operand.ty);
                 let parameter = self.instance_restriction(
@@ -520,6 +522,10 @@ impl<'p> Checker<'p> {
             _ => {
                 let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
+                if outer.is_some() {
+                    self.mark_operand_calls(&b.left);
+                    self.mark_operand_calls(&b.right);
+                }
                 let (mut left, mut right);
                 if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
@@ -785,6 +791,7 @@ impl<'p> Checker<'p> {
                         .unwrap_or(Type::I32),
                     _ => Type::I32,
                 };
+                self.mark_operand_calls(&property.expr);
                 let index = self.check_expr(&property.expr, Some(&index_context), fx);
                 self.check_index(receiver, index, self.pos(member.span), fx)
             }

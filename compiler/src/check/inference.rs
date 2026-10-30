@@ -1,4 +1,4 @@
-//! Argument inference for generic calls and constructions (§149, §197).
+//! Argument inference for generic calls and constructions (§149, §197, §212).
 
 use super::*;
 use crate::check::expr::unparen_expr;
@@ -37,6 +37,8 @@ struct InferenceTarget<'a> {
     type_params: &'a [String],
     /// The annotation of each declared parameter, in order.
     annotations: Vec<Option<&'a ast::TsType>>,
+    /// The declared result annotation of a function or a method (§212).
+    result: Option<&'a ast::TsType>,
     /// The count of parameters up to the last one with no default.
     required: usize,
     /// The name that a rejection text gives the callee.
@@ -58,6 +60,10 @@ impl<'a> InferenceTarget<'a> {
                 .iter()
                 .map(|param| pattern_annotation(&param.pat))
                 .collect(),
+            result: function
+                .return_type
+                .as_ref()
+                .map(|annotation| &*annotation.type_ann),
             required: function
                 .params
                 .iter()
@@ -91,6 +97,7 @@ impl<'a> InferenceTarget<'a> {
         Self {
             file: template.file,
             type_params: &template.type_params,
+            result: None,
             required: parameters
                 .iter()
                 .rposition(|(_, default)| !default)
@@ -126,11 +133,12 @@ impl<'p> Checker<'p> {
             &template.function,
             source_name(key),
         );
-        self.infer_arguments(&target, &call.args, &[], fx, pos)
+        let contextual = self.contextual_result_candidates(&target, call);
+        self.infer_arguments(&target, &call.args, &contextual, fx, pos)
     }
 
-    /// Infers the type arguments of a generic method call (§197 rule 1).
-    /// The result type of the call gives no candidate (§197 rule 3).
+    /// Infers the type arguments of a generic method call (§197 rule 1,
+    /// §212).
     pub(super) fn infer_method_arguments(
         &mut self,
         class: ClassId,
@@ -157,7 +165,66 @@ impl<'p> Checker<'p> {
             &template.function,
             format!("{owner}.{name}"),
         );
-        self.infer_arguments(&target, &call.args, &[], fx, pos)
+        let contextual = self.contextual_result_candidates(&target, call);
+        self.infer_arguments(&target, &call.args, &contextual, fx, pos)
+    }
+
+    /// Records the contextual type of the call that starts, and returns
+    /// the context of the enclosing call. A call that an operator operand
+    /// or an index holds has no contextual type (§212 rule 1).
+    pub(super) fn enter_call_context(
+        &mut self,
+        call: &ast::CallExpr,
+        ctx: Option<&Type>,
+    ) -> Option<Type> {
+        let operand = self.operand_calls.remove(&call.span);
+        let context = ctx.filter(|_| !operand && call.type_args.is_none());
+        std::mem::replace(&mut self.active_call_context, context.cloned())
+    }
+
+    /// Marks each call whose value `expr` gives. The context that an
+    /// operator operand or an index receives types a literal. `tsc` gives
+    /// such an operand no contextual type, so it decides no type argument.
+    pub(super) fn mark_operand_calls(&mut self, expr: &ast::Expr) {
+        match unparen_expr(expr) {
+            ast::Expr::Call(call) => {
+                self.operand_calls.insert(call.span);
+            }
+            ast::Expr::Cond(conditional) => {
+                self.mark_operand_calls(&conditional.cons);
+                self.mark_operand_calls(&conditional.alt);
+            }
+            _ => {}
+        }
+    }
+
+    /// Matches the declared result type against the contextual type of
+    /// `call` (§212 rule 1). The match goes through `C | null` in the
+    /// contextual type. A shape that does not match gives no candidate.
+    /// The first match of a type parameter is its candidate.
+    fn contextual_result_candidates(
+        &mut self,
+        target: &InferenceTarget<'_>,
+        call: &ast::CallExpr,
+    ) -> Vec<Option<Type>> {
+        if self.active_call != Some(call.span) {
+            return Vec::new();
+        }
+        let (Some(result), Some(context)) = (target.result, self.active_call_context.clone())
+        else {
+            return Vec::new();
+        };
+        let mut candidates = vec![Vec::new(); target.type_params.len()];
+        let file = std::mem::replace(&mut self.cur_file, target.file);
+        self.match_inference_type(result, &context, target.type_params, &mut candidates);
+        if let Type::Nullable(inner, _) = &context {
+            self.match_inference_type(result, inner, target.type_params, &mut candidates);
+        }
+        self.cur_file = file;
+        candidates
+            .into_iter()
+            .map(|values| values.into_iter().next())
+            .collect()
     }
 
     /// Infers the type arguments of `new G(args)` for a generic class
@@ -260,7 +327,7 @@ impl<'p> Checker<'p> {
     /// A contextual candidate follows the non-literal candidates and
     /// precedes the literal defaults. A non-literal argument has the
     /// context of its parameter type when each type parameter that the
-    /// type names has a contextual candidate (§197 rule 3).
+    /// type names has a contextual candidate (§197 rule 3, §212 rule 2).
     fn infer_arguments(
         &mut self,
         target: &InferenceTarget<'_>,
@@ -273,7 +340,8 @@ impl<'p> Checker<'p> {
         let annotations = &target.annotations;
         let mut candidates = vec![Vec::new(); parameters.len()];
         let mut checked = vec![None; args.len()];
-        let has_context: Vec<bool> = (0..parameters.len())
+        let mut contextual = contextual.to_vec();
+        let mut has_context: Vec<bool> = (0..parameters.len())
             .map(|index| contextual.get(index).is_some_and(Option::is_some))
             .collect();
         for (index, argument) in args.iter().enumerate() {
@@ -293,7 +361,7 @@ impl<'p> Checker<'p> {
                         self.cur_file = target.file;
                         let saved: Vec<_> = parameters
                             .iter()
-                            .zip(contextual)
+                            .zip(&contextual)
                             .filter_map(|(parameter, candidate)| {
                                 let candidate = candidate.clone()?;
                                 Some((
@@ -324,6 +392,18 @@ impl<'p> Checker<'p> {
                 return None;
             }
             if let Some(Some(annotation)) = annotations.get(index) {
+                // §212 rule 3: a `null` argument keeps the context of the
+                // result from deciding a type parameter that it mentions.
+                if target.result.is_some() && value.ty == Type::Null {
+                    for (parameter, candidate) in contextual.iter_mut().enumerate() {
+                        let mut others = vec![true; parameters.len()];
+                        others[parameter] = false;
+                        if type_mentions_missing(annotation, parameters, &others) {
+                            *candidate = None;
+                            has_context[parameter] = false;
+                        }
+                    }
+                }
                 let file = self.cur_file;
                 self.cur_file = target.file;
                 self.match_inference_type(annotation, &value.ty, parameters, &mut candidates);

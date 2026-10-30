@@ -130,6 +130,9 @@ impl<'p> Checker<'p> {
         } else {
             Some(target_ty.clone())
         };
+        if op.is_some() {
+            self.mark_operand_calls(&a.right);
+        }
         let value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
         let signature_write = match &place {
             Place::IndexSignature {
@@ -684,6 +687,7 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = false;
                 }
+                self.mark_operand_calls(&c.expr);
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;

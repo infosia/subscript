@@ -878,6 +878,7 @@ impl<'p> Checker<'p> {
                             field
                         }
                         ast::MemberProp::Computed(index) => {
+                            self.mark_operand_calls(&index.expr);
                             let index = self.check_expr(&index.expr, Some(&Type::I32), fx);
                             self.check_index(receiver, index, self.pos(member.span), fx)
                         }

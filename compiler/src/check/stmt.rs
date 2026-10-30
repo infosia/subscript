@@ -1471,6 +1471,7 @@ impl<'p> Checker<'p> {
         alias_labels_valid: &mut bool,
         fx: &mut FnCtx,
     ) -> hir::Expr {
+        self.mark_operand_calls(t);
         let checked = self.check_expr(t, Some(disc_ty), fx);
         if let Some((alias_name, members)) = alias_switch {
             match t {

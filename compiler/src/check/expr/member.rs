@@ -130,6 +130,7 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = false;
                 }
+                self.mark_operand_calls(&c.expr);
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;

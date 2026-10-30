@@ -18,8 +18,10 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let active = self.active_call.replace(c.span);
+        let active_context = self.enter_call_context(c, ctx);
         let checked = self.check_call_inner(c, ctx, fx, pos);
         self.active_call = active;
+        self.active_call_context = active_context;
         checked
     }
 
