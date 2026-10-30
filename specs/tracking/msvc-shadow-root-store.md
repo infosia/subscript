@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The `volatile` clear of §210.2 exceeds the cost limit. A `volatile` scrutinee is the next form.
+Status: open. The `volatile` scrutinee of §210.2 is next.
 
 ## Measurement at the pin `c7bb7e55`
 

@@ -32,11 +32,9 @@ results, on the toolchain that §11c selects.
    `subscript emit` with its own flags (`README.md`,
    `docs/tutorial-c-cpp.md`). A flag in `add_c11_optimized_flags`
    does not reach that host, so a flag alone does not close the defect.
-2. **The fix covers the class, not `a383`.** The round reduces the
-   trigger and states it in the tracking note. The form must make that
-   trigger unreachable for every function that the emitter writes. If
-   the trigger also covers storage other than the shadow frame, the
-   form covers that storage too.
+2. **The fix covers the trigger, not `a383`.** The tracking note states
+   the reduced trigger. The form must make that trigger unreachable for
+   every function that the emitter writes.
 3. **Other compilers see the same C.** The change applies only when
    `_MSC_VER` is defined and `__clang__` is not. For every other
    compiler, the preprocessed C does not change.
@@ -47,25 +45,27 @@ results, on the toolchain that §11c selects.
 ### 210.2 The form
 
 The tracking note holds the reduced trigger and the measured cost of
-two forms that fail §210.4 rule 3: a `volatile` frame, and
-`/d2SSAOptimizer-`. Neither form lands.
+three forms that fail §210.4 rule 3: a `volatile` frame,
+`/d2SSAOptimizer-`, and a `volatile` clear. None of them lands.
 
-1. **A clear of a shadow root is a store through a `volatile` lvalue**
-   on MSVC. A read of the slot and a store of a value do not change.
-2. **Every clear uses this form.** A clear is a store of null to a
-   frame slot, whatever its spelling: `roots.vN = 0`, a member of the
-   frame reached through a pointer, or `memset` over slots. The emitter
-   has one function for this store, so that a new clear site cannot
-   omit the form.
-3. **The form closes the trigger of the tracking note.** If a clear
-   site, or a storage class that shows the trigger, cannot use the form,
-   the landing stops and reports.
+1. **The value of an emitted `switch` is a `volatile` local on MSVC.**
+   The local `_disc` is `volatile`. The clears do not change.
+2. **Every emitted `switch` uses this form.** One emitter site writes
+   the local, so that a new `switch` cannot omit the form.
+3. **The form closes the shapes of the tracking note.** The defect
+   needs a `switch` in each shape that fails. If a reduction shows the
+   defect without a `switch`, the landing stops and reports.
+
+**Open.** The form does not prove that the class is closed. The cause
+inside `cl` is not known, and a small number of shapes were run. A
+shape with no `switch` that shows the defect is a new finding. The
+differential gate reports such a shape only if a corpus entry has it.
 
 ### 210.3 Corpus
 
 No new entry. `a383-exhaustive-enum-switch` is Red at the pin on MSVC.
 Its golden does not move. A unit test reads the emitted text for the
-clear and the MSVC condition. Any moved corpus golden is a stop.
+`switch` and the MSVC condition. Any moved corpus golden is a stop.
 
 ### 210.4 Exit criteria
 
