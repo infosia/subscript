@@ -1492,6 +1492,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     ) -> Result<(), LowerError> {
         let value = self.require_expr(disc)?;
         let exit = self.new_state_block(Vec::new(), Some("switch.exit".to_string()), &[]);
+        let has_case_test = cases.iter().any(|case| case.test.is_some());
         let exhaustive_alias =
             matches!(disc.ty, Type::StringAlias(_)) && cases.iter().all(|case| case.test.is_some());
         let no_match = if exhaustive_alias {
@@ -1519,7 +1520,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .iter()
             .filter_map(|case| case.test.as_ref())
             .all(|test| constant_expr(test).is_some());
-        if all_constant {
+        if !has_case_test {
+            let edge = self.block_target(default, Vec::new())?;
+            self.terminate(l::Terminator::Branch(edge), pos)?;
+        } else if all_constant {
             let arms = cases
                 .iter()
                 .zip(&case_blocks)
@@ -1547,49 +1551,44 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .enumerate()
                 .filter_map(|(index, case)| case.test.as_ref().map(|test| (index, test)))
                 .collect::<Vec<_>>();
-            if tests.is_empty() {
-                let edge = self.block_target(default, Vec::new())?;
-                self.terminate(l::Terminator::Branch(edge), pos)?;
-            } else {
-                for (test_index, (case_index, test)) in tests.iter().enumerate() {
-                    let test_value = self.require_expr(test)?;
-                    let test_value = self.coerce_operand(
-                        test_value,
-                        l::ValueType::Data(disc.ty.clone()),
-                        &test.pos,
-                    )?;
-                    let equal = self
-                        .emit(
-                            l::InstructionKind::Binary(l::BinaryOp::Eq),
-                            vec![value.clone(), test_value],
-                            Some(l::ValueType::Data(Type::Bool)),
-                            false,
-                            Vec::new(),
-                            test.pos.clone(),
-                        )?
-                        .expect("switch test result");
-                    let miss = if test_index + 1 == tests.len() {
-                        default
-                    } else {
-                        self.new_state_block(
-                            Vec::new(),
-                            Some(format!("switch.test.{}", test_index + 1)),
-                            &[],
-                        )
-                    };
-                    let then_target = self.block_target(case_blocks[*case_index], Vec::new())?;
-                    let else_target = self.block_target(miss, Vec::new())?;
-                    self.terminate(
-                        l::Terminator::ConditionalBranch {
-                            condition: equal,
-                            then_target,
-                            else_target,
-                        },
-                        &test.pos,
-                    )?;
-                    if test_index + 1 != tests.len() {
-                        self.enter_block(miss)?;
-                    }
+            for (test_index, (case_index, test)) in tests.iter().enumerate() {
+                let test_value = self.require_expr(test)?;
+                let test_value = self.coerce_operand(
+                    test_value,
+                    l::ValueType::Data(disc.ty.clone()),
+                    &test.pos,
+                )?;
+                let equal = self
+                    .emit(
+                        l::InstructionKind::Binary(l::BinaryOp::Eq),
+                        vec![value.clone(), test_value],
+                        Some(l::ValueType::Data(Type::Bool)),
+                        false,
+                        Vec::new(),
+                        test.pos.clone(),
+                    )?
+                    .expect("switch test result");
+                let miss = if test_index + 1 == tests.len() {
+                    default
+                } else {
+                    self.new_state_block(
+                        Vec::new(),
+                        Some(format!("switch.test.{}", test_index + 1)),
+                        &[],
+                    )
+                };
+                let then_target = self.block_target(case_blocks[*case_index], Vec::new())?;
+                let else_target = self.block_target(miss, Vec::new())?;
+                self.terminate(
+                    l::Terminator::ConditionalBranch {
+                        condition: equal,
+                        then_target,
+                        else_target,
+                    },
+                    &test.pos,
+                )?;
+                if test_index + 1 != tests.len() {
+                    self.enter_block(miss)?;
                 }
             }
         }

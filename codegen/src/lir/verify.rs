@@ -517,3 +517,61 @@ fn verify_constant(
         }
     }
 }
+
+#[cfg(test)]
+mod switch_tests {
+    use super::*;
+    use subscript_compiler::{check_program, SourceFile};
+
+    #[test]
+    fn verifier_rejects_a_switch_with_no_arm() {
+        // Cost: Lower an empty function and verify one constructed terminator; no native compiler.
+        let checked = check_program(&[SourceFile::new(
+            "switch.ts",
+            "export function main(): void {}",
+        )])
+        .expect("valid source");
+        let mut module = lower_module(&checked).expect("valid LIR");
+        let function = module
+            .functions
+            .iter_mut()
+            .find(|function| function.source_name == "main")
+            .unwrap();
+        let block = &mut function.blocks[0];
+        block.terminator = l::Terminator::Switch {
+            value: l::Operand::Constant(l::Constant {
+                ty: Type::I32,
+                kind: l::ConstantKind::Integer(1),
+            }),
+            arms: Vec::new(),
+            default: l::BlockTarget {
+                block: block.id,
+                arguments: Vec::new(),
+                ownership: Vec::new(),
+            },
+        };
+        let errors = verify_module(&module).expect_err("a switch requires an arm");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.to_string().contains("switch has no arm")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn default_only_switch_lowers_without_a_switch_terminator() {
+        // Cost: Lower one small corpus entry; no interpreter or native compiler.
+        let checked = check_program(&[SourceFile::new(
+            "switch.ts",
+            include_str!("../../../corpus/accept/a396-default-only-switch.ts"),
+        )])
+        .expect("valid source");
+        let module = lower_module(&checked).expect("valid LIR");
+        assert!(!module
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .any(|block| matches!(block.terminator, l::Terminator::Switch { .. })));
+    }
+}

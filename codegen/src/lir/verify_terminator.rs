@@ -46,6 +46,12 @@ pub(super) fn verify_terminator_types(
             );
         }
         l::Terminator::Switch { value, arms, .. } => {
+            if arms.is_empty() {
+                errors.push(finding(
+                    function,
+                    format!("block {} switch has no arm (compiler.md §211)", block.id.0),
+                ));
+            }
             let discriminant = operand_type(function, value);
             for arm in arms {
                 if discriminant != Some(l::ValueType::Data(arm.value.ty.clone())) {
