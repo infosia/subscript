@@ -1,6 +1,6 @@
 # A store to a shadow root reaches the MSVC output — `compiler.md` §210
 
-Status: open. The owner accepted the cost of the `volatile` scrutinee on every `switch`. Implementation is next.
+Status: landed. The Open item of §210.2 stands.
 
 ## Measurement at the pin `c7bb7e55`
 
@@ -183,5 +183,25 @@ alternate for 11 runs of each. The time is the whole process.
 | prototype | 23.9736 ms | 23.5766 ms | 25.1839 ms | 1.6073 ms |
 
 The change is +7.4545 ms, +45.127%, or 0.19 ns for each dispatch. Each
-IQR is smaller than the change. This workload does no other work, so it
-gives the largest relative cost that the form can have.
+IQR is smaller than the change. This number is not an upper bound. The
+Phase Review measured a `switch` that the inliner folds to a constant in
+the plain form: 7.26 ms to 54.70 ms for 200,000,000 calls, +653%, or
+0.24 ns for each dispatch. With a value that changes, the same review
+measured +23%, or 0.07 ns. The absolute cost stays near the accepted
+value.
+
+## Landing
+
+Red at the pin: a binary from a clean export of `c7bb7e55` exits with
+`0xc0000005` on `a383`. After the landing, `a383` agrees on the dev JIT,
+the ship C, the interpreter, and the golden, in debug and release. The
+standalone reproducer exits with `0xc0000005` with the emitted function
+of the pin, and prints `9` with the emitted function of the landing.
+
+`tools/gate.sh full`: exit 0, debug 2949 passed, release 2946 passed, 0
+failed. No golden moved. A temporary mutation that removed the
+qualifier, one that left zero switches, and one that removed the
+`__clang__` condition each failed the new test.
+
+The Phase Review ran six more shapes under `/O1`, `/O2`, `/Ox`, `/Ot`,
+and `/O2 /GL`. With the form, each one printed `9`.

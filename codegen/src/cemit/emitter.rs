@@ -315,6 +315,14 @@ impl<'m> Emitter<'m> {
         bodies.push_str(&self.helpers);
 
         let mut source = "#include \"program.h\"\n".to_owned();
+        // MSVC can discard a shadow-root store before a plain switch (§210).
+        source.push_str(
+            "#if defined(_MSC_VER) && !defined(__clang__)\n\
+             #define SUBSCRIPT_SWITCH_VOLATILE volatile\n\
+             #else\n\
+             #define SUBSCRIPT_SWITCH_VOLATILE\n\
+             #endif\n",
+        );
         source.push_str(PREAMBLE);
         let mut emitted_includes = HashSet::new();
         let boundary_headers = self.module.classes.iter().filter_map(|class| {

@@ -35,7 +35,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let value = self.operand(value)?;
                 let _ = writeln!(
                     out,
-                    "    {{\n    {} _disc = {value};\n    switch (_disc) {{",
+                    "    {{\n    SUBSCRIPT_SWITCH_VOLATILE {} _disc = {value};\n    switch (_disc) {{",
                     self.emitter.ctype(value_type)?
                 );
                 for arm in arms {

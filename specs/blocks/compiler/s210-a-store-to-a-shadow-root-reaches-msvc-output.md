@@ -59,9 +59,11 @@ does not touch code that has no `switch`.
    defect without a `switch`, the landing stops and reports.
 
 **Open.** The form does not prove that the class is closed. The cause
-inside `cl` is not known, and a small number of shapes were run. A
-shape with no `switch` that shows the defect is a new finding. The
-differential gate reports such a shape only if a corpus entry has it.
+inside `cl` is not known, a small number of shapes were run, and one
+`cl` version was run, on x64. A shape that fails with the form, with or
+without a `switch`, is a new finding. The differential gate reports
+such a shape only if a corpus entry has it and the run compiles with
+`cl`.
 
 ### 210.3 Corpus
 
