@@ -25,7 +25,7 @@ The stages of the current form and the sections that hold their rules:
 | parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
-| ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
+| ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210 |
 | reference interpreter | §68.7 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
@@ -251,3 +251,4 @@ Every section, with its status:
 | §207 | A static method and a local function are function values | active | [`s207-a-static-method-and-a-local-function-are-function-values.md`](compiler/s207-a-static-method-and-a-local-function-are-function-values.md) |
 | §208 | An interface is a constraint | active | [`s208-an-interface-is-a-constraint.md`](compiler/s208-an-interface-is-a-constraint.md) |
 | §209 | An assignment to a method names the method | active | [`s209-an-assignment-to-a-method-names-the-method.md`](compiler/s209-an-assignment-to-a-method-names-the-method.md) |
+| §210 | A store to a shadow root reaches the MSVC output | active | [`s210-a-store-to-a-shadow-root-reaches-msvc-output.md`](compiler/s210-a-store-to-a-shadow-root-reaches-msvc-output.md) |
