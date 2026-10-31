@@ -11,6 +11,7 @@ mod interface_constraint;
 mod language;
 mod local_functions;
 mod method_assignment;
+mod nullable_array;
 mod poisoned_containers;
 mod private_names;
 mod removal;

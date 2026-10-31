@@ -1358,20 +1358,6 @@ fn contextual_conditional_does_not_admit_script_value_class_union() {
 }
 
 #[test]
-fn array_nullable_union_keeps_the_s011_acceptance_boundary() {
-    let source = "export function main(): void {\n  let a: i32[] | null = null;\n}\n";
-    let files = [SourceFile::new("test.ts", source)];
-    let diagnostics =
-        check_program(&files).expect_err("dynamic arrays are not accepted as nullable unions");
-    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
-    assert_eq!(diagnostics[0].code, RuleCode::S011);
-    assert_eq!(
-        diagnostics[0].message,
-        "unions are limited to `Ref | null`; `i32[] | null` is not a reference type union"
-    );
-}
-
-#[test]
 fn array_and_regexp_identity_keep_the_s100_acceptance_boundary() {
     let source = "export function main(): void {\n\
                   \x20 let a: i32[] = [1];\n\

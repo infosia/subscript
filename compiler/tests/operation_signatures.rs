@@ -428,6 +428,28 @@ fn corpus_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     files
 }
 
+/// The operation table records the `Map.set` value as the value type `V`.
+/// A call with `V = T | null` can pass a `T` or `null`, so this conversion
+/// takes those two argument types to `V`. Any other argument type stays, and
+/// the comparison with the table reports it.
+fn normalize_nullable_map_value(target: &hir::OperationSignatureTarget, parameters: &mut [Type]) {
+    let hir::OperationSignatureTarget::Map(hir::MapFn::Set) = target else {
+        return;
+    };
+    let declared = match parameters.first() {
+        Some(Type::Map(_, value)) => (**value).clone(),
+        _ => return,
+    };
+    let Type::Nullable(inner, _) = &declared else {
+        return;
+    };
+    if let Some(value) = parameters.get_mut(2) {
+        if *value == **inner || *value == Type::Null {
+            *value = declared;
+        }
+    }
+}
+
 fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
     fn visit_child(child: hir::HirChild<'_>, found: &mut Vec<(Pos, hir::OperationSignature)>) {
         match child {
@@ -445,15 +467,17 @@ fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> 
     fn visit_expr(expression: &hir::Expr, found: &mut Vec<(Pos, hir::OperationSignature)>) {
         if let hir::ExprKind::Call { callee, args } = &expression.kind {
             if let Some((target, receiver)) = hir::operation_signature_target(callee) {
+                let mut parameter_types: Vec<Type> = receiver
+                    .into_iter()
+                    .cloned()
+                    .chain(args.iter().map(|argument| argument.ty.clone()))
+                    .collect();
+                normalize_nullable_map_value(&target, &mut parameter_types);
                 found.push((
                     expression.pos.clone(),
                     hir::OperationSignature {
                         target,
-                        parameter_types: receiver
-                            .into_iter()
-                            .cloned()
-                            .chain(args.iter().map(|argument| argument.ty.clone()))
-                            .collect(),
+                        parameter_types,
                         return_type: (expression.ty != Type::Void).then(|| expression.ty.clone()),
                     },
                 ));
@@ -497,6 +521,58 @@ fn append_missing(label: &str, module: &mut hir::Module, errors: &mut Vec<String
             .into_iter()
             .map(|(position, signature)| format!("{label}: {position}: missing {signature:?}")),
     );
+}
+
+/// A `Map<K, T | null>` with a `set` call of `value`.
+fn map_set_module(element: &str, value: &str) -> hir::Module {
+    let source = format!(
+        "class C {{ x: i32 = 1; }}\n\
+         export function main(): void {{\n\
+         \x20 const table = new Map<string, {element} | null>();\n\
+         \x20 table.set(\"a\", {value});\n\
+         \x20 table.set(\"b\", null);\n\
+         }}\n"
+    );
+    checked_module("map set", vec![SourceFile::new("map-set.ts", source)])
+}
+
+#[test]
+fn a_nullable_map_value_takes_a_plain_value_and_null() {
+    for (element, value) in [("C", "new C()"), ("i32[]", "[1, 2]")] {
+        let module = map_set_module(element, value);
+        assert_eq!(missing_operation_calls(&module), Vec::new(), "{element}");
+    }
+}
+
+#[test]
+fn a_map_set_value_that_is_not_the_value_type_is_missing() {
+    let mut module = map_set_module("C", "new C()");
+    assert_eq!(missing_operation_calls(&module), Vec::new());
+    let main = module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "main")
+        .expect("main");
+    let calls = main
+        .body
+        .iter_mut()
+        .filter_map(|statement| match statement {
+            hir::Stmt::Expr(hir::Expr {
+                kind: hir::ExprKind::Call { args, .. },
+                ..
+            }) => args.last_mut(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2);
+    for value in calls {
+        value.ty = Type::I32;
+    }
+    let missing = missing_operation_calls(&module);
+    assert_eq!(missing.len(), 2, "{missing:?}");
+    assert!(missing
+        .iter()
+        .all(|(_, signature)| signature.parameter_types.last() == Some(&Type::I32)));
 }
 
 #[test]

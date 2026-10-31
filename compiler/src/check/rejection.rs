@@ -643,6 +643,7 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::MirrorStringProvenanceMissing),
     ),
+    Self::MirrorNullableArray => (RuleCode::S100, Diverges(Divergence::NullableNonReference)),
     Self::MirrorParameterProvenanceMismatch => (
         RuleCode::S100,
         Diverges(Divergence::MirrorParameterProvenanceMismatch),

@@ -20,7 +20,10 @@ impl<'p> Checker<'p> {
                     continue;
                 }
                 let ty = self.resolve_type(&t.type_ann);
-                self.type_aliases.insert(t.id.sym.to_string(), ty);
+                let name = t.id.sym.to_string();
+                let pos = self.pos(t.id.span);
+                self.reject_mirror_nullable_array(file, &name, &ty, pos);
+                self.type_aliases.insert(name, ty);
             }
         }
         // Sub-pass 2: struct shapes, foreign signatures, ambient consts.
@@ -33,6 +36,16 @@ impl<'p> Checker<'p> {
                     let name = c.ident.sym.to_string();
                     if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
                         self.resolve_class_shape(id, &c.class, c.declare);
+                        for field in self.classes[id.0].fields.clone() {
+                            self.reject_mirror_nullable_array(
+                                file,
+                                &format!("{name}.{}", field.name),
+                                &field.ty,
+                                field.pos,
+                            );
+                        }
+                        let class_pos = self.pos(c.ident.span);
+                        self.reject_mirror_member_signatures(file, id, &name, class_pos);
                     }
                 }
                 ast::Decl::Fn(f) => {
@@ -41,7 +54,14 @@ impl<'p> Checker<'p> {
                     self.allow_wire_alias_boundary = true;
                     let sig = self.resolve_fn_sig(&f.function, pos.clone());
                     self.allow_wire_alias_boundary = false;
+                    self.reject_mirror_nullable_array(file, &name, &sig.ret, pos.clone());
                     for parameter in &sig.params {
+                        self.reject_mirror_nullable_array(
+                            file,
+                            &format!("{name}.{}", parameter.name),
+                            parameter.ty(),
+                            pos.clone(),
+                        );
                         if Self::contains_string_alias(parameter.ty())
                             && !Self::supported_wire_alias_boundary_type(parameter.ty())
                         {
@@ -166,6 +186,63 @@ impl<'p> Checker<'p> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Applies §217.1 rule 3 to the constructor and the methods of a mirror
+    /// class, in name order.
+    fn reject_mirror_member_signatures(
+        &mut self,
+        file: usize,
+        class: ClassId,
+        name: &str,
+        pos: Pos,
+    ) {
+        let signature = &self.class_sigs[class.0];
+        let mut types = Vec::new();
+        for parameter in signature.ctor.iter().flatten() {
+            types.push((
+                format!("{name}.constructor.{}", parameter.name),
+                parameter.ty().clone(),
+            ));
+        }
+        let mut methods: Vec<_> = signature.methods.iter().collect();
+        methods.sort_by_key(|(method, _)| method.as_str());
+        for (method, sig) in methods {
+            types.push((format!("{name}.{method}"), sig.ret.clone()));
+            for parameter in &sig.params {
+                types.push((
+                    format!("{name}.{method}.{}", parameter.name),
+                    parameter.ty().clone(),
+                ));
+            }
+        }
+        for (declaration, ty) in types {
+            self.reject_mirror_nullable_array(file, &declaration, &ty, pos.clone());
+        }
+    }
+
+    /// §217.1 rule 3: the C ABI gives `T[] | null` no layout. The check reads
+    /// the resolved type of each mirror declaration, so an alias, a callback
+    /// signature, and a nested form all reach it.
+    fn reject_mirror_nullable_array(
+        &mut self,
+        file: usize,
+        declaration: &str,
+        ty: &Type,
+        pos: Pos,
+    ) {
+        if self.apparent_type(ty).holds_nullable_array() {
+            let type_name = self.type_name(ty);
+            self.reject_subset(
+                RejectionSite::MirrorNullableArray,
+                format!(
+                    "mirror `{}` declaration `{declaration}` has `{type_name}`; the C ABI \
+                     gives a nullable array no layout",
+                    self.prog.files[file].name
+                ),
+                pos,
+            );
         }
     }
 

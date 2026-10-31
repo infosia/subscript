@@ -719,7 +719,7 @@ pub(super) const BOUNDARYLITERALALIAS: DivergenceEntry = DivergenceEntry {
 pub(super) const NULLABLENONREFERENCE: DivergenceEntry = DivergenceEntry {
                 ts: "function f(x: i32 | null): void {}\nexport function main(): void {}",
                 subscript: "no equivalent; use a reference class to represent a nullable value",
-                why: "Only reference classes, opaque handles, function types, and boundary pointers have a nullable representation.",
+                why: "Only reference classes, opaque handles, function types, boundary pointers, and arrays with no counted element have a nullable representation.",
                 collision: "C7",
             };
 

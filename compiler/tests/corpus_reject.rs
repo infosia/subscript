@@ -164,6 +164,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r456-class-does-not-implement.ts", RuleCode::S100, 11),
     ("r457-constraint-needs-implements.ts", RuleCode::S100, 22),
     ("r458-method-assignment.ts", RuleCode::S100, 19),
+    ("r459-nullable-array-of-handles.ts", RuleCode::S011, 7),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

@@ -714,6 +714,12 @@ Corpus: [`corpus/accept/a144-accessor.ts`](../corpus/accept/a144-accessor.ts), [
 
 Corpus: [`corpus/accept/a177-nullish.ts`](../corpus/accept/a177-nullish.ts), [`corpus/reject/r177-nullish-non-nullable-left.ts`](../corpus/reject/r177-nullish-non-nullable-left.ts), [`corpus/reject/r178-optional-chain-unbound.ts`](../corpus/reject/r178-optional-chain-unbound.ts).
 
+### Nullable arrays
+
+`T[] | null` is a legal `Ref | null` form (§217). Its absence is a null pointer. It narrows and flows as a class type does: `=== null`, `==`, `if`, `??`, `??=`, and `?.` with a member or a call. `.length`, an index, a method call, and `for...of` need a null test first. `a === b` with two arrays is rejected. An element type that holds a counted value fails with S011: `Promise<void>[] | null`, `Promise<void>[][] | null`, and `Generator<i32>[] | null`. A nullable has no holder count, so the handles in it have no owner. A type argument that fills `T` with a counted type fails with the same text. An array of a class is legal, and the class can have a `Promise<T>` field. A mirror declaration cannot hold this form at any depth (S100): a foreign parameter, a foreign result, a field, a constructor, a method, a type alias, and a callback signature. `JSON.stringify` and `JSON.parse<D>` accept a field of this type. A Worker message field stays rejected. `string | null` stays rejected (S011).
+
+Corpus: [`corpus/accept/a400-nullable-array.ts`](../corpus/accept/a400-nullable-array.ts), [`corpus/reject/r459-nullable-array-of-handles.ts`](../corpus/reject/r459-nullable-array-of-handles.ts).
+
 ### Undefined results
 
 `T | undefined` is legal only as the declared result of a function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. `pop()` and `shift()` on `T[]` return `T | undefined` for these `T` (§196): a reference class, a `Map`, a `Set`, a function type, and an array that holds no async handle. On an empty array they give `undefined`. They return `T` for each other `T`, such as a scalar, `string`, a value class, a nullable type, or `Promise<void>[]`. An empty array then traps with `empty-pop`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.

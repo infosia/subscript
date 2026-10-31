@@ -4473,8 +4473,21 @@ END FILE
 END PROGRAM
 PROGRAM	c-value-nullable-array-reject	TS2740		0
 FILE	E	target/s154/forms/c-value-nullable-array-reject/value-nullable-array-reject.ts
-@ValueType class C {x:i32=1;} function f(c:C):void {const xs:i32[]|null=c;}
+@ValueType class C {x:i32=1;} function f(c:C):void {const xs:Promise<void>[]|null=c;}
 export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	mirror-nullable-array			0
+FILE	E	target/s154/forms/mirror-nullable-array/main.ts
+export function main(): void {}
+END FILE
+FILE	A	target/s154/forms/mirror-nullable-array/mirror.d.ts
+// @subscript-c-header include="x.h"
+// @subscript-c-callback typedef="OnValues"
+type OnValues = (values: i32[] | null) => void;
+declare class Slot { values: i32[] | null; constructor(values: i32[] | null); }
+declare function takes(values: i32[] | null): void;
+declare function gives(): i32[] | null;
 END FILE
 END PROGRAM
 PROGRAM	c-worker-arity	TS2314		0

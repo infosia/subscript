@@ -134,15 +134,17 @@ impl HandleKind {
     /// Acceptance filter (S011): can this handle kind be the non-null member
     /// of a reference union accepted by the language today?
     ///
-    /// The runtime representation could also support `RegExp`, `Array`,
-    /// `Generator`, and `AsyncHandle`. Those are candidate widenings only;
-    /// the corpus does not accept them. An already-nullable type is likewise
-    /// not a new union member, and a plain value class has no nullable handle.
+    /// The runtime representation could also support `RegExp`, `Generator`,
+    /// and `AsyncHandle`. Those are candidate widenings only; the corpus does
+    /// not accept them. An already-nullable type is likewise not a new union
+    /// member, and a plain value class has no nullable handle. A string has
+    /// a handle, but its equality and search are by content (§217.1 rule 7).
     #[must_use]
     pub fn supports_nullable(self) -> bool {
         matches!(
             self,
             Self::Object
+                | Self::Array
                 | Self::Map
                 | Self::Set
                 | Self::Worker
@@ -516,6 +518,17 @@ impl Type {
         self.contained_types()
             .into_iter()
             .any(Type::holds_undefined)
+    }
+
+    /// Whether a `T[] | null` occurs in this type, at the top level or below
+    /// it (§217.1 rule 3).
+    #[must_use]
+    pub fn holds_nullable_array(&self) -> bool {
+        matches!(self, Self::Nullable(inner, _) if matches!(**inner, Self::Array(_)))
+            || self
+                .contained_types()
+                .into_iter()
+                .any(Type::holds_nullable_array)
     }
 
     /// Maps every `undefined` spelling in this type to `null` (§195.7 rule 2).
@@ -965,13 +978,14 @@ impl Type {
     /// Acceptance filter (S011): can this type appear as the non-null member
     /// of `Ref | null` under the corpus-recorded language surface?
     ///
-    /// The runtime represents `RegExp`, `Array`, `Generator`, and
-    /// `AsyncHandle`; the language does not accept them here. An
-    /// already-nullable type is not a union member, and a plain value class
-    /// is outside this surface.
+    /// The runtime represents `RegExp`, `Generator`, and `AsyncHandle`; the
+    /// language does not accept them here. An already-nullable type is not a
+    /// union member, and a plain value class is outside this surface. A
+    /// counted type at any depth is outside it too: a nullable has no holder
+    /// count, so the handles in it have no owner (§217.1 rule 2).
     #[must_use]
     pub fn is_reference_shape(&self, classes: &[HandleClass]) -> bool {
-        if matches!(self, Type::Nullable(_, _)) {
+        if matches!(self, Type::Nullable(_, _)) || self.counted_type().is_some() {
             return false;
         }
         Type::Nullable(Box::new(self.clone()), Absence::Null)
@@ -1495,7 +1509,7 @@ mod tests {
             (HandleKind::Str, true, false, false, false, true),
             (HandleKind::RegExp, true, false, false, true, true),
             (HandleKind::Object, true, true, false, true, true),
-            (HandleKind::Array, true, false, false, true, true),
+            (HandleKind::Array, true, true, false, true, true),
             (HandleKind::Map, true, true, true, true, true),
             (HandleKind::Set, true, true, true, true, true),
             (HandleKind::Generator, true, false, false, true, true),
@@ -1555,7 +1569,12 @@ mod tests {
             (Type::Enum(EnumId(0)), false, false),
             (Type::StringAlias(StringAliasId(0)), false, false),
             (Type::FixedArray(Box::new(Type::I32), 2), false, false),
-            (Type::Array(Box::new(Type::I32)), false, false),
+            (Type::Array(Box::new(Type::I32)), true, false),
+            (
+                Type::Array(Box::new(Type::AsyncHandle(Box::new(Type::Void)))),
+                false,
+                false,
+            ),
             (
                 Type::Map(Box::new(Type::I32), Box::new(Type::Bool)),
                 true,
@@ -1601,6 +1620,30 @@ mod tests {
         for (ty, nullable, identity) in cases {
             assert_eq!(ty.is_reference_shape(&classes), nullable, "{ty:?}");
             assert_eq!(ty.uses_reference_identity(&classes), identity, "{ty:?}");
+        }
+    }
+
+    #[test]
+    fn holds_nullable_array_reads_each_depth() {
+        let array = Type::Array(Box::new(Type::I32));
+        let nullable = Type::Nullable(Box::new(array.clone()), Absence::Null);
+        let callback = Type::Func(Box::new(FuncType {
+            params: vec![nullable.clone()],
+            ret: Type::Void,
+        }));
+        for ty in [
+            nullable.clone(),
+            Type::Array(Box::new(nullable.clone())),
+            Type::FixedArray(Box::new(nullable), 2),
+            callback,
+        ] {
+            assert!(ty.holds_nullable_array(), "{ty:?}");
+        }
+        for ty in [
+            array,
+            Type::Nullable(Box::new(Type::Class(ClassId(0))), Absence::Null),
+        ] {
+            assert!(!ty.holds_nullable_array(), "{ty:?}");
         }
     }
 

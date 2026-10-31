@@ -343,6 +343,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::MirrorLifetimeTargetMissing => WitnessEntry::General { files: &["c-prov-target-lifetime"], variant: Some(Divergence::MirrorLifetimeTargetMissing), reason: "" },
         RejectionSite::MirrorArrayProvenanceMissing => WitnessEntry::General { files: &["c-prov-array"], variant: Some(Divergence::MirrorArrayProvenanceMissing), reason: "" },
         RejectionSite::MirrorStringProvenanceMissing => WitnessEntry::General { files: &["c-prov-string"], variant: Some(Divergence::MirrorStringProvenanceMissing), reason: "" },
+        RejectionSite::MirrorNullableArray => WitnessEntry::General { files: &["mirror-nullable-array"], variant: Some(Divergence::NullableNonReference), reason: "" },
         RejectionSite::MirrorParameterProvenanceMismatch => WitnessEntry::General { files: &["c-prov-incompatible"], variant: Some(Divergence::MirrorParameterProvenanceMismatch), reason: "" },
         RejectionSite::MirrorAnonymousCallback => WitnessEntry::General { files: &["c-callback-anonymous-field"], variant: Some(Divergence::MirrorAnonymousCallback), reason: "" },
         RejectionSite::MirrorCallbackProvenanceMissing => WitnessEntry::General { files: &["c-callback-alias-field"], variant: Some(Divergence::MirrorCallbackProvenanceMissing), reason: "" },

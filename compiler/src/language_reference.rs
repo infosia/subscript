@@ -22,6 +22,8 @@ const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for 
 
 const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null` or `Ref | undefined`. It evaluates `a` once and evaluates `b` only when `a` is absent. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
 
+const NULLABLE_ARRAYS: &str = "`T[] | null` is a legal `Ref | null` form (§217). Its absence is a null pointer. It narrows and flows as a class type does: `=== null`, `==`, `if`, `??`, `??=`, and `?.` with a member or a call. `.length`, an index, a method call, and `for...of` need a null test first. `a === b` with two arrays is rejected. An element type that holds a counted value fails with S011: `Promise<void>[] | null`, `Promise<void>[][] | null`, and `Generator<i32>[] | null`. A nullable has no holder count, so the handles in it have no owner. A type argument that fills `T` with a counted type fails with the same text. An array of a class is legal, and the class can have a `Promise<T>` field. A mirror declaration cannot hold this form at any depth (S100): a foreign parameter, a foreign result, a field, a constructor, a method, a type alias, and a callback signature. `JSON.stringify` and `JSON.parse<D>` accept a field of this type. A Worker message field stays rejected. `string | null` stays rejected (S011).";
+
 const UNDEFINED_RESULTS: &str = "`T | undefined` is legal only as the declared result of a function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. `pop()` and `shift()` on `T[]` return `T | undefined` for these `T` (§196): a reference class, a `Map`, a `Set`, a function type, and an array that holds no async handle. On an empty array they give `undefined`. They return `T` for each other `T`, such as a scalar, `string`, a value class, a nullable type, or `Promise<void>[]`. An empty array then traps with `empty-pop`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.";
 
 const USING_DECLARATIONS: &str = "`using x = e` declares an immutable reference-class binding whose class declares `[Symbol.dispose](): void`. The binding can have type `R | null`. Each initializer evaluates once. Scope exits call the hooks in reverse declaration order and skip null bindings. Inner scopes dispose first; a return expression evaluates before disposal. Suspension preserves resources until completion. Member reads through nullable bindings require ordinary null narrowing. A bare `using x = null` needs a type annotation. Traps do not run disposal. `await using`, value-class hooks, and descriptor-class hooks stay rejected.";
@@ -147,6 +149,14 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a177-nullish.ts",
             "corpus/reject/r177-nullish-non-nullable-left.ts",
             "corpus/reject/r178-optional-chain-unbound.ts",
+        ],
+    },
+    Feature {
+        title: "Nullable arrays",
+        prose: NULLABLE_ARRAYS,
+        corpus: &[
+            "corpus/accept/a400-nullable-array.ts",
+            "corpus/reject/r459-nullable-array-of-handles.ts",
         ],
     },
     Feature {

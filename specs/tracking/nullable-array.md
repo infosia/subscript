@@ -1,6 +1,6 @@
 # A nullable array and a nullable string — `compiler.md` §217
 
-Status: contract.
+Status: implemented; Phase Review open.
 
 ## Step 0 at `14a143f1`
 
@@ -46,3 +46,17 @@ Other finding: two `FixedArray<X | null, N>` types with different `X` give
 `tools/gate.sh quick` on the table change: six failures, each a pin or a
 total-check row. No entry reaches the wrong values above, so the corpus
 needs new entries.
+
+## Implementation
+
+Red, on a binary built from `14a143f1`: `a400` gives 18 diagnostics, the
+first S011 "`i32[] | null` is not a reference type union". `r459` gives S011
+"`Promise<void>[] | null` is not a reference type union", and it stays
+rejected. `tsc` accepts each, and `node` prints `0` for `r459`.
+
+`operation_signatures` read the raw argument type of `Map.set`. A
+`Map<K, C | null>` with a plain value failed that test too, and no corpus
+entry reached it. The test now converts a plain value and `null` to `V`
+only for `V = T | null`, and a test with an `i32` argument shows a
+real mismatch still fails. `push`, `fill`, `includes`, and `Set.add` with
+a nullable element have the same gap in that test.

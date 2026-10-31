@@ -523,7 +523,7 @@ pub(super) fn cells() -> Vec<Cell> {
     }
     // C21 excludes void controls; C24 row 1 records truth controls.
     // The split rejection classes omit concrete forms outside their recorded restrictions.
-    assert_eq!(omitted.len(), 7826, "the omitted instance set changed");
+    assert_eq!(omitted.len(), 7821, "the omitted instance set changed");
     let additional_pairs: usize = kinds::additional()
         .iter()
         .map(|kind| 2 + usize::from(kinds::numeric(kind)))
