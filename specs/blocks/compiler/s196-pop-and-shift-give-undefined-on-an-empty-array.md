@@ -22,11 +22,13 @@ pointer of `T | null`.
 
 ### 196.1 Rules
 
+*(Amended 2026-10-31 by §219: `string` is in the set of rule 1.)*
+
 1. `pop()` and `shift()` on `T[]` give `T | undefined` if `T` is in
    the set of `Map.get` (§123.1 rule 1, §195.5 rule 3). On an empty
    array they give `undefined`. They do not trap.
 2. For each other `T`, `pop()` and `shift()` give `T`, and an empty
-   array traps, as at the pin. This includes a scalar, `string`, a
+   array traps, as at the pin. This includes a scalar, a
    value class, an async handle, a nullable `T`, and a `T` that owns
    counted values (§171), such as `Promise<void>[]`. A nullable
    counted owner has no release: with rule 1 on `Promise<void>[][]`,
