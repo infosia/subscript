@@ -1453,9 +1453,10 @@ fn trap_line_parsing_is_total() {
 
 /// The archive freshness reads cargo's dep-info: a newer file that the
 /// dep-info does not list leaves the archive fresh; a newer listed source,
-/// a newer manifest, and a missing dep-info make it stale.
+/// a newer manifest, a newer lockfile, a missing lockfile, and a missing
+/// dep-info make it stale.
 ///
-/// Cost: under 10 ms. The test writes five small files and sets their
+/// Cost: under 10 ms. The test writes six small files and sets their
 /// modification times.
 #[test]
 fn staticlib_freshness_reads_the_dep_info() {
@@ -1475,6 +1476,7 @@ fn staticlib_freshness_reads_the_dep_info() {
     };
     let source = set("listed source.rs", 100);
     set("Cargo.toml", 100);
+    let lockfile = set("Cargo.lock", 100);
     let archive = set("libsubscript_runtime.a", 200);
     let dep_info = archive.with_extension("d");
     std::fs::write(
@@ -1488,30 +1490,114 @@ fn staticlib_freshness_reads_the_dep_info() {
     .expect("write dep-info");
     set("tests.rs", 300);
     assert!(
-        staticlib_is_fresh(&archive, &root),
+        staticlib_is_fresh(&archive, &root, &lockfile),
         "an unlisted newer file leaves the archive fresh"
     );
 
     set("listed source.rs", 300);
     assert!(
-        !staticlib_is_fresh(&archive, &root),
+        !staticlib_is_fresh(&archive, &root, &lockfile),
         "a newer listed source makes the archive stale"
     );
     set("listed source.rs", 100);
     set("Cargo.toml", 300);
     assert!(
-        !staticlib_is_fresh(&archive, &root),
+        !staticlib_is_fresh(&archive, &root, &lockfile),
         "a newer manifest makes the archive stale"
     );
     set("Cargo.toml", 100);
+    set("Cargo.lock", 300);
     assert!(
-        staticlib_is_fresh(&archive, &root),
+        !staticlib_is_fresh(&archive, &root, &lockfile),
+        "a newer lockfile makes the archive stale"
+    );
+    set("Cargo.lock", 100);
+    assert!(
+        staticlib_is_fresh(&archive, &root, &lockfile),
+        "an older lockfile leaves the archive fresh"
+    );
+
+    std::fs::remove_file(&lockfile).expect("remove lockfile");
+    assert!(
+        !staticlib_is_fresh(&archive, &root, &lockfile),
+        "a missing lockfile makes the archive stale"
+    );
+    set("Cargo.lock", 100);
+    assert!(
+        staticlib_is_fresh(&archive, &root, &lockfile),
         "the control is fresh again"
     );
 
     std::fs::remove_file(&dep_info).expect("remove dep-info");
     assert!(
-        !staticlib_is_fresh(&archive, &root),
+        !staticlib_is_fresh(&archive, &root, &lockfile),
         "a missing dep-info makes the archive stale"
+    );
+}
+
+/// The runtime build runs in the runtime directory, so `rustup` selects
+/// the pinned toolchain from any working directory of the caller.
+///
+/// Cost: under 1 ms. The test builds the command and does not run it.
+#[test]
+fn runtime_build_command_runs_in_the_runtime_directory() {
+    let runtime_dir = Path::new("workspace/runtime");
+    let command = runtime_build_command(runtime_dir, false);
+    assert_eq!(command.get_current_dir(), Some(runtime_dir));
+}
+
+/// A `Cargo.lock` newer than an old archive gives stale. The step that
+/// follows a successful build gives fresh, and it keeps the archive bytes.
+/// A source newer than the time that the step takes stays stale. The
+/// first assertion is the control without the step.
+///
+/// Cost: under 10 ms. The test writes five small files and sets their
+/// modification times.
+#[test]
+fn marking_the_archive_current_makes_it_fresh_after_a_newer_lockfile() {
+    use std::time::{Duration, SystemTime};
+    let dir = TempDir::new("archive-mark").expect("temp dir");
+    let root = dir.path.clone();
+    let set = |name: &str, contents: &[u8], seconds: u64| {
+        let path = root.join(name);
+        std::fs::write(&path, contents).expect("write file");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("open file")
+            .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
+            .expect("set modification time");
+        path
+    };
+    let source = set("source.rs", b"", 100);
+    set("Cargo.toml", b"", 100);
+    let archive = set("libsubscript_runtime.a", b"archive bytes", 200);
+    let lockfile = set("Cargo.lock", b"", 300);
+    std::fs::write(
+        archive.with_extension("d"),
+        format!("{}: {}\n", archive.display(), source.display()),
+    )
+    .expect("write dep-info");
+
+    assert!(
+        !staticlib_is_fresh(&archive, &root, &lockfile),
+        "with no step, a newer lockfile makes the archive stale"
+    );
+    let started = SystemTime::UNIX_EPOCH + Duration::from_secs(400);
+    mark_archive_current(&archive, started).expect("mark the archive");
+    assert!(
+        staticlib_is_fresh(&archive, &root, &lockfile),
+        "the step makes the archive fresh"
+    );
+    assert_eq!(
+        std::fs::read(&archive).expect("read archive"),
+        b"archive bytes"
+    );
+
+    set("source.rs", b"", 500);
+    mark_archive_current(&archive, started).expect("mark the archive");
+    assert!(
+        !staticlib_is_fresh(&archive, &root, &lockfile),
+        "a source that changed during the build stays newer than the archive"
     );
 }

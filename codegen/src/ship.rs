@@ -248,11 +248,12 @@ fn dep_info_paths(dep_info: &Path) -> Option<Vec<PathBuf>> {
 }
 
 /// True when `archive` exists and is at least as new as every path that
-/// its cargo dep-info lists, and as `runtime_dir/Cargo.toml`. A file
-/// that cargo does not compile into the archive, such as a test-only
-/// module, is not in the dep-info, so it does not make the archive stale.
-/// A missing or unreadable dep-info makes the archive stale.
-fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
+/// its cargo dep-info lists, as `runtime_dir/Cargo.toml`, and as
+/// `lockfile`. A file that cargo does not compile into the archive, such
+/// as a test-only module, is not in the dep-info, so it does not make the
+/// archive stale. A missing or unreadable dep-info makes the archive
+/// stale, and a missing manifest or lockfile does too.
+fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path, lockfile: &Path) -> bool {
     let Ok(built) = std::fs::metadata(archive).and_then(|m| m.modified()) else {
         return false;
     };
@@ -260,6 +261,7 @@ fn staticlib_is_fresh(archive: &Path, runtime_dir: &Path) -> bool {
         return false;
     };
     sources.push(runtime_dir.join("Cargo.toml"));
+    sources.push(lockfile.to_path_buf());
     sources.iter().all(|source| {
         std::fs::metadata(source)
             .and_then(|m| m.modified())
@@ -280,29 +282,52 @@ pub fn runtime_staticlib_name() -> &'static str {
     }
 }
 
+/// The command that builds the runtime static library. It runs in
+/// `runtime_dir`, so `rustup` selects the toolchain that the repository
+/// pins from any working directory of the caller.
+fn runtime_build_command(runtime_dir: &Path, release: bool) -> Command {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(runtime_dir)
+        .arg("build")
+        .arg("--offline")
+        .arg("--manifest-path")
+        .arg(runtime_dir.join("Cargo.toml"));
+    if release {
+        cmd.arg("--release");
+    }
+    cmd
+}
+
+/// Sets the modification time of `archive` to `started` and keeps its
+/// bytes. `started` is the time read before `cargo` started, so a source
+/// that changes during the build stays newer than the archive. A `cargo
+/// build` that finds no work keeps the old archive time, so with no such
+/// step a newer `Cargo.lock` starts one `cargo build` in each later
+/// process. The file opens for writing because Windows needs the write
+/// access to set the time.
+fn mark_archive_current(archive: &Path, started: std::time::SystemTime) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(archive)?
+        .set_modified(started)
+}
+
 /// Builds the runtime static library for the running profile and
 /// returns its path.
 fn build_runtime_staticlib() -> Result<PathBuf, String> {
     let dir = build_dir().map_err(|e| e.to_string())?;
     let archive = dir.join(runtime_staticlib_name());
     let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime");
-    if staticlib_is_fresh(&archive, &runtime_dir) {
+    if staticlib_is_fresh(&archive, &runtime_dir, &runtime_dir.join("../Cargo.lock")) {
         return Ok(archive);
     }
     let profile = dir
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut cmd = Command::new(cargo);
-    cmd.arg("build")
-        .arg("--offline")
-        .arg("--manifest-path")
-        .arg(runtime_dir.join("Cargo.toml"));
-    if profile == "release" {
-        cmd.arg("--release");
-    }
-    let out = cmd
+    let started = std::time::SystemTime::now();
+    let out = runtime_build_command(&runtime_dir, profile == "release")
         .output()
         .map_err(|e| internal(format!("build runtime staticlib: {e}")))?;
     if !out.status.success() {
@@ -317,6 +342,9 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
             archive.display()
         )));
     }
+    // §214.1 rule 2a: a failure of this step is not an error. The archive
+    // is valid, and the cost is one more `cargo build`.
+    let _ = mark_archive_current(&archive, started);
     Ok(archive)
 }
 
@@ -326,9 +354,10 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
 /// builds only the `rlib` it links against, so the archive is produced
 /// on demand with the same cargo and the same profile. Resolution is
 /// cached per process and the archive is reused when it is newer than
-/// every runtime source, so a test binary that links many programs
-/// spawns cargo at most once, and not at all when the archive is
-/// already current. Set [`RUNTIME_STATICLIB_ENV`] to bypass all of it.
+/// every runtime source and the workspace `Cargo.lock`, so a test binary
+/// that links many programs spawns cargo at most once, and not at all
+/// when the archive is already current. Set [`RUNTIME_STATICLIB_ENV`] to
+/// bypass all of it.
 fn runtime_staticlib() -> Result<PathBuf, RunError> {
     if let Some(p) = std::env::var_os(RUNTIME_STATICLIB_ENV) {
         let path = PathBuf::from(p);
@@ -349,7 +378,7 @@ fn runtime_staticlib() -> Result<PathBuf, RunError> {
 
 /// Path to the runtime static library for the running build profile,
 /// building it with the workspace's own cargo when it is missing or
-/// older than the runtime sources.
+/// older than the runtime sources or the workspace `Cargo.lock`.
 ///
 /// The ship-tier runner uses it for its link. It is public so that host
 /// programs resolve the same archive as the differential gate.
