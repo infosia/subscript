@@ -1,7 +1,8 @@
-//! A generic call infers from its contextual result type (`compiler.md` §212).
+//! A generic call infers from its contextual result type (`compiler.md`
+//! §212), also through `Promise<T>`, `Array<T>`, and `await` (§215).
 //!
 //! Cost: each test runs the checker on one short program, with no code
-//! generation and no external process. The whole file took 0.07 s in a
+//! generation and no external process. The whole file took 0.15 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
@@ -27,6 +28,19 @@ function trail<T>(b: Buf<T>, x: T | null): Buf<T> { return b; }
 function run(f: () => void): void { f(); }
 function same<T>(): Two<T, T> { throw new Error("same"); }
 class Factory { make<T>(): Buf<T> { return new Buf<T>(); } }
+async function af<T>(): Promise<Buf<T>> { return new Buf<T>(); }
+async function az<T>(): Promise<T> { throw new Error("az"); }
+async function ai<T>(value: T): Promise<T> { return value; }
+async function fr<T>(p: Promise<T>): Promise<T> { return await p; }
+async function one(): Promise<i32> { return 1; }
+async function done(): Promise<void> {}
+function pending<T>(): Promise<Buf<T>> { return af<T>(); }
+function mk<T>(): Array<T> { return []; }
+function head<T>(items: Array<T>): T { return items[0]; }
+class Maker {
+    async make<T>(): Promise<Buf<T>> { return new Buf<T>(); }
+    plain<T>(): T { throw new Error("plain"); }
+}
 "#;
 
 fn program(main: &str) -> String {
@@ -44,6 +58,24 @@ fn reject(main: &str, code: RuleCode, message: &str) {
         check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code, code, "{errors:?}");
+    assert_eq!(errors[0].message, message);
+}
+
+fn async_program(main: &str) -> String {
+    format!("{PRELUDE}\nexport async function main(): Promise<void> {{\n{main}\n}}\n")
+}
+
+fn accept_async(main: &str) {
+    check_program(&[SourceFile::new("test.ts", async_program(main).as_str())])
+        .unwrap_or_else(|errors| panic!("{errors:?}"));
+}
+
+fn reject_async(main: &str, message: &str) {
+    let source = async_program(main);
+    let errors =
+        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
     assert_eq!(errors[0].message, message);
 }
 
@@ -352,4 +384,184 @@ fn a_partial_type_argument_list_stays_rejected() {
         errors[0].message.contains("expects 2 type argument"),
         "{errors:?}"
     );
+}
+
+/// §215 rule 1: `Array<T>` matches an array as `T[]` does, at a result and
+/// at a parameter.
+#[test]
+fn array_of_t_is_an_inference_form() {
+    accept("const x: P[] = mk(); const y: Array<P> = mk();");
+    accept("const xs: P[] = [new P()]; const p: P = head(xs);");
+    accept("const xs: P[] = [new P()]; const p = head(xs); print(`${p.x}`);");
+    // The control: another shape gives no candidate.
+    reject(
+        "const x: Buf<P> = mk();",
+        RuleCode::S100,
+        &no_candidate("T", "mk"),
+    );
+}
+
+/// §215 rule 2: `Promise<T>` matches a handle, for an argument candidate
+/// and for a contextual candidate.
+#[test]
+fn promise_of_t_is_an_inference_form() {
+    accept_async("const p: Promise<Buf<P>> = af(); await p;");
+    accept_async("const p: Promise<Buf<P>> = pending(); await p;");
+    accept_async("const q: Promise<P> = ai(new P()); const r = await fr(q); print(`${r.x}`);");
+    // The control: an argument of another shape gives no candidate.
+    reject_async("const r = await fr(new P());", &no_candidate("T", "fr"));
+    reject_async(
+        "const p: Promise<i32> = af(); await p;",
+        &no_candidate("T", "af"),
+    );
+}
+
+/// §215 rule 3: `await` gives a call the contextual type `Promise<C>`.
+#[test]
+fn await_gives_its_call_operand_a_context() {
+    accept_async("const b: Buf<P> = await af();");
+    accept_async("const b: Buf<P> = await (af());");
+    accept_async("const b: Buf<P> | null = await af();");
+    accept_async("const b: Buf<P> | null = await az();");
+    accept_async("const m = new Maker(); const b: Buf<P> = await m.make();");
+    accept_async("const v: i64 = await ai(7);");
+    accept_async("const b: Buf<Buf<P>> = await ai(await af());");
+    // A literal argument with no context takes its default.
+    let source = async_program("const b = await ai(7); const v: i64 = b;");
+    let errors =
+        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+    assert_eq!(errors[0].code, RuleCode::S007, "{errors:?}");
+}
+
+/// §215 rule 3: with no contextual type the call keeps the diagnostic. The
+/// operand of `as` and a member read give no contextual type.
+#[test]
+fn await_with_no_context_keeps_the_diagnostic() {
+    let no_af = no_candidate("T", "af");
+    reject_async("const b = await af();", &no_af);
+    reject_async("await af();", &no_af);
+    reject_async("const b = (await af()) as Buf<P>;", &no_af);
+    reject_async("const n: i32 = (await af()).items.length;", &no_af);
+    reject_async(
+        "const m = new Maker(); const b = await m.make();",
+        &no_candidate("T", "Maker.make"),
+    );
+}
+
+/// §215 rule 3: a contextual type reaches a call only. A non-call operand
+/// keeps its form, and an `await` of a synchronous callee keeps its text.
+#[test]
+fn await_of_another_operand_is_unchanged() {
+    let no_af = no_candidate("T", "af");
+    let source =
+        async_program("const c: boolean = true; const b: Buf<P> = await (c ? af() : af());");
+    let errors =
+        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert_eq!(errors[0].message, no_af);
+    reject_async(
+        "const x: i32 = await 1;",
+        "`await` requires `Context.suspend()`, an async call, or a held async handle",
+    );
+    reject_async("const x: P = await zero();", &no_candidate("T", "zero"));
+    reject_async(
+        "const x: P = await new Maker().plain();",
+        &no_candidate("T", "Maker.plain"),
+    );
+    reject_async(
+        "const b: Buf<P> = await pending();",
+        &no_candidate("T", "pending"),
+    );
+    reject_async(
+        "const x: P = await id(new P());",
+        "`id<P>` is synchronous and cannot be awaited",
+    );
+    // The control: a held handle takes the same position.
+    accept_async("const h: Promise<i32> = one(); const x: i32 = await h;");
+}
+
+/// §215 rule 4: an `await` at a hint position gives no contextual
+/// candidate. A reject here fails if `mark_operand_calls` stops at `await`.
+#[test]
+fn a_literal_hint_does_not_pass_through_await() {
+    let no_az = no_candidate("T", "az");
+    reject_async("const a: i32 = -(await az());", &no_az);
+    reject_async("const a: i32 = ~(await az());", &no_az);
+    reject_async("const a: i32 = 1 + (await az());", &no_az);
+    reject_async(
+        "const xs: i32[] = [1]; const a: i32 = xs[await az()];",
+        &no_az,
+    );
+    reject_async("const a: i32 = (await az())[0];", &no_az);
+    reject_async(
+        "const a: i32 = 1; switch (a) { case await az(): break; default: break; }",
+        &no_az,
+    );
+    reject_async("const xs = [1, await az()];", &no_az);
+    reject_async("const xs = [new P(), await az()];", &no_az);
+    reject_async(
+        "const c: boolean = true; const a: i32 = -(c ? await az() : 1);",
+        &no_az,
+    );
+    let compound = async_program("let x: i32 = 1; x += await az();");
+    let errors =
+        check_program(&[SourceFile::new("test.ts", compound.as_str())]).expect_err("must reject");
+    assert_eq!(errors[0].message, no_az);
+    // The control: the same callee in a contextual position.
+    accept_async("const a: i32 = await az();");
+    accept_async("const xs: i32[] = [1, await az()];");
+    accept_async("const c: boolean = true; const a: i32 = c ? await az() : 1;");
+}
+
+/// §215 rule 5: `return af();` stays rejected, also with written type
+/// arguments, because an async function has no promise adoption.
+#[test]
+fn a_returned_handle_stays_rejected() {
+    let body = |statement: &str| {
+        format!(
+            "{PRELUDE}
+async function r(): Promise<Buf<P>> {{ {statement} }}
+export function main(): void {{}}
+"
+        )
+    };
+    let message = |statement: &str| {
+        let source = body(statement);
+        let errors =
+            check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+        errors[0].message.clone()
+    };
+    assert_eq!(message("return af();"), no_candidate("T", "af"));
+    assert_eq!(
+        message("return af<P>();"),
+        "type mismatch: the return value expects `Buf<P>`, got `Promise<Buf<P>>`"
+    );
+    // The control: an explicit `await` takes the context of the result.
+    let source = body("return await af();");
+    check_program(&[SourceFile::new("test.ts", source.as_str())])
+        .unwrap_or_else(|errors| panic!("{errors:?}"));
+}
+
+/// §215 rule 6: the other awaitable forms keep what they did. An element of
+/// `Promise.all` has no contextual type.
+#[test]
+fn the_other_awaitable_forms_are_unchanged() {
+    let void_value = "a `void` expression is only allowed as an expression statement";
+    accept_async("await Context.suspend();");
+    reject_async("const x: i32 = await Context.suspend();", void_value);
+    accept_async("const xs: i32[] = await Promise.all([one(), one()]);");
+    accept_async("const xs: Buf<P>[] = await Promise.all([af<P>(), af<P>()]);");
+    reject_async(
+        "const xs: Buf<P>[] = await Promise.all([af()]);",
+        &no_candidate("T", "af"),
+    );
+    accept_async("const g: TaskGroup = new TaskGroup(); g.add(done()); await g.join();");
+    reject_async(
+        "const g: TaskGroup = new TaskGroup(); g.add(done()); const x: i32 = await g.join();",
+        void_value,
+    );
+    accept_async("const f = one; const x: i32 = await f();");
+    accept_async("const h: Promise<i32> = one(); const x: i32 = await h.then((v: i32) => v + 1);");
 }

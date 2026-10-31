@@ -185,7 +185,8 @@ impl<'p> Checker<'p> {
     /// Marks each call whose value `expr` gives. The context that an
     /// operator operand, an index, or a later element of an array literal
     /// receives types a literal. `tsc` gives such an expression no
-    /// contextual type, so it decides no type argument (§212 rule 1a).
+    /// contextual type, so it decides no type argument (§212 rule 1a,
+    /// §215 rule 4).
     pub(super) fn mark_operand_calls(&mut self, expr: &ast::Expr) {
         match unparen_expr(expr) {
             ast::Expr::Call(call) => {
@@ -200,13 +201,15 @@ impl<'p> Checker<'p> {
                     self.mark_operand_calls(&element.expr);
                 }
             }
+            ast::Expr::Await(awaited) => self.mark_operand_calls(&awaited.arg),
             _ => {}
         }
     }
 
     /// Matches the declared result type against the contextual type of
     /// `call` (§212 rule 1). The match goes through `C | null` in the
-    /// contextual type. A shape that does not match gives no candidate.
+    /// contextual type, and in the value type of a contextual
+    /// `Promise<C>`. A shape that does not match gives no candidate.
     /// The first match of a type parameter is its candidate. `void` gives
     /// no candidate.
     fn contextual_result_candidates(
@@ -227,6 +230,9 @@ impl<'p> Checker<'p> {
         if let Type::Nullable(inner, _) = &context {
             self.match_inference_type(result, inner, target.type_params, &mut candidates);
         }
+        if let Some(handle) = self.non_null_handle(&context) {
+            self.match_inference_type(result, &handle, target.type_params, &mut candidates);
+        }
         self.cur_file = file;
         candidates
             .into_iter()
@@ -237,6 +243,17 @@ impl<'p> Checker<'p> {
                     .filter(|value| self.apparent_type(value) != Type::Void)
             })
             .collect()
+    }
+
+    /// `Promise<C>` for a contextual `Promise<C | null>` (§215 rule 3).
+    fn non_null_handle(&self, context: &Type) -> Option<Type> {
+        let Type::AsyncHandle(value) = self.apparent_type(context) else {
+            return None;
+        };
+        match self.apparent_type(&value) {
+            Type::Nullable(inner, _) => Some(Type::AsyncHandle(inner)),
+            _ => None,
+        }
     }
 
     /// Infers the type arguments of `new G(args)` for a generic class
@@ -591,7 +608,9 @@ impl<'p> Checker<'p> {
                 let shape = self.apparent_type(actual);
                 let components: Vec<&Type> = match (name.sym.as_ref(), &shape) {
                     ("FixedArray", Type::FixedArray(element, _) | Type::Array(element))
-                    | ("Set", Type::Set(element)) => vec![element],
+                    | ("Array", Type::Array(element))
+                    | ("Set", Type::Set(element))
+                    | ("Promise", Type::AsyncHandle(element)) => vec![element],
                     ("Map", Type::Map(key, value)) => vec![key, value],
                     (_, Type::Class(id)) => {
                         let Some((key, types)) = self.instance_arguments.get(id) else {

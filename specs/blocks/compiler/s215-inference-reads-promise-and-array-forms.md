@@ -33,6 +33,11 @@ An async factory is the async form of the §212 request, and
    contextual type `Promise<C>`. An `await` with no contextual type
    gives none, so `const b = await af();` keeps the §149.1 rule 5
    diagnostic, as §212.1 rule 5 states.
+3a. A synchronous callee under `await` takes no such context. So
+   `const x: P = await zero();` keeps the no-candidate text. A contextual
+   type through `C | null` works as in §212.1 rule 1:
+   `const b: Buf<P> | null = await af();` is accepted. *(Added
+   2026-10-31: the coding agent measured these forms.)*
 4. §212.1 rule 1a applies through `await`. A call under an `await` at
    an arithmetic operand, a unary operand, an index, a compound
    assignment value, a `switch` case test, or a later array element with
@@ -57,3 +62,13 @@ An async factory is the async form of the §212 request, and
 4. The rejection-site total check passes.
 5. No golden moves. The LIR text snapshot grows by the `a398` section
    only, because `a398` has async functions.
+
+### 215.3 Open
+
+`tsc` accepts each of these, and each stays rejected:
+
+1. `await (c ? af() : af())`: a non-call operand of `await` has no
+   context.
+2. An element of `Promise.all([af()])`.
+3. `await k?.make()` (§212.4 item 1).
+4. `await saf()`, with a synchronous `saf<T>(): Promise<T>` (rule 3a).

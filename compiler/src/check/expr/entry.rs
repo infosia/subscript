@@ -434,7 +434,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Await(a) => {
                 // §188.1 rule 2: an `await` result that holds a handle is
                 // an origin.
-                let value = self.check_await(a, fx, pos);
+                let value = self.check_await(a, ctx, fx, pos);
                 self.track_async_call_result(value, fx)
             }
             ast::Expr::TsNonNull(t) => {
@@ -597,8 +597,16 @@ impl<'p> Checker<'p> {
 
     /// Checks the three awaitable forms (§26, §37). The AST call is handled
     /// here instead of through the ordinary call path so an async call can
-    /// never materialize a Promise-typed value in HIR.
-    fn check_await(&mut self, awaited: &ast::AwaitExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    /// never materialize a Promise-typed value in HIR. A call operand has
+    /// the contextual type `Promise<C>` for the context `C` of the `await`
+    /// (§215 rule 3).
+    fn check_await(
+        &mut self,
+        awaited: &ast::AwaitExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
             self.reject_subset(
                 RejectionSite::AwaitOutsideAsync,
@@ -629,6 +637,24 @@ impl<'p> Checker<'p> {
                 pos,
             };
         };
+        let context = ctx.map(|value| Type::AsyncHandle(Box::new(value.clone())));
+        let active = self.active_call.replace(call.span);
+        let active_context = self.enter_call_context(call, context.as_ref());
+        let checked = self.check_await_call(operand, call, fx, pos);
+        self.active_call = active;
+        self.active_call_context = active_context;
+        checked
+    }
+
+    /// Checks an awaited call. `active_call_context` holds its contextual
+    /// type, so each path that checks `operand` passes that type on.
+    fn check_await_call(
+        &mut self,
+        operand: &ast::Expr,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
         let ast::Callee::Expr(callee) = &call.callee else {
             self.reject_subset(
                 RejectionSite::AwaitNotDirectCall,
@@ -659,7 +685,8 @@ impl<'p> Checker<'p> {
                 || (self.ambient_namespace(&member.obj, fx) == Some("Promise")
                     && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all"))
             {
-                let handle = self.check_expr(operand, None, fx);
+                let context = self.active_call_context.clone();
+                let handle = self.check_expr(operand, context.as_ref(), fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {
                     return self.err_expr(pos);
                 };
@@ -715,7 +742,8 @@ impl<'p> Checker<'p> {
             && self.foreign_defs.iter().any(|f| f.name == id.sym.as_ref() && f.completion_result.is_some()));
         let standard = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.peek_scope_item(id.sym.as_ref()), Some(ScopeItem::StandardFile(_))));
         if indirect || completion || standard {
-            let handle = self.check_expr(operand, None, fx);
+            let context = self.active_call_context.clone();
+            let handle = self.check_expr(operand, context.as_ref(), fx);
             if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
                 let origins = self.expr_async_origins(&handle, fx);
                 fx.handle_async_origins(&origins);
@@ -761,6 +789,15 @@ impl<'p> Checker<'p> {
                         let arguments = if let Some(type_args) = &call.type_args {
                             self.resolve_instance_arguments(type_args)
                         } else {
+                            // A synchronous callee is rejected below, so
+                            // `Promise<C>` decides no type argument of it.
+                            let is_async = self
+                                .generic_fns
+                                .get(&key)
+                                .is_some_and(|template| template.function.is_async);
+                            if !is_async {
+                                self.active_call_context = None;
+                            }
                             let Some((arguments, values)) =
                                 self.infer_call_arguments(&key, call, fx, &callee_pos)
                             else {
@@ -935,6 +972,15 @@ impl<'p> Checker<'p> {
                 let generic = self.class_sigs[class.0].has_generic_method(&name, false);
                 let mut inferred = None;
                 let name = if generic {
+                    // A synchronous method is rejected below, so `Promise<C>`
+                    // decides no type argument of it.
+                    let is_async = self.class_sigs[class.0]
+                        .generic_methods
+                        .get(&name)
+                        .is_some_and(|template| template.function.is_async);
+                    if !is_async {
+                        self.active_call_context = None;
+                    }
                     let Some((instance, checked)) = self.instantiate_generic_method_call(
                         class,
                         &name,
