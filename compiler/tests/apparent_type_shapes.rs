@@ -548,7 +548,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("inference.rs", "infer_constructor_arguments", 0x7764f382d2239c63),
             ("inference.rs", "infer_container_arguments", 0x7bfed925f60a198f),
             ("inference.rs", "match_inference_type", 0x45a1699ca55a906c),
-            ("inference.rs", "inferred_parameter_edges", 0xf0e7cada3029a254),
+            ("inference.rs", "inferred_parameter_edges", 0x2a5c38f7a71592ef),
         ],
     },
     AllowGroup {

@@ -2,7 +2,7 @@
 //! §212), also through `Promise<T>`, `Array<T>`, and `await` (§215).
 //!
 //! Cost: each test runs the checker on one short program, with no code
-//! generation and no external process. The whole file took 0.15 s in a
+//! generation and no external process. The whole file took 0.17 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
@@ -40,7 +40,9 @@ function head<T>(items: Array<T>): T { return items[0]; }
 class Maker {
     async make<T>(): Promise<Buf<T>> { return new Buf<T>(); }
     plain<T>(): T { throw new Error("plain"); }
+    sync<T>(): Buf<T> { return new Buf<T>(); }
 }
+async function gk(): Promise<Maker> { return new Maker(); }
 "#;
 
 fn program(main: &str) -> String {
@@ -426,6 +428,10 @@ fn await_gives_its_call_operand_a_context() {
     accept_async("const m = new Maker(); const b: Buf<P> = await m.make();");
     accept_async("const v: i64 = await ai(7);");
     accept_async("const b: Buf<Buf<P>> = await ai(await af());");
+    // An `await` in a receiver leaves the call of the enclosing expression
+    // and its context in place.
+    accept_async("const b: Buf<P> = (await gk()).sync();");
+    accept_async("const b: Buf<P> = await (await gk()).make();");
     // A literal argument with no context takes its default.
     let source = async_program("const b = await ai(7); const v: i64 = b;");
     let errors =
@@ -564,4 +570,52 @@ fn the_other_awaitable_forms_are_unchanged() {
     );
     accept_async("const f = one; const x: i32 = await f();");
     accept_async("const h: Promise<i32> = one(); const x: i32 = await h.then((v: i32) => v + 1);");
+}
+
+/// A `Promise<T>` argument that wraps a type parameter is an expanding
+/// edge, so the chain of instances reports its diagnostic.
+#[test]
+fn a_chain_through_a_handle_argument_is_reported() {
+    for (parameter, call) in [
+        (
+            "v: Promise<T>",
+            "const q: Promise<i32> = ai(1); print(`${await g(1, q)}`);",
+        ),
+        ("v: T", "print(`${await g(1, 2)}`);"),
+    ] {
+        let source = format!(
+            "{PRELUDE}
+async function g<T>(n: i32, {parameter}): Promise<i32> {{
+    if (n === 0) {{ return 0; }}
+    return await g(n - 1, ai(v));
+}}
+export async function main(): Promise<void> {{ {call} }}
+"
+        );
+        let errors =
+            check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
+        assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+        assert!(
+            errors[0]
+                .message
+                .contains("the chain of instances grows without bound"),
+            "{errors:?}"
+        );
+    }
+    // The control: a chain that keeps its type argument is accepted.
+    let source = format!(
+        "{PRELUDE}
+async function h<T>(n: i32, v: Promise<T>): Promise<i32> {{
+    await v;
+    if (n === 0) {{ return 0; }}
+    return await h(n - 1, ai(new P()));
+}}
+export async function main(): Promise<void> {{
+    const q: Promise<P> = ai(new P());
+    print(`${{await h(1, q)}}`);
+}}
+"
+    );
+    check_program(&[SourceFile::new("test.ts", source.as_str())])
+        .unwrap_or_else(|errors| panic!("{errors:?}"));
 }

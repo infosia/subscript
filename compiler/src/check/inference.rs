@@ -676,7 +676,8 @@ impl<'p> Checker<'p> {
             Type::Array(element)
             | Type::FixedArray(element, _)
             | Type::Set(element)
-            | Type::Nullable(element, _) => vec![element],
+            | Type::Nullable(element, _)
+            | Type::AsyncHandle(element) => vec![element],
             Type::Map(key, value) => vec![key, value],
             Type::Class(id) => self
                 .instance_arguments

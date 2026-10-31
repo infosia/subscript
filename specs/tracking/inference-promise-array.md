@@ -1,6 +1,6 @@
 # Inference reads `Promise<T>` and `Array<T>` — `compiler.md` §215
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 ## Measurement at the pin `fbf3509a`
 
@@ -22,10 +22,10 @@ subscript gives S100 "the return value expects `Buf<P>`, got
 
 ## Implementation
 
-Red, on a first draft of `a398`, with a binary built from `3769dcc8`: 11
-errors, 10 × S100 "cannot infer type parameter" and 1 × S013 at an async
-arrow in the draft. The final entry replaces that arrow, and it has no
-separate Red run.
+Red, Phase Review, the final `a398` on a binary built from `fbf3509a`:
+11 errors, 10 × S100 "cannot infer type parameter" and 1 × S013 at
+`const source: Promise<Particle> = particle();`, a cascade of the
+rejected `fr(source)`.
 
 `a398` passes `tsc`, `node`, and the three tiers. No `.expected` file
 moves. `codegen/tests/lir-goldens/corpus.txt` grows by the `a398`
@@ -35,3 +35,5 @@ A form that stays rejected and now gives another text: `await sf(q)`
 with a synchronous `sf` gives "`sf<P>` is synchronous and cannot be
 awaited", and `const r: i32 = await fr(1);` gives "the argument expects
 `Promise<i32>`, got `i32`".
+
+`gate full 23fcf221 dirty:7 debug 3064/0/5 release 3061/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0.

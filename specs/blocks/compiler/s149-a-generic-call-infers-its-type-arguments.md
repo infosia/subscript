@@ -60,6 +60,7 @@ check`; `tsc` 5.9.2 accepts every row:
 6. Explicit type arguments override inference. Each argument is
    evaluated once, in order; inference is a check-time step with no
    runtime effect.
+6a. §215 adds `Array<T>` and `Promise<T>` to the forms of rule 2.
 7. Out of scope, still rejected as before: a callback's parameter
    types from context. §197 gives inference for a generic method and a
    generic constructor (`new G(x)`). §212 gives a candidate through the

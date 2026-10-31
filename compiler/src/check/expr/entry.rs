@@ -647,7 +647,8 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks an awaited call. `active_call_context` holds its contextual
-    /// type, so each path that checks `operand` passes that type on.
+    /// type for inference. A path that checks `operand` has no inference
+    /// that reads a context, so it passes none.
     fn check_await_call(
         &mut self,
         operand: &ast::Expr,
@@ -685,8 +686,7 @@ impl<'p> Checker<'p> {
                 || (self.ambient_namespace(&member.obj, fx) == Some("Promise")
                     && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all"))
             {
-                let context = self.active_call_context.clone();
-                let handle = self.check_expr(operand, context.as_ref(), fx);
+                let handle = self.check_expr(operand, None, fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {
                     return self.err_expr(pos);
                 };
@@ -742,8 +742,7 @@ impl<'p> Checker<'p> {
             && self.foreign_defs.iter().any(|f| f.name == id.sym.as_ref() && f.completion_result.is_some()));
         let standard = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.peek_scope_item(id.sym.as_ref()), Some(ScopeItem::StandardFile(_))));
         if indirect || completion || standard {
-            let context = self.active_call_context.clone();
-            let handle = self.check_expr(operand, context.as_ref(), fx);
+            let handle = self.check_expr(operand, None, fx);
             if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
                 let origins = self.expr_async_origins(&handle, fx);
                 fx.handle_async_origins(&origins);
