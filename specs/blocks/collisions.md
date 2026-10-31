@@ -160,8 +160,9 @@ An exception that leaves a close finalizer traps at its throw (`t109`), while Ja
 ### C7. Unions, `null`, `undefined` (Q8) — `T | null` only
 
 In-language, the only union form is `Ref | null` where `Ref` is a
-reference class, opaque handle, function type, boundary struct pointer, or
-an array with no counted element (`compiler.md` §217).
+reference class, opaque handle, function type, boundary struct pointer,
+an array with no counted element (`compiler.md` §217), or a string
+(`compiler.md` §218).
 General unions (`i32 | string`), value-class-with-null, and every use of
 `undefined` (including optional properties `x?: T` and optional parameters
 without defaults) are rejected.

@@ -50,8 +50,7 @@ no record gives a reason for the difference.
    stay rejected, as `tsc` TS18047 does. `x[i]` through `?.[i]` and
    `x!` keep the text that a nullable class has.
 6. `a === b` with two arrays stays rejected. `a === null` is accepted.
-7. A `string | null` stays rejected. Its equality and search need a
-   separate section.
+7. §218 states `string | null`.
 8. The form has no run-time cost beyond the null test that the source
    writes.
 9. Each `FixedArray` type has its own C type. Two `FixedArray` types of
