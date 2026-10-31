@@ -500,6 +500,8 @@ mod tests {
         .expect("bench run");
         assert_eq!(b.stdout, b"tick\n");
         assert_eq!(b.samples.len(), 3);
+        assert_eq!(b.cpu_samples.len(), 3);
+        assert_eq!(b.cpu_samples.iter().all(Option::is_some), cfg!(unix));
         assert_eq!(b.warmup_iterations, 2);
         assert!(b.warmup > Duration::ZERO);
         assert!(b.compile > Duration::ZERO);

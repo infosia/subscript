@@ -21,7 +21,7 @@
   compiled with the platform C compiler at `-O2`, measured on the same
   machine in the same session as the language runs and recorded in the
   tracking file when P4 opens. Criteria: ship tier within **1.5×** of
-  the C baseline (eval median). Failing it reopens the backend decision
+  the C baseline (eval median; a gate run reads §213). Failing it reopens the backend decision
   with the measurement as the named criterion.
 
   *(Revised 2026-08-27, owner. This read "ship-AOT within 1.5× ...;
@@ -152,11 +152,11 @@
   **A gate does not need §9's quiet machine.** §9's precision exists for
   the published comparison, where 5% is the claim. A gate reports a
   regression. `perf-gate` read 1.35× and 19.64× on a quiet machine and
-  1.38× and 20.17× on a loaded one, so run-to-run variation is about 3%.
-  Every limit here keeps at least 11% headroom, and the regression this
-  gate exists to catch was 32%. Load above one busy process per CPU moves
-  a median past a limit, so a gate run compares the fastest runs
-  (§213). *(Amended 2026-10-31.)*
+  1.38× and 20.17× on a loaded one. Every limit here keeps at least 11%
+  headroom, and the regression this gate exists to catch was 32%. Load
+  at one busy process per CPU moves a median past a limit, so a gate
+  run compares the fastest runs and the dev-JIT CPU time (§213).
+  *(Amended 2026-10-31.)*
 
   **`perf-gate` serves two runs, and they are not the same run.**
   *(Added 2026-08-28, after the first round removed §9's void from
@@ -176,5 +176,5 @@
   invalid timing breaks §9, which says the timing is withheld.
 
   If the gate run proves unstable in practice, record the measurement
-  that shows the instability first. The answer is not a weaker check.
-  §213 records one such measurement.
+  that shows the instability first. §213 records one, and §213.1 rule 3
+  states what the gate gives up for it.

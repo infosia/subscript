@@ -29,6 +29,33 @@ pub(super) struct CompletedRun {
     pub(super) ctx: Box<Context>,
     pub(super) stdout: Vec<u8>,
     pub(super) elapsed: Duration,
+    /// Thread CPU time over the span of `elapsed`, on a host with that clock.
+    pub(super) cpu: Option<Duration>,
+}
+
+/// The CPU time of the calling thread (`compiler.md` §213 rule 1a). A host
+/// with no such clock gives `None`.
+fn thread_cpu_time() -> Option<Duration> {
+    #[cfg(unix)]
+    {
+        let mut time = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: `time` is live writable storage for this one call.
+        let status = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
+        if status != 0 {
+            return None;
+        }
+        Some(Duration::new(
+            u64::try_from(time.tv_sec).ok()?,
+            u32::try_from(time.tv_nsec).ok()?,
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 /// What one dev-tier entry run needs beyond the finalized code.
@@ -43,7 +70,7 @@ pub(super) struct EntryOptions {
 
 /// Runs the module initializer and then the exported `main` on a fresh
 /// Context, returning the stdout bytes of the run and how long the
-/// `main` call itself took.
+/// `main` call itself took, in wall time and in thread CPU time.
 ///
 /// The initializer is deliberately outside the measured span: it is the
 /// module's global setup, not the workload (`specs/blocks/compiler.md`
@@ -96,6 +123,7 @@ pub(super) fn execute_entry(
         ctx.fail_alloc_after(n);
     }
     let mut elapsed = Duration::ZERO;
+    let mut cpu = None;
     {
         // SAFETY: `init_ptr`/`main_ptr` are finalized JIT code for
         // functions the lowering built with exactly this signature
@@ -109,9 +137,13 @@ pub(super) fn execute_entry(
                 type Entry = unsafe extern "C" fn(*mut Context);
                 let main: Entry = std::mem::transmute(main_ptr);
                 ctx.enter_script();
+                let cpu_start = thread_cpu_time();
                 let start = Instant::now();
                 main(&mut *ctx);
                 elapsed = start.elapsed();
+                cpu = thread_cpu_time()
+                    .zip(cpu_start)
+                    .and_then(|(end, start)| end.checked_sub(start));
                 ctx.exit_script();
             }
             if !ctx.trapped() {
@@ -147,6 +179,7 @@ pub(super) fn execute_entry(
             ctx,
             stdout,
             elapsed,
+            cpu,
         }),
     }
 }
@@ -287,8 +320,8 @@ pub(super) fn run_entry(
     module: &JITModule,
     lowered: &Lowered,
     options: EntryOptions,
-) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, options, None).map(|run| (run.stdout, run.elapsed))
+) -> Result<(Vec<u8>, Duration, Option<Duration>), RunError> {
+    execute_entry(module, lowered, options, None).map(|run| (run.stdout, run.elapsed, run.cpu))
 }
 
 pub(super) fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {

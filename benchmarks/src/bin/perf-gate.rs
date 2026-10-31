@@ -34,7 +34,9 @@
 //!   compare medians.
 //! - `--gate` selects the automatic gate run. Spread stays visible but does
 //!   not control the result. The §3 thresholds compare the minimum of the
-//!   timed runs (§213) and return status 0 or 1.
+//!   timed runs (§213) and return status 0 or 1. On a host with a thread CPU
+//!   clock, the dev-JIT figure is the minimum of its thread CPU samples, over
+//!   the C wall minimum (§213 rule 1a).
 //!
 //! Output or toolchain errors return status 2 in both runs.
 //!
@@ -281,6 +283,9 @@ struct Subject {
     stdout: Vec<u8>,
     /// One duration per timed run, warm-up already discarded.
     samples: Vec<Duration>,
+    /// Thread CPU time of each timed run, if the subject measures it
+    /// (§213 rule 1a).
+    cpu_samples: Option<Vec<Duration>>,
     /// Sum of the measured workload-call durations discarded as warm-up.
     warmup: Duration,
     /// Number of workload calls discarded as warm-up.
@@ -406,13 +411,26 @@ fn compare_ratio(
 }
 
 /// The header of the threshold lines, which states the compared figure of a
-/// gate run (§213).
-fn thresholds_header(mode: RunMode) -> &'static str {
-    match mode {
-        RunMode::Gate => {
+/// gate run (§213). `dev_cpu` states that the dev-JIT figure is thread CPU
+/// time (§213 rule 1a).
+fn thresholds_header(mode: RunMode, dev_cpu: bool) -> &'static str {
+    match (mode, dev_cpu) {
+        (RunMode::Gate, true) => {
+            "thresholds (compiler.md §3, pre-registered), minimum of the timed runs (compiler.md §213), dev-JIT thread CPU time over C wall time:"
+        }
+        (RunMode::Gate, false) => {
             "thresholds (compiler.md §3, pre-registered), minimum of the timed runs (compiler.md §213):"
         }
-        RunMode::Reporting => "thresholds (compiler.md §3, pre-registered):",
+        (RunMode::Reporting, _) => "thresholds (compiler.md §3, pre-registered):",
+    }
+}
+
+/// The statistics of the thread CPU samples of `subject` that a gate run
+/// compares (§213 rule 1a). A reporting run compares wall time only.
+fn cpu_stats(mode: RunMode, subject: &Subject) -> Result<Option<Stats>, Fail> {
+    match (mode, &subject.cpu_samples) {
+        (RunMode::Gate, Some(samples)) => Stats::of(samples).map(Some),
+        _ => Ok(None),
     }
 }
 
@@ -936,8 +954,17 @@ fn write_report(
         }
     }
 
+    let dev_cpu_stats: Vec<Option<Stats>> = workload_runs
+        .iter()
+        .map(|run| {
+            run.subjects
+                .get(2)
+                .map_or(Ok(None), |dev| cpu_stats(mode, dev))
+        })
+        .collect::<Result<_, _>>()?;
+    let dev_cpu = dev_cpu_stats.iter().any(Option::is_some);
     w(report, format_args!(""))?;
-    w(report, format_args!("{}", thresholds_header(mode)))?;
+    w(report, format_args!("{}", thresholds_header(mode, dev_cpu)))?;
     for workload in WORKLOADS.iter().filter(|w| w.ship_limit.is_scoped()) {
         w(
             report,
@@ -957,7 +984,11 @@ fn write_report(
         return Err("an iteration subject is missing from the report".to_string());
     };
     let mut thresholds_met = true;
-    for (run, stats) in workload_runs.iter().zip(workload_stats.iter()) {
+    for ((run, stats), cpu) in workload_runs
+        .iter()
+        .zip(workload_stats.iter())
+        .zip(dev_cpu_stats.iter())
+    {
         let (Some(baseline), Some(ship), Some(dev)) = (stats.first(), stats.get(1), stats.get(2))
         else {
             return Err(format!(
@@ -968,7 +999,12 @@ fn write_report(
         let ship_limit = run.workload.ship_limit.here();
         let (Some(ship_check), Some(dev_check)) = (
             compare_ratio(mode, ship, baseline, ship_limit),
-            compare_ratio(mode, dev, baseline, run.workload.dev_limit),
+            compare_ratio(
+                mode,
+                cpu.as_ref().unwrap_or(dev),
+                baseline,
+                run.workload.dev_limit,
+            ),
         ) else {
             return Err(format!(
                 "{} C baseline measured zero time; the clock is unusable",
@@ -1016,6 +1052,18 @@ fn write_report(
                     dev_check.figure,
                     run.workload.dev_limit,
                     if dev_check.met { "MET" } else { "MISSED" }
+                ),
+            )?;
+        }
+        if let Some(cpu) = cpu {
+            w(
+                report,
+                format_args!(
+                    "  {:<9} {:<15} wall minimum {:.2}x of C, CPU minimum {}",
+                    run.workload.name,
+                    "dev-JIT",
+                    dev.min / baseline.min,
+                    ms(cpu.min)
                 ),
             )?;
         }
@@ -1476,6 +1524,7 @@ fn measure_c(
         span: workload.c_span,
         stdout: run.stdout,
         samples: run.samples,
+        cpu_samples: None,
         warmup: run.warmup,
         warmup_iterations: run.warmup_iterations,
         prepare: vec![("compile (cc)", compile)],
@@ -1560,6 +1609,7 @@ fn measure_ship(
         span: "the subscript_export_main call in the ship-tier binary (linked with the runtime)",
         stdout: run.stdout,
         samples: run.samples,
+        cpu_samples: None,
         warmup: run.warmup,
         warmup_iterations: run.warmup_iterations,
         prepare: vec![("check + emit C", emit), ("compile + link (cc)", compile)],
@@ -1575,6 +1625,7 @@ fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Result<Subj
         span: "the main call in this process",
         stdout: b.stdout,
         samples: b.samples,
+        cpu_samples: b.cpu_samples.into_iter().collect(),
         warmup: b.warmup,
         warmup_iterations: b.warmup_iterations,
         prepare: Vec::new(),
@@ -1582,163 +1633,8 @@ fn measure_jit(files: &[SourceFile], warmup: usize, timed: usize) -> Result<Subj
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clean_reporting_run_passes_when_thresholds_are_met() {
-        let spreads = [NOISE_LIMIT - 0.01];
-        assert_eq!(
-            decide_run(RunMode::Reporting, true, &spreads),
-            RunDecision::Passed
-        );
-    }
-
-    #[test]
-    fn clean_reporting_run_reports_a_missed_threshold() {
-        let spreads = [NOISE_LIMIT - 0.01];
-        assert_eq!(
-            decide_run(RunMode::Reporting, false, &spreads),
-            RunDecision::Missed
-        );
-    }
-
-    #[test]
-    fn gate_noise_does_not_void_a_missed_threshold() {
-        let spreads = [NOISE_LIMIT + 0.01];
-        assert_eq!(
-            decide_run(RunMode::Gate, false, &spreads),
-            RunDecision::Missed
-        );
-    }
-
-    #[test]
-    fn reporting_noise_voids_before_a_missed_threshold() {
-        let spreads = [NOISE_LIMIT + 0.01];
-        assert_eq!(
-            decide_run(RunMode::Reporting, false, &spreads),
-            RunDecision::Void
-        );
-    }
-
-    #[test]
-    fn only_noisy_reporting_timings_are_withheld() {
-        let under_limit = NOISE_LIMIT - 0.01;
-        let over_limit = NOISE_LIMIT + 0.01;
-
-        assert!(!timing_is_withheld(RunMode::Reporting, under_limit));
-        assert!(timing_is_withheld(RunMode::Reporting, over_limit));
-        assert!(!timing_is_withheld(RunMode::Gate, under_limit));
-        assert!(!timing_is_withheld(RunMode::Gate, over_limit));
-    }
-
-    #[test]
-    fn an_empty_spread_list_never_voids_either_run() {
-        for mode in [RunMode::Reporting, RunMode::Gate] {
-            assert_eq!(decide_run(mode, true, &[]), RunDecision::Passed);
-            assert_eq!(decide_run(mode, false, &[]), RunDecision::Missed);
-        }
-    }
-
-    #[test]
-    fn excessive_spread_voids_only_the_reporting_run() {
-        let spreads = [NOISE_LIMIT + 0.01];
-        assert_eq!(
-            decide_run(RunMode::Reporting, true, &spreads),
-            RunDecision::Void
-        );
-        assert_eq!(
-            decide_run(RunMode::Gate, true, &spreads),
-            RunDecision::Passed
-        );
-    }
-
-    /// The ship-tier limit of `a22` on aarch64.
-    const SHIP_LIMIT: f64 = 1.50;
-
-    /// The statistics of `samples`, given in milliseconds.
-    fn stats_of(samples: &[f64]) -> Stats {
-        let samples: Vec<Duration> = samples
-            .iter()
-            .map(|sample| Duration::from_secs_f64(sample / 1000.0))
-            .collect();
-        Stats::of(&samples).expect("the samples are not empty")
-    }
-
-    /// The ship-tier comparison of `ship` against `c`, in milliseconds.
-    fn ship_comparison(mode: RunMode, ship: &[f64], c: &[f64]) -> Comparison {
-        compare_ratio(mode, &stats_of(ship), &stats_of(c), SHIP_LIMIT)
-            .expect("the baseline figure is not zero")
-    }
-
-    /// Asserts `actual` to the two decimals of a report line.
-    fn assert_ratio(actual: f64, expected: &str) {
-        assert_eq!(format!("{actual:.2}"), expected);
-    }
-
-    const MISS_C: [f64; 11] = [
-        5.044, 11.807, 5.018, 6.159, 5.030, 11.245, 7.192, 6.577, 5.050, 12.464, 6.264,
-    ];
-    const MISS_SHIP: [f64; 11] = [
-        8.497, 6.674, 13.860, 11.739, 6.662, 14.336, 13.750, 6.651, 14.099, 6.635, 13.938,
-    ];
-    const QUIET_C: [f64; 11] = [
-        3.872, 3.847, 3.882, 3.858, 3.874, 3.849, 3.973, 3.881, 3.909, 3.849, 3.987,
-    ];
-    const QUIET_SHIP: [f64; 11] = [
-        5.138, 5.230, 5.155, 5.152, 5.141, 5.154, 5.133, 5.129, 5.266, 5.148, 5.169,
-    ];
-
-    #[test]
-    fn a_gate_run_meets_the_loaded_samples_that_a_reporting_run_misses() {
-        let gate = ship_comparison(RunMode::Gate, &MISS_SHIP, &MISS_C);
-        assert_ratio(gate.figure, "1.32");
-        assert!(gate.met);
-
-        let reporting = ship_comparison(RunMode::Reporting, &MISS_SHIP, &MISS_C);
-        assert_ratio(reporting.figure, "1.87");
-        assert!(!reporting.met);
-    }
-
-    #[test]
-    fn a_gate_run_meets_quiet_samples() {
-        assert!(ship_comparison(RunMode::Gate, &QUIET_SHIP, &QUIET_C).met);
-    }
-
-    #[test]
-    fn a_gate_run_misses_a_slowdown_of_every_run() {
-        let slowed = QUIET_SHIP.map(|sample| sample * 1.32);
-        assert!(!ship_comparison(RunMode::Gate, &slowed, &QUIET_C).met);
-    }
-
-    #[test]
-    fn a_one_shot_figure_follows_the_run_mode() {
-        let stats = stats_of(&[
-            12.0, 13.0, 12.5, 31.0, 30.0, 32.0, 12.2, 30.5, 31.5, 13.5, 33.0,
-        ]);
-        let limit = DEV_ITERATION_LIMIT.as_secs_f64();
-        assert!(stats.median > limit);
-        assert!(stats.min <= limit);
-
-        assert!(compare_time(RunMode::Gate, &stats, limit).met);
-        assert!(!compare_time(RunMode::Reporting, &stats, limit).met);
-    }
-
-    #[test]
-    fn the_zero_time_check_tests_the_figure_that_the_ratio_divides_by() {
-        let subject = stats_of(&[1.0, 1.0, 1.0]);
-        let baseline = stats_of(&[0.0, 1.0, 1.0]);
-
-        assert!(compare_ratio(RunMode::Gate, &subject, &baseline, SHIP_LIMIT).is_none());
-        assert!(compare_ratio(RunMode::Reporting, &subject, &baseline, SHIP_LIMIT).is_some());
-    }
-
-    #[test]
-    fn only_the_gate_header_names_the_minimum() {
-        assert!(thresholds_header(RunMode::Gate).contains("minimum"));
-        assert!(!thresholds_header(RunMode::Reporting).contains("minimum"));
-    }
-}
+#[path = "../perf_gate_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "../host_header_test.rs"]

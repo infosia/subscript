@@ -23,6 +23,10 @@ pub struct BenchSamples {
     /// Elapsed time of each timed run, in order; warm-up runs are not
     /// included.
     pub samples: Vec<Duration>,
+    /// Thread CPU time of the span of each entry of `samples`, in the same
+    /// order. An entry is `None` on a host with no thread CPU clock
+    /// (`specs/blocks/compiler.md` §213 rule 1a).
+    pub cpu_samples: Vec<Option<Duration>>,
     /// Sum of the measured workload-call durations discarded as warm-up.
     pub warmup: Duration,
     /// Number of workload calls discarded as warm-up.
@@ -146,13 +150,14 @@ pub fn jit_bench_configured(
     };
 
     let mut samples = Vec::with_capacity(timed);
+    let mut cpu_samples = Vec::with_capacity(timed);
     let mut warmup_elapsed = Duration::ZERO;
     let mut warmup_iterations = 0;
     let mut stdout: Option<Vec<u8>> = None;
     let mut failure: Option<RunError> = None;
     while warmup_iterations < warmup || warmup_elapsed < warmup_floor {
         match run_entry(&module, &lowered, options) {
-            Ok((out, elapsed)) => {
+            Ok((out, elapsed, _)) => {
                 match &stdout {
                     Some(first) if first != &out => {
                         failure = Some(RunError::Internal(internal(
@@ -177,7 +182,7 @@ pub fn jit_bench_configured(
     if failure.is_none() {
         for _ in 0..timed {
             match run_entry(&module, &lowered, options) {
-                Ok((out, elapsed)) => {
+                Ok((out, elapsed, cpu)) => {
                     match &stdout {
                         Some(first) if first != &out => {
                             failure = Some(RunError::Internal(internal(
@@ -191,6 +196,7 @@ pub fn jit_bench_configured(
                         break;
                     }
                     samples.push(elapsed);
+                    cpu_samples.push(cpu);
                 }
                 Err(e) => {
                     failure = Some(e);
@@ -209,6 +215,7 @@ pub fn jit_bench_configured(
     Ok(BenchSamples {
         stdout: stdout.unwrap_or_default(),
         samples,
+        cpu_samples,
         warmup: warmup_elapsed,
         warmup_iterations,
         compile,
