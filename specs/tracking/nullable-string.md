@@ -48,3 +48,21 @@ Hot reload: `body_edit_keeps_a_nullable_string_global` keeps a
 | Test code | `#[cfg(test)]` blocks and test tables |
 
 No site stayed unclassified.
+
+## Phase Review fixes
+
+`FixedArray` iteration, on a binary built from `821d2a7a`: `a403` gives 18
+lines on the JIT and the ship tier, and the golden has 28. A probe with
+`await` or `yield` in the body stopped with signal 11 on the JIT and gave
+wrong bytes on the ship tier. The Phase Review measured the `string` form
+at `ca7d8897`.
+
+An extension of `environment_dependencies` closed the plain case only,
+because a dependency does not carry a value across a suspend. The
+operand form closes each case.
+
+`program.c` across 292 accept entries that emit with no mirror: only
+`a77-for-of-containers` moves among entries with an unchanged source, by
+two lines of the cursor form. The LIR text snapshot does not move.
+
+`gate full 821d2a7a dirty:26 debug 3114/0/5 release 3111/0/5 skips 2/0 clippy 5/18/11 goldens-moved 1 exit 0`. `tools/hygiene.sh` exit 0. The moved golden is `a402`, which this section adds.

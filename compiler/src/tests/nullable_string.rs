@@ -94,7 +94,14 @@ fn rule_2_each_equality_of_a_string_form_selects_the_content_operator() {
 #[test]
 fn rule_2_the_definition_is_symmetric() {
     let nullable = Type::Nullable(Box::new(Type::Str), crate::types::Absence::Null);
-    let forms = [Type::Str, nullable.clone(), Type::Null, Type::I32];
+    let undefined = Type::Nullable(Box::new(Type::Str), crate::types::Absence::Undefined);
+    let forms = [
+        Type::Str,
+        nullable.clone(),
+        undefined.clone(),
+        Type::Null,
+        Type::I32,
+    ];
     for left in &forms {
         for right in &forms {
             assert_eq!(
@@ -105,6 +112,8 @@ fn rule_2_the_definition_is_symmetric() {
         }
     }
     assert!(Type::compares_string_content(&nullable, &Type::Str));
+    assert!(Type::compares_string_content(&undefined, &Type::Str));
+    assert!(Type::compares_string_content(&undefined, &undefined));
     assert!(!Type::compares_string_content(&Type::Str, &Type::Null));
     assert!(!Type::compares_string_content(&nullable, &Type::Null));
     assert!(!Type::compares_string_content(&Type::Str, &Type::I32));

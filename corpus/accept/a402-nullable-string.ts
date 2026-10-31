@@ -56,6 +56,32 @@ function mixed(a: string | null, s: string): string {
   return `${a === s} ${s === a} ${a !== s} ${s !== a} ${a == s} ${s != a} ${a === "abc"} ${"abc" === a}`;
 }
 
+function lookup(n: i32): string | undefined {
+  if (n < 0) {
+    return undefined;
+  }
+  return `u${n}`;
+}
+
+function append(acc: string | null, s: string): string | null {
+  return acc === null ? s : acc + s;
+}
+
+function firstLength(acc: Holder | null, s: string): Holder | null {
+  if (acc !== null) {
+    return acc;
+  }
+  const made = new Holder();
+  made.n = s.length;
+  return made;
+}
+
+function lengths(acc: i32[] | null, s: string): i32[] | null {
+  const out: i32[] = acc ?? [];
+  out.push(s.length);
+  return out;
+}
+
 function fillShared(): void {
   shared = built("sev", "en");
 }
@@ -133,4 +159,22 @@ export function main(): void {
   print(pending);
   const upper = maybe(2)?.toUpperCase() ?? "none";
   print(`${upper} ${maybe(-1)?.length ?? -1}`);
+
+  // A `reduce` seed takes the accumulator type.
+  const words: string[] = ["a", "bb"];
+  print(words.reduce(append, built("se", "ed")) ?? "none");
+  print(words.reduce(append, null) ?? "none");
+  print(words.reduceRight(append, "seed") ?? "none");
+  print(words.reduceRight(append, null) ?? "none");
+  const fresh = new Holder();
+  fresh.n = 7;
+  print(`${words.reduce(firstLength, fresh)?.n ?? -1} ${words.reduce(firstLength, null)?.n ?? -1}`);
+  print(`${words.reduceRight(firstLength, fresh)?.n ?? -1} ${words.reduceRight(firstLength, null)?.n ?? -1}`);
+  print(`${(words.reduce(lengths, [9]) ?? []).length} ${(words.reduce(lengths, null) ?? []).length}`);
+  print(`${(words.reduceRight(lengths, [9]) ?? []).length} ${(words.reduceRight(lengths, null) ?? []).length}`);
+
+  // A `string | undefined` result compares by content and with `== null`.
+  print(`${lookup(-1) == null} ${lookup(1) == null} ${lookup(-1) === undefined} ${lookup(1) !== undefined}`);
+  print(`${lookup(1) === built("u", "1")} ${built("u", "1") === lookup(1)} ${lookup(1) !== "u2"} ${lookup(-1) === "u1"}`);
+  print(`${lookup(1) === lookup(1)} ${lookup(-1) === lookup(-1)} ${lookup(1) === lookup(-1)}`);
 }

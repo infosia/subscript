@@ -27,13 +27,26 @@ pub(super) fn verify_function(
 /// §218.1 rule 2: a string operand can be null, so its only reader is the
 /// string compare, which accepts null.
 fn verify_string_operands(function: &l::Function, errors: &mut Vec<VerifyError>) {
-    let use_counts = value_use_counts(function);
+    let mut comparisons = vec![0usize; function.values.len()];
     let instructions = || {
         function
             .blocks
             .iter()
             .flat_map(|block| block.instructions.iter())
     };
+    for reader in instructions().filter(|reader| {
+        matches!(
+            reader.kind,
+            l::InstructionKind::Binary(l::BinaryOp::Eq | l::BinaryOp::Ne)
+        )
+    }) {
+        for operand in &reader.operands {
+            if let l::Operand::Value(value) = operand {
+                comparisons[value.0 as usize] += 1;
+            }
+        }
+    }
+    let use_counts = value_use_counts(function);
     for instruction in instructions() {
         if instruction.kind != l::InstructionKind::StringOperand {
             continue;
@@ -41,17 +54,8 @@ fn verify_string_operands(function: &l::Function, errors: &mut Vec<VerifyError>)
         let Some(result) = instruction.result else {
             continue;
         };
-        let comparisons = instructions()
-            .filter(|reader| {
-                matches!(
-                    reader.kind,
-                    l::InstructionKind::Binary(l::BinaryOp::Eq | l::BinaryOp::Ne)
-                )
-            })
-            .flat_map(|reader| reader.operands.iter())
-            .filter(|operand| **operand == l::Operand::Value(result))
-            .count();
-        if use_counts.get(result.0 as usize).copied().unwrap_or(0) != comparisons {
+        let index = result.0 as usize;
+        if use_counts.get(index) != comparisons.get(index) {
             errors.push(finding(
                 function,
                 "a string operand has a reader other than a string compare",

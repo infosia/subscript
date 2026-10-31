@@ -747,6 +747,13 @@ impl Interpreter<'_> {
                 pos,
             )?;
         }
+        // A fixed-array cursor stores no subject: each element read takes the
+        // array as an operand (compiler.md §218.1 rule 12).
+        let subject = if kind == l::ForOfKind::FixedArrayValues {
+            Value::Null
+        } else {
+            subject
+        };
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind,
             bound_kind,
@@ -831,6 +838,7 @@ impl Interpreter<'_> {
         &mut self,
         cursor: &Value,
         index: i64,
+        array: Option<&Value>,
         result_ty: Option<&l::ValueType>,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
@@ -867,8 +875,8 @@ impl Interpreter<'_> {
                 })
             }
             l::ForOfKind::FixedArrayValues => {
-                let Value::Blob(bytes) = &cursor.subject else {
-                    return Err(type_error("fixed array", &cursor.subject));
+                let Some(Value::Blob(bytes)) = array else {
+                    return Err(self.invalid(Some(pos.clone()), "fixed-array read has no array"));
                 };
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "iterator element has no layout")

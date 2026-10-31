@@ -693,9 +693,10 @@ pub(super) fn verify_instruction_contract(
                 _ => None,
             };
             let expected_base = match (instruction.operands.first(), operand_types.first()) {
-                (Some(l::Operand::Value(value)), Some(l::ValueType::Data(Type::Array(_)))) => {
-                    Some(*value)
-                }
+                (
+                    Some(l::Operand::Value(value)),
+                    Some(l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _))),
+                ) => Some(*value),
                 (_, Some(l::ValueType::Address(address))) => address.array_base,
                 _ => None,
             };
@@ -911,7 +912,15 @@ pub(super) fn verify_instruction_contract(
                 (
                     [l::ValueType::Iterator(iterator), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::I32)],
                     Some(l::ValueType::Data(result)),
-                ) => iterator.element == *result,
+                ) => iterator.kind != l::ForOfKind::FixedArrayValues && iterator.element == *result,
+                (
+                    [l::ValueType::Iterator(iterator), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::FixedArray(element, _))],
+                    Some(l::ValueType::Data(result)),
+                ) => {
+                    iterator.kind == l::ForOfKind::FixedArrayValues
+                        && iterator.element == *result
+                        && **element == *result
+                }
                 _ => false,
             };
             if !valid {

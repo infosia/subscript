@@ -293,7 +293,6 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Keeps the C17 classification at an assignment rejection.
     /// The fix that a rejection of a `string | null` operand states
     /// (§218.1 rule 5), or nothing for other operands.
     pub(super) fn null_test_fix(&self, operands: &[&Type]) -> &'static str {
@@ -307,6 +306,7 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Keeps the C17 classification at an assignment rejection.
     pub(super) fn require_expr_assignable(
         &mut self,
         from: &hir::Expr,

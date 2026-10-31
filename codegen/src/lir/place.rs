@@ -264,7 +264,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let base = self.materialize_base(base, pos, include_traps)?;
                 let base_type = self.operand_type(&base, pos)?;
                 let array_base = match (&base, &base_type) {
-                    (l::Operand::Value(value), l::ValueType::Data(Type::Array(_))) => Some(*value),
+                    (
+                        l::Operand::Value(value),
+                        l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _)),
+                    ) => Some(*value),
                     (_, l::ValueType::Address(address)) => address.array_base,
                     _ => None,
                 };

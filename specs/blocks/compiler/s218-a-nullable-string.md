@@ -31,10 +31,15 @@ falls to the pointer form.
    where `T[] | null` is legal (§217.1 rule 1). Its absence is a null
    pointer. An empty string is not absent: an `s: string | null` that
    holds `""` gives `false` for `s === null`.
+1a. `string | undefined` is legal as a declared result, as §195 states
+   for `T | undefined`. It compares by rule 2 and with `== null`. `===`
+   against a `string | null` stays rejected (§195). *(Added 2026-10-31
+   after the Phase Review, m4.)*
 2. **One equality rule.** `===`, `!==`, `==`, and `!=` compare by
    content if one operand has type `string | null` and the other has
-   type `string`, `string | null`, or `null`. `null` equals `null`
-   only. The rule has one definition, `Type::compares_string_content`.
+   type `string` or `string | null`. A null value equals a null value
+   only. A test against the literal `null` is a null test. The rule has
+   one definition, `Type::compares_string_content`.
    The LIR gives a nullable operand as `StringOperand`, and each tier
    reaches its one string compare. The verifier rejects `Binary(Eq|Ne)`
    on a nullable string, except a null test. The order of the operands
@@ -65,6 +70,20 @@ falls to the pointer form.
 10. A string-literal alias `L | null` stays rejected.
 11. The form has no run-time cost beyond the null test in the string
     compare, which the runtime compare does.
+12. No value other than an `Address` holds an address. A `FixedArray`
+    cursor holds an index, and `IteratorValue` takes the array as an
+    operand, so the array has a use at each read. Liveness, a suspension,
+    and a slot clear follow from that use. A `FixedArray` call result that
+    a direct index reads has a base slot in the same way. At `ca7d8897`,
+    `for (const x of b)` with `b: FixedArray<string, 2>` read null
+    elements on the JIT and the ship tier, a body with `await` or `yield`
+    stopped on a bad read, and `pair()[0]` printed nothing, with no
+    diagnostic. *(Added 2026-10-31 after the Phase Review, M1.)*
+13. `reduce` and `reduceRight` convert the seed to the accumulator type,
+    as an argument is converted. So a `string` or `null` seed for a
+    `string | null` accumulator is accepted, and for `C | null` and
+    `T[] | null`. At `ca7d8897` this form gave an internal error.
+    *(Added 2026-10-31 after the Phase Review, M2.)*
 
 ### 218.2 Acceptance
 
@@ -79,7 +98,44 @@ falls to the pointer form.
    `Context.collect()` with a null field, and `JSON.stringify`.
 3. A unit test shows that each tier reads one definition of rule 2 and
    rule 3.
+3a. `a403-for-of-fixed-array-handles` pins rule 12, with `string`,
+   `string | null`, and `C | null` elements and two loops. It fails at
+   `ca7d8897` on the JIT and the ship tier for the `string` form. `a402`
+   pins rule 13 and rule 1a.
 4. The rejection-site total check passes.
 5. C7 in `collisions.md` names a string. §217.1 rule 7 cites this section.
 6. No golden moves. The LIR text snapshot does not move if `a402` has no
    generator and no async function.
+
+### 218.3 Phase Review
+
+*(Added 2026-10-31.)* A fresh review of `ca7d8897..821d2a7a` gave two
+MAJOR and seven MINOR findings. §218 gave no wrong value in the review.
+
+1. MAJOR, realistic, fixed: `for…of` over a `FixedArray` of handles read
+   null elements on the JIT and the ship tier at `ca7d8897`. The
+   iterator held the address of a root temporary, and the next line
+   cleared it. Rule 12.
+2. MAJOR, realistic, fixed: `reduce` with a nullable accumulator and a
+   plain seed gave an internal error at `ca7d8897`. Rule 13.
+3. MINOR, realistic, fixed: the reference and rule 2 named `"" === null`
+   and `null` as a content operand.
+4. MINOR, realistic, fixed: a doc comment moved to another function.
+5. MINOR, realistic, closed by §219: the S014 texts for `Map.get` and
+   `find` on `string` were false.
+6. MINOR, realistic, fixed: `string | undefined` was accepted and no rule
+   stated it. Rule 1a.
+7. MINOR, realistic, closed by §219: `s === "lit"` gave no narrowing.
+8. MAJOR, realistic, fixed: the review named a second `getOr` on a `Map`
+   with a `FixedArray` value as MINOR. The cause is wider: `pair()[0]`
+   on any `FixedArray` call result printed nothing on the JIT and the
+   ship tier. Rule 12.
+9. MINOR, contrived, fixed: the verifier scanned the function for each
+   `StringOperand`.
+
+### 218.4 Open
+
+1. `let b: FixedArray<i32, 2>`, `for (const x of b) { b[1] = 9; print(x); }`
+   prints `1 2` on the three tiers. `node` prints `1 9`. This predates
+   §218. `collisions.md` names no such divergence.
+

@@ -113,3 +113,27 @@ fn a_string_operand_has_no_other_reader() {
         messages(&module)
     );
 }
+
+#[test]
+fn a_string_operand_reads_a_nullable_string() {
+    let mut module = lowered();
+    assert!(verify_module(&module).is_ok());
+    let function = same(&mut module);
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            if instruction.kind == l::InstructionKind::StringOperand {
+                instruction.operands = vec![l::Operand::Constant(l::Constant {
+                    ty: Type::I32,
+                    kind: l::ConstantKind::Integer(0),
+                })];
+            }
+        }
+    }
+    assert!(
+        messages(&module)
+            .iter()
+            .any(|message| message.contains("string operand signature is invalid")),
+        "{:?}",
+        messages(&module)
+    );
+}

@@ -542,7 +542,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     kind,
                     bound: l::IteratorBoundKind::Live,
                 },
-                vec![subject_value],
+                vec![subject_value.clone()],
                 Some(iterator_type.clone()),
                 false,
                 convert_traps(&subject.statement_read_sites(self.lowering.hir)),
@@ -605,10 +605,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let cursor = self.read_binding(cursor_binding, pos)?;
         let index = self.read_binding(index_binding, pos)?;
         let bound = self.read_binding(bound_binding, pos)?;
+        let mut value_operands = vec![cursor, index, bound];
+        if kind == l::ForOfKind::FixedArrayValues {
+            value_operands.push(subject_value);
+        }
         let value = self
             .emit(
                 l::InstructionKind::IteratorValue,
-                vec![cursor, index, bound],
+                value_operands,
                 Some(l::ValueType::Data(ty.clone())),
                 false,
                 Vec::new(),
@@ -825,11 +829,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let subject_value = self.require_expr(subject)?;
         let callback = self.lower_static_callback(callback_expr)?;
         let initial = if matches!(operation, hir::ArrFn::Reduce | hir::ArrFn::ReduceRight) {
-            Some(
-                args.get(2)
-                    .ok_or_else(|| self.error(&expr.pos, "reduce has no initial value"))
-                    .and_then(|initial| self.require_expr(initial))?,
-            )
+            let initial = args
+                .get(2)
+                .ok_or_else(|| self.error(&expr.pos, "reduce has no initial value"))?;
+            let value = self.require_expr(initial)?;
+            Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &initial.pos)?)
         } else {
             None
         };
@@ -869,10 +873,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         self.error(&trap.pos, "static callback lifetime operand is missing")
                     })?;
                     trap.kind = l::TrapKind::DevOnlyLifetime(0);
+                    let value_type = self.operand_type(value, &args[index].pos)?;
                     self.emit(
                         l::InstructionKind::Copy,
                         vec![value.clone()],
-                        Some(l::ValueType::Data(args[index].ty.clone())),
+                        Some(value_type),
                         false,
                         vec![trap],
                         args[index].pos.clone(),
@@ -1376,10 +1381,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let mut value_operands = vec![cursor, index.clone(), captured_bound.clone()];
+        if kind == l::ForOfKind::FixedArrayValues {
+            value_operands.push(subject_value);
+        }
         let value = self
             .emit(
                 l::InstructionKind::IteratorValue,
-                vec![cursor, index.clone(), captured_bound.clone()],
+                value_operands,
                 Some(l::ValueType::Data(element)),
                 false,
                 Vec::new(),

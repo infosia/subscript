@@ -15,10 +15,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         let destination = result.ok_or_else(|| internal("iterator creation has no result"))?;
+        // A fixed-array cursor stores no subject: each element read takes the
+        // array as an operand (compiler.md §218.1 rule 12).
         let subject = match (kind, subject_type) {
-            (l::ForOfKind::FixedArrayValues, l::ValueType::Data(Type::FixedArray(_, count))) => {
-                let _ = count;
-                format!("(void*)&({subject})")
+            (l::ForOfKind::FixedArrayValues, l::ValueType::Data(Type::FixedArray(_, _))) => {
+                "(void*)0".to_string()
             }
             (l::ForOfKind::FixedArrayValues, other) => {
                 return Err(internal(format!(
@@ -225,10 +226,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::ForOfKind::FixedArrayValues => {
                 let _ = writeln!(
                     out,
-                    "    {destination} = (({}*)({}.subject))[{}.position];",
-                    self.emitter.ctype(&iterator.element)?,
-                    operands[0],
-                    operands[0]
+                    "    {destination} = ({}).a[{}.position];",
+                    operands[3], operands[0]
                 );
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {

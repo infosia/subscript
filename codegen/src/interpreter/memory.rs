@@ -450,6 +450,14 @@ impl Interpreter<'_> {
                     poison: address.poison.clone(),
                 })
             }
+            Value::Blob(_) => Ok(Address {
+                target: AddressTarget::SlotBytes {
+                    slot: Rc::new(RefCell::new(base.clone())),
+                    offset,
+                },
+                pointee,
+                poison: Rc::new(RefCell::new(None)),
+            }),
             other => Err(type_error("class handle or aggregate address", other)),
         }
     }
@@ -536,6 +544,31 @@ impl Interpreter<'_> {
                     },
                     pointee,
                     poison: address.poison.clone(),
+                })
+            }
+            Value::Blob(_) => {
+                let layout = self.layout_cached(&pointee).ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        "indexed element has no layout",
+                    )
+                })?;
+                let offset = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| index.checked_mul(align_up(layout.size, layout.align)))
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            "fixed-array index is negative or overflows",
+                        )
+                    })?;
+                Ok(Address {
+                    target: AddressTarget::SlotBytes {
+                        slot: Rc::new(RefCell::new(base.clone())),
+                        offset,
+                    },
+                    pointee,
+                    poison,
                 })
             }
             other => Err(type_error("array handle or fixed-array address", other)),

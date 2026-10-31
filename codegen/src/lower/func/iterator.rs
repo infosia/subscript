@@ -14,11 +14,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<RV, String> {
         let cursor = self.stack_slot(32, 8);
         self.zero_bytes(cursor, 32, 8);
+        // A fixed-array cursor stores no subject: each element read takes the
+        // array as an operand (compiler.md §218.1 rule 12).
         let subject = match kind {
-            l::ForOfKind::FixedArrayValues => self.expect_aggregate(subject)?,
-            _ => self.expect_scalar(subject)?,
+            l::ForOfKind::FixedArrayValues => None,
+            _ => Some(self.expect_scalar(subject)?),
         };
-        self.builder.ins().store(flags(), subject, cursor, 0);
+        if let Some(subject) = subject {
+            self.builder.ins().store(flags(), subject, cursor, 0);
+        }
         let fixed = self.iconst(
             types::I64,
             i64::from(bound_kind == l::IteratorBoundKind::Fixed),
@@ -55,6 +59,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
         ) {
             let start = self.iconst(types::I64, 0);
+            let subject = subject.ok_or_else(|| internal("association cursor has no subject"))?;
             let position =
                 self.next_live_assoc_position(subject, iterator_ty, start, captured, pos)?;
             self.builder.ins().store(flags(), position, cursor, 8);
@@ -228,6 +233,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         iterator: RV,
         iterator_ty: &l::IteratorType,
         index: Value,
+        array: Option<RV>,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
@@ -257,12 +263,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.load_data(&iterator_ty.element, address, 0)
             }
             l::ForOfKind::FixedArrayValues => {
+                let array = array.ok_or_else(|| internal("fixed-array read has no array"))?;
+                let array = self.expect_aggregate(array)?;
                 let stride = self.ml.layouts.stride(&iterator_ty.element)?;
                 let offset = self
                     .builder
                     .ins()
                     .imul_imm(cursor_position, i64::from(stride));
-                let address = self.builder.ins().iadd(subject, offset);
+                let address = self.builder.ins().iadd(array, offset);
                 self.load_data(&iterator_ty.element, address, 0)
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {

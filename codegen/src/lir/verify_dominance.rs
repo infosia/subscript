@@ -90,7 +90,10 @@ fn verify_array_base_dominance(
             ));
             continue;
         };
-        if !matches!(base_value.ty, l::ValueType::Data(Type::Array(_))) {
+        if !matches!(
+            base_value.ty,
+            l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _))
+        ) {
             errors.push(finding(
                 function,
                 format!(

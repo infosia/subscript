@@ -659,6 +659,7 @@ impl Interpreter<'_> {
                         .get(1)
                         .ok_or_else(|| self.missing_operand(instruction, 1))?
                         .as_i64()?,
+                    operands.get(3),
                     result_ty,
                     &instruction.pos,
                 )?,

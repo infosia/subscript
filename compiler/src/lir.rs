@@ -504,7 +504,9 @@ pub enum ValueType {
 pub struct AddressType {
     /// Value stored at the address.
     pub pointee: Type,
-    /// Dynamic-array value whose movable storage owns this address.
+    /// Array value whose storage owns this address: a dynamic array, whose
+    /// storage can move, or a fixed-array value, which stays live until the
+    /// last read of the address.
     pub array_base: Option<ValueId>,
 }
 
@@ -782,7 +784,10 @@ pub enum InstructionKind {
     },
     /// Test a fused cursor without advancing it.
     IteratorHasNext,
-    /// Read the element at the current traversal state.
+    /// Read the element at the current traversal state. Operands are the
+    /// cursor, the index, and the bound. A `FixedArrayValues` cursor has no
+    /// subject, so operand three is the array, and the array stays live until
+    /// the last element read (compiler.md §218.1 rule 12).
     IteratorValue,
     /// Read the fixed traversal bound captured at creation.
     IteratorBound,
