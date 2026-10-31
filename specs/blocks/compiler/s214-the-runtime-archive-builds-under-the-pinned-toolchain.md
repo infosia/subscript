@@ -25,15 +25,24 @@ dependency keeps the old archive.
 
 1. The command that builds the runtime archive runs in the runtime
    directory. So `rustup` selects the pinned toolchain from any working
-   directory of the caller.
+   directory of the caller, when neither `CARGO` nor `RUSTUP_TOOLCHAIN`
+   is set. The command passes `--target-dir` with the parent of the
+   directory that holds the archive, so `cargo` writes the file that
+   the step reads, with a relative `CARGO_TARGET_DIR` too. *(Amended
+   2026-10-31 after the Phase Review, F1.)* If the runtime directory
+   does not exist, the step fails with a text that names the directory
+   and `SUBSCRIPT_RUNTIME_STATICLIB`.
 2. An archive is fresh only if it is not older than the workspace
    `Cargo.lock`, and not older than each path that the rule at the pin
    reads.
 2a. After a successful `cargo build`, the build step sets the
    modification time of the archive to the time read before `cargo`
    started. A `Cargo.lock` change that leaves the runtime unchanged
-   makes `cargo` do no work and keeps the old archive time, so with no
-   such step each later process starts one `cargo build`. A source that
+   makes `cargo` do no work, and the archive stays older than the
+   lockfile, so with no such step each later process starts one
+   `cargo build`. On macOS a `cargo build` with no work also restores
+   the time of the `deps/` file, so a later process can start one
+   more `cargo build`, which sets the time again. A source that
    changes during the build stays newer than the archive, so the next
    process builds it. A failure of this step is not an error: the
    archive is valid, and the cost is one more `cargo build`. *(Added
@@ -52,4 +61,25 @@ dependency keeps the old archive.
 3. A unit test pins rule 2a: an archive with an old time, a newer
    `Cargo.lock`, and the step of rule 2a gives fresh. A control without
    the step gives stale.
-4. No golden moves. §196.3 Open cites this section.
+4. A unit test reads `--target-dir` from the build command.
+5. No golden moves. §196.3 Open cites this section.
+
+### 214.3 Phase Review
+
+*(Added 2026-10-31.)* A fresh review of `4da0d6bb..aea57650` gave no
+CRITICAL or MAJOR finding and six MINOR findings.
+
+1. MINOR, realistic, fixed: with a relative `CARGO_TARGET_DIR`, the
+   command in the runtime directory wrote another path, and the step
+   marked the old archive as fresh. Rule 1.
+2. MINOR, realistic, fixed: rule 2a said that a `cargo build` with no
+   work keeps the archive time. On macOS it restores the `deps/` time.
+3. MINOR, realistic, open: no test pins the call of the rule 2a step or
+   the `Cargo.lock` path in `build_runtime_staticlib`. A test needs a
+   fake `CARGO`.
+4. MINOR, contrived, fixed: the tracking note gave a macOS inode fact as
+   a general reason.
+5. MINOR, realistic, fixed: with no runtime directory, the text did not
+   name a path. Rule 1.
+6. MINOR, contrived, fixed: rule 1 did not name `CARGO` and
+   `RUSTUP_TOOLCHAIN`.

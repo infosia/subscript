@@ -1,6 +1,6 @@
 # The runtime archive builds under the pinned toolchain — `compiler.md` §214
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 ## Measurement at the pin `4da0d6bb`
 
@@ -24,13 +24,25 @@ Scratch `staticlib` crate, `cargo` of the pin:
 |---|---|
 | `Cargo.lock` with a future time, `cargo build` | no work; archive time unchanged |
 | archive set to the present, source changed, `cargo build` | rebuilt; the new symbol is in the archive |
-| `rlib` + `staticlib` with a dependent bin, uplifted archive touched | no work; `target/debug/` and `deps/` hold different inodes |
+| `rlib` + `staticlib` with a dependent bin, uplifted archive touched, macOS | no work; `target/debug/` and `deps/` hold different inodes |
 
 The first row is the reason for §214.1 rule 2a. The other two rows show
-that the step does not hide a change from `cargo` or relink a dependent
-binary.
+that on macOS the step does not hide a change from `cargo` or relink a
+dependent binary. On another host the uplift can be one inode. There
+`--manifest-path runtime/Cargo.toml` and `-p subscript-codegen` still
+build different units of the runtime.
 
 From `$TMPDIR` with `CARGO` not set, a codegen test through `run_c_aot`
-passes, and the archive time does not change. The toolchain path with a
-stale archive has no end-to-end run: a unit test reads the current
-directory of the command.
+passes, and the archive time does not change.
+
+End to end, Phase Review: from `$TMPDIR` with `CARGO` and
+`RUSTUP_TOOLCHAIN` not set and a stale archive, a binary that calls
+`runtime_staticlib_path` rebuilt the archive. The archive holds
+`rustc version 1.95.0`.
+
+The runtime rebuild with `--target-dir` against a target that the same
+runtime build wrote: 0.08 s, `Fresh subscript-runtime`, so the flag
+does not change the fingerprint.
+
+`gate full aea57650 dirty:4 debug 3055/0/5 release 3052/0/5 skips 2/0
+clippy 5/18/11 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0.

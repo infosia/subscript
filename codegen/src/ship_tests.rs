@@ -1536,14 +1536,22 @@ fn staticlib_freshness_reads_the_dep_info() {
 }
 
 /// The runtime build runs in the runtime directory, so `rustup` selects
-/// the pinned toolchain from any working directory of the caller.
+/// the pinned toolchain from any working directory of the caller. It
+/// passes `--target-dir`, so `cargo` writes the file that the step reads.
 ///
 /// Cost: under 1 ms. The test builds the command and does not run it.
 #[test]
 fn runtime_build_command_runs_in_the_runtime_directory() {
     let runtime_dir = Path::new("workspace/runtime");
-    let command = runtime_build_command(runtime_dir, false);
+    let target_dir = Path::new("workspace/target");
+    let command = runtime_build_command(runtime_dir, target_dir, false);
     assert_eq!(command.get_current_dir(), Some(runtime_dir));
+    let args: Vec<_> = command.get_args().collect();
+    let flag = args
+        .iter()
+        .position(|arg| *arg == "--target-dir")
+        .expect("the command passes --target-dir");
+    assert_eq!(args.get(flag + 1), Some(&target_dir.as_os_str()));
 }
 
 /// A `Cargo.lock` newer than an old archive gives stale. The step that

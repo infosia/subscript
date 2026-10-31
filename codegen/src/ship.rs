@@ -284,15 +284,19 @@ pub fn runtime_staticlib_name() -> &'static str {
 
 /// The command that builds the runtime static library. It runs in
 /// `runtime_dir`, so `rustup` selects the toolchain that the repository
-/// pins from any working directory of the caller.
-fn runtime_build_command(runtime_dir: &Path, release: bool) -> Command {
+/// pins from any working directory of the caller. `target_dir` is the
+/// parent of the directory that holds the archive, so `cargo` writes the
+/// file that the step reads, with a relative `CARGO_TARGET_DIR` too.
+fn runtime_build_command(runtime_dir: &Path, target_dir: &Path, release: bool) -> Command {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut cmd = Command::new(cargo);
     cmd.current_dir(runtime_dir)
         .arg("build")
         .arg("--offline")
         .arg("--manifest-path")
-        .arg(runtime_dir.join("Cargo.toml"));
+        .arg(runtime_dir.join("Cargo.toml"))
+        .arg("--target-dir")
+        .arg(target_dir);
     if release {
         cmd.arg("--release");
     }
@@ -302,10 +306,10 @@ fn runtime_build_command(runtime_dir: &Path, release: bool) -> Command {
 /// Sets the modification time of `archive` to `started` and keeps its
 /// bytes. `started` is the time read before `cargo` started, so a source
 /// that changes during the build stays newer than the archive. A `cargo
-/// build` that finds no work keeps the old archive time, so with no such
-/// step a newer `Cargo.lock` starts one `cargo build` in each later
-/// process. The file opens for writing because Windows needs the write
-/// access to set the time.
+/// build` that finds no work leaves the archive older than a newer
+/// `Cargo.lock`, so with no such step each later process starts one
+/// `cargo build`. The file opens for writing because Windows needs the
+/// write access to set the time.
 fn mark_archive_current(archive: &Path, started: std::time::SystemTime) -> std::io::Result<()> {
     std::fs::OpenOptions::new()
         .write(true)
@@ -322,12 +326,21 @@ fn build_runtime_staticlib() -> Result<PathBuf, String> {
     if staticlib_is_fresh(&archive, &runtime_dir, &runtime_dir.join("../Cargo.lock")) {
         return Ok(archive);
     }
+    if !runtime_dir.is_dir() {
+        return Err(internal(format!(
+            "runtime directory {} does not exist; set {RUNTIME_STATICLIB_ENV}",
+            runtime_dir.display()
+        )));
+    }
+    let target_dir = dir
+        .parent()
+        .ok_or_else(|| internal("build directory has no parent"))?;
     let profile = dir
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let started = std::time::SystemTime::now();
-    let out = runtime_build_command(&runtime_dir, profile == "release")
+    let out = runtime_build_command(&runtime_dir, target_dir, profile == "release")
         .output()
         .map_err(|e| internal(format!("build runtime staticlib: {e}")))?;
     if !out.status.success() {
