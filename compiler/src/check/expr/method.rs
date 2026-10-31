@@ -486,6 +486,14 @@ impl<'p> Checker<'p> {
                 mk(args, ty, pos)
             }
             A::Join => {
+                let (recv, elem) = if matches!(self.apparent_type(&elem), Type::StringAlias(_)) {
+                    (
+                        self.string_alias_elements(recv, elem, c.span, fx, &pos),
+                        Type::Str,
+                    )
+                } else {
+                    (recv, elem)
+                };
                 if !self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::TemplateInterpolation,
                     &elem,

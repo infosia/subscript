@@ -1,0 +1,24 @@
+on/off/on
+on,off,on
+onoffon
+[]
+[]
+on,off,on
+modes: on,off,on.
+receiver 1
+off-on
+receiver 2
+off,on
+2
+off
+high:low
+high,low
+on+off+on
+on
+on/off/on
+on,on
+true false
+1 -1 2
+true 1
+<high><low>
+high

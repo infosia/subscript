@@ -574,9 +574,13 @@ impl ArrElemKind {
             | Type::Array(_)
             | Type::Map(..)
             | Type::Set(_) => ArrElemKind::Int,
-            Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => {
-                ArrElemKind::SignedInt
-            }
+            Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::Enum(_)
+            | Type::StringAlias(_)
+            | Type::Date => ArrElemKind::SignedInt,
             Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
             Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,

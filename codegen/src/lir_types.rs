@@ -214,7 +214,13 @@ pub(crate) fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, S
         | Type::Array(_)
         | Type::Map(..)
         | Type::Set(_) => 0,
-        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Enum(_) | Type::Date => 5,
+        Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::Enum(_)
+        | Type::StringAlias(_)
+        | Type::Date => 5,
         Type::Class(class) if !lir_class_is_value(module, *class) => 0,
         Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => 0,
         Type::F32 => 1,

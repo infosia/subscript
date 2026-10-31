@@ -1303,7 +1303,7 @@ pub enum ArrElemKind {
     Int,
     /// Bitwise integer equality at the element width; passed in a
     /// sign-extending integer register. Covers signed sized integers,
-    /// enums, and `Date` (millis).
+    /// enums, string-literal aliases, and `Date` (millis).
     SignedInt,
     /// IEEE `f32` equality (`NaN` never equal); float register.
     F32,

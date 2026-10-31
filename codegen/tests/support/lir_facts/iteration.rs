@@ -243,6 +243,20 @@ pub(super) fn compare_static_array_callbacks(
     lir: &l::Module,
     findings: &mut Vec<String>,
 ) {
+    // A chain gives each of its calls the position of the chain start, so
+    // one position can hold more than one output array.
+    let mut static_outputs = BTreeMap::<(String, u32, u32), usize>::new();
+    walk_module_expressions(hir, &mut |expr| {
+        if let hir::ExprKind::Call {
+            callee: hir::Callee::Arr(operation @ (hir::ArrFn::Map | hir::ArrFn::Filter)),
+            args,
+        } = &expr.kind
+        {
+            if static_array_callback(*operation, args).is_some() {
+                *static_outputs.entry(pos_key(&expr.pos)).or_default() += 1;
+            }
+        }
+    });
     walk_module_expressions(hir, &mut |expr| {
         let hir::ExprKind::Call {
             callee: hir::Callee::Arr(operation),
@@ -359,13 +373,84 @@ pub(super) fn compare_static_array_callbacks(
                     if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
             })
             .count();
-        let produces_array = matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter);
-        let required = usize::from(produces_array);
+        let required = static_outputs.get(&key).copied().unwrap_or(0);
         if output_count != required || push_count != required {
             findings.push(format!(
-                "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each",
+                "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each, one for each static `map` or `filter` call at this position",
                 expr.pos
             ));
         }
     });
+}
+
+#[cfg(test)]
+mod static_output_tests {
+    use super::*;
+    use subscript_compiler::{check_program, SourceFile};
+
+    const CHAIN: &str = "export function main(): void {\n\
+        const ns: i32[] = [1, 2, 3];\n\
+        print(ns.filter((x: i32): boolean => x > 1).map((x: i32): string => `${x}`).join(\",\"));\n\
+        }\n";
+
+    fn checked() -> (hir::Module, l::Module) {
+        let hir = check_program(&[SourceFile::new("chain.ts", CHAIN)]).expect("the chain checks");
+        let lir = subscript_codegen::lir::lower_module(&hir).expect("the chain lowers");
+        (hir, lir)
+    }
+
+    fn findings(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
+        let mut findings = Vec::new();
+        compare_static_array_callbacks(hir, lir, &mut findings);
+        findings
+    }
+
+    /// Replaces the first instruction that `selected` takes with a `Copy`.
+    fn remove_first(lir: &mut l::Module, selected: impl Fn(&l::InstructionKind) -> bool) {
+        let instruction = lir
+            .functions
+            .iter_mut()
+            .flat_map(|function| &mut function.blocks)
+            .flat_map(|block| &mut block.instructions)
+            .find(|instruction| selected(&instruction.kind))
+            .expect("the chain has the instruction");
+        instruction.kind = l::InstructionKind::Copy;
+    }
+
+    #[test]
+    fn a_chain_requires_one_output_for_each_static_call_at_the_position() {
+        let (hir, lir) = checked();
+        assert_eq!(findings(&hir, &lir), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_chain_with_a_missing_capacity_allocation_gives_a_finding() {
+        let (hir, mut lir) = checked();
+        remove_first(&mut lir, |kind| {
+            *kind == l::InstructionKind::ArrayWithCapacity
+        });
+        let findings = findings(&hir, &lir);
+        assert!(
+            findings.iter().any(|finding| finding.contains(
+                "carries 1 capacity allocation(s) and 2 push site(s); HIR requires 2 each"
+            )),
+            "{findings:?}"
+        );
+    }
+
+    #[test]
+    fn a_chain_with_a_missing_push_gives_a_finding() {
+        let (hir, mut lir) = checked();
+        remove_first(&mut lir, |kind| {
+            matches!(kind, l::InstructionKind::Call(target)
+                if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
+        });
+        let findings = findings(&hir, &lir);
+        assert!(
+            findings.iter().any(|finding| finding.contains(
+                "carries 2 capacity allocation(s) and 1 push site(s); HIR requires 2 each"
+            )),
+            "{findings:?}"
+        );
+    }
 }

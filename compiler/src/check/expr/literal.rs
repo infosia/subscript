@@ -365,6 +365,64 @@ impl<'p> Checker<'p> {
         self.check_method_call_on(operand, &property, &call, fx, pos)
     }
 
+    /// compiler.md §216 rule 1: the receiver of `join` on a string-literal
+    /// alias element is `receiver.map((x) => `${x}`)`. The contextual
+    /// parameter type carries the alias, so the alias needs no name in
+    /// the scope of the call. The synthetic nodes take the span of the
+    /// `join` call. No node of the callback is a call, so `active_call`
+    /// and `operand_calls` do not read that span.
+    pub(super) fn string_alias_elements(
+        &mut self,
+        receiver: hir::Expr,
+        element: Type,
+        span: swc_common::Span,
+        fx: &mut FnCtx,
+        pos: &Pos,
+    ) -> hir::Expr {
+        let ident = ast::Ident::new("__element".into(), span, Default::default());
+        let text = ast::Expr::Tpl(ast::Tpl {
+            span,
+            exprs: vec![Box::new(ast::Expr::Ident(ident.clone()))],
+            quasis: [false, true]
+                .into_iter()
+                .map(|tail| ast::TplElement {
+                    span,
+                    tail,
+                    cooked: Some("".into()),
+                    raw: "".into(),
+                })
+                .collect(),
+        });
+        let callback = ast::ArrowExpr {
+            span,
+            ctxt: Default::default(),
+            params: vec![ast::Pat::Ident(ident.into())],
+            body: Box::new(ast::BlockStmtOrExpr::Expr(Box::new(text))),
+            is_async: false,
+            is_generator: false,
+            type_params: None,
+            return_type: None,
+        };
+        let call = ast::CallExpr {
+            span,
+            ctxt: Default::default(),
+            callee: ast::Callee::Expr(Box::new(ast::Expr::Invalid(ast::Invalid { span }))),
+            args: vec![ast::ExprOrSpread {
+                spread: None,
+                expr: Box::new(ast::Expr::Arrow(callback)),
+            }],
+            type_args: None,
+        };
+        self.check_array_method(
+            receiver,
+            element,
+            (hir::ArrFn::Map, "map"),
+            &call,
+            fx,
+            pos.clone(),
+        )
+    }
+
     /// The value of a module function or a static method (compiler.md
     /// §207.1 rule 1): a function pointer (C5). `direct_value` marks the
     /// whole initializer of a module variable.
