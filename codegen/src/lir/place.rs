@@ -241,7 +241,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .ok_or_else(|| self.error(pos, "global address produced no value")),
             PreparedPlaceKind::Field { base, field, ty } => {
                 let base = self.materialize_base(base, pos, include_traps)?;
-                let array_base = address_base(&self.operand_type(&base, pos)?);
+                let array_base = self.address_base(&base, pos)?;
                 self.emit(
                     l::InstructionKind::AddressOfField(*field),
                     vec![base],
@@ -262,15 +262,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ty,
             } => {
                 let base = self.materialize_base(base, pos, include_traps)?;
-                let base_type = self.operand_type(&base, pos)?;
-                let array_base = match (&base, &base_type) {
-                    (
-                        l::Operand::Value(value),
-                        l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _)),
-                    ) => Some(*value),
-                    (_, l::ValueType::Address(address)) => address.array_base,
-                    _ => None,
-                };
+                let array_base = self.address_base(&base, pos)?;
                 self.emit(
                     l::InstructionKind::AddressOfIndex {
                         checked: *checked && include_traps,
@@ -287,6 +279,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .ok_or_else(|| self.error(pos, "index address produced no value"))
             }
         }
+    }
+
+    pub(super) fn address_base(
+        &self,
+        base: &l::Operand,
+        pos: &Pos,
+    ) -> Result<Option<l::ValueId>, LowerError> {
+        let classes = &self.lowering.hir.classes;
+        Ok(address_base(
+            base,
+            &self.operand_type(base, pos)?,
+            |class| classes.get(class.0).is_some_and(|class| class.is_value),
+        ))
     }
 
     fn materialize_base(

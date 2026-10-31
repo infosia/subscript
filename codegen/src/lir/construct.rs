@@ -253,11 +253,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .ok_or_else(|| self.error(pos, "class field index is missing"))?;
         let field = definition.id;
         let value = self.coerce_operand(value, l::ValueType::Data(definition.ty.clone()), pos)?;
-        let base_type = self.operand_type(&object, pos)?;
-        let array_base = match base_type {
-            l::ValueType::Address(address) => address.array_base,
-            _ => None,
-        };
+        let array_base = self.address_base(&object, pos)?;
         let address = self
             .emit(
                 l::InstructionKind::AddressOfField(l::FieldRef::Class(field)),

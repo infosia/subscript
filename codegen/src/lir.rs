@@ -1168,9 +1168,22 @@ fn branch(block: l::BlockId) -> l::Terminator {
     l::Terminator::Branch(target(block, Vec::new()))
 }
 
-fn address_base(ty: &l::ValueType) -> Option<l::ValueId> {
-    match ty {
-        l::ValueType::Address(address) => address.array_base,
+/// The base of an element or field address (compiler.md §218.1 rule 12): the
+/// base of an address operand, or a `Data` value whose own storage holds the
+/// target. A dynamic array is the other such value, because its storage can
+/// move. A reference class handle has no base: the target is a heap object.
+fn address_base(
+    operand: &l::Operand,
+    ty: &l::ValueType,
+    is_value_class: impl Fn(ClassId) -> bool,
+) -> Option<l::ValueId> {
+    match (operand, ty) {
+        (_, l::ValueType::Address(address)) => address.array_base,
+        (l::Operand::Value(value), l::ValueType::Data(data)) => match data {
+            Type::Array(_) | Type::FixedArray(_, _) | Type::IterResult(_) => Some(*value),
+            Type::Class(class) if is_value_class(*class) => Some(*value),
+            _ => None,
+        },
         _ => None,
     }
 }

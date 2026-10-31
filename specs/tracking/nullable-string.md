@@ -1,6 +1,6 @@
 # A nullable string — `compiler.md` §218
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 The owner selected this section and §219 on 2026-10-31. The Step 0 table
 is in `specs/tracking/nullable-array.md`.
@@ -66,3 +66,25 @@ operand form closes each case.
 two lines of the cursor form. The LIR text snapshot does not move.
 
 `gate full 821d2a7a dirty:26 debug 3114/0/5 release 3111/0/5 skips 2/0 clippy 5/18/11 goldens-moved 1 exit 0`. `tools/hygiene.sh` exit 0. The moved golden is `a402`, which this section adds.
+
+## Second review fixes
+
+Three-run values with a debug compiler, 196,608 reads of
+`FixedArray<f64, 16384>` with `yield` in the body. The JIT figures hold
+about 4.49 s of literal compile time.
+
+| Shape | JIT before | JIT after | C before | C after |
+|---|---|---|---|---|
+| `for…of` | 5.90 s | 4.50 s | 2.1 s | 0.024 s |
+| index loop | 4.49 s | 4.49 s | 0.022 s | 0.023 s |
+| sync `for…of`, 1024 f64, 20.48M reads | 0.172 s | 0.180 s | 0.122 s | 0.123 s |
+
+`program.c` across 292 accept entries: only `a77` and `a403` move. The LIR
+snapshot does not move.
+
+A rule that gave a base to any `Data` operand failed: a counted check
+reads a base as an index, and a field write on a reference class gave
+"replaces a counted array element" on `a359` and `a361`. So the rule
+names the value kinds.
+
+`gate full 04032626 dirty:32 debug 3120/0/5 release 3117/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0.

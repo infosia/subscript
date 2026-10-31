@@ -13,6 +13,12 @@ pub(super) fn verify_instruction_contract(
     errors: &mut Vec<VerifyError>,
 ) {
     let context = format!("block {} instruction {instruction_index}", block.id.0);
+    let is_value_class = |class: ClassId| {
+        module
+            .classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value)
+    };
     let operand_types = instruction
         .operands
         .iter()
@@ -479,7 +485,11 @@ pub(super) fn verify_instruction_contract(
                 .is_some_and(|base| field_base_accepts(module, *field, base));
             let result_valid = match (expected_field, result_type.as_ref()) {
                 (Some(expected), Some(l::ValueType::Address(address))) => {
-                    let expected_base = operand_types.first().and_then(address_base);
+                    let expected_base = instruction
+                        .operands
+                        .first()
+                        .zip(operand_types.first())
+                        .and_then(|(operand, ty)| address_base(operand, ty, is_value_class));
                     address.pointee == expected && address.array_base == expected_base
                 }
                 _ => false,
@@ -692,14 +702,11 @@ pub(super) fn verify_instruction_contract(
                 Some(l::ValueType::Address(address)) => Some(&address.pointee),
                 _ => None,
             };
-            let expected_base = match (instruction.operands.first(), operand_types.first()) {
-                (
-                    Some(l::Operand::Value(value)),
-                    Some(l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _))),
-                ) => Some(*value),
-                (_, Some(l::ValueType::Address(address))) => address.array_base,
-                _ => None,
-            };
+            let expected_base = instruction
+                .operands
+                .first()
+                .zip(operand_types.first())
+                .and_then(|(operand, ty)| address_base(operand, ty, is_value_class));
             let result_base = match result_type.as_ref() {
                 Some(l::ValueType::Address(address)) => address.array_base,
                 _ => None,
@@ -883,7 +890,15 @@ pub(super) fn verify_instruction_contract(
                 result_type.as_ref(),
                 Some(l::ValueType::Iterator(iterator)) if iterator.kind == *kind
             );
-            if operand_types.len() != 1 || !valid {
+            let subject_valid = (*kind == l::ForOfKind::FixedArrayValues)
+                == matches!(
+                    operand_types.first(),
+                    Some(l::ValueType::Address(l::AddressType {
+                        pointee: Type::FixedArray(_, _),
+                        ..
+                    }))
+                );
+            if operand_types.len() != 1 || !valid || !subject_valid {
                 bad("iterator creation signature is invalid", errors);
             }
             if *bound == l::IteratorBoundKind::Fixed
@@ -913,14 +928,6 @@ pub(super) fn verify_instruction_contract(
                     [l::ValueType::Iterator(iterator), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::I32)],
                     Some(l::ValueType::Data(result)),
                 ) => iterator.kind != l::ForOfKind::FixedArrayValues && iterator.element == *result,
-                (
-                    [l::ValueType::Iterator(iterator), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::FixedArray(element, _))],
-                    Some(l::ValueType::Data(result)),
-                ) => {
-                    iterator.kind == l::ForOfKind::FixedArrayValues
-                        && iterator.element == *result
-                        && **element == *result
-                }
                 _ => false,
             };
             if !valid {

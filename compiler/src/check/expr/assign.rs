@@ -476,11 +476,58 @@ impl<'p> Checker<'p> {
         }
         let previous_arithmetic = std::mem::replace(&mut fx.arithmetic_write, arithmetic);
         let place = self.check_assign_target_inner(target, fx, pos);
+        if let Place::Field(path) | Place::Index(path) = &place {
+            self.reject_write_through_value_temporary(path);
+        }
         fx.arithmetic_write = previous_arithmetic;
         if let Some(context) = &mut fx.field_initializer {
             context.write = previous;
         }
         place
+    }
+
+    /// §218.1 rule 12a: a path that stays in value storage and reaches a value
+    /// temporary writes a copy. A reference class or a dynamic array on the
+    /// path ends the walk, because the write reaches shared storage.
+    fn reject_write_through_value_temporary(&mut self, path: &hir::Expr) {
+        let mut step = path;
+        loop {
+            let (ExprKind::Field { obj, .. } | ExprKind::Index { obj, .. }) = &step.kind else {
+                return;
+            };
+            let value_storage = self.is_value_class(&obj.ty)
+                || matches!(
+                    self.apparent_type(&obj.ty),
+                    Type::FixedArray(..) | Type::IterResult(_)
+                );
+            if !value_storage {
+                return;
+            }
+            let mut root = obj.as_ref();
+            while let ExprKind::Cast(inner) = &root.kind {
+                root = inner;
+            }
+            match &root.kind {
+                ExprKind::Field { .. } | ExprKind::Index { .. } => step = root,
+                ExprKind::Local(..)
+                | ExprKind::Global(_)
+                | ExprKind::This
+                | ExprKind::Seq { .. } => return,
+                _ => {
+                    let result = self.type_name(&root.ty);
+                    self.reject_subset(
+                        RejectionSite::WriteThroughValueTemporary,
+                        format!(
+                            "this write changes a copy of the `{result}` result, and nothing \
+                             reads that copy; bind the result to a variable, or assign to the \
+                             source"
+                        ),
+                        path.pos.clone(),
+                    );
+                    return;
+                }
+            }
+        }
     }
 
     fn check_assign_target_inner(

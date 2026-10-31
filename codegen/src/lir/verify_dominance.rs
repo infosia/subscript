@@ -90,14 +90,11 @@ fn verify_array_base_dominance(
             ));
             continue;
         };
-        if !matches!(
-            base_value.ty,
-            l::ValueType::Data(Type::Array(_) | Type::FixedArray(_, _))
-        ) {
+        if !matches!(base_value.ty, l::ValueType::Data(_)) {
             errors.push(finding(
                 function,
                 format!(
-                    "address value {} names non-array base value {}",
+                    "address value {} names non-data base value {}",
                     value.id.0, base.0
                 ),
             ));

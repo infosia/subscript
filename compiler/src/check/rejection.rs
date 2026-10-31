@@ -644,6 +644,10 @@ rejection_classes! {
         Diverges(Divergence::MirrorStringProvenanceMissing),
     ),
     Self::MirrorNullableView => (RuleCode::S100, Diverges(Divergence::NullableNonReference)),
+    Self::WriteThroughValueTemporary => (
+        RuleCode::S100,
+        Diverges(Divergence::WriteThroughValueTemporary),
+    ),
     Self::MirrorParameterProvenanceMismatch => (
         RuleCode::S100,
         Diverges(Divergence::MirrorParameterProvenanceMismatch),

@@ -893,7 +893,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                                 .get(1)
                                 .ok_or_else(|| internal("iterator index is missing"))?,
                         )?,
-                        operands.get(3).copied(),
                         &instruction.pos,
                     )?,
                 )

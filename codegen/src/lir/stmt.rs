@@ -536,13 +536,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             kind,
             element: ty.clone(),
         });
+        let (fixed_subject, cursor_subject) =
+            self.traversal_subject(kind, subject_value, &subject.ty, pos)?;
         let iterator = self
             .emit(
                 l::InstructionKind::IteratorCreate {
                     kind,
                     bound: l::IteratorBoundKind::Live,
                 },
-                vec![subject_value.clone()],
+                vec![cursor_subject],
                 Some(iterator_type.clone()),
                 false,
                 convert_traps(&subject.statement_read_sites(self.lowering.hir)),
@@ -605,20 +607,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let cursor = self.read_binding(cursor_binding, pos)?;
         let index = self.read_binding(index_binding, pos)?;
         let bound = self.read_binding(bound_binding, pos)?;
-        let mut value_operands = vec![cursor, index, bound];
-        if kind == l::ForOfKind::FixedArrayValues {
-            value_operands.push(subject_value);
-        }
-        let value = self
-            .emit(
-                l::InstructionKind::IteratorValue,
-                value_operands,
-                Some(l::ValueType::Data(ty.clone())),
-                false,
-                Vec::new(),
-                pos.clone(),
-            )?
-            .expect("iterator value");
+        let value = self.traversal_element(fixed_subject, cursor, index, bound, ty, pos)?;
         self.scopes.push(HashMap::new());
         self.declare_binding(
             name.to_string(),
@@ -679,6 +668,106 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
         self.scopes.pop();
         Ok(())
+    }
+
+    /// Gives a fixed-array traversal its hidden local (compiler.md §218.1
+    /// rule 12): one copy of the subject at the start, which each element read
+    /// addresses. Returns the local and the subject operand of the cursor.
+    fn traversal_subject(
+        &mut self,
+        kind: l::ForOfKind,
+        subject: l::Operand,
+        subject_ty: &Type,
+        pos: &Pos,
+    ) -> Result<(Option<(l::LocalId, Type)>, l::Operand), LowerError> {
+        if kind != l::ForOfKind::FixedArrayValues {
+            return Ok((None, subject));
+        }
+        let local = self.add_local(
+            "<for-of subject>".to_string(),
+            l::ValueType::Data(subject_ty.clone()),
+            false,
+            pos.clone(),
+        )?;
+        self.emit(
+            l::InstructionKind::StoreLocal(local),
+            vec![subject],
+            None,
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?;
+        let address = self.subject_address(local, subject_ty, pos)?;
+        Ok((Some((local, subject_ty.clone())), address))
+    }
+
+    fn subject_address(
+        &mut self,
+        local: l::LocalId,
+        subject_ty: &Type,
+        pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
+        self.emit(
+            l::InstructionKind::AddressOfLocal(local),
+            Vec::new(),
+            Some(l::ValueType::Address(l::AddressType {
+                pointee: subject_ty.clone(),
+                array_base: None,
+            })),
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "local address produced no value"))
+    }
+
+    /// Reads the element at `index`: from the hidden local of a fixed-array
+    /// traversal, and from the cursor otherwise.
+    fn traversal_element(
+        &mut self,
+        fixed_subject: Option<(l::LocalId, Type)>,
+        cursor: l::Operand,
+        index: l::Operand,
+        bound: l::Operand,
+        element: &Type,
+        pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
+        let data = l::ValueType::Data(element.clone());
+        let Some((local, subject_ty)) = fixed_subject else {
+            return self
+                .emit(
+                    l::InstructionKind::IteratorValue,
+                    vec![cursor, index, bound],
+                    Some(data),
+                    false,
+                    Vec::new(),
+                    pos.clone(),
+                )?
+                .ok_or_else(|| self.error(pos, "iterator value produced no value"));
+        };
+        let array = self.subject_address(local, &subject_ty, pos)?;
+        let address = self
+            .emit(
+                l::InstructionKind::AddressOfIndex { checked: false },
+                vec![array, index],
+                Some(l::ValueType::Address(l::AddressType {
+                    pointee: element.clone(),
+                    array_base: None,
+                })),
+                false,
+                Vec::new(),
+                pos.clone(),
+            )?
+            .ok_or_else(|| self.error(pos, "element address produced no value"))?;
+        self.emit(
+            l::InstructionKind::LoadAddress,
+            vec![address],
+            Some(data),
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "element load produced no value"))
     }
 
     fn create_iterator(
@@ -1280,8 +1369,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
         };
 
+        let (fixed_subject, cursor_subject) =
+            self.traversal_subject(kind, subject_value.clone(), &subject.ty, &expr.pos)?;
         let (iterator_type, iterator) = self.create_iterator(
-            subject_value.clone(),
+            cursor_subject,
             kind,
             element.clone(),
             bound,
@@ -1381,20 +1472,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
-        let mut value_operands = vec![cursor, index.clone(), captured_bound.clone()];
-        if kind == l::ForOfKind::FixedArrayValues {
-            value_operands.push(subject_value);
-        }
-        let value = self
-            .emit(
-                l::InstructionKind::IteratorValue,
-                value_operands,
-                Some(l::ValueType::Data(element)),
-                false,
-                Vec::new(),
-                expr.pos.clone(),
-            )?
-            .expect("iterator value");
+        let value = self.traversal_element(
+            fixed_subject,
+            cursor,
+            index.clone(),
+            captured_bound.clone(),
+            &element,
+            &expr.pos,
+        )?;
         let mut call_operands = vec![self.read_binding(callback_binding, &expr.pos)?, value];
         if let Some(secondary_binding) = secondary_binding {
             let secondary_cursor = self.read_binding(secondary_binding, &expr.pos)?;

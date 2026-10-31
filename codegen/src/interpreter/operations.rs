@@ -700,7 +700,7 @@ impl Interpreter<'_> {
                 (Some(Type::Str), Value::Handle(string)) => {
                     i64::from(ffi_len_string(&self.context, *string))
                 }
-                (Some(Type::FixedArray(_, count)), Value::Blob(_)) => i64::from(*count),
+                (Some(Type::FixedArray(_, count)), Value::Address(_)) => i64::from(*count),
                 _ => {
                     return Err(self.invalid(
                         Some(pos.clone()),
@@ -747,8 +747,8 @@ impl Interpreter<'_> {
                 pos,
             )?;
         }
-        // A fixed-array cursor stores no subject: each element read takes the
-        // array as an operand (compiler.md §218.1 rule 12).
+        // A fixed-array cursor stores no subject: the loop reads a hidden local
+        // (compiler.md §218.1 rule 12).
         let subject = if kind == l::ForOfKind::FixedArrayValues {
             Value::Null
         } else {
@@ -838,7 +838,6 @@ impl Interpreter<'_> {
         &mut self,
         cursor: &Value,
         index: i64,
-        array: Option<&Value>,
         result_ty: Option<&l::ValueType>,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
@@ -874,16 +873,10 @@ impl Interpreter<'_> {
                     std::slice::from_raw_parts(pointer, layout.size)
                 })
             }
-            l::ForOfKind::FixedArrayValues => {
-                let Some(Value::Blob(bytes)) = array else {
-                    return Err(self.invalid(Some(pos.clone()), "fixed-array read has no array"));
-                };
-                let layout = self.layout_cached(ty).ok_or_else(|| {
-                    self.invalid(Some(pos.clone()), "iterator element has no layout")
-                })?;
-                let offset = cursor.position as usize * align_up(layout.size, layout.align);
-                self.unpack(ty, bytes.get(offset..).unwrap_or_default())
-            }
+            l::ForOfKind::FixedArrayValues => Err(self.invalid(
+                Some(pos.clone()),
+                "a fixed-array cursor has no element read",
+            )),
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "association element has no layout")

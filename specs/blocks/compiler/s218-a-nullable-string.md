@@ -71,14 +71,28 @@ falls to the pointer form.
 11. The form has no run-time cost beyond the null test in the string
     compare, which the runtime compare does.
 12. No value other than an `Address` holds an address. A `FixedArray`
-    cursor holds an index, and `IteratorValue` takes the array as an
-    operand, so the array has a use at each read. Liveness, a suspension,
-    and a slot clear follow from that use. A `FixedArray` call result that
-    a direct index reads has a base slot in the same way. At `ca7d8897`,
+    cursor holds an index. The subject of a `for…of` is a hidden local,
+    which the loop reads through an address of that local, as an index
+    loop reads a local. So a suspension in the body copies no array.
+    A field or an index of a value temporary has a base slot, and the
+    verifier rejects `AddressOfField` or `AddressOfIndex` with no base on
+    a value operand: a `FixedArray`, an `IterResult`, a value class, or a
+    dynamic array. A reference class handle needs no base, because its
+    target is a heap object. *(Amended 2026-10-31 after the second review, M1
+    and the cost finding.)* At `ca7d8897`,
     `for (const x of b)` with `b: FixedArray<string, 2>` read null
     elements on the JIT and the ship tier, a body with `await` or `yield`
     stopped on a bad read, and `pair()[0]` printed nothing, with no
     diagnostic. *(Added 2026-10-31 after the Phase Review, M1.)*
+12a. A write through a value temporary fails with S100 and names the
+    copy: `cur()[0] = 9`, `cv().x = 3`, `cv().a[1] = 7`, `cur()[0]++`, and
+    `b.gt()[1] = 5`, where the call result is a `FixedArray` or a value
+    class. The result is a copy (C2), so the write has no reader. The text
+    states the fix: bind the result, or assign to the source. `tsc` accepts
+    these forms, so the text carries a "TypeScript accepts" block. At
+    `ca7d8897` these forms ran on the JIT and the ship tier and lost
+    the write, and the interpreter stopped. *(Added 2026-10-31 after the
+    second review, M2.)*
 13. `reduce` and `reduceRight` convert the seed to the accumulator type,
     as an argument is converted. So a `string` or `null` seed for a
     `string | null` accumulator is accepted, and for `C | null` and
@@ -98,7 +112,8 @@ falls to the pointer form.
    `Context.collect()` with a null field, and `JSON.stringify`.
 3. A unit test shows that each tier reads one definition of rule 2 and
    rule 3.
-3a. `a403-for-of-fixed-array-handles` pins rule 12, with `string`,
+3a. `r462-write-through-value-temporary` pins rule 12a.
+    `a403-for-of-fixed-array-handles` pins rule 12, with `string`,
    `string | null`, and `C | null` elements and two loops. It fails at
    `ca7d8897` on the JIT and the ship tier for the `string` form. `a402`
    pins rule 13 and rule 1a.
@@ -133,9 +148,41 @@ MAJOR and seven MINOR findings. §218 gave no wrong value in the review.
 9. MINOR, contrived, fixed: the verifier scanned the function for each
    `StringOperand`.
 
+### 218.3a Second review
+
+*(Added 2026-10-31.)* A fresh review of `821d2a7a..04032626` gave two MAJOR
+and four MINOR findings, and one cost finding.
+
+1. MAJOR, realistic, fixed: `it.next().value[1]` on a `FixedArray` read
+   through a field path gave a wrong value or a signal 11 on the JIT and
+   the ship tier. Only the index path had a base slot. Rule 12.
+2. MAJOR, realistic, fixed: a write through a value temporary was
+   accepted and lost on the three tiers, and the new `Blob` arms removed
+   the only stop. Rule 12a.
+3. Cost, fixed: a suspension in a `for…of` body copied the whole array
+   into the frame and back. With `FixedArray<f64, 16384>` the JIT took
+   5.69 s against 0.53 s for an index loop. Rule 12.
+4. MINOR: §218.4 items 1 to 4.
+
 ### 218.4 Open
 
-1. `let b: FixedArray<i32, 2>`, `for (const x of b) { b[1] = 9; print(x); }`
-   prints `1 2` on the three tiers. `node` prints `1 9`. This predates
-   §218. `collisions.md` names no such divergence.
-
+1. A `for…of` over a `FixedArray` reads a copy of the subject. With
+   `b[1] = 9` in the body, `for (const x of b)` prints `1 2` on the three
+   tiers, and `node` prints `1 9`. A global, a class field, a `string`
+   element, a change in a called function, `forEach`, `map`, and a
+   generator parameter behave the same way. This predates §218.
+   `collisions.md` C2 states copy on assignment and on a pass, and names
+   no such loop.
+2. A zero-length `FixedArray` live across a suspension panics the JIT,
+   and `(SubFA_i32_0){0}` fails the C compile. Contrived.
+3. `xs.reduce<string | null>((acc, x) => …, null)` ignores the type
+   argument for a lambda with no parameter types. It stays rejected. The
+   annotated form passes.
+4. `reduce` rejects a callback whose result is narrower than the
+   accumulator: `xs.reduce((acc: string | null, x: string): string => …,
+   null)`. `tsc` is not measured on it.
+5. The hidden subject of a `for…of` over a `FixedArray` stays rooted until
+   the function returns. A `Context.collect()` after the loop keeps the
+   handles of that array. The hold is one array per loop site. A named
+   `const` in an inner block has the same lifetime. A store of a zero
+   value on the loop exit closes it.

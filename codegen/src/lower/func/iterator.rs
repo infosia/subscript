@@ -14,8 +14,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<RV, String> {
         let cursor = self.stack_slot(32, 8);
         self.zero_bytes(cursor, 32, 8);
-        // A fixed-array cursor stores no subject: each element read takes the
-        // array as an operand (compiler.md §218.1 rule 12).
+        // A fixed-array cursor stores no subject: the loop reads a hidden local
+        // (compiler.md §218.1 rule 12).
         let subject = match kind {
             l::ForOfKind::FixedArrayValues => None,
             _ => Some(self.expect_scalar(subject)?),
@@ -28,18 +28,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             i64::from(bound_kind == l::IteratorBoundKind::Fixed),
         );
         self.builder.ins().store(flags(), fixed, cursor, 24);
-        if kind == l::ForOfKind::FixedArrayValues
-            && !matches!(subject_ty, l::ValueType::Data(Type::FixedArray(_, _)))
-        {
-            return Err(internal(
-                "fixed-array iterator has no fixed-array subject type",
-            ));
-        }
-        let captured = if let (
-            l::ForOfKind::FixedArrayValues,
-            l::ValueType::Data(Type::FixedArray(_, count)),
-        ) = (kind, subject_ty)
-        {
+        let captured = if kind == l::ForOfKind::FixedArrayValues {
+            let l::ValueType::Address(l::AddressType {
+                pointee: Type::FixedArray(_, count),
+                ..
+            }) = subject_ty
+            else {
+                return Err(internal(
+                    "fixed-array iterator has no fixed-array subject type",
+                ));
+            };
             self.iconst(types::I64, i64::from(*count))
         } else {
             self.iterator_current_bound(cursor, iterator_ty, pos)?
@@ -233,7 +231,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         iterator: RV,
         iterator_ty: &l::IteratorType,
         index: Value,
-        array: Option<RV>,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
@@ -263,15 +260,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.load_data(&iterator_ty.element, address, 0)
             }
             l::ForOfKind::FixedArrayValues => {
-                let array = array.ok_or_else(|| internal("fixed-array read has no array"))?;
-                let array = self.expect_aggregate(array)?;
-                let stride = self.ml.layouts.stride(&iterator_ty.element)?;
-                let offset = self
-                    .builder
-                    .ins()
-                    .imul_imm(cursor_position, i64::from(stride));
-                let address = self.builder.ins().iadd(array, offset);
-                self.load_data(&iterator_ty.element, address, 0)
+                Err(internal("a fixed-array cursor has no element read"))
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let (size, align) = self.ml.layouts.size_align(&iterator_ty.element)?;

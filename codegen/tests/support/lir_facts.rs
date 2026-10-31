@@ -1180,8 +1180,7 @@ fn instruction_arity(
         | K::AsyncHandleRelease
         | K::AsyncHandleArrayRetain
         | K::AsyncHandleArrayRelease => Arity::Exact(1),
-        K::IteratorHasNext | K::IteratorAdvance => Arity::Exact(3),
-        K::IteratorValue => Arity::Variable,
+        K::IteratorHasNext | K::IteratorValue | K::IteratorAdvance => Arity::Exact(3),
     }
 }
 

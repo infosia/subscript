@@ -533,6 +533,13 @@ pub(super) const THISINVALUETYPEARROW: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 15,
 };
 
+pub(super) const WRITE_THROUGH_VALUE_TEMPORARY: DivergenceEntry = DivergenceEntry {
+    ts: "function pair(): FixedArray<i32, 2> { return [1, 2]; }\nexport function main(): void { pair()[0] = 9; }",
+    subscript: "function pair(): FixedArray<i32, 2> { return [1, 2]; }\nexport function main(): void { const kept = pair(); kept[0] = 9; print(`${kept[0]}`); }",
+    why: "A FixedArray or value class result is a copy (C2), so a write through it has no reader.",
+    collision: "C2",
+};
+
 pub(super) const NONNULLASSERTIONEXPRESSIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "class C { x: i32 = 1; }\nexport function main(): void { const c: C = new C(); c!.x; }",
     subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",

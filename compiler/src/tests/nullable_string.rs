@@ -119,6 +119,91 @@ fn rule_2_the_definition_is_symmetric() {
     assert!(!Type::compares_string_content(&Type::Str, &Type::I32));
 }
 
+const VALUE_RESULTS: &str = "@ValueType class V { x: i32 = 1; a: FixedArray<i32, 2> = [1, 2]; }\n\
+                             class C { n: i32 = 1; }\n\
+                             class H {\n\
+                             \x20 a: FixedArray<i32, 2> = [1, 2];\n\
+                             \x20 v: V = new V();\n\
+                             \x20 get vget(): V { return this.v; }\n\
+                             \x20 get fa(): FixedArray<i32, 2> { return this.a; }\n\
+                             }\n\
+                             function cur(): FixedArray<i32, 2> { return [1, 2]; }\n\
+                             function cv(): V { return new V(); }\n\
+                             function getC(): C { return new C(); }\n\
+                             function getH(): H { return new H(); }\n\
+                             function getArr(): i32[] { return [1]; }\n\
+                             function cs(): FixedArray<C, 1> { return [new C()]; }\n\
+                             function* g(): Generator<FixedArray<i32, 2>> { yield [1, 2]; }\n";
+
+#[test]
+fn rule_12a_a_write_through_a_value_temporary_names_the_copy() {
+    for (write, result) in [
+        ("cur()[0] = 9;", "FixedArray<i32, 2>"),
+        ("cv().x = 3;", "V"),
+        ("cv().a[1] = 7;", "V"),
+        ("cur()[0]++;", "FixedArray<i32, 2>"),
+        ("cur()[0] += 2;", "FixedArray<i32, 2>"),
+        ("(true ? cur() : cur())[0] = 1;", "FixedArray<i32, 2>"),
+        ("new V().x = 1;", "V"),
+        ("new H().vget.x = 1;", "V"),
+        ("new H().vget.a[0] = 1;", "V"),
+        ("new H().vget.x += 1;", "V"),
+        ("new H().fa[0]++;", "FixedArray<i32, 2>"),
+        ("g().next().value[0] = 1;", "done: boolean"),
+    ] {
+        let source = format!("{VALUE_RESULTS}export function main(): void {{ {write} }}\n");
+        let diagnostics = check_one(&source).expect_err(write);
+        let found = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.message.starts_with("this write changes a copy"))
+            .unwrap_or_else(|| panic!("{write}: {diagnostics:?}"));
+        assert_eq!(found.code, RuleCode::S100, "{write}");
+        assert!(found.message.contains(result), "{write}: {}", found.message);
+        assert!(
+            found.message.ends_with("or assign to the source"),
+            "{write}"
+        );
+    }
+}
+
+#[test]
+fn rule_12a_a_write_that_reaches_shared_storage_stays_legal() {
+    for write in [
+        "getC().n = 1;",
+        "getArr()[0] = 1;",
+        "cs()[0].n = 1;",
+        "getH().a[0] = 1;",
+        "getH().v.a[1] = 1;",
+        "getH().v.x += 1;",
+        "const kept = getH().vget; kept.x = 1; print(`${kept.x}`);",
+        "const kept = cur(); kept[0] = 9; print(`${kept[0]}`);",
+    ] {
+        let source = format!("{VALUE_RESULTS}export function main(): void {{ {write} }}\n");
+        let module = check_one(&source);
+        assert!(module.is_ok(), "{write}: {:?}", module.err());
+    }
+}
+
+#[test]
+fn rule_12a_a_destructuring_target_has_no_write_to_lose() {
+    // Control: the same target is legal as a plain assignment.
+    let plain = format!(
+        "{VALUE_RESULTS}export function main(): void {{ const a: i32[] = [0]; a[0] = 1; }}\n"
+    );
+    let module = check_one(&plain);
+    assert!(module.is_ok(), "{:?}", module.err());
+    for write in ["[cur()[0]] = [1];", "const a: i32[] = [0]; [a[0]] = [1];"] {
+        let source = format!("{VALUE_RESULTS}export function main(): void {{ {write} }}\n");
+        let diagnostics = check_one(&source).expect_err(write);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.starts_with("a destructuring assignment")),
+            "{write}: {diagnostics:?}"
+        );
+    }
+}
+
 #[test]
 fn rule_5_each_text_states_the_fix() {
     for (form, code, message) in [

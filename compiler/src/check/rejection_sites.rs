@@ -324,6 +324,7 @@ pub(crate) enum RejectionSite {
     MirrorStringProvenanceMissing,
     MirrorParameterProvenanceMismatch,
     MirrorNullableView,
+    WriteThroughValueTemporary,
     MirrorAnonymousCallback,
     MirrorCallbackProvenanceMissing,
     InitializerNonPlaceOptionalReceiver,

@@ -16,7 +16,7 @@ const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-sh
 
 const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 
-const VALUE_REFERENCE_CLASSES: &str = "`@ValueType class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@ValueType({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
+const VALUE_REFERENCE_CLASSES: &str = "`@ValueType class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@ValueType({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another. A `FixedArray` or value class result of a call, a read accessor, `new`, or a ternary is a copy, so a write through it fails with S100 (§218): `cur()[0] = 9`, `cv().x = 3`, `obj.vget.x = 1`, `cur()[0]++`, and `cur()[0] += 2`. The text names the copy and states the fix: bind the result to a variable, or assign to the source. A path through a reference class or a dynamic array reaches shared storage and stays legal: `getC().x = 1` and `getArr()[0] = 1`.";
 
 const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Static accessors use the same rules through the class name. Reference classes and `@ValueType` value classes can declare read accessors. Only reference classes can declare instance write accessors. Value-position writes, value-class instance write accessors, and mirror accessors are outside the surface.";
 
@@ -126,6 +126,7 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a21-methods.ts",
             "corpus/accept/a141-valuetype-align.ts",
             "corpus/reject/r06-structural-substitution.ts",
+            "corpus/reject/r462-write-through-value-temporary.ts",
             "corpus/reject/r07-value-class-extends.ts",
             "corpus/reject/r135-valuetype-align-below-natural.ts",
             "corpus/reject/r136-valuetype-align-not-in-set.ts",

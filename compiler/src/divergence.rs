@@ -252,6 +252,8 @@ pub enum Divergence {
     ThisInParameterDefaultArrow,
     /// A ValueType receiver capture copies the receiver.
     ThisInValueTypeArrow,
+    /// A write through a value temporary changes a copy that nothing reads.
+    WriteThroughValueTemporary,
     /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
     EnumObjectMember,
     /// No first-class value is decided for a direct call target.
@@ -1174,6 +1176,7 @@ impl Divergence {
         Divergence::NonNullAssertionExpressionForm,
         Divergence::ThisInParameterDefaultArrow,
         Divergence::ThisInValueTypeArrow,
+        Divergence::WriteThroughValueTemporary,
         Divergence::EnumObjectMember,
         Divergence::StaticMethodValueForm,
         Divergence::MethodAssignment,
