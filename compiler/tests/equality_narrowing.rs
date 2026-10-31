@@ -1,5 +1,10 @@
 //! Equality with a value that has no absence narrows (compiler.md §219.1
 //! rule 4). Each accepted form has a rejected control in the same shape.
+//!
+//! Cost: each test runs the checker on short programs, with no code
+//! generation and no external process. The whole file took 0.05 s in a
+//! debug build.
+
 use subscript_compiler::{check_program, divergence::Divergence, Diagnostic, RuleCode, SourceFile};
 
 const DECLARATIONS: &str = "class C { v: i32 = 1; }
@@ -191,6 +196,32 @@ fn a_type_parameter_operand_narrows_only_with_no_absence() {
     )
     .expect_err("an unconstrained parameter can be nullable");
     assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+}
+
+#[test]
+fn a_generic_union_narrows_only_if_each_member_has_no_absence() {
+    assert_accepted(
+        "function f<T extends C, U extends H>(a: C | null, t: T, u: U, c: boolean): i32 { if (a === (c ? t : u)) { return a.v; } return 0; }",
+    );
+    assert_unnarrowed(
+        "function f<T extends C>(a: C | null, b: T, c: boolean): i32 { if (a === (c ? b : null)) { return a.v; } return 0; }",
+        None,
+    );
+    let errors = check(
+        "function f<T>(a: T | null, b: T, c: boolean): T | null { if (a === (c ? b : null)) { const r: T = a; return r; } return null; }",
+    )
+    .expect_err("a union with a null member can be absent");
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+}
+
+#[test]
+fn a_poison_operand_gives_no_narrowing() {
+    let errors = check(
+        "function f(a: string | null): i32 { if (a === (nosuch + 1)) { return a.length; } return 0; }",
+    )
+    .expect_err("the operand names no declaration");
+    let codes: Vec<RuleCode> = errors.iter().map(|error| error.code).collect();
+    assert_eq!(codes, [RuleCode::S016, RuleCode::S011], "{errors:?}");
 }
 
 #[test]

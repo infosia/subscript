@@ -64,7 +64,29 @@ Problem, measured at `bbd38549`:
 6. The rejection-site total check passes. §196 and §123 cite this
    section.
 
-### 219.3 Open
+### 219.3 Phase Review
+
+*(Added 2026-10-31.)* A fresh review of `bbd38549..152f26b2` gave no
+CRITICAL or MAJOR finding and five MINOR findings. About 90 forms of rule
+4 ran against `tsc`, and each form that can read a null is rejected.
+
+1. MINOR, contrived, open: §219.4 item 3.
+2. MINOR, fixed: §123, `collisions.md`, and `api_reference.rs` still
+   named `string` as outside the set.
+3. MINOR, contrived, fixed: two arms of `has_no_absence` had no test.
+   The review called them dead. The coding agent measured that
+   `a === (c ? b : null)` reaches the `GenericUnion` arm, and each arm
+   now has a test. `Void` is dead, and the match names it.
+
+### 219.4 Open
 
 1. Two `C | null` values in `===` stay rejected (rule 4a). `tsc` accepts
    them.
+2. `if (a === "x" || a === "y") a.length` gives S011. `tsc` accepts it. A
+   union of facts on one location does not exist.
+3. `if (a === r.value) { a.length; }` with an unguarded `IterResult.value`
+   is accepted, and `tsc` gives TS18047. The read traps with
+   `generator-done-value` before the compare. Contrived.
+4. `n ?? b` with `n: C | null` and `b: T`, `T extends C`: `nullish_result_type`
+   gives `Type::Error` with no diagnostic. A template with no call is
+   accepted, and a call gives S100.

@@ -28,8 +28,8 @@ every probe:
 
 1. `Map<K, V>.get` returns `V | null` where `V` and `V | null` share one
    nullable-pointer representation: a reference class, a reference
-   container (`Map`, `Set`), a function type, an array, and a
-   nullable form of one of them. `Worker`, `Inbox`, and `Outbox` are
+   container (`Map`, `Set`), a function type, an array, a `string`
+   (*amended 2026-10-31 by §219*), and a nullable form of one of them. `Worker`, `Inbox`, and `Outbox` are
    not container type arguments (§40), so `get` has no rule for them
    here. One predicate decides the set, from
    the handle kind of `V` itself. A type whose `| null` form is a
@@ -43,8 +43,7 @@ every probe:
    and a nullable `V` is outside the set.
 2. The S014 reason names the kind of `V` it rejects. A numeric, a
    boolean, an enum, or a string-literal alias gets "a scalar value
-   type has no null miss value". Every other rejected type (`string`,
-   `Date`, `RegExp`, `Generator<T>`, a value class, `FixedArray`, a
+   type has no null miss value". Every other rejected type (`Date`, `RegExp`, `Generator<T>`, a value class, `FixedArray`, a
    boundary struct) gets the reason that it has no `| null` form of the
    map's value representation. `getOr` stays the total spelling for
    both.

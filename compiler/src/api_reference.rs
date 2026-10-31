@@ -348,7 +348,7 @@ console.log(value === 0.7085450778517304 ? "context-sequence" : "host-sequence")
         id: "q4-empty-array-pop",
         surface: "`T[].pop` on an empty array",
         q_rule: "Q4",
-        summary: "subscript traps because `T` cannot represent JS's undefined result.",
+        summary: "For a scalar or value `T`, subscript traps because `T` cannot represent JS's undefined result. A reference or `string` element gives `T | undefined`.",
         subscript: r#"export function main(): void {
   const values: i32[] = [];
   print(`${values.pop()}`);
@@ -363,7 +363,7 @@ console.log(value === 0.7085450778517304 ? "context-sequence" : "host-sequence")
         id: "q27-empty-array-shift",
         surface: "`T[].shift` on an empty array",
         q_rule: "Q27",
-        summary: "subscript traps because `T` cannot represent JS's undefined result.",
+        summary: "For a scalar or value `T`, subscript traps because `T` cannot represent JS's undefined result. A reference or `string` element gives `T | undefined`.",
         subscript: r#"export function main(): void {
   const values: i32[] = [];
   print(`${values.shift()}`);

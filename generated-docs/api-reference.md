@@ -857,7 +857,7 @@ console.log(`${parseInt("hg3u5kjup4fqpcnqlor6do3ilczi9cbixkrepc", 36)}`);
 
 ### `T[].pop` on an empty array — Q4
 
-subscript traps because `T` cannot represent JS's undefined result.
+For a scalar or value `T`, subscript traps because `T` cannot represent JS's undefined result. A reference or `string` element gives `T | undefined`.
 
 subscript:
 
@@ -879,7 +879,7 @@ console.log(String([].pop()));
 
 ### `T[].shift` on an empty array — Q27
 
-subscript traps because `T` cannot represent JS's undefined result.
+For a scalar or value `T`, subscript traps because `T` cannot represent JS's undefined result. A reference or `string` element gives `T | undefined`.
 
 subscript:
 

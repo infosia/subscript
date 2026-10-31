@@ -693,7 +693,8 @@ prints `true` and `x === null` prints `false`:
 
 - the `value` of a finished generator of `Box | null` (C8).
 
-*Revised 2026-10-26 (`compiler.md` §195.5):* a miss of `Map.get`,
+*Revised 2026-10-26 (`compiler.md` §195.5), and 2026-10-31 (§219, a
+`string` element):* a miss of `Map.get`,
 `find`, or `findLast` on a reference element has the `undefined`
 spelling. `x === undefined` agrees with `node`, and `x === null` is
 rejected (C7).
@@ -1182,7 +1183,8 @@ Accept: `a369`, `a370`. Reject: `r421`.
   lib's arity-overloaded no-init form changes meaning silently);
   `sort` requires a comparator (the lib's default sort coerces to
   strings); `find` is rejected (no miss value for scalar element
-  types — use `findIndex`). Callbacks are non-escaping (C5) by
+  types — use `findIndex`). *(`stdlib.md` §9.10 and `compiler.md` §219
+  accept a reference and a `string` element.)* Callbacks are non-escaping (C5) by
   construction; a callback trap aborts the iteration.
 - **Q23 (narrow numerics: `i8`/`u8`/`i16`/`u16`/`f16`)** — five further
   ambient aliases of `number`, extending C3's table. They exist because

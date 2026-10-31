@@ -1,6 +1,6 @@
 # A string result can be `undefined`, and equality narrows — `compiler.md` §219
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 The Step 0 of `specs/tracking/nullable-array.md` added `Str` to
 `map_get_value_ok`: one line gave `string | undefined` results, equal to
@@ -22,3 +22,5 @@ that reads an empty `string[]` `pop` or `shift`.
 
 A matrix of 57 forms against `tsc` differs only by a stated rule: C17, C24
 row 32, §218.1 rule 5, and S009.
+
+`gate full 152f26b2 dirty:8 debug 3131/0/5 release 3128/0/5 skips 2/0 clippy 5/18/11 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0.

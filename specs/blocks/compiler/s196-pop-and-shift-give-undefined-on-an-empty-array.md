@@ -51,10 +51,11 @@ pointer of `T | null`.
    accepted. The tracking note records each result.
 2. `a375` passes `tsc`, and its output under `node` equals its golden.
 3. `r439` gives S011 "may be null here".
-4. The traps of `pop` and `shift` on an empty array of a scalar, a
-   value class, and `string` stay. The divergence witnesses
-   `q4-empty-array-pop` and `q27-empty-array-shift` keep their scalar
-   programs. A unit test pins the value-class case. *(§219 moves `string`.)*
+4. The traps of `pop` and `shift` on an empty array of a scalar and a
+   value class stay. The divergence witnesses `q4-empty-array-pop` and
+   `q27-empty-array-shift` keep their scalar programs. A unit test pins
+   the value-class case. *(Amended 2026-10-31 by §219: `string` left this
+   list.)*
 5. A unit test shows that a discarded `pop()` and `shift()` on a
    reference element give the `t87` and `t88` results.
 6. The API reference rows of `pop` and `shift` state rules 1 and 2.

@@ -577,7 +577,9 @@ fn assignment_target(operand: &hir::Expr) -> &hir::Expr {
 
 /// True when a value of type `ty` is never absent. A type parameter with no
 /// constraint can be a nullable type, and the poison type states nothing, so
-/// neither counts (compiler.md §219.1 rule 4).
+/// neither counts (compiler.md §219.1 rule 4). The match names each type, so
+/// a new type must state its absence. `check_expr` makes a `void` operand
+/// the poison expression, so an operand never has the type `Void`.
 fn has_no_absence(ty: &Type, apparent_type: &impl Fn(&Type) -> Type) -> bool {
     match apparent_type(ty) {
         Type::Null | Type::Nullable(_, _) | Type::TypeParameter(_) | Type::Error | Type::Void => {
@@ -586,7 +588,39 @@ fn has_no_absence(ty: &Type, apparent_type: &impl Fn(&Type) -> Type) -> bool {
         Type::GenericUnion(members) => members
             .iter()
             .all(|member| has_no_absence(member, apparent_type)),
-        _ => true,
+        Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::F32
+        | Type::F64
+        | Type::F16
+        | Type::Bool
+        | Type::Str
+        | Type::Date
+        | Type::RegExp
+        | Type::TaskGroup
+        | Type::Object
+        | Type::Class(_)
+        | Type::Interface(_)
+        | Type::GenericNumber
+        | Type::Enum(_)
+        | Type::StringAlias(_)
+        | Type::FixedArray(_, _)
+        | Type::Array(_)
+        | Type::Map(_, _)
+        | Type::Set(_)
+        | Type::Worker(_, _)
+        | Type::Inbox(_)
+        | Type::Outbox(_)
+        | Type::Func(_)
+        | Type::Generator(_)
+        | Type::AsyncHandle(_)
+        | Type::IterResult(_) => true,
     }
 }
 
