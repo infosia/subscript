@@ -56,6 +56,11 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
   assignment copies into the storage. A dynamic array element at any
   depth of the subject keeps its index, and a step traps if a removal makes the
   index invalid.
+- A method on a dynamic array element is rejected if it can move an
+  array of that element type (`compiler.md` §221). `tsc` accepts the
+  call. `this` is an address into the storage. A copy spelled in the
+  source is the fix. A traversal runs a `reduce` seed before the first
+  element check (§220.1 rule 10a).
 
 Accept: `a04`, `a21`, `a406`. Trap: `t113`. Reject: `r07-value-class-extends` (`@ValueType class`
 with an `extends` clause; `tsc`-clean).

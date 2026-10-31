@@ -44,8 +44,8 @@ Two copies exist: the checker lifts the subject into a `const`, and
 3. No address lives across a step. Each step computes the element
    address from the kept operands. A suspension in the body copies no
    array. The one exception is `this` in a `@ValueType` method, an
-   `Address` parameter that each step reads. §220.4 item 1 records its
-   effect.
+   `Address` parameter that each step reads. §221 rejects a method that
+   can move its array, so that address stays valid.
 3a. `Context.free` of a base in the body gives the Q6 behaviour of an
    access after a delete at the next step: a dev trap, and an
    unspecified read on the ship tier (`t23`).
@@ -144,7 +144,7 @@ is in `codegen/src/lir/builder.rs`, and `a409` pins it.
 
 ### 220.4 Open
 
-1. `this` in a `@ValueType` method is an address into the storage of the
+1. *(Closed by §221.)* `this` in a `@ValueType` method is an address into the storage of the
    receiver. If the receiver is a dynamic array element and the body grows
    that array, later reads use old storage. `all[0].walk()` with a
    `grow()` of 5,000 `push` calls in the body gives `10` on the three
