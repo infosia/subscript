@@ -23,7 +23,7 @@ The stages of the current form and the sections that hold their rules:
 | Stage | Sections |
 |---|---|
 | parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219 |
-| HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
+| HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
 | reference interpreter | §68.7 |
@@ -261,3 +261,4 @@ Every section, with its status:
 | §217 | A nullable array | active | [`s217-a-nullable-array.md`](compiler/s217-a-nullable-array.md) |
 | §218 | A nullable string | active | [`s218-a-nullable-string.md`](compiler/s218-a-nullable-string.md) |
 | §219 | A string result can be `undefined`, and equality narrows | active | [`s219-a-string-result-can-be-undefined.md`](compiler/s219-a-string-result-can-be-undefined.md) |
+| §220 | A `FixedArray` traversal reads its place | active | [`s220-a-fixed-array-traversal-reads-its-place.md`](compiler/s220-a-fixed-array-traversal-reads-its-place.md) |

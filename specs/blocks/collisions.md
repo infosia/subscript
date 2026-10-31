@@ -50,6 +50,12 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
 - `const` binding of a value struct blocks rebinding only; field writes
   through it are legal (Q17 — matches `tsc`; C-style `const struct`
   semantics are not imported).
+- A traversal of a `FixedArray` reads its place at each step
+  (`compiler.md` §220). Two forms differ from `node`. A whole assignment
+  to the place in the body changes what later steps read, because an
+  assignment copies into the storage. An element of a dynamic array as
+  the subject keeps its index, and a step traps if a removal makes the
+  index invalid.
 
 Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@ValueType class`
 with an `extends` clause; `tsc`-clean).

@@ -71,7 +71,9 @@ falls to the pointer form.
 11. The form has no run-time cost beyond the null test in the string
     compare, which the runtime compare does.
 12. No value other than an `Address` holds an address. A `FixedArray`
-    cursor holds an index. The subject of a `for…of` is a hidden local,
+    cursor holds an index, and a `FixedArray` traversal has no cursor.
+    §220 reads a subject that is a place. Another
+    subject of a `for…of` is a hidden local,
     which the loop reads through an address of that local, as an index
     loop reads a local. So a suspension in the body copies no array.
     A field or an index of a value temporary has a base slot, and the
@@ -166,7 +168,7 @@ and four MINOR findings, and one cost finding.
 
 ### 218.4 Open
 
-1. A `for…of` over a `FixedArray` reads a copy of the subject. With
+1. *(Closed by §220.)* A `for…of` over a `FixedArray` reads a copy of the subject. With
    `b[1] = 9` in the body, `for (const x of b)` prints `1 2` on the three
    tiers, and `node` prints `1 9`. A global, a class field, a `string`
    element, a change in a called function, `forEach`, `map`, and a
@@ -181,7 +183,7 @@ and four MINOR findings, and one cost finding.
 4. `reduce` rejects a callback whose result is narrower than the
    accumulator: `xs.reduce((acc: string | null, x: string): string => …,
    null)`. `tsc` is not measured on it.
-5. The hidden subject of a `for…of` over a `FixedArray` stays rooted until
+5. *(Closed by §220.)* The hidden subject of a `for…of` over a `FixedArray` stays rooted until
    the function returns. A `Context.collect()` after the loop keeps the
    handles of that array. The hold is one array per loop site. A named
    `const` in an inner block has the same lifetime. A store of a zero
