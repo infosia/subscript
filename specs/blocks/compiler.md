@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -258,3 +258,4 @@ Every section, with its status:
 | §214 | The runtime archive builds under the pinned toolchain | active | [`s214-the-runtime-archive-builds-under-the-pinned-toolchain.md`](compiler/s214-the-runtime-archive-builds-under-the-pinned-toolchain.md) |
 | §215 | Inference reads `Promise<T>` and `Array<T>` | active | [`s215-inference-reads-promise-and-array-forms.md`](compiler/s215-inference-reads-promise-and-array-forms.md) |
 | §216 | `join` formats a string-literal alias | active | [`s216-join-formats-a-string-literal-alias.md`](compiler/s216-join-formats-a-string-literal-alias.md) |
+| §217 | A nullable array | active | [`s217-a-nullable-array.md`](compiler/s217-a-nullable-array.md) |
