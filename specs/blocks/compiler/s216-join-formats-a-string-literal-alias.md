@@ -52,7 +52,28 @@ and an array of an enum takes these methods.
 5. No golden moves, except the growth of the LIR snapshot if the entry
    adds a section.
 
-### 216.3 Open
+### 216.3 Phase Review
+
+*(Added 2026-10-31.)* A fresh review of `673b1113..e6f03a14` gave no
+CRITICAL or MAJOR finding and five MINOR findings.
+
+1. MINOR, contrived, fixed: a `@Descriptor` default with `join` on an
+   alias array gave an internal error in a function that cannot raise.
+   `expression_can_raise` had no arm for a descriptor literal. A
+   written `map` at that place gave the same error at the pin.
+2. MINOR, fixed: the tracking table gave S014 at the pin for eight
+   methods that the pin accepted.
+3. MINOR, realistic, fixed: most methods of rule 1a had no corpus
+   witness.
+4. MINOR, realistic, fixed: the element-kind unit table had no alias
+   row.
+5. MINOR, realistic, open: §216.4 item 2.
+
+### 216.4 Open
 
 1. `ms.join(f())`, where `f` changes `ms`: the rewrite evaluates `f`
    after `map`, and `node` evaluates it before. Contrived.
+2. `const r: Mode[] = ms.map((x: Mode) => x === "a" ? "z" : "a");` gives
+   S100 "the initializer expects `Mode[]`, got `string[]`": `map` gives
+   a callback no return context. `tsc` accepts it. A `: Mode` annotation
+   on the callback is accepted.

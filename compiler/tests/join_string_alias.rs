@@ -145,3 +145,39 @@ fn find_keeps_the_scalar_element_rejection() {
     assert_eq!(rejected[0].code, RuleCode::S014);
     assert!(rejected[0].message.contains("`find` is rejected"));
 }
+
+fn main_can_raise(statement: &str, field: &str) -> bool {
+    let source = format!(
+        "{MODE}const G: Mode[] = [\"a\"];\n\
+         const N: i32[] = [1];\n\
+         @Descriptor class O {{ s?: string = {field}; }}\n\
+         export function main(): void {{ {statement} }}\n"
+    );
+    let checked = check_program(&[SourceFile::new("test.ts", source)]).expect("the program checks");
+    checked
+        .functions
+        .iter()
+        .find(|function| function.name == "main")
+        .expect("main")
+        .can_raise
+}
+
+#[test]
+fn an_omitted_descriptor_field_carries_the_raise_fact_of_its_initializer() {
+    let omitted = "const o: O = {}; print(`${o.s}`);";
+    assert!(main_can_raise(omitted, "G.join()"));
+    assert!(main_can_raise(
+        omitted,
+        "N.map((x: i32): string => `${x}`).join()"
+    ));
+}
+
+#[test]
+fn an_explicit_descriptor_field_does_not_evaluate_the_initializer() {
+    let explicit = "const o: O = { s: \"x\" }; print(`${o.s}`);";
+    assert!(!main_can_raise(explicit, "G.join()"));
+    assert!(!main_can_raise(
+        "const o: O = {}; print(`${o.s}`);",
+        "\"plain\""
+    ));
+}

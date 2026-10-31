@@ -238,25 +238,48 @@ pub(super) fn static_array_callback(
     .then_some(callback)
 }
 
-pub(super) fn compare_static_array_callbacks(
-    hir: &hir::Module,
-    lir: &l::Module,
-    findings: &mut Vec<String>,
-) {
-    // A chain gives each of its calls the position of the chain start, so
-    // one position can hold more than one output array.
-    let mut static_outputs = BTreeMap::<(String, u32, u32), usize>::new();
-    walk_module_expressions(hir, &mut |expr| {
-        if let hir::ExprKind::Call {
-            callee: hir::Callee::Arr(operation @ (hir::ArrFn::Map | hir::ArrFn::Filter)),
-            args,
-        } = &expr.kind
-        {
-            if static_array_callback(*operation, args).is_some() {
-                *static_outputs.entry(pos_key(&expr.pos)).or_default() += 1;
-            }
-        }
-    });
+type PositionKey = (String, u32, u32);
+
+/// The Array callback calls of the HIR, counted by source position. A
+/// chain gives each of its calls the position of the chain start, so one
+/// position can hold more than one call.
+#[derive(Default)]
+struct CallbackSites {
+    /// Static `map` and `filter` calls: each one has an output array.
+    outputs: BTreeMap<PositionKey, usize>,
+    /// Function value calls of one operation: each one is a runtime intrinsic.
+    intrinsics: BTreeMap<(PositionKey, &'static str), usize>,
+    /// Static calls of one callback: each one is a direct call target.
+    direct: BTreeMap<(PositionKey, String), usize>,
+}
+
+fn is_array_callback_site(operation: hir::ArrFn, args: &[hir::Expr]) -> bool {
+    matches!(
+        operation,
+        hir::ArrFn::Map
+            | hir::ArrFn::Filter
+            | hir::ArrFn::Reduce
+            | hir::ArrFn::ReduceRight
+            | hir::ArrFn::ForEach
+            | hir::ArrFn::Some
+            | hir::ArrFn::Every
+            | hir::ArrFn::FindIndex
+    ) && matches!(
+        args.first().map(|argument| &argument.ty),
+        Some(Type::Array(_))
+    ) && args.get(1).is_some()
+}
+
+/// Names one static callback: a function by its symbol, a lambda by its position.
+fn callback_identity(callback: &hir::Expr) -> String {
+    match &callback.kind {
+        hir::ExprKind::FuncRef(name) => format!("function {name:?}"),
+        _ => format!("lambda {}", callback.pos),
+    }
+}
+
+fn callback_sites_by_position(hir: &hir::Module) -> CallbackSites {
+    let mut sites = CallbackSites::default();
     walk_module_expressions(hir, &mut |expr| {
         let hir::ExprKind::Call {
             callee: hir::Callee::Arr(operation),
@@ -265,23 +288,40 @@ pub(super) fn compare_static_array_callbacks(
         else {
             return;
         };
-        if !matches!(
-            operation,
-            hir::ArrFn::Map
-                | hir::ArrFn::Filter
-                | hir::ArrFn::Reduce
-                | hir::ArrFn::ReduceRight
-                | hir::ArrFn::ForEach
-                | hir::ArrFn::Some
-                | hir::ArrFn::Every
-                | hir::ArrFn::FindIndex
-        ) || !matches!(
-            args.first().map(|argument| &argument.ty),
-            Some(Type::Array(_))
-        ) {
+        if !is_array_callback_site(*operation, args) {
             return;
         }
-        if args.get(1).is_none() {
+        let key = pos_key(&expr.pos);
+        let Some(callback) = static_array_callback(*operation, args) else {
+            *sites.intrinsics.entry((key, operation.name())).or_default() += 1;
+            return;
+        };
+        *sites
+            .direct
+            .entry((key.clone(), callback_identity(callback)))
+            .or_default() += 1;
+        if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
+            *sites.outputs.entry(key).or_default() += 1;
+        }
+    });
+    sites
+}
+
+pub(super) fn compare_static_array_callbacks(
+    hir: &hir::Module,
+    lir: &l::Module,
+    findings: &mut Vec<String>,
+) {
+    let sites = callback_sites_by_position(hir);
+    walk_module_expressions(hir, &mut |expr| {
+        let hir::ExprKind::Call {
+            callee: hir::Callee::Arr(operation),
+            args,
+        } = &expr.kind
+        else {
+            return;
+        };
+        if !is_array_callback_site(*operation, args) {
             return;
         }
         let key = pos_key(&expr.pos);
@@ -311,19 +351,26 @@ pub(super) fn compare_static_array_callbacks(
             })
             .count();
 
+        let required_intrinsics = sites
+            .intrinsics
+            .get(&(key.clone(), operation.name()))
+            .copied()
+            .unwrap_or(0);
         let Some(static_callback) = static_array_callback(*operation, args) else {
-            if intrinsic_count != 1 {
+            if intrinsic_count != required_intrinsics {
                 findings.push(format!(
-                    "{}: Array callback function value carries {intrinsic_count} runtime intrinsic call(s); HIR requires 1",
-                    expr.pos
+                    "{}: Array callback function value carries {intrinsic_count} runtime intrinsic call(s); HIR requires {required_intrinsics}, one for each function value call of `{}` at this position",
+                    expr.pos,
+                    operation.name()
                 ));
             }
             return;
         };
-        if intrinsic_count != 0 {
+        if intrinsic_count != required_intrinsics {
             findings.push(format!(
-                "{}: static Array callback keeps {intrinsic_count} runtime intrinsic call(s)",
-                expr.pos
+                "{}: static Array callback keeps {intrinsic_count} runtime intrinsic call(s); HIR requires {required_intrinsics}, one for each function value call of `{}` at this position",
+                expr.pos,
+                operation.name()
             ));
         }
         let direct = instructions
@@ -355,9 +402,14 @@ pub(super) fn compare_static_array_callbacks(
                 }
             })
             .count();
-        if direct != 1 {
+        let required_direct = sites
+            .direct
+            .get(&(key.clone(), callback_identity(static_callback)))
+            .copied()
+            .unwrap_or(0);
+        if direct != required_direct {
             findings.push(format!(
-                "{}: static Array callback carries {direct} matching direct call target(s); HIR requires 1",
+                "{}: static Array callback carries {direct} matching direct call target(s); HIR requires {required_direct}, one for each static call of this callback at this position",
                 expr.pos
             ));
         }
@@ -373,7 +425,7 @@ pub(super) fn compare_static_array_callbacks(
                     if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
             })
             .count();
-        let required = static_outputs.get(&key).copied().unwrap_or(0);
+        let required = sites.outputs.get(&key).copied().unwrap_or(0);
         if output_count != required || push_count != required {
             findings.push(format!(
                 "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each, one for each static `map` or `filter` call at this position",
@@ -392,11 +444,25 @@ mod static_output_tests {
         const ns: i32[] = [1, 2, 3];\n\
         print(ns.filter((x: i32): boolean => x > 1).map((x: i32): string => `${x}`).join(\",\"));\n\
         }\n";
+    const FUNCTION_CHAIN: &str = "function f(x: i32): i32 { return x + 1; }\n\
+        export function main(): void {\n\
+        const ns: i32[] = [1, 2, 3];\n\
+        print(ns.map(f).map(f).join(\",\"));\n\
+        }\n";
+    const VALUE_CHAIN: &str = "export function main(): void {\n\
+        const g = (x: i32): boolean => x > 1;\n\
+        const ns: i32[] = [1, 2, 3];\n\
+        print(ns.filter(g).filter(g).join(\",\"));\n\
+        }\n";
 
-    fn checked() -> (hir::Module, l::Module) {
-        let hir = check_program(&[SourceFile::new("chain.ts", CHAIN)]).expect("the chain checks");
+    fn checked_source(source: &str) -> (hir::Module, l::Module) {
+        let hir = check_program(&[SourceFile::new("chain.ts", source)]).expect("the chain checks");
         let lir = subscript_codegen::lir::lower_module(&hir).expect("the chain lowers");
         (hir, lir)
+    }
+
+    fn checked() -> (hir::Module, l::Module) {
+        checked_source(CHAIN)
     }
 
     fn findings(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
@@ -421,6 +487,41 @@ mod static_output_tests {
     fn a_chain_requires_one_output_for_each_static_call_at_the_position() {
         let (hir, lir) = checked();
         assert_eq!(findings(&hir, &lir), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_function_callback_chain_requires_one_direct_call_for_each_static_call() {
+        let (hir, mut lir) = checked_source(FUNCTION_CHAIN);
+        assert_eq!(findings(&hir, &lir), Vec::<String>::new());
+        remove_first(&mut lir, |kind| {
+            matches!(kind, l::InstructionKind::Call(target)
+                if matches!(target.kind, l::CallTargetKind::Function(_)))
+        });
+        let findings = findings(&hir, &lir);
+        assert!(
+            findings.iter().any(|finding| finding
+                .contains("carries 1 matching direct call target(s); HIR requires 2")),
+            "{findings:?}"
+        );
+    }
+
+    #[test]
+    fn a_function_value_chain_requires_one_intrinsic_for_each_call() {
+        let (hir, mut lir) = checked_source(VALUE_CHAIN);
+        assert_eq!(findings(&hir, &lir), Vec::<String>::new());
+        remove_first(&mut lir, |kind| {
+            matches!(kind, l::InstructionKind::Call(target)
+                if matches!(&target.kind, l::CallTargetKind::Intrinsic(intrinsic)
+                    if intrinsic.family == l::IntrinsicFamily::Array))
+        });
+        let findings = findings(&hir, &lir);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding
+                    .contains("carries 1 runtime intrinsic call(s); HIR requires 2")),
+            "{findings:?}"
+        );
     }
 
     #[test]

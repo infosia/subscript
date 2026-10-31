@@ -239,6 +239,19 @@ impl Module {
                 .classes
                 .get(class.0)
                 .is_some_and(|class| self.construction_can_raise(class, args.len())),
+            // A descriptor literal evaluates the initializer of each
+            // omitted field. The children hold the explicit values.
+            ExprKind::DescriptorLit { class, fields } => {
+                self.classes.get(class.0).is_some_and(|class| {
+                    class.fields.iter().zip(fields).any(|(field, value)| {
+                        value.is_none()
+                            && field
+                                .init
+                                .as_ref()
+                                .is_some_and(|init| self.expression_can_raise(init))
+                    })
+                })
+            }
             ExprKind::AsyncCall { callee, args } => {
                 async_callee_can_raise(self, callee)
                     || self.async_defaults_can_raise(callee, args.len())

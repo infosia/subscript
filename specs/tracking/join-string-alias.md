@@ -1,6 +1,6 @@
 # `join` formats a string-literal alias — `compiler.md` §216
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 ## Measurement at the pin `673b1113`
 
@@ -31,7 +31,8 @@ Each row was run on a plain alias `"z" | "a" | "m"` and a wire alias
 | Form | Pin | Now |
 |---|---|---|
 | `map`, `filter`, `forEach`, `some`, `every`, `findIndex`, `findLastIndex`, `flatMap`, `reduce`, `reduceRight` | S014 | equal to `node` |
-| `includes`, `indexOf`, `lastIndexOf`, `sort(cmp)`, `reverse`, `slice`, `concat`, `fill`, `push`, `unshift`, `splice` with no insert, `copyWithin` | S014 | equal to `node` |
+| `includes`, `indexOf`, `lastIndexOf`, `sort(cmp)` | S014 | equal to `node` |
+| `reverse`, `slice`, `concat`, `fill`, `push`, `unshift`, `splice` with no insert, `copyWithin` | accepted | equal to `node` |
 | `join`, `toString()`, `` `${ms}` `` | S014 | equal to `node` |
 | `find`, `findLast` | S014 | S014, the text of an enum array |
 | `sort()` with no comparator, `sort` with `localeCompare`, `splice` with an insert | S014 | S014 |
@@ -47,3 +48,5 @@ internal error on `includes`.
 allocation at a position. A written `ns.filter(f).map(g)` gives two calls
 at one position, and it failed that check at the pin too. The HIR count
 at the position is now the requirement.
+
+`gate full e6f03a14 dirty:10 debug 3079/0/5 release 3076/0/5 skips 2/0 clippy 5/18/11 goldens-moved 1 exit 0`. `tools/hygiene.sh` exit 0. The moved golden is `a399`, which this section adds.

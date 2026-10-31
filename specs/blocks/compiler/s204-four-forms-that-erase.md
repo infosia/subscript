@@ -55,8 +55,8 @@ run-time meaning.
    `r450-template-nested-array` fail their expected errors at the pin.
    The tracking note records each result.
 2. `a390` passes `tsc`, and its output under `node` equals its golden.
-   It interpolates an array of each element kind that `join` accepts
-   (a string-literal alias element is not one of them, see §204.3),
+   It interpolates an array of each element kind that `join` accepted
+   at the pin (§216 adds a string-literal alias element),
    an empty array, and an array that a call gives (evaluated once).
 3. `r449` gives the assignment mismatch text. `tsc` rejects it with
    TS1360. `r450` gives the `join` text.

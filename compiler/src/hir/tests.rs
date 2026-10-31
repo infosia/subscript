@@ -807,6 +807,7 @@ fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
         Type::I64,
         Type::Date,
         Type::Enum(EnumId(0)),
+        Type::StringAlias(crate::types::StringAliasId(0)),
     ] {
         assert_eq!(of(&ty), Some(ArrElemKind::SignedInt), "{ty:?}");
     }
@@ -857,6 +858,10 @@ fn arr_fmt_kind_matches_the_q14_interpolable_set() {
     assert_eq!(ArrFmtKind::of(&Type::Str), Some(ArrFmtKind::Str));
     // Not interpolatable (Q20 for Date; references have no Q14 form).
     assert_eq!(ArrFmtKind::of(&Type::Date), None);
+    assert_eq!(
+        ArrFmtKind::of(&Type::StringAlias(crate::types::StringAliasId(0))),
+        None
+    );
     assert_eq!(ArrFmtKind::of(&Type::Class(ClassId(0))), None);
     assert_eq!(ArrFmtKind::of(&Type::Object), None);
     // Stable ABI codes, in declaration order.
