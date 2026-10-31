@@ -70,3 +70,8 @@ The cost of a call through an interface value depends on the count of
 implementers, which another declaration sets, and on the run-time class.
 Core principle 16 rejects a cost of this kind. Stage 2 needs an owner
 decision on that principle before a prototype.
+
+The owner did not adopt stage 2 (2026-10-31). A value of an interface
+type stays rejected (§208.1 rule 5). `T extends I` covers the shared
+method set with a direct call. No downstream request names an interface
+value.
