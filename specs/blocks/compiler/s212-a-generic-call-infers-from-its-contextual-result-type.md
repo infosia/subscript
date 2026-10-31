@@ -126,14 +126,11 @@ MAJOR and eight MINOR findings.
 
 1. `k?.make()` with a context takes no contextual candidate: the
    optional call has no context. `tsc` accepts it.
-2. A `Promise<T>` result takes no contextual candidate: `Promise` is
-   not a §149.1 rule 2 form. `await af()`, `const p: Promise<Buf<P>> =
-   af();`, and `return af();` stay rejected. `tsc` accepts them.
+2. *(Closed by §215.)* A `Promise<T>` result took no contextual
+   candidate.
 3. `empty() as Buf<P>` takes no contextual candidate: `as` gives no
    context. `tsc` accepts it.
-4. `Array<T>` as a declared result is not a §149.1 rule 2 form, so
-   `mk<T>(): Array<T>` with `const x: P[] = mk();` stays rejected. `tsc`
-   accepts it.
+4. *(Closed by §215.)* `Array<T>` was not a §149.1 rule 2 form.
 5. A lambda result gives no context through a built-in method or a
    type parameter with no candidate:
    `const r: Buf<P>[] = xs.map((x: i32) => empty());` and
