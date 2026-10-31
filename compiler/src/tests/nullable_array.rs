@@ -27,6 +27,38 @@ fn rule_1_accepts_an_array_of_each_element_that_holds_no_counted_value() {
 }
 
 #[test]
+fn rule_1a_a_nullable_array_is_a_literal_context() {
+    let source = "class C { x: i32 = 1; }\n\
+                  @ValueType\nclass V { x: i32 = 1; }\n\
+                  type L = \"a\" | \"b\";\n\
+                  function takes(x: f64[] | null): void {}\n\
+                  function gives(): f64[] | null { return [1, 2]; }\n\
+                  export function main(): void {\n\
+                  \x20 const base: f64[] = [1];\n\
+                  \x20 const a: f64[] | null = [1, 2];\n\
+                  \x20 const b: f64[] | null = [];\n\
+                  \x20 const c: (C | null)[] | null = [new C(), null];\n\
+                  \x20 const d: (i32[] | null)[] | null = [[1], null];\n\
+                  \x20 const e: L[] | null = [\"a\", \"b\"];\n\
+                  \x20 const f: f64[] | null = [...base, 1];\n\
+                  \x20 const g: V[] | null = [new V()];\n\
+                  \x20 const map = new Map<string, f64[] | null>();\n\
+                  \x20 map.set(\"a\", [1, 2]);\n\
+                  \x20 const rows: (f64[] | null)[] = [];\n\
+                  \x20 rows.push([1, 2]);\n\
+                  \x20 rows[0] = [3];\n\
+                  \x20 takes([1]);\n\
+                  \x20 takes([]);\n\
+                  }\n";
+    let module = check_one(source);
+    assert!(module.is_ok(), "{:?}", module.err());
+    // Control: the element type of the context still applies.
+    let diagnostics =
+        check_one(&main_with("const a: f64[] | null = [\"x\"];")).expect_err("a string element");
+    assert_eq!(diagnostics[0].code, RuleCode::S100, "{diagnostics:?}");
+}
+
+#[test]
 fn rule_2_rejects_a_counted_element_at_each_depth() {
     for form in [
         "Promise<void>[]",
@@ -50,11 +82,46 @@ fn rule_2_rejects_a_counted_element_at_each_depth() {
             Some(Divergence::NullableNonReference)
         );
     }
-    // Control: the same form with an uncounted element is accepted.
-    assert!(check_one(&main_with(
-        "class P { x: i32 = 1; }\nfunction f(x: P[] | null): void {}"
-    ))
-    .is_ok());
+    // Controls: an uncounted element is accepted, and a class and a `Map` own
+    // their values, so an array of either is not a counted owner.
+    for form in ["P[]", "Map<string, Promise<i32>>[]", "J[]"] {
+        let source = main_with(&format!(
+            "class P {{ x: i32 = 1; }}\n\
+             class J {{ p: Promise<i32>; constructor(p: Promise<i32>) {{ this.p = p; }} }}\n\
+             function f(x: {form} | null): void {{}}"
+        ));
+        let result = check_one(&source);
+        assert!(result.is_ok(), "{form}: {:?}", result.err());
+    }
+}
+
+#[test]
+fn rule_2a_map_get_on_a_counted_array_names_get_or() {
+    let template = "function f(table: Map<string, VALUE>): void { EXPRESSION; }\n\
+                    export function main(): void {}\n";
+    let program = |value: &str, expression: &str| {
+        template
+            .replace("VALUE", value)
+            .replace("EXPRESSION", expression)
+    };
+    let diagnostics =
+        check_one(&program("Promise<i32>[]", "table.get(\"a\")")).expect_err("a counted value");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S014);
+    assert!(
+        diagnostics[0].message.contains("use `getOr`"),
+        "{diagnostics:?}"
+    );
+    assert_eq!(
+        diagnostics[0].divergence,
+        Some(Divergence::MapNonNullableGet)
+    );
+    // Controls: `getOr` on the same map, and `get` on an uncounted array.
+    let fallback = "const empty: Promise<i32>[] = []; table.getOr(\"a\", empty)";
+    let accepted = check_one(&program("Promise<i32>[]", fallback));
+    assert!(accepted.is_ok(), "{:?}", accepted.err());
+    let accepted = check_one(&program("i32[]", "table.get(\"a\")"));
+    assert!(accepted.is_ok(), "{:?}", accepted.err());
 }
 
 #[test]
@@ -176,6 +243,32 @@ fn rule_5_an_unnarrowed_read_stays_rejected() {
     assert_eq!(diagnostics[0].code, RuleCode::S014);
     // Control: the same read after a null test is accepted.
     assert!(check_one(&body("if (a !== null) { const n = a.length; }")).is_ok());
+}
+
+#[test]
+fn rule_5_optional_index_and_assertion_keep_the_class_text() {
+    let body = |target: &str, read: &str| {
+        format!(
+            "class C {{ x: i32 = 1; }}\n\
+             function f(a: {target} | null): void {{ const y = {read}; }}\n\
+             export function main(): void {{}}\n"
+        )
+    };
+    for target in ["i32[]", "C[]"] {
+        let diagnostics = check_one(&body(target, "a?.[0] ?? a")).expect_err("optional index");
+        assert_eq!(
+            diagnostics[0].message,
+            "an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`"
+        );
+    }
+    for target in ["i32[]", "C"] {
+        let diagnostics = check_one(&body(target, "a!")).expect_err("assertion");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].message,
+            "the `!` assertion is not in the decided surface; narrow with a null check"
+        );
+    }
 }
 
 #[test]

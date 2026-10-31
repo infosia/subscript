@@ -12,6 +12,18 @@ use crate::types::Type;
 use super::DescriptorProp;
 
 impl<'p> Checker<'p> {
+    /// The context of an array literal. A nullable array gives the context
+    /// of its array type (§217.1 rule 1a).
+    fn array_literal_context(&self, ctx: Option<&Type>) -> Option<Type> {
+        let ctx = ctx?;
+        if let Type::Nullable(inner, _) = self.apparent_type(ctx) {
+            if matches!(self.apparent_type(&inner), Type::Array(_)) {
+                return Some(*inner);
+            }
+        }
+        Some(ctx.clone())
+    }
+
     pub(super) fn check_array_lit(
         &mut self,
         a: &ast::ArrayLit,
@@ -40,7 +52,8 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
+        let ctx = self.array_literal_context(ctx);
+        match ctx.as_ref().map(|ty| self.apparent_type(ty)).as_ref() {
             // compiler.md §132 rule 2: the declaration that gives the
             // poisoned context reported the failure. Each element takes
             // the poisoned context, so a nested container reports nothing
@@ -291,7 +304,8 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
         }
-        let context_elem = match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
+        let ctx = self.array_literal_context(ctx);
+        let context_elem = match ctx.as_ref().map(|ty| self.apparent_type(ty)).as_ref() {
             Some(Type::Array(elem)) => Some((**elem).clone()),
             _ => None,
         };
@@ -369,7 +383,7 @@ impl<'p> Checker<'p> {
                 (None, expr.ty.clone())
             };
             if inferred.is_none() && !matches!(self.apparent_type(&element_ty), Type::Error) {
-                let saved_context = self.enter_container_context(ctx);
+                let saved_context = self.enter_container_context(ctx.as_ref());
                 let admitted = self.container_argument(
                     ContainerSlot::ArrayElement,
                     element_ty.clone(),

@@ -428,28 +428,6 @@ fn corpus_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     files
 }
 
-/// The operation table records the `Map.set` value as the value type `V`.
-/// A call with `V = T | null` can pass a `T` or `null`, so this conversion
-/// takes those two argument types to `V`. Any other argument type stays, and
-/// the comparison with the table reports it.
-fn normalize_nullable_map_value(target: &hir::OperationSignatureTarget, parameters: &mut [Type]) {
-    let hir::OperationSignatureTarget::Map(hir::MapFn::Set) = target else {
-        return;
-    };
-    let declared = match parameters.first() {
-        Some(Type::Map(_, value)) => (**value).clone(),
-        _ => return,
-    };
-    let Type::Nullable(inner, _) = &declared else {
-        return;
-    };
-    if let Some(value) = parameters.get_mut(2) {
-        if *value == **inner || *value == Type::Null {
-            *value = declared;
-        }
-    }
-}
-
 fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
     fn visit_child(child: hir::HirChild<'_>, found: &mut Vec<(Pos, hir::OperationSignature)>) {
         match child {
@@ -467,17 +445,15 @@ fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> 
     fn visit_expr(expression: &hir::Expr, found: &mut Vec<(Pos, hir::OperationSignature)>) {
         if let hir::ExprKind::Call { callee, args } = &expression.kind {
             if let Some((target, receiver)) = hir::operation_signature_target(callee) {
-                let mut parameter_types: Vec<Type> = receiver
-                    .into_iter()
-                    .cloned()
-                    .chain(args.iter().map(|argument| argument.ty.clone()))
-                    .collect();
-                normalize_nullable_map_value(&target, &mut parameter_types);
                 found.push((
                     expression.pos.clone(),
                     hir::OperationSignature {
                         target,
-                        parameter_types,
+                        parameter_types: receiver
+                            .into_iter()
+                            .cloned()
+                            .chain(args.iter().map(|argument| argument.ty.clone()))
+                            .collect(),
                         return_type: (expression.ty != Type::Void).then(|| expression.ty.clone()),
                     },
                 ));
@@ -502,11 +478,32 @@ fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> 
     found
 }
 
+/// An argument of type `T` or `null` is assignable to a `T | null` parameter.
+/// The table records the declared parameter, and a call carries the type of
+/// its argument, so the two are compared by assignment.
+fn assignable(argument: &Type, parameter: &Type) -> bool {
+    argument == parameter
+        || matches!(parameter, Type::Nullable(inner, _)
+            if argument == inner.as_ref() || *argument == Type::Null)
+}
+
+/// True if the table row describes the call.
+fn row_covers_call(row: &hir::OperationSignature, call: &hir::OperationSignature) -> bool {
+    row.target == call.target
+        && row.return_type == call.return_type
+        && row.parameter_types.len() == call.parameter_types.len()
+        && call
+            .parameter_types
+            .iter()
+            .zip(&row.parameter_types)
+            .all(|(argument, parameter)| assignable(argument, parameter))
+}
+
 fn missing_operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
     let table = module.operation_signatures.clone();
     operation_calls(module)
         .into_iter()
-        .filter(|(_, signature)| !table.contains(signature))
+        .filter(|(_, call)| !table.iter().any(|row| row_covers_call(row, call)))
         .collect()
 }
 
@@ -534,6 +531,30 @@ fn map_set_module(element: &str, value: &str) -> hir::Module {
          }}\n"
     );
     checked_module("map set", vec![SourceFile::new("map-set.ts", source)])
+}
+
+#[test]
+fn each_normalized_parameter_takes_a_plain_value_and_null() {
+    let module = checked_module(
+        "nullable element",
+        vec![SourceFile::new(
+            "nullable-element.ts",
+            "class C { x: i32 = 1; }\n\
+             export function main(): void {\n\
+             \x20 const c = new C();\n\
+             \x20 const items: (C | null)[] = [];\n\
+             \x20 items.push(c);\n\
+             \x20 items.push(null);\n\
+             \x20 print(`${items.includes(c)} ${items.includes(null)}`);\n\
+             \x20 print(`${items.indexOf(c)} ${items.lastIndexOf(null)}`);\n\
+             \x20 items.fill(c);\n\
+             \x20 items.fill(null);\n\
+             \x20 const seen = new Set<C>();\n\
+             \x20 seen.add(c);\n\
+             }\n",
+        )],
+    );
+    assert_eq!(missing_operation_calls(&module), Vec::new());
 }
 
 #[test]

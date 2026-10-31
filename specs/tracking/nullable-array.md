@@ -1,6 +1,6 @@
 # A nullable array and a nullable string — `compiler.md` §217
 
-Status: implemented; Phase Review open.
+Status: COMPLETE.
 
 ## Step 0 at `14a143f1`
 
@@ -40,8 +40,8 @@ A `string` has no null zero, so the null form changes no default.
 `subscript_rt_str_eq` and `valeq.rs` are null-safe. The risk is that
 dispatch keys on `Type::Str`.
 
-Other finding: two `FixedArray<X | null, N>` types with different `X` give
-`typedef redefinition ... SubFA_ptr_2` on the ship tier at the pin.
+Other finding: two `FixedArray` types of one length with handle elements
+give `typedef redefinition ... SubFA_ptr_2` on the ship tier at the pin.
 
 `tools/gate.sh quick` on the table change: six failures, each a pin or a
 total-check row. No entry reaches the wrong values above, so the corpus
@@ -60,3 +60,19 @@ entry reached it. The test now converts a plain value and `null` to `V`
 only for `V = T | null`, and a test with an `i32` argument shows a
 real mismatch still fails. `push`, `fill`, `includes`, and `Set.add` with
 a nullable element have the same gap in that test.
+
+## Phase Review fixes
+
+| Entry | `14a143f1` | `7d2729b2` | Fixed |
+|---|---|---|---|
+| `a400`, rule 1a lines | S011 | S100 "expects `f64[] \| null`, got `i32[]`" | equal to `node` |
+| `a401` | S011 | ship: `typedef redefinition ... SubFA_ptr_2`; the others correct | equal to `node` |
+| `r460` | trap `use-after-delete`; ship: `[internal] async resume without completion` | the same | S014 |
+
+`r460` passes `tsc`, and `node` prints `1`, `2`.
+
+Across 484 accept, trap, warn, and example files, the 34 with a
+`FixedArray` that emit show no `program.h` change and 8 `program.c`
+changes. Only names with handle elements move, and they are internal.
+
+`gate full 7d2729b2 dirty:18 debug 3094/0/5 release 3091/0/5 skips 2/0 clippy 5/18/11 goldens-moved 1 exit 0`. `tools/hygiene.sh` exit 0. The moved golden is `a400`, which this section adds.

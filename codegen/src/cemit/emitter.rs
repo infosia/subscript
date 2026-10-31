@@ -171,11 +171,48 @@ impl<'m> Emitter<'m> {
     }
 
     pub(super) fn fixed_array_name(&self, element: &Type, count: u32) -> Result<String, String> {
-        Ok(format!("SubFA_{}_{count}", self.type_tag(element)?))
+        Ok(format!("SubFA_{}_{count}", self.element_tag(element)?))
     }
 
     fn iter_result_name(&self, value: &Type) -> Result<String, String> {
         Ok(format!("SubIR_{}", self.type_tag(value)?))
+    }
+
+    /// The tag of a `FixedArray` element (§217.1 rule 9). Unlike `type_tag`,
+    /// which gives each handle one tag because its users share a C layout,
+    /// this tag names the whole type. Each constructor has a fixed arity and
+    /// its own token, so two different types never have one tag.
+    fn element_tag(&self, ty: &Type) -> Result<String, String> {
+        let tags = |types: &[&Type]| -> Result<String, String> {
+            let tags = types
+                .iter()
+                .map(|ty| self.element_tag(ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(tags.join("_"))
+        };
+        Ok(match ty {
+            Type::Str => "str".into(),
+            Type::RegExp => "regexp".into(),
+            Type::TaskGroup => "group".into(),
+            Type::Object => "object".into(),
+            Type::Null => "null".into(),
+            Type::Class(id) if !self.is_value_class(*id)? => format!("r{}", id.0),
+            Type::Array(element) => format!("arr_{}", tags(&[element])?),
+            Type::Set(element) => format!("set_{}", tags(&[element])?),
+            Type::Map(key, value) => format!("map_{}", tags(&[key, value])?),
+            Type::Worker(input, output) => format!("worker_{}", tags(&[input, output])?),
+            Type::Inbox(message) => format!("inbox_{}", tags(&[message])?),
+            Type::Outbox(message) => format!("outbox_{}", tags(&[message])?),
+            Type::Generator(value) => format!("gen_{}", tags(&[value])?),
+            Type::AsyncHandle(value) => format!("async_{}", tags(&[value])?),
+            Type::Nullable(inner, _) => format!("opt_{}", tags(&[inner])?),
+            Type::Func(signature) => {
+                let mut parts = signature.params.iter().collect::<Vec<_>>();
+                parts.push(&signature.ret);
+                format!("fn{}_{}", signature.params.len(), tags(&parts)?)
+            }
+            other => self.type_tag(other)?,
+        })
     }
 
     fn type_tag(&self, ty: &Type) -> Result<String, String> {
@@ -201,7 +238,7 @@ impl<'m> Emitter<'m> {
             Type::StringAlias(id) => format!("s{}", id.0),
             Type::Class(id) if self.is_value_class(*id)? => format!("c{}", id.0),
             Type::FixedArray(element, count) => {
-                format!("fa{}_{}", self.type_tag(element)?, count)
+                format!("fa{}_{}", self.element_tag(element)?, count)
             }
             Type::IterResult(value) => format!("ir{}", self.type_tag(value)?),
             Type::Func(_) => "fn".into(),

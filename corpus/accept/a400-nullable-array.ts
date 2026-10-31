@@ -7,6 +7,12 @@ class Point {
   x: i32 = 1;
 }
 
+class Box2 {
+  x: f64 = 0.5;
+}
+
+type Level = "a" | "b";
+
 class Holder {
   items: i32[] | null = null;
   names: string[] | null = ["a", "b"];
@@ -42,6 +48,20 @@ function sizeOfAny<T>(values: T[] | null): i32 {
 
 function orEmpty(values: i32[] | null): i32[] {
   return values ?? [];
+}
+
+function sumOf(values: f64[] | null): f64 {
+  let sum = 0.0;
+  if (values !== null) {
+    for (const value of values) {
+      sum += value;
+    }
+  }
+  return sum;
+}
+
+function gives(): f64[] | null {
+  return [1, 2];
 }
 
 function fillShared(): void {
@@ -105,4 +125,25 @@ export function main(): void {
   print(text?.join("+") ?? "none");
   text?.push(4);
   print(`${text?.length ?? -1}`);
+
+  // An array literal takes the context of a nullable array.
+  const floats: f64[] | null = [1, 2];
+  const none: f64[] | null = [];
+  print(`${sumOf(floats)} ${none.length} ${sumOf([3, 4])} ${sumOf([])} ${sumOf(gives())}`);
+  const classes: (Box2 | null)[] | null = [new Box2(), null];
+  print(`${classes[0]?.x ?? 0} ${classes[1] === null}`);
+  const nested: (f64[] | null)[] | null = [[1.5], null];
+  print(`${sumOf(nested[0])} ${nested[1] === null}`);
+  const byName = new Map<string, f64[] | null>();
+  byName.set("a", [1, 2]);
+  print(`${byName.size}`);
+  const elements: (f64[] | null)[] = [];
+  elements.push([1, 2]);
+  elements[0] = [3];
+  print(`${sumOf(elements[0])}`);
+  const levels: Level[] | null = ["a", "b"];
+  print(levels.join("+"));
+  const base: f64[] = [1.5];
+  const spread: f64[] | null = [...base, 1];
+  print(`${sumOf(spread)}`);
 }

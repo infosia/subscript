@@ -1353,7 +1353,10 @@ impl<'p> Checker<'p> {
                     self.reject_api_form("Map<K, V | null>", "get(key)", "get(key)", prop_pos);
                     return self.err_expr(pos);
                 }
-                if !self.map_get_value_ok(&value) {
+                // §217.1 rule 2a: the result is an alias with no holder count.
+                if !self.map_get_value_ok(&value)
+                    || self.apparent_type(&value).counted_type().is_some()
+                {
                     let group = if self.apparent_type(&value).is_numeric()
                         || matches!(
                             &self.apparent_type(&value),
