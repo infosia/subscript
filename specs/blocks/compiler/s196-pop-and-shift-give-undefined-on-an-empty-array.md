@@ -77,11 +77,9 @@ Open:
 1. A generic container with a scalar `T` that tests `x === undefined`
    on a `pop` result gets S012 with the text of §195.2. The text does
    not name rule 2 or the instantiation. `tsc` accepts the program.
-2. The freshness of the runtime archive does not read `Cargo.lock`.
-   When the archive is stale, each concurrent test process still
-   starts `cargo build`.
-3. `build_runtime_staticlib` starts `cargo` in the working directory
-   of the caller when `CARGO` is not set. From a directory outside the
-   repository, `rustup` selects a different toolchain. This is outside
-   the diff.
+2. When the runtime archive is stale, each concurrent test process
+   still starts `cargo build` (§214.1 rule 3).
+3. *(Closed by §214.)* The build of the runtime archive ran in the
+   working directory of the caller, and its freshness did not read
+   `Cargo.lock`.
 

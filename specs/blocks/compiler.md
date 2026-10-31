@@ -25,7 +25,7 @@ The stages of the current form and the sections that hold their rules:
 | parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
-| ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210 |
+| ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
 | reference interpreter | §68.7 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
@@ -255,3 +255,4 @@ Every section, with its status:
 | §211 | A `switch` with no case test is a branch | active | [`s211-a-switch-with-no-case-test-is-a-branch.md`](compiler/s211-a-switch-with-no-case-test-is-a-branch.md) |
 | §212 | A generic call infers from its contextual result type | active | [`s212-a-generic-call-infers-from-its-contextual-result-type.md`](compiler/s212-a-generic-call-infers-from-its-contextual-result-type.md) |
 | §213 | A gate run compares the fastest runs | active | [`s213-a-gate-run-compares-the-fastest-runs.md`](compiler/s213-a-gate-run-compares-the-fastest-runs.md) |
+| §214 | The runtime archive builds under the pinned toolchain | active | [`s214-the-runtime-archive-builds-under-the-pinned-toolchain.md`](compiler/s214-the-runtime-archive-builds-under-the-pinned-toolchain.md) |
