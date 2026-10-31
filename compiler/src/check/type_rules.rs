@@ -294,6 +294,19 @@ impl<'p> Checker<'p> {
     }
 
     /// Keeps the C17 classification at an assignment rejection.
+    /// The fix that a rejection of a `string | null` operand states
+    /// (§218.1 rule 5), or nothing for other operands.
+    pub(super) fn null_test_fix(&self, operands: &[&Type]) -> &'static str {
+        let nullable_string = operands.iter().any(
+            |ty| matches!(self.apparent_type(ty), Type::Nullable(inner, _) if self.apparent_type(&inner) == Type::Str),
+        );
+        if nullable_string {
+            "; a null test first gives a `string`"
+        } else {
+            ""
+        }
+    }
+
     pub(super) fn require_expr_assignable(
         &mut self,
         from: &hir::Expr,
@@ -416,9 +429,14 @@ impl<'p> Checker<'p> {
                 pos,
             );
         } else {
+            let fix = if self.apparent_type(to) == Type::Str {
+                self.null_test_fix(&[from])
+            } else {
+                ""
+            };
             let message = format!(
-                "type mismatch: {} expects `{}`, got `{}`",
-                what, to_n, from_n
+                "type mismatch: {} expects `{}`, got `{}`{}",
+                what, to_n, from_n, fix
             );
             if matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_))) {
                 let compatible = match (&self.apparent_type(from), &self.apparent_type(to)) {

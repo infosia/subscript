@@ -100,6 +100,7 @@ pub(super) fn environment_dependencies(
                         instruction.kind,
                         l::InstructionKind::Copy
                             | l::InstructionKind::Coerce
+                            | l::InstructionKind::StringOperand
                             | l::InstructionKind::Cast
                             | l::InstructionKind::NarrowNonNull(_)
                     )

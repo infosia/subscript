@@ -166,9 +166,14 @@ impl Interpreter<'_> {
         Ok(match ty {
             Type::F32 => left.as_f64()? as f32 == right.as_f64()? as f32,
             Type::F64 => left.as_f64()? == right.as_f64()?,
-            Type::Str => {
-                self.string_bytes(left.as_handle()?)? == self.string_bytes(right.as_handle()?)?
-            }
+            // §218.1 rule 2: the runtime compare treats a null handle the same way.
+            Type::Str => match (absent_string(left), absent_string(right)) {
+                (false, false) => {
+                    self.string_bytes(left.as_handle()?)?
+                        == self.string_bytes(right.as_handle()?)?
+                }
+                (left, right) => left && right,
+            },
             Type::Bool => left.as_bool()? == right.as_bool()?,
             Type::Class(id)
                 if self
@@ -1025,5 +1030,14 @@ impl Interpreter<'_> {
             self.pack_into(value_ty, &value, &mut bytes[offset..])?;
         }
         Ok(Value::Blob(bytes))
+    }
+}
+
+/// A string operand with no value. The interpreter has two null forms.
+fn absent_string(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Handle(handle) => handle.is_null(),
+        _ => false,
     }
 }

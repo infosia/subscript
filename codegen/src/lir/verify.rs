@@ -21,6 +21,43 @@ pub(super) fn verify_function(
     verify_dominance(function, errors);
     super::verify_narrowing::verify_narrowing(function, errors);
     verify_address_invalidation(function, errors);
+    verify_string_operands(function, errors);
+}
+
+/// §218.1 rule 2: a string operand can be null, so its only reader is the
+/// string compare, which accepts null.
+fn verify_string_operands(function: &l::Function, errors: &mut Vec<VerifyError>) {
+    let use_counts = value_use_counts(function);
+    let instructions = || {
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+    };
+    for instruction in instructions() {
+        if instruction.kind != l::InstructionKind::StringOperand {
+            continue;
+        }
+        let Some(result) = instruction.result else {
+            continue;
+        };
+        let comparisons = instructions()
+            .filter(|reader| {
+                matches!(
+                    reader.kind,
+                    l::InstructionKind::Binary(l::BinaryOp::Eq | l::BinaryOp::Ne)
+                )
+            })
+            .flat_map(|reader| reader.operands.iter())
+            .filter(|operand| **operand == l::Operand::Value(result))
+            .count();
+        if use_counts.get(result.0 as usize).copied().unwrap_or(0) != comparisons {
+            errors.push(finding(
+                function,
+                "a string operand has a reader other than a string compare",
+            ));
+        }
+    }
 }
 
 fn verify_counted_stores(

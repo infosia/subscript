@@ -1340,10 +1340,12 @@ impl<'p> Checker<'p> {
                 )
             }
             B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq => {
-                let hop = if matches!(op, B::EqEq | B::EqEqEq) {
-                    BinOp::Eq
-                } else {
-                    BinOp::Ne
+                let content = Type::compares_string_content(&lt, &rt);
+                let hop = match (matches!(op, B::EqEq | B::EqEqEq), content) {
+                    (true, true) => BinOp::StrEq,
+                    (false, true) => BinOp::StrNe,
+                    (true, false) => BinOp::Eq,
+                    (false, false) => BinOp::Ne,
                 };
                 let null_cmp = matches!(
                     (&lt, &rt),
@@ -1362,7 +1364,7 @@ impl<'p> Checker<'p> {
                     if parameter {
                         related_parameter
                     } else {
-                        null_cmp || same_scalar
+                        null_cmp || same_scalar || content
                     },
                 )
             }
@@ -1422,9 +1424,10 @@ impl<'p> Checker<'p> {
                     RejectionSite::CompoundInvalidOperand
                 },
                 format!(
-                    "operator `{operator}` is not defined for `{}` and `{}`",
+                    "operator `{operator}` is not defined for `{}` and `{}`{}",
                     self.type_name(&lt),
-                    self.type_name(&rt)
+                    self.type_name(&rt),
+                    self.null_test_fix(&[&lt, &rt])
                 ),
                 pos.clone(),
             );
@@ -1519,7 +1522,14 @@ impl<'p> Checker<'p> {
                     RejectionSite::BinaryInvalidOperand
                 },
                 equality_operator.map_or_else(
-                    || format!("operator not defined for `{ln}` and `{rn}`"),
+                    || {
+                        let fix = if op == B::Add {
+                            self.null_test_fix(&[&lt, &rt])
+                        } else {
+                            ""
+                        };
+                        format!("operator not defined for `{ln}` and `{rn}`{fix}")
+                    },
                     |operator| format!("operator `{operator}` not defined for `{ln}` and `{rn}`"),
                 ),
                 pos.clone(),

@@ -3,6 +3,23 @@
 use super::*;
 
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
+    /// One operand of a content comparison: a `string` stays as it is.
+    fn string_operand(&mut self, operand: l::Operand, pos: &Pos) -> Result<l::Operand, LowerError> {
+        let string = l::ValueType::Data(Type::Str);
+        if self.operand_type(&operand, pos)? == string {
+            return Ok(operand);
+        }
+        self.emit(
+            l::InstructionKind::StringOperand,
+            vec![operand],
+            Some(string),
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "a string operand produced no value"))
+    }
+
     pub(super) fn coerce_shared_read(
         &mut self,
         value: l::Operand,
@@ -206,6 +223,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::Binary { op, left, right } => {
                 let left = self.require_expr(left)?;
                 let right = self.require_expr(right)?;
+                // §218.1 rule 2: a content comparison has string operands, so
+                // each tier reaches its one string compare.
+                let (left, right) = if matches!(op, hir::BinOp::StrEq | hir::BinOp::StrNe) {
+                    (
+                        self.string_operand(left, &expr.pos)?,
+                        self.string_operand(right, &expr.pos)?,
+                    )
+                } else {
+                    (left, right)
+                };
                 self.emit(
                     l::InstructionKind::Binary(convert_binary(*op)?),
                     vec![left, right],

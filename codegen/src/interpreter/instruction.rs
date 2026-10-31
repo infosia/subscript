@@ -302,6 +302,7 @@ impl Interpreter<'_> {
             ),
             l::InstructionKind::Cast
             | l::InstructionKind::Coerce
+            | l::InstructionKind::StringOperand
             | l::InstructionKind::NarrowNonNull(_) => Some(
                 self.convert(
                     operands

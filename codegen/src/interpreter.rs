@@ -1900,23 +1900,10 @@ fn ffi_len_string(context: &Context, handle: *mut u8) -> i32 {
     unsafe { context.str_bytes(handle) }.len() as i32
 }
 
-fn array_elem_kind(ty: &Type, module: &l::Module) -> u32 {
-    match ty {
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::F16 => 4,
-        Type::I8 | Type::I16 | Type::I32 | Type::I64 => 5,
-        Type::Class(id)
-            if module
-                .classes
-                .get(id.0)
-                .is_some_and(|class| !class.is_value) =>
-        {
-            0
-        }
-        _ => 0,
-    }
+/// The element kind that the shared runtime array operation reads. An
+/// element with no kind has no such operation, so its code is never read.
+pub(crate) fn array_elem_kind(ty: &Type, module: &l::Module) -> u32 {
+    crate::lir_types::array_element_kind(module, ty).unwrap_or(0)
 }
 
 fn array_fmt_kind(ty: &Type) -> u32 {

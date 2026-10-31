@@ -325,7 +325,11 @@ impl<'p> Checker<'p> {
                     let name = self.type_name(&checked.ty);
                     self.reject_subset(
                         RejectionSite::TemplateInterpolationKind,
-                        format!("type `{}` cannot be interpolated into a template", name),
+                        format!(
+                            "type `{}` cannot be interpolated into a template{}",
+                            name,
+                            self.null_test_fix(&[&checked.ty])
+                        ),
                         checked.pos.clone(),
                     );
                 }

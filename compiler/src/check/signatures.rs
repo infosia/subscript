@@ -22,7 +22,7 @@ impl<'p> Checker<'p> {
                 let ty = self.resolve_type(&t.type_ann);
                 let name = t.id.sym.to_string();
                 let pos = self.pos(t.id.span);
-                self.reject_mirror_nullable_array(file, &name, &ty, pos);
+                self.reject_mirror_nullable_view(file, &name, &ty, pos);
                 self.type_aliases.insert(name, ty);
             }
         }
@@ -37,7 +37,7 @@ impl<'p> Checker<'p> {
                     if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
                         self.resolve_class_shape(id, &c.class, c.declare);
                         for field in self.classes[id.0].fields.clone() {
-                            self.reject_mirror_nullable_array(
+                            self.reject_mirror_nullable_view(
                                 file,
                                 &format!("{name}.{}", field.name),
                                 &field.ty,
@@ -54,9 +54,9 @@ impl<'p> Checker<'p> {
                     self.allow_wire_alias_boundary = true;
                     let sig = self.resolve_fn_sig(&f.function, pos.clone());
                     self.allow_wire_alias_boundary = false;
-                    self.reject_mirror_nullable_array(file, &name, &sig.ret, pos.clone());
+                    self.reject_mirror_nullable_view(file, &name, &sig.ret, pos.clone());
                     for parameter in &sig.params {
-                        self.reject_mirror_nullable_array(
+                        self.reject_mirror_nullable_view(
                             file,
                             &format!("{name}.{}", parameter.name),
                             parameter.ty(),
@@ -189,7 +189,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Applies §217.1 rule 3 to the constructor and the methods of a mirror
+    /// Applies §217.1 rule 3 and §218.1 rule 9 to the constructor and the methods of a mirror
     /// class, in name order.
     fn reject_mirror_member_signatures(
         &mut self,
@@ -218,27 +218,22 @@ impl<'p> Checker<'p> {
             }
         }
         for (declaration, ty) in types {
-            self.reject_mirror_nullable_array(file, &declaration, &ty, pos.clone());
+            self.reject_mirror_nullable_view(file, &declaration, &ty, pos.clone());
         }
     }
 
-    /// §217.1 rule 3: the C ABI gives `T[] | null` no layout. The check reads
+    /// §217.1 rule 3 and §218.1 rule 9: the C ABI gives `T[] | null` and
+    /// `string | null` no layout. The check reads
     /// the resolved type of each mirror declaration, so an alias, a callback
     /// signature, and a nested form all reach it.
-    fn reject_mirror_nullable_array(
-        &mut self,
-        file: usize,
-        declaration: &str,
-        ty: &Type,
-        pos: Pos,
-    ) {
-        if self.apparent_type(ty).holds_nullable_array() {
+    fn reject_mirror_nullable_view(&mut self, file: usize, declaration: &str, ty: &Type, pos: Pos) {
+        if self.apparent_type(ty).holds_nullable_view() {
             let type_name = self.type_name(ty);
             self.reject_subset(
-                RejectionSite::MirrorNullableArray,
+                RejectionSite::MirrorNullableView,
                 format!(
                     "mirror `{}` declaration `{declaration}` has `{type_name}`; the C ABI \
-                     gives a nullable array no layout",
+                     gives a nullable array or string no layout",
                     self.prog.files[file].name
                 ),
                 pos,

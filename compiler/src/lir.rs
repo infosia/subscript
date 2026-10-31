@@ -689,6 +689,10 @@ pub enum InstructionKind {
     Cast,
     /// Apply a checker-approved implicit assignment/call conversion.
     Coerce,
+    /// Read a `string | null` operand of a content comparison as a string
+    /// handle, which can be null (§218.1 rule 2). The result goes only
+    /// to `Binary(Eq)` or `Binary(Ne)`, and the string compare accepts null.
+    StringOperand,
     /// Convert a nullable value to its non-null value or boundary address.
     NarrowNonNull(NarrowOrigin),
     /// Allocate zeroed class storage.

@@ -186,7 +186,7 @@ fn rule_3_rejects_each_mirror_declaration() {
     ] {
         let diagnostics = mirror(&format!("{header}{declaration}")).expect_err(declaration);
         let expected = format!(
-            "mirror `mirror.d.ts` declaration `{name}` has `{ty}`; the C ABI gives a nullable array no layout"
+            "mirror `mirror.d.ts` declaration `{name}` has `{ty}`; the C ABI gives a nullable array or string no layout"
         );
         let found = diagnostics
             .iter()
@@ -282,15 +282,4 @@ fn rule_6_only_a_null_test_compares_a_nullable_array() {
     let diagnostics = check_one(&body("a === b")).expect_err("two arrays");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert!(check_one(&body("a === null")).is_ok());
-}
-
-#[test]
-fn rule_7_a_nullable_string_stays_rejected() {
-    let diagnostics = check_one(&main_with("function f(x: string | null): void {}"))
-        .expect_err("a nullable string");
-    assert_eq!(diagnostics[0].code, RuleCode::S011);
-    assert_eq!(
-        diagnostics[0].message,
-        "unions are limited to `Ref | null`; `string | null` is not a reference type union"
-    );
 }

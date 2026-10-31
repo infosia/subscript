@@ -582,6 +582,7 @@ impl ArrElemKind {
             | Type::StringAlias(_)
             | Type::Date => ArrElemKind::SignedInt,
             Type::Class(id) if !is_value_class(*id) => ArrElemKind::Int,
+            Type::Nullable(inner, _) if **inner == Type::Str => ArrElemKind::Str,
             Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => ArrElemKind::Int,
             Type::F32 => ArrElemKind::F32,
             Type::F64 => ArrElemKind::F64,

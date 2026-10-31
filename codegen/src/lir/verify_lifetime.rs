@@ -168,6 +168,7 @@ fn read_operands(
         | Unary(_)
         | Binary(_)
         | Coerce
+        | StringOperand
         | NarrowNonNull(_)
         | AllocateClass(_)
         | BoxBoundaryValue { .. }

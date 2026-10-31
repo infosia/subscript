@@ -472,7 +472,7 @@ mod construction {
 
     #[test]
     fn a_poisoned_context_reports_only_its_own_diagnostic() {
-        let diagnostics = diagnostics(&main_with("const a: Box<string | null> = new Box(null);"));
+        let diagnostics = diagnostics(&main_with("const a: Box<i32 | null> = new Box(null);"));
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         assert_eq!(diagnostics[0].code, RuleCode::S011, "{diagnostics:?}");
         // Positive control: a legal context gives no diagnostic.

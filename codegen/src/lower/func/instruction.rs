@@ -286,6 +286,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             l::InstructionKind::Cast
             | l::InstructionKind::Coerce
+            | l::InstructionKind::StringOperand
             | l::InstructionKind::NarrowNonNull(_) => {
                 if matches!(result_ty, Some(l::ValueType::Address(_))) {
                     let pointer = self.expect_scalar(

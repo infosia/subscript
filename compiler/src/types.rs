@@ -137,13 +137,13 @@ impl HandleKind {
     /// The runtime representation could also support `RegExp`, `Generator`,
     /// and `AsyncHandle`. Those are candidate widenings only; the corpus does
     /// not accept them. An already-nullable type is likewise not a new union
-    /// member, and a plain value class has no nullable handle. A string has
-    /// a handle, but its equality and search are by content (§217.1 rule 7).
+    /// member, and a plain value class has no nullable handle.
     #[must_use]
     pub fn supports_nullable(self) -> bool {
         matches!(
             self,
             Self::Object
+                | Self::Str
                 | Self::Array
                 | Self::Map
                 | Self::Set
@@ -520,15 +520,28 @@ impl Type {
             .any(Type::holds_undefined)
     }
 
-    /// Whether a `T[] | null` occurs in this type, at the top level or below
-    /// it (§217.1 rule 3).
+    /// Whether a `T[] | null` or a `string | null` occurs in this type, at the
+    /// top level or below it. The C ABI of each is a view, and a view has no
+    /// null form (§217.1 rule 3, §218.1 rule 9).
     #[must_use]
-    pub fn holds_nullable_array(&self) -> bool {
-        matches!(self, Self::Nullable(inner, _) if matches!(**inner, Self::Array(_)))
+    pub fn holds_nullable_view(&self) -> bool {
+        matches!(self, Self::Nullable(inner, _) if matches!(**inner, Self::Array(_) | Self::Str))
             || self
                 .contained_types()
                 .into_iter()
-                .any(Type::holds_nullable_array)
+                .any(Type::holds_nullable_view)
+    }
+
+    /// Whether an equality of these two operand types compares string
+    /// content (§218.1 rule 2). This is the one definition: the checker reads
+    /// it, and the operator that it selects carries the fact. A null test of
+    /// a nullable string is not in this set: its result needs no content.
+    #[must_use]
+    pub fn compares_string_content(left: &Type, right: &Type) -> bool {
+        let string = |ty: &Type| {
+            *ty == Self::Str || matches!(ty, Self::Nullable(inner, _) if **inner == Self::Str)
+        };
+        string(left) && string(right)
     }
 
     /// Maps every `undefined` spelling in this type to `null` (§195.7 rule 2).
@@ -1506,7 +1519,7 @@ mod tests {
     #[test]
     fn every_handle_kind_has_the_recorded_filters() {
         let cases = [
-            (HandleKind::Str, true, false, false, false, true),
+            (HandleKind::Str, true, true, false, false, true),
             (HandleKind::RegExp, true, false, false, true, true),
             (HandleKind::Object, true, true, false, true, true),
             (HandleKind::Array, true, true, false, true, true),
@@ -1557,7 +1570,7 @@ mod tests {
             (Type::F64, false, false),
             (Type::F16, false, false),
             (Type::Bool, false, false),
-            (Type::Str, false, false),
+            (Type::Str, true, false),
             (Type::Date, false, false),
             (Type::RegExp, false, false),
             (Type::Void, false, false),
@@ -1624,7 +1637,7 @@ mod tests {
     }
 
     #[test]
-    fn holds_nullable_array_reads_each_depth() {
+    fn holds_nullable_view_reads_each_depth() {
         let array = Type::Array(Box::new(Type::I32));
         let nullable = Type::Nullable(Box::new(array.clone()), Absence::Null);
         let callback = Type::Func(Box::new(FuncType {
@@ -1637,13 +1650,13 @@ mod tests {
             Type::FixedArray(Box::new(nullable), 2),
             callback,
         ] {
-            assert!(ty.holds_nullable_array(), "{ty:?}");
+            assert!(ty.holds_nullable_view(), "{ty:?}");
         }
         for ty in [
             array,
             Type::Nullable(Box::new(Type::Class(ClassId(0))), Absence::Null),
         ] {
-            assert!(!ty.holds_nullable_array(), "{ty:?}");
+            assert!(!ty.holds_nullable_view(), "{ty:?}");
         }
     }
 

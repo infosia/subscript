@@ -1080,6 +1080,7 @@ fn instruction_arity(
         | K::Cast
         | K::NarrowNonNull(_)
         | K::Coerce
+        | K::StringOperand
         | K::BoxBoundaryValue { .. }
         | K::AddressOfValue
         | K::LoadAddress

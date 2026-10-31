@@ -4488,6 +4488,7 @@ type OnValues = (values: i32[] | null) => void;
 declare class Slot { values: i32[] | null; constructor(values: i32[] | null); }
 declare function takes(values: i32[] | null): void;
 declare function gives(): i32[] | null;
+declare function name(label: string | null): void;
 END FILE
 END PROGRAM
 PROGRAM	c-worker-arity	TS2314		0

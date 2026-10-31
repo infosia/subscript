@@ -12,6 +12,7 @@ mod language;
 mod local_functions;
 mod method_assignment;
 mod nullable_array;
+mod nullable_string;
 mod poisoned_containers;
 mod private_names;
 mod removal;

@@ -333,11 +333,12 @@ UndefinedUnionMember	c-undefined-union	S012	`T | undefined` is legal only as the
 NullableNonReference	nullable-non-reference	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
 NullableNonReference	c-nullable-scalar	S011	unions are limited to `Ref | null`; `i32 | null` is not a reference type union
 NullableNonReference	c-value-nullable-array-reject	S011	unions are limited to `Ref | null`; `Promise<void>[] | null` is not a reference type union
-MirrorNullableArray	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `OnValues` has `(i32[] | null) => void`; the C ABI gives a nullable array no layout
-MirrorNullableArray	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `Slot.values` has `i32[] | null`; the C ABI gives a nullable array no layout
-MirrorNullableArray	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `Slot.constructor.values` has `i32[] | null`; the C ABI gives a nullable array no layout
-MirrorNullableArray	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `gives` has `i32[] | null`; the C ABI gives a nullable array no layout
-MirrorNullableArray	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `takes.values` has `i32[] | null`; the C ABI gives a nullable array no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `OnValues` has `(i32[] | null) => void`; the C ABI gives a nullable array or string no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `Slot.values` has `i32[] | null`; the C ABI gives a nullable array or string no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `Slot.constructor.values` has `i32[] | null`; the C ABI gives a nullable array or string no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `gives` has `i32[] | null`; the C ABI gives a nullable array or string no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `takes.values` has `i32[] | null`; the C ABI gives a nullable array or string no layout
+MirrorNullableView	mirror-nullable-array	S100	mirror `target/s154/forms/mirror-nullable-array/mirror.d.ts` declaration `name.label` has `string | null`; the C ABI gives a nullable array or string no layout
 ConstructorTypeAnnotation	c-constructor-type	S100	constructor types are not in the decided surface
 FunctionTypeParameterAnnotationMissing	c-function-unannotated	S100	function type parameters require annotations
 NamespaceMemberMissing	c-namespace-missing	S016	`missing` is not exported by `./namespace-missing-lib`

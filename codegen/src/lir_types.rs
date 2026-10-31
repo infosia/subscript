@@ -203,36 +203,12 @@ pub(crate) fn boundary_box_class(module: &impl BoundaryBoxModule, ty: &Type) -> 
     module.is_boundary_value_class(*class).then_some(*class)
 }
 
+/// The runtime kind of an array element: the one table of
+/// `hir::ArrElemKind::of` (§218.1 rule 3).
 pub(crate) fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
-    Ok(match ty {
-        Type::Bool
-        | Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_) => 0,
-        Type::I8
-        | Type::I16
-        | Type::I32
-        | Type::I64
-        | Type::Enum(_)
-        | Type::StringAlias(_)
-        | Type::Date => 5,
-        Type::Class(class) if !lir_class_is_value(module, *class) => 0,
-        Type::Nullable(inner, _) if !matches!(**inner, Type::Func(_)) => 0,
-        Type::F32 => 1,
-        Type::F64 => 2,
-        Type::Str => 3,
-        Type::F16 => 4,
-        other => {
-            return Err(format!(
-                "internal error: array element type {other:?} has no runtime kind"
-            ));
-        }
-    })
+    subscript_compiler::hir::ArrElemKind::of(ty, &|class| lir_class_is_value(module, class))
+        .map(subscript_compiler::hir::ArrElemKind::code)
+        .ok_or_else(|| format!("internal error: array element type {ty:?} has no runtime kind"))
 }
 
 pub(crate) fn array_format_kind(ty: &Type) -> Result<u32, String> {

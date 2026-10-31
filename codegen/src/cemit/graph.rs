@@ -346,6 +346,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::Cast
             | l::InstructionKind::Coerce
+            | l::InstructionKind::StringOperand
             | l::InstructionKind::NarrowNonNull(_) => {
                 self.emit_conversion(out, instruction, &operands[0], &operand_types[0])
             }

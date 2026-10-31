@@ -1524,8 +1524,9 @@ impl<'p> Checker<'p> {
         {
             let name = self.type_name(&disc.ty);
             self.reject_subset(RejectionSite::SwitchDiscriminantKind, format!(
-                    "switch discriminants are integers, enums, strings, or string-literal union aliases; got `{}`",
-                    name
+                    "switch discriminants are integers, enums, strings, or string-literal union aliases; got `{}`{}",
+                    name,
+                    self.null_test_fix(&[&disc.ty])
                 ), disc.pos.clone());
         }
         let disc_ty = disc.ty.clone();

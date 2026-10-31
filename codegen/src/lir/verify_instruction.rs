@@ -279,6 +279,15 @@ pub(super) fn verify_instruction_contract(
                 bad("implicit coercion signature is invalid", errors);
             }
         }
+        l::InstructionKind::StringOperand => {
+            let source = matches!(
+                operand_types.as_slice(),
+                [l::ValueType::Data(Type::Nullable(inner, _))] if **inner == Type::Str
+            );
+            if !source || result_type != Some(l::ValueType::Data(Type::Str)) {
+                bad("string operand signature is invalid", errors);
+            }
+        }
         l::InstructionKind::StringLiteral(_) => {
             if !instruction.operands.is_empty()
                 || result_type != Some(l::ValueType::Data(Type::Str))
@@ -394,6 +403,13 @@ pub(super) fn verify_instruction_contract(
                     | l::BinaryOp::Mul
                     | l::BinaryOp::Div
                     | l::BinaryOp::Rem => left == right && left == result && left.is_numeric(),
+                    // §218.1 rule 2: a nullable string reaches a comparison only
+                    // as a null test. Any other pair would compare pointers.
+                    l::BinaryOp::Eq | l::BinaryOp::Ne
+                        if nullable_string_pointer_compare(left, right) =>
+                    {
+                        false
+                    }
                     l::BinaryOp::Eq
                     | l::BinaryOp::Ne
                     | l::BinaryOp::Lt
@@ -1341,4 +1357,12 @@ pub(super) fn declared_call_signature(
                 )
             }),
     }
+}
+
+/// True for an equality that compares a nullable string by pointer.
+fn nullable_string_pointer_compare(left: &Type, right: &Type) -> bool {
+    let nullable_string =
+        |ty: &Type| matches!(ty, Type::Nullable(inner, _) if **inner == Type::Str);
+    (nullable_string(left) && *right != Type::Null)
+        || (nullable_string(right) && *left != Type::Null)
 }

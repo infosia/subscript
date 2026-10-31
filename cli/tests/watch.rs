@@ -101,6 +101,46 @@ fn body_edit_runs_new_behavior_with_the_live_context() -> Result<(), String> {
     Ok(())
 }
 
+const NULLABLE_GLOBAL_V1: &str = "\
+let last: string | null = null;
+export function main(): void {
+  const before: string = last ?? \"none\";
+  last = `v${1}`;
+  print(`old ${before}`);
+}
+";
+
+const NULLABLE_GLOBAL_V2: &str = "\
+let last: string | null = null;
+export function main(): void {
+  print(`new ${last ?? \"none\"} ${last === \"v1\"}`);
+  last = null;
+}
+";
+
+const NULLABLE_GLOBAL_V3: &str = "\
+let last: string | null = null;
+export function main(): void {
+  print(`null ${last === null}`);
+}
+";
+
+/// §218.1 rule 1: a body edit keeps a `string | null` global, in each state.
+#[test]
+fn body_edit_keeps_a_nullable_string_global() -> Result<(), String> {
+    let mut watch = WatchSession::new(false);
+    let started = watch.step(&files(NULLABLE_GLOBAL_V1));
+    assert!(started.diagnostics.is_empty());
+    assert_eq!(call_output(started.outcome)?, b"old none\n");
+    let second = watch.step(&files(NULLABLE_GLOBAL_V2));
+    assert!(second.diagnostics.is_empty());
+    assert_eq!(call_output(second.outcome)?, b"new v1 true\n");
+    let third = watch.step(&files(NULLABLE_GLOBAL_V3));
+    assert!(third.diagnostics.is_empty());
+    assert_eq!(call_output(third.outcome)?, b"null true\n");
+    Ok(())
+}
+
 const SHAPE_V1: &str = "\
 class Box {
   value: i32;

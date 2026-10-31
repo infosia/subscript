@@ -29,12 +29,18 @@ falls to the pointer form.
 
 1. `string | null` is a legal `Ref | null` form (C7), in each position
    where `T[] | null` is legal (§217.1 rule 1). Its absence is a null
-   pointer. An empty string is not absent: `"" === null` is `false`.
-2. **One equality rule.** `===`, `!==`, `==`, and `!=` with each operand
-   of type `string`, `string | null`, or `null` compare by content.
-   `null` equals `null` only. The rule has one definition, which each
-   tier reads. No tier selects it by a second test on `Type::Str`.
-   The order of the operands does not change the result.
+   pointer. An empty string is not absent: an `s: string | null` that
+   holds `""` gives `false` for `s === null`.
+2. **One equality rule.** `===`, `!==`, `==`, and `!=` compare by
+   content if one operand has type `string | null` and the other has
+   type `string`, `string | null`, or `null`. `null` equals `null`
+   only. The rule has one definition, `Type::compares_string_content`.
+   The LIR gives a nullable operand as `StringOperand`, and each tier
+   reaches its one string compare. The verifier rejects `Binary(Eq|Ne)`
+   on a nullable string, except a null test. The order of the operands
+   does not change the result. A `string` operand against `null` stays
+   rejected: `NonNullableNullEquality` applies, as for a class.
+   *(Amended 2026-10-31: the coding agent measured the form.)*
 3. **One element-kind table.** `includes`, `indexOf`, and `lastIndexOf` on
    `(string | null)[]` compare by rule 2. The element kind of an array has
    one definition, which the checker and each tier read.

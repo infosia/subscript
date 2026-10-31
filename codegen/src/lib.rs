@@ -347,6 +347,49 @@ export function main(): void {}
     }
 
     #[test]
+    fn each_tier_reads_the_one_array_element_kind_table() {
+        use subscript_compiler::hir::ArrElemKind;
+        use subscript_compiler::types::{Absence, ClassId};
+        use subscript_compiler::Type;
+        let module = lir::lower_module(
+            &subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+                "kinds.ts",
+                "class R { x: i32 = 0; }\n@ValueType\nclass V { x: i32 = 0; }\n\
+                 export function main(): void {}\n",
+            )])
+            .expect("the program checks clean"),
+        )
+        .expect("the program lowers");
+        let nullable = |ty| Type::Nullable(Box::new(ty), Absence::Null);
+        let reference = module
+            .classes
+            .iter()
+            .find(|class| !class.is_value)
+            .map_or(ClassId(0), |class| class.id);
+        for (ty, kind) in [
+            (Type::Str, ArrElemKind::Str),
+            (nullable(Type::Str), ArrElemKind::Str),
+            (nullable(Type::Class(reference)), ArrElemKind::Int),
+            (Type::Class(reference), ArrElemKind::Int),
+            (Type::I32, ArrElemKind::SignedInt),
+            (
+                Type::StringAlias(subscript_compiler::StringAliasId(0)),
+                ArrElemKind::SignedInt,
+            ),
+            (Type::F64, ArrElemKind::F64),
+        ] {
+            assert_eq!(lir_types::array_element_kind(&module, &ty), Ok(kind.code()));
+            assert_eq!(interpreter::array_elem_kind(&ty, &module), kind.code());
+        }
+        // Control: a function value has no element kind.
+        let function = Type::Func(Box::new(subscript_compiler::types::FuncType {
+            params: Vec::new(),
+            ret: Type::Void,
+        }));
+        assert!(lir_types::array_element_kind(&module, &function).is_err());
+    }
+
+    #[test]
     fn arr_kind_codes_agree_between_compiler_and_runtime() {
         // The subscript_rt_arr_* tag contract (stdlib.md §9): the compiler's
         // ArrElemKind/ArrFmtKind codes and the runtime arrops decoders

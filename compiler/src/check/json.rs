@@ -418,7 +418,7 @@ impl Checker<'_> {
                 }
                 Type::Nullable(inner, _) => {
                     let shape = checker.apparent_type(inner);
-                    (matches!(shape, Type::Array(_))
+                    (matches!(shape, Type::Array(_) | Type::Str)
                         || matches!(shape, Type::Class(id) if !checker.classes[id.0].is_value))
                         && visit(checker, inner, active, done)
                 }

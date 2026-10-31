@@ -675,6 +675,11 @@ pub enum BinOp {
     Eq,
     /// Strict inequality `!==`.
     Ne,
+    /// Equality by string content; each operand is a `string`, a
+    /// `string | null`, or `null` (§218.1 rule 2).
+    StrEq,
+    /// Inequality by string content (§218.1 rule 2).
+    StrNe,
     /// Less than.
     Lt,
     /// Less than or equal.
