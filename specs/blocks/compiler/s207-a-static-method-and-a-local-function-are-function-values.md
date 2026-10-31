@@ -109,3 +109,9 @@ MAJOR and four MINOR findings.
 5. MINOR, contrived, fixed: in a module-level block, the text named an
    enclosing function.
 6. MINOR, fixed: a test name still described the old rejection.
+
+Open:
+
+1. `Worker.spawn` with a local function as its entry passes `check` and
+   runs. The diagnostic for another entry form still says "must be a
+   directly named module-level function". Measured 2026-10-31.

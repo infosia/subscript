@@ -82,4 +82,9 @@ Open:
 3. *(Closed by §214.)* The build of the runtime archive ran in the
    working directory of the caller, and its freshness did not read
    `Cargo.lock`.
+4. Rule 2 says that a `T` that owns counted values gets `T`. The
+   checker gives `Map<string, Promise<void>>[]` a `pop` of type
+   `T | undefined`, and `Promise<void>[][]` a `pop` of type `T`.
+   Measured 2026-10-31. `generated-docs/language-reference.md` states the
+   measured form.
 

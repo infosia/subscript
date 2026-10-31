@@ -12,7 +12,7 @@ use crate::{RuleCode, WarnCode};
 
 const GENERATED_BY: &str = "cargo run --offline -p subscript-compiler --bin generate-api-reference";
 
-const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, `undefined` outside a function result, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
+const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. The entry module exports the host entry functions. Types are nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, `undefined` outside a function result, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
 
 const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 
@@ -22,23 +22,43 @@ const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for 
 
 const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null` or `Ref | undefined`. It evaluates `a` once and evaluates `b` only when `a` is absent. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
 
-const UNDEFINED_RESULTS: &str = "`T | undefined` is legal only as the declared result of a module-level function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.";
+const UNDEFINED_RESULTS: &str = "`T | undefined` is legal only as the declared result of a function declaration or a class method, for the `T` of `T | null` (§195). It has the representation of `T | null`. `Map.get`, `find`, and `findLast` return `T | undefined`. `pop()` and `shift()` on `T[]` return `T | undefined` for these `T` (§196): a reference class, a `Map`, a `Set`, a function type, and an array that holds no async handle. On an empty array they give `undefined`. They return `T` for each other `T`, such as a scalar, `string`, a value class, a nullable type, or `Promise<void>[]`. An empty array then traps with `empty-pop`. The `undefined` token is legal in `return undefined;` and as an operand of an absence comparison. `===` and `!==` across a `null` and an `undefined` absence are rejected; `==` tests either absence. A `T | undefined` value has no annotation, no container, and no C boundary crossing.";
 
 const USING_DECLARATIONS: &str = "`using x = e` declares an immutable reference-class binding whose class declares `[Symbol.dispose](): void`. The binding can have type `R | null`. Each initializer evaluates once. Scope exits call the hooks in reverse declaration order and skip null bindings. Inner scopes dispose first; a return expression evaluates before disposal. Suspension preserves resources until completion. Member reads through nullable bindings require ordinary null narrowing. A bare `using x = null` needs a type annotation. Traps do not run disposal. `await using`, value-class hooks, and descriptor-class hooks stay rejected.";
 
-const GENERIC_FUNCTIONS: &str = "A directly named generic function infers omitted type arguments from its arguments (§149). Imported and namespace-qualified functions use the same rule. Structural candidates pass through arrays, FixedArray, nullable types, Map, Set, generic classes, and declared function signatures. Non-literal arguments decide each candidate first. Numeric, string, and array literals use that candidate as their context. With only literals, integer literals default to i32, fractional literals to f64, and string literals to string. Equal candidates agree; C and C | null join to C | null. Conflicting candidates and missing candidates require explicit type arguments. Explicit type arguments override inference. Constraints, opaque body checks, and instance-chain checks still apply. Each argument evaluates once, in order. Generic methods and constructors require explicit type arguments. Callback parameter types and return contexts do not supply inference candidates.";
+const GENERIC_FUNCTIONS: &str = "A directly named generic function infers omitted type arguments from its arguments (§149) and its contextual type (§212). Imported and namespace-qualified functions use the same rule. Structural candidates pass through arrays, FixedArray, nullable types, Map, Set, generic classes, and declared function signatures. Non-literal arguments decide each candidate first. Numeric, string, and array literals use that candidate as their context. With only literals, integer literals default to i32, fractional literals to f64, and string literals to string. Equal candidates agree; C and C | null join to C | null. Conflicting candidates and a type parameter with no candidate require explicit type arguments. Explicit type arguments override inference. Constraints, opaque body checks, and instance-chain checks still apply. Each argument evaluates once, in order. A callback's parameter types do not come from context, so a lambda parameter needs its annotation.";
 
-const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A method call must supply explicit type arguments. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. An async instance method on a non-generic reference class can declare type parameters (§93). A generic method on a generic class stays outside the surface.";
+const GENERIC_CONTEXT_INFERENCE: &str = "`new G(args)` with no type arguments infers the type arguments of a generic class, `Map`, or `Set` (§197). `recv.m(args)` and `C.m(args)` infer the type arguments of a generic method. Candidates come from the arguments, by the rules of a generic function; a constructor uses the parameters of its `constructor`. `new Set(source)` takes its element candidate from a non-literal `source`. A contextual type gives a constructor a candidate: `const b: Box<i64> = new Box(7);`, `const m: Map<string, i32> = new Map();`, `const s: Set<string> = new Set();`. A generic function or method call takes a candidate through its declared result type (§212): with `create<T>(n: i32): Buf<T>`, `const a: Buf<P> = create(1);` is accepted. The context is a local annotation, a parameter, a `return`, a field initializer, an assignment target, or an array element. It also passes through `| null`. The order is a non-literal argument candidate, then the contextual candidate, then the literal default. So `const b: Box<i64> = new Box(n);` with `n: i32` stays a type error. A type list is complete or absent: for `f<A, B>`, the partial list `f<P>(1)` is rejected, also with a context. With no context, a type parameter with no candidate fails with \"cannot infer type parameter `T` of `create`: no candidate; use explicit type arguments\": `const a = create(1);`, `create(1);`. `new Map()` and `new Set()` with no context fail with their Q24 text. These positions give no contextual candidate: an `as` operand, an optional call, an `await` operand, a `Promise<T>` result, an arithmetic operand, and an index. A `null` argument for a parameter `T` or `T | null` stops the contextual candidate of `T`.";
+
+const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A method call infers omitted type arguments from its arguments and its contextual type (§197, §212), or supplies them explicitly. A type parameter with no candidate needs an explicit list: `box.empty<i32>()`. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. An async instance method on a non-generic reference class can declare type parameters (§93). A generic method on a generic class stays outside the surface.";
 
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member != undefined` / `member !== undefined` or the inverse arm of `member == undefined` / `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
-const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.";
+const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return. A value of a Q32 alias does not convert to `string`. `type L2 = Label;` names the same closed set (§202).";
 
-const DIVERGENCE_FLOW: &str = "`unreachable()` is legal only as a call statement. It marks that path as diverging for return-flow analysis and traps with `unreachable-reached` if execution reaches the call. Returns, `unreachable()`, and recursively exhaustive Q32 switches compose as diverging statements; a switch arm that falls through or breaks does not diverge.";
+const DIVERGENCE_FLOW: &str = "`unreachable()` is legal only as a call statement. It marks that path as diverging for return-flow analysis and traps with `unreachable-reached` if execution reaches the call. Returns, `unreachable()`, and recursively exhaustive Q32 and source-enum switches compose as diverging statements; a switch arm that falls through or breaks does not diverge. A source-enum switch with a `case` for each member and no `default` satisfies return flow when each arm diverges (§200). At the end of a function that returns a value, a value that is not a member traps at that switch with `unreachable-reached`. A switch with a missing member or a `break` arm keeps \"not all paths return a value\". An exhaustive switch followed by a statement that reaches the end of the function keeps that text too. A following `return` is reached by a value that is not a member, as in JavaScript.";
+
+const PARAMETER_PROPERTIES: &str = "A constructor parameter with `public`, `private`, `protected`, or `readonly`, or a combination that TypeScript accepts, is a parameter property (§198). It declares an instance field with the name, type, and modifiers of the parameter. The parameter-property fields come first, in parameter order, and the declared fields follow. The C layout of a value class and the key order of `JSON.stringify` use this order. At construction, the field initializers run first. Then the constructor assigns each parameter property, in parameter order, and then its body runs. With no annotation, a literal default gives the field its type: `constructor(public count = 0)` declares an `i32`. Any other default with no annotation fails with \"a parameter property requires a type annotation\". A field initializer that reads a parameter-property field is rejected. A field and a parameter property with one name fail with S017.";
+
+const LOGICAL_ASSIGNMENT: &str = "`p ??= v`, `p ||= v`, and `p &&= v` are tested assignments (§199). `v` evaluates only if the assignment runs. The receiver and the index of `p` evaluate once. `p` is a place that a plain assignment accepts: a local, a field, a static field, an array element, or an accessor. For `??=`, `p` must be nullable, or the form fails with \"the left operand of `??=` has type `T`, which is not nullable\". For `||=` and `&&=`, `p` and `v` must be `boolean`; there is no truthiness test on another type. `x ??= v` in statement position, with `v` of the unwrapped type, narrows `x` as the spelled `if` does. Value position is legal, but it does not narrow `x`. An accessor place is legal in statement position only.";
+
+const MULTI_ARGUMENT_CALLS: &str = "`r.push(a1, …, ak)` takes any argument count, zero included (§201). It evaluates `r` once, then every argument in order, and then appends each value. The result is the length after the last append. `Math.max` and `Math.min` take any count of `f64` arguments and fold from the left. `Math.max(a)` is `a`, `Math.max()` is `-Infinity`, and `Math.min()` is `Infinity`. `Array.of(a1, …, ak)` gives the array `[a1, …, ak]`. A spread argument stays rejected: `xs.push(...ys)` and `Math.max(...xs)`. `Math.hypot` with three or more arguments stays rejected. `unshift` with two or more arguments, the insert form of `splice`, and `concat` with two or more arrays also stay rejected.";
+
+const TYPE_ALIASES: &str = "A module-level `type N = T;` declares a second name of `T` (§202). `N` has no type parameters, and `T` is not a union of string literals. Each use of `N` in a type position is the type `T`, and a diagnostic prints `T`. The alias has no layout, no C name, and no run-time form. `T` can be a class, an enum, a sized numeric, an array, a function type, `C | null`, a generic instance, or another alias. Declaration order does not matter. `export type N = T;` in an imported module exports the alias; the entry module exports functions only. A union of two or more string literals declares a Q32 alias instead. That alias is a nominal closed set, not a second name of `string`. Two Q32 aliases with one member set stay distinct. An alias of a Q32 alias is that same set. A generic alias, a `T | undefined` member, an alias that holds a `TaskGroup`, and an alias in a function body stay rejected. `type One = \"a\";` stays rejected too. An async function result must spell `Promise<T>`, not an alias of it. An alias that reaches itself fails with \"type alias `N` refers to itself\", also through an array or a type argument (`type L = L[];`). A type argument on an alias fails with \"type alias `N` is not generic\". `new N()` fails with \"type alias `N` used as a value\".";
+
+const DO_WHILE: &str = "`do { body } while (c);` runs `body`, then evaluates the `boolean` test `c`, and repeats while `c` is `true` (§203). `continue` goes to the evaluation of `c`, and `break` leaves the loop. The form is legal wherever `while` is legal, including a lambda, a generator, and an async function. A local that `body` assigns on every path to `c` is assigned in `c`. An assignment after a `continue` does not count on that path. `c` narrows the next iteration: `do { s += n.v; } while ((n = n.next) !== null);` reads `n.v` with `n` not null. After a loop with no `break`, the false arm of `c` narrows as after a `while` loop.";
+
+const ERASED_FORMS: &str = "Global `isNaN(x)` and `isFinite(x)` are `Number.isNaN(x)` and `Number.isFinite(x)` (§204). The argument is an `f64`, and each name can only be called, not read as a value. `` `${xs}` `` with an array `xs` is `` `${xs.join(\",\")}` ``, and `xs` evaluates once. An element type that `join` rejects, such as a nested array or a Q32 alias, fails with the `join` text. A `FixedArray` operand and a class operand stay rejected. `x satisfies T` checks `x` with the context `T`, and a mismatch fails with the text of the assignment to a `T` local. The expression is `x`, with the type of `x`. An operand with an empty array literal gets no context, so `[] satisfies string[]` is rejected. `debugger;` is an empty statement. `<T>x` and `string +` an array stay rejected.";
+
+const INTERFACES: &str = "A module-level `interface I { … }` declares a type-only constraint (§208). It has no layout, no C name, and no run-time form. A member is a method signature `m(a: A): R;` or a read accessor signature `get g(): R;`. `class C implements I, J` declares that `C` has each member, and the checker compares them. A method signature needs an instance method with the same parameter and result types. A read accessor signature needs an instance read accessor or an instance field with that name and type. A `private` member and a static member do not count. An `async` method implements a member with the result `Promise<R>`. A reference class, a value class, and a generic class can declare `implements`. `T extends I` on a function, a method, or a class lets the body call each member of `I` on a value of type `T`. Each instance calls the member of its type argument directly, with no dispatch. A type argument must declare `implements I`, or be a type parameter with that constraint. A class with the same members and no clause fails with \"`A` does not declare `implements I`\". An interface is not a value type. It fails with \"interface `I` is a constraint only; write a type parameter `T extends I`\". This applies to a parameter, a result, a local, a field, an array element, a union, and a type argument. An interface in an imported module can be exported; the entry module exports functions only. Each other member form fails with \"interface `I` has a member form outside the decided surface\". This text covers a property, an optional member, and a call, construct, or index signature. It covers a generic method signature, a write accessor signature, a rest parameter, and an overload. It also covers a type parameter on the interface, `extends` on the interface, and a second declaration of one name. A local interface stays rejected. An `implements` clause that names another kind fails with \"`implements` names an interface; `A` is not an interface\". `T extends I & J` and a union constraint stay rejected.";
+
+const PRIVATE_NAMES: &str = "A class can declare a `#x` instance field, static field, instance method, static method, getter, and setter, with `readonly` on a field (§206). The class body can read and write `this.#x`, `o.#x` where `o` has the class type, and `C.#s`. Code outside the class body fails with \"member `#x` is private in class `C`\". `#x` and `x` are two members of one class, and no brand check runs. A `#x` field is a field of the C layout, in declaration order. `JSON.stringify` omits it, but its type must still be a JSON type. `JSON.parse<C>` fails if `C` has a `#x` field. `#x in o`, `o?.#x`, a `#x` member of a `@Descriptor` class, and a static and an instance member with one private name stay rejected.";
+
+const FUNCTION_VALUES: &str = "`C.m`, where `m` is a static method of `C`, is a function value, as a module function is (§207). It can be an argument, a local, or an array element. A generic static method and a static generator method stay rejected as values. A `function` declaration in a function body, a method body, a lambda body, or a block is a local function. Its name is visible in the whole block, so a call before the declaration is legal. It can call itself and the other local functions of its block, and it is a function value. A local function cannot read or write a local, a parameter, `this`, or a type parameter of an enclosing function. The form fails with \"local function `f` reads the local `k` of its enclosing function\". Use a `const` lambda instead. Two local functions with one name in one block fail with S017. A local class, enum, type alias, interface, and namespace stay rejected. An assignment to an instance or static method fails with \"cannot be assigned: a method is a function, not a field\" (§209). A field of a function type is the assignable form.";
 
 const Q34_ASYNC: &str = "Q34/R13/R36/§70/§167/§170 admits `await Context.suspend()`, direct awaits of named async functions and async instance methods, and a held async handle awaited later. A named async function is a function value. A non-capturing async arrow is accepted. Each call returns a started handle. An async expression body follows the named async return rule: a handle body is rejected; use an explicit await (§167 rule 3). An async arrow owns its const captures in a reference environment (§181). Mutable captures and `this` stay rejected. Await accepts a call through a function value in a local, a parameter, a global, a field, or an array element. The named async function and reference class can be generic. Direct calls accept `await f(...)`, `await f<A>(...)`, `await recv.m(...)`, and `await recv.m<A>(...)` (§93). `Promise<T>` is the TypeScript-compatible annotation and storage view of that handle, not a Promise object: constructors and statics other than `Promise.all` do not exist. On a handle, `then(f)`, `then(f, r)`, `catch(r)`, and `finally(f)` create the handle of a compiler-supplied async helper. Their callbacks run in the `node` order, and a direct synchronous callback lambda owns its const captures (§186). A `catch` callback returns the handle value type. Locals, arrays, fields, and globals can hold handles (§70.3 rule 2a). A TaskGroup lives in one const local; a synchronous parameter borrows it. add moves one task count and registers a group reaction at the call. join closes the group and waits for every task, then reports the first failure in reaction order. The scope exit of an unjoined group traps with TaskGroup (33) if unfinished or failed tasks remain. Fields, arrays, results, assignments, and captures cannot hold groups (§170). A generator body cannot use a group: a dropped iterator has no scope exit. Handles can pass to another function. Every created handle must have at least one awaited completion. Copies retain the Context-owned frame, lexical exits release it, and `await` does not change ownership. Under \u{a7}94 an async call runs its callee to that callee's first await or return, and every await suspends its caller, a completed handle included: the await registers a continuation and returns. A completion queues the continuations registered on it, in registration order. Only a host checkpoint runs those continuations, so there is no event loop and no autonomous scheduler. An exception that leaves an async body completes its handle with the Error object, report text, and last throw position (§116.1 rules 1–4). The call returns the handle without raising the exception. An await of that handle raises the same object with the same report text and position. Each later await raises it again without a copy. If no await raises the exception, the last holder's release traps with `TrapKind::UncaughtException` (29), that report text, and that position. An exception that leaves a host-callable async export traps with `TrapKind::UncaughtException` (29), because the export has no script holder (§116.1 rule 5).";
 
-const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-level synchronous function on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, top-level `string` fields, and top-level `FixedArray<string, N>` fields. Delivery copies every string's bytes into a fresh string owned by the receiving `Context`; other reference, growable-array, function, and nullable fields remain non-transferable. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, any `Map`/`Set` type argument, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
+const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named synchronous function, module-level or local, on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, top-level `string` fields, and top-level `FixedArray<string, N>` fields. Delivery copies every string's bytes into a fresh string owned by the receiving `Context`; other reference, growable-array, function, and nullable fields remain non-transferable. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, any `Map`/`Set` type argument, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
 
 const MODULES: &str = "A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.";
 
@@ -134,9 +154,11 @@ const FEATURES: &[Feature] = &[
         prose: UNDEFINED_RESULTS,
         corpus: &[
             "corpus/accept/a373-undefined-result.ts",
+            "corpus/accept/a375-array-pop-shift-undefined.ts",
             "corpus/reject/r424-undefined-strict-null-compare.ts",
             "corpus/reject/r428-undefined-local-annotation.ts",
             "corpus/reject/r435-map-get-nullable-value.ts",
+            "corpus/reject/r439-array-pop-unnarrowed.ts",
         ],
     },
     Feature {
@@ -147,6 +169,17 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r330-generic-inference-conflict.ts",
             "corpus/reject/r331-generic-inference-return-only.ts",
             "corpus/reject/r332-generic-inference-only-null.ts",
+        ],
+    },
+    Feature {
+        title: "Generic construction and contextual inference",
+        prose: GENERIC_CONTEXT_INFERENCE,
+        corpus: &[
+            "corpus/accept/a377-generic-construction-inference.ts",
+            "corpus/accept/a378-generic-construction-nested-context.ts",
+            "corpus/accept/a397-contextual-result-inference.ts",
+            "corpus/reject/r440-generic-constructor-conflicting-candidates.ts",
+            "corpus/reject/r441-generic-constructor-no-candidate.ts",
         ],
     },
     Feature {
@@ -200,8 +233,100 @@ const FEATURES: &[Feature] = &[
         prose: DIVERGENCE_FLOW,
         corpus: &[
             "corpus/accept/a116-exhaustive-switch-returns.ts",
+            "corpus/accept/a383-exhaustive-enum-switch.ts",
             "corpus/reject/r115-unreachable-as-value.ts",
             "corpus/trap/t47-unreachable-reached.ts",
+            "corpus/trap/t112-enum-switch-non-member-value.ts",
+        ],
+    },
+    Feature {
+        title: "Constructor parameter properties",
+        prose: PARAMETER_PROPERTIES,
+        corpus: &[
+            "corpus/accept/a379-constructor-parameter-properties.ts",
+            "corpus/accept/a380-value-class-parameter-properties.ts",
+            "corpus/reject/r442-parameter-property-read-by-field-initializer.ts",
+            "corpus/reject/r443-parameter-property-value-class-instance.ts",
+        ],
+    },
+    Feature {
+        title: "Logical assignment",
+        prose: LOGICAL_ASSIGNMENT,
+        corpus: &[
+            "corpus/accept/a381-logical-assignment.ts",
+            "corpus/accept/a382-logical-assignment-value-projection.ts",
+            "corpus/reject/r444-logical-or-assignment-on-string.ts",
+            "corpus/reject/r445-nullish-assignment-on-non-nullable.ts",
+        ],
+    },
+    Feature {
+        title: "Multi-argument calls",
+        prose: MULTI_ARGUMENT_CALLS,
+        corpus: &[
+            "corpus/accept/a384-multi-argument-calls.ts",
+            "corpus/accept/a385-multi-argument-push-receiver.ts",
+            "corpus/reject/r16-math-variadic-max.ts",
+        ],
+    },
+    Feature {
+        title: "Type aliases",
+        prose: TYPE_ALIASES,
+        corpus: &[
+            "corpus/accept/a386-transparent-type-alias/main.ts",
+            "corpus/accept/a386-transparent-type-alias/lib.ts",
+            "corpus/accept/a387-type-alias-generic-instance.ts",
+            "corpus/reject/r446-type-alias-refers-to-itself.ts",
+            "corpus/reject/r447-type-alias-rejected-annotation.ts",
+        ],
+    },
+    Feature {
+        title: "do…while",
+        prose: DO_WHILE,
+        corpus: &[
+            "corpus/accept/a388-do-while.ts",
+            "corpus/accept/a389-do-while-test-narrows-the-body.ts",
+            "corpus/reject/r448-do-while-continue-skips-assignment.ts",
+        ],
+    },
+    Feature {
+        title: "Erased forms",
+        prose: ERASED_FORMS,
+        corpus: &[
+            "corpus/accept/a390-trivial-erasures.ts",
+            "corpus/reject/r449-satisfies-mismatch.ts",
+            "corpus/reject/r450-template-nested-array.ts",
+        ],
+    },
+    Feature {
+        title: "Interfaces and implements",
+        prose: INTERFACES,
+        corpus: &[
+            "corpus/accept/a394-interface-constraint/main.ts",
+            "corpus/accept/a394-interface-constraint/shapes.ts",
+            "corpus/accept/a395-interface-async-member.ts",
+            "corpus/reject/r451-class-implements.ts",
+            "corpus/reject/r455-interface-value-type.ts",
+            "corpus/reject/r456-class-does-not-implement.ts",
+            "corpus/reject/r457-constraint-needs-implements.ts",
+        ],
+    },
+    Feature {
+        title: "Private names",
+        prose: PRIVATE_NAMES,
+        corpus: &[
+            "corpus/accept/a391-private-names.ts",
+            "corpus/reject/r452-private-name-outside-its-class.ts",
+        ],
+    },
+    Feature {
+        title: "Static method and local function values",
+        prose: FUNCTION_VALUES,
+        corpus: &[
+            "corpus/accept/a392-static-method-and-local-function-values.ts",
+            "corpus/accept/a393-local-function-in-a-class-body.ts",
+            "corpus/reject/r453-local-function-reads-a-local.ts",
+            "corpus/reject/r454-local-function-declared-twice.ts",
+            "corpus/reject/r458-method-assignment.ts",
         ],
     },
     Feature {

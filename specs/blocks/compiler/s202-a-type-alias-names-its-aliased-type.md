@@ -114,5 +114,5 @@ Open:
    for `C | null | null`. The written form `C | null | null` is
    rejected too. `tsc` accepts both. Contrived.
 2. `type V = void;` is rejected. `tsc` accepts it.
-3. `generated-docs/language-reference.md` has no text for a
-   transparent alias.
+3. *(Closed 2026-10-31.)* `generated-docs/language-reference.md` had
+   no text for a transparent alias.
