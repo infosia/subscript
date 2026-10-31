@@ -372,8 +372,8 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | string | `normalize` | S014 | Q21 | `normalize("NFC")` | The form must be omitted or the literal "NFC"; NFD, NFKC, and NFKD are not available. | `r419-normalize-nfd.ts` |
 | string | `match` | S014 | Q31 | — | The match result requires an optional numeric index, but the language requires a definite `i32` index. | `r27-string-match.ts` |
 | string | `matchAll` | S014 | Q31/Q30 | — | It needs a Q30 fusion decision and each iteration step still yields an object. | `r81-regex-match-all.ts` |
-| T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |
-| T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
+| T[] | `find` | S014 | Q22 | `findIndex` | The element type has no `\| null` form, so a miss has no value. | `r30-array-find.ts` |
+| T[] | `findLast` | S014 | Q22 | `findIndex` | The element type has no `\| null` form, so a miss has no value. | — |
 | T[] | `flat` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `flatMap` | S014 | Q22 | — | The callback must return an array. | — |
 | T[] | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |

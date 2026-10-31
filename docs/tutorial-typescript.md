@@ -1494,9 +1494,9 @@ one output for one input.
 
 **A scalar has no miss value.** `find` on a scalar array is rejected,
 because a missing `i32` has nothing to return; `findIndex` returns
-`-1`. On a reference element, `find`, `pop`, and `shift` return
-`T | undefined`. `Map.get` returns `V | undefined` for a reference
-value, and `Map.getOr` takes the fallback for a scalar value. `pop`
+`-1`. On a reference or `string` element, `find`, `pop`, and `shift`
+return `T | undefined`. `Map.get` returns `V | undefined` for a reference
+or `string` value, and `Map.getOr` takes the fallback for a scalar value. `pop`
 and `shift` on an empty scalar array trap. `JSON.parse<T>` returns a `T`
 against a class you declare, not an `any`, and raises `TypeError` when
 the document does not match it.

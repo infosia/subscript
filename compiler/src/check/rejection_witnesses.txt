@@ -34,7 +34,7 @@ export function main(): void {
 }
 ===
 a010.ts	ARRAY_REJECTIONS/T[] / find		S014		
-`find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+`find` is rejected: The element type has no `| null` form, so a miss has no value; use `findIndex` (Q22)
 export function main(): void {
   const xs: i32[] = [3, 1, 2];
   const hit = xs.find((v: i32): boolean => v > 1);
@@ -42,7 +42,7 @@ export function main(): void {
 }
 ===
 a011.ts	ARRAY_REJECTIONS/T[] / findLast		S014		
-`findLast` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+`findLast` is rejected: The element type has no `| null` form, so a miss has no value; use `findIndex` (Q22)
 export function main(): void { const xs: i32[] = [1]; xs.findLast((v: i32): boolean => v > 0); }
 ===
 a012.ts	ARRAY_REJECTIONS/T[] / flat		S014		
@@ -746,11 +746,11 @@ a006-b.ts	REGEX_STRING_REJECTIONS/string / matchAll	TS2345	S014
 export function main(): void { "x".matchAll(1); }
 ===
 a010-b.ts	ARRAY_REJECTIONS/T[] / find	TS2769	S014		
-`find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+`find` is rejected: The element type has no `| null` form, so a miss has no value; use `findIndex` (Q22)
 export function main(): void { const xs: i32[] = [1]; xs.find((v: string): boolean => true); }
 ===
 a011-b.ts	ARRAY_REJECTIONS/T[] / findLast	TS2345	S014		
-`findLast` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)
+`findLast` is rejected: The element type has no `| null` form, so a miss has no value; use `findIndex` (Q22)
 export function main(): void { const xs: i32[] = [1]; xs.findLast((v: string): boolean => true); }
 ===
 a012-b.ts	ARRAY_REJECTIONS/T[] / flat	TS2345	S014		

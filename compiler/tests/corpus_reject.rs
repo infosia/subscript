@@ -168,6 +168,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r460-map-get-counted-array.ts", RuleCode::S014, 14),
     ("r461-nullable-string-template.ts", RuleCode::S100, 8),
     ("r462-write-through-value-temporary.ts", RuleCode::S100, 46),
+    ("r463-string-pop-needs-a-test.ts", RuleCode::S011, 10),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

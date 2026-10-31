@@ -550,7 +550,8 @@ Added by Q27 (2026-07-25):
   which the language does not have; this is a recorded subset, not
   parity
 - `shift(): T` — **traps when empty**, exactly as `pop` already does
-  (Q4/Q15), so JS's `undefined` never has to be represented.
+  (Q4/Q15), so JS's `undefined` never has to be represented. *(§196 and
+  §219: a reference or `string` element gives `T | undefined`.)*
   *(Amended 2026-10-27 by `compiler.md` §196: on a reference element,
   `pop()` and `shift()` give `T | undefined` and do not trap.)*
 - `unshift(x: T): i32` — **one element**, matching `push`; returns the
@@ -568,7 +569,8 @@ Added by Q27 (2026-07-25):
 Rejected (S014, Q22/Q27): no-argument `sort`, no-init `reduce`
 (each changes meaning with arity); `find`/`findLast` on a **scalar**
 `T[]` (a scalar has no miss value — `T | null` does not cover scalars;
-use `findIndex`; a reference-class `T` is accepted by §9.10); `flat`
+use `findIndex`; a reference-class `T` is accepted by §9.10, and a
+`string` by `compiler.md` §219); `flat`
 (the depth appears in the result type, so a runtime depth cannot be
 typed — undecided rather than refused, `js-api-sweep.md`; `flatMap`,
 whose depth is always 1, is accepted by §9.10); `entries` (no tuple type);
@@ -833,7 +835,8 @@ earlier text saying so was wrong.
 ### 10.5 The miss problem — `get` on a scalar value type
 
 `get` must report "absent". For a reference-class `V`, `V | null`
-carries it (C7). For a **scalar** `V` there is no miss value — the
+carries it (C7), and `string` takes the same form (`compiler.md` §219).
+For a **scalar** `V` there is no miss value — the
 same problem Q22 solved by rejecting `find` in favour of `findIndex`.
 Rule: `get` returns `V | undefined` **only where `V` is a
 nullable-capable type**: a type whose `| null` form shares its

@@ -235,7 +235,7 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         "find",
         "Q22",
         Some("findIndex"),
-        "A scalar element type has no miss value.",
+        "The element type has no `| null` form, so a miss has no value.",
         Some("r30-array-find.ts"),
     ),
     rejection(
@@ -247,7 +247,7 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         "findLast",
         "Q22",
         Some("findIndex"),
-        "A scalar element type has no miss value.",
+        "The element type has no `| null` form, so a miss has no value.",
         None,
     ),
     rejection(

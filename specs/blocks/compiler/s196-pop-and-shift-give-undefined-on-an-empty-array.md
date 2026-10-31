@@ -54,7 +54,7 @@ pointer of `T | null`.
 4. The traps of `pop` and `shift` on an empty array of a scalar, a
    value class, and `string` stay. The divergence witnesses
    `q4-empty-array-pop` and `q27-empty-array-shift` keep their scalar
-   programs. A unit test pins the value-class and `string` cases.
+   programs. A unit test pins the value-class case. *(§219 moves `string`.)*
 5. A unit test shows that a discarded `pop()` and `shift()` on a
    reference element give the `t87` and `t88` results.
 6. The API reference rows of `pop` and `shift` state rules 1 and 2.

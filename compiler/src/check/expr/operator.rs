@@ -1358,13 +1358,18 @@ impl<'p> Checker<'p> {
                         || matches!(lt, Type::Bool | Type::Str | Type::Enum(_))
                         || matches!(lt, Type::StringAlias(_))
                         || self.is_reference_class(&lt));
+                // §219.1 rule 4: a `C | null` compares with a `C` by identity.
+                let nullable_and_value = matches!(&lt, Type::Nullable(inner, _)
+                        if self.apparent_type(inner) == rt && self.is_reference_class(&rt))
+                    || matches!(&rt, Type::Nullable(inner, _)
+                        if self.apparent_type(inner) == lt && self.is_reference_class(&lt));
                 (
                     hop,
                     Type::Bool,
                     if parameter {
                         related_parameter
                     } else {
-                        null_cmp || same_scalar || content
+                        null_cmp || same_scalar || content || nullable_and_value
                     },
                 )
             }

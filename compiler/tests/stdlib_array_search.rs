@@ -9,7 +9,7 @@ fn scalar_searches_keep_the_find_index_diagnostic() {
         let diagnostics = check_program(&[SourceFile::new("test.ts", source)]).unwrap_err();
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, RuleCode::S014);
-        assert_eq!(diagnostics[0].message, format!("`{method}` is rejected: A scalar element type has no miss value; use `findIndex` (Q22)"));
+        assert_eq!(diagnostics[0].message, format!("`{method}` is rejected: The element type has no `| null` form, so a miss has no value; use `findIndex` (Q22)"));
     }
 }
 

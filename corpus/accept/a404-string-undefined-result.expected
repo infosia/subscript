@@ -1,0 +1,41 @@
+false
+apple
+true
+apple
+none
+bee
+bat
+none
+none
+true
+three
+one
+3
+empty pop
+empty shift
+true true
+-1
+0
+left 3
+right 3
+same 3
+same loose 3
+equal loose 3
+differs
+differs loose
+differs
+differs loose
+2 -1 -1
+1 0 0
+left 7
+right 7
+same 7
+loose 7
+other node
+other node
+4 -1
+field 7
+global 6
+4
+3
+5 true

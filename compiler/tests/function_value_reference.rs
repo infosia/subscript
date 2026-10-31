@@ -15,7 +15,6 @@ fn map_get_reasons_distinguish_scalars_from_non_nullable_types() {
         ("boolean", scalar),
         ("E", scalar),
         ("Label", scalar),
-        ("string", representation),
         ("Date", representation),
         ("RegExp", representation),
         ("Generator<i32>", representation),

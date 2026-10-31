@@ -38,20 +38,7 @@ impl Checker<'_> {
                 }
             };
             let mut first = pick(self.narrowing_paths(left, fx));
-            if !first.is_empty() {
-                let effects = right.narrowing_effects(
-                    self.narrowing_classes(),
-                    self.narrowing_helpers(),
-                    self.narrowing_globals(),
-                );
-                first.retain(|key| {
-                    let (shared, local) = path_kills(key, &effects);
-                    if shared && !local {
-                        fx.ended_shared_narrowing.insert_fact(key.clone());
-                    }
-                    !shared && !local
-                });
-            }
+            self.end_facts_at(&mut first, right, fx);
             first.extend(pick(self.narrowing_paths(right, fx)));
             if and {
                 (first, Vec::new())
@@ -59,8 +46,43 @@ impl Checker<'_> {
                 (Vec::new(), first)
             }
         } else {
-            leaf_paths(cond, |ty| self.apparent_type(ty), self.narrowing_classes())
+            let (mut yes, mut no) =
+                leaf_paths(cond, |ty| self.apparent_type(ty), self.narrowing_classes());
+            if let hir::ExprKind::Binary { left, right, .. } = &cond.kind {
+                // The read of the left operand comes before the right operand
+                // runs, so a kill there ends the fact (compiler.md §219.1 rule 4).
+                let read = path_key(assignment_target(left));
+                if yes
+                    .iter()
+                    .chain(&no)
+                    .all(|fact| Some(&fact.key) == read.as_ref())
+                {
+                    self.end_facts_at(&mut yes, right, fx);
+                    self.end_facts_at(&mut no, right, fx);
+                }
+            }
+            (yes, no)
         }
+    }
+
+    /// Removes each fact of `facts` that a kill in `later` ends. The later
+    /// expression runs after the facts are true (compiler.md §124).
+    fn end_facts_at(&self, facts: &mut Vec<NarrowingFact>, later: &hir::Expr, fx: &mut FnCtx) {
+        if facts.is_empty() {
+            return;
+        }
+        let effects = later.narrowing_effects(
+            self.narrowing_classes(),
+            self.narrowing_helpers(),
+            self.narrowing_globals(),
+        );
+        facts.retain(|key| {
+            let (shared, local) = path_kills(key, &effects);
+            if shared && !local {
+                fx.ended_shared_narrowing.insert_fact(key.clone());
+            }
+            !shared && !local
+        });
     }
 
     pub(super) fn end_shared_narrowing(&self, expression: &hir::Expr, fx: &mut FnCtx) {
@@ -542,6 +564,32 @@ fn loop_path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (boo
     (shared_kill, local_kill)
 }
 
+/// The location that a condition operand tests: the target of an assignment
+/// expression, else the operand (compiler.md §159 rule 1a).
+fn assignment_target(operand: &hir::Expr) -> &hir::Expr {
+    match &operand.kind {
+        ExprKind::Assign {
+            op: None, target, ..
+        } => target,
+        _ => operand,
+    }
+}
+
+/// True when a value of type `ty` is never absent. A type parameter with no
+/// constraint can be a nullable type, and the poison type states nothing, so
+/// neither counts (compiler.md §219.1 rule 4).
+fn has_no_absence(ty: &Type, apparent_type: &impl Fn(&Type) -> Type) -> bool {
+    match apparent_type(ty) {
+        Type::Null | Type::Nullable(_, _) | Type::TypeParameter(_) | Type::Error | Type::Void => {
+            false
+        }
+        Type::GenericUnion(members) => members
+            .iter()
+            .all(|member| has_no_absence(member, apparent_type)),
+        _ => true,
+    }
+}
+
 /// Narrowing facts derived from a checked leaf condition: paths known
 /// non-null or known present when the condition is true / false.
 /// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
@@ -611,39 +659,52 @@ pub(super) fn leaf_paths(
         return (Vec::new(), Vec::new());
     }
     if let ExprKind::Binary { op, left, right } = &cond.kind {
+        // The fact of `operand` when `operand` can be absent.
+        let nullable_fact = |operand: &hir::Expr| {
+            let target = assignment_target(operand);
+            let compared_type = if matches!(target.kind, ExprKind::Index { .. }) {
+                &target.ty
+            } else {
+                &operand.ty
+            };
+            matches!(apparent_type(compared_type), Type::Nullable(_, _))
+                .then(|| fact(target))
+                .flatten()
+        };
+        let equal = matches!(op, BinOp::Eq | BinOp::StrEq);
         match op {
-            BinOp::Eq | BinOp::Ne => {
-                let (null_side, other) = if matches!(left.kind, ExprKind::Null) {
-                    (Some(()), right)
+            BinOp::Eq | BinOp::Ne | BinOp::StrEq | BinOp::StrNe => {
+                let null_test = if matches!(left.kind, ExprKind::Null) {
+                    Some(right)
                 } else if matches!(right.kind, ExprKind::Null) {
-                    (Some(()), left)
+                    Some(left)
                 } else {
-                    (None, left)
+                    None
                 };
-                let target = match &other.kind {
-                    ExprKind::Assign {
-                        op: None, target, ..
-                    } => target.as_ref(),
-                    _ => other,
-                };
-                let compared_type = if matches!(target.kind, ExprKind::Index { .. }) {
-                    &target.ty
-                } else {
-                    &other.ty
-                };
-                if null_side.is_some()
-                    && matches!(apparent_type(compared_type), Type::Nullable(_, _))
-                {
-                    if let Some(key) = fact(target) {
-                        return match op {
-                            // `p === null` → p is non-null when false.
-                            BinOp::Eq => (Vec::new(), vec![key]),
-                            // `p !== null` → p is non-null when true.
-                            _ => (vec![key], Vec::new()),
-                        };
-                    }
+                if let Some(tested) = null_test {
+                    return match nullable_fact(tested) {
+                        // `p === null` → p is non-null when false.
+                        Some(key) if equal => (Vec::new(), vec![key]),
+                        // `p !== null` → p is non-null when true.
+                        Some(key) => (vec![key], Vec::new()),
+                        None => (Vec::new(), Vec::new()),
+                    };
                 }
-                (Vec::new(), Vec::new())
+                // §219.1 rule 4: equality with a value that has no absence
+                // shows that the other operand is present.
+                let present = |value: &hir::Expr| has_no_absence(&value.ty, &apparent_type);
+                let tested = if present(right) {
+                    nullable_fact(left)
+                } else if present(left) {
+                    nullable_fact(right)
+                } else {
+                    None
+                };
+                match tested {
+                    Some(key) if equal => (vec![key], Vec::new()),
+                    Some(key) => (Vec::new(), vec![key]),
+                    None => (Vec::new(), Vec::new()),
+                }
             }
             _ => (Vec::new(), Vec::new()),
         }

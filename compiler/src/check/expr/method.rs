@@ -1031,6 +1031,7 @@ impl<'p> Checker<'p> {
                     | HandleKind::Set
                     | HandleKind::Func
                     | HandleKind::Array
+                    | HandleKind::Str
             )
         )
     }

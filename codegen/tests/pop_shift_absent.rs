@@ -63,12 +63,12 @@ export function main(): void {
     assert_eq!(run_c_aot(&files).expect("ship C"), expected);
 }
 
-/// A value-class element and a `string` element keep the empty trap.
+/// A value-class element keeps the empty trap.
 ///
-/// Cost: one C compile for the value-class `pop`; the other three cases
-/// run the interpreter and the dev JIT only.
+/// Cost: one C compile for `pop`; `shift` runs the interpreter and the dev
+/// JIT only.
 #[test]
-fn value_class_and_string_elements_keep_the_empty_trap() {
+fn value_class_elements_keep_the_empty_trap() {
     for (element, declaration, member, ship) in [
         (
             "Point",
@@ -82,8 +82,6 @@ fn value_class_and_string_elements_keep_the_empty_trap() {
             "shift",
             false,
         ),
-        ("string", "", "pop", false),
-        ("string", "", "shift", false),
     ] {
         let source = format!(
             "{declaration}export function main(): void {{\n  const xs: {element}[] = [];\n  const r: {element} = xs.{member}();\n}}\n"
