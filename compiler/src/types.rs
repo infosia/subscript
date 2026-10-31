@@ -196,7 +196,7 @@ impl HandleKind {
 
 /// The identity, source name, and constraint of a type parameter (§143).
 /// The boxed payload preserves the interpreter value layout.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct TypeParameterType {
     /// The identity of the parameter in the opaque check.
@@ -209,7 +209,7 @@ pub struct TypeParameterType {
 
 /// The identity and source name of a type-only interface (compiler.md
 /// §208). The type is the constraint of a type parameter only.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct InterfaceType {
     /// The index of the interface in the checker.
@@ -235,7 +235,7 @@ pub enum Absence {
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
 /// classes are different types); `Nullable` and named string-literal
 /// aliases are the only union forms (`Ref | null`, C7/Q32).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Type {
     /// 8-bit signed integer.
@@ -653,7 +653,7 @@ pub enum IterKind {
 }
 
 /// Parameter and return types of a function type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FuncType {
     /// Parameter types, in order.
     pub params: Vec<Type>,

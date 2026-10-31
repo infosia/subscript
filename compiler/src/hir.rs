@@ -1453,6 +1453,31 @@ impl Callee {
     }
 }
 
+/// The effect of an operation on the elements of a dynamic array
+/// (compiler.md §221.1 rule 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ElementMove {
+    /// The array has more elements, and each index keeps its element.
+    Growth,
+    /// A removal, a permutation, or a prepend: an index stops naming its element.
+    Rearrangement,
+}
+
+impl BuiltinMethod {
+    /// The source spelling and the effect of a built-in method that can change
+    /// the storage or the position of an array element (compiler.md §221.1
+    /// rule 2).
+    #[must_use]
+    pub fn element_move(self) -> Option<(&'static str, ElementMove)> {
+        match self {
+            Self::ArrayPush => Some(("push", ElementMove::Growth)),
+            Self::ArrayClear => Some(("length = 0", ElementMove::Rearrangement)),
+            Self::ArrayPop | Self::StringSlice | Self::GeneratorNext => None,
+        }
+    }
+}
+
 /// Returns the operation-table target and receiver type for a callee.
 ///
 /// The receiver is present only when the operation uses method syntax and

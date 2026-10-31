@@ -12,6 +12,9 @@ mod assignment_flow;
 #[cfg(test)]
 mod assignment_narrowing;
 pub(crate) mod diagnostic_text;
+mod element_receiver;
+#[cfg(test)]
+mod element_receiver_tests;
 mod file_module;
 mod host_entries;
 mod identity;

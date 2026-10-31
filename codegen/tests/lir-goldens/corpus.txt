@@ -54722,6 +54722,618 @@ fn f9 "<lambda a410-reduce-seed-await.ts:30:26>" kind=Lambda exported=false gene
     %4: Data(I32) = Binary(Add)(%3, %1) @ a410-reduce-seed-await.ts:30:59
     %5: Data(I32) = Binary(Add)(%4, %2) @ a410-reduce-seed-await.ts:30:59
     -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a410-reduce-seed-await.ts", line: 30, col: 59 } }
+===== a415-for-of-value-element-copy =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "V" value=true descriptor=false boundary=false align=None @ a415-for-of-value-element-copy.ts:8:7
+  field d3 "a": I32 defaulted=false absence=false foreign=None @ a415-for-of-value-element-copy.ts:9:3
+  field d4 "b": I32 defaulted=false absence=false foreign=None @ a415-for-of-value-element-copy.ts:10:3
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "values" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a415-for-of-value-element-copy.ts:13:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 13, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(2)): []
+  param %0 "all": Data(Array(Class(ClassId(1)))) kind=Explicit storage=None @ a415-for-of-value-element-copy.ts:13:18
+  value %0: Data(Array(Class(ClassId(1)))) name=Some("all")
+  value %1: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Array(Class(ClassId(1)))) name=None
+  value %4: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Array(Class(ClassId(1)))) name=None
+  value %8: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Array(Class(ClassId(1)))) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(Class(ClassId(1))) name=None
+  value %14: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(3)) }) name=None
+  value %15: Address(AddressType { pointee: I32, array_base: Some(ValueId(3)) }) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Array(Class(ClassId(1)))) name=None
+  value %18: Data(Class(ClassId(1))) name=None
+  value %19: Data(Bool) name=None
+  value %20: Data(Array(Class(ClassId(1)))) name=None
+  value %21: Data(Class(ClassId(1))) name=None
+  value %22: Data(Array(Class(ClassId(1)))) name=None
+  value %23: Data(Class(ClassId(1))) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 14, col: 19 } }] @ a415-for-of-value-element-copy.ts:14:3
+    %2: Data(I32) = IteratorBound(%1) @ a415-for-of-value-element-copy.ts:14:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(2))], ownership: [false, false, false, false] })
+  b1(%3: Data(Array(Class(ClassId(1)))), %4: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %5: Data(I32), %6: Data(I32)) Some("for-of.cond"):
+    %12: Data(Bool) = IteratorHasNext(%4, %5, %6) @ a415-for-of-value-element-copy.ts:14:3
+    -> ConditionalBranch { condition: Value(ValueId(12)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(3))], ownership: [false] } }
+  b2 Some("for-of.body"):
+    %13: Data(Class(ClassId(1))) = IteratorValue(%4, %5, %6) @ a415-for-of-value-element-copy.ts:14:3
+    %14: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(3)) }) = AddressOfIndex { checked: true }(%3, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 15, col: 5 } }, Trap { kind: IndexRead, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 15, col: 5 } }] @ a415-for-of-value-element-copy.ts:15:12
+    %15: Address(AddressType { pointee: I32, array_base: Some(ValueId(3)) }) = AddressOfField(Class(FieldId(4)))(%14) @ a415-for-of-value-element-copy.ts:15:12
+    StoreAddress(%15, Integer(40):I32) @ a415-for-of-value-element-copy.ts:15:12
+    %16: Data(I32) = LoadField(Class(FieldId(4)))(%13) @ a415-for-of-value-element-copy.ts:16:13
+    -> Suspend { kind: Yield(Some(ValueId(16))), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 16, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(3)), Value(ValueId(13))], ownership: [false, false], invalidates: [], traps: [] }
+  b3(%7: Data(Array(Class(ClassId(1)))), %8: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %9: Data(I32), %10: Data(I32)) Some("for-of.step"):
+    -> Unreachable { pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 13, col: 11 } }
+  b4(%11: Data(Array(Class(ClassId(1))))) Some("for-of.exit"):
+    -> Return { value: None, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 13, col: 11 } }
+  b5(%17: Data(Array(Class(ClassId(1)))), %18: Data(Class(ClassId(1)))) Some("yield.resume"):
+    %19: Data(Bool) = GeneratorIsClosing() @ a415-for-of-value-element-copy.ts:16:5
+    -> ConditionalBranch { condition: Value(ValueId(19)), then_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(17)), Value(ValueId(18))], ownership: [false, false] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(17)), Value(ValueId(18))], ownership: [false, false] } }
+  b6(%20: Data(Array(Class(ClassId(1)))), %21: Data(Class(ClassId(1)))) Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 16, col: 5 } }
+  b7(%22: Data(Array(Class(ClassId(1)))), %23: Data(Class(ClassId(1)))) Some("generator.next"):
+    %24: Data(I32) = LoadField(Class(FieldId(4)))(%23) @ a415-for-of-value-element-copy.ts:17:28
+    %25: Data(Str) = Template([Text("after-yield "), Operand { index: 0, format: I32 }])(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 17, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 17, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 17, col: 11 } }] @ a415-for-of-value-element-copy.ts:17:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%25) invalidates=[ValueId(0), ValueId(3), ValueId(7), ValueId(11), ValueId(17), ValueId(20), ValueId(22)] @ a415-for-of-value-element-copy.ts:17:5
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(22))], ownership: [false] })
+fn f2 "late" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a415-for-of-value-element-copy.ts:22:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 22, col: 16 } }]
+  param %0 "all": Data(Array(Class(ClassId(1)))) kind=Explicit storage=None @ a415-for-of-value-element-copy.ts:22:21
+  value %0: Data(Array(Class(ClassId(1)))) name=Some("all")
+  value %1: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Array(Class(ClassId(1)))) name=None
+  value %4: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Array(Class(ClassId(1)))) name=None
+  value %8: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Array(Class(ClassId(1)))) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(Class(ClassId(1))) name=None
+  value %14: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(3)) }) name=None
+  value %15: Address(AddressType { pointee: I32, array_base: Some(ValueId(3)) }) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Array(Class(ClassId(1)))) name=None
+  value %19: Data(Class(ClassId(1))) name=None
+  b0 Some("entry"):
+    %1: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 23, col: 19 } }] @ a415-for-of-value-element-copy.ts:23:3
+    %2: Data(I32) = IteratorBound(%1) @ a415-for-of-value-element-copy.ts:23:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(2))], ownership: [false, false, false, false] })
+  b1(%3: Data(Array(Class(ClassId(1)))), %4: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %5: Data(I32), %6: Data(I32)) Some("for-of.cond"):
+    %12: Data(Bool) = IteratorHasNext(%4, %5, %6) @ a415-for-of-value-element-copy.ts:23:3
+    -> ConditionalBranch { condition: Value(ValueId(12)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(3))], ownership: [false] } }
+  b2 Some("for-of.body"):
+    %13: Data(Class(ClassId(1))) = IteratorValue(%4, %5, %6) @ a415-for-of-value-element-copy.ts:23:3
+    %14: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(3)) }) = AddressOfIndex { checked: true }(%3, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 24, col: 5 } }, Trap { kind: IndexRead, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 24, col: 5 } }] @ a415-for-of-value-element-copy.ts:24:12
+    %15: Address(AddressType { pointee: I32, array_base: Some(ValueId(3)) }) = AddressOfField(Class(FieldId(4)))(%14) @ a415-for-of-value-element-copy.ts:24:12
+    StoreAddress(%15, Integer(50):I32) @ a415-for-of-value-element-copy.ts:24:12
+    -> Suspend { kind: Async, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 25, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(3)), Value(ValueId(13))], ownership: [false, false], invalidates: [ValueId(0), ValueId(3), ValueId(7), ValueId(11)], traps: [] }
+  b3(%7: Data(Array(Class(ClassId(1)))), %8: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %9: Data(I32), %10: Data(I32)) Some("for-of.step"):
+    -> Unreachable { pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 22, col: 16 } }
+  b4(%11: Data(Array(Class(ClassId(1))))) Some("for-of.exit"):
+    -> Return { value: None, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 22, col: 16 } }
+  b5(%18: Data(Array(Class(ClassId(1)))), %19: Data(Class(ClassId(1)))) Some("async.resume"):
+    %16: Data(I32) = LoadField(Class(FieldId(4)))(%19) @ a415-for-of-value-element-copy.ts:26:30
+    %17: Data(Str) = Template([Text("after-suspend "), Operand { index: 0, format: I32 }])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 26, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 26, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 26, col: 11 } }] @ a415-for-of-value-element-copy.ts:26:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) invalidates=[ValueId(0), ValueId(18), ValueId(7), ValueId(11)] @ a415-for-of-value-element-copy.ts:26:5
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(18))], ownership: [false] })
+fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a415-for-of-value-element-copy.ts:31:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }]
+  value %0: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %3: Data(Class(ClassId(1))) name=None
+  value %4: Data(Array(Class(ClassId(1)))) name=None
+  value %5: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %6: Data(I32) name=None
+  value %7: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Bool) name=None
+  value %14: Data(Class(ClassId(1))) name=None
+  value %15: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(4)) }) name=None
+  value %16: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Str) name=None
+  value %19: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %20: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %21: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %22: Data(Class(ClassId(1))) name=None
+  value %23: Data(Array(Class(ClassId(1)))) name=None
+  value %24: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %25: Data(I32) name=None
+  value %26: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(I32) name=None
+  value %29: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Bool) name=None
+  value %33: Data(Class(ClassId(1))) name=None
+  value %34: Data(Class(ClassId(1))) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(Class(ClassId(1))) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(Class(ClassId(1))) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Bool) name=None
+  value %41: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %42: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %43: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %44: Data(Class(ClassId(1))) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(I32) name=None
+  value %47: Data(I32) name=None
+  value %48: Data(Str) name=None
+  value %49: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %50: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %51: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %52: Data(Class(ClassId(1))) name=None
+  value %53: Data(Array(Class(ClassId(1)))) name=None
+  value %54: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %55: Data(I32) name=None
+  value %56: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(I32) name=None
+  value %59: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %60: Data(I32) name=None
+  value %61: Data(I32) name=None
+  value %62: Data(Bool) name=None
+  value %63: Data(Class(ClassId(1))) name=None
+  value %64: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(53)) }) name=None
+  value %65: Address(AddressType { pointee: I32, array_base: Some(ValueId(53)) }) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(I32) name=None
+  value %68: Data(Str) name=None
+  value %69: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %70: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %71: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %72: Data(Class(ClassId(1))) name=None
+  value %73: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %74: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %75: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %76: Data(Class(ClassId(1))) name=None
+  value %77: Data(Array(Class(ClassId(1)))) name=None
+  value %78: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %79: Data(I32) name=None
+  value %80: Data(I32) name=None
+  value %81: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %82: Data(I32) name=None
+  value %83: Data(I32) name=None
+  value %84: Data(I32) name=None
+  value %85: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %86: Data(I32) name=None
+  value %87: Data(I32) name=None
+  value %88: Data(I32) name=None
+  value %89: Data(Bool) name=None
+  value %90: Data(Class(ClassId(1))) name=None
+  value %91: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(77)) }) name=None
+  value %92: Address(AddressType { pointee: I32, array_base: Some(ValueId(77)) }) name=None
+  value %93: Data(I32) name=None
+  value %94: Data(I32) name=None
+  value %95: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) name=None
+  value %96: Data(I32) name=None
+  value %97: Data(Str) name=None
+  value %98: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %99: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %100: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %101: Data(Class(ClassId(1))) name=None
+  value %102: Data(Array(Class(ClassId(1)))) name=None
+  value %103: Data(Generator(I32)) name=None
+  value %104: Data(IterResult(I32)) name=None
+  value %105: Data(I32) name=None
+  value %106: Data(Str) name=None
+  value %107: Data(IterResult(I32)) name=None
+  value %108: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) name=None
+  value %109: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %110: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %111: Data(Class(ClassId(1))) name=None
+  value %112: Data(Array(Class(ClassId(1)))) name=None
+  value %113: Data(Generator(I32)) name=None
+  b0 Some("entry"):
+    %0: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:32:21
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%1, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%2, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %3: Data(Class(ClassId(1))) = LoadAddress(%0) @ a415-for-of-value-element-copy.ts:32:21
+    %4: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 32, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 32, col: 21 } }] @ a415-for-of-value-element-copy.ts:32:20
+    %5: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 33, col: 19 } }] @ a415-for-of-value-element-copy.ts:33:3
+    %6: Data(I32) = IteratorBound(%5) @ a415-for-of-value-element-copy.ts:33:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(6))], ownership: [false, false, false] })
+  b1(%7: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %8: Data(I32), %9: Data(I32)) Some("for-of.cond"):
+    %13: Data(Bool) = IteratorHasNext(%7, %8, %9) @ a415-for-of-value-element-copy.ts:33:3
+    -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] } }
+  b2 Some("for-of.body"):
+    %14: Data(Class(ClassId(1))) = IteratorValue(%7, %8, %9) @ a415-for-of-value-element-copy.ts:33:3
+    %15: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(4)) }) = AddressOfIndex { checked: true }(%4, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 34, col: 5 } }, Trap { kind: IndexRead, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 34, col: 5 } }] @ a415-for-of-value-element-copy.ts:34:12
+    %16: Address(AddressType { pointee: I32, array_base: Some(ValueId(4)) }) = AddressOfField(Class(FieldId(4)))(%15) @ a415-for-of-value-element-copy.ts:34:12
+    StoreAddress(%16, Integer(9):I32) @ a415-for-of-value-element-copy.ts:34:12
+    %17: Data(I32) = LoadField(Class(FieldId(4)))(%14) @ a415-for-of-value-element-copy.ts:35:22
+    %18: Data(Str) = Template([Text("write "), Operand { index: 0, format: I32 }])(%17) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 35, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 35, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 35, col: 11 } }] @ a415-for-of-value-element-copy.ts:35:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) invalidates=[ValueId(4)] @ a415-for-of-value-element-copy.ts:35:5
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [], ownership: [] })
+  b3(%10: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %11: Data(I32), %12: Data(I32)) Some("for-of.step"):
+    -> Unreachable { pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }
+  b4 Some("for-of.exit"):
+    %19: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:39:23
+    %20: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%19) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%20, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %21: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%19) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%21, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %22: Data(Class(ClassId(1))) = LoadAddress(%19) @ a415-for-of-value-element-copy.ts:39:23
+    %23: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%22) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 39, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 39, col: 23 } }] @ a415-for-of-value-element-copy.ts:39:22
+    %24: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%23) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 40, col: 19 } }] @ a415-for-of-value-element-copy.ts:40:3
+    %25: Data(I32) = IteratorBound(%24) @ a415-for-of-value-element-copy.ts:40:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(24)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(25))], ownership: [false, false, false] })
+  b5(%26: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %27: Data(I32), %28: Data(I32)) Some("for-of.cond"):
+    %32: Data(Bool) = IteratorHasNext(%26, %27, %28) @ a415-for-of-value-element-copy.ts:40:3
+    -> ConditionalBranch { condition: Value(ValueId(32)), then_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b6 Some("for-of.body"):
+    %33: Data(Class(ClassId(1))) = IteratorValue(%26, %27, %28) @ a415-for-of-value-element-copy.ts:40:3
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(33)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false] })
+  b7(%29: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %30: Data(I32), %31: Data(I32)) Some("for-of.step"):
+    -> Unreachable { pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }
+  b8 Some("for-of.exit"):
+    %49: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:48:22
+    %50: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%49) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%50, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %51: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%49) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%51, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %52: Data(Class(ClassId(1))) = LoadAddress(%49) @ a415-for-of-value-element-copy.ts:48:22
+    %53: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%52) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 48, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 48, col: 22 } }] @ a415-for-of-value-element-copy.ts:48:21
+    %54: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%53) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 49, col: 19 } }] @ a415-for-of-value-element-copy.ts:49:3
+    %55: Data(I32) = IteratorBound(%54) @ a415-for-of-value-element-copy.ts:49:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(54)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(55))], ownership: [false, false, false] })
+  b9(%34: Data(Class(ClassId(1))), %35: Data(I32)) Some("for.cond"):
+    %40: Data(Bool) = Binary(Lt)(%35, Integer(5000):I32) @ a415-for-of-value-element-copy.ts:41:26
+    -> ConditionalBranch { condition: Value(ValueId(40)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(12), arguments: [Value(ValueId(34)), Value(ValueId(35))], ownership: [false, false] } }
+  b10 Some("for.body"):
+    %41: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:42:18
+    %42: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%41) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%42, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %43: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%41) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%43, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %44: Data(Class(ClassId(1))) = LoadAddress(%41) @ a415-for-of-value-element-copy.ts:42:18
+    %45: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Class(ClassId(1)))), Data(Class(ClassId(1)))], return_type: Some(Data(I32)) })(%23, %44) invalidates=[ValueId(4), ValueId(23)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 42, col: 7 } }, Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 42, col: 7 } }] @ a415-for-of-value-element-copy.ts:42:7
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [Value(ValueId(34)), Value(ValueId(35))], ownership: [false, false] })
+  b11(%36: Data(Class(ClassId(1))), %37: Data(I32)) Some("for.step"):
+    %46: Data(I32) = Binary(Add)(%37, Integer(1):I32) @ a415-for-of-value-element-copy.ts:41:40
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(36)), Value(ValueId(46))], ownership: [false, false] })
+  b12(%38: Data(Class(ClassId(1))), %39: Data(I32)) Some("for.exit"):
+    %47: Data(I32) = LoadField(Class(FieldId(4)))(%38) @ a415-for-of-value-element-copy.ts:44:21
+    %48: Data(Str) = Template([Text("grow "), Operand { index: 0, format: I32 }])(%47) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 44, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 44, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 44, col: 11 } }] @ a415-for-of-value-element-copy.ts:44:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%48) invalidates=[ValueId(4), ValueId(23)] @ a415-for-of-value-element-copy.ts:44:5
+    -> Branch(BlockTarget { block: BlockId(8), arguments: [], ownership: [] })
+  b13(%56: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %57: Data(I32), %58: Data(I32)) Some("for-of.cond"):
+    %62: Data(Bool) = IteratorHasNext(%56, %57, %58) @ a415-for-of-value-element-copy.ts:49:3
+    -> ConditionalBranch { condition: Value(ValueId(62)), then_target: BlockTarget { block: BlockId(14), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(16), arguments: [], ownership: [] } }
+  b14 Some("for-of.body"):
+    %63: Data(Class(ClassId(1))) = IteratorValue(%56, %57, %58) @ a415-for-of-value-element-copy.ts:49:3
+    %64: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(53)) }) = AddressOfIndex { checked: true }(%53, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 51, col: 5 } }, Trap { kind: IndexRead, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 51, col: 5 } }] @ a415-for-of-value-element-copy.ts:51:13
+    %65: Address(AddressType { pointee: I32, array_base: Some(ValueId(53)) }) = AddressOfField(Class(FieldId(4)))(%64) @ a415-for-of-value-element-copy.ts:51:13
+    StoreAddress(%65, Integer(7):I32) @ a415-for-of-value-element-copy.ts:51:13
+    %66: Data(I32) = LoadField(Class(FieldId(4)))(%63) @ a415-for-of-value-element-copy.ts:52:22
+    %67: Data(I32) = LoadField(Class(FieldId(4)))(%63) @ a415-for-of-value-element-copy.ts:52:29
+    %68: Data(Str) = Template([Text("const "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%66, %67) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 52, col: 11 } }] @ a415-for-of-value-element-copy.ts:52:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%68) invalidates=[ValueId(4), ValueId(23), ValueId(53)] @ a415-for-of-value-element-copy.ts:52:5
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [], ownership: [] })
+  b15(%59: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %60: Data(I32), %61: Data(I32)) Some("for-of.step"):
+    -> Unreachable { pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }
+  b16 Some("for-of.exit"):
+    %69: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:56:22
+    %70: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%69) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%70, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %71: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%69) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%71, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %72: Data(Class(ClassId(1))) = LoadAddress(%69) @ a415-for-of-value-element-copy.ts:56:22
+    %73: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:56:31
+    %74: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%73) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%74, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %75: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%73) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%75, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %76: Data(Class(ClassId(1))) = LoadAddress(%73) @ a415-for-of-value-element-copy.ts:56:31
+    %77: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%72, %76) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 56, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 56, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 56, col: 31 } }] @ a415-for-of-value-element-copy.ts:56:21
+    %78: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%77) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 58, col: 19 } }] @ a415-for-of-value-element-copy.ts:58:3
+    %79: Data(I32) = IteratorBound(%78) @ a415-for-of-value-element-copy.ts:58:3
+    -> Branch(BlockTarget { block: BlockId(17), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(78)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(79))], ownership: [false, false, false, false] })
+  b17(%80: Data(I32), %81: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %82: Data(I32), %83: Data(I32)) Some("for-of.cond"):
+    %89: Data(Bool) = IteratorHasNext(%81, %82, %83) @ a415-for-of-value-element-copy.ts:58:3
+    -> ConditionalBranch { condition: Value(ValueId(89)), then_target: BlockTarget { block: BlockId(18), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(20), arguments: [Value(ValueId(80))], ownership: [false] } }
+  b18 Some("for-of.body"):
+    %90: Data(Class(ClassId(1))) = IteratorValue(%81, %82, %83) @ a415-for-of-value-element-copy.ts:58:3
+    %91: Address(AddressType { pointee: Class(ClassId(1)), array_base: Some(ValueId(77)) }) = AddressOfIndex { checked: true }(%77, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 59, col: 5 } }, Trap { kind: IndexRead, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 59, col: 5 } }] @ a415-for-of-value-element-copy.ts:59:13
+    %92: Address(AddressType { pointee: I32, array_base: Some(ValueId(77)) }) = AddressOfField(Class(FieldId(4)))(%91) @ a415-for-of-value-element-copy.ts:59:13
+    StoreAddress(%92, Integer(5):I32) @ a415-for-of-value-element-copy.ts:59:13
+    %93: Data(I32) = LoadField(Class(FieldId(4)))(%90) @ a415-for-of-value-element-copy.ts:60:23
+    %94: Data(I32) = Binary(Add)(%80, %93) @ a415-for-of-value-element-copy.ts:60:13
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(94)), Value(ValueId(81)), Value(ValueId(82)), Value(ValueId(83))], ownership: [false, false, false, false] })
+  b19(%84: Data(I32), %85: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }), %86: Data(I32), %87: Data(I32)) Some("for-of.step"):
+    %95: Iterator(IteratorType { kind: ArrayValues, element: Class(ClassId(1)) }) = IteratorAdvance(%85, %86, %87) @ a415-for-of-value-element-copy.ts:58:3
+    %96: Data(I32) = Binary(Add)(%86, Integer(1):I32) @ a415-for-of-value-element-copy.ts:58:3
+    -> Branch(BlockTarget { block: BlockId(17), arguments: [Value(ValueId(84)), Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(87))], ownership: [false, false, false, false] })
+  b20(%88: Data(I32)) Some("for-of.exit"):
+    %97: Data(Str) = Template([Text("each "), Operand { index: 0, format: I32 }])(%88) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 62, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 62, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 62, col: 9 } }] @ a415-for-of-value-element-copy.ts:62:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%97) invalidates=[ValueId(4), ValueId(23), ValueId(53), ValueId(77)] @ a415-for-of-value-element-copy.ts:62:3
+    %98: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:64:25
+    %99: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%98) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%99, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %100: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%98) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%100, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %101: Data(Class(ClassId(1))) = LoadAddress(%98) @ a415-for-of-value-element-copy.ts:64:25
+    %102: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%101) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 64, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 64, col: 25 } }] @ a415-for-of-value-element-copy.ts:64:24
+    %103: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Array(Class(ClassId(1))))], return_type: Some(Data(Generator(I32))) })(%102) invalidates=[ValueId(4), ValueId(23), ValueId(53), ValueId(77), ValueId(102)] traps=[Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 65, col: 33 } }] @ a415-for-of-value-element-copy.ts:65:33
+    %104: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%103) invalidates=[ValueId(4), ValueId(23), ValueId(53), ValueId(77), ValueId(102)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 18 } }] @ a415-for-of-value-element-copy.ts:66:18
+    %105: Data(I32) = LoadField(IterValue)(%104) @ a415-for-of-value-element-copy.ts:66:31
+    %106: Data(Str) = Template([Text("yield "), Operand { index: 0, format: I32 }])(%105) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 66, col: 9 } }] @ a415-for-of-value-element-copy.ts:66:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%106) invalidates=[ValueId(4), ValueId(23), ValueId(53), ValueId(77), ValueId(102)] @ a415-for-of-value-element-copy.ts:66:3
+    %107: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%103) invalidates=[ValueId(4), ValueId(23), ValueId(53), ValueId(77), ValueId(102)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 67, col: 3 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 67, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 67, col: 3 } }] @ a415-for-of-value-element-copy.ts:67:3
+    %108: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AllocateClass(ClassId(1))() @ a415-for-of-value-element-copy.ts:69:15
+    %109: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%108) @ a415-for-of-value-element-copy.ts:9:3
+    StoreAddress(%109, Integer(1):I32) @ a415-for-of-value-element-copy.ts:9:3
+    %110: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%108) @ a415-for-of-value-element-copy.ts:10:3
+    StoreAddress(%110, Integer(2):I32) @ a415-for-of-value-element-copy.ts:10:3
+    %111: Data(Class(ClassId(1))) = LoadAddress(%108) @ a415-for-of-value-element-copy.ts:69:15
+    %112: Data(Array(Class(ClassId(1)))) = ArrayLiteral(%111) traps=[Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 69, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 69, col: 15 } }] @ a415-for-of-value-element-copy.ts:69:14
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Array(Class(ClassId(1))))], return_type: None }, operands: [ValueId(112)] }, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 69, col: 3 }, successor: BlockId(21), resume_value: None, arguments: [Value(ValueId(103))], ownership: [false], invalidates: [ValueId(4), ValueId(23), ValueId(53), ValueId(77), ValueId(102), ValueId(112)], traps: [Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 69, col: 3 } }] }
+  b21(%113: Data(Generator(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a415-for-of-value-element-copy.ts:69:3
+    AsyncHandleArrayRelease(%113) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }] @ a415-for-of-value-element-copy.ts:31:23
+    -> Return { value: None, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

@@ -254,6 +254,8 @@ pub enum Divergence {
     ThisInValueTypeArrow,
     /// A write through a value temporary changes a copy that nothing reads.
     WriteThroughValueTemporary,
+    /// A method that can move the array of its element runs on old storage.
+    ElementMethodMovesArray,
     /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
     EnumObjectMember,
     /// No first-class value is decided for a direct call target.
@@ -1177,6 +1179,7 @@ impl Divergence {
         Divergence::ThisInParameterDefaultArrow,
         Divergence::ThisInValueTypeArrow,
         Divergence::WriteThroughValueTemporary,
+        Divergence::ElementMethodMovesArray,
         Divergence::EnumObjectMember,
         Divergence::StaticMethodValueForm,
         Divergence::MethodAssignment,

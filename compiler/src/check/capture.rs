@@ -602,7 +602,7 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
     Ok(())
 }
 
-fn type_name(m: &hir::Module, t: &Type) -> String {
+pub(super) fn type_name(m: &hir::Module, t: &Type) -> String {
     match t {
         Type::Class(id) => m.classes[id.0].name.clone(),
         Type::Array(t) => {

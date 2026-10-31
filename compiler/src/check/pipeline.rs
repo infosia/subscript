@@ -560,6 +560,7 @@ fn run_with_effects(
             return Ok((module, opaque_loops));
         }
         capture::check(&mut module)?;
+        element_receiver::check(&module, &ck.class_sigs)?;
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
         crate::raise_sites::decide_can_raise(&mut module);

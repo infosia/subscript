@@ -540,6 +540,13 @@ pub(super) const WRITE_THROUGH_VALUE_TEMPORARY: DivergenceEntry = DivergenceEntr
     collision: "C2",
 };
 
+pub(super) const ELEMENT_METHOD_MOVES_ARRAY: DivergenceEntry = DivergenceEntry {
+    ts: "@ValueType class V { a: i32 = 1; grow(all: V[]): void { all.push(new V()); this.a = 2; } }\nexport function main(): void { const all: V[] = [new V()]; all[0].grow(all); }",
+    subscript: "@ValueType class V { a: i32 = 1; grow(all: V[]): void { all.push(new V()); this.a = 2; } }\nexport function main(): void { const all: V[] = [new V()]; const t: V = all[0]; t.grow(all); all[0] = t; print(`${all[0].a}`); }",
+    why: "`this` on a dynamic array element is an address into the array storage (C2), so a move of the array leaves `this` on old storage.",
+    collision: "C2",
+};
+
 pub(super) const NONNULLASSERTIONEXPRESSIONFORM: DivergenceEntry = DivergenceEntry {
     ts: "class C { x: i32 = 1; }\nexport function main(): void { const c: C = new C(); c!.x; }",
     subscript: "no equivalent; use Math.pow, an explicit comparison, or a null check",

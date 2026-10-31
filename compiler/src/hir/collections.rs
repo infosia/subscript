@@ -105,6 +105,42 @@ impl ArrFn {
         }
     }
 
+    /// How the operation can change the position of an element of a dynamic
+    /// array (compiler.md §221.1 rules 2 and 6). `fill` stores a value at each
+    /// index, as an element assignment does. `splice` and `unshift` change the
+    /// index of an element, so each has the rearrangement class.
+    #[must_use]
+    pub fn element_move(self) -> Option<ElementMove> {
+        match self {
+            ArrFn::Reverse
+            | ArrFn::Sort
+            | ArrFn::Splice
+            | ArrFn::Shift
+            | ArrFn::Unshift
+            | ArrFn::CopyWithin => Some(ElementMove::Rearrangement),
+            ArrFn::IndexOf
+            | ArrFn::LastIndexOf
+            | ArrFn::Includes
+            | ArrFn::Join
+            | ArrFn::Slice
+            | ArrFn::Fill
+            | ArrFn::Concat
+            | ArrFn::ForEach
+            | ArrFn::Map
+            | ArrFn::Filter
+            | ArrFn::Reduce
+            | ArrFn::Some
+            | ArrFn::Every
+            | ArrFn::FindIndex
+            | ArrFn::ReduceRight
+            | ArrFn::At
+            | ArrFn::Find
+            | ArrFn::FindLast
+            | ArrFn::FindLastIndex
+            | ArrFn::FlatMap => None,
+        }
+    }
+
     /// True for the Q27 `FixedArray<T, N>` callback family. Each method lowers
     /// to a loop that reads the receiver place (compiler.md §220.1 rule 10).
     #[must_use]

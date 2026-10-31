@@ -648,6 +648,10 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::WriteThroughValueTemporary),
     ),
+    Self::ElementMethodMovesArray => (
+        RuleCode::S100,
+        Diverges(Divergence::ElementMethodMovesArray),
+    ),
     Self::MirrorParameterProvenanceMismatch => (
         RuleCode::S100,
         Diverges(Divergence::MirrorParameterProvenanceMismatch),

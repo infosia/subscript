@@ -4602,6 +4602,11 @@ FILE	E	target/s154/forms/write-through-value-temporary/main.ts
 function pair():FixedArray<i32,2>{return [1,2];} export function main():void{pair()[0]=9;}
 END FILE
 END PROGRAM
+PROGRAM	element-method-moves-array			0
+FILE	E	target/s154/forms/element-method-moves-array/main.ts
+@ValueType class V{a:i32=1;grow(all:V[]):void{all.push(new V());}} export function main():void{const all:V[]=[new V()];all[0].grow(all);}
+END FILE
+END PROGRAM
 PROGRAM	new-frame-argument-copy			0
 FILE	E	target/s154/forms/new-frame-argument-copy/main.ts
 function consume(a:FixedArray<u8,1100000000>,b:FixedArray<u8,1100000000>):void{} function probe(a:FixedArray<u8,1100000000>,b:FixedArray<u8,1100000000>):void{consume(a,b);} export function main():void{}

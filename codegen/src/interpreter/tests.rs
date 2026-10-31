@@ -696,13 +696,10 @@ fn teardown_releases_a_generator_that_names_itself() {
 
 #[test]
 fn poisoned_address_names_use_and_invalidation() {
-    let module = empty_module(Vec::new());
-    let mut interpreter = Interpreter::new(&module).expect("empty module is valid");
-    let poison = Rc::new(RefCell::new(None));
-    interpreter
-        .poison_registry
-        .insert(l::ValueId(3), vec![Rc::downgrade(&poison)]);
-    interpreter.invalidate(&[l::ValueId(3)], &Pos::new("poison.ts", 4, 7), || {
+    let poison: Rc<RefCell<Option<Invalidation>>> = Rc::new(RefCell::new(None));
+    let mut registry = PoisonRegistry::default();
+    registry.register(l::ValueId(3), &poison);
+    registry.invalidate(&[l::ValueId(3)], &Pos::new("poison.ts", 4, 7), || {
         "Call(Array.Push)".to_string()
     });
     let address = Address {
@@ -723,6 +720,23 @@ fn poisoned_address_names_use_and_invalidation() {
             && invalidated_by == "Call(Array.Push)"
             && invalidated_at == Pos::new("poison.ts", 4, 7)
     ));
+}
+
+/// compiler.md §221.1 rule 11: a recursion reuses one value identifier in
+/// a second frame. The move in the first frame is the control.
+#[test]
+fn invalidation_poisons_an_address_of_its_own_frame_only() {
+    let poison: Rc<RefCell<Option<Invalidation>>> = Rc::new(RefCell::new(None));
+    let mut first = PoisonRegistry::default();
+    let mut second = PoisonRegistry::default();
+    first.register(l::ValueId(3), &poison);
+    let pos = Pos::new("poison.ts", 4, 7);
+    second.invalidate(&[l::ValueId(3)], &pos, || "Call(recur)".to_string());
+    assert!(poison.borrow().is_none());
+    first.invalidate(&[l::ValueId(4)], &pos, || "Call(recur)".to_string());
+    assert!(poison.borrow().is_none());
+    first.invalidate(&[l::ValueId(3)], &pos, || "Call(Array.Push)".to_string());
+    assert!(poison.borrow().is_some());
 }
 
 #[test]

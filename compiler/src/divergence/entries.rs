@@ -213,6 +213,7 @@ impl Divergence {
             Divergence::ThisInParameterDefaultArrow => surface_forms::THISINPARAMETERDEFAULTARROW,
             Divergence::ThisInValueTypeArrow => surface_forms::THISINVALUETYPEARROW,
             Divergence::WriteThroughValueTemporary => surface_forms::WRITE_THROUGH_VALUE_TEMPORARY,
+            Divergence::ElementMethodMovesArray => surface_forms::ELEMENT_METHOD_MOVES_ARRAY,
             Divergence::EnumObjectMember => surface_forms::ENUMOBJECTMEMBER,
             Divergence::StaticMethodValueForm => surface_forms::STATICMETHODVALUEFORM,
             Divergence::MethodAssignment => surface_forms::METHODASSIGNMENT,

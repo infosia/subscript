@@ -345,6 +345,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::MirrorStringProvenanceMissing => WitnessEntry::General { files: &["c-prov-string"], variant: Some(Divergence::MirrorStringProvenanceMissing), reason: "" },
         RejectionSite::MirrorNullableView => WitnessEntry::General { files: &["mirror-nullable-array"], variant: Some(Divergence::NullableNonReference), reason: "" },
         RejectionSite::WriteThroughValueTemporary => WitnessEntry::General { files: &["write-through-value-temporary"], variant: Some(Divergence::WriteThroughValueTemporary), reason: "" },
+        RejectionSite::ElementMethodMovesArray => WitnessEntry::General { files: &["element-method-moves-array"], variant: Some(Divergence::ElementMethodMovesArray), reason: "" },
         RejectionSite::MirrorParameterProvenanceMismatch => WitnessEntry::General { files: &["c-prov-incompatible"], variant: Some(Divergence::MirrorParameterProvenanceMismatch), reason: "" },
         RejectionSite::MirrorAnonymousCallback => WitnessEntry::General { files: &["c-callback-anonymous-field"], variant: Some(Divergence::MirrorAnonymousCallback), reason: "" },
         RejectionSite::MirrorCallbackProvenanceMissing => WitnessEntry::General { files: &["c-callback-alias-field"], variant: Some(Divergence::MirrorCallbackProvenanceMissing), reason: "" },

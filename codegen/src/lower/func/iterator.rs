@@ -232,6 +232,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .ins()
                     .imul_imm(cursor_position, i64::from(stride));
                 let address = self.builder.ins().iadd(data, offset);
+                // compiler.md §221.1 rule 12: the binding of an aggregate
+                // element is a copy, not an address into the array storage.
+                if matches!(
+                    self.ml.layouts.repr(&iterator_ty.element)?,
+                    Repr::Agg { .. }
+                ) {
+                    let (size, align) = self.ml.layouts.size_align(&iterator_ty.element)?;
+                    let element = self.stack_slot(size.max(1), align.max(1));
+                    self.copy_bytes(element, address, size, align);
+                    return self.load_data(&iterator_ty.element, element, 0);
+                }
                 self.load_data(&iterator_ty.element, address, 0)
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {

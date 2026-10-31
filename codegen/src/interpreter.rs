@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::ops::Range;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
+#[cfg(test)]
+use std::rc::Weak;
 
 use subscript_compiler::lir as l;
 use subscript_compiler::types::scalar_size_align;
@@ -323,6 +325,8 @@ enum AsyncRequest {
 }
 
 struct Frame {
+    /// The addresses that this activation made (`compiler.md` §221.1 rule 11).
+    poison: PoisonRegistry,
     function: l::FunctionId,
     block: l::BlockId,
     values: Vec<Option<Value>>,
@@ -399,7 +403,6 @@ struct Interpreter<'m> {
     class_layouts: HashMap<ClassId, Layout>,
     layout_cache: HashMap<String, Layout>,
     padding_cache: HashMap<String, Vec<Range<usize>>>,
-    poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
     task_groups: HashMap<usize, Rc<RefCell<task_group::Group>>>,
     next_group_id: usize,
@@ -449,7 +452,6 @@ impl<'m> Interpreter<'m> {
             class_layouts: HashMap::new(),
             layout_cache: HashMap::new(),
             padding_cache: HashMap::new(),
-            poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
             task_groups: HashMap::new(),
             next_group_id: 2,
@@ -588,6 +590,7 @@ impl<'m> Interpreter<'m> {
         }
         let generator_owners = counted::start_generator_owners(function, &values);
         let frame = Frame {
+            poison: PoisonRegistry::default(),
             generator_owners,
             closing: false,
             function: id,
@@ -1168,9 +1171,11 @@ impl<'m> Interpreter<'m> {
                         }
                         (Err(error), _) => return Err(error),
                     }
-                    self.invalidate(&instruction.invalidates, &instruction.pos, || {
-                        format!("{:?}", instruction.kind)
-                    });
+                    (*frame)
+                        .poison
+                        .invalidate(&instruction.invalidates, &instruction.pos, || {
+                            format!("{:?}", instruction.kind)
+                        });
                     if handler.is_some() {
                         break;
                     }
@@ -1236,7 +1241,9 @@ impl<'m> Interpreter<'m> {
                         traps: _,
                         ownership: _,
                     } => {
-                        self.invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
+                        (*frame)
+                            .poison
+                            .invalidate(invalidates, pos, || format!("Suspend({kind:?})"));
                         let destination =
                             function.blocks.get(successor.0 as usize).ok_or_else(|| {
                                 self.invalid(
@@ -1961,6 +1968,8 @@ mod instruction;
 mod intrinsics;
 mod memory;
 mod operations;
+mod poison;
+use poison::PoisonRegistry;
 
 mod async_all;
 mod task_group;

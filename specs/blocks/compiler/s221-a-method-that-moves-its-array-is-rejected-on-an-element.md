@@ -124,8 +124,46 @@ has the numbers.
 
 ### 221.3 Phase Review
 
-*(Filled at the end of the phase.)*
+*(Added 2026-11-01.)* A review of the copy form gave three MAJOR
+findings, and the form did not land. The problem statement and the
+tracking note give the numbers.
+
+A fresh review of the rejection gave three MAJOR and six MINOR findings.
+
+1. MAJOR, realistic, fixed: a foreign call that fires a script callback
+   had no edge, so a program with a stale `this` was accepted. Ship
+   printed `0` and `1`, and the spelled copy printed `2` and `7`. Rule 10.
+   `r483` pins it.
+2. MAJOR, realistic, fixed: the text of rule 6 wrote back at the old index
+   after a removal. The form with a moved index printed `2 1 2 0`, and
+   `node` printed `2 1 3 10`. The coding agent found that `unshift` has the
+   same effect. Rule 6.
+3. MAJOR, realistic, fixed, predates §221: a JIT `for…of` binding of a value
+   element was an address into array storage. Rule 12. `a415` pins it.
+4. MINOR, realistic, fixed: the text spelled a place that the source does
+   not have. Rule 6.
+5. MINOR, realistic, fixed in the contract: rule 4 names an async call.
+6. MINOR, contrived, fixed: the poison registry grew at each call. It is
+   now in `Frame`.
+7. MINOR, contrived, open: item 2 of §221.4.
+8. MINOR, realistic, fixed: six mutants survived the tests. New tests
+   close five. The sixth is an optimization. One arm was dead, and it is
+   deleted.
+9. MINOR, fixed: the records of the phase.
 
 ### 221.4 Open
 
-*(Filled at the end of the phase.)*
+1. A call of an export during a foreign call has no edge in the reach.
+   §18 neither allows nor forbids it. An edge rejects each element method
+   that calls C if any export moves that array.
+2. `all = []; Context.collect();` in a method leaves `this` on released
+   storage. Rule 2 does not list a reassignment. Measured value `11`, equal
+   to the expected value. Contrived.
+3. Rule 5 rejects a method that moves a fresh local array of the same
+   element type: `const out: V[] = []; out.push(this);`. The type decides.
+   The spelled copy compiles.
+4. `await` of a handle held in a value has no edge. In two probes on the
+   JIT, a move did not run while `this` was live.
+5. A JIT `for…of` binding of a large element now copies: 100,000,000 visits
+   of 260 bytes take 1.12 s against 0.70 s on a debug CLI. The cost comes
+   from the declared size.

@@ -62,7 +62,7 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
   source is the fix. A traversal runs a `reduce` seed before the first
   element check (§220.1 rule 10a).
 
-Accept: `a04`, `a21`, `a406`. Trap: `t113`. Reject: `r07-value-class-extends` (`@ValueType class`
+Accept: `a04`, `a21`, `a406`, `a411`, `a415`. Trap: `t113`. Reject: `r464`, `r07-value-class-extends` (`@ValueType class`
 with an `extends` clause; `tsc`-clean).
 
 ### C3. `number` and sized numerics (Q1) — bare `number` rejected

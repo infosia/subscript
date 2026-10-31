@@ -692,10 +692,8 @@ impl Interpreter<'_> {
             })?;
             if let Some(l::ValueType::Address(address_ty)) = result_ty {
                 if let (Some(base), Value::Address(address)) = (address_ty.array_base, &result) {
-                    self.poison_registry
-                        .entry(base)
-                        .or_default()
-                        .push(Rc::downgrade(&address.poison));
+                    // SAFETY: execute_frame owns the registered frame for this call.
+                    unsafe { &mut (*frame).poison }.register(base, &address.poison);
                 }
             }
             self.set_value(
@@ -797,40 +795,6 @@ impl Interpreter<'_> {
         })?;
         *slot = Some(value);
         Ok(())
-    }
-
-    pub(super) fn invalidate(
-        &mut self,
-        bases: &[l::ValueId],
-        pos: &Pos,
-        instruction: impl FnOnce() -> String,
-    ) {
-        let mut instruction = Some(instruction);
-        let mut description = None;
-        for base in bases {
-            if let Some(addresses) = self.poison_registry.get_mut(base) {
-                addresses.retain(|address| {
-                    if let Some(address) = address.upgrade() {
-                        let mut poison = address.borrow_mut();
-                        if poison.is_none() {
-                            let description = description.get_or_insert_with(|| {
-                                instruction
-                                    .take()
-                                    .expect("invalidation description used once")(
-                                )
-                            });
-                            *poison = Some(Invalidation {
-                                instruction: description.clone(),
-                                pos: pos.clone(),
-                            });
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                });
-            }
-        }
     }
 
     pub(super) fn invalid(&self, pos: Option<Pos>, message: impl Into<String>) -> InterpretError {

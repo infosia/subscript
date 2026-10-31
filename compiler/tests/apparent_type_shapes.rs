@@ -588,6 +588,17 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "diagnostic-type-name", reason: "Diagnostic names preserve the declared parameter identity (§143 rule 1b).", sites: &[
         ("type_rules.rs", "type_name", 0x8245fa141bdc8bec),
     ] },
+    AllowGroup { name: "element-receiver-walk", reason: "The element receiver check reads the assembled module, which holds no opaque instance (§135 rule 1, §221).", sites: &[
+        ("element_receiver.rs", "callbacks", 0x53e4f9bb23e79090),
+        ("element_receiver.rs", "cross_boundary", 0xdfe5697e2a0fecc7),
+        ("element_receiver.rs", "crossed_element", 0xcc761ac0b9a48667),
+        ("element_receiver.rs", "expr", 0x8e472868b7752ad2),
+        ("element_receiver.rs", "dispose", 0xc04a44fcc997cb13),
+        ("element_receiver.rs", "is_value_class", 0xcc141d822a5e2a22),
+        ("element_receiver.rs", "method_call", 0x2f3042f5f91679f),
+        ("element_receiver.rs", "reach", 0x1e9b01d38520aca1),
+        ("element_receiver.rs", "record_move", 0x7862a5a212353090),
+    ]},
     AllowGroup { name: "concrete-captures", reason: "Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1).", sites: &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
         ("capture/blocks.rs", "flow_inputs", 0x80bc8ebc9b829d3a),
