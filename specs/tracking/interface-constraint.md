@@ -52,3 +52,21 @@ it grows by the `a395` section only. At `48aae770`, `a395` gave "class
 `Job` has no async method `run`"; `tsc` accepts it, and `node` prints
 the golden. `tsc` accepts a member of type `(x: i64) => void` for
 `(x: i32) => void` and gives TS2416 for `string` against `i32`.
+
+## Stage 2 cost, measured 2026-10-31
+
+No production change. A C model at `-O2` on aarch64: an object with the
+runtime header shape, a `noinline` member per class, 4,096 objects, and
+the fastest of nine rounds. The unit is ns per call.
+
+| Implementers | Direct call | `switch` on the class id, one class | `switch`, random classes | Function table, random classes |
+|---|---|---|---|---|
+| 2 | 0.86 | 1.15 | 2.20 | 4.49 |
+| 4 | 0.86 | 1.43 | 3.46 | 5.06 |
+| 8 | 0.86 | 1.44 | 3.66 | 5.32 |
+| 32 | 0.86 | 1.46 | 7.34 | 6.05 |
+
+The cost of a call through an interface value depends on the count of
+implementers, which another declaration sets, and on the run-time class.
+Core principle 16 rejects a cost of this kind. Stage 2 needs an owner
+decision on that principle before a prototype.
