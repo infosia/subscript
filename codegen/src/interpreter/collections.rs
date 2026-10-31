@@ -12,7 +12,7 @@ impl Interpreter<'_> {
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
         let receiver_ty = match parameter_types.first() {
-            Some(l::ValueType::Data(ty @ (Type::Array(_) | Type::FixedArray(_, _)))) => ty,
+            Some(l::ValueType::Data(ty @ Type::Array(_))) => ty,
             _ => {
                 return Err(
                     self.invalid(None, format!("Array.{operation} receiver type is missing"))
@@ -20,7 +20,7 @@ impl Interpreter<'_> {
             }
         };
         let element_ty = match receiver_ty {
-            Type::Array(element) | Type::FixedArray(element, _) => element.as_ref(),
+            Type::Array(element) => element.as_ref(),
             _ => {
                 return Err(
                     self.invalid(None, format!("Array.{operation} receiver type is invalid"))
@@ -507,10 +507,7 @@ impl Interpreter<'_> {
                 let len = unsafe { self.context.array_len(*handle) };
                 usize::try_from(len).map_err(|_| self.invalid(None, "array length is negative"))
             }
-            (Type::FixedArray(_, count), Value::Blob(_)) => usize::try_from(*count)
-                .map_err(|_| self.invalid(None, "fixed-array count does not fit usize")),
             (Type::Array(_), other) => Err(type_error("runtime array handle", other)),
-            (Type::FixedArray(_, _), other) => Err(type_error("fixed array", other)),
             _ => Err(self.invalid(None, "array callback receiver has a non-array type")),
         }
     }
@@ -538,25 +535,7 @@ impl Interpreter<'_> {
                 let bytes = unsafe { std::slice::from_raw_parts(pointer, layout.size) };
                 self.unpack(element_ty, bytes).map(Some)
             }
-            (Type::FixedArray(_, count), Value::Blob(bytes)) => {
-                let count = usize::try_from(*count)
-                    .map_err(|_| self.invalid(None, "fixed-array count does not fit usize"))?;
-                if index >= count {
-                    return Ok(None);
-                }
-                let start = index
-                    .checked_mul(layout.size)
-                    .ok_or_else(|| self.invalid(None, "fixed-array callback offset overflows"))?;
-                let end = start
-                    .checked_add(layout.size)
-                    .ok_or_else(|| self.invalid(None, "fixed-array callback range overflows"))?;
-                let element = bytes.get(start..end).ok_or_else(|| {
-                    self.invalid(None, "fixed-array callback reads outside its blob")
-                })?;
-                self.unpack(element_ty, element).map(Some)
-            }
             (Type::Array(_), other) => Err(type_error("runtime array handle", other)),
-            (Type::FixedArray(_, _), other) => Err(type_error("fixed array", other)),
             _ => Err(self.invalid(None, "array callback receiver has a non-array type")),
         }
     }

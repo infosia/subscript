@@ -1252,7 +1252,7 @@ impl<'p> Checker<'p> {
             // keep the standing "no method" diagnostic.
             Type::FixedArray(elem, n) => {
                 if let Some(f) = crate::ambient::arr_method(&name) {
-                    if f.fixed_symbol().is_some() {
+                    if f.on_fixed_array() {
                         return checker.check_array_method(
                             recv,
                             (*elem).clone(),

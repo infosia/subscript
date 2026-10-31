@@ -1273,10 +1273,7 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "length: i32".to_string(),
         summary: "Returns the compile-time fixed element count.",
     });
-    for f in ArrFn::ALL
-        .into_iter()
-        .filter(|f| f.fixed_symbol().is_some())
-    {
+    for f in ArrFn::ALL.into_iter().filter(|f| f.on_fixed_array()) {
         out.push(ApiItem {
             group: "FixedArray<T, N>",
             signature: f.api_signature().to_string(),
@@ -1742,7 +1739,7 @@ mod tests {
         }
         for f in ArrFn::ALL {
             assert!(has("T[]", f.api_signature()), "T[].{}", f.name());
-            if f.fixed_symbol().is_some() {
+            if f.on_fixed_array() {
                 assert!(
                     has("FixedArray<T, N>", f.api_signature()),
                     "FixedArray.{}",
@@ -1811,7 +1808,7 @@ mod tests {
             + 1
             + ArrFn::ALL
                 .into_iter()
-                .filter(|f| f.fixed_symbol().is_some())
+                .filter(|f| f.on_fixed_array())
                 .count()
             + MapFn::ALL.len()
             // The Map copy row and the two Array.of rows (stdlib.md §10.9 and §9.11).

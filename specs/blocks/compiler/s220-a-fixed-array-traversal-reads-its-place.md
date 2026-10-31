@@ -114,8 +114,45 @@ Two copies exist: the checker lifts the subject into a `const`, and
 
 ### 220.3 Phase Review
 
-*(Filled at the end of the phase.)*
+*(Added 2026-10-31.)* A fresh review of the tree on the contract commit
+gave three MAJOR and five MINOR findings.
+
+1. MAJOR, realistic, fixed: a `for…of` over a call result of type
+   `FixedArray<Generator<T>, N>` or `FixedArray<Promise<T>, N>` gave
+   invalid LIR. `1 2 5 6` before §220. Rule 7 makes the hidden local the
+   one owner. `a409` pins it.
+2. MAJOR, realistic, rare shape, not fixed: item 1 of §220.4. Rule 3
+   names the exception. The owner line for a rare shape applies: the
+   defect is in the receiver form, and it predates §220 on the index
+   loop.
+3. MAJOR, realistic, rare shape, fixed: `await` in the seed of `reduce`
+   with a lambda gave invalid LIR on both receivers. Rule 10b. `a410` pins
+   it.
+4. MINOR, fixed: eight `fixed_*` runtime functions had no caller.
+5. MINOR, fixed: the `IteratorCreate` subject check lost its test.
+6. MINOR, fixed: contract text on the cursor, on the depth of a dynamic
+   array element, and the C2 citation.
+7. MINOR, contrived, fixed in the contract: `Context.free` of a base in
+   the body. Rule 3a.
+8. MINOR, open: item 2 of §220.4.
+
+The coding agent found one defect at the pin in the M1 fix. A counted
+local with storage and a state binding live at a `yield` gave invalid
+LIR: `edge 5 -> 6 has type Data(Generator(I32)), expected Data(I32)`.
+`terminate` pushed the loaded owner after the state parameters. The fix
+is in `codegen/src/lir/builder.rs`, and `a409` pins it.
 
 ### 220.4 Open
 
-*(Filled at the end of the phase.)*
+1. `this` in a `@ValueType` method is an address into the storage of the
+   receiver. If the receiver is a dynamic array element and the body grows
+   that array, later reads use old storage. `all[0].walk()` with a
+   `grow()` of 5,000 `push` calls in the body gives `10` on the three
+   tiers for `for…of` over `this.a` and for `this.a.reduce`, and `node`
+   gives `12`. Before §220 these two forms gave `12`. A `this.a[i]` index
+   loop gives `0`, before §220 too. A fix belongs to the receiver form and
+   closes all three forms.
+2. An unused `const e: FixedArray<i32, 0>[] = []` fails the C compile:
+   `use of undeclared identifier 'SubFA_i32_0'`. `subscript run` accepts
+   it. Contrived. §218.4 item 2 has the same type.
+3. `ElementSource` in the runtime has one variant.

@@ -511,7 +511,7 @@ impl<'p> Checker<'p> {
                         self.arr_surface_error(name, prop_pos.clone());
                     }
                 } else if !for_write
-                    && crate::ambient::arr_method(name).is_some_and(|f| f.fixed_symbol().is_some())
+                    && crate::ambient::arr_method(name).is_some_and(|f| f.on_fixed_array())
                 {
                     self.reject_subset(
                         RejectionSite::FixedArrayMethodValue,

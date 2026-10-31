@@ -191,6 +191,8 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         }
         // compiler.md §200.1 rule 2: the position of the `switch`.
         "t112-enum-switch-non-member-value" => (TrapKind::UnreachableReached, 20, 3),
+        // compiler.md §220.1 rule 6: the position of the subject.
+        "t113-fixed-array-traversal-element-removed" => (TrapKind::IndexOutOfBounds, 12, 19),
         "t106-dropped-generator-local" => (TrapKind::UncaughtException, 12, 39),
         "t103-unstarted-generator-parameter" => (TrapKind::UncaughtException, 22, 5),
         "t104-coroutine-closure-environment" => (TrapKind::UncaughtException, 21, 61),

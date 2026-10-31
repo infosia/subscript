@@ -779,7 +779,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     *bound,
                     &iterator_type,
                     &operands[0],
-                    &operand_types[0],
                     result,
                 )
             }

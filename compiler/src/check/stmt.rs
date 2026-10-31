@@ -1193,6 +1193,20 @@ impl<'p> Checker<'p> {
             return;
         }
 
+        let kind = kind.expect("non-generator `for…of` has a fused kind");
+        // A `FixedArray` traversal reads its place (compiler.md §220.1 rule 1),
+        // so the subject stays an expression and no local copies it.
+        if kind == hir::ForOfKind::FixedArrayValues {
+            out.push(hir::Stmt::ForOf {
+                name,
+                ty: elem_ty,
+                subject,
+                kind,
+                body,
+                pos,
+            });
+            return;
+        }
         let id = self.next_for_of_id;
         self.next_for_of_id += 1;
         let subject_name = format!("[[for.of#{id}.subject]]");
@@ -1216,7 +1230,7 @@ impl<'p> Checker<'p> {
             name,
             ty: elem_ty,
             subject: subject_local,
-            kind: kind.expect("non-generator `for…of` has a fused kind"),
+            kind,
             body,
             pos: pos.clone(),
         };

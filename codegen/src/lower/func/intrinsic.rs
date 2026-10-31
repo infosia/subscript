@@ -328,32 +328,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let receiver_ty = parameter_types
             .first()
             .ok_or_else(|| internal(format!("Array.{name} has no receiver type")))?;
-        let (element, fixed_count) = match receiver_ty {
-            l::ValueType::Data(Type::Array(element)) => ((**element).clone(), None),
-            l::ValueType::Data(Type::FixedArray(element, count)) => {
-                ((**element).clone(), Some(*count))
-            }
-            other => return Err(internal(format!("Array.{name} receiver is {other:?}"))),
+        let l::ValueType::Data(Type::Array(element)) = receiver_ty else {
+            return Err(internal(format!(
+                "Array.{name} receiver is {receiver_ty:?}"
+            )));
         };
+        let element = (**element).clone();
         let receiver = *operands
             .first()
             .ok_or_else(|| internal(format!("Array.{name} has no receiver")))?;
-        let receiver = if fixed_count.is_some() {
-            self.expect_aggregate(receiver)?
-        } else {
-            self.expect_scalar(receiver)?
-        };
-        let function = if fixed_count.is_some() {
-            self.ml
-                .rt
-                .fixed_arr_ops
-                .get(intrinsic.operation as usize)
-                .copied()
-                .flatten()
-                .ok_or_else(|| internal(format!("Array.{name} is not a FixedArray method")))?
-        } else {
-            function
-        };
+        let receiver = self.expect_scalar(receiver)?;
         let scalar = |this: &Self, index: usize| {
             operands
                 .get(index)
@@ -553,11 +537,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let kind = self.iconst(types::I32, i64::from(kind));
                 let indexed = self.iconst(types::I32, i64::from(indexed));
                 let mut arguments = vec![self.ctx, receiver];
-                if let Some(count) = fixed_count {
-                    let stride = self.ml.layouts.stride(&element)?;
-                    arguments.push(self.iconst(types::I64, i64::from(count)));
-                    arguments.push(self.iconst(types::I64, i64::from(stride)));
-                }
                 arguments.extend([code, environment, kind]);
                 if name == "Filter" {
                     let position = self.position_id(pos);
@@ -604,11 +583,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 };
                 let result_stride = self.ml.layouts.stride(result_element)?;
                 let mut arguments = vec![self.ctx, receiver];
-                if let Some(count) = fixed_count {
-                    let stride = self.ml.layouts.stride(&element)?;
-                    arguments.push(self.iconst(types::I64, i64::from(count)));
-                    arguments.push(self.iconst(types::I64, i64::from(stride)));
-                }
                 arguments.extend([
                     code,
                     environment,
@@ -638,11 +612,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let accumulator_kind = array_element_kind(self.ml.lir, accumulator_ty)?;
                 let accumulator_stride = self.ml.layouts.stride(accumulator_ty)?;
                 let mut arguments = vec![self.ctx, receiver];
-                if let Some(count) = fixed_count {
-                    let stride = self.ml.layouts.stride(&element)?;
-                    arguments.push(self.iconst(types::I64, i64::from(count)));
-                    arguments.push(self.iconst(types::I64, i64::from(stride)));
-                }
                 arguments.extend([
                     code,
                     environment,

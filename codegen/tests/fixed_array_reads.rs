@@ -1,8 +1,9 @@
 //! A read of a `FixedArray` element keeps the array live (`compiler.md` §218.1
-//! rule 12). A `for…of` reads a hidden local through an address of that local.
-//! An address of a field or an element of a value names that value as its base.
+//! rule 12). A traversal of a place reads the place (§220.1). A traversal of
+//! another subject reads a hidden local through an address of that local. An
+//! address of a field or an element of a value names that value as its base.
 //!
-//! Measured cost: 0.48 s for the nine tests on arm64 debug. The form tests check and lower
+//! Measured cost: 0.96 s for the eleven tests on arm64 debug. The form tests check and lower
 //! one small program. Each tier test runs one program under the interpreter,
 //! the dev JIT, and one C compilation, and the C step is most of the cost. A
 //! suspension is in a tier test, because a corpus entry with a coroutine grows
@@ -13,9 +14,9 @@ use subscript_codegen::lir::{lower_module, verify_module};
 use subscript_compiler::lir as l;
 use subscript_compiler::{check_program, SourceFile, Type};
 
-const FORM: &str = "export function main(): void {\n\
-                    \x20 const fixed: FixedArray<string, 2> = [\"a\", \"b\"];\n\
-                    \x20 for (const x of fixed) { print(x); }\n\
+const FORM: &str = "function pair(): FixedArray<string, 2> { return [\"a\", \"b\"]; }\n\
+                    export function main(): void {\n\
+                    \x20 for (const x of pair()) { print(x); }\n\
                     \x20 const dynamic: string[] = [\"c\"];\n\
                     \x20 for (const x of dynamic) { print(x); }\n\
                     }\n";
@@ -48,16 +49,6 @@ fn instructions(function: &mut l::Function) -> impl Iterator<Item = &mut l::Inst
         .flat_map(|block| &mut block.instructions)
 }
 
-fn cursor_kind(function: &l::Function, instruction: &l::Instruction) -> l::ForOfKind {
-    let Some(l::Operand::Value(cursor)) = instruction.operands.first() else {
-        panic!("a cursor operand");
-    };
-    let l::ValueType::Iterator(iterator) = &function.values[cursor.0 as usize].ty else {
-        panic!("an iterator type");
-    };
-    iterator.kind
-}
-
 #[test]
 fn a_fixed_array_traversal_reads_a_hidden_local_with_no_data_copy() {
     let mut module = lowered();
@@ -79,7 +70,7 @@ fn a_fixed_array_traversal_reads_a_hidden_local_with_no_data_copy() {
         .filter(|instruction| instruction.kind == l::InstructionKind::IteratorValue)
         .map(|instruction| instruction.operands.len())
         .collect();
-    // The dynamic array has a cursor read, and the fixed array has none.
+    // The dynamic array has a cursor read, and the fixed array has no cursor.
     assert_eq!(reads, vec![3]);
     let block = snapshot
         .blocks
@@ -103,66 +94,184 @@ fn a_fixed_array_traversal_reads_a_hidden_local_with_no_data_copy() {
     ));
 }
 
-#[test]
-fn a_cursor_read_of_a_fixed_array_traversal_is_invalid() {
-    let mut module = lowered();
-    let function = main_function(&mut module);
-    let snapshot = function.clone();
-    let fixed_cursor = snapshot
-        .blocks
-        .iter()
-        .flat_map(|block| &block.instructions)
-        .find(|i| {
-            matches!(i.kind, l::InstructionKind::IteratorHasNext)
-                && cursor_kind(&snapshot, i) == l::ForOfKind::FixedArrayValues
-        })
-        .expect("a fixed-array cursor test")
-        .operands
-        .clone();
-    let element = snapshot
-        .values
-        .iter()
-        .find(|value| value.ty == l::ValueType::Data(Type::Str))
-        .expect("a string value")
-        .id;
-    let read = instructions(function)
-        .find(|i| i.kind == l::InstructionKind::LoadAddress && i.result.is_some())
-        .expect("one load");
-    read.kind = l::InstructionKind::IteratorValue;
-    read.operands = fixed_cursor;
-    read.result = Some(element);
-    assert!(
-        messages(&module)
-            .iter()
-            .any(|message| message.contains("iterator value signature is invalid")),
-        "{:?}",
-        messages(&module)
-    );
+/// Each address that an instruction defines and another block reads, and each
+/// address that a block parameter carries.
+fn addresses_across_blocks(function: &l::Function) -> Vec<l::ValueId> {
+    let is_address = |value: l::ValueId| {
+        matches!(
+            function.values[value.0 as usize].ty,
+            l::ValueType::Address(_)
+        )
+    };
+    let mut defined = std::collections::HashMap::new();
+    let mut found: Vec<l::ValueId> = Vec::new();
+    for block in &function.blocks {
+        found.extend(block.parameters.iter().copied().filter(|v| is_address(*v)));
+        for instruction in &block.instructions {
+            if let Some(result) = instruction.result {
+                defined.insert(result, block.id);
+            }
+        }
+    }
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            for operand in &instruction.operands {
+                if let l::Operand::Value(value) = operand {
+                    if is_address(*value) && defined.get(value).is_some_and(|b| *b != block.id) {
+                        found.push(*value);
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+const PLACE_FORM: &str = "class R {\n\
+                          \x20 a: FixedArray<string, 2> = [\"a\", \"b\"];\n\
+                          \x20 m: FixedArray<FixedArray<i32, 2>, 2> = [[1, 2], [3, 4]];\n\
+                          }\n\
+                          function* walk(r: R, d: FixedArray<string, 2>[]): Generator<string> {\n\
+                          \x20 for (const x of r.a) { yield x; }\n\
+                          \x20 for (const x of d[0]) { yield x; }\n\
+                          }\n\
+                          async function go(r: R, i: i32): Promise<void> {\n\
+                          \x20 for (const x of r.m[i]) { await Context.suspend(); print(`${x}`); }\n\
+                          }\n\
+                          export async function main(): Promise<void> {\n\
+                          \x20 const r = new R();\n\
+                          \x20 const b: FixedArray<i32, 2> = [1, 2];\n\
+                          \x20 for (const x of b) { print(`${x}`); }\n\
+                          \x20 r.a.forEach((x: string): void => { print(x); });\n\
+                          \x20 print(`${b.reduceRight((n: i32, x: i32): i32 => n + x, 0)}`);\n\
+                          \x20 for (const x of walk(r, [[\"p\", \"q\"]])) { print(x); }\n\
+                          \x20 await go(r, 1);\n\
+                          }\n";
+
+fn place_form() -> l::Module {
+    let hir = check_program(&[SourceFile::entry("place.ts", PLACE_FORM)]).expect("checks clean");
+    lower_module(&hir).expect("lowers")
 }
 
 #[test]
-fn a_fixed_array_cursor_over_a_data_subject_is_invalid() {
+fn a_traversal_of_a_place_has_no_hidden_local_and_no_address_across_a_step() {
+    let module = place_form();
+    assert!(verify_module(&module).is_ok());
+    let mut element_reads = 0;
+    for function in &module.functions {
+        assert!(
+            !function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .any(
+                    |i| matches!(i.kind, l::InstructionKind::IteratorCreate { .. })
+                        && function.source_name != "main"
+                ),
+            "{} has a cursor",
+            function.source_name
+        );
+        assert!(
+            function
+                .locals
+                .iter()
+                .all(|local| local.source_name != "<for-of subject>"),
+            "{} has a hidden local",
+            function.source_name
+        );
+        assert_eq!(
+            addresses_across_blocks(function),
+            Vec::new(),
+            "{}",
+            function.source_name
+        );
+        element_reads += function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|i| i.kind == l::InstructionKind::AddressOfIndex { checked: false })
+            .count();
+    }
+    // Each of the six traversals has one element read.
+    assert_eq!(element_reads, 6);
+}
+
+#[test]
+fn an_address_kept_across_a_step_is_found() {
+    let mut module = place_form();
+    let function = main_function(&mut module);
+    assert_eq!(addresses_across_blocks(function), Vec::new());
+    // One step takes an address that another step computed.
+    let (block, address) = function
+        .blocks
+        .iter()
+        .find_map(|block| {
+            let i = block
+                .instructions
+                .iter()
+                .find(|i| matches!(i.kind, l::InstructionKind::AddressOfLocal(_)))?;
+            Some((block.id, i.result?))
+        })
+        .expect("a local address");
+    let element = function
+        .blocks
+        .iter_mut()
+        .filter(|candidate| candidate.id != block)
+        .flat_map(|block| &mut block.instructions)
+        .find(|i| i.kind == l::InstructionKind::AddressOfIndex { checked: false })
+        .expect("an element address in another block");
+    element.operands[0] = l::Operand::Value(address);
+    assert_eq!(addresses_across_blocks(function).len(), 1);
+}
+
+#[test]
+fn the_hidden_local_of_a_call_result_is_released_at_the_loop_exit() {
+    const PREFIX: &str = "class Holder { n: i32 = 7; task: Promise<void>; constructor(t: Promise<void>) { this.task = t; } }\n\
+                          async function fail(): Promise<void> { throw new Error(\"lost\"); }\n\
+                          function one(h: Holder): FixedArray<Holder, 1> { return [h]; }\n";
+    let run = |name: &str, body: &str| {
+        let source = format!("{PREFIX}export function main(): void {{\n{body}\n}}\n");
+        let files = [SourceFile::entry(name, &source)];
+        let module = check_program(&files).expect("checks clean");
+        let lir = lower_module(&module).expect("lowers");
+        let interpreted = subscript_codegen::interpreter::interpret(&lir);
+        let trapped = |error: String| error.contains("lost");
+        [
+            interpreted.map_err(|error| trapped(format!("{error:?}"))),
+            subscript_codegen::run_jit(&files).map_err(|error| trapped(format!("{error:?}"))),
+            subscript_codegen::run_c_aot(&files).map_err(|error| trapped(format!("{error:?}"))),
+        ]
+    };
+    let released = "for (const h of one(new Holder(fail()))) { print(\"step\"); }\n\
+                    Context.collect();\n\
+                    print(\"end\");";
+    for outcome in run("released.ts", released) {
+        assert_eq!(outcome, Err(true));
+    }
+    let held = "const kept = new Holder(fail());\n\
+                for (const h of one(kept)) { print(\"step\"); }\n\
+                Context.collect();\n\
+                print(`end ${kept.n}`);";
+    for outcome in run("held.ts", held) {
+        assert_eq!(outcome, Ok(b"step\nend 7\n".to_vec()));
+    }
+}
+
+#[test]
+fn a_cursor_over_an_address_is_invalid() {
     let mut module = lowered();
     let function = main_function(&mut module);
-    let store = function
+    let address = function
         .blocks
         .iter()
         .flat_map(|block| &block.instructions)
-        .find(|i| matches!(i.kind, l::InstructionKind::StoreLocal(_)))
-        .expect("the hidden local store")
-        .operands[0]
-        .clone();
-    for instruction in instructions(function) {
-        if matches!(
-            instruction.kind,
-            l::InstructionKind::IteratorCreate {
-                kind: l::ForOfKind::FixedArrayValues,
-                ..
-            }
-        ) {
-            instruction.operands = vec![store.clone()];
-        }
-    }
+        .find(|i| matches!(i.kind, l::InstructionKind::AddressOfLocal(_)))
+        .and_then(|i| i.result)
+        .expect("the address of the hidden local");
+    let create = instructions(function)
+        .find(|i| matches!(i.kind, l::InstructionKind::IteratorCreate { .. }))
+        .expect("the cursor of the dynamic array");
+    create.operands = vec![l::Operand::Value(address)];
     assert!(
         messages(&module)
             .iter()

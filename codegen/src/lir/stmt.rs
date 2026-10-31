@@ -1,5 +1,6 @@
 //! Lowering for statements: declarations, conditionals, loops, iteration callbacks, and switch.
 
+use super::fixed_traversal::FixedSubject;
 use super::*;
 
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
@@ -519,59 +520,35 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         body: &[hir::Stmt],
         pos: &Pos,
     ) -> Result<(), LowerError> {
-        let subject_value = self.require_expr(subject)?;
         self.scopes.push(HashMap::new());
-        if is_async_owner_type(&l::ValueType::Data(subject.ty.clone())) {
-            self.declare_binding(
-                "<for-of owner>".to_string(),
-                l::ValueType::Data(subject.ty.clone()),
-                false,
-                subject_value.clone(),
-                pos.clone(),
-                Some(hir::AsyncCopySite::Binding),
-            )?;
-        }
-        let kind = convert_for_of(kind);
-        let iterator_type = l::ValueType::Iterator(l::IteratorType {
-            kind,
-            element: ty.clone(),
-        });
-        let (fixed_subject, cursor_subject) =
-            self.traversal_subject(kind, subject_value, &subject.ty, pos)?;
-        let iterator = self
-            .emit(
-                l::InstructionKind::IteratorCreate {
-                    kind,
-                    bound: l::IteratorBoundKind::Live,
-                },
-                vec![cursor_subject],
-                Some(iterator_type.clone()),
-                false,
-                convert_traps(&subject.statement_read_sites(self.lowering.hir)),
-                pos.clone(),
-            )?
-            .expect("iterator result");
-        let bound = self
-            .emit(
-                l::InstructionKind::IteratorBound,
-                vec![iterator.clone()],
-                Some(l::ValueType::Data(Type::I32)),
-                false,
-                Vec::new(),
-                pos.clone(),
-            )?
-            .expect("iterator bound");
-        let index = l::Operand::Constant(l::Constant {
-            ty: Type::I32,
-            kind: l::ConstantKind::Integer(0),
-        });
-        let cursor_binding =
-            self.declare_hidden_binding("<for-of cursor>", iterator_type.clone(), iterator);
+        let (cursor, fixed_subject) = match convert_for_of(kind) {
+            Some(kind) => {
+                let value = self.require_expr(subject)?;
+                self.own_for_of_subject(subject, &value, pos)?;
+                let traps = convert_traps(&subject.statement_read_sites(self.lowering.hir));
+                let bound = l::IteratorBoundKind::Live;
+                let cursor = self.create_iterator(value, kind, ty.clone(), bound, pos, traps)?;
+                (Some(cursor), None)
+            }
+            None => (None, Some(self.fixed_subject(subject, pos)?)),
+        };
+        let (cursor_binding, bound) = match cursor {
+            Some((iterator_type, iterator)) => {
+                let bound = self.iterator_bound(&iterator, pos)?;
+                let binding =
+                    self.declare_hidden_binding("<for-of cursor>", iterator_type, iterator);
+                (Some(binding), bound)
+            }
+            None => (None, self.fixed_bound(&subject.ty, pos)?),
+        };
+        let index = i32_constant(0);
         let index_binding =
             self.declare_hidden_binding("<for-of index>", l::ValueType::Data(Type::I32), index);
         let bound_binding =
             self.declare_hidden_binding("<for-of bound>", l::ValueType::Data(Type::I32), bound);
-        let traversal = [cursor_binding, index_binding, bound_binding];
+        let mut traversal = vec![index_binding, bound_binding];
+        traversal.extend(cursor_binding);
+        traversal.extend(fixed_subject.iter().flat_map(FixedSubject::kept_bindings));
         let header = self.new_state_block(Vec::new(), Some("for-of.cond".to_string()), &traversal);
         let body_block = self.new_block(Vec::new(), Some("for-of.body".to_string()));
         let step_block =
@@ -580,19 +557,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let edge = self.block_target(header, Vec::new())?;
         self.terminate(l::Terminator::Branch(edge), pos)?;
         self.enter_block(header)?;
-        let cursor = self.read_binding(cursor_binding, pos)?;
-        let index = self.read_binding(index_binding, pos)?;
-        let bound = self.read_binding(bound_binding, pos)?;
-        let more = self
-            .emit(
-                l::InstructionKind::IteratorHasNext,
-                vec![cursor, index, bound],
-                Some(l::ValueType::Data(Type::Bool)),
-                false,
-                Vec::new(),
-                pos.clone(),
-            )?
-            .expect("iterator condition");
+        let more = self.traversal_has_next(cursor_binding, index_binding, bound_binding, pos)?;
         let exit_target = self.block_target(exit, Vec::new())?;
         self.terminate(
             l::Terminator::ConditionalBranch {
@@ -604,10 +569,24 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         )?;
         self.controls.push(self.control(exit, Some(step_block)));
         self.current = Some(body_block);
-        let cursor = self.read_binding(cursor_binding, pos)?;
         let index = self.read_binding(index_binding, pos)?;
-        let bound = self.read_binding(bound_binding, pos)?;
-        let value = self.traversal_element(fixed_subject, cursor, index, bound, ty, pos)?;
+        let value = match (&fixed_subject, cursor_binding) {
+            (Some(fixed), _) => self.fixed_element(fixed, index, ty, pos)?,
+            (None, Some(cursor_binding)) => {
+                let cursor = self.read_binding(cursor_binding, pos)?;
+                let bound = self.read_binding(bound_binding, pos)?;
+                self.emit(
+                    l::InstructionKind::IteratorValue,
+                    vec![cursor, index, bound],
+                    Some(l::ValueType::Data(ty.clone())),
+                    false,
+                    Vec::new(),
+                    pos.clone(),
+                )?
+                .ok_or_else(|| self.error(pos, "iterator value produced no value"))?
+            }
+            (None, None) => return Err(self.error(pos, "a traversal has no cursor")),
+        };
         self.scopes.push(HashMap::new());
         self.declare_binding(
             name.to_string(),
@@ -629,19 +608,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let step_reachable = self.block_reachable(step_block);
         if step_reachable {
             self.enter_block(step_block)?;
-            let cursor = self.read_binding(cursor_binding, pos)?;
             let index = self.read_binding(index_binding, pos)?;
-            let bound = self.read_binding(bound_binding, pos)?;
-            let advanced = self
-                .emit(
-                    l::InstructionKind::IteratorAdvance,
-                    vec![cursor, index.clone(), bound],
-                    Some(iterator_type),
-                    false,
-                    Vec::new(),
-                    pos.clone(),
-                )?
-                .expect("advanced iterator");
+            if let Some(cursor_binding) = cursor_binding {
+                self.advance_cursor(cursor_binding, &index, bound_binding, pos)?;
+            }
             let next_index = self
                 .emit(
                     l::InstructionKind::Binary(l::BinaryOp::Add),
@@ -658,7 +628,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     pos.clone(),
                 )?
                 .expect("advanced iterator index");
-            self.bindings[cursor_binding.0].value = Some(advanced);
             self.bindings[index_binding.0].value = Some(next_index);
             let edge = self.block_target(header, Vec::new())?;
             self.terminate(l::Terminator::Branch(edge), pos)?;
@@ -666,108 +635,86 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.controls.pop();
         self.enter_block(exit)?;
         self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
+        if let Some(fixed) = &fixed_subject {
+            self.finish_fixed_subject(fixed, pos)?;
+        }
         self.scopes.pop();
         Ok(())
     }
 
-    /// Gives a fixed-array traversal its hidden local (compiler.md §218.1
-    /// rule 12): one copy of the subject at the start, which each element read
-    /// addresses. Returns the local and the subject operand of the cursor.
-    fn traversal_subject(
+    fn iterator_bound(
         &mut self,
-        kind: l::ForOfKind,
-        subject: l::Operand,
-        subject_ty: &Type,
-        pos: &Pos,
-    ) -> Result<(Option<(l::LocalId, Type)>, l::Operand), LowerError> {
-        if kind != l::ForOfKind::FixedArrayValues {
-            return Ok((None, subject));
-        }
-        let local = self.add_local(
-            "<for-of subject>".to_string(),
-            l::ValueType::Data(subject_ty.clone()),
-            false,
-            pos.clone(),
-        )?;
-        self.emit(
-            l::InstructionKind::StoreLocal(local),
-            vec![subject],
-            None,
-            false,
-            Vec::new(),
-            pos.clone(),
-        )?;
-        let address = self.subject_address(local, subject_ty, pos)?;
-        Ok((Some((local, subject_ty.clone())), address))
-    }
-
-    fn subject_address(
-        &mut self,
-        local: l::LocalId,
-        subject_ty: &Type,
+        iterator: &l::Operand,
         pos: &Pos,
     ) -> Result<l::Operand, LowerError> {
         self.emit(
-            l::InstructionKind::AddressOfLocal(local),
-            Vec::new(),
-            Some(l::ValueType::Address(l::AddressType {
-                pointee: subject_ty.clone(),
-                array_base: None,
-            })),
+            l::InstructionKind::IteratorBound,
+            vec![iterator.clone()],
+            Some(l::ValueType::Data(Type::I32)),
             false,
             Vec::new(),
             pos.clone(),
         )?
-        .ok_or_else(|| self.error(pos, "local address produced no value"))
+        .ok_or_else(|| self.error(pos, "iterator bound produced no value"))
     }
 
-    /// Reads the element at `index`: from the hidden local of a fixed-array
-    /// traversal, and from the cursor otherwise.
-    fn traversal_element(
+    /// Tests the next step of a traversal. A traversal with no cursor compares
+    /// its index with its bound.
+    fn traversal_has_next(
         &mut self,
-        fixed_subject: Option<(l::LocalId, Type)>,
-        cursor: l::Operand,
-        index: l::Operand,
-        bound: l::Operand,
-        element: &Type,
+        cursor: Option<BindingId>,
+        index: BindingId,
+        bound: BindingId,
         pos: &Pos,
     ) -> Result<l::Operand, LowerError> {
-        let data = l::ValueType::Data(element.clone());
-        let Some((local, subject_ty)) = fixed_subject else {
-            return self
-                .emit(
-                    l::InstructionKind::IteratorValue,
-                    vec![cursor, index, bound],
-                    Some(data),
-                    false,
-                    Vec::new(),
-                    pos.clone(),
-                )?
-                .ok_or_else(|| self.error(pos, "iterator value produced no value"));
+        let index = self.read_binding(index, pos)?;
+        let bound = self.read_binding(bound, pos)?;
+        let (kind, operands) = match cursor {
+            Some(cursor) => (
+                l::InstructionKind::IteratorHasNext,
+                vec![self.read_binding(cursor, pos)?, index, bound],
+            ),
+            None => (
+                l::InstructionKind::Binary(l::BinaryOp::Lt),
+                vec![index, bound],
+            ),
         };
-        let array = self.subject_address(local, &subject_ty, pos)?;
-        let address = self
+        self.emit(
+            kind,
+            operands,
+            Some(l::ValueType::Data(Type::Bool)),
+            false,
+            Vec::new(),
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "traversal condition produced no value"))
+    }
+
+    fn advance_cursor(
+        &mut self,
+        cursor: BindingId,
+        index: &l::Operand,
+        bound: BindingId,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let iterator_type = self.bindings[cursor.0].ty.clone();
+        let operands = vec![
+            self.read_binding(cursor, pos)?,
+            index.clone(),
+            self.read_binding(bound, pos)?,
+        ];
+        let advanced = self
             .emit(
-                l::InstructionKind::AddressOfIndex { checked: false },
-                vec![array, index],
-                Some(l::ValueType::Address(l::AddressType {
-                    pointee: element.clone(),
-                    array_base: None,
-                })),
+                l::InstructionKind::IteratorAdvance,
+                operands,
+                Some(iterator_type),
                 false,
                 Vec::new(),
                 pos.clone(),
             )?
-            .ok_or_else(|| self.error(pos, "element address produced no value"))?;
-        self.emit(
-            l::InstructionKind::LoadAddress,
-            vec![address],
-            Some(data),
-            false,
-            Vec::new(),
-            pos.clone(),
-        )?
-        .ok_or_else(|| self.error(pos, "element load produced no value"))
+            .ok_or_else(|| self.error(pos, "advanced iterator produced no value"))?;
+        self.bindings[cursor.0].value = Some(advanced);
+        Ok(())
     }
 
     fn create_iterator(
@@ -835,7 +782,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     ty: callback.ty.clone(),
                 })
             }
-            _ => Err(self.error(&callback.pos, "callback is not a known function")),
+            _ => Ok(StaticCallback {
+                target: l::CallTargetKind::Indirect,
+                callable: Some(self.require_expr(callback)?),
+                ty: callback.ty.clone(),
+            }),
         }
     }
 
@@ -896,6 +847,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
+    fn lower_reduce_seed(
+        &mut self,
+        operation: hir::ArrFn,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        if !matches!(operation, hir::ArrFn::Reduce | hir::ArrFn::ReduceRight) {
+            return Ok(None);
+        }
+        let initial = args
+            .get(2)
+            .ok_or_else(|| self.error(&expr.pos, "reduce has no initial value"))?;
+        let value = self.require_expr(initial)?;
+        self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &initial.pos)
+            .map(Some)
+    }
+
     pub(super) fn lower_static_array_callback(
         &mut self,
         operation: hir::ArrFn,
@@ -908,23 +876,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let Some(callback_expr) = args.get(1) else {
             return Err(self.error(&expr.pos, "static Array callback has no callback"));
         };
-        let Type::Array(element) = &subject.ty else {
-            return Err(self.error(
-                &subject.pos,
-                "static Array callback receiver is not dynamic",
-            ));
+        let (Type::Array(element) | Type::FixedArray(element, _)) = &subject.ty else {
+            return Err(self.error(&subject.pos, "static callback receiver is not an array"));
         };
         let element = (**element).clone();
-        let subject_value = self.require_expr(subject)?;
-        let callback = self.lower_static_callback(callback_expr)?;
-        let initial = if matches!(operation, hir::ArrFn::Reduce | hir::ArrFn::ReduceRight) {
-            let initial = args
-                .get(2)
-                .ok_or_else(|| self.error(&expr.pos, "reduce has no initial value"))?;
-            let value = self.require_expr(initial)?;
-            Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &initial.pos)?)
+        let (fixed_subject, subject_value) = if matches!(subject.ty, Type::FixedArray(..)) {
+            (Some(self.fixed_subject(subject, &expr.pos)?), None)
         } else {
-            None
+            (None, Some(self.require_expr(subject)?))
+        };
+        // A seed can suspend, and a closure cannot live across a suspension
+        // (compiler.md §220.1 rule 10b).
+        let (callback, initial) = if matches!(callback_expr.kind, hir::ExprKind::Lambda { .. }) {
+            let initial = self.lower_reduce_seed(operation, args, expr)?;
+            (self.lower_static_callback(callback_expr)?, initial)
+        } else {
+            let callback = self.lower_static_callback(callback_expr)?;
+            (callback, self.lower_reduce_seed(operation, args, expr)?)
         };
         let Type::Func(callback_type) = &callback.ty else {
             unreachable!("static callback type was checked")
@@ -943,18 +911,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             l::ForOfKind::ArrayValues
         };
-        let (iterator_type, iterator) = self.create_iterator(
-            subject_value.clone(),
-            kind,
-            element.clone(),
-            l::IteratorBoundKind::Fixed,
-            &expr.pos,
-            expression_traps
-                .clone()
-                .into_iter()
-                .filter(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(0)))
-                .collect(),
-        )?;
+        let cursor = subject_value
+            .as_ref()
+            .map(|subject_value| {
+                self.create_iterator(
+                    subject_value.clone(),
+                    kind,
+                    element.clone(),
+                    l::IteratorBoundKind::Fixed,
+                    &expr.pos,
+                    expression_traps
+                        .clone()
+                        .into_iter()
+                        .filter(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(0)))
+                        .collect(),
+                )
+            })
+            .transpose()?;
         for mut trap in expression_traps.clone() {
             if let l::TrapKind::DevOnlyLifetime(index) = trap.kind {
                 if index != 0 {
@@ -974,28 +947,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }
             }
         }
-        let reverse_index_iterator = if reverse && indexed {
-            Some(self.create_iterator(
-                subject_value,
+        let reverse_index_iterator = match &subject_value {
+            Some(subject_value) if reverse && indexed => Some(self.create_iterator(
+                subject_value.clone(),
                 l::ForOfKind::ArrayKeysReverse,
                 Type::I32,
                 l::IteratorBoundKind::Fixed,
                 &expr.pos,
                 convert_traps(&subject.statement_read_sites(self.lowering.hir)),
-            )?)
-        } else {
-            None
+            )?),
+            _ => None,
         };
-        let bound = self
-            .emit(
-                l::InstructionKind::IteratorBound,
-                vec![iterator.clone()],
-                Some(l::ValueType::Data(Type::I32)),
-                false,
-                Vec::new(),
-                expr.pos.clone(),
-            )?
-            .expect("static callback iterator bound");
+        let bound = match &cursor {
+            Some((_, iterator)) => self.iterator_bound(iterator, &expr.pos)?,
+            None => self.fixed_bound(&subject.ty, &expr.pos)?,
+        };
         let call_traps = expression_traps
             .clone()
             .into_iter()
@@ -1037,8 +1003,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
 
         self.scopes.push(HashMap::new());
-        let cursor_binding =
-            self.declare_hidden_binding("<array callback cursor>", iterator_type.clone(), iterator);
+        let cursor_binding = cursor.map(|(iterator_type, iterator)| {
+            self.declare_hidden_binding("<array callback cursor>", iterator_type, iterator)
+        });
         let reverse_index_binding = reverse_index_iterator.map(|(ty, iterator)| {
             self.declare_hidden_binding("<array callback reverse index>", ty, iterator)
         });
@@ -1066,10 +1033,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 value,
             )
         });
-        let mut traversal = vec![cursor_binding, index_binding, bound_binding];
+        let mut traversal = vec![index_binding, bound_binding];
+        traversal.extend(cursor_binding);
         traversal.extend(reverse_index_binding);
         traversal.extend(callable_binding);
         traversal.extend(result_binding);
+        traversal.extend(fixed_subject.iter().flat_map(FixedSubject::kept_bindings));
 
         let header = self.new_state_block(
             Vec::new(),
@@ -1092,19 +1061,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
 
         self.enter_block(header)?;
-        let header_cursor = self.read_binding(cursor_binding, &expr.pos)?;
-        let header_index = self.read_binding(index_binding, &expr.pos)?;
-        let header_bound = self.read_binding(bound_binding, &expr.pos)?;
-        let more = self
-            .emit(
-                l::InstructionKind::IteratorHasNext,
-                vec![header_cursor, header_index, header_bound],
-                Some(l::ValueType::Data(Type::Bool)),
-                false,
-                Vec::new(),
-                expr.pos.clone(),
-            )?
-            .expect("static callback iterator condition");
+        let more =
+            self.traversal_has_next(cursor_binding, index_binding, bound_binding, &expr.pos)?;
         let exit_target = self.block_target(exit, Vec::new())?;
         self.terminate(
             l::Terminator::ConditionalBranch {
@@ -1116,20 +1074,36 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         )?;
 
         self.current = Some(body);
-        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let step_index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
-        let value = self
-            .emit(
-                l::InstructionKind::IteratorValue,
-                vec![cursor, step_index.clone(), captured_bound.clone()],
-                Some(l::ValueType::Data(element.clone())),
-                false,
-                Vec::new(),
-                expr.pos.clone(),
-            )?
-            .expect("static callback iterator value");
-        let callback_index = if let Some(binding) = reverse_index_binding {
+        let fixed_index = match (&fixed_subject, reverse) {
+            (Some(_), true) => {
+                Some(self.reverse_fixed_index(&step_index, &captured_bound, expr)?)
+            }
+            (Some(_), false) => Some(step_index.clone()),
+            (None, _) => None,
+        };
+        let value = match (&fixed_subject, &fixed_index, cursor_binding) {
+            (Some(fixed), Some(index), _) => {
+                self.fixed_element(fixed, index.clone(), &element, &expr.pos)?
+            }
+            (_, _, Some(cursor_binding)) => {
+                let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+                self.emit(
+                    l::InstructionKind::IteratorValue,
+                    vec![cursor, step_index.clone(), captured_bound.clone()],
+                    Some(l::ValueType::Data(element.clone())),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?
+                .expect("static callback iterator value")
+            }
+            _ => return Err(self.error(&expr.pos, "a traversal has no cursor")),
+        };
+        let callback_index = if let Some(index) = fixed_index {
+            index
+        } else if let Some(binding) = reverse_index_binding {
             let reverse_cursor = self.read_binding(binding, &expr.pos)?;
             self.emit(
                 l::InstructionKind::IteratorValue,
@@ -1230,21 +1204,24 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
 
         self.enter_block(step)?;
-        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
-        let advanced = self
-            .emit(
-                l::InstructionKind::IteratorAdvance,
-                vec![cursor, index.clone(), captured_bound.clone()],
-                Some(iterator_type),
-                false,
-                Vec::new(),
-                expr.pos.clone(),
-            )?
-            .expect("advanced static callback iterator");
-        if reverse {
-            self.bindings[cursor_binding.0].value = Some(advanced);
+        if let Some(cursor_binding) = cursor_binding {
+            let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+            let iterator_type = self.bindings[cursor_binding.0].ty.clone();
+            let advanced = self
+                .emit(
+                    l::InstructionKind::IteratorAdvance,
+                    vec![cursor, index.clone(), captured_bound.clone()],
+                    Some(iterator_type),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?
+                .expect("advanced static callback iterator");
+            if reverse {
+                self.bindings[cursor_binding.0].value = Some(advanced);
+            }
         }
         if let Some(binding) = reverse_index_binding {
             let cursor = self.read_binding(binding, &expr.pos)?;
@@ -1276,6 +1253,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
 
         self.enter_block(exit)?;
+        if let Some(fixed) = &fixed_subject {
+            self.finish_fixed_subject(fixed, &expr.pos)?;
+        }
         let result = result_binding
             .map(|binding| self.read_binding(binding, &expr.pos))
             .transpose()?;
@@ -1340,18 +1320,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
 
         let (kind, element, secondary, bound) = match (callee, &subject.ty) {
-            (hir::Callee::Arr(hir::ArrFn::ForEach), Type::Array(element)) => (
-                l::ForOfKind::ArrayValues,
-                (**element).clone(),
-                None,
-                l::IteratorBoundKind::Fixed,
-            ),
-            (hir::Callee::Arr(hir::ArrFn::ForEach), Type::FixedArray(element, _)) => (
-                l::ForOfKind::FixedArrayValues,
-                (**element).clone(),
-                None,
-                l::IteratorBoundKind::Live,
-            ),
             (hir::Callee::Map(hir::MapFn::ForEach), Type::Map(key, value)) => (
                 l::ForOfKind::MapValues,
                 (**value).clone(),
@@ -1369,10 +1337,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
         };
 
-        let (fixed_subject, cursor_subject) =
-            self.traversal_subject(kind, subject_value.clone(), &subject.ty, &expr.pos)?;
         let (iterator_type, iterator) = self.create_iterator(
-            cursor_subject,
+            subject_value.clone(),
             kind,
             element.clone(),
             bound,
@@ -1472,14 +1438,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
-        let value = self.traversal_element(
-            fixed_subject,
-            cursor,
-            index.clone(),
-            captured_bound.clone(),
-            &element,
-            &expr.pos,
-        )?;
+        let value = self
+            .emit(
+                l::InstructionKind::IteratorValue,
+                vec![cursor, index.clone(), captured_bound.clone()],
+                Some(l::ValueType::Data(element)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .ok_or_else(|| self.error(&expr.pos, "iterator value produced no value"))?;
         let mut call_operands = vec![self.read_binding(callback_binding, &expr.pos)?, value];
         if let Some(secondary_binding) = secondary_binding {
             let secondary_cursor = self.read_binding(secondary_binding, &expr.pos)?;

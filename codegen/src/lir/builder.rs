@@ -653,14 +653,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } = &mut terminator
             {
                 ownership.resize(arguments.len(), false);
+                // A loaded owner goes before the state parameters, which
+                // `enter_block` reads from the end of the block.
+                let state = self.blocks[successor.0 as usize].state_bindings.len();
                 for value in &owners {
                     let operand = l::Operand::Value(*value);
                     if !arguments.contains(&operand) {
                         let ty = self.values[value.0 as usize].ty.clone();
                         let parameter = self.new_value(ty, None);
-                        self.blocks[successor.0 as usize].parameters.push(parameter);
-                        arguments.push(operand);
-                        ownership.push(false);
+                        let parameters = &mut self.blocks[successor.0 as usize].parameters;
+                        parameters.insert(parameters.len() - state, parameter);
+                        let index = arguments.len() - state;
+                        arguments.insert(index, operand);
+                        ownership.insert(index, false);
                     }
                 }
             }

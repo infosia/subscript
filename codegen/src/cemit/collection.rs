@@ -17,22 +17,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let receiver_type = operand_types
             .first()
             .ok_or_else(|| internal(format!("Array.{name} has no receiver type")))?;
-        let (element, fixed_count) = match receiver_type {
-            l::ValueType::Data(Type::Array(element)) => (element.as_ref(), None),
-            l::ValueType::Data(Type::FixedArray(element, count)) => {
-                (element.as_ref(), Some(*count))
-            }
-            other => return Err(internal(format!("Array.{name} receiver is {other:?}"))),
+        let l::ValueType::Data(Type::Array(element)) = receiver_type else {
+            return Err(internal(format!(
+                "Array.{name} receiver is {receiver_type:?}"
+            )));
         };
+        let element = element.as_ref();
         let receiver = operands
             .first()
             .ok_or_else(|| internal(format!("Array.{name} has no receiver")))?;
-        let receiver = if fixed_count.is_some() {
-            format!("(const void*)({receiver}).a")
-        } else {
-            receiver.clone()
-        };
-        let symbol = array_symbol(name, fixed_count.is_some())?;
+        let receiver = receiver.clone();
+        let symbol = array_symbol(name)?;
         let result_type = target.return_type.as_ref().map(data_type).transpose()?;
         let return_ctype = target
             .return_type
@@ -257,13 +252,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let callback = argument(1)?;
                 let mut types = vec!["void*".into(), "const void*".into()];
                 let mut args = vec!["ctx".into(), receiver];
-                if let Some(count) = fixed_count {
-                    types.extend(["uint64_t".into(), "uint64_t".into()]);
-                    args.extend([
-                        format!("{count}ull"),
-                        format!("(uint64_t)sizeof({})", self.emitter.ctype(element)?),
-                    ]);
-                }
                 types.extend([
                     "const void*".into(),
                     "const void*".into(),
@@ -316,13 +304,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 };
                 let mut types = vec!["void*".into(), "const void*".into()];
                 let mut args = vec!["ctx".into(), receiver];
-                if let Some(count) = fixed_count {
-                    types.extend(["uint64_t".into(), "uint64_t".into()]);
-                    args.extend([
-                        format!("{count}ull"),
-                        format!("(uint64_t)sizeof({})", self.emitter.ctype(element)?),
-                    ]);
-                }
                 types.extend([
                     "const void*".into(),
                     "const void*".into(),
@@ -364,13 +345,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let mut types = vec!["void*".into(), "const void*".into()];
                 let mut args = vec!["ctx".into(), receiver];
-                if let Some(count) = fixed_count {
-                    types.extend(["uint64_t".into(), "uint64_t".into()]);
-                    args.extend([
-                        format!("{count}ull"),
-                        format!("(uint64_t)sizeof({})", self.emitter.ctype(element)?),
-                    ]);
-                }
                 types.extend([
                     "const void*".into(),
                     "const void*".into(),

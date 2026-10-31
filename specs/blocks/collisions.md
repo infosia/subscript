@@ -53,11 +53,11 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
 - A traversal of a `FixedArray` reads its place at each step
   (`compiler.md` §220). Two forms differ from `node`. A whole assignment
   to the place in the body changes what later steps read, because an
-  assignment copies into the storage. An element of a dynamic array as
-  the subject keeps its index, and a step traps if a removal makes the
+  assignment copies into the storage. A dynamic array element at any
+  depth of the subject keeps its index, and a step traps if a removal makes the
   index invalid.
 
-Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@ValueType class`
+Accept: `a04`, `a21`, `a406`. Trap: `t113`. Reject: `r07-value-class-extends` (`@ValueType class`
 with an `extends` clause; `tsc`-clean).
 
 ### C3. `number` and sized numerics (Q1) — bare `number` rejected

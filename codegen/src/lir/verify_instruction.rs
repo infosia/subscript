@@ -890,14 +890,7 @@ pub(super) fn verify_instruction_contract(
                 result_type.as_ref(),
                 Some(l::ValueType::Iterator(iterator)) if iterator.kind == *kind
             );
-            let subject_valid = (*kind == l::ForOfKind::FixedArrayValues)
-                == matches!(
-                    operand_types.first(),
-                    Some(l::ValueType::Address(l::AddressType {
-                        pointee: Type::FixedArray(_, _),
-                        ..
-                    }))
-                );
+            let subject_valid = !matches!(operand_types.first(), Some(l::ValueType::Address(_)));
             if operand_types.len() != 1 || !valid || !subject_valid {
                 bad("iterator creation signature is invalid", errors);
             }
@@ -927,7 +920,7 @@ pub(super) fn verify_instruction_contract(
                 (
                     [l::ValueType::Iterator(iterator), l::ValueType::Data(Type::I32), l::ValueType::Data(Type::I32)],
                     Some(l::ValueType::Data(result)),
-                ) => iterator.kind != l::ForOfKind::FixedArrayValues && iterator.element == *result,
+                ) => iterator.element == *result,
                 _ => false,
             };
             if !valid {

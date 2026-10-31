@@ -105,21 +105,21 @@ impl ArrFn {
         }
     }
 
-    /// The Q27 `FixedArray<T, N>` callback-family runtime symbol, when
-    /// this operation is accepted on an in-place fixed buffer.
+    /// True for the Q27 `FixedArray<T, N>` callback family. Each method lowers
+    /// to a loop that reads the receiver place (compiler.md §220.1 rule 10).
     #[must_use]
-    pub fn fixed_symbol(self) -> Option<&'static str> {
-        Some(match self {
-            ArrFn::ForEach => "subscript_rt_fixed_arr_for_each",
-            ArrFn::Map => "subscript_rt_fixed_arr_map",
-            ArrFn::Filter => "subscript_rt_fixed_arr_filter",
-            ArrFn::Reduce => "subscript_rt_fixed_arr_reduce",
-            ArrFn::Some => "subscript_rt_fixed_arr_some",
-            ArrFn::Every => "subscript_rt_fixed_arr_every",
-            ArrFn::FindIndex => "subscript_rt_fixed_arr_find_index",
-            ArrFn::ReduceRight => "subscript_rt_fixed_arr_reduce_right",
-            _ => return None,
-        })
+    pub fn on_fixed_array(self) -> bool {
+        matches!(
+            self,
+            ArrFn::ForEach
+                | ArrFn::Map
+                | ArrFn::Filter
+                | ArrFn::Reduce
+                | ArrFn::Some
+                | ArrFn::Every
+                | ArrFn::FindIndex
+                | ArrFn::ReduceRight
+        )
     }
 
     /// True for the methods whose second HIR argument is a script

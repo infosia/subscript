@@ -44,7 +44,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
                 )
             });
-            if static_operation && dynamic_receiver && known_callback {
+            let fixed_receiver = args
+                .first()
+                .is_some_and(|receiver| is_fixed_array_callback(callee, receiver));
+            if fixed_receiver || (static_operation && dynamic_receiver && known_callback) {
                 return self.lower_static_array_callback(*operation, args, expr);
             }
         }

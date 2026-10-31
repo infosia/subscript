@@ -70,6 +70,20 @@ pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<Str
     }
 }
 
+/// The owners that a `FixedArray` traversal keeps: a counted base of a place,
+/// or the value of a subject that is not a place (compiler.md §220.1 rule 7).
+fn traversal_owners(subject: &hir::Expr) -> usize {
+    use hir::ExprKind as K;
+    match &subject.kind {
+        K::Local(..) | K::Global(_) | K::This => 0,
+        K::Field { obj, .. } | K::Index { obj, .. } if matches!(obj.ty, Type::FixedArray(..)) => {
+            traversal_owners(obj)
+        }
+        K::Field { obj, .. } | K::Index { obj, .. } => usize::from(owned(&obj.ty)),
+        _ => usize::from(owned(&subject.ty)),
+    }
+}
+
 fn owned(ty: &Type) -> bool {
     ty.counted_type().is_some()
 }
@@ -290,6 +304,22 @@ impl Walk<'_> {
                 self.sequence(body);
                 self.controls.pop();
                 self.sequence(step);
+                self.owners = owners;
+            }
+            S::ForOf {
+                ty,
+                subject,
+                body,
+                kind: hir::ForOfKind::FixedArrayValues,
+                name: _,
+                pos: _,
+            } => {
+                self.expression(subject);
+                let owners = self.owners;
+                self.owners += usize::from(owned(ty)) + traversal_owners(subject);
+                self.controls.push((self.hooks.len(), true));
+                self.sequence(body);
+                self.controls.pop();
                 self.owners = owners;
             }
             S::ForOf {

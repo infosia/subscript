@@ -113,10 +113,18 @@ impl AddressTaken<'_> {
                 subject,
                 body,
                 pos,
+                kind,
                 ty: _,
-                kind: _,
+            } => {
+                // A fixed-array traversal reads its place (compiler.md §220.1 rule 1).
+                if *kind == hir::ForOfKind::FixedArrayValues {
+                    self.place(subject);
+                } else {
+                    self.expr(subject);
+                }
+                self.loop_body(name, body, pos);
             }
-            | hir::Stmt::GeneratorForOf {
+            hir::Stmt::GeneratorForOf {
                 name,
                 subject,
                 body,
@@ -125,10 +133,7 @@ impl AddressTaken<'_> {
                 mutable: _,
             } => {
                 self.expr(subject);
-                self.scopes.push(HashMap::new());
-                self.declare(name, pos);
-                self.scoped(body);
-                self.scopes.pop();
+                self.loop_body(name, body, pos);
             }
             hir::Stmt::Switch {
                 disc,
@@ -164,6 +169,13 @@ impl AddressTaken<'_> {
                 }
             }
         }
+    }
+
+    fn loop_body(&mut self, name: &str, body: &[hir::Stmt], pos: &Pos) {
+        self.scopes.push(HashMap::new());
+        self.declare(name, pos);
+        self.scoped(body);
+        self.scopes.pop();
     }
 
     fn expr(&mut self, expr: &hir::Expr) {
@@ -238,7 +250,9 @@ impl AddressTaken<'_> {
                     _ => None,
                 };
                 for (index, argument) in args.iter().enumerate() {
-                    if matches!(callee, hir::Callee::Foreign(_))
+                    if index == 0 && is_fixed_array_callback(callee, argument) {
+                        self.place(argument);
+                    } else if matches!(callee, hir::Callee::Foreign(_))
                         && parameter_types
                             .as_ref()
                             .and_then(|params| params.get(index))

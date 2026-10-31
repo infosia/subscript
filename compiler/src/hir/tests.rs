@@ -1010,3 +1010,25 @@ fn counted_map_operations_and_free_carry_call_traps() {
         }
     }
 }
+
+#[test]
+fn the_fixed_array_callback_family_is_the_callback_methods_that_the_prelude_declares() {
+    let family: Vec<_> = ArrFn::ALL
+        .into_iter()
+        .filter(|f| f.on_fixed_array())
+        .map(ArrFn::name)
+        .collect();
+    assert_eq!(
+        family,
+        [
+            "forEach",
+            "map",
+            "filter",
+            "reduce",
+            "some",
+            "every",
+            "findIndex",
+            "reduceRight"
+        ]
+    );
+}

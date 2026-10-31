@@ -775,9 +775,7 @@ pub enum InstructionKind {
     /// Release one counted array or inline aggregate owner. Its `Call`
     /// trap stops as `AsyncHandleRelease` stops (§116.1 rule 4).
     AsyncHandleArrayRelease,
-    /// Create a fused iteration cursor with its source-selected bound. For
-    /// `FixedArrayValues`, operand zero is the address of the hidden local
-    /// that holds the subject.
+    /// Create a fused iteration cursor with its source-selected bound.
     IteratorCreate {
         /// Storage traversal operation.
         kind: ForOfKind,
@@ -786,9 +784,7 @@ pub enum InstructionKind {
     },
     /// Test a fused cursor without advancing it.
     IteratorHasNext,
-    /// Read the element at the current traversal state. A `FixedArrayValues`
-    /// cursor has no element read: the loop reads the hidden local that holds
-    /// its subject (compiler.md §218.1 rule 12).
+    /// Read the element at the current traversal state.
     IteratorValue,
     /// Read the fixed traversal bound captured at creation.
     IteratorBound,
@@ -1178,8 +1174,6 @@ pub enum ForOfKind {
     ArrayValuesReverse,
     /// Dynamic-array indices from the initial last index to zero.
     ArrayKeysReverse,
-    /// Fixed-array values.
-    FixedArrayValues,
     /// Map keys.
     MapKeys,
     /// Map values.

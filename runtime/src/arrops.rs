@@ -368,16 +368,10 @@ unsafe fn len_of(ctx: *mut Context, h: *const u8, pos_id: u32) -> usize {
 
 /// Element storage used by the shared callback loops.
 ///
-/// Dynamic arrays re-resolve their length and storage on every visit.
-/// Fixed arrays report their constant length and read the caller buffer.
+/// A dynamic array re-resolves its length and storage on every visit.
 #[derive(Clone, Copy)]
 enum ElementSource {
     Dynamic(*mut u8),
-    Fixed {
-        data: *const u8,
-        len: usize,
-        elem_size: usize,
-    },
 }
 
 impl ElementSource {
@@ -386,7 +380,6 @@ impl ElementSource {
         code.is_null()
             || match self {
                 ElementSource::Dynamic(handle) => handle.is_null(),
-                ElementSource::Fixed { data, len, .. } => data.is_null() && len != 0,
             }
             // SAFETY: caller contract.
             || unsafe { (*ctx).trapped() }
@@ -397,7 +390,6 @@ impl ElementSource {
         match self {
             // SAFETY: caller contract.
             ElementSource::Dynamic(handle) => unsafe { (*ctx).array_elem_size(handle) },
-            ElementSource::Fixed { elem_size, .. } => elem_size,
         }
     }
 
@@ -406,7 +398,6 @@ impl ElementSource {
         match self {
             // SAFETY: caller contract.
             ElementSource::Dynamic(handle) => unsafe { len_of(ctx, handle, pos_id) },
-            ElementSource::Fixed { len, .. } => len,
         }
     }
 
@@ -415,14 +406,6 @@ impl ElementSource {
         match self {
             // SAFETY: caller contract and the current length check.
             ElementSource::Dynamic(handle) => unsafe { read_elem(ctx, handle, index) },
-            ElementSource::Fixed { data, .. } => {
-                // SAFETY: caller contract and the current length check.
-                unsafe {
-                    data.add(index * std::mem::size_of::<T>())
-                        .cast::<T>()
-                        .read_unaligned()
-                }
-            }
         }
     }
 }
@@ -1658,292 +1641,6 @@ pub unsafe fn find_last_index(
             env,
             kind,
             SearchMode::FindLastIndex,
-            indexed,
-            std::ptr::null_mut(),
-        )
-    }
-}
-
-// ----- FixedArray callback operations (Q27) -----
-
-/// Q27 `FixedArray.forEach`: direct iteration over the caller's
-/// fixed-length in-place storage.
-///
-/// # Safety
-///
-/// `data` is readable for `len * elem_size` bytes and `code`/`env`
-/// have the callback shape selected by `kind` and `indexed`.
-pub unsafe fn fixed_for_each(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    indexed: bool,
-) {
-    // SAFETY: caller contract.
-    unsafe {
-        for_each_source(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            kind,
-            indexed,
-        )
-    };
-}
-
-/// Q27 `FixedArray.map`: a fresh dynamic array of callback results.
-///
-/// # Safety
-///
-/// As [`fixed_for_each`], with the result ABI described by
-/// `ret_kind`/`ret_size`.
-pub unsafe fn fixed_map(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    elem_kind: ElemKind,
-    ret_kind: ElemKind,
-    ret_size: usize,
-    pos_id: u32,
-    indexed: bool,
-) -> *mut u8 {
-    // SAFETY: caller contract.
-    unsafe {
-        map_source(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            (code, env),
-            elem_kind,
-            MapResult::Value {
-                kind: ret_kind,
-                size: ret_size,
-            },
-            pos_id,
-            indexed,
-        )
-    }
-}
-
-/// Q27 `FixedArray.filter`: selected elements in a fresh dynamic array.
-///
-/// # Safety
-///
-/// As [`fixed_for_each`].
-pub unsafe fn fixed_filter(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    pos_id: u32,
-    indexed: bool,
-) -> *mut u8 {
-    // SAFETY: caller contract.
-    unsafe {
-        filter_source(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            kind,
-            pos_id,
-            indexed,
-        )
-    }
-}
-
-/// Q27 `FixedArray.reduce`.
-///
-/// # Safety
-///
-/// As [`fixed_for_each`]; `acc_ptr` is readable and writable for
-/// `acc_size` bytes.
-pub unsafe fn fixed_reduce(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    elem_kind: ElemKind,
-    acc_kind: ElemKind,
-    acc_size: usize,
-    acc_ptr: *mut u8,
-    indexed: bool,
-) {
-    unsafe {
-        reduce_direction(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            elem_kind,
-            acc_kind,
-            acc_size,
-            acc_ptr,
-            ReduceDirection::Left,
-            indexed,
-        )
-    };
-}
-
-/// Q27 `FixedArray.reduceRight`.
-///
-/// # Safety
-///
-/// As [`fixed_reduce`].
-pub unsafe fn fixed_reduce_right(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    elem_kind: ElemKind,
-    acc_kind: ElemKind,
-    acc_size: usize,
-    acc_ptr: *mut u8,
-    indexed: bool,
-) {
-    unsafe {
-        reduce_direction(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            elem_kind,
-            acc_kind,
-            acc_size,
-            acc_ptr,
-            ReduceDirection::Right,
-            indexed,
-        )
-    };
-}
-
-/// Q27 `FixedArray.some`.
-///
-/// # Safety
-///
-/// As [`fixed_for_each`].
-pub unsafe fn fixed_some(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    indexed: bool,
-) -> i32 {
-    unsafe {
-        search(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            kind,
-            SearchMode::Some,
-            indexed,
-            std::ptr::null_mut(),
-        )
-    }
-}
-
-/// Q27 `FixedArray.every`.
-///
-/// # Safety
-///
-/// As [`fixed_some`].
-pub unsafe fn fixed_every(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    indexed: bool,
-) -> i32 {
-    unsafe {
-        search(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            kind,
-            SearchMode::Every,
-            indexed,
-            std::ptr::null_mut(),
-        )
-    }
-}
-
-/// Q27 `FixedArray.findIndex`.
-///
-/// # Safety
-///
-/// As [`fixed_some`].
-pub unsafe fn fixed_find_index(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    indexed: bool,
-) -> i32 {
-    unsafe {
-        search(
-            ctx,
-            ElementSource::Fixed {
-                data,
-                len,
-                elem_size,
-            },
-            code,
-            env,
-            kind,
-            SearchMode::FindIndex,
             indexed,
             std::ptr::null_mut(),
         )

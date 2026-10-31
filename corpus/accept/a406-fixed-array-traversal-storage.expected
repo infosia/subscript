@@ -1,0 +1,16 @@
+whole-local 1,8
+whole-field 1,8
+shifted 1,4
+value-local 1,9
+value-nested 1,9
+value-callback 1,9
+this-value 19,19
+this-field 1,9
+row-copy 9,9
+row-binding 2,4
+pass 1,9,2,9
+parameter 1,9
+parameter-caller 2
+generator 1,2
+captured 3,11
+captured-walk 1919

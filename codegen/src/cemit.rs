@@ -280,24 +280,7 @@ fn runtime_header_declares(symbol: &str) -> bool {
     symbol.starts_with("subscript_rt_ctx_") || symbol.starts_with("subscript_rt_worker_")
 }
 
-fn array_symbol(name: &str, fixed: bool) -> Result<&'static str, String> {
-    if fixed {
-        return Ok(match name {
-            "ForEach" => "subscript_rt_fixed_arr_for_each",
-            "Map" => "subscript_rt_fixed_arr_map",
-            "Filter" => "subscript_rt_fixed_arr_filter",
-            "Reduce" => "subscript_rt_fixed_arr_reduce",
-            "Some" => "subscript_rt_fixed_arr_some",
-            "Every" => "subscript_rt_fixed_arr_every",
-            "FindIndex" => "subscript_rt_fixed_arr_find_index",
-            "ReduceRight" => "subscript_rt_fixed_arr_reduce_right",
-            other => {
-                return Err(internal(format!(
-                    "Array.{other} is not a FixedArray method"
-                )))
-            }
-        });
-    }
+fn array_symbol(name: &str) -> Result<&'static str, String> {
     Ok(match name {
         "At" => "subscript_rt_arr_at",
         "Find" => "subscript_rt_arr_find",
@@ -1235,7 +1218,6 @@ mod tests {
             l::ForOfKind::ArrayKeys,
             l::ForOfKind::ArrayValuesReverse,
             l::ForOfKind::ArrayKeysReverse,
-            l::ForOfKind::FixedArrayValues,
             l::ForOfKind::MapKeys,
             l::ForOfKind::MapValues,
             l::ForOfKind::SetValues,

@@ -19,6 +19,7 @@ mod construct;
 mod defaults;
 mod exception;
 mod expr;
+mod fixed_traversal;
 mod generator_close;
 mod lambda;
 mod liveness;
@@ -801,6 +802,13 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
     )
 }
 
+/// True for a callback method whose receiver is a `FixedArray`. The traversal
+/// reads the receiver place (compiler.md §220.1 rule 10).
+fn is_fixed_array_callback(callee: &hir::Callee, receiver: &hir::Expr) -> bool {
+    matches!(callee, hir::Callee::Arr(operation) if operation.on_fixed_array())
+        && matches!(receiver.ty, Type::FixedArray(..))
+}
+
 fn is_value_class(module: &hir::Module, ty: &Type) -> bool {
     matches!(ty, Type::Class(id) if module.classes.get(id.0).is_some_and(|class| class.is_value))
 }
@@ -1030,17 +1038,19 @@ fn convert_binary(value: hir::BinOp) -> Result<l::BinaryOp, LowerError> {
     })
 }
 
-fn convert_for_of(value: hir::ForOfKind) -> l::ForOfKind {
-    match value {
+/// The cursor of a traversal. A `FixedArray` traversal has none: an index is
+/// its whole state (compiler.md §220.1 rule 3).
+fn convert_for_of(value: hir::ForOfKind) -> Option<l::ForOfKind> {
+    Some(match value {
+        hir::ForOfKind::FixedArrayValues => return None,
         hir::ForOfKind::ArrayValues => l::ForOfKind::ArrayValues,
         hir::ForOfKind::ArrayKeys => l::ForOfKind::ArrayKeys,
-        hir::ForOfKind::FixedArrayValues => l::ForOfKind::FixedArrayValues,
         hir::ForOfKind::MapKeys => l::ForOfKind::MapKeys,
         hir::ForOfKind::MapValues => l::ForOfKind::MapValues,
         hir::ForOfKind::SetValues => l::ForOfKind::SetValues,
         hir::ForOfKind::StringCodePoints => l::ForOfKind::StringCodePoints,
         _ => unreachable!("unknown checked for-of kind"),
-    }
+    })
 }
 
 fn convert_spread(value: hir::SpreadKind) -> l::SpreadKind {

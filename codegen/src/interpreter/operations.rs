@@ -700,7 +700,6 @@ impl Interpreter<'_> {
                 (Some(Type::Str), Value::Handle(string)) => {
                     i64::from(ffi_len_string(&self.context, *string))
                 }
-                (Some(Type::FixedArray(_, count)), Value::Address(_)) => i64::from(*count),
                 _ => {
                     return Err(self.invalid(
                         Some(pos.clone()),
@@ -747,13 +746,6 @@ impl Interpreter<'_> {
                 pos,
             )?;
         }
-        // A fixed-array cursor stores no subject: the loop reads a hidden local
-        // (compiler.md §218.1 rule 12).
-        let subject = if kind == l::ForOfKind::FixedArrayValues {
-            Value::Null
-        } else {
-            subject
-        };
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind,
             bound_kind,
@@ -814,7 +806,6 @@ impl Interpreter<'_> {
             | l::ForOfKind::ArrayKeysReverse => {
                 i64::from(unsafe { self.context.array_len(cursor.subject.as_handle()?) })
             }
-            l::ForOfKind::FixedArrayValues => cursor.bound,
             l::ForOfKind::StringCodePoints => {
                 i64::from(ffi_len_string(&self.context, cursor.subject.as_handle()?))
             }
@@ -873,10 +864,6 @@ impl Interpreter<'_> {
                     std::slice::from_raw_parts(pointer, layout.size)
                 })
             }
-            l::ForOfKind::FixedArrayValues => Err(self.invalid(
-                Some(pos.clone()),
-                "a fixed-array cursor has no element read",
-            )),
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "association element has no layout")

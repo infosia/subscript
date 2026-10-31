@@ -11,33 +11,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         bound_kind: l::IteratorBoundKind,
         iterator_type: &l::IteratorType,
         subject: &str,
-        subject_type: &l::ValueType,
         result: Option<String>,
     ) -> Result<(), String> {
         let destination = result.ok_or_else(|| internal("iterator creation has no result"))?;
-        // A fixed-array cursor stores no subject: the loop reads a hidden local
-        // (compiler.md §218.1 rule 12).
-        let fixed_count = match subject_type {
-            l::ValueType::Address(l::AddressType {
-                pointee: Type::FixedArray(_, count),
-                ..
-            }) => Some(*count),
-            _ => None,
-        };
-        let subject = match (kind, fixed_count) {
-            (l::ForOfKind::FixedArrayValues, Some(_)) => "(void*)0".to_string(),
-            (l::ForOfKind::FixedArrayValues, None) => {
-                return Err(internal(format!(
-                    "fixed-array iterator source is {subject_type:?}"
-                )))
-            }
-            _ => format!("(void*)({subject})"),
-        };
+        let subject = format!("(void*)({subject})");
         let temporary = format!("(SubIter){{ {subject}, 0ull, 0ull, 0ull }}");
-        let bound = match (kind, fixed_count) {
-            (l::ForOfKind::FixedArrayValues, Some(count)) => format!("{count}ull"),
-            _ => self.iterator_current_bound_expression(instruction, &temporary, iterator_type)?,
-        };
+        let bound =
+            self.iterator_current_bound_expression(instruction, &temporary, iterator_type)?;
         let fixed = u32::from(bound_kind == l::IteratorBoundKind::Fixed);
         let position = if matches!(
             kind,
@@ -134,9 +114,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             | l::ForOfKind::ArrayKeysReverse => {
                 format!("((const SsArrayHeader*)({iterator}).subject)->len")
             }
-            l::ForOfKind::FixedArrayValues => {
-                format!("({iterator}).bound")
-            }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let pos = self.emitter.pos_id(&instruction.pos);
                 self.emitter.runtime_call(
@@ -226,9 +203,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     operands[0]
                 );
             }
-            l::ForOfKind::FixedArrayValues => {
-                return Err(internal("a fixed-array cursor has no element read"));
-            }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let select = i32::from(iterator.kind == l::ForOfKind::MapValues);
                 let pos = self.emitter.pos_id(&instruction.pos);
@@ -303,9 +277,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         let _ = writeln!(out, "    {destination} = {};", operands[0]);
         match iterator.kind {
-            l::ForOfKind::ArrayValues
-            | l::ForOfKind::ArrayKeys
-            | l::ForOfKind::FixedArrayValues => {
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
                 let _ = writeln!(
                     out,
                     "    {destination}.position = ({}).position + 1ull;",

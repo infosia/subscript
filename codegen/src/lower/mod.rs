@@ -236,9 +236,6 @@ pub(crate) struct RtFns {
     /// signature starts `(ctx, recv, …)`; element values travel by
     /// pointer, callbacks as `(code, env)`, kind tags as `u32`.
     pub arr_ops: [FuncId; ArrFn::ALL.len()],
-    /// Q27 `FixedArray<T, N>` callback-family imports. Unsupported
-    /// `ArrFn` variants have no fixed-buffer entry.
-    pub fixed_arr_ops: [Option<FuncId>; ArrFn::ALL.len()],
     /// `subscript_rt_map_*` imports (stdlib.md §10), indexed by
     /// [`MapFn::ALL`] discriminant order.
     pub map_ops: [FuncId; MapFn::ALL.len()],
@@ -887,40 +884,6 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     let arr_ops: [FuncId; ArrFn::ALL.len()] = arr_ids
         .try_into()
         .map_err(|_| internal("array import table size"))?;
-    let mut fixed_arr_ids: Vec<Option<FuncId>> = Vec::with_capacity(ArrFn::ALL.len());
-    for f in ArrFn::ALL {
-        use ArrFn as A;
-        let Some(symbol) = f.fixed_symbol() else {
-            fixed_arr_ids.push(None);
-            continue;
-        };
-        let (params, ret): (&[types::Type], Option<types::Type>) = match f {
-            // (ctx, data, len, elem_size, code, env, kind, indexed)
-            A::ForEach => (&[I64, I64, I64, I64, I64, I64, I32, I32], None),
-            // Plus result kind/size and allocation position.
-            A::Map => (
-                &[I64, I64, I64, I64, I64, I64, I32, I32, I64, I32, I32],
-                Some(I64),
-            ),
-            A::Filter => (&[I64, I64, I64, I64, I64, I64, I32, I32, I32], Some(I64)),
-            A::Reduce | A::ReduceRight => (
-                &[I64, I64, I64, I64, I64, I64, I32, I32, I64, I64, I32],
-                None,
-            ),
-            A::Some | A::Every | A::FindIndex => {
-                (&[I64, I64, I64, I64, I64, I64, I32, I32], Some(I32))
-            }
-            other => {
-                return Err(internal(format!(
-                    "FixedArray symbol on unsupported ArrFn {other:?}"
-                )))
-            }
-        };
-        fixed_arr_ids.push(Some(mk(symbol, params, ret)?));
-    }
-    let fixed_arr_ops: [Option<FuncId>; ArrFn::ALL.len()] = fixed_arr_ids
-        .try_into()
-        .map_err(|_| internal("FixedArray callback import table size"))?;
     // Map/Set operations (stdlib.md §10). Keys, values, and fallbacks
     // travel by pointer; new receives the concrete monomorphized widths
     // and key-kind tag. forEach receives a generated fixed-ABI bridge.
@@ -1218,7 +1181,6 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         str_ops,
         regex_ops,
         arr_ops,
-        fixed_arr_ops,
         map_ops,
         set_ops,
         worker_spawn: mk(

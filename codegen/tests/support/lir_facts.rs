@@ -955,7 +955,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
                 static_array_callback(*operation, args).and_then(|callback| match &callback.ty {
                     Type::Func(function) => Some(
                         function.params.len()
-                            + usize::from(matches!(callback.kind, hir::ExprKind::Lambda { .. })),
+                            + usize::from(!matches!(callback.kind, hir::ExprKind::FuncRef(_))),
                     ),
                     _ => None,
                 })

@@ -844,9 +844,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         *operands
                             .first()
                             .ok_or_else(|| internal("iterator subject is missing"))?,
-                        operand_types
-                            .first()
-                            .ok_or_else(|| internal("iterator subject type is missing"))?,
                         iterator_ty,
                         &instruction.pos,
                     )?,

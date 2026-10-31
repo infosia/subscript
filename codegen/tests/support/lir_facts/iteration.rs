@@ -30,7 +30,10 @@ pub(super) fn compare_iterator_bounds(
             return;
         };
         let fact = match callee {
-            hir::Callee::Arr(operation) if static_array_callback(*operation, args).is_some() => {
+            hir::Callee::Arr(operation)
+                if static_array_callback(*operation, args).is_some()
+                    && !has_fixed_receiver(args) =>
+            {
                 let callback = static_array_callback(*operation, args)
                     .expect("guard established a static callback");
                 let indexed = matches!(&callback.ty, Type::Func(signature)
@@ -119,17 +122,20 @@ fn collect_for_of_bounds(
                 name: _,
                 ty: _,
                 subject: _,
-                kind: _,
+                kind,
             } => {
-                require(
-                    expected,
-                    pos_key(pos),
-                    ExpectedIteratorBound {
-                        bound: l::IteratorBoundKind::Live,
-                        spelling: "for-of",
-                        count: 1,
-                    },
-                );
+                // An index is the whole state of a `FixedArray` traversal.
+                if *kind != hir::ForOfKind::FixedArrayValues {
+                    require(
+                        expected,
+                        pos_key(pos),
+                        ExpectedIteratorBound {
+                            bound: l::IteratorBoundKind::Live,
+                            spelling: "for-of",
+                            count: 1,
+                        },
+                    );
+                }
                 collect_for_of_bounds(hir, body, expected);
             }
             hir::Stmt::If {
@@ -210,6 +216,16 @@ fn collect_for_of_bounds(
     }
 }
 
+fn has_fixed_receiver(args: &[hir::Expr]) -> bool {
+    matches!(
+        args.first().map(|argument| &argument.ty),
+        Some(Type::FixedArray(..))
+    )
+}
+
+/// The callback of a call that lowers to a loop. A `FixedArray` receiver takes
+/// a loop with each callback (compiler.md §220.1 rule 10), and a dynamic array
+/// takes one with a known function.
 pub(super) fn static_array_callback(
     operation: hir::ArrFn,
     args: &[hir::Expr],
@@ -226,15 +242,16 @@ pub(super) fn static_array_callback(
             | hir::ArrFn::FindIndex
     ) || !matches!(
         args.first().map(|argument| &argument.ty),
-        Some(Type::Array(_))
+        Some(Type::Array(_) | Type::FixedArray(..))
     ) {
         return None;
     }
     let callback = args.get(1)?;
-    matches!(
-        callback.kind,
-        hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
-    )
+    (has_fixed_receiver(args)
+        || matches!(
+            callback.kind,
+            hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
+        ))
     .then_some(callback)
 }
 
@@ -266,7 +283,7 @@ fn is_array_callback_site(operation: hir::ArrFn, args: &[hir::Expr]) -> bool {
             | hir::ArrFn::FindIndex
     ) && matches!(
         args.first().map(|argument| &argument.ty),
-        Some(Type::Array(_))
+        Some(Type::Array(_) | Type::FixedArray(..))
     ) && args.get(1).is_some()
 }
 
@@ -398,6 +415,8 @@ pub(super) fn compare_static_array_callbacks(
                                 && function.pos == static_callback.pos
                         })
                     }
+                    (hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }, _) => false,
+                    (_, l::CallTargetKind::Indirect) => true,
                     _ => false,
                 }
             })

@@ -8,40 +8,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         kind: l::ForOfKind,
         bound_kind: l::IteratorBoundKind,
         subject: RV,
-        subject_ty: &l::ValueType,
         iterator_ty: &l::IteratorType,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.stack_slot(32, 8);
         self.zero_bytes(cursor, 32, 8);
-        // A fixed-array cursor stores no subject: the loop reads a hidden local
-        // (compiler.md §218.1 rule 12).
-        let subject = match kind {
-            l::ForOfKind::FixedArrayValues => None,
-            _ => Some(self.expect_scalar(subject)?),
-        };
-        if let Some(subject) = subject {
-            self.builder.ins().store(flags(), subject, cursor, 0);
-        }
+        let subject = self.expect_scalar(subject)?;
+        self.builder.ins().store(flags(), subject, cursor, 0);
         let fixed = self.iconst(
             types::I64,
             i64::from(bound_kind == l::IteratorBoundKind::Fixed),
         );
         self.builder.ins().store(flags(), fixed, cursor, 24);
-        let captured = if kind == l::ForOfKind::FixedArrayValues {
-            let l::ValueType::Address(l::AddressType {
-                pointee: Type::FixedArray(_, count),
-                ..
-            }) = subject_ty
-            else {
-                return Err(internal(
-                    "fixed-array iterator has no fixed-array subject type",
-                ));
-            };
-            self.iconst(types::I64, i64::from(*count))
-        } else {
-            self.iterator_current_bound(cursor, iterator_ty, pos)?
-        };
+        let captured = self.iterator_current_bound(cursor, iterator_ty, pos)?;
         self.builder.ins().store(flags(), captured, cursor, 16);
         if matches!(
             kind,
@@ -57,7 +36,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
         ) {
             let start = self.iconst(types::I64, 0);
-            let subject = subject.ok_or_else(|| internal("association cursor has no subject"))?;
             let position =
                 self.next_live_assoc_position(subject, iterator_ty, start, captured, pos)?;
             self.builder.ins().store(flags(), position, cursor, 8);
@@ -80,9 +58,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.builder
                     .ins()
                     .load(types::I64, flags(), subject, ARRAY_LEN_OFFSET)
-            }
-            l::ForOfKind::FixedArrayValues => {
-                self.builder.ins().load(types::I64, flags(), cursor, 16)
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let position = self.position_id(pos);
@@ -259,9 +234,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let address = self.builder.ins().iadd(data, offset);
                 self.load_data(&iterator_ty.element, address, 0)
             }
-            l::ForOfKind::FixedArrayValues => {
-                Err(internal("a fixed-array cursor has no element read"))
-            }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let (size, align) = self.ml.layouts.size_align(&iterator_ty.element)?;
                 let output = self.stack_slot(size.max(1), align.max(1));
@@ -309,9 +281,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let effective = self.iterator_effective_bound(cursor, iterator_ty, bound, pos)?;
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let next = match iterator_ty.kind {
-            l::ForOfKind::ArrayValues
-            | l::ForOfKind::ArrayKeys
-            | l::ForOfKind::FixedArrayValues => self.builder.ins().iadd_imm(current, 1),
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
+                self.builder.ins().iadd_imm(current, 1)
+            }
             l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse => {
                 let no_prior = self.builder.ins().icmp_imm(IntCC::Equal, current, 0);
                 let empty = self.builder.ins().icmp_imm(IntCC::Equal, effective, 0);
