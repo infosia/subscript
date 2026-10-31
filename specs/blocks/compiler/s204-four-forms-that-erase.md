@@ -93,7 +93,5 @@ CRITICAL or MAJOR finding and six MINOR findings.
 
 Open:
 
-1. `join` rejects an array of a string-literal alias (`Mode[]`), so
-   `` `${ms}` `` fails with the `join` text. `node` prints `on,off`. A
-   literal-alias element is an `i32` index at run time, so `join`
-   needs a new format kind in the runtime formatter.
+1. *(Closed by §216.)* `join` rejected an array of a string-literal
+   alias (`Mode[]`).
