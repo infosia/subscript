@@ -132,13 +132,10 @@
 
   Criteria:
 
-      ship tier   within 7.5x of the C baseline
-      dev tier    within 8.5x, a ceiling, as a22's is
+      ship tier   within 1.5x of the C baseline on aarch64, 7.5x on x86-64
+      dev tier    within 6.0x, a ceiling, as a22's is
 
-  Derivation: the two tiers measured 6.45× and 7.04× at `1bb670d`. The
-  §68 regression measured 8.07× and 10.17×. 7.5× leaves 16% over the
-  measurement, and it trips 7% under the known regression. 8.5× leaves
-  21%, and it trips 16% under it.
+  Derivation: §222. *(Amended 2026-11-01.)*
 
   **The gate runs from a test target.** `cargo test --release` fails
   when a threshold is missed. In a debug build the gate does not run,

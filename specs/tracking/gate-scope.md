@@ -1,8 +1,8 @@
 # The performance criteria are not gates
 
-Status: **finding, 2026-08-28. Open.** `specs/blocks/compiler.md` §3 is
-the owner's to revise, so this file states the finding and a proposal.
-It changes no criterion.
+Status: **closed.** §3 adopted both proposals, §213 changed the figure,
+and §222 replaced the `collect` limits. The text below is the finding of
+2026-08-28.
 
 ## Fact
 

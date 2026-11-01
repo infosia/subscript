@@ -397,8 +397,8 @@ operations.
 
 **Exit criteria.** No corpus golden moves (neither rule changes an
 observable). After A: `collect` under 3.5× on the arm64 reference
-machine. After A and B: under 2.0×. §3's 7.5× gate stays a ceiling
-against regression. The `cross-language` snapshot and `benchmarks/
+machine. After A and B: under 2.0×. §3's gate stays a ceiling
+against regression (§222). The `cross-language` snapshot and `benchmarks/
 README.md` are re-measured on a quiet machine after each round.
 
 **Measured.** A landed at `64a637a`: the standalone ship binary

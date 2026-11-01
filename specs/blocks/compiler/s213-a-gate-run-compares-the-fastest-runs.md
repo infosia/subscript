@@ -100,10 +100,6 @@ MAJOR and eight MINOR findings.
 
 ### 213.4 Open
 
-1. The `collect` limits are stale. `collect` reads 1.12x ship and 3.63x
-   dev against 7.50x and 8.50x, so the gate misses no ship regression
-   under about 6.7x, on either figure. §3 derives these limits from
-   6.45x and 7.04x. A change of a pre-registered limit needs its own
-   section.
+1. *(Closed by §222.)* The `collect` limits were stale.
 2. The Windows path of rule 1a has no build here. No Windows target is
    installed.
