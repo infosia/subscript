@@ -76,7 +76,10 @@ const SHIP_LIMIT: f64 = WORKLOADS[0].ship_limit.aarch64;
 /// `a22` with the aarch64 ship-tier limit on each host, so that a report
 /// test states one figure and one verdict on each host.
 static A22: Workload = Workload {
-    ship_limit: ShipLimit::uniform(SHIP_LIMIT),
+    ship_limit: ShipLimit {
+        aarch64: SHIP_LIMIT,
+        x86_64: SHIP_LIMIT,
+    },
     ..WORKLOADS[0]
 };
 

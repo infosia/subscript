@@ -164,6 +164,8 @@ struct Workload {
     expected_output: ExpectedOutput,
     /// Maximum ship-tier ratio to the C baseline, by host ISA.
     ship_limit: ShipLimit,
+    /// The reason that the ship-tier ceiling differs by host ISA.
+    ship_scope: &'static str,
     /// Maximum dev-tier ratio to the C baseline.
     dev_limit: f64,
     /// Description of the C timed span.
@@ -175,7 +177,8 @@ struct Workload {
 /// not cost the same on both: §10a measures out-of-line growable-array
 /// access and copy-heavy value-class parameter passing as costs clang
 /// optimizes on arm64 and does not on x86-64. One number over two
-/// instruction sets therefore states a criterion neither host owns.
+/// instruction sets therefore states a criterion neither host owns. The
+/// `collect` ceiling differs because §222 has no x86-64 measurement.
 #[derive(Debug, Clone, Copy)]
 struct ShipLimit {
     /// The gated ratio on aarch64, where §3 keeps 1.5x.
@@ -185,15 +188,6 @@ struct ShipLimit {
 }
 
 impl ShipLimit {
-    /// One ratio for every host, where the instruction set does not change
-    /// the measured cost.
-    const fn uniform(limit: f64) -> Self {
-        Self {
-            aarch64: limit,
-            x86_64: limit,
-        }
-    }
-
     /// The ceiling for the host this binary runs on. A host that is
     /// neither aarch64 nor x86-64 reads the aarch64 number, and §3 has no
     /// measurement for it; the report names the host, so the reader sees
@@ -226,6 +220,7 @@ const WORKLOADS: [Workload; 2] = [
             aarch64: 1.50,
             x86_64: 2.50,
         },
+        ship_scope: "§10a names the x86-64 cost, and it is open.",
         dev_limit: 25.0,
         c_span: "the workload call: array construction, 100 propagation iterations, checksum",
     },
@@ -237,8 +232,12 @@ const WORKLOADS: [Workload; 2] = [
         baseline_c: include_str!("../../workloads/c/collect.c"),
         baseline_protocol: BaselineProtocol::SecondsWithInternalFloor,
         expected_output: ExpectedOutput::I32(COLLECT_CHECKSUM),
-        ship_limit: ShipLimit::uniform(7.50),
-        dev_limit: 8.50,
+        ship_limit: ShipLimit {
+            aarch64: 1.50,
+            x86_64: 7.50,
+        },
+        ship_scope: "§222 has no x86-64 measurement.",
+        dev_limit: 6.00,
         c_span: "the workload call: graph construction, explicit reclamation, traversal, checksum",
     },
 ];
@@ -969,9 +968,11 @@ fn write_report(
         w(
             report,
             format_args!(
-                "  {} ship-tier is scoped by host ISA: aarch64 {:.2}x, x86-64 {:.2}x. \
-                 §10a names the x86-64 cost, and it is open.",
-                workload.name, workload.ship_limit.aarch64, workload.ship_limit.x86_64
+                "  {} ship-tier is scoped by host ISA: aarch64 {:.2}x, x86-64 {:.2}x. {}",
+                workload.name,
+                workload.ship_limit.aarch64,
+                workload.ship_limit.x86_64,
+                workload.ship_scope
             ),
         )?;
     }
