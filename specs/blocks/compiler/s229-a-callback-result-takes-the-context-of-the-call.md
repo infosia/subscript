@@ -101,5 +101,5 @@ gave one MAJOR and five MINOR findings.
    accepted. `tsc` gives TS2558 and TS2345. This predates §229.
 3. `compiler/src/check/expr/method.rs` has 1,986 lines. The next change
    to it needs a split.
-4. `p.then((v: i32) => "a")` with a `Promise<Mode>` context stays
+4. *(Closed by §233.)* `p.then((v: i32) => "a")` with a `Promise<Mode>` context stays
    rejected. `tsc` accepts it. Rule 6 keeps it.
