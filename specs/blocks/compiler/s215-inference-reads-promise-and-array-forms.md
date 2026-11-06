@@ -89,9 +89,9 @@ CRITICAL or MAJOR finding and seven MINOR findings.
 
 `tsc` accepts each of these, and each stays rejected:
 
-1. `await (c ? af() : af())`: a non-call operand of `await` has no
+1. *(Closed by §232.)* `await (c ? af() : af())`: a non-call operand of `await` has no
    context.
-2. `await k?.make()` (§212.4 item 1).
+2. *(Closed by §232.)* `await k?.make()` (§212.4 item 1).
 3. `await saf()`, with a synchronous `saf<T>(): Promise<T>` (rule 3a).
 4. `arrv([1, 2], 3.5)` (rule 6): `tsc` gives `T` the type `number`. The
    language has no such join of `i32` and `f64`.

@@ -124,12 +124,13 @@ MAJOR and eight MINOR findings.
 
 ### 212.4 Open
 
-1. `k?.make()` with a context takes no contextual candidate: the
+1. *(Closed by §232.)* `k?.make()` with a context took no contextual candidate: the
    optional call has no context. `tsc` accepts it.
 2. *(Closed by §215.)* A `Promise<T>` result took no contextual
    candidate.
 3. `empty() as Buf<P>` takes no contextual candidate: `as` gives no
-   context. `tsc` accepts it.
+   context. `tsc` accepts it. With a context the form is an identity
+   assertion, which C24 rejects (§232.1 rule 2).
 4. *(Closed by §215.)* `Array<T>` was not a §149.1 rule 2 form.
 5. *(Closed by §229.)* A lambda result gave no context through a built-in method or a
    type parameter with no candidate:
@@ -143,8 +144,8 @@ MAJOR and eight MINOR findings.
    `function f<U>(a: Buf<U> | null): Buf<U> { return a ?? empty(); }`
    and `a ?? []` stay rejected. `tsc` accepts them. A context there
    changes the type of `a ?? 1` and `a ?? id(1)`, which rule 6 forbids.
-7. `!zero()`, `c || zero()`, `c && zero()`, and `empty() ?? null` take
+7. *(`c || zero()` and `c && zero()` closed by §232. `!zero()` stays, §232.1 rule 4.)* `!zero()`, `c || zero()`, `c && zero()`, and `empty() ?? null` take
    no contextual candidate. `tsc` accepts them.
-8. `id<Mode>("a")` with `type Mode = "a" | "b"` gives "the argument
+8. *(Closed: both forms are accepted at `0bd4204a`.)* `id<Mode>("a")` with `type Mode = "a" | "b"` gives "the argument
    expects `string`, got `Mode`", at the pin too. `tsc` accepts it.
    `const m: Mode = zero();` now reaches the same text.
