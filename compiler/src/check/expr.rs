@@ -5,6 +5,7 @@
 mod aggregate;
 mod array_of_and_map_copy;
 mod assign;
+mod await_handle;
 mod call;
 mod container_new;
 mod entry;

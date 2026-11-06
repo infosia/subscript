@@ -64,3 +64,20 @@ or rejected by where the handle is held.
 5. The rejection-site total check passes. Each site keeps a witness of a
    form that it still rejects. §167.3 item 2 cites this section. `a421` has an async entry, so the LIR text snapshot grows by
    its functions. No other golden moves.
+
+### 234.3 Phase Review
+
+*(Added 2026-11-07.)* A fresh review of `4afd673b` and the implementation
+gave three MINOR findings and no CRITICAL or MAJOR finding. The order of
+side effects, exceptions, a handle from a parameter or a field, a handle
+awaited twice, 2,000 iterations of each form, namespace imports, and
+generic methods give the same bytes on the dev tier, the ship tier, and
+`node`, and the same result as the local form.
+
+1. MINOR, realistic, fixed: the checker read the `Promise` result from
+   the declaration, so a generic callee whose instance result is a
+   handle (`await first<Promise<i32>>(hs)`) stayed rejected. The checker
+   now reads the result of the instance.
+2. MINOR, fixed: two routes had no test, and rule 4 had no method test.
+3. MINOR, fixed: a tag of the `a421` header and a comment named the
+   wrong forms.

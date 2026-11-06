@@ -262,7 +262,7 @@ impl<'p> Checker<'p> {
         self.check_direct_call_with_arguments(fn_name, c, fx, pos, None)
     }
 
-    fn check_direct_call_with_arguments(
+    pub(super) fn check_direct_call_with_arguments(
         &mut self,
         fn_name: &str,
         c: &ast::CallExpr,

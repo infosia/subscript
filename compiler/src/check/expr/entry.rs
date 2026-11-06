@@ -776,8 +776,16 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
 
-        // Each path below awaits a user function or method, or a promise
-        // reaction that rejects its own type arguments (§231 rule 1).
+        // §234 rule 1: a synchronous static method is an ordinary call, and
+        // `await` reads its handle. The call takes no context (§215.1 rule
+        // 3a). A function and an instance method take the same step below,
+        // after their instance is known.
+        if let Some(handle) = self.await_static_call(callee, operand, fx) {
+            return self.await_call_handle(handle, fx, pos);
+        }
+        // Each path below awaits a user function, a generic function, an
+        // instance method, a generic method, an interface method, or a
+        // promise reaction that rejects its own type arguments (§231 rule 1).
         self.mark_user_call(call, matches!(callee, ast::Expr::Member(_)));
         match callee {
             ast::Expr::Ident(ident) => {
@@ -835,6 +843,21 @@ impl<'p> Checker<'p> {
                 let Some(sig) = self.fn_sigs.get(&function).cloned() else {
                     return self.err_expr(pos);
                 };
+                // §234 rule 1: a synchronous function whose instantiated
+                // result is a handle is an ordinary call.
+                if !sig.is_async && matches!(self.apparent_type(&sig.ret), Type::AsyncHandle(_)) {
+                    if rejects_type_args {
+                        self.reject_subset(
+                            RejectionSite::AwaitFunctionTypeArguments,
+                            format!("`{name}` is not generic"),
+                            self.pos(ident.span),
+                        );
+                    }
+                    let call_pos = self.pos(call.span);
+                    let handle = self
+                        .check_direct_call_with_arguments(&function, call, fx, call_pos, checked);
+                    return self.await_call_handle(handle, fx, pos);
+                }
                 if !sig.is_async {
                     self.reject_subset(
                         RejectionSite::AwaitSynchronousFunction,
@@ -1019,6 +1042,20 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 };
+                // §234 rule 1: a synchronous method whose instantiated result
+                // is a handle is an ordinary call.
+                if !sig.is_async && matches!(self.apparent_type(&sig.ret), Type::AsyncHandle(_)) {
+                    if !generic && call.type_args.is_some() {
+                        self.reject_subset(
+                            RejectionSite::AwaitMethodTypeArguments,
+                            format!("method `{name}` is not generic"),
+                            method_pos,
+                        );
+                    }
+                    let handle =
+                        self.synchronous_method_call(receiver, name, &sig, call, inferred, fx);
+                    return self.await_call_handle(handle, fx, pos);
+                }
                 if !sig.is_async {
                     self.reject_subset(
                         RejectionSite::AwaitSynchronousMethod,
