@@ -1,7 +1,7 @@
 # Inherited-precedent audit — pre-registered
 
-Status: pre-registered 2026-07-28 (owner request). Not yet run. Runs at
-or after P25's Phase Review.
+Status: CLOSED 2026-11-06. Run 1 (2026-07-28) found 3 hits, and each is
+settled. On 2026-11-06 the owner closed the audit with no second run.
 
 ## The defect class
 
