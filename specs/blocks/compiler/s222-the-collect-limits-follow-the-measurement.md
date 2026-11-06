@@ -42,6 +42,7 @@ CRITICAL or MAJOR finding.
 ### 222.4 Open
 
 1. The x86-64 ship limit and the x86-64 dev limit have no measurement. A
-   miss on x86-64 gives the first figure. §225.2 measures them with `cl`.
+   miss on x86-64 gives the first figure. §225.2 measures them with `cl`,
+   and §226 sets the x86-64 ship limit and the Windows dev limits.
 2. No test reads `ship_scope`, so a swap of the two reasons in
    `perf-gate.rs` passes.

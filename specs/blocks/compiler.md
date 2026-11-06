@@ -267,3 +267,4 @@ Every section, with its status:
 | §223 | A host entry during a host entry traps | active | [`s223-a-host-entry-during-a-host-entry-traps.md`](compiler/s223-a-host-entry-during-a-host-entry-traps.md) |
 | §224 | A callback outside a host entry is a host entry | active | [`s224-a-callback-outside-a-host-entry-is-a-host-entry.md`](compiler/s224-a-callback-outside-a-host-entry-is-a-host-entry.md) |
 | §225 | A benchmark compiles with the ship C compiler | active | [`s225-a-benchmark-compiles-with-the-ship-c-compiler.md`](compiler/s225-a-benchmark-compiles-with-the-ship-c-compiler.md) |
+| §226 | The x86-64 and Windows limits follow the measurement | active | [`s226-the-x86-64-and-windows-limits-follow-the-measurement.md`](compiler/s226-the-x86-64-and-windows-limits-follow-the-measurement.md) |
