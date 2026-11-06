@@ -85,9 +85,8 @@ has the numbers.
     a function argument of a foreign call, and a value stored in a mirror
     field. C can call that value during the call, or store it and call it
     at a later foreign call. A foreign function with no such value reaches
-    no operation. §18 neither allows nor forbids a call of an export
-    during a foreign call, so the reach has no edge to an export. §221.4
-    records this.
+    no operation. A call of an export during a foreign call traps
+    (§223), so the reach has no edge to an export. *(Amended 2026-11-06.)*
 11. The interpreter poison registry of §68.2 item 9 is per frame. It sees
     a move in one function. A value identifier is local to a function, so
     a shared registry reported a false move on a correct recursion through
@@ -153,9 +152,8 @@ A fresh review of the rejection gave three MAJOR and six MINOR findings.
 
 ### 221.4 Open
 
-1. A call of an export during a foreign call has no edge in the reach.
-   §18 neither allows nor forbids it. An edge rejects each element method
-   that calls C if any export moves that array.
+1. *(Closed by §223.)* A call of an export during a foreign call had no
+   edge in the reach.
 2. `all = []; Context.collect();` in a method leaves `this` on released
    storage. Rule 2 does not list a reassignment. Measured value `11`, equal
    to the expected value. Contrived.

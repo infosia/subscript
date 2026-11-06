@@ -27,7 +27,7 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
 | reference interpreter | §68.7 |
-| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
+| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152 |
 | the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222 |
@@ -264,3 +264,4 @@ Every section, with its status:
 | §220 | A `FixedArray` traversal reads its place | active | [`s220-a-fixed-array-traversal-reads-its-place.md`](compiler/s220-a-fixed-array-traversal-reads-its-place.md) |
 | §221 | A method that moves its array is rejected on an element | active | [`s221-a-method-that-moves-its-array-is-rejected-on-an-element.md`](compiler/s221-a-method-that-moves-its-array-is-rejected-on-an-element.md) |
 | §222 | The `collect` limits follow the measurement | active | [`s222-the-collect-limits-follow-the-measurement.md`](compiler/s222-the-collect-limits-follow-the-measurement.md) |
+| §223 | A host entry during a host entry traps | active | [`s223-a-host-entry-during-a-host-entry-traps.md`](compiler/s223-a-host-entry-during-a-host-entry-traps.md) |
