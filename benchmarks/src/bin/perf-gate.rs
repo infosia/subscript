@@ -181,7 +181,7 @@ struct Workload {
     /// The reason that the ship-tier ceiling differs by host ISA.
     ship_scope: &'static str,
     /// Maximum dev-tier ratio to the C baseline.
-    dev_limit: f64,
+    dev_limit: DevLimit,
     /// Description of the C timed span.
     c_span: &'static str,
 }
@@ -192,7 +192,7 @@ struct Workload {
 /// access and copy-heavy value-class parameter passing as costs clang
 /// optimizes on arm64 and does not on x86-64. One number over two
 /// instruction sets therefore states a criterion neither host owns. The
-/// `collect` ceiling differs because §222 has no x86-64 measurement.
+/// `collect` ceiling follows the x86-64 measurement in §226.
 #[derive(Debug, Clone, Copy)]
 struct ShipLimit {
     /// The gated ratio on aarch64, where §3 keeps 1.5x.
@@ -207,7 +207,12 @@ impl ShipLimit {
     /// measurement for it; the report names the host, so the reader sees
     /// which number applied.
     fn here(self) -> f64 {
-        if cfg!(target_arch = "x86_64") {
+        self.for_host(Host::here())
+    }
+
+    /// The ceiling for an explicit host.
+    fn for_host(self, host: Host) -> f64 {
+        if host.x86_64 {
             self.x86_64
         } else {
             self.aarch64
@@ -217,6 +222,57 @@ impl ShipLimit {
     /// Whether this workload's ceiling differs by host.
     fn is_scoped(self) -> bool {
         self.aarch64 != self.x86_64
+    }
+}
+
+/// The host properties that select performance limits.
+#[derive(Clone, Copy, Debug)]
+struct Host {
+    /// Whether the host uses the x86-64 instruction set.
+    x86_64: bool,
+    /// Whether the host runs Windows.
+    windows: bool,
+}
+
+impl Host {
+    /// Selects the properties of the host this binary runs on.
+    fn here() -> Self {
+        Self {
+            x86_64: cfg!(target_arch = "x86_64"),
+            windows: cfg!(target_os = "windows"),
+        }
+    }
+}
+
+/// A dev-JIT ceiling scoped by host OS (§226).
+#[derive(Clone, Copy)]
+struct DevLimit {
+    /// The gated ratio on Windows, which uses wall time.
+    windows: f64,
+    /// The gated ratio on every other host.
+    other: f64,
+    /// The measured reason for the host scope.
+    reason: &'static str,
+}
+
+impl DevLimit {
+    /// The ceiling for the host this binary runs on.
+    fn here(self) -> f64 {
+        self.for_host(Host::here())
+    }
+
+    /// The ceiling for an explicit host.
+    fn for_host(self, host: Host) -> f64 {
+        if host.windows {
+            self.windows
+        } else {
+            self.other
+        }
+    }
+
+    /// Whether this workload's ceiling differs by host.
+    fn is_scoped(self) -> bool {
+        self.windows != self.other
     }
 }
 
@@ -235,7 +291,11 @@ const WORKLOADS: [Workload; 2] = [
             x86_64: 2.50,
         },
         ship_scope: "§10a names the x86-64 cost, and it is open.",
-        dev_limit: 25.0,
+        dev_limit: DevLimit {
+            windows: 31.00,
+            other: 25.00,
+            reason: "§226: Windows wall time reached 26.60x under load; 31.00x adds 17% margin.",
+        },
         c_span: "the workload call: array construction, 100 propagation iterations, checksum",
     },
     Workload {
@@ -248,10 +308,14 @@ const WORKLOADS: [Workload; 2] = [
         expected_output: ExpectedOutput::I32(COLLECT_CHECKSUM),
         ship_limit: ShipLimit {
             aarch64: 1.50,
-            x86_64: 7.50,
+            x86_64: 2.00,
         },
-        ship_scope: "§222 has no x86-64 measurement.",
-        dev_limit: 6.00,
+        ship_scope: "§226: x86-64 reached 1.68x; 2.00x adds 19% margin.",
+        dev_limit: DevLimit {
+            windows: 7.50,
+            other: 6.00,
+            reason: "§226: Windows wall time reached 6.37x under load; 7.50x adds 18% margin.",
+        },
         c_span: "the workload call: graph construction, explicit reclamation, traversal, checksum",
     },
 ];
@@ -989,6 +1053,18 @@ fn write_report(
             ),
         )?;
     }
+    for workload in WORKLOADS.iter().filter(|w| w.dev_limit.is_scoped()) {
+        w(
+            report,
+            format_args!(
+                "  {} dev-JIT is scoped by host OS: Windows {:.2}x, other hosts {:.2}x. {}",
+                workload.name,
+                workload.dev_limit.windows,
+                workload.dev_limit.other,
+                workload.dev_limit.reason
+            ),
+        )?;
+    }
     let (Some(iteration), Some(iteration_stats), Some(reload), Some(reload_stats)) = (
         one_shots.first(),
         one_shot_stats.first(),
@@ -1011,14 +1087,10 @@ fn write_report(
             ));
         };
         let ship_limit = run.workload.ship_limit.here();
+        let dev_limit = run.workload.dev_limit.here();
         let (Some(ship_check), Some(dev_check)) = (
             compare_ratio(mode, ship, baseline, ship_limit),
-            compare_ratio(
-                mode,
-                cpu.as_ref().unwrap_or(dev),
-                baseline,
-                run.workload.dev_limit,
-            ),
+            compare_ratio(mode, cpu.as_ref().unwrap_or(dev), baseline, dev_limit),
         ) else {
             return Err(format!(
                 "{} C baseline measured zero time; the clock is unusable",
@@ -1053,7 +1125,7 @@ fn write_report(
                 report,
                 format_args!(
                     "  {:<9} {:<15} {:>16}, limit {:.2}x  WITHHELD",
-                    run.workload.name, "dev-JIT", "noise", run.workload.dev_limit
+                    run.workload.name, "dev-JIT", "noise", dev_limit
                 ),
             )?;
         } else {
@@ -1064,7 +1136,7 @@ fn write_report(
                     run.workload.name,
                     "dev-JIT",
                     dev_check.figure,
-                    run.workload.dev_limit,
+                    dev_limit,
                     if dev_check.met { "MET" } else { "MISSED" }
                 ),
             )?;

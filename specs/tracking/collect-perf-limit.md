@@ -58,3 +58,20 @@ against 25.00x.
 
 The `collect` ship figure stays far under the x86-64 limit of 7.50x:
 the highest figure is 1.68x.
+
+## Landing of §226
+
+Three quiet `perf-gate --gate` runs at the landing, exit 0 each:
+
+| Run | `collect` ship | `collect` dev | `a22` ship | `a22` dev |
+|---|---|---|---|---|
+| 1 | 0.90x | 1.34x | 1.65x | 7.22x |
+| 2 | 1.34x | 3.51x | 1.72x | 5.97x |
+| 3 | 1.15x | 3.10x | 1.79x | 6.37x |
+
+One run during other builds on the same host read `collect` ship 4.75x
+and `collect` dev 7.81x, and missed both. That run is not a quiet run
+(§213.1 rule 7).
+
+`tools/gate.sh full`: exit 0, debug 3103 passed, release 3100 passed, 0
+failed. No golden moved.

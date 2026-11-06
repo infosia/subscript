@@ -62,6 +62,7 @@
   baseline. That is a ceiling against regression, not a performance
   goal: the tier exists to iterate, and 25× is chosen from the measured
   19.6× that a constant-trip unroller reaches, with room above it.
+  On Windows the ceiling is 31× (§226 rule 3).
 
   Making this a ceiling rather than dropping the measurement is
   deliberate. The old 4× was never met and nothing re-measured it for
@@ -132,10 +133,10 @@
 
   Criteria:
 
-      ship tier   within 1.5x of the C baseline on aarch64, 7.5x on x86-64
-      dev tier    within 6.0x, a ceiling, as a22's is
+      ship tier   within 1.5x of the C baseline on aarch64, 2.0x on x86-64
+      dev tier    within 6.0x, a ceiling, as a22's is; 7.5x on Windows
 
-  Derivation: §222. *(Amended 2026-11-01.)*
+  Derivation: §222 and §226. *(Amended 2026-11-06.)*
 
   **The gate runs from a test target.** `cargo test --release` fails
   when a threshold is missed. In a debug build the gate does not run,

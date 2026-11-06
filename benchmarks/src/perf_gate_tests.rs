@@ -3,6 +3,66 @@
 use super::*;
 
 #[test]
+fn workload_limits_match_section_226_on_each_host() {
+    // Cost: sixteen limit lookups and literal comparisons; no workload execution.
+    for (host, a22_ship, a22_dev, collect_ship, collect_dev) in [
+        (
+            Host {
+                x86_64: true,
+                windows: true,
+            },
+            2.50,
+            31.00,
+            2.00,
+            7.50,
+        ),
+        (
+            Host {
+                x86_64: true,
+                windows: false,
+            },
+            2.50,
+            25.00,
+            2.00,
+            6.00,
+        ),
+        (
+            Host {
+                x86_64: false,
+                windows: true,
+            },
+            1.50,
+            31.00,
+            1.50,
+            7.50,
+        ),
+        (
+            Host {
+                x86_64: false,
+                windows: false,
+            },
+            1.50,
+            25.00,
+            1.50,
+            6.00,
+        ),
+    ] {
+        let a22 = WORKLOADS
+            .iter()
+            .find(|w| w.name == "a22")
+            .expect("a22 exists");
+        let collect = WORKLOADS
+            .iter()
+            .find(|w| w.name == "collect")
+            .expect("collect exists");
+        assert_eq!(a22.ship_limit.for_host(host), a22_ship, "{host:?}");
+        assert_eq!(a22.dev_limit.for_host(host), a22_dev, "{host:?}");
+        assert_eq!(collect.ship_limit.for_host(host), collect_ship, "{host:?}");
+        assert_eq!(collect.dev_limit.for_host(host), collect_dev, "{host:?}");
+    }
+}
+
+#[test]
 fn clean_reporting_run_passes_when_thresholds_are_met() {
     let spreads = [NOISE_LIMIT - 0.01];
     assert_eq!(
@@ -73,12 +133,17 @@ fn excessive_spread_voids_only_the_reporting_run() {
 /// The ship-tier limit of `a22` on aarch64.
 const SHIP_LIMIT: f64 = WORKLOADS[0].ship_limit.aarch64;
 
-/// `a22` with the aarch64 ship-tier limit on each host, so that a report
+/// `a22` with the non-Windows aarch64 limits on each host, so that a report
 /// test states one figure and one verdict on each host.
 static A22: Workload = Workload {
     ship_limit: ShipLimit {
         aarch64: SHIP_LIMIT,
         x86_64: SHIP_LIMIT,
+    },
+    dev_limit: DevLimit {
+        windows: 25.00,
+        other: 25.00,
+        reason: "The report fixture uses the same limits on each host.",
     },
     ..WORKLOADS[0]
 };
@@ -249,7 +314,7 @@ fn threshold_lines_of(
         .lines()
         .skip_while(|line| !line.starts_with("thresholds"))
         .take_while(|line| !line.is_empty())
-        .filter(|line| !line.contains("scoped by host ISA"))
+        .filter(|line| !line.contains("scoped by host"))
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
         .collect();
     (code, lines)

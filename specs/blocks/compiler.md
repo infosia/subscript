@@ -30,7 +30,7 @@ The stages of the current form and the sections that hold their rules:
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152 |
-| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222 |
+| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222, §225, §226 |
 
 Every section, with its status:
 

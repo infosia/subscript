@@ -102,4 +102,6 @@ MAJOR and eight MINOR findings.
 
 1. *(Closed by §222.)* The `collect` limits were stale.
 2. The Windows path of rule 1a has no build here. No Windows target is
-   installed.
+   installed. *(2026-11-06: §226 measured the Windows path. At two busy
+   processes per CPU its dev-JIT wall minimum missed 6.00x and 25.00x;
+   §226 widens those two limits on Windows. The item is closed.)*

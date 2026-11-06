@@ -15,8 +15,9 @@ about 6.5x. §3 derives the limits from 6.45x and 7.04x at `1bb670d`.
 
 1. On aarch64, the `collect` ship-tier limit is 1.50x.
 2. On x86-64, the `collect` ship-tier limit stays 7.50x. This host has
-   no x86-64 measurement.
-3. The `collect` dev-JIT limit is 6.00x on each ISA.
+   no x86-64 measurement. *(Superseded by §226 rule 1: 2.00x.)*
+3. The `collect` dev-JIT limit is 6.00x on each ISA. *(On Windows,
+   §226 rule 2 makes it 7.50x.)*
 4. The figure stays the figure of §213.1.
 
 ### 222.2 Acceptance

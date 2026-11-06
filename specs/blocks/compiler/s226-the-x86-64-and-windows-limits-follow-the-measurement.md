@@ -40,4 +40,19 @@ time figure.
 ### 226.3 Open
 
 1. The measurement is one host and one `cl` version. A miss on another
-   x86-64 host gives the next figure.
+   x86-64 host gives the next figure. An aarch64 Windows host has no
+   measurement; it reads the Windows dev limits and the aarch64 ship
+   limits.
+2. No test reads the report line of rule 5, as §222.4 item 2 states for
+   the ship scope.
+3. The dev limits select on Windows, and the cause is that the harness
+   has no thread CPU clock there. If Windows gains that clock, rules 2
+   and 3 need a new measurement.
+
+### 226.4 Phase Review
+
+*(Added 2026-11-06.)* A fresh review gave five MINOR findings and no
+CRITICAL or MAJOR finding. Three were documentation and are fixed:
+§222.1 cites this section, the index row lists it, and §213.4 item 2 is
+closed. The other two are items 2 and 3 of §226.3, and the aarch64
+Windows case is in item 1.
