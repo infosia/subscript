@@ -688,6 +688,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::WorkerStaticObjectMethod => WitnessEntry::General { files: &["a-s049"], variant: Some(Divergence::WorkerStaticObjectMethod), reason: "" },
         RejectionSite::ValueClassMethodMissing => WitnessEntry::General { files: &["a-s051"], variant: None, reason: "" },
         RejectionSite::ToStringTypeArguments => WitnessEntry::General { files: &["a-s052"], variant: None, reason: "" },
+        RejectionSite::BuiltinTypeArgumentCount => WitnessEntry::General { files: &["builtin-type-argument-count"], variant: None, reason: "" },
+        RejectionSite::ReduceLiteralResultWidens => WitnessEntry::General { files: &["reduce-literal-result-widens"], variant: None, reason: "" },
         RejectionSite::WorkerObjectMethod => WitnessEntry::General { files: &["a-s053"], variant: Some(Divergence::WorkerObjectMethod), reason: "" },
         RejectionSite::InboxObjectMethod => WitnessEntry::General { files: &["a-s054"], variant: Some(Divergence::InboxObjectMethod), reason: "" },
         RejectionSite::OutboxObjectMethod => WitnessEntry::General { files: &["a-s055"], variant: Some(Divergence::OutboxObjectMethod), reason: "" },

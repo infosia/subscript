@@ -470,6 +470,8 @@ WorkerStaticObjectMethod	a-s049	S018	`Worker` has no static method `valueOf`
 ValueClassMethodMissing	a-probe-unconstrained-object	S018	`T` has no method `toString`
 ValueClassMethodMissing	a-s051	S018	`T` has no method `foo`
 ToStringTypeArguments	a-s052	S100	`toString` is not generic
+BuiltinTypeArgumentCount	builtin-type-argument-count	S100	`filter` takes no type arguments, got 1
+ReduceLiteralResultWidens	reduce-literal-result-widens	S100	the `reduce` callback result `"b"` has the type `string`, and `string` is not assignable to the accumulator `Mode`; `tsc` rejects the call (TS2769)\nnote: write `reduce<Mode>(...)`, or annotate the callback result: `(...): Mode => ...`
 WorkerObjectMethod	a-s053	S018	`Worker<M, M>` has no method `valueOf`
 InboxObjectMethod	a-s054	S018	`Inbox<M>` has no method `valueOf`
 OutboxObjectMethod	a-s055	S018	`Outbox<M>` has no method `valueOf`

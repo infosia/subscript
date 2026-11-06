@@ -627,6 +627,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::WorkerStaticObjectMethod,
     RejectionSite::ValueClassMethodMissing,
     RejectionSite::ToStringTypeArguments,
+    RejectionSite::BuiltinTypeArgumentCount,
+    RejectionSite::ReduceLiteralResultWidens,
     RejectionSite::WorkerObjectMethod,
     RejectionSite::InboxObjectMethod,
     RejectionSite::OutboxObjectMethod,

@@ -106,6 +106,10 @@ impl<'p> Checker<'p> {
     }
 
     fn resolve_type_position(&mut self, ty: &ast::TsType, allow_void: bool) -> Type {
+        // §230 rule 3: a resolved type argument entry is read.
+        if !self.type_argument_watch.is_empty() {
+            self.type_argument_watch.remove(&ty.span());
+        }
         let undefined_result = std::mem::take(&mut self.undefined_result);
         let resolved = match ty {
             ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),

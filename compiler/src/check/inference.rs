@@ -178,7 +178,7 @@ impl<'p> Checker<'p> {
         method: hir::ArrFn,
         call: &ast::CallExpr,
     ) -> Option<Type> {
-        let [argument] = call.type_args.as_ref()?.params.as_slice() else {
+        let [argument] = self.type_arguments_of(call, 1)? else {
             return None;
         };
         if let [callback] = call.args.as_slice() {

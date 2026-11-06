@@ -1358,6 +1358,8 @@ rejection_classes! {
     ),
     Self::ValueClassMethodMissing => (RuleCode::S018, TscRejects),
     Self::ToStringTypeArguments => (RuleCode::S100, TscRejects),
+    Self::BuiltinTypeArgumentCount => (RuleCode::S100, TscRejects),
+    Self::ReduceLiteralResultWidens => (RuleCode::S100, TscRejects),
     Self::WorkerObjectMethod => (RuleCode::S018, Diverges(Divergence::WorkerObjectMethod)),
     Self::InboxObjectMethod => (RuleCode::S018, Diverges(Divergence::InboxObjectMethod)),
     Self::OutboxObjectMethod => (RuleCode::S018, Diverges(Divergence::OutboxObjectMethod)),

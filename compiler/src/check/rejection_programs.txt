@@ -403,6 +403,16 @@ FILE	E	target/s154/forms/a-s052/main.ts
 export function main(): void { new Error().toString<i32>(); }
 END FILE
 END PROGRAM
+PROGRAM	builtin-type-argument-count	TS2345		0
+FILE	E	target/s154/forms/builtin-type-argument-count/main.ts
+export function main(): void { const xs: i32[] = [1]; xs.filter<i32>((x: i32) => x > 0); }
+END FILE
+END PROGRAM
+PROGRAM	reduce-literal-result-widens	TS2322,TS2769		0
+FILE	E	target/s154/forms/reduce-literal-result-widens/main.ts
+type Mode = "a" | "b"; export function main(): void { const xs: i32[] = [1]; const m: Mode = xs.reduce((acc: Mode, x: i32) => "b", "a"); }
+END FILE
+END PROGRAM
 PROGRAM	a-s053			0
 FILE	E	target/s154/forms/a-s053/main.ts
 class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {}

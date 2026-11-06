@@ -87,3 +87,36 @@ that the checker does not read has no effect and no diagnostic.
    rule 3 rejects, report it and stop.
 6. The rejection-site total check passes. §229.4 items 1 and 2 cite this
    section. No golden moves.
+
+### 230.3 Phase Review
+
+*(Added 2026-11-06.)* A fresh review of `6b31e0d2` and the implementation
+gave seven MINOR findings and no CRITICAL or MAJOR finding.
+
+1. MINOR, realistic, fixed: rule 1 rejected four forms that `tsc`
+   accepts, such as `(acc: Mode, x) => "b"`. Rule 1a now states them.
+2. MINOR, realistic, fixed: rule 3 did not check a call in a `for…of`
+   subject or a statement `unreachable<i32>()`. Each call entry now runs
+   one helper.
+3. MINOR, contrived, open: §230.4 item 1.
+4. MINOR, contrived, open: §230.4 item 2.
+5. MINOR, contrived, open: §230.4 item 3.
+6. MINOR, fixed: the count test had no case for `Context.bytesInto` or
+   `Context.fromBytes`, and no control for a user generic call.
+7. MINOR, fixed: the reference text of rule 1 was not in STE, and it did
+   not state rule 1a. One part stays: when rule 1 rejects a call, the
+   S014 of a callback with the wrong parameter count does not show. The
+   program is rejected in both cases.
+
+### 230.4 Open
+
+1. `xs.reduce((acc: Mode, x: i32) => { return "b"; }, "a")` is accepted,
+   and `tsc` gives TS2322 and TS2769. Rule 2 keeps a block body.
+2. `xs.flatMap<i32, undefined>(…)` is rejected with "takes 1 type
+   argument, got 2". `tsc` accepts it, because its declaration has a
+   second type parameter `This`.
+3. A type argument list on a call of a user function or method is
+   outside rule 3. `b.get<i32>()` on a non-generic method, `f<i32>(1)`
+   on a `const` arrow, and `Reg.f<i32>(1)` on a static field of a
+   function type are accepted, and `tsc` gives TS2558. The awaited form
+   `await b.get<i32>()` gives "method `get` is not generic".

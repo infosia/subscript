@@ -661,6 +661,8 @@ pub(crate) enum RejectionSite {
     WorkerStaticObjectMethod,
     ValueClassMethodMissing,
     ToStringTypeArguments,
+    BuiltinTypeArgumentCount,
+    ReduceLiteralResultWidens,
     WorkerObjectMethod,
     InboxObjectMethod,
     OutboxObjectMethod,

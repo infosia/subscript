@@ -552,7 +552,9 @@ impl<'p> Checker<'p> {
                 if let ast::Expr::Ident(ident) = callee {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
-                        let checked = self.check_named_call(ident, call, fx, pos, true);
+                        let checked = self.checked_call(call, Self::poisoned_call, |checker| {
+                            checker.check_named_call(ident, call, fx, pos, true)
+                        });
                         self.end_shared_narrowing(&checked, fx);
                         return vec![hir::Stmt::Expr(checked)];
                     }
@@ -640,7 +642,9 @@ impl<'p> Checker<'p> {
         let context = ctx.map(|value| Type::AsyncHandle(Box::new(value.clone())));
         let active = self.active_call.replace(call.span);
         let active_context = self.enter_call_context(call, context.as_ref());
-        let checked = self.check_await_call(operand, call, fx, pos);
+        let checked = self.checked_call(call, Self::poisoned_call, |checker| {
+            checker.check_await_call(operand, call, fx, pos)
+        });
         self.active_call = active;
         self.active_call_context = active_context;
         checked
@@ -768,6 +772,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
 
+        // Each path below awaits a user function or method, or a promise
+        // reaction that rejects its own type arguments, so §230 rule 3,
+        // which covers built-ins, does not read the list here.
+        self.exempt_type_arguments(call);
         match callee {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();

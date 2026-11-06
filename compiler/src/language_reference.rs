@@ -38,6 +38,8 @@ const GENERIC_CONTEXT_INFERENCE: &str = "`new G(args)` with no type arguments in
 
 const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A method call infers omitted type arguments from its arguments and its contextual type (§197, §212), or supplies them explicitly. A type parameter with no candidate needs an explicit list: `box.empty<i32>()`. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. An async instance method on a non-generic reference class can declare type parameters (§93). A generic method on a generic class stays outside the surface.";
 
+const BUILTIN_TYPE_ARGUMENTS: &str = "A type argument list on a built-in call is accepted only if the checker reads each entry (§230). These built-ins read a type argument. `xs.map<U>`, `xs.flatMap<U>`, `xs.reduce<U>`, and `xs.reduceRight<U>` take 1. `Array.of<T>`, `Array.from<T>`, and `JSON.parse<T>` take 1. `Context.bytesOf<T>`, `Context.bytesInto<T>`, and `Context.fromBytes<T>` take 1. `Map.groupBy<K, T>` and `Worker.spawn<In, Out>` take 2. Each other built-in takes none, so `xs.filter<i32>(f)` is rejected: \"`filter` takes no type arguments, got 1\". A user function or method keeps its own rule. A call of `reduce` or `reduceRight` can have an initial value and no type argument. If its callback has an expression body and no result annotation, a string literal result has the type `string`, as `tsc` gives it. The result keeps its literal type only if the element type has a string literal type. So `xs.reduce((acc: Mode, x: i32) => \"b\", \"a\")` with `xs: i32[]` is rejected. If the accumulator has an annotation and another parameter has none, the result keeps its type, as `tsc` types the body after the inference: `xs.reduce((acc: Mode, x) => \"b\", \"a\")` is accepted. Write `xs.reduce<Mode>(...)`, or annotate the result: `(acc: Mode, x: i32): Mode => \"b\"`.";
+
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member != undefined` / `member !== undefined` or the inverse arm of `member == undefined` / `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return. A value of a Q32 alias does not convert to `string`. `type L2 = Label;` names the same closed set (§202). `xs.join(s)` on an array of a Q32 alias is `` xs.map((x) => `${x}`).join(s) ``, and `xs` evaluates once (§216). An array of a Q32 alias takes each array method that an array of an enum takes, and `includes` and `indexOf` compare the alias value. `<` on a Q32 alias, `sort()` with no comparator, and `find` and `findLast` stay rejected.";
@@ -225,6 +227,14 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a187-async-generic-method.ts",
             "corpus/reject/r186-async-generic-method-without-type-args.ts",
             "corpus/reject/r187-async-generic-method-on-value-class.ts",
+        ],
+    },
+    Feature {
+        title: "Type arguments of built-in calls",
+        prose: BUILTIN_TYPE_ARGUMENTS,
+        corpus: &[
+            "corpus/reject/r486-reduce-literal-result-widens.ts",
+            "corpus/reject/r487-unread-type-argument.ts",
         ],
     },
     Feature {

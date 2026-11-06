@@ -1333,74 +1333,93 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
     ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
         if let ast::Expr::Call(call) = expression {
-            if let ast::Callee::Expr(callee) = &call.callee {
-                if let ast::Expr::Member(member) = &**callee {
-                    if let ast::MemberProp::Ident(prop) = &member.prop {
-                        let name = prop.sym.as_ref();
-                        if matches!(name, "keys" | "values" | "entries") {
-                            let recv = self.check_expr(&member.obj, None, fx);
-                            // The view rules reach the §14.1 containers
-                            // only. On any other receiver the three names
-                            // are ordinary members (compiler.md §103.2).
-                            if !self.is_fused_view_receiver(&recv.ty) {
-                                let call_pos = self.pos(call.span);
-                                let subject =
-                                    self.check_method_call_on(recv, prop, call, fx, call_pos);
-                                return self.for_of_subject_from(subject);
-                            }
-                            let prop_pos = self.pos(prop.span);
-                            if name == "entries" {
-                                self.reject_subset(
-                                    RejectionSite::ForOfEntries,
-                                    "`entries()` yields a pair, but the language has no tuple type",
-                                    prop_pos,
-                                );
-                                return (recv, None, Type::Error, false);
-                            }
-                            if !call.args.is_empty() {
-                                self.reject_subset(
-                                    if call.args.iter().all(|argument| argument.spread.is_some()) {
-                                        RejectionSite::IteratorMethodArgumentCount
-                                    } else {
-                                        RejectionSite::IteratorMethodValueArgumentCount
-                                    },
-                                    format!("`{name}()` expects no arguments"),
-                                    self.pos(call.span),
-                                );
-                                return (recv, None, Type::Error, false);
-                            }
-                            let selected = match (&self.apparent_type(&recv.ty), name) {
-                                (Type::Array(_), "keys") => {
-                                    Some((hir::ForOfKind::ArrayKeys, Type::I32))
-                                }
-                                (Type::Array(elem), "values") => {
-                                    Some((hir::ForOfKind::ArrayValues, (**elem).clone()))
-                                }
-                                (Type::Map(key, _), "keys") => {
-                                    Some((hir::ForOfKind::MapKeys, (**key).clone()))
-                                }
-                                (Type::Map(_, value), "values") => {
-                                    Some((hir::ForOfKind::MapValues, (**value).clone()))
-                                }
-                                (Type::Set(key), "keys" | "values") => {
-                                    Some((hir::ForOfKind::SetValues, (**key).clone()))
-                                }
-                                _ => None,
-                            };
-                            if let Some((kind, elem)) = selected {
-                                return (recv, Some(kind), elem, false);
-                            }
-                            let actual = self.type_name(&recv.ty);
+            // A fused view call enters the checker here (compiler.md §230 rule 3).
+            type Subject = (hir::Expr, Option<hir::ForOfKind>, Type, bool);
+            let poisoned = |checker: &Self, (subject, _, element, _): &Subject| {
+                checker.poisoned_call(subject)
+                    || matches!(checker.apparent_type(element), Type::Error)
+            };
+            return self.checked_call(call, poisoned, |checker| {
+                checker.check_for_of_call_subject(call, expression, fx)
+            });
+        }
+        let subject = self.check_expr(expression, None, fx);
+        self.for_of_subject_from(subject)
+    }
+
+    /// [`Self::check_for_of_subject_under_flag`] for a call subject.
+    fn check_for_of_call_subject(
+        &mut self,
+        call: &ast::CallExpr,
+        expression: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
+        if let ast::Callee::Expr(callee) = &call.callee {
+            if let ast::Expr::Member(member) = &**callee {
+                if let ast::MemberProp::Ident(prop) = &member.prop {
+                    let name = prop.sym.as_ref();
+                    if matches!(name, "keys" | "values" | "entries") {
+                        let recv = self.check_expr(&member.obj, None, fx);
+                        // The view rules reach the §14.1 containers
+                        // only. On any other receiver the three names
+                        // are ordinary members (compiler.md §103.2).
+                        if !self.is_fused_view_receiver(&recv.ty) {
+                            let call_pos = self.pos(call.span);
+                            let subject = self.check_method_call_on(recv, prop, call, fx, call_pos);
+                            return self.for_of_subject_from(subject);
+                        }
+                        let prop_pos = self.pos(prop.span);
+                        if name == "entries" {
                             self.reject_subset(
-                                RejectionSite::ForOfKeys,
-                                format!(
-                                    "`{name}()` is a subject-only fused view on Map, Set, \
-                                     or T[]; receiver is `{actual}`"
-                                ),
+                                RejectionSite::ForOfEntries,
+                                "`entries()` yields a pair, but the language has no tuple type",
                                 prop_pos,
                             );
                             return (recv, None, Type::Error, false);
                         }
+                        if !call.args.is_empty() {
+                            self.reject_subset(
+                                if call.args.iter().all(|argument| argument.spread.is_some()) {
+                                    RejectionSite::IteratorMethodArgumentCount
+                                } else {
+                                    RejectionSite::IteratorMethodValueArgumentCount
+                                },
+                                format!("`{name}()` expects no arguments"),
+                                self.pos(call.span),
+                            );
+                            return (recv, None, Type::Error, false);
+                        }
+                        let selected = match (&self.apparent_type(&recv.ty), name) {
+                            (Type::Array(_), "keys") => {
+                                Some((hir::ForOfKind::ArrayKeys, Type::I32))
+                            }
+                            (Type::Array(elem), "values") => {
+                                Some((hir::ForOfKind::ArrayValues, (**elem).clone()))
+                            }
+                            (Type::Map(key, _), "keys") => {
+                                Some((hir::ForOfKind::MapKeys, (**key).clone()))
+                            }
+                            (Type::Map(_, value), "values") => {
+                                Some((hir::ForOfKind::MapValues, (**value).clone()))
+                            }
+                            (Type::Set(key), "keys" | "values") => {
+                                Some((hir::ForOfKind::SetValues, (**key).clone()))
+                            }
+                            _ => None,
+                        };
+                        if let Some((kind, elem)) = selected {
+                            return (recv, Some(kind), elem, false);
+                        }
+                        let actual = self.type_name(&recv.ty);
+                        self.reject_subset(
+                            RejectionSite::ForOfKeys,
+                            format!(
+                                "`{name}()` is a subject-only fused view on Map, Set, \
+                                 or T[]; receiver is `{actual}`"
+                            ),
+                            prop_pos,
+                        );
+                        return (recv, None, Type::Error, false);
                     }
                 }
             }

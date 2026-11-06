@@ -1292,6 +1292,12 @@ pub(crate) struct Checker<'p> {
     /// Each call that `mark_operand_calls` marks. Such a call has no
     /// contextual type (§212 rule 1a).
     operand_calls: HashSet<swc_common::Span>,
+    /// Each type argument entry of an active call that the checker did not
+    /// read yet (§230 rule 3).
+    type_argument_watch: HashSet<swc_common::Span>,
+    /// The count of type arguments that a built-in call reads, by call
+    /// span (§230 rule 3).
+    type_argument_takes: HashMap<swc_common::Span, usize>,
     function_value_decision: bool,
     initializer_root: Option<swc_common::Span>,
     static_method_owners: HashMap<String, (ClassId, String)>,

@@ -19,7 +19,9 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let active = self.active_call.replace(c.span);
         let active_context = self.enter_call_context(c, ctx);
-        let checked = self.check_call_inner(c, ctx, fx, pos);
+        let checked = self.checked_call(c, Self::poisoned_call, |checker| {
+            checker.check_call_inner(c, ctx, fx, pos)
+        });
         self.active_call = active;
         self.active_call_context = active_context;
         checked
@@ -105,6 +107,12 @@ impl<'p> Checker<'p> {
                 return checker.check_indirect_call(callee, c, fx, pos);
             }
             let item = checker.scope_item(&name, &ident_pos);
+            if matches!(
+                item,
+                Some(ScopeItem::Func(_) | ScopeItem::GenericFunc(_) | ScopeItem::Foreign(_))
+            ) {
+                checker.exempt_type_arguments(c);
+            }
             if item.is_none() && crate::check::exception::ErrorKind::from_name(&name).is_some() {
                 return checker.reject_error_call(&name, pos);
             }
@@ -626,6 +634,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        self.exempt_type_arguments(c);
         self.check_indirect_call_with_arguments(callee, c, fx, pos, None)
     }
 
@@ -764,6 +773,7 @@ impl<'p> Checker<'p> {
         name: &str,
     ) -> Option<hir::Expr> {
         if self.rejected_static_generic_method(&member.obj, name, fx) {
+            self.exempt_type_arguments(call);
             return Some(self.err_expr(pos));
         }
         let ast::Expr::Ident(receiver) = &*member.obj else {
@@ -777,6 +787,7 @@ impl<'p> Checker<'p> {
         let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos) else {
             return None;
         };
+        self.exempt_type_arguments(call);
         if self.reject_member_access(class, name, true, false, fx, member_pos.clone()) {
             return Some(self.err_expr(pos));
         }
@@ -947,6 +958,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> Option<(String, Option<Vec<Option<hir::Expr>>>)> {
+        self.exempt_type_arguments(call);
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
             return None;
         }
@@ -989,6 +1001,9 @@ impl<'p> Checker<'p> {
             return result.unwrap_or_else(|| checker.err_expr(pos));
         }
         let recv = checker.apparent_expr(recv);
+        if matches!(checker.apparent_type(&recv.ty), Type::Class(id) if id != checker.error_class) {
+            checker.exempt_type_arguments(c);
+        }
         let mut name = property.sym.to_string();
         let mut inferred = None;
         let prop_pos = checker.pos(property.span);

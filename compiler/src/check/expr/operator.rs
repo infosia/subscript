@@ -722,13 +722,10 @@ impl<'p> Checker<'p> {
                             continue;
                         };
                         let call = opt_call_as_call(call);
-                        current = self.check_method_call_on(
-                            current,
-                            property,
-                            &call,
-                            fx,
-                            self.pos(call.span),
-                        );
+                        let call_pos = self.pos(call.span);
+                        current = self.checked_call(&call, Self::poisoned_call, |checker| {
+                            checker.check_method_call_on(current, property, &call, fx, call_pos)
+                        });
                         index += 2;
                         self.end_shared_narrowing(&current, fx);
                         ends_in_call = true;
@@ -753,7 +750,10 @@ impl<'p> Checker<'p> {
                         };
                     }
                     let call = opt_call_as_call(call);
-                    current = self.check_indirect_call(current, &call, fx, self.pos(call.span));
+                    let call_pos = self.pos(call.span);
+                    current = self.checked_call(&call, Self::poisoned_call, |checker| {
+                        checker.check_indirect_call(current, &call, fx, call_pos)
+                    });
                     self.end_shared_narrowing(&current, fx);
                     index += 1;
                     ends_in_call = true;

@@ -825,7 +825,7 @@ impl<'p> Checker<'p> {
                 // natural contextual type, so a plain literal init does
                 // not default to `i32` and poison `U`. Only an
                 // un-annotated arrow leaves `U` to `init` itself.
-                let (acc_ctx, checked_cb, resolved_acc) = self.reduce_acc_context(&c.args[0], fx);
+                let (acc_ctx, checked_cb, resolved_acc) = self.reduce_acc_context(c, fx);
                 let init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
                 if matches!(self.apparent_type(&init.ty), Type::Error) {
                     return self.err_expr(pos);
@@ -844,7 +844,9 @@ impl<'p> Checker<'p> {
                     }
                     None => init.ty.clone(),
                 };
-                if matches!(self.apparent_type(&acc_ty), Type::Error) {
+                if matches!(self.apparent_type(&acc_ty), Type::Error)
+                    || self.reject_widened_reduce_result(f, c, &elem, &acc_ty)
+                {
                     return self.err_expr(pos);
                 }
                 if !self.instance_restriction(
@@ -1072,7 +1074,21 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let items = self.check_expr(&c.args[0].expr, None, fx);
+        // §230 rule 3: `Map.groupBy<K, T>` reads both entries. `T[]` is the
+        // context of the items, and `K` is the result of the callback.
+        let explicit = self.type_arguments_of(c, 2).map(|entries| {
+            (
+                self.resolve_type(&entries[0]),
+                self.resolve_type(&entries[1]),
+            )
+        });
+        let items_type = explicit
+            .as_ref()
+            .map(|(_, element)| Type::array(element.clone()));
+        let items = self.check_expr(&c.args[0].expr, items_type.as_ref(), fx);
+        if let Some(expected) = &items_type {
+            self.require_expr_assignable(&items, expected, fx, "the `Map.groupBy` items");
+        }
         let elem = match &self.apparent_type(&items.ty) {
             Type::Array(elem) => (**elem).clone(),
             Type::Error => return self.err_expr(pos),
@@ -1104,7 +1120,7 @@ impl<'p> Checker<'p> {
         let callback = self.check_arr_callback(
             &c.args[1],
             vec![elem.clone()],
-            None,
+            explicit.map(|(key, _)| key),
             fx,
             CallbackSpec::new("Map.groupBy", "Q27", false),
         );
@@ -1661,47 +1677,6 @@ impl<'p> Checker<'p> {
                 mk(operation.operation(), vec![recv, other], ty, pos)
             }
         }
-    }
-
-    /// The accumulator type `U` a `reduce` callback spells, if any — the
-    /// contextual type for `init` (C4).
-    ///
-    /// An arrow callback spells it as its first parameter's annotation:
-    /// resolved here without reporting, because the callback check
-    /// resolves the same annotation afterwards. Any other callback
-    /// expression is a function value whose declared type already gives
-    /// `U`; it is checked once, here, and returned so the caller
-    /// shape-validates it. `(None, None)` when the callback does not
-    /// spell `U` (an un-annotated arrow, or an expression that is not a
-    /// function), which leaves `init` context-free.
-    fn reduce_acc_context(
-        &mut self,
-        arg: &ast::ExprOrSpread,
-        fx: &mut FnCtx,
-    ) -> (Option<Type>, Option<hir::Expr>, Option<Type>) {
-        if arg.spread.is_some() {
-            return (None, None, None); // reported by `check_arr_callback`
-        }
-        if let ast::Expr::Arrow(a) = &*arg.expr {
-            let Some(ast::Pat::Ident(binding)) = a.params.first() else {
-                return (None, None, None);
-            };
-            let Some(ann) = binding.type_ann.as_ref() else {
-                return (None, None, None);
-            };
-            let ty = self.resolve_type(&ann.type_ann);
-            return (
-                (!matches!(&self.apparent_type(&ty), Type::Error)).then_some(ty.clone()),
-                None,
-                Some(ty),
-            );
-        }
-        let checked = self.check_expr(&arg.expr, None, fx);
-        let acc = match &self.apparent_type(&checked.ty) {
-            Type::Func(ft) => ft.params.first().cloned(),
-            _ => None,
-        };
-        (acc, Some(checked), None)
     }
 
     /// Checks one callback argument of an `Array`, `Map`, or `Set`
