@@ -82,8 +82,8 @@ CRITICAL or MAJOR finding and five MINOR findings. About 90 forms of rule
 
 1. Two `C | null` values in `===` stay rejected (rule 4a). `tsc` accepts
    them.
-2. `if (a === "x" || a === "y") a.length` gives S011. `tsc` accepts it. A
-   union of facts on one location does not exist.
+2. *(Closed by §227.)* `if (a === "x" || a === "y") a.length` gave S011. `tsc` accepts it. A
+   union of facts on one location did not exist.
 3. `if (a === r.value) { a.length; }` with an unguarded `IterResult.value`
    is accepted, and `tsc` gives TS18047. The read traps with
    `generator-done-value` before the compare. Contrived.
