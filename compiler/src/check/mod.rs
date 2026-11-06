@@ -1298,6 +1298,9 @@ pub(crate) struct Checker<'p> {
     /// The count of type arguments that a built-in call reads, by call
     /// span (§230 rule 3).
     type_argument_takes: HashMap<swc_common::Span, usize>,
+    /// Each call with a type argument list that reaches a user method
+    /// (`true`) or a user function or function value (§231 rule 1).
+    type_argument_user_calls: HashMap<swc_common::Span, bool>,
     function_value_decision: bool,
     initializer_root: Option<swc_common::Span>,
     static_method_owners: HashMap<String, (ClassId, String)>,

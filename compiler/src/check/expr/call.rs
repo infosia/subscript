@@ -111,7 +111,7 @@ impl<'p> Checker<'p> {
                 item,
                 Some(ScopeItem::Func(_) | ScopeItem::GenericFunc(_) | ScopeItem::Foreign(_))
             ) {
-                checker.exempt_type_arguments(c);
+                checker.mark_user_call(c, false);
             }
             if item.is_none() && crate::check::exception::ErrorKind::from_name(&name).is_some() {
                 return checker.reject_error_call(&name, pos);
@@ -634,7 +634,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        self.exempt_type_arguments(c);
+        self.mark_user_call(c, false);
         self.check_indirect_call_with_arguments(callee, c, fx, pos, None)
     }
 
@@ -773,7 +773,7 @@ impl<'p> Checker<'p> {
         name: &str,
     ) -> Option<hir::Expr> {
         if self.rejected_static_generic_method(&member.obj, name, fx) {
-            self.exempt_type_arguments(call);
+            self.mark_user_call(call, true);
             return Some(self.err_expr(pos));
         }
         let ast::Expr::Ident(receiver) = &*member.obj else {
@@ -787,7 +787,7 @@ impl<'p> Checker<'p> {
         let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos) else {
             return None;
         };
-        self.exempt_type_arguments(call);
+        self.mark_user_call(call, true);
         if self.reject_member_access(class, name, true, false, fx, member_pos.clone()) {
             return Some(self.err_expr(pos));
         }
@@ -958,7 +958,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> Option<(String, Option<Vec<Option<hir::Expr>>>)> {
-        self.exempt_type_arguments(call);
+        self.mark_user_call(call, true);
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
             return None;
         }
@@ -1001,8 +1001,11 @@ impl<'p> Checker<'p> {
             return result.unwrap_or_else(|| checker.err_expr(pos));
         }
         let recv = checker.apparent_expr(recv);
-        if matches!(checker.apparent_type(&recv.ty), Type::Class(id) if id != checker.error_class) {
-            checker.exempt_type_arguments(c);
+        // §231 rule 1: a user class or an interface constraint has user methods.
+        if matches!(checker.apparent_type(&recv.ty), Type::Class(id) if id != checker.error_class)
+            || matches!(checker.apparent_type(&recv.ty), Type::Interface(_))
+        {
+            checker.mark_user_call(c, true);
         }
         let mut name = property.sym.to_string();
         let mut inferred = None;

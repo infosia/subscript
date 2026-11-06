@@ -296,6 +296,11 @@ function f(): void {}
 export function main(): void { f<i32>(); }
 END FILE
 END PROGRAM
+PROGRAM	user-method-type-arguments	TS2558		0
+FILE	E	target/s154/forms/user-method-type-arguments/main.ts
+class B { get(): i32 { return 1; } } export function main(): void { new B().get<i32>(); }
+END FILE
+END PROGRAM
 PROGRAM	a-s035	TS2348		0
 FILE	E	target/s154/forms/a-s035/main.ts
 class C { x: i32 = 1; }

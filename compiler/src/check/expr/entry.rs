@@ -773,9 +773,8 @@ impl<'p> Checker<'p> {
         }
 
         // Each path below awaits a user function or method, or a promise
-        // reaction that rejects its own type arguments, so §230 rule 3,
-        // which covers built-ins, does not read the list here.
-        self.exempt_type_arguments(call);
+        // reaction that rejects its own type arguments (§231 rule 1).
+        self.mark_user_call(call, matches!(callee, ast::Expr::Member(_)));
         match callee {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();

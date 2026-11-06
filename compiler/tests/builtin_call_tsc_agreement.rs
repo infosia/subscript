@@ -1,9 +1,10 @@
 //! A built-in call is accepted only where `tsc` accepts it (compiler.md
 //! §230): the result of a `reduce` callback (rule 1), and the type
-//! argument list of a built-in call (rule 3).
+//! argument list of a call (rule 3). Each call reads its type arguments,
+//! and a block-body `reduce` callback has the same rule (§231).
 //!
 //! Cost: each test runs the checker on short programs, with no code
-//! generation and no external process. The whole file took 0.06 s in a
+//! generation and no external process. The whole file took 0.07 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
@@ -18,6 +19,13 @@ class U {
   static make<T>(value: T): T { return value; }
   keep<T>(value: T): T { return value; }
 }
+class B {
+  get(): i32 { return 1; }
+  static s(): i32 { return 2; }
+  async load(): Promise<i32> { return 1; }
+}
+class Reg { static f: (x: i32) => i32 = (x: i32): i32 => x; }
+function g(): i32 { return 1; }
 "#;
 
 fn check(body: &str) -> Result<(), Vec<Diagnostic>> {
@@ -292,4 +300,158 @@ fn a_user_generic_call_with_type_arguments_stays_accepted() {
     ] {
         accepts(body);
     }
+}
+
+/// §231 rule 1: a user call has the check of a built-in call, with the
+/// diagnostic of a named function.
+#[test]
+fn a_user_call_rejects_a_list_that_it_does_not_read() {
+    for (body, message) in [
+        (
+            "const r: i32 = new B().get<i32>();",
+            "method `get` is not generic",
+        ),
+        (
+            "const f = (x: i32): i32 => x; const r: i32 = f<i32>(1);",
+            "`f` is not generic",
+        ),
+        ("const r: i32 = Reg.f<i32>(1);", "`f` is not generic"),
+    ] {
+        rejects(body, RuleCode::S100, message);
+    }
+}
+
+/// §231 acceptance 3: each neighbour keeps its result, and a user generic
+/// call with the right count stays accepted.
+#[test]
+fn the_neighbours_of_a_user_call_keep_their_result() {
+    for (body, message) in [
+        ("const r: i32 = g<i32>();", "`g` is not generic"),
+        (
+            "const r: i32 = B.s<i32>();",
+            "static method `B.s` is not generic",
+        ),
+        (
+            "const r: i32 = id<i32, i32>(1);",
+            "`id` expects 1 type argument(s), got 2",
+        ),
+    ] {
+        rejects(body, RuleCode::S100, message);
+    }
+    let source = format!(
+        "{DECLARATIONS}export async function main(): Promise<void> {{ const r: i32 = await new B().load<i32>(); }}\n"
+    );
+    let errors = check_program(&[SourceFile::entry("test.ts", source.as_str())])
+        .expect_err("await of a method that is not generic");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].message, "method `load` is not generic");
+    for body in [
+        "const r: i32 = id<i32>(1);",
+        "const r: i32 = U.make<i32>(1);",
+        "const r: i32 = new U().keep<i32>(1);",
+    ] {
+        accepts(body);
+    }
+}
+
+/// §231 rules 3 and 4: the `return` values of a block body are the result.
+#[test]
+fn a_block_reduce_result_widens_as_an_expression_result_does() {
+    for (method, body) in [
+        (
+            "reduce",
+            r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => { return "b"; }, "a");"#,
+        ),
+        (
+            "reduceRight",
+            r#"const r: Mode = xs.reduceRight((acc: Mode, x: i32) => { return "b"; }, "a");"#,
+        ),
+        (
+            "reduce",
+            r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => { if (x > 0) { return "b"; } return "b"; }, "a");"#,
+        ),
+    ] {
+        rejects(body, RuleCode::S100, &widens(method));
+    }
+    for body in [
+        r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => { if (x > 0) { return "b"; } return acc; }, "a");"#,
+        r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => { if (x > 0) { return "b"; } return "a"; }, "a");"#,
+        // Rule 4: §230 rule 1a holds for a block body.
+        r#"const r: Mode = xs.reduce((acc: Mode, x) => { return "b"; }, "a");"#,
+        r#"const r: Mode = xs.reduce((acc: Mode, x: i32): Mode => { return "b"; }, "a");"#,
+    ] {
+        accepts(body);
+    }
+}
+
+/// §231 rule 3: the walk of a block reaches each `return`. A return of
+/// `acc` inside each statement form keeps the result a union, as `tsc`
+/// keeps it, so a walk that misses the form fires rule 1 and fails here.
+#[test]
+fn the_return_walk_reaches_each_statement_form() {
+    for inner in [
+        "if (x > 0) { } else { return acc; }",
+        "switch (x) { case 1: return acc; }",
+        "try { if (x > 0) { return acc; } } catch (e) { return acc; }",
+        "try { x = x + 1; } catch (e) { return acc; }",
+        "try { x = x + 1; } finally { if (x > 3) { return acc; } }",
+        "while (x > 0) { return acc; }",
+        "do { return acc; } while (x > 0);",
+        "for (let i: i32 = 0; i < x; i = i + 1) { return acc; }",
+        "const ys: i32[] = [x]; for (const y of ys) { return acc; }",
+    ] {
+        accepts(&format!(
+            r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => {{ {inner} return "b"; }}, "a");"#
+        ));
+    }
+    // A labeled statement and `for…in` are outside the surface, so the body
+    // check rejects them. Rule 1 does not fire first: the walk sees `acc`.
+    for inner in [
+        "outer: while (x > 0) { return acc; }",
+        "const o: M = new M(); for (const k in o) { return acc; }",
+    ] {
+        let body = format!(
+            r#"const r: Mode = xs.reduce((acc: Mode, x: i32) => {{ {inner} return "b"; }}, "a");"#
+        );
+        let errors = check(&body).expect_err(&body);
+        assert_eq!(
+            errors[0].message, "statement form outside the decided surface",
+            "{errors:?}"
+        );
+    }
+}
+
+/// §231 rule 5: a user call that already has a diagnostic gets no second
+/// one for its list.
+#[test]
+fn a_user_call_with_a_diagnostic_gets_no_list_diagnostic() {
+    rejects(
+        "const r: i32 = new B().get<i32>(5);",
+        RuleCode::S100,
+        "`get` expects 0 argument(s) (0 required), got 1",
+    );
+}
+
+/// §231 rule 1: a method through an interface constraint is a user method,
+/// and a callee with no name is not printed as an identifier.
+#[test]
+fn a_user_list_names_its_callee() {
+    let source = "interface I { n(): i32; }\n\
+                  function f<T extends I>(i: T): i32 { return i.n<i32>(); }\n\
+                  function a(x: i32): i32 { return x; }\n\
+                  function mk(): (x: i32) => i32 { return a; }\n\
+                  function h(): i32 { const fs: ((x: i32) => i32)[] = [a]; return fs[0]<i32>(1); }\n\
+                  function k(): i32 { return mk()<i32>(1); }\n\
+                  export function main(): void {}\n";
+    let errors = check_program(&[SourceFile::entry("test.ts", source)]).expect_err("lists");
+    let messages: Vec<&str> = errors.iter().map(|error| error.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        [
+            "method `n` is not generic",
+            "the callee is not generic",
+            "the callee is not generic"
+        ],
+        "{errors:?}"
+    );
 }

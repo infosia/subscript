@@ -65,3 +65,19 @@ rule 1, and `tsc` widens a literal that a block returns in the same way.
 5. The rejection-site total check and `generic_tsc_matrix` pass, and the
    omission count of the matrix does not rise. §230.4 items 1 and 3 cite
    this section. No golden moves.
+
+### 231.3 Phase Review
+
+*(Added 2026-11-06.)* A fresh review of `22f44fef` and the implementation
+gave four MINOR findings and no CRITICAL or MAJOR finding. About 60
+forms with generic and non-generic user calls, imports, namespaces,
+optional chains, `await`, and block bodies agree with `tsc`.
+
+1. MINOR, realistic, fixed: a call through a receiver of a type
+   parameter with an interface constraint got the built-in text.
+2. MINOR, realistic, fixed: a callee with no name printed "the callee"
+   as an identifier in backticks.
+3. MINOR, fixed: a branch for a user call with a count was dead, and the
+   site of a user method had no method witness.
+4. MINOR, fixed: no test reached the `switch`, `try`, and loop arms of
+   the `return` walk, and no test pinned rule 5 for a user call.

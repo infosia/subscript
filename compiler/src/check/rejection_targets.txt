@@ -451,6 +451,7 @@ DescriptorRequiredMemberMissing	a-s008	S100	descriptor literal for `D` is missin
 ArraySpreadLiteralHole	a-s009	S100	array holes are not decided
 NonExpressionCalleeUnavailable	a-s033	S100	call form outside the decided surface
 NonGenericFunctionTypeArguments	a-s034	S100	`f` is not generic
+NonGenericFunctionTypeArguments	user-method-type-arguments	S100	method `get` is not generic
 ClassCalledWithoutNew	a-s035	S100	`C` is a class; construct it with `new`
 EnumCalled	a-s036	S100	enum `E` is not callable
 MirrorTypeAliasCalled	a-s037	S100	type alias `Fn37` used as a value

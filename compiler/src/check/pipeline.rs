@@ -252,6 +252,7 @@ fn run_with_effects(
         operand_calls: HashSet::new(),
         type_argument_watch: HashSet::new(),
         type_argument_takes: HashMap::new(),
+        type_argument_user_calls: HashMap::new(),
         function_value_decision: false,
         initializer_root: None,
         static_method_owners: HashMap::new(),

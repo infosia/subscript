@@ -1,10 +1,10 @@
 //! The type argument list of a call (compiler.md §230 rule 3) and the
 //! result of a `reduce` callback (§230 rule 1).
 //!
-//! A built-in call accepts a type argument list only if the checker reads
-//! each entry of it. The checker reads an entry when it resolves it, so
-//! `resolve_type` removes each entry from the watch set, and the call
-//! reports each entry that stays.
+//! A call accepts a type argument list only if the checker reads each
+//! entry of it (§231 rule 1). The checker reads an entry when it resolves
+//! it, so `resolve_type` removes each entry from the watch set, and the
+//! call reports each entry that stays.
 
 use super::*;
 use crate::check::rejection::RejectionSite;
@@ -38,8 +38,9 @@ impl Checker<'_> {
             unread |= self.type_argument_watch.remove(&entry.span());
         }
         let takes = self.type_argument_takes.remove(&call.span).unwrap_or(0);
+        let user = self.type_argument_user_calls.remove(&call.span);
         if unread && self.diags.len() == diagnostics && !poisoned(self, &checked) {
-            self.reject_unread_type_arguments(call, arguments, takes);
+            self.reject_unread_type_arguments(call, arguments, takes, user);
         }
         checked
     }
@@ -54,6 +55,7 @@ impl Checker<'_> {
         call: &ast::CallExpr,
         arguments: &ast::TsTypeParamInstantiation,
         takes: usize,
+        user: Option<bool>,
     ) {
         let member = |member: &ast::MemberExpr| match &member.prop {
             ast::MemberProp::Ident(name) => Some(name.sym.to_string()),
@@ -70,9 +72,24 @@ impl Checker<'_> {
                 _ => None,
             },
             _ => None,
-        }
-        .unwrap_or_else(|| "the callee".to_string());
+        };
+        // A callee with no name is not an identifier, so the text names it
+        // with no backticks.
+        let name = name.map_or_else(|| "the callee".to_string(), |name| format!("`{name}`"));
         let got = arguments.params.len();
+        let pos = self.pos(arguments.span);
+        // §231 rule 1: a user call has the diagnostic of a named function.
+        // A user function or method reads its list when it is generic, so
+        // an unread list is the list of a callee that is not generic.
+        if let Some(method) = user {
+            let message = if method {
+                format!("method {name} is not generic")
+            } else {
+                format!("{name} is not generic")
+            };
+            self.reject_subset(RejectionSite::NonGenericFunctionTypeArguments, message, pos);
+            return;
+        }
         let takes = match takes {
             0 => "no type arguments".to_string(),
             1 => "1 type argument".to_string(),
@@ -80,8 +97,8 @@ impl Checker<'_> {
         };
         self.reject_subset(
             RejectionSite::BuiltinTypeArgumentCount,
-            format!("`{name}` takes {takes}, got {got}"),
-            self.pos(arguments.span),
+            format!("{name} takes {takes}, got {got}"),
+            pos,
         );
     }
 
@@ -98,13 +115,12 @@ impl Checker<'_> {
         (arguments.params.len() == count).then_some(arguments.params.as_slice())
     }
 
-    /// A call of a user method or a function value keeps its present rule:
-    /// §230 rule 3 covers built-in methods and functions.
-    pub(in crate::check) fn exempt_type_arguments(&mut self, call: &ast::CallExpr) {
-        if let Some(arguments) = &call.type_args {
-            for entry in &arguments.params {
-                self.type_argument_watch.remove(&entry.span());
-            }
+    /// Records that `call` reaches a user method (`method`) or a user
+    /// function or function value. Its unread list then has the diagnostic
+    /// of a named function (§231 rule 1).
+    pub(in crate::check) fn mark_user_call(&mut self, call: &ast::CallExpr, method: bool) {
+        if call.type_args.is_some() {
+            self.type_argument_user_calls.insert(call.span, method);
         }
     }
 
@@ -147,10 +163,12 @@ impl Checker<'_> {
     }
 
     /// §230 rule 1: with an initial value and no type argument, `tsc` types
-    /// the expression body of a `reduce` callback with no result annotation
-    /// with the element type as its context. A string literal result then
-    /// widens to `string` unless the element type has a string literal
-    /// type. Rejects the call if `string` is not assignable to `acc`.
+    /// the result of a `reduce` callback with no result annotation with the
+    /// element type as its context. The result values are the expression
+    /// body, or the `return` expressions of a block body (§231 rule 3). A
+    /// string literal result then widens to `string` unless the element
+    /// type has a string literal type. Rejects the call if `string` is not
+    /// assignable to `acc`.
     /// Only a string literal widens here: the language has no other
     /// literal type.
     pub(super) fn reject_widened_reduce_result(
@@ -169,9 +187,13 @@ impl Checker<'_> {
         let ast::Expr::Arrow(arrow) = unparen_expr(&callback.expr) else {
             return false;
         };
-        let ast::BlockStmtOrExpr::Expr(body) = &*arrow.body else {
-            return false;
-        };
+        // §231 rule 3: the result values of a block body are the
+        // expressions of its `return` statements.
+        let mut results = Vec::new();
+        match &*arrow.body {
+            ast::BlockStmtOrExpr::Expr(body) => results.push(Some(&**body)),
+            ast::BlockStmtOrExpr::BlockStmt(block) => return_values(&block.stmts, &mut results),
+        }
         if arrow.return_type.is_some() || arrow.is_async {
             return false;
         }
@@ -194,9 +216,13 @@ impl Checker<'_> {
         {
             return false;
         }
-        let Some(literal) = string_literal_result(body) else {
+        let Some(literal) = string_literal_result(&results) else {
             return false;
         };
+        let Some(Some(first)) = results.first() else {
+            return false;
+        };
+        let result_pos = self.pos(first.span());
         if self.has_string_literal_type(elem) || self.assignable(&Type::Str, acc) {
             return false;
         }
@@ -211,7 +237,7 @@ impl Checker<'_> {
                  note: write `{name}<{acc_name}>(...)`, or annotate the callback result: \
                  `(...): {acc_name} => ...`"
             ),
-            self.pos(body.span()),
+            result_pos,
         );
         true
     }
@@ -228,11 +254,12 @@ impl Checker<'_> {
     }
 }
 
-/// The string literal of a result whose every branch is the same string
+/// The string literal of a result whose every value is the same string
 /// literal, through parentheses and conditional branches. `tsc` gives such
 /// a result one fresh literal type, and that type widens. Two different
-/// literals give a union, and `tsc` keeps a union of literals.
-fn string_literal_result(expr: &ast::Expr) -> Option<String> {
+/// literals give a union, and `tsc` keeps a union of literals. A `return`
+/// with no value has no literal.
+fn string_literal_result(results: &[Option<&ast::Expr>]) -> Option<String> {
     fn leaves(expr: &ast::Expr, out: &mut Vec<String>) -> Option<()> {
         match unparen_expr(expr) {
             ast::Expr::Lit(ast::Lit::Str(text)) => out.push(text.value.to_string()),
@@ -253,7 +280,51 @@ fn string_literal_result(expr: &ast::Expr) -> Option<String> {
         Some(())
     }
     let mut out = Vec::new();
-    leaves(expr, &mut out)?;
+    for result in results {
+        leaves((*result)?, &mut out)?;
+    }
     let first = out.first()?.clone();
     out.iter().all(|value| *value == first).then_some(first)
+}
+
+/// Each `return` of a block body, in source order. A nested function has
+/// its own returns, so the walk does not enter one.
+fn return_values<'a>(statements: &'a [ast::Stmt], out: &mut Vec<Option<&'a ast::Expr>>) {
+    for statement in statements {
+        return_values_of(statement, out);
+    }
+}
+
+fn return_values_of<'a>(statement: &'a ast::Stmt, out: &mut Vec<Option<&'a ast::Expr>>) {
+    match statement {
+        ast::Stmt::Return(ret) => out.push(ret.arg.as_deref()),
+        ast::Stmt::Block(block) => return_values(&block.stmts, out),
+        ast::Stmt::If(branch) => {
+            return_values_of(&branch.cons, out);
+            if let Some(alt) = &branch.alt {
+                return_values_of(alt, out);
+            }
+        }
+        ast::Stmt::Labeled(labeled) => return_values_of(&labeled.body, out),
+        ast::Stmt::While(stmt) => return_values_of(&stmt.body, out),
+        ast::Stmt::DoWhile(stmt) => return_values_of(&stmt.body, out),
+        ast::Stmt::For(stmt) => return_values_of(&stmt.body, out),
+        ast::Stmt::ForOf(stmt) => return_values_of(&stmt.body, out),
+        ast::Stmt::ForIn(stmt) => return_values_of(&stmt.body, out),
+        ast::Stmt::Switch(switch) => {
+            for case in &switch.cases {
+                return_values(&case.cons, out);
+            }
+        }
+        ast::Stmt::Try(stmt) => {
+            return_values(&stmt.block.stmts, out);
+            if let Some(handler) = &stmt.handler {
+                return_values(&handler.body.stmts, out);
+            }
+            if let Some(finalizer) = &stmt.finalizer {
+                return_values(&finalizer.stmts, out);
+            }
+        }
+        _ => {}
+    }
 }
