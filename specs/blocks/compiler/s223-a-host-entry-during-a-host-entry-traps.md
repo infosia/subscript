@@ -67,7 +67,7 @@ gave one MAJOR and three MINOR findings.
 
 ### 223.4 Open
 
-1. A callback can outlive its registration (§13, §14). If the host calls
+1. *(Closed by §224.)* A callback can outlive its registration (§13, §14). If the host calls
    it from its own loop, no host entry runs. A foreign call in that
    callback can then call an export with no trap. Rule 1 does not list a
    callback as a host entry.
