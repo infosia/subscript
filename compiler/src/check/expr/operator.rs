@@ -1359,17 +1359,23 @@ impl<'p> Checker<'p> {
                         || matches!(lt, Type::StringAlias(_))
                         || self.is_reference_class(&lt));
                 // §219.1 rule 4: a `C | null` compares with a `C` by identity.
-                let nullable_and_value = matches!(&lt, Type::Nullable(inner, _)
-                        if self.apparent_type(inner) == rt && self.is_reference_class(&rt))
-                    || matches!(&rt, Type::Nullable(inner, _)
-                        if self.apparent_type(inner) == lt && self.is_reference_class(&lt));
+                let admits_value = |nullable: &Type, value: &Type| {
+                    matches!(self.apparent_type(nullable), Type::Nullable(inner, _)
+                        if self.apparent_type(&inner) == *value && self.is_reference_class(value))
+                };
+                let nullable_and_value = admits_value(&lt, &rt) || admits_value(&rt, &lt);
+                // §228.1 rule 1: if `T | null` compares with `T`, two
+                // `T | null` operands compare by identity. The spellings can
+                // differ only for `==` and `!=` (§228.1 rules 3 and 4).
+                let nullable_pair = matches!(&rt, Type::Nullable(inner, _)
+                    if admits_value(&lt, &self.apparent_type(inner)));
                 (
                     hop,
                     Type::Bool,
                     if parameter {
                         related_parameter
                     } else {
-                        null_cmp || same_scalar || content || nullable_and_value
+                        null_cmp || same_scalar || content || nullable_and_value || nullable_pair
                     },
                 )
             }

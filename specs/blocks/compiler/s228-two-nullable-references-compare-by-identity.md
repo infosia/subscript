@@ -53,3 +53,18 @@ form.
    and pins rules 4, 5, and 6 with a control each.
 4. The rejection-site total check passes. §219.1 rule 4a and §219.4
    item 1 cite this section. No other golden moves.
+
+### 228.3 Phase Review
+
+*(Added 2026-11-06.)* A fresh review of `28ccd17b` and the implementation
+gave two MINOR findings and no CRITICAL or MAJOR finding. For each type
+probed, the pair verdict equals the `T | null === T` verdict. A generic
+function, a generic class, `Error` and `Set` fields, `find`, `pop`, and
+`Map.get` pairs give the same bytes on the dev tier, the ship tier, and
+`node`.
+
+1. MINOR, contrived, recorded: the rule 1 test has no row for a type
+   alias of `C | null` or for an `Error` subclass. Both forms are
+   accepted and run correctly.
+2. MINOR, fixed: the tracking note said COMPLETE before the Phase Review
+   was recorded.

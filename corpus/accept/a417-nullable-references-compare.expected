@@ -1,0 +1,11 @@
+strictEq:true:false:false:true:false
+strictNe:false:true:true:false:true
+looseEq:true:false:false:true:false
+looseNe:false:true:true:false:true
+linked:true:false:true:false
+mapGet:true:false:true:false
+mapGetNe:false:true:false:true
+mapsEq:true:false:true:false
+mapsLooseNe:false:true:false:true
+acrossEq:true:false:false:true:false
+acrossNe:false:true:true:false:true

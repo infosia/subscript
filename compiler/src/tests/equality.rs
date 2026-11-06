@@ -108,6 +108,13 @@ fn loose_equality_matches_strict_operand_pair_verdicts_and_codes() {
             "(a: Box | null, b: Box | null)",
             "a",
             "b",
+            None,
+        ),
+        (
+            "nullable-pair-two-classes",
+            "(a: Box | null, b: Error | null)",
+            "a",
+            "b",
             Some(RuleCode::S100),
         ),
     ];

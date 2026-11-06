@@ -1,8 +1,9 @@
 //! Equality with a value that has no absence narrows (compiler.md §219.1
-//! rule 4). Each accepted form has a rejected control in the same shape.
+//! rule 4). Two nullable references compare by identity (compiler.md
+//! §228). Each accepted form has a rejected control in the same shape.
 //!
 //! Cost: each test runs the checker on short programs, with no code
-//! generation and no external process. The whole file took 0.05 s in a
+//! generation and no external process. The whole file took 0.07 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, divergence::Divergence, Diagnostic, RuleCode, SourceFile};
@@ -225,14 +226,87 @@ fn a_poison_operand_gives_no_narrowing() {
 }
 
 #[test]
-fn a_class_compares_with_its_nullable_form_and_not_with_a_second_one() {
+fn a_class_compares_with_its_nullable_form_and_not_with_another_class() {
     assert_accepted("function f(a: C | null, b: C): boolean { return a === b; }");
     assert_accepted("function f(a: C | null, b: C): boolean { return b !== a; }");
-    for rejected in [
-        "function f(a: C | null, b: C | null): boolean { return a === b; }",
-        "function f(a: C | null, b: H): boolean { return a === b; }",
-    ] {
-        let errors = check(rejected).expect_err(rejected);
-        assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+    let rejected = "function f(a: C | null, b: H): boolean { return a === b; }";
+    let errors = check(rejected).expect_err(rejected);
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+}
+
+/// The operand types of compiler.md §228.1 rule 1: each type that compares
+/// with its `| null` form, and a type that does not.
+const PAIR_TYPES: &[(&str, bool)] = &[
+    ("C", true),
+    ("Map<i32, i32>", true),
+    ("Set<i32>", true),
+    ("Error", true),
+    ("i32[]", false),
+];
+
+#[test]
+fn a_nullable_pair_compares_if_the_nullable_form_compares_with_its_type() {
+    for &(ty, compares) in PAIR_TYPES {
+        let single = format!("function f(a: {ty} | null, b: {ty}): boolean {{ return a === b; }}");
+        assert_eq!(check(&single).is_ok(), compares, "{single}");
+        for absence in ["null", "undefined"] {
+            for operator in ["===", "!==", "==", "!="] {
+                // `T | undefined` is legal only as a result type (§195).
+                let pair = format!(
+                    "function a(): {ty} | {absence} {{ return {absence}; }}\n\
+                     function f(): boolean {{ return a() {operator} a(); }}"
+                );
+                match check(&pair) {
+                    Ok(()) => assert!(compares, "{pair}"),
+                    Err(errors) => {
+                        assert!(!compares, "{pair}: {errors:?}");
+                        assert_eq!(errors.len(), 1, "{pair}: {errors:?}");
+                        assert_eq!(errors[0].code, RuleCode::S100, "{pair}");
+                    }
+                }
+            }
+        }
     }
+}
+
+#[test]
+fn loose_equality_compares_across_spellings_and_strict_equality_does_not() {
+    for operator in ["==", "!="] {
+        assert_accepted(&format!(
+            "function u(): C | undefined {{ return undefined; }}\n\
+             function f(a: C | null): boolean {{ return a {operator} u(); }}"
+        ));
+    }
+    for operator in ["===", "!=="] {
+        let body = format!(
+            "function u(): C | undefined {{ return undefined; }}\n\
+             function f(a: C | null): boolean {{ return a {operator} u(); }}"
+        );
+        let errors = check(&body).expect_err(&body);
+        assert_eq!(errors.len(), 1, "{body}: {errors:?}");
+        assert_eq!(errors[0].code, RuleCode::S012, "{body}");
+    }
+}
+
+#[test]
+fn a_nullable_pair_of_two_types_stays_rejected() {
+    assert_accepted("function f(a: C | null, b: C | null): boolean { return a === b; }");
+    let body = "function f(a: C | null, b: H | null): boolean { return a === b; }";
+    let errors = check(body).expect_err(body);
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+}
+
+#[test]
+fn a_nullable_pair_gives_no_narrowing() {
+    assert_accepted(
+        "function f(a: C | null, b: C): i32 { if (a === b) { return a.v; } return 0; }",
+    );
+    assert_unnarrowed(
+        "function f(a: C | null, b: C | null): i32 { if (a === b) { return a.v; } return 0; }",
+        None,
+    );
+    assert_unnarrowed(
+        "function f(a: C | null, b: C | null): i32 { if (a !== b) { return 0; } return a.v; }",
+        None,
+    );
 }
