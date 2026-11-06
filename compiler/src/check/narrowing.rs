@@ -30,20 +30,25 @@ impl Checker<'_> {
             // `a && b` is true, and `a || b` is false, when both operands
             // are; a kill in `b` ends a fact of `a` (compiler.md §124).
             let and = matches!(op, hir::BinOp::And);
-            let pick = |facts: (Vec<NarrowingFact>, Vec<NarrowingFact>)| {
+            let split = |(yes, no): (Vec<NarrowingFact>, Vec<NarrowingFact>)| {
                 if and {
-                    facts.0
+                    (yes, no)
                 } else {
-                    facts.1
+                    (no, yes)
                 }
             };
-            let mut first = pick(self.narrowing_paths(left, fx));
+            let (mut first, left_decides) = split(self.narrowing_paths(left, fx));
             self.end_facts_at(&mut first, right, fx);
-            first.extend(pick(self.narrowing_paths(right, fx)));
+            let (second, right_decides) = split(self.narrowing_paths(right, fx));
+            first.extend(second);
+            // `a || b` is true, and `a && b` is false, when either operand
+            // decides. `b` does not run when `a` decides, so a kill in `b`
+            // does not end the fact of `a` (compiler.md §227.1 rules 1 to 4).
+            let either = facts_on_both_arms(left_decides, &right_decides);
             if and {
-                (first, Vec::new())
+                (first, either)
             } else {
-                (Vec::new(), first)
+                (either, first)
             }
         } else {
             let (mut yes, mut no) =
@@ -624,6 +629,20 @@ fn has_no_absence(ty: &Type, apparent_type: &impl Fn(&Type) -> Type) -> bool {
     }
 }
 
+/// The facts that both arms give: the same path with the same kind. The
+/// result is shared if either fact is shared (compiler.md §227.1 rule 3).
+fn facts_on_both_arms(left: Vec<NarrowingFact>, right: &[NarrowingFact]) -> Vec<NarrowingFact> {
+    left.into_iter()
+        .filter_map(|mut fact| {
+            let other = right
+                .iter()
+                .find(|other| other.key == fact.key && other.kind == fact.kind)?;
+            fact.shared |= other.shared;
+            Some(fact)
+        })
+        .collect()
+}
+
 /// Narrowing facts derived from a checked leaf condition: paths known
 /// non-null or known present when the condition is true / false.
 /// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
@@ -923,5 +942,126 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn fact(
+        key: &str,
+        kind: crate::check::narrowing_fact::FactKind,
+        shared: bool,
+    ) -> NarrowingFact {
+        NarrowingFact {
+            key: key.into(),
+            shared,
+            kind,
+        }
+    }
+
+    #[test]
+    fn both_arms_match_on_path_and_kind_and_join_shared() {
+        use crate::check::narrowing_fact::FactKind;
+        let element = FactKind::ElementCheck {
+            receiver: "xs".into(),
+            key: "int:0".into(),
+            const_bindings: Vec::new(),
+        };
+        let left = vec![
+            fact("a", FactKind::Narrowing, false),
+            fact("b", FactKind::Narrowing, false),
+            fact("c", FactKind::Narrowing, false),
+        ];
+        let right = vec![
+            fact("a", FactKind::Narrowing, true),
+            fact("c", element.clone(), false),
+            fact("d", FactKind::Narrowing, false),
+        ];
+        let both = facts_on_both_arms(left, &right);
+        // Rule 1: only `a` is on both arms. Rule 3: `c` has two kinds, so it
+        // gives no fact, and the fact of `a` is shared because one arm is.
+        assert_eq!(both.len(), 1);
+        assert_eq!(both[0].key, "a");
+        assert_eq!(both[0].kind, FactKind::Narrowing);
+        assert!(both[0].shared);
+        let same = facts_on_both_arms(
+            vec![fact("c", element.clone(), false)],
+            &[fact("c", element.clone(), false)],
+        );
+        assert_eq!(same.len(), 1);
+        assert_eq!(same[0].kind, element);
+        assert!(!same[0].shared);
+    }
+
+    fn checks(body: &str) -> Result<(), Vec<crate::Diagnostic>> {
+        let source = format!(
+            "class H {{ f: string | null = null; }}\n\
+             let g: string | null = null;\n\
+             function call(): boolean {{ return true; }}\n\
+             function body(a: string | null, b: string | null, h: H, xs: (string | null)[]): i32 {{\n\
+             {body}\n\
+             return 0;\n\
+             }}\n\
+             export function main(): void {{ print(`${{body(null, null, new H(), [null])}}`); }}\n"
+        );
+        crate::check_program(&[crate::SourceFile::entry("or.ts", &source)]).map(|_| ())
+    }
+
+    fn rejects_s011(body: &str) -> Vec<crate::Diagnostic> {
+        let errors = checks(body).expect_err(body);
+        assert_eq!(errors.len(), 1, "{body}: {errors:?}");
+        assert_eq!(errors[0].code, crate::diag::RuleCode::S011, "{body}");
+        errors
+    }
+
+    #[test]
+    fn a_fact_on_both_arms_of_or_narrows() {
+        for body in [
+            // Rule 1.
+            r#"if (a === "x" || a === "y") { return a.length; }"#,
+            r#"if (a === "x" || a === "y" || a === "z") { return a.length; }"#,
+            r#"if (a !== null || a === "y") { return a.length; }"#,
+            r#"return a === "x" || a === "y" ? a.length : 0;"#,
+            r#"if (h.f === "x" || h.f === "y") { return h.f.length; }"#,
+            // Rule 2.
+            r#"if (a !== "x" && a !== "y") { return 0; } return a.length;"#,
+            r#"if (!(a === "x" || a === "y")) { return 0; } return a.length;"#,
+            // Rule 4: a call in `b` does not end the fact of `a`, because
+            // `b` does not run when `a` decides; `b` tests after the call.
+            r#"if (g === "x" || (call() && g === "y")) { return g.length; }"#,
+            // Rule 4: a local fact stays through a call in `b`.
+            r#"if (a === "x" || (a === "y" && call())) { return a.length; }"#,
+        ] {
+            assert!(checks(body).is_ok(), "{body}: {:?}", checks(body));
+        }
+    }
+
+    #[test]
+    fn a_fact_on_one_arm_or_ended_in_b_gives_no_narrowing() {
+        for body in [
+            // Rule 6: a fact on one arm only.
+            r#"if (a === "x" || b === "y") { return a.length; }"#,
+            r#"if (a === "x" || a === null) { return a.length; }"#,
+            r#"if (a === "x" && b === "y") { return 0; } return a.length;"#,
+            // Rule 4: a call in `b` after its test ends the shared fact of `b`.
+            r#"if (g === "x" || (g === "y" && call())) { return g.length; }"#,
+            r#"if (h.f === "x" || (h.f === "y" && call())) { return h.f.length; }"#,
+            // Rule 3: the joined fact is shared, so a later call ends it.
+            r#"if (h.f === "x" || h.f === "y") { call(); return h.f.length; }"#,
+        ] {
+            rejects_s011(body);
+        }
+    }
+
+    #[test]
+    fn an_element_check_on_both_arms_selects_the_checked_diagnostic() {
+        let checked = rejects_s011(
+            r#"const i: i32 = 0; if (xs[i] === "x" || xs[i] === "y") { return xs[i].length; }"#,
+        );
+        assert_eq!(
+            checked[0].divergence,
+            Some(crate::divergence::Divergence::IndexedReadNullCheck)
+        );
+        let unchecked = rejects_s011(
+            r#"const i: i32 = 0; if (xs[i] === "x" || b === "y") { return xs[i].length; }"#,
+        );
+        assert_eq!(unchecked[0].divergence, None);
     }
 }

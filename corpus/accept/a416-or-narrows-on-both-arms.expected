@@ -1,0 +1,9 @@
+orIf:1:1:-1:-1
+andFalse:2:1:-1:-1
+notOr:2:1:-1:-1
+threeArms:1:2:3:-1:-1
+conditional:1:2:0:0
+presentOrEqual:4:-1
+classOr:5:6:-1
+fieldOr:1:1:-1:-1
+elementOr:1:1:-1:-1

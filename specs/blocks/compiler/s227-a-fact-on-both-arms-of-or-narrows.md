@@ -60,3 +60,23 @@ give holds after either arm.
    Rule 3 then needs a contract change.
 6. The rejection-site total check passes. §219.4 item 2 cites this
    section. No other golden moves.
+
+### 227.3 Phase Review
+
+*(Added 2026-11-06.)* A fresh review of `62de4861` and the implementation
+gave two MINOR findings and no CRITICAL or MAJOR finding. About 20 forms
+with kills in each arm, shared locations, loops, and nested operators
+gave no read of a null.
+
+1. MINOR, contrived, recorded: `elementOr` in `a416` passes at the pin
+   too. The unit test of the `ElementCheck` fact is the check, and the
+   corpus function is a run witness.
+2. MINOR, contrived, recorded: in `a !== null || a === "y"` the right
+   arm cannot decide alone, so `a416` runs two paths of that row.
+
+### 227.4 Open
+
+1. `a === "x" || ((a = getS()) === "y")` and
+   `g === "x" || (call() || g === "y")` stay rejected with S011. `tsc`
+   accepts them. The checker is stricter there, and no read of a null
+   follows.
