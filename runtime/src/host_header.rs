@@ -665,6 +665,10 @@ mod tests {
  * `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with that
  * trap when the foreign call returns.
  *
+ * compiler.md §224: a stored callback that the host calls outside a host
+ * entry is a host entry for its run. No outer entry exists, so its trap stays
+ * on the subscript_rt_context for the host to read with `subscript_rt_ctx_trap_kind`.
+ *
  * compiler.md §142 rules 1 and 2:
  * A handle value from the host transfers no ownership, by any route:
  * an entry parameter, a foreign-call result, or a field or element of

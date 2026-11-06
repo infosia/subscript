@@ -130,6 +130,10 @@ pub type AllocationVisitor =
 /// that C calls, runs no script code. It sets the trap kind
 /// `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with that
 /// trap when the foreign call returns.
+///
+/// compiler.md §224: a stored callback that the host calls outside a host
+/// entry is a host entry for its run. No outer entry exists, so its trap stays
+/// on the Context for the host to read with `subscript_rt_ctx_trap_kind`.
 pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Fixed ABI of a compiler-generated async-frame resume function.

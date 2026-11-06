@@ -46,13 +46,17 @@ pub unsafe extern "C" fn subscript_rt_cb_bind(
 ///
 /// The Context reaches the trampoline through the binding (captured at
 /// registration), not through global state: scripts are single-threaded
-/// and trusted (invariant 6), the trampoline only ever runs synchronously
-/// inside a foreign call made by generated code executing under that same
-/// Context, so `binding.ctx` is always the live, correct Context. A trap
+/// and trusted (invariant 6), and the trampoline runs on the thread of that
+/// same Context, so `binding.ctx` is always the live, correct Context. C
+/// can call it inside a foreign call, or from the host loop after the
+/// entry returns; in the second case the callback is a host entry
+/// (`compiler.md` §224). A trap
 /// in the language callback sets the Context trap flag and returns a
 /// zeroed value; the generated code that made the foreign call checks the
 /// flag on return and unwinds, so the trap propagates without crossing
-/// this boundary as an unwind.
+/// this boundary as an unwind. A callback outside a host entry has no such
+/// caller, so the trap stays on the Context for the host to read with
+/// `subscript_rt_ctx_trap_kind`.
 ///
 /// # Safety
 ///
@@ -138,10 +142,17 @@ pub(crate) unsafe fn fire_callback(
     type LangCb = unsafe extern "C" fn(*mut Context, *const u8, *mut u8, *mut u8, *mut u8);
     // SAFETY: `code` is a language callback wrapper of this shape.
     let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(code) };
+    // compiler.md §224: a callback that runs outside a host entry is a host
+    // entry for the length of its run.
+    let entered = context.begin_callback_entry();
     // SAFETY: calling generated code that never unwinds across FFI.
     unsafe { f(ctx, env, s, userdata1, userdata2) };
+    // SAFETY: the same live Context; the callback returned.
+    let context = unsafe { &mut *ctx };
     // compiler.md §115.4 item 5: no exception crosses the C frame of the
     // host function. A pending exception becomes the uncaught trap here.
-    // SAFETY: the same live Context; the callback returned.
-    unsafe { &mut *ctx }.settle_uncaught_exception();
+    context.settle_uncaught_exception();
+    if entered {
+        context.end_host_entry();
+    }
 }

@@ -1375,6 +1375,11 @@ Five facts describe the protocol:
   that trap when the foreign call returns (`specs/blocks/compiler.md`
   §223). A callback that the script registered stays legal during a
   foreign call.
+  If the host calls a stored callback outside a host entry, that
+  callback is a host entry for its run (§224). A host entry that C
+  calls during the callback traps, and the callback stops. No outer
+  entry exists, so the trap stays on the Context. Read it with
+  `subscript_rt_ctx_trap_kind` after the callback returns.
 
 So a frame loop is: stage or gather the frame's inputs →
 `hostCallScript(ctx, subscript_export_update)` (or a direct call with

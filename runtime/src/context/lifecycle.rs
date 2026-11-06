@@ -338,6 +338,20 @@ impl Context {
         true
     }
 
+    /// Starts a callback that C calls (compiler.md §224 rules 1 and 2).
+    ///
+    /// If no host entry of this Context runs, the callback is a host entry:
+    /// this raises the host-entry-active flag and returns `true`, and the
+    /// caller ends it with [`Context::end_host_entry`]. If a host entry
+    /// runs, this changes nothing and returns `false`.
+    pub fn begin_callback_entry(&mut self) -> bool {
+        if self.host_entry_active != 0 {
+            return false;
+        }
+        self.host_entry_active = 1;
+        true
+    }
+
     /// Ends the host entry that [`Context::begin_host_entry`] started.
     pub fn end_host_entry(&mut self) {
         self.host_entry_active = 0;

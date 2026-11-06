@@ -23,6 +23,7 @@ declare class EngineSink {
   constructor(engineCallback: EngineCallback, engineUserdata1: object | null, engineUserdata2: object | null);
 }
 declare function engineUse(engineSink: EngineSink): void;
+declare function engineStore(engineSink: EngineSink): void;
 declare function hostReenter(): void;
 declare function hostStep(): void;
 declare function hostInit(): void;
@@ -48,6 +49,15 @@ export function takeAgain(): void {
   hostTake();
   print(\"take-after\");
 }
+export function store(): void {
+  engineStore(new EngineSink((m, a, b) => {
+    print(`stored ${m.length}`);
+    if (m.length === 7) {
+      hostReenter();
+      print(\"stored-after\");
+    }
+  }, null, null));
+}
 export function callback(): void {
   engineUse(new EngineSink((m, a, b) => { print(`cb ${m.length}`); }, null, null));
   print(\"callback-after\");
@@ -66,6 +76,7 @@ typedef struct EngineView { const uint8_t* data; size_t len; } EngineView;
 typedef void (*EngineCallback)(EngineView message, void* userdata1, void* userdata2);
 typedef struct EngineSink { EngineCallback engineCallback; void* engineUserdata1; void* engineUserdata2; } EngineSink;
 void engineUse(EngineSink sink);
+void engineStore(EngineSink sink);
 void hostReenter(void);
 void hostStep(void);
 void hostInit(void);
@@ -92,6 +103,13 @@ trap 0
 cb 3
 callback-after
 trap 0
+[export-in-stored-callback]
+stored 7
+trap 34 host entry `subscript_export_inner` called during a host entry of the same Context
+[stored-callback-then-export]
+stored 3
+inner
+trap 0
 [step-in-foreign-call]
 step-before
 trap 34 host entry `subscript_rt_ctx_async_step` called during a host entry of the same Context
@@ -104,7 +122,7 @@ trap 34 host entry `subscript_rt_ctx_async_step` called during a host entry of t
 #[test]
 fn a_host_entry_during_a_foreign_call_traps_and_the_outer_entry_stops() {
     // Cost: one emitted program, one C compile and link, and one host run
-    // that covers the seven cases on seven Contexts (about 2 s).
+    // that covers the nine cases on nine Contexts (about 2 s).
     struct Scratch(std::path::PathBuf);
     impl Drop for Scratch {
         fn drop(&mut self) {
@@ -154,6 +172,12 @@ void engineUse(EngineSink sink) {
     EngineView view = { (const uint8_t*)"abc", 3 };
     sink.engineCallback(view, sink.engineUserdata1, sink.engineUserdata2);
 }
+static EngineSink stored;
+void engineStore(EngineSink sink) { stored = sink; }
+static void fire_stored(const char* text) {
+    EngineView view = { (const uint8_t*)text, strlen(text) };
+    stored.engineCallback(view, stored.engineUserdata1, stored.engineUserdata2);
+}
 static void report(const char* label) {
     uint64_t length = 0;
     const uint8_t* output = subscript_rt_ctx_stdout(current, &length);
@@ -200,6 +224,17 @@ int main(void) {
     start();
     subscript_export_callback(current);
     report("callback-in-foreign-call");
+
+    start();
+    subscript_export_store(current);
+    fire_stored("reenter");
+    report("export-in-stored-callback");
+
+    start();
+    subscript_export_store(current);
+    fire_stored("abc");
+    subscript_export_inner(current);
+    report("stored-callback-then-export");
 
     start();
     subscript_export_stepper(current);

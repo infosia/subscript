@@ -305,6 +305,33 @@ fn a_host_entry_during_a_host_entry_traps_and_names_the_inner_entry() {
     ctx.end_host_entry();
 }
 
+/// compiler.md §224 rules 1 and 2: a callback outside a host entry raises
+/// the flag; a callback inside a host entry leaves it alone.
+#[test]
+fn a_callback_entry_raises_the_flag_only_outside_a_host_entry() {
+    let mut ctx = Context::new();
+    assert!(ctx.begin_callback_entry());
+    assert!(ctx.host_entry_active());
+    // A host entry during the callback traps.
+    assert!(!ctx.begin_host_entry("subscript_export_inner"));
+    assert_eq!(
+        ctx.trap_record().expect("trap").kind,
+        TrapKind::HostEntryReentry
+    );
+    // A nested callback leaves the raised flag alone.
+    assert!(!ctx.begin_callback_entry());
+    assert!(ctx.host_entry_active());
+    ctx.end_host_entry();
+    assert!(!ctx.host_entry_active());
+
+    // Inside a host entry, the callback changes nothing.
+    let mut ctx = Context::new();
+    assert!(ctx.begin_host_entry("subscript_export_outer"));
+    assert!(!ctx.begin_callback_entry());
+    assert!(ctx.host_entry_active());
+    assert!(!ctx.trapped());
+}
+
 #[test]
 fn trap_host_entry_reentry_records_the_kind_and_the_entry() {
     let mut ctx = Context::new();
