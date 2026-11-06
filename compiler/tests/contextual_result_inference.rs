@@ -455,17 +455,12 @@ fn await_with_no_context_keeps_the_diagnostic() {
     );
 }
 
-/// §215 rule 3: a contextual type reaches a call only. A non-call operand
-/// keeps its form, and an `await` of a synchronous callee keeps its text.
+/// §215 rule 3 and §232 rule 3: the context of `await` reaches a call,
+/// also through a conditional. Another operand keeps its form, and an
+/// `await` of a synchronous callee keeps its text.
 #[test]
 fn await_of_another_operand_is_unchanged() {
-    let no_af = no_candidate("T", "af");
-    let source =
-        async_program("const c: boolean = true; const b: Buf<P> = await (c ? af() : af());");
-    let errors =
-        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
-    assert_eq!(errors.len(), 2, "{errors:?}");
-    assert_eq!(errors[0].message, no_af);
+    accept_async("const c: boolean = true; const b: Buf<P> = await (c ? af() : af());");
     reject_async(
         "const x: i32 = await 1;",
         "`await` requires `Context.suspend()`, an async call, or a held async handle",
@@ -737,4 +732,143 @@ fn only_an_arrow_callback_takes_the_context() {
         r#"const flag: boolean = xs.length > 0; const r: Mode[] = xs.map(flag ? (x: i32) => "a" : (x: i32) => "b");"#,
         MODES,
     );
+}
+
+/// The declarations of the §232 tests, before `main`.
+const OPERANDS: &str = r#"
+function idn<T>(value: T): T | null { return value; }
+"#;
+
+fn operands(main: &str) -> Result<(), Vec<subscript_compiler::Diagnostic>> {
+    let source = format!(
+        "{PRELUDE}{OPERANDS}\nexport function main(): void {{\nconst c: boolean = true;\nconst n: i32 = 1;\nconst k: Factory | null = new Factory();\nconst xs: i32[] = [1];\nconst mk: Maker | null = new Maker();\nconst o: Buf<P> = empty<P>();\n{main}\n}}\n"
+    );
+    check_program(&[SourceFile::new("test.ts", source.as_str())]).map(|_| ())
+}
+
+fn operand_rejects(main: &str, message: &str) {
+    let errors = operands(main).expect_err(main);
+    assert_eq!(errors.len(), 1, "{main}: {errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100, "{main}: {errors:?}");
+    assert_eq!(errors[0].message, message, "{main}");
+}
+
+/// §232 rule 1: each operand of `||`, the right operand of `&&`, and the
+/// left operand of `??` keep the context, and an optional call there takes
+/// the context with no absence.
+#[test]
+fn an_operand_keeps_the_context_of_its_expression() {
+    for main in [
+        "const r: boolean = c || zero();",
+        "const r: boolean = zero() || c;",
+        "const r: boolean = c && zero();",
+        "const b: Buf<P> = k?.make() ?? empty<P>();",
+        "const b: Buf<P> = k?.make() ?? empty();",
+        "const b: Buf<P> = zero() ?? empty<P>();",
+        "const b: Buf<P> = (c ? zero() : null) ?? empty<P>();",
+    ] {
+        if let Err(errors) = operands(main) {
+            panic!("{main}: {errors:?}");
+        }
+    }
+}
+
+/// §232 rule 4: the left operand of `&&` and the operand of `!` take no
+/// context, so they keep the diagnostic of §212.1 rule 5.
+#[test]
+fn the_left_operand_of_and_and_the_not_operand_take_no_context() {
+    // `tsc` rejects the first form with TS2322: it infers `unknown`, and
+    // `unknown && boolean` is not a `boolean`. The second and third forms
+    // are `tsc`-clean.
+    for main in [
+        "const r: boolean = zero() && c;",
+        "if (zero() && c) { print(\"x\"); }",
+        "const r: boolean = !zero();",
+    ] {
+        operand_rejects(main, &no_candidate("T", "zero"));
+    }
+}
+
+/// §232 rule 5: an argument candidate comes before the context, and a
+/// literal default that meets the context keeps its type.
+#[test]
+fn an_operand_context_changes_no_accepted_program() {
+    operand_rejects(
+        "const r: boolean = c || id(n);",
+        "logical operators require booleans, got `i32`",
+    );
+    if let Err(errors) = operands(r#"const r: string = idn("a") ?? "b";"#) {
+        panic!("{errors:?}");
+    }
+    // A literal operand takes no context.
+    if let Err(errors) = operands("const r: boolean = c || false;") {
+        panic!("{errors:?}");
+    }
+}
+
+/// §232 rule 2: the operand of `as` takes no context, so each `as` form
+/// keeps the result of the pin.
+#[test]
+fn an_as_operand_takes_no_context() {
+    if let Err(errors) = operands("const r: i64 = id(1) as i64;") {
+        panic!("{errors:?}");
+    }
+    operand_rejects(
+        "const b: Buf<P> = empty<P>(); const r: Buf<P> = b as Buf<P>;",
+        "`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `Buf<P>` to `Buf<P>`",
+    );
+    operand_rejects(
+        "const r: Buf<P> = empty() as Buf<P>;",
+        &no_candidate("T", "empty"),
+    );
+}
+
+/// §232 rule 1: a literal other than `null` takes no context, so the
+/// literal branch keeps the type `string`. With the context `Mode | null`
+/// the literal would take `Mode`. `tsc` accepts the form (§232.4 item 1).
+#[test]
+fn a_literal_operand_takes_no_context() {
+    let source = format!(
+        "{PRELUDE}type Mode = \"a\" | \"b\";\n\
+         function m1(c: boolean): Mode {{ return (c ? \"a\" : null) ?? \"b\"; }}\n\
+         export function main(): void {{}}\n"
+    );
+    let errors =
+        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("literal branch");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(
+        errors[0].message,
+        "type mismatch: the return value expects `Mode`, got `string`"
+    );
+}
+
+/// §232 rule 1 and §212.1 rule 1a: an operand that keeps the context keeps
+/// the mark of an operand position too, so a literal hint there gives no
+/// candidate. Each form fails if its arm of `mark_operand_calls` is gone.
+#[test]
+fn a_hint_position_reaches_no_kept_operand() {
+    for (main, name) in [
+        // `||`, both operands.
+        ("const r: i32 = xs[c || zero()];", "zero"),
+        ("const r: i32 = xs[zero() || c];", "zero"),
+        // `&&`, the right operand.
+        ("const r: i32 = xs[c && zero()];", "zero"),
+        // `??`, the left operand.
+        ("const r: i32 = n + (zero() ?? 1);", "zero"),
+        // An optional call as the left operand of `??`.
+        ("const r: i32 = n + (mk?.plain() ?? 1);", "Maker.plain"),
+        // An equality operand has no context.
+        ("const r: boolean = c === (c || zero());", "zero"),
+        (
+            "const r: boolean = (k?.make() ?? empty<P>()) == o;",
+            "Factory.make",
+        ),
+    ] {
+        let errors = operands(main).expect_err(main);
+        assert_eq!(
+            errors[0].message,
+            no_candidate("T", name),
+            "{main}: {errors:?}"
+        );
+    }
 }

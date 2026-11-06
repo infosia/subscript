@@ -210,6 +210,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r487-unread-type-argument.ts", RuleCode::S100, 9),
     ("r488-user-call-unread-type-argument.ts", RuleCode::S100, 15),
     ("r489-reduce-block-literal-result.ts", RuleCode::S100, 12),
+    (
+        "r490-and-left-operand-has-no-context.ts",
+        RuleCode::S100,
+        13,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

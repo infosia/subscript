@@ -55334,6 +55334,1129 @@ fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     AwaitRaise() count=Uncounted @ a415-for-of-value-element-copy.ts:69:3
     AsyncHandleArrayRelease(%113) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }] @ a415-for-of-value-element-copy.ts:31:23
     -> Return { value: None, pos: Pos { file: "a415-for-of-value-element-copy.ts", line: 31, col: 23 } }
+===== a419-operand-takes-context =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "P" value=false descriptor=false boundary=false align=None @ a419-operand-takes-context.ts:7:7
+  field d3 "v": I32 defaulted=false absence=false foreign=None @ a419-operand-takes-context.ts:8:3
+class c2 "K" value=false descriptor=false boundary=false align=None @ a419-operand-takes-context.ts:24:7
+  field d4 "tag": I32 defaulted=false absence=false foreign=None @ a419-operand-takes-context.ts:25:3
+  method m1 "constructor" -> f1
+  method m2 "make<P>" -> f2
+class c3 "Buf<P>" value=false descriptor=false boundary=false align=None @ a419-operand-takes-context.ts:11:7
+  field d5 "items": Array(Class(ClassId(1))) defaulted=false absence=false foreign=None @ a419-operand-takes-context.ts:12:3
+  field d6 "tag": I32 defaulted=false absence=false foreign=None @ a419-operand-takes-context.ts:13:3
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a419-operand-takes-context.ts:26:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a419-operand-takes-context.ts:26:3
+  param %1 "tag": Data(I32) kind=Explicit storage=None @ a419-operand-takes-context.ts:26:15
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(I32) name=Some("tag")
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 27, col: 5 } }] @ a419-operand-takes-context.ts:27:10
+    StoreAddress(%2, %1) @ a419-operand-takes-context.ts:27:10
+    -> Return { value: None, pos: Pos { file: "a419-operand-takes-context.ts", line: 26, col: 3 } }
+fn f2 "make<P>" kind=Method { class: ClassId(2), method: MethodId(2) } exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:56:13
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a419-operand-takes-context.ts:56:13
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Class(ClassId(3))) name=None
+  value %2: Data(Array(Class(ClassId(1)))) name=None
+  value %3: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %5: Data(I32) name=None
+  value %6: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %1: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 31, col: 23 } }] @ a419-operand-takes-context.ts:31:23
+    %2: Data(Array(Class(ClassId(1)))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 12, col: 16 } }] @ a419-operand-takes-context.ts:12:16
+    %3: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) = AddressOfField(Class(FieldId(5)))(%1) @ a419-operand-takes-context.ts:12:3
+    StoreAddress(%3, %2) @ a419-operand-takes-context.ts:12:3
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%1) @ a419-operand-takes-context.ts:13:3
+    StoreAddress(%4, Integer(0):I32) @ a419-operand-takes-context.ts:13:3
+    %5: Data(I32) = LoadField(Class(FieldId(4)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 32, col: 13 } }] @ a419-operand-takes-context.ts:32:18
+    %6: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 32, col: 5 } }] @ a419-operand-takes-context.ts:32:7
+    StoreAddress(%6, %5) @ a419-operand-takes-context.ts:32:7
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a419-operand-takes-context.ts", line: 33, col: 5 } }
+fn f3 "[[json.parse#0.validate#0]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(U64) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Bool) = Unary(Not)(%2) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %4: Data(Str) = StringLiteral("boolean")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%0, %1, %4, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b3(%5: Data(U64), %6: Data(U64)) Some("if.join"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f4 "[[json.parse#0.construct#0]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 23, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f5 "[[json.parse#0.root]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(U64) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(U64) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Class(ClassId(0))) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Bool) name=None
+  b0 Some("entry"):
+    %1: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 16, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: Some(Data(U64)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %2: Data(Bool) = Binary(Eq)(%1, Integer(0):U64) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %3: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %4: Data(Str) = StringLiteral("SyntaxError")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %5: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 28, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Str)) })() traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%3, Integer(1):U32, %4, %5) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %6: Data(Str) = LoadField(Class(FieldId(1)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %7: Data(Str) = LoadField(Class(FieldId(2)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Throw(%3, %6, %7) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Unreachable { pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))], ownership: [false] })
+  b3(%8: Data(Str)) Some("if.join"):
+    %9: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 18, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: Some(Data(U64)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %10: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%1, %9) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %11: Data(Bool) = Unary(Not)(%10) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    %12: Data(Str) = StringLiteral("T")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %13: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 33, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(Str)], return_type: Some(Data(Str)) })(%1, %12) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 17, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: None })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %14: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %15: Data(Str) = StringLiteral("TypeError")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%14, Integer(2):U32, %15, %13) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %16: Data(Str) = LoadField(Class(FieldId(1)))(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %17: Data(Str) = LoadField(Class(FieldId(2)))(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Throw(%14, %16, %17) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Unreachable { pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(8))], ownership: [false] })
+  b6(%18: Data(Str)) Some("if.join"):
+    %19: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%1, %9) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 17, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: None })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(19))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f6 "pick<boolean>" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:44:15
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:16:18
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(Bool) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Str)], return_type: Some(Data(Bool)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 3 } }
+fn f7 "orRight" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:43:10
+  can-raise
+  param %0 "c": Data(Bool) kind=Explicit storage=None @ a419-operand-takes-context.ts:43:18
+  param %1 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:43:30
+  value %0: Data(Bool) name=Some("c")
+  value %1: Data(Str) name=Some("text")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Bool) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: Bool, kind: Boolean(true) }), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] }, else_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] } }
+  b1 Some("logic.rhs"):
+    %5: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(Str)], return_type: Some(Data(Bool)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 44, col: 15 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 44, col: 15 } }] @ a419-operand-takes-context.ts:44:15
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(5)), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] })
+  b2(%2: Data(Bool), %3: Data(Bool), %4: Data(Str)) Some("logic.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 44, col: 3 } }
+fn f8 "orLeft" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:47:10
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:47:17
+  param %1 "c": Data(Bool) kind=Explicit storage=None @ a419-operand-takes-context.ts:47:31
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(Bool) name=Some("c")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(Str)], return_type: Some(Data(Bool)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 48, col: 10 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 48, col: 10 } }] @ a419-operand-takes-context.ts:48:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: Bool, kind: Boolean(true) }), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] }, else_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] } }
+  b1 Some("logic.rhs"):
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(1)), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] })
+  b2(%3: Data(Bool), %4: Data(Str), %5: Data(Bool)) Some("logic.merge"):
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a419-operand-takes-context.ts", line: 48, col: 3 } }
+fn f9 "andRight" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:51:10
+  can-raise
+  param %0 "c": Data(Bool) kind=Explicit storage=None @ a419-operand-takes-context.ts:51:19
+  param %1 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:51:31
+  value %0: Data(Bool) name=Some("c")
+  value %1: Data(Str) name=Some("text")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Bool) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [Constant(Constant { ty: Bool, kind: Boolean(false) }), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] } }
+  b1 Some("logic.rhs"):
+    %5: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(Str)], return_type: Some(Data(Bool)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 52, col: 15 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 52, col: 15 } }] @ a419-operand-takes-context.ts:52:15
+    -> Branch(BlockTarget { block: BlockId(2), arguments: [Value(ValueId(5)), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] })
+  b2(%2: Data(Bool), %3: Data(Bool), %4: Data(Str)) Some("logic.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 52, col: 3 } }
+fn f10 "empty<P>" kind=Free exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:56:23
+  value %0: Data(Class(ClassId(3))) name=None
+  value %1: Data(Array(Class(ClassId(1)))) name=None
+  value %2: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) name=None
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 21, col: 10 } }] @ a419-operand-takes-context.ts:21:10
+    %1: Data(Array(Class(ClassId(1)))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 12, col: 16 } }] @ a419-operand-takes-context.ts:12:16
+    %2: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) @ a419-operand-takes-context.ts:12:3
+    StoreAddress(%2, %1) @ a419-operand-takes-context.ts:12:3
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%0) @ a419-operand-takes-context.ts:13:3
+    StoreAddress(%3, Integer(0):I32) @ a419-operand-takes-context.ts:13:3
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a419-operand-takes-context.ts", line: 21, col: 3 } }
+fn f11 "optional" kind=Free exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:55:10
+  param %0 "k": Data(Nullable(Class(ClassId(2)))) kind=Explicit storage=None @ a419-operand-takes-context.ts:55:19
+  value %0: Data(Nullable(Class(ClassId(2)))) name=Some("k")
+  value %1: Data(Bool) name=None
+  value %2: Data(Class(ClassId(3))) name=None
+  value %3: Data(Nullable(Class(ClassId(2)))) name=None
+  value %4: Data(Class(ClassId(2))) name=None
+  value %5: Data(Class(ClassId(3))) name=None
+  value %6: Data(Class(ClassId(3))) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Ne)(%0, Null:Null) @ a419-operand-takes-context.ts:56:10
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %4: Data(Class(ClassId(2))) = NarrowNonNull(Local)(%0) @ a419-operand-takes-context.ts:56:10
+    %5: Data(Class(ClassId(3))) = Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Class(ClassId(3)))) })(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 56, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 56, col: 10 } }] @ a419-operand-takes-context.ts:56:10
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    %6: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: Some(Data(Class(ClassId(3)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 56, col: 23 } }] @ a419-operand-takes-context.ts:56:23
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))], ownership: [false, false] })
+  b3(%2: Data(Class(ClassId(3))), %3: Data(Nullable(Class(ClassId(2))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 56, col: 3 } }
+fn f12 "optionalBoth" kind=Free exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:59:10
+  param %0 "k": Data(Nullable(Class(ClassId(2)))) kind=Explicit storage=None @ a419-operand-takes-context.ts:59:23
+  value %0: Data(Nullable(Class(ClassId(2)))) name=Some("k")
+  value %1: Data(Bool) name=None
+  value %2: Data(Class(ClassId(3))) name=None
+  value %3: Data(Nullable(Class(ClassId(2)))) name=None
+  value %4: Data(Class(ClassId(2))) name=None
+  value %5: Data(Class(ClassId(3))) name=None
+  value %6: Data(Class(ClassId(3))) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Ne)(%0, Null:Null) @ a419-operand-takes-context.ts:60:10
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %4: Data(Class(ClassId(2))) = NarrowNonNull(Local)(%0) @ a419-operand-takes-context.ts:60:10
+    %5: Data(Class(ClassId(3))) = Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Class(ClassId(3)))) })(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 60, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 60, col: 10 } }] @ a419-operand-takes-context.ts:60:10
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    %6: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: Some(Data(Class(ClassId(3)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 60, col: 23 } }] @ a419-operand-takes-context.ts:60:23
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(0))], ownership: [false, false] })
+  b3(%2: Data(Class(ClassId(3))), %3: Data(Nullable(Class(ClassId(2))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 60, col: 3 } }
+fn f13 "[[json.parse#10.validate#0]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(U64) name=None
+  value %7: Data(U64) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(0):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    %3: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %4: Data(Bool) = Unary(Not)(%3) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(4)), then_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] } }
+  b3 Some("if.then"):
+    %5: Data(Str) = StringLiteral("Buf<P> | null")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 32, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(Str)], return_type: None })(%1, %5) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b4 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b5(%6: Data(U64), %7: Data(U64)) Some("if.join"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f14 "[[json.parse#10.validate#1]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(U64) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(U64) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(U64) name=None
+  value %14: Data(U64) name=None
+  value %15: Data(Bool) name=None
+  value %16: Data(Bool) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(U64) name=None
+  value %19: Data(U64) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(U64) name=None
+  value %22: Data(Bool) name=None
+  value %23: Data(Bool) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(U64) name=None
+  value %27: Data(U64) name=None
+  value %28: Data(Bool) name=None
+  value %29: Data(Bool) name=None
+  value %30: Data(Str) name=None
+  value %31: Data(U64) name=None
+  value %32: Data(U64) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(5):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Bool) = Unary(Not)(%2) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %4: Data(Str) = StringLiteral("Buf<P>")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%0, %1, %4, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b3(%5: Data(U64), %6: Data(U64)) Some("if.join"):
+    %7: Data(Str) = StringLiteral("items")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %8: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%5, %6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %9: Data(Bool) = Binary(Ne)(%8, Integer(0):U64) @ a419-operand-takes-context.ts:17:10
+    %10: Data(Bool) = Unary(Not)(%9) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(10)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    %11: Data(Str) = StringLiteral("P[]")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%5, Integer(0):U64, %11, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %12: Data(Str) = StringLiteral("items")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(5)), Value(ValueId(6))], ownership: [false, false] })
+  b6(%13: Data(U64), %14: Data(U64)) Some("if.join"):
+    %15: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%13, %8) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %16: Data(Bool) = Unary(Not)(%15) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(7), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b7 Some("if.then"):
+    %17: Data(Str) = StringLiteral("items")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b8 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(13)), Value(ValueId(14))], ownership: [false, false] })
+  b9(%18: Data(U64), %19: Data(U64)) Some("if.join"):
+    %20: Data(Str) = StringLiteral("tag")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %21: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%18, %19, %20) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %22: Data(Bool) = Binary(Ne)(%21, Integer(0):U64) @ a419-operand-takes-context.ts:17:10
+    %23: Data(Bool) = Unary(Not)(%22) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(11), arguments: [], ownership: [] } }
+  b10 Some("if.then"):
+    %24: Data(Str) = StringLiteral("i32")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%18, Integer(0):U64, %24, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %25: Data(Str) = StringLiteral("tag")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%25) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b11 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(18)), Value(ValueId(19))], ownership: [false, false] })
+  b12(%26: Data(U64), %27: Data(U64)) Some("if.join"):
+    %28: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%26, %21) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %29: Data(Bool) = Unary(Not)(%28) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(29)), then_target: BlockTarget { block: BlockId(13), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(14), arguments: [], ownership: [] } }
+  b13 Some("if.then"):
+    %30: Data(Str) = StringLiteral("tag")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%30) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b14 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(26)), Value(ValueId(27))], ownership: [false, false] })
+  b15(%31: Data(U64), %32: Data(U64)) Some("if.join"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f15 "[[json.parse#10.validate#2]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(U64) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(U64) name=None
+  value %12: Data(U64) name=None
+  value %13: Data(U64) name=None
+  value %14: Data(U64) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(U64) name=None
+  value %17: Data(U64) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Bool) name=None
+  value %20: Data(U64) name=None
+  value %21: Data(Bool) name=None
+  value %22: Data(Bool) name=None
+  value %23: Data(U64) name=None
+  value %24: Data(U64) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Bool) = Unary(Not)(%2) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %4: Data(Str) = StringLiteral("P[]")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%0, %1, %4, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b3(%5: Data(U64), %6: Data(U64)) Some("if.join"):
+    %7: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 25, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(I32)) })(%5, %6) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %8: Data(Bool) = Binary(Ge)(%7, Integer(0):I32) @ a419-operand-takes-context.ts:17:10
+    %9: Data(Bool) = Unary(Not)(%8) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(9)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    %10: Data(Str) = StringLiteral("P[]")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%5, %6, %10, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(5)), Value(ValueId(6))], ownership: [false, false] })
+  b6(%11: Data(U64), %12: Data(U64)) Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(11)), Value(ValueId(12)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false, false] })
+  b7(%13: Data(U64), %14: Data(U64), %15: Data(I32)) Some("while.cond"):
+    %19: Data(Bool) = Binary(Lt)(%15, %7) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(19)), then_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))], ownership: [false, false, false] } }
+  b8 Some("while.body"):
+    %20: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 26, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(U64)) })(%13, %14, %15) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %21: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(16)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%13, %20) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %22: Data(Bool) = Unary(Not)(%21) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(22)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(11), arguments: [], ownership: [] } }
+  b9(%16: Data(U64), %17: Data(U64), %18: Data(I32)) Some("while.exit"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b10 Some("if.then"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 31, type_argument: None, worker_entry: None }), parameter_types: [Data(I32)], return_type: None })(%15) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b11 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))], ownership: [false, false, false] })
+  b12(%23: Data(U64), %24: Data(U64), %25: Data(I32)) Some("if.join"):
+    %26: Data(I32) = Binary(Add)(%25, Integer(1):I32) @ a419-operand-takes-context.ts:17:10
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(26))], ownership: [false, false, false] })
+fn f16 "[[json.parse#10.validate#3]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(U64) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(U64) name=None
+  value %9: Data(Bool) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(U64) name=None
+  value %14: Data(U64) name=None
+  value %15: Data(Bool) name=None
+  value %16: Data(Bool) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(U64) name=None
+  value %19: Data(U64) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(5):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Bool) = Unary(Not)(%2) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %4: Data(Str) = StringLiteral("P")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%0, %1, %4, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b3(%5: Data(U64), %6: Data(U64)) Some("if.join"):
+    %7: Data(Str) = StringLiteral("v")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %8: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%5, %6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %9: Data(Bool) = Binary(Ne)(%8, Integer(0):U64) @ a419-operand-takes-context.ts:17:10
+    %10: Data(Bool) = Unary(Not)(%9) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(10)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    %11: Data(Str) = StringLiteral("i32")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%5, Integer(0):U64, %11, Integer(-1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %12: Data(Str) = StringLiteral("v")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(5)), Value(ValueId(6))], ownership: [false, false] })
+  b6(%13: Data(U64), %14: Data(U64)) Some("if.join"):
+    %15: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%13, %8) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %16: Data(Bool) = Unary(Not)(%15) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(7), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b7 Some("if.then"):
+    %17: Data(Str) = StringLiteral("v")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 30, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b8 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(13)), Value(ValueId(14))], ownership: [false, false] })
+  b9(%18: Data(U64), %19: Data(U64)) Some("if.join"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f17 "[[json.parse#10.validate#4]]" kind=SynthesizedHelper exported=false generator=false async=false -> Bool entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(U64) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 20, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Bool) = Unary(Not)(%2) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %4: Data(Str) = StringLiteral("i32")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 29, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str), Data(I32)], return_type: None })(%0, %1, %4, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
+  b3(%5: Data(U64), %6: Data(U64)) Some("if.join"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f18 "[[json.parse#10.construct#0]]" kind=SynthesizedHelper exported=false generator=false async=false -> Nullable(Class(ClassId(3))) entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Bool) name=None
+  value %3: Data(Nullable(Class(ClassId(3)))) name=None
+  value %4: Data(Class(ClassId(3))) name=None
+  value %5: Data(Nullable(Class(ClassId(3)))) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 19, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1, Integer(0):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %3: Data(Nullable(Class(ClassId(3)))) = Coerce(Null:Null) @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    %4: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(19)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Class(ClassId(3)))) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %5: Data(Nullable(Class(ClassId(3)))) = Coerce(%4) @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f19 "[[json.parse#10.construct#1]]" kind=SynthesizedHelper exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Class(ClassId(3))) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(U64) name=None
+  value %5: Data(Array(Class(ClassId(1)))) name=None
+  value %6: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(U64) name=None
+  value %9: Data(I32) name=None
+  value %10: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Str) = StringLiteral("items")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %4: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%0, %1, %3) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %5: Data(Array(Class(ClassId(1)))) = Call(CallTarget { kind: Function(FunctionId(20)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Array(Class(ClassId(1))))) })(%0, %4) invalidates=[ValueId(5)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %6: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) = AddressOfField(Class(FieldId(5)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    StoreAddress(%6, %5) @ a419-operand-takes-context.ts:17:10
+    %7: Data(Str) = StringLiteral("tag")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %8: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%0, %1, %7) invalidates=[ValueId(5)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %9: Data(I32) = Call(CallTarget { kind: Function(FunctionId(22)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(I32)) })(%0, %8) invalidates=[ValueId(5)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %10: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    StoreAddress(%10, %9) @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f20 "[[json.parse#10.construct#2]]" kind=SynthesizedHelper exported=false generator=false async=false -> Array(Class(ClassId(1))) entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Array(Class(ClassId(1)))) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(U64) name=None
+  value %5: Data(U64) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(U64) name=None
+  value %8: Data(U64) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(U64) name=None
+  value %12: Data(Class(ClassId(1))) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Array(Class(ClassId(1)))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 25, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(I32)) })(%0, %1) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false, false] })
+  b1(%4: Data(U64), %5: Data(U64), %6: Data(I32)) Some("while.cond"):
+    %10: Data(Bool) = Binary(Lt)(%6, %3) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(10)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6))], ownership: [false, false, false] } }
+  b2 Some("while.body"):
+    %11: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 26, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(U64)) })(%4, %5, %6) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %12: Data(Class(ClassId(1))) = Call(CallTarget { kind: Function(FunctionId(21)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Class(ClassId(1)))) })(%4, %11) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %13: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Class(ClassId(1)))), Data(Class(ClassId(1)))], return_type: Some(Data(I32)) })(%2, %12) invalidates=[ValueId(2)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %14: Data(I32) = Binary(Add)(%6, Integer(1):I32) @ a419-operand-takes-context.ts:17:10
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(14))], ownership: [false, false, false] })
+  b3(%7: Data(U64), %8: Data(U64), %9: Data(I32)) Some("while.exit"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f21 "[[json.parse#10.construct#3]]" kind=SynthesizedHelper exported=false generator=false async=false -> Class(ClassId(1)) entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(Class(ClassId(1))) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(U64) name=None
+  value %5: Data(I32) name=None
+  value %6: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(Str) = StringLiteral("v")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %4: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 27, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(Str)], return_type: Some(Data(U64)) })(%0, %1, %3) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(22)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(I32)) })(%0, %4) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %6: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    StoreAddress(%6, %5) @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f22 "[[json.parse#10.construct#4]]" kind=SynthesizedHelper exported=false generator=false async=false -> I32 entry=b0 @ a419-operand-takes-context.ts:17:10
+  param %0 "parser": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  param %1 "node": Data(U64) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(U64) name=Some("parser")
+  value %1: Data(U64) name=Some("node")
+  value %2: Data(U64) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 22, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(U64), Data(I32)], return_type: Some(Data(U64)) })(%0, %1, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %3: Data(I32) = Cast(%2) @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f23 "[[json.parse#10.root]]" kind=SynthesizedHelper exported=false generator=false async=false -> Nullable(Class(ClassId(3))) entry=b0 @ a419-operand-takes-context.ts:17:10
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:17:10
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(U64) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(U64) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Class(ClassId(0))) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Nullable(Class(ClassId(3)))) name=None
+  b0 Some("entry"):
+    %1: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 16, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: Some(Data(U64)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %2: Data(Bool) = Binary(Eq)(%1, Integer(0):U64) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    %3: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %4: Data(Str) = StringLiteral("SyntaxError")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %5: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 28, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Str)) })() traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%3, Integer(1):U32, %4, %5) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %6: Data(Str) = LoadField(Class(FieldId(1)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %7: Data(Str) = LoadField(Class(FieldId(2)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Throw(%3, %6, %7) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Unreachable { pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))], ownership: [false] })
+  b3(%8: Data(Str)) Some("if.join"):
+    %9: Data(U64) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 18, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: Some(Data(U64)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %10: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Bool)) })(%1, %9) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %11: Data(Bool) = Unary(Not)(%10) @ a419-operand-takes-context.ts:17:10
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    %12: Data(Str) = StringLiteral("T")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %13: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 33, type_argument: None, worker_entry: None }), parameter_types: [Data(U64), Data(Str)], return_type: Some(Data(Str)) })(%1, %12) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 17, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: None })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %14: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %15: Data(Str) = StringLiteral("TypeError")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%14, Integer(2):U32, %15, %13) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %16: Data(Str) = LoadField(Class(FieldId(1)))(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    %17: Data(Str) = LoadField(Class(FieldId(2)))(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Throw(%14, %16, %17) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Unreachable { pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(8))], ownership: [false] })
+  b6(%18: Data(Str)) Some("if.join"):
+    %19: Data(Nullable(Class(ClassId(3)))) = Call(CallTarget { kind: Function(FunctionId(18)), parameter_types: [Data(U64), Data(U64)], return_type: Some(Data(Nullable(Class(ClassId(3))))) })(%1, %9) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Json, operation: 17, type_argument: None, worker_entry: None }), parameter_types: [Data(U64)], return_type: None })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(19))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }
+fn f24 "pick<Buf<P> | null>" kind=Free exported=false generator=false async=false -> Nullable(Class(ClassId(3))) entry=b0 @ a419-operand-takes-context.ts:64:10
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:16:18
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(Nullable(Class(ClassId(3)))) name=None
+  b0 Some("entry"):
+    %1: Data(Nullable(Class(ClassId(3)))) = Call(CallTarget { kind: Function(FunctionId(23)), parameter_types: [Data(Str)], return_type: Some(Data(Nullable(Class(ClassId(3))))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 10 } }] @ a419-operand-takes-context.ts:17:10
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a419-operand-takes-context.ts", line: 17, col: 3 } }
+fn f25 "parsed" kind=Free exported=false generator=false async=false -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:63:10
+  can-raise
+  param %0 "text": Data(Str) kind=Explicit storage=None @ a419-operand-takes-context.ts:63:17
+  value %0: Data(Str) name=Some("text")
+  value %1: Data(Nullable(Class(ClassId(3)))) name=None
+  value %2: Data(Nullable(Class(ClassId(3)))) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Class(ClassId(3))) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Nullable(Class(ClassId(3)))) name=None
+  value %7: Data(Class(ClassId(3))) name=None
+  value %8: Data(Class(ClassId(3))) name=None
+  b0 Some("entry"):
+    %1: Data(Nullable(Class(ClassId(3)))) = Coerce(Null:Null) @ a419-operand-takes-context.ts:64:10
+    %2: Data(Nullable(Class(ClassId(3)))) = Call(CallTarget { kind: Function(FunctionId(24)), parameter_types: [Data(Str)], return_type: Some(Data(Nullable(Class(ClassId(3))))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 64, col: 10 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 64, col: 10 } }] @ a419-operand-takes-context.ts:64:10
+    %3: Data(Bool) = Binary(Ne)(%2, Null:Null) @ a419-operand-takes-context.ts:64:10
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %7: Data(Class(ClassId(3))) = NarrowNonNull(Local)(%2) @ a419-operand-takes-context.ts:64:10
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(7)), Value(ValueId(0)), Value(ValueId(2))], ownership: [false, false, false] })
+  b2 Some("cond.else"):
+    %8: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: Some(Data(Class(ClassId(3)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 64, col: 24 } }] @ a419-operand-takes-context.ts:64:24
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(8)), Value(ValueId(0)), Value(ValueId(2))], ownership: [false, false, false] })
+  b3(%4: Data(Class(ClassId(3))), %5: Data(Str), %6: Data(Nullable(Class(ClassId(3))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a419-operand-takes-context.ts", line: 64, col: 3 } }
+fn f26 "af<P>" kind=Free exported=false generator=false async=true -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:68:21
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 21 } }]
+  param %0 "tag": Data(I32) kind=Explicit storage=None @ a419-operand-takes-context.ts:37:22
+  value %0: Data(I32) name=Some("tag")
+  value %1: Data(Class(ClassId(3))) name=None
+  value %2: Data(Array(Class(ClassId(1)))) name=None
+  value %3: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) name=None
+  value %4: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %1: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 38, col: 21 } }] @ a419-operand-takes-context.ts:38:21
+    %2: Data(Array(Class(ClassId(1)))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 12, col: 16 } }] @ a419-operand-takes-context.ts:12:16
+    %3: Address(AddressType { pointee: Array(Class(ClassId(1))), array_base: None }) = AddressOfField(Class(FieldId(5)))(%1) @ a419-operand-takes-context.ts:12:3
+    StoreAddress(%3, %2) @ a419-operand-takes-context.ts:12:3
+    %4: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%1) @ a419-operand-takes-context.ts:13:3
+    StoreAddress(%4, Integer(0):I32) @ a419-operand-takes-context.ts:13:3
+    %5: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 39, col: 3 } }] @ a419-operand-takes-context.ts:39:5
+    StoreAddress(%5, %0) @ a419-operand-takes-context.ts:39:5
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a419-operand-takes-context.ts", line: 40, col: 3 } }
+fn f27 "awaited" kind=Free exported=false generator=false async=true -> Class(ClassId(3)) entry=b0 @ a419-operand-takes-context.ts:67:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 67, col: 16 } }]
+  can-raise
+  param %0 "c": Data(Bool) kind=Explicit storage=None @ a419-operand-takes-context.ts:67:24
+  value %0: Data(Bool) name=Some("c")
+  value %1: Data(AsyncHandle(Class(ClassId(3)))) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(AsyncHandle(Class(ClassId(3)))) name=None
+  value %4: Data(AsyncHandle(Class(ClassId(3)))) name=None
+  value %5: Data(Class(ClassId(3))) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %3: Data(AsyncHandle(Class(ClassId(3)))) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(26)), parameter_types: [Data(I32)], return_type: Some(Data(Class(ClassId(3)))) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 21 } }] @ a419-operand-takes-context.ts:68:21
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(3)), Value(ValueId(0))], ownership: [true, false] })
+  b2 Some("cond.else"):
+    %4: Data(AsyncHandle(Class(ClassId(3)))) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(26)), parameter_types: [Data(I32)], return_type: Some(Data(Class(ClassId(3)))) })(Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 29 } }] @ a419-operand-takes-context.ts:68:29
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(0))], ownership: [true, false] })
+  b3(%1: Data(AsyncHandle(Class(ClassId(3)))), %2: Data(Bool)) Some("cond.merge"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: true }, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 10 }, successor: BlockId(4), resume_value: Some(ValueId(5)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 10 } }] }
+  b4(%5: Data(Class(ClassId(3)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 10 } }] @ a419-operand-takes-context.ts:68:10
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a419-operand-takes-context.ts", line: 68, col: 3 } }
+fn f28 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a419-operand-takes-context.ts:71:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 71, col: 23 } }]
+  can-raise
+  value %0: Data(Str) name=None
+  value %1: Data(Bool) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Bool) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Str) name=None
+  value %15: Data(Bool) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Bool) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Bool) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Class(ClassId(2))) name=None
+  value %22: Data(Nullable(Class(ClassId(2)))) name=None
+  value %23: Data(Class(ClassId(3))) name=None
+  value %24: Data(I32) name=None
+  value %25: Data(Nullable(Class(ClassId(2)))) name=None
+  value %26: Data(Class(ClassId(3))) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(Class(ClassId(2))) name=None
+  value %30: Data(Nullable(Class(ClassId(2)))) name=None
+  value %31: Data(Class(ClassId(3))) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(Nullable(Class(ClassId(2)))) name=None
+  value %34: Data(Class(ClassId(3))) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Class(ClassId(3))) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Str) name=None
+  value %41: Data(Class(ClassId(3))) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(Str) name=None
+  value %44: Data(Bool) name=None
+  value %45: Data(Class(ClassId(3))) name=None
+  value %46: Data(Bool) name=None
+  value %47: Data(Class(ClassId(3))) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(I32) name=None
+  value %50: Data(Str) name=None
+  value %51: Data(Class(ClassId(3))) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("false")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 29 } }] @ a419-operand-takes-context.ts:72:29
+    %1: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(true):Bool, %0) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 15 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 15 } }] @ a419-operand-takes-context.ts:72:15
+    %2: Data(Str) = StringLiteral("true")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 56 } }] @ a419-operand-takes-context.ts:72:56
+    %3: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(false):Bool, %2) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 41 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 41 } }] @ a419-operand-takes-context.ts:72:41
+    %4: Data(Str) = StringLiteral("false")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 82 } }] @ a419-operand-takes-context.ts:72:82
+    %5: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(false):Bool, %4) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 67 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 67 } }] @ a419-operand-takes-context.ts:72:67
+    %6: Data(Str) = Template([Text("or:"), Operand { index: 0, format: Bool }, Text(":"), Operand { index: 1, format: Bool }, Text(":"), Operand { index: 2, format: Bool }])(%1, %3, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 67 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 72, col: 9 } }] @ a419-operand-takes-context.ts:72:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a419-operand-takes-context.ts:72:3
+    %7: Data(Str) = StringLiteral("true")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 26 } }] @ a419-operand-takes-context.ts:73:26
+    %8: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Str), Data(Bool)], return_type: Some(Data(Bool)) })(%7, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 19 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 19 } }] @ a419-operand-takes-context.ts:73:19
+    %9: Data(Str) = StringLiteral("false")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 51 } }] @ a419-operand-takes-context.ts:73:51
+    %10: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Str), Data(Bool)], return_type: Some(Data(Bool)) })(%9, Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 44 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 44 } }] @ a419-operand-takes-context.ts:73:44
+    %11: Data(Str) = StringLiteral("false")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 76 } }] @ a419-operand-takes-context.ts:73:76
+    %12: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Str), Data(Bool)], return_type: Some(Data(Bool)) })(%11, Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 69 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 69 } }] @ a419-operand-takes-context.ts:73:69
+    %13: Data(Str) = Template([Text("orLeft:"), Operand { index: 0, format: Bool }, Text(":"), Operand { index: 1, format: Bool }, Text(":"), Operand { index: 2, format: Bool }])(%8, %10, %12) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 44 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 69 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 73, col: 9 } }] @ a419-operand-takes-context.ts:73:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a419-operand-takes-context.ts:73:3
+    %14: Data(Str) = StringLiteral("true")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 32 } }] @ a419-operand-takes-context.ts:74:32
+    %15: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(false):Bool, %14) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 16 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 16 } }] @ a419-operand-takes-context.ts:74:16
+    %16: Data(Str) = StringLiteral("true")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 58 } }] @ a419-operand-takes-context.ts:74:58
+    %17: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(true):Bool, %16) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 43 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 43 } }] @ a419-operand-takes-context.ts:74:43
+    %18: Data(Str) = StringLiteral("false")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 84 } }] @ a419-operand-takes-context.ts:74:84
+    %19: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Bool), Data(Str)], return_type: Some(Data(Bool)) })(Boolean(true):Bool, %18) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 69 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 69 } }] @ a419-operand-takes-context.ts:74:69
+    %20: Data(Str) = Template([Text("and:"), Operand { index: 0, format: Bool }, Text(":"), Operand { index: 1, format: Bool }, Text(":"), Operand { index: 2, format: Bool }])(%15, %17, %19) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 43 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 69 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 74, col: 9 } }] @ a419-operand-takes-context.ts:74:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%20) @ a419-operand-takes-context.ts:74:3
+    %21: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 30 } }] @ a419-operand-takes-context.ts:75:30
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(I32)], return_type: None })(%21, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 30 } }] @ a419-operand-takes-context.ts:75:30
+    %22: Data(Nullable(Class(ClassId(2)))) = Coerce(%21) @ a419-operand-takes-context.ts:55:19
+    %23: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(Nullable(Class(ClassId(2))))], return_type: Some(Data(Class(ClassId(3)))) })(%22) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 21 } }] @ a419-operand-takes-context.ts:75:21
+    %24: Data(I32) = LoadField(Class(FieldId(6)))(%23) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 21 } }] @ a419-operand-takes-context.ts:75:40
+    %25: Data(Nullable(Class(ClassId(2)))) = Coerce(Null:Null) @ a419-operand-takes-context.ts:55:19
+    %26: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(Nullable(Class(ClassId(2))))], return_type: Some(Data(Class(ClassId(3)))) })(%25) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 47 } }] @ a419-operand-takes-context.ts:75:47
+    %27: Data(I32) = LoadField(Class(FieldId(6)))(%26) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 47 } }] @ a419-operand-takes-context.ts:75:62
+    %28: Data(Str) = Template([Text("optional:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%24, %27) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 40 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 62 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 75, col: 9 } }] @ a419-operand-takes-context.ts:75:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) @ a419-operand-takes-context.ts:75:3
+    %29: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 38 } }] @ a419-operand-takes-context.ts:76:38
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(I32)], return_type: None })(%29, Integer(6):I32) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 38 } }] @ a419-operand-takes-context.ts:76:38
+    %30: Data(Nullable(Class(ClassId(2)))) = Coerce(%29) @ a419-operand-takes-context.ts:59:23
+    %31: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(12)), parameter_types: [Data(Nullable(Class(ClassId(2))))], return_type: Some(Data(Class(ClassId(3)))) })(%30) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 25 } }] @ a419-operand-takes-context.ts:76:25
+    %32: Data(I32) = LoadField(Class(FieldId(6)))(%31) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 25 } }] @ a419-operand-takes-context.ts:76:48
+    %33: Data(Nullable(Class(ClassId(2)))) = Coerce(Null:Null) @ a419-operand-takes-context.ts:59:23
+    %34: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(12)), parameter_types: [Data(Nullable(Class(ClassId(2))))], return_type: Some(Data(Class(ClassId(3)))) })(%33) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 55 } }] @ a419-operand-takes-context.ts:76:55
+    %35: Data(I32) = LoadField(Class(FieldId(6)))(%34) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 55 } }] @ a419-operand-takes-context.ts:76:74
+    %36: Data(Str) = Template([Text("optionalBoth:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%32, %35) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 48 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 74 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 76, col: 9 } }] @ a419-operand-takes-context.ts:76:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%36) @ a419-operand-takes-context.ts:76:3
+    %37: Data(Str) = StringLiteral("{\"items\":[],\"tag\":5}")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 26 } }] @ a419-operand-takes-context.ts:77:26
+    %38: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str)], return_type: Some(Data(Class(ClassId(3)))) })(%37) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 19 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 19 } }] @ a419-operand-takes-context.ts:77:19
+    %39: Data(I32) = LoadField(Class(FieldId(6)))(%38) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 19 } }] @ a419-operand-takes-context.ts:77:50
+    %40: Data(Str) = StringLiteral("null")() traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 64 } }] @ a419-operand-takes-context.ts:77:64
+    %41: Data(Class(ClassId(3))) = Call(CallTarget { kind: Function(FunctionId(25)), parameter_types: [Data(Str)], return_type: Some(Data(Class(ClassId(3)))) })(%40) traps=[Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 57 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 57 } }] @ a419-operand-takes-context.ts:77:57
+    %42: Data(I32) = LoadField(Class(FieldId(6)))(%41) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 57 } }] @ a419-operand-takes-context.ts:77:72
+    %43: Data(Str) = Template([Text("parsed:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%39, %42) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 50 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 72 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 77, col: 9 } }] @ a419-operand-takes-context.ts:77:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%43) @ a419-operand-takes-context.ts:77:3
+    %44: Data(Bool) = Copy(Boolean(true):Bool) @ a419-operand-takes-context.ts:78:25
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(Bool)], return_type: Some(Data(Class(ClassId(3)))) }, operands: [ValueId(44)] }, pos: Pos { file: "a419-operand-takes-context.ts", line: 78, col: 25 }, successor: BlockId(1), resume_value: Some(ValueId(45)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 78, col: 25 } }] }
+  b1(%45: Data(Class(ClassId(3)))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 78, col: 25 } }] @ a419-operand-takes-context.ts:78:25
+    %46: Data(Bool) = Copy(Boolean(false):Bool) @ a419-operand-takes-context.ts:79:26
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(27)), parameter_types: [Data(Bool)], return_type: Some(Data(Class(ClassId(3)))) }, operands: [ValueId(46)] }, pos: Pos { file: "a419-operand-takes-context.ts", line: 79, col: 26 }, successor: BlockId(2), resume_value: Some(ValueId(47)), arguments: [Value(ValueId(45))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a419-operand-takes-context.ts", line: 79, col: 26 } }] }
+  b2(%47: Data(Class(ClassId(3))), %51: Data(Class(ClassId(3)))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a419-operand-takes-context.ts", line: 79, col: 26 } }] @ a419-operand-takes-context.ts:79:26
+    %48: Data(I32) = LoadField(Class(FieldId(6)))(%51) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 18 } }] @ a419-operand-takes-context.ts:80:24
+    %49: Data(I32) = LoadField(Class(FieldId(6)))(%47) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 31 } }] @ a419-operand-takes-context.ts:80:38
+    %50: Data(Str) = Template([Text("await:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%48, %49) traps=[Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a419-operand-takes-context.ts", line: 80, col: 9 } }] @ a419-operand-takes-context.ts:80:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%50) @ a419-operand-takes-context.ts:80:3
+    -> Return { value: None, pos: Pos { file: "a419-operand-takes-context.ts", line: 71, col: 23 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

@@ -459,8 +459,14 @@ impl<'p> Checker<'p> {
         }
         match b.op {
             B::LogicalAnd | B::LogicalOr => {
-                let left = self.check_expr(&b.left, None, fx);
-                let right = self.check_logical_right(&left, b, fx);
+                // §232 rules 1 and 4: each operand of `||` and the right
+                // operand of `&&` keep the context.
+                let left_ctx = (b.op == B::LogicalOr)
+                    .then(|| self.operand_context(&b.left, ctx))
+                    .flatten();
+                let left = self.check_expr(&b.left, left_ctx.as_ref(), fx);
+                let right_ctx = self.operand_context(&b.right, ctx);
+                let right = self.check_logical_right(&left, b, right_ctx.as_ref(), fx);
                 for side in [&left, &right] {
                     if !self.instance_restriction(
                         crate::check::opaque::InstanceRestriction::BooleanContext,
@@ -505,7 +511,7 @@ impl<'p> Checker<'p> {
                     pos,
                 }
             }
-            B::NullishCoalescing => self.check_nullish(b, fx, pos),
+            B::NullishCoalescing => self.check_nullish(b, ctx, fx, pos),
             B::InstanceOf => self.check_instanceof(b, fx, pos),
             B::In | B::Exp => {
                 self.reject_subset(
@@ -645,6 +651,7 @@ impl<'p> Checker<'p> {
     }
 
     fn check_optional_plan(&mut self, chain: &ast::OptChainExpr, fx: &mut FnCtx) -> OptionalPlan {
+        let call_context = self.optional_chain_context.take();
         let mut steps = Vec::new();
         let root = flatten_optional_chain(chain, &mut steps);
         if matches!(steps.first(), Some(OptionalStep::Member { .. }))
@@ -723,8 +730,11 @@ impl<'p> Checker<'p> {
                         };
                         let call = opt_call_as_call(call);
                         let call_pos = self.pos(call.span);
-                        current = self.checked_call(&call, Self::poisoned_call, |checker| {
-                            checker.check_method_call_on(current, property, &call, fx, call_pos)
+                        let ctx = call_context.as_ref().filter(|_| index + 2 == steps.len());
+                        current = self.with_optional_call_context(&call, ctx, |checker| {
+                            checker.checked_call(&call, Self::poisoned_call, |checker| {
+                                checker.check_method_call_on(current, property, &call, fx, call_pos)
+                            })
                         });
                         index += 2;
                         self.end_shared_narrowing(&current, fx);
@@ -807,14 +817,23 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_nullish(&mut self, binary: &ast::BinExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    fn check_nullish(
+        &mut self,
+        binary: &ast::BinExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        // §232 rule 1: the left operand of `??` keeps the context.
+        let left_ctx = self.operand_context(&binary.left, ctx);
         let left_ast = unparen_expr(&binary.left);
         if let ast::Expr::OptChain(chain) = left_ast {
+            self.optional_chain_context = left_ctx;
             let plan = self.check_optional_plan(chain, fx);
             return self.finish_nullish_plan(plan, &binary.right, fx, pos);
         }
-
-        let mut left = self.check_expr(&binary.left, None, fx);
+        let left_ctx = self.nullish_left_context(left_ctx.as_ref());
+        let mut left = self.check_expr(&binary.left, left_ctx.as_ref(), fx);
         self.restore_nullable_storage(&mut left);
         if matches!(left_ast, ast::Expr::Bin(binary) if binary.op == ast::BinaryOp::NullishCoalescing)
             && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
@@ -1560,6 +1579,7 @@ impl<'p> Checker<'p> {
         &mut self,
         left: &hir::Expr,
         b: &ast::BinExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
         let note_paths = fx.narrowing_note_paths();
@@ -1571,7 +1591,7 @@ impl<'p> Checker<'p> {
         };
         let mut base = fx.narrowed.clone();
         fx.narrowed = base.iter().cloned().chain(extra).collect();
-        let right = self.check_expr(&b.right, None, fx);
+        let right = self.check_expr(&b.right, ctx, fx);
         // Keep kills: facts removed inside the operand stay removed.
         base.retain(|key| fx.narrowed.contains(key));
         fx.narrowed = base;

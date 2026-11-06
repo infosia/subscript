@@ -623,7 +623,11 @@ impl<'p> Checker<'p> {
             operand = &paren.expr;
         }
         let ast::Expr::Call(call) = operand else {
-            let handle = self.check_expr(operand, None, fx);
+            // §232 rule 3: a conditional or an optional call takes
+            // `Promise<C>` too.
+            let context = ctx.map(|value| Type::AsyncHandle(Box::new(value.clone())));
+            let context = self.operand_context(operand, context.as_ref());
+            let handle = self.check_expr(operand, context.as_ref(), fx);
             let Type::AsyncHandle(value) = self.apparent_type(&handle.ty.clone()) else {
                 if self.apparent_type(&(handle.ty)) != Type::Error {
                     self.reject_subset(RejectionSite::AwaitNonHandle, "`await` requires `Context.suspend()`, an async call, or a held async handle", pos.clone());

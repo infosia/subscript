@@ -250,6 +250,7 @@ fn run_with_effects(
         active_call: None,
         active_call_context: None,
         operand_calls: HashSet::new(),
+        optional_chain_context: None,
         type_argument_watch: HashSet::new(),
         type_argument_takes: HashMap::new(),
         type_argument_user_calls: HashMap::new(),

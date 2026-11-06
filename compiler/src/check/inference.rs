@@ -263,8 +263,78 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Expr::Await(awaited) => self.mark_operand_calls(&awaited.arg),
+            // §232 rule 1: the operands that keep the context of the
+            // expression also keep a mark.
+            ast::Expr::Bin(binary) => match binary.op {
+                ast::BinaryOp::LogicalOr => {
+                    self.mark_operand_calls(&binary.left);
+                    self.mark_operand_calls(&binary.right);
+                }
+                ast::BinaryOp::LogicalAnd => self.mark_operand_calls(&binary.right),
+                ast::BinaryOp::NullishCoalescing => self.mark_operand_calls(&binary.left),
+                _ => {}
+            },
+            ast::Expr::OptChain(chain) => {
+                if let ast::OptChainBase::Call(call) = &*chain.base {
+                    self.operand_calls.insert(call.span);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// The context of an operand that keeps the context of its expression
+    /// (§232 rules 1 and 3). By §232 rule 1, a literal other than `null`, a
+    /// template, and an array literal take no context, so each keeps its
+    /// present type. `null` has one type in each context.
+    pub(super) fn operand_context(&self, operand: &ast::Expr, ctx: Option<&Type>) -> Option<Type> {
+        fn literal_free(expr: &ast::Expr) -> bool {
+            match unparen_expr(expr) {
+                ast::Expr::Lit(ast::Lit::Null(_)) => true,
+                ast::Expr::Lit(_) | ast::Expr::Tpl(_) | ast::Expr::Array(_) => false,
+                ast::Expr::Unary(unary) => {
+                    !matches!(unary.op, ast::UnaryOp::Minus | ast::UnaryOp::Plus)
+                }
+                ast::Expr::Cond(conditional) => {
+                    literal_free(&conditional.cons) && literal_free(&conditional.alt)
+                }
+                _ => true,
+            }
+        }
+        ctx.filter(|_| literal_free(operand)).cloned()
+    }
+
+    /// The context of the left operand of `??`: the context with `| null`,
+    /// as the left operand can be absent (§232 rule 1). An optional call
+    /// there drops the absence again.
+    pub(super) fn nullish_left_context(&self, ctx: Option<&Type>) -> Option<Type> {
+        let ctx = ctx?;
+        Some(match self.apparent_type(ctx) {
+            Type::Nullable(_, _) => ctx.clone(),
+            _ if self.allows_nullable(ctx) => Type::nullable(ctx.clone()),
+            _ => ctx.clone(),
+        })
+    }
+
+    /// Checks `check` as the call `call` with the contextual type `ctx`, so
+    /// §212 inference reads it. An optional call takes the context with
+    /// `| undefined` and `| null` dropped (§232 rule 1).
+    pub(super) fn with_optional_call_context<T>(
+        &mut self,
+        call: &ast::CallExpr,
+        ctx: Option<&Type>,
+        check: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let context = ctx.map(|ctx| match self.apparent_type(ctx) {
+            Type::Nullable(inner, _) => *inner,
+            _ => ctx.clone(),
+        });
+        let active = self.active_call.replace(call.span);
+        let active_context = self.enter_call_context(call, context.as_ref());
+        let checked = check(self);
+        self.active_call = active;
+        self.active_call_context = active_context;
+        checked
     }
 
     /// Matches the declared result type against the contextual type of
