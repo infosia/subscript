@@ -1,6 +1,8 @@
 # The corpus size is written down five times
 
-Status: **finding, 2026-08-28. Open.** No change is made here.
+Status: **closed 2026-11-06.** At `63feca93` none of the five files
+states a corpus count, and §221 added five entries with no edit to them.
+The text below is the finding of 2026-08-28.
 
 ## Fact
 

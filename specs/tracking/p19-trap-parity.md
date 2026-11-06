@@ -122,6 +122,13 @@ would have misdirected the next optimisation.
 
 ## Open, carried forward
 
+*(Closed 2026-11-06.)* §68 made one LIR the source of each trap site, and
+the build compares the traps that each function carries with the traps
+that the transcriber consumes (`specs/tracking/s68-one-ordered-ir.md`). So
+no trap policy is written twice. The two defects below give `as 7 7` on
+the development tier and the ship tier at `63feca93`. The text below is
+the finding of 2026-07-26.
+
 **About ten non-call trap sites remain two-place policy** — integer
 div/rem, index read and write, `JsonResult.value`, narrowing casts,
 use-after-delete, stale-coroutine, allocation-bearing literals — each
