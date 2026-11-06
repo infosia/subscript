@@ -5,11 +5,11 @@
 //! ten-workload run writes `benchmarks/results.json` and `benchmarks/README.md`:
 //!
 //! - **C** — the hand-written baseline (`benchmarks/workloads/c/<id>.c`), compiled
-//!   `clang -O2 -ffp-contract=off`, self-timed, the 1.00x reference.
+//!   with the host C compiler, self-timed, the 1.00x reference.
 //! - **subscript-ship** — the ship tier: the workload's typed HIR emitted as C
-//!   (`subscript_codegen::emit_c`), compiled `clang -std=c11 -O2 -fwrapv
-//!   -ffp-contract=off` and linked with the runtime static library and the AOT
-//!   timing entry, then timed on the exported workload call.
+//!   (`subscript_codegen::emit_c`), compiled with the ship C compiler flags,
+//!   and linked with the runtime static library and the AOT timing entry.
+//!   It times the exported workload call.
 //! - **subscript-jit** — the dev tier (`subscript_codegen::jit_bench`), run in
 //!   a fresh re-exec child for each workload.
 //! - **LuaJIT**, **JSC**, **V8 (Node.js)** — self-timed scripts, one per
@@ -35,11 +35,25 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 use subscript_codegen::{
-    emit_c, jit_bench, jit_bench_with_warmup_floor, posix_feature_arguments,
-    runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    unreferenced_code_removal_arguments, CCompilerStyle,
+    emit_c, host_c_compiler, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path,
+    tool_output_report, HostCCompiler,
 };
 use subscript_compiler::{check_program, SourceFile};
+
+#[path = "../c_toolchain.rs"]
+mod c_toolchain;
+
+#[cfg(test)]
+mod c_toolchain_tests {
+    include!("../c_toolchain_tests.rs");
+
+    #[test]
+    fn unix_subject_arguments_are_byte_identical() {
+        // Cost: two command constructions and argument comparisons; no compiler execution.
+        const UNIX_BASELINE_PIN: &[&str] = &["-O2", "-fwrapv", "-ffp-contract=off"];
+        assert_unix_subject_arguments(UNIX_BASELINE_PIN);
+    }
+}
 
 /// A failure that stops one measurement; the runner never panics.
 type Fail = String;
@@ -97,7 +111,7 @@ const AOT_BENCH_ENTRY_C: &str = concat!(
     include_str!("../../aot-entry.c")
 );
 
-/// C baseline flags (`benchmarks.md` Subjects table).
+/// Recorded Unix C baseline flags (`benchmarks.md` Subjects table).
 const BASELINE_CFLAGS: [&str; 3] = ["-O2", "-fwrapv", "-ffp-contract=off"];
 
 /// Default minimum number of discarded warm-up iterations.
@@ -623,23 +637,19 @@ fn measure_c(
     warmup: usize,
     timed: usize,
 ) -> Outcome {
-    let Some(cc) = &tools.cc else {
-        return Outcome::Unavailable("clang is not installed".to_string());
+    let cc = match &tools.cc {
+        Ok(cc) => cc,
+        Err(error) => return Outcome::Error(error.clone()),
     };
     let src = dir.join("c").join(format!("{id}.c"));
     let exe = work
         .path
         .join(format!("c-{id}{}", std::env::consts::EXE_SUFFIX));
-    let build = Command::new(cc)
-        .args(BASELINE_CFLAGS)
-        .arg(&src)
-        .arg("-o")
-        .arg(&exe)
-        .output();
+    let build = c_toolchain::subject_command(cc, &[&src], &exe, &work.path, None).output();
     match build {
         Ok(o) if o.status.success() => {}
         Ok(o) => return Outcome::Error(format!("compile failed:\n{}", tool_output_report(&o))),
-        Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
+        Err(e) => return Outcome::Error(format!("the host C compiler could not run: {e}")),
     }
     let argv: Vec<std::ffi::OsString> = vec![warmup.to_string().into(), timed.to_string().into()];
     run_self_timed(&exe, &argv, warmup, timed)
@@ -656,8 +666,9 @@ fn measure_ship(
     warmup: usize,
     timed: usize,
 ) -> Outcome {
-    let Some(cc) = &tools.cc else {
-        return Outcome::Unavailable("clang is not installed".to_string());
+    let cc = match &tools.cc {
+        Ok(cc) => cc,
+        Err(error) => return Outcome::Error(error.clone()),
     };
     let module = match check_program(files) {
         Ok(m) => m,
@@ -686,25 +697,15 @@ fn measure_ship(
     if let Err(e) = std::fs::write(&entry, AOT_BENCH_ENTRY_C.as_bytes()) {
         return Outcome::Error(format!("write entry: {e}"));
     }
-    let build = Command::new(cc)
-        .arg("-std=c11")
-        .args(posix_feature_arguments())
-        .args(BASELINE_CFLAGS)
-        .arg("-fwrapv")
-        .arg(&src)
-        .arg(&entry)
-        .arg(staticlib)
-        .args(runtime_system_libraries(CCompilerStyle::Unix))
-        .args(unreferenced_code_removal_arguments(CCompilerStyle::Unix))
-        .arg("-o")
-        .arg(&exe)
-        .output();
+    let build =
+        c_toolchain::subject_command(cc, &[&src, &entry], &exe, &work.path, Some(staticlib))
+            .output();
     match build {
         Ok(o) if o.status.success() => {}
         Ok(o) => {
             return Outcome::Error(format!("compile/link failed:\n{}", tool_output_report(&o)))
         }
-        Err(e) => return Outcome::Error(format!("clang could not run: {e}")),
+        Err(e) => return Outcome::Error(format!("the host C compiler could not run: {e}")),
     }
     match run_looped_binary(&exe, warmup, timed, WARMUP_FLOOR) {
         Ok(run) => finish(
@@ -1126,10 +1127,10 @@ fn parse_looped_output(
 
 // ---- environment / tools --------------------------------------------------
 
-/// Located interpreters/compilers (env override, then `PATH`, then a known OS
-/// path for JSC). Absent tools are `None` and reported as `-`.
+/// The ship C compiler and the optional interpreters.
+/// An absent C compiler is an error. An absent interpreter is reported as `-`.
 struct Tools {
-    cc: Option<PathBuf>,
+    cc: Result<HostCCompiler, String>,
     node: Option<PathBuf>,
     luajit: Option<PathBuf>,
     jsc: Option<PathBuf>,
@@ -1138,35 +1139,12 @@ struct Tools {
 impl Tools {
     fn resolve() -> Tools {
         Tools {
-            cc: resolve_clang(),
+            cc: host_c_compiler().map_err(|error| error.to_string()),
             node: env_or_path("NODE", "node"),
             luajit: env_or_path("LUAJIT", "luajit"),
             jsc: resolve_jsc(),
         }
     }
-}
-
-/// Resolves clang: `$CC` verbatim, else `clang` on `PATH`, else — on
-/// Windows only — the standard LLVM install
-/// (`%ProgramFiles%\LLVM\bin\clang.exe`). `None` when none is found
-/// (reported as `-`, mirroring `subscript_codegen::host_c_compiler` but
-/// without that function's fail-loud bare-name fallback, since an
-/// absent compiler here is a skipped subject, not an error).
-fn resolve_clang() -> Option<PathBuf> {
-    if let Some(v) = std::env::var_os("CC") {
-        return Some(PathBuf::from(v));
-    }
-    if let Some(p) = find_on_path("clang") {
-        return Some(p);
-    }
-    #[cfg(windows)]
-    if let Some(pf) = std::env::var_os("ProgramFiles") {
-        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
-        if llvm.is_file() {
-            return Some(llvm);
-        }
-    }
-    None
 }
 
 /// `$VAR` verbatim if set, else `name` on `PATH`, else `None`.
@@ -1331,10 +1309,10 @@ fn versions(tools: &Tools) -> Vec<(String, String)> {
         tools
             .cc
             .as_ref()
-            .and_then(|c| first_line(c, &["--version"]))
-            .unwrap_or_else(|| "absent".to_string()),
+            .map(c_toolchain::description)
+            .unwrap_or_else(|error| error.clone()),
     ));
-    v.push(("subscript".to_string(), subscript_version()));
+    v.push(("subscript".to_string(), subscript_version(tools)));
     v.push((
         "LuaJIT".to_string(),
         tools
@@ -1357,7 +1335,7 @@ fn versions(tools: &Tools) -> Vec<(String, String)> {
 }
 
 /// subscript provenance: the repo's short git commit, when available.
-fn subscript_version() -> String {
+fn subscript_version(tools: &Tools) -> String {
     let hash = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -1367,7 +1345,14 @@ fn subscript_version() -> String {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
-    format!("subscript @ {hash} (dev-JIT: Cranelift; ship: HIR->C->clang)")
+    let compiler = tools
+        .cc
+        .as_ref()
+        .ok()
+        .and_then(|cc| Path::new(cc.program()).file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unavailable".to_string());
+    format!("subscript @ {hash} (dev-JIT: Cranelift; ship: HIR->C->{compiler})")
 }
 
 /// JSC has no version flag; label it with the macOS product version (an OS
@@ -1822,144 +1807,8 @@ fn jstr(s: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Builds a measurement without executing a workload.
-    fn measurement(samples_s: &[f64]) -> Measured {
-        Measured {
-            checksum: 1,
-            median_s: stats(samples_s).map_or(0.0, |(median, _, _)| median),
-            samples_s: samples_s.to_vec(),
-            warmup_s: 0.2,
-            warmup_iterations: 3,
-        }
-    }
-
-    #[test]
-    fn quartiles_interpolate_eleven_samples() {
-        let x = [
-            90.0, 92.0, 94.0, 96.0, 98.0, 100.0, 102.0, 104.0, 106.0, 108.0, 110.0,
-        ];
-        let mut reversed = x;
-        reversed.reverse();
-        let m = measurement(&reversed);
-        assert_eq!(m.median_s, 100.0);
-        assert_eq!(
-            m.quartiles(),
-            Some((x[2] + 0.5 * (x[3] - x[2]), x[7] + 0.5 * (x[8] - x[7])))
-        );
-        assert_eq!(m.iqr_fraction(), Some(0.10));
-        assert_eq!(measurement(&[5.0]).quartiles(), Some((5.0, 5.0)));
-    }
-
-    #[test]
-    fn isolated_outlier_does_not_withhold_stable_median() {
-        let m = measurement(&[
-            98.0, 99.0, 99.0, 100.0, 100.0, 100.0, 101.0, 101.0, 102.0, 102.0, 155.0,
-        ]);
-        assert_eq!(m.median_s, 100.0);
-        assert_eq!(m.iqr_fraction(), Some(0.02));
-        assert!(!m.noisy());
-    }
-
-    #[test]
-    fn noise_gate_compares_iqr_to_limit() {
-        for (half_width, noisy) in [(8.0, true), (7.0, false), (7.5, false)] {
-            let mut samples = vec![100.0 - half_width; 5];
-            samples.push(100.0);
-            samples.extend([100.0 + half_width; 5]);
-            let m = measurement(&samples);
-            assert_eq!(m.iqr_fraction(), Some(2.0 * half_width / 100.0));
-            assert_eq!(m.noisy(), noisy);
-        }
-    }
-
-    #[test]
-    fn invalid_samples_are_noisy_but_nonpositive_medians_are_not() {
-        for samples in [
-            vec![],
-            vec![f64::NAN],
-            vec![1.0, f64::INFINITY],
-            vec![f64::NEG_INFINITY],
-            vec![-1.0],
-        ] {
-            let m = measurement(&samples);
-            assert_eq!(m.quartiles(), None);
-            assert_eq!(m.iqr_fraction(), None);
-            assert!(m.noisy());
-        }
-        for median in [0.0, -1.0] {
-            let mut m = measurement(&[0.0; 11]);
-            m.median_s = median;
-            assert_eq!(m.iqr_fraction(), Some(0.0));
-            assert!(!m.noisy());
-        }
-    }
-
-    #[test]
-    fn reports_use_iqr_and_preserve_ranges() {
-        let machine = Machine {
-            arch: "test".into(),
-            os: "test".into(),
-            cpu: "test".into(),
-            cores: "1".into(),
-            power: "test".into(),
-        };
-        let mut rows = [WorkloadResult {
-            id: "sort".into(),
-            checksum: Some(1),
-            matched: true,
-            outcomes: vec![(
-                "C".into(),
-                Outcome::Ok(measurement(&[
-                    90.0, 92.0, 92.0, 92.0, 99.0, 100.0, 101.0, 108.0, 108.0, 108.0, 110.0,
-                ])),
-            )],
-        }];
-        let readme = render_readme(&rows, &machine, &[], "test", 3, 11);
-        assert!(readme.contains("Noise: interquartile range wider than 15% of the median"));
-        assert!(readme.contains("sort/C (IQR 16.0% of median)"));
-        assert!(readme.contains("invalid (noise)"));
-        let json = render_json(&rows, &machine, &[], "test", 3, 11);
-        assert!(json.contains("\"ranges_s\": {\n        \"C\": [90.000000000, 110.000000000],"));
-        assert!(json.contains("\"quartiles_s\": {\n        \"C\": [92.000000000, 108.000000000],\n        \"subscript-ship\": null,"));
-        rows[0].outcomes = vec![("C".into(), Outcome::Ok(measurement(&[100.0; 11])))];
-        let readme = render_readme(&rows, &machine, &[], "test", 3, 11);
-        assert!(readme.contains("Noise: no recorded sample set has an interquartile range wider than 15% of the median."));
-    }
-
-    #[test]
-    fn writes_record_when_all_workloads_are_measured() {
-        assert!(writes_the_record(10, 10));
-    }
-
-    #[test]
-    fn does_not_write_record_when_fewer_workloads_are_measured() {
-        assert!(!writes_the_record(1, 10));
-    }
-
-    #[test]
-    fn does_not_write_record_when_no_workloads_are_measured() {
-        assert!(!writes_the_record(0, 0));
-    }
-
-    #[test]
-    fn does_not_write_record_when_one_subject_has_an_error() {
-        let outcomes = vec![
-            (
-                "C".to_string(),
-                Outcome::Unavailable("not installed".to_string()),
-            ),
-            (
-                "subscript-ship".to_string(),
-                Outcome::Error("compile failed".to_string()),
-            ),
-        ];
-        let measured = usize::from(workload_has_all_present_timings(&outcomes));
-        assert!(!writes_the_record(measured, 1));
-    }
-}
+#[path = "../cross_language_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "../host_header_test.rs"]

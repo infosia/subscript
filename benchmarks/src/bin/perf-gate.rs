@@ -5,9 +5,9 @@
 //! workloads, in one process, in one session:
 //!
 //! - **C baseline** — each workload's hand-written C implementation,
-//!   compiled here with the platform C compiler at `-O2`.
+//!   compiled here with the host C compiler and its optimized flags.
 //! - **ship-tier** — each workload's typed HIR emitted as C, compiled with
-//!   the baseline flags, and linked with the runtime static library.
+//!   the ship C compiler flags, and linked with the runtime static library.
 //! - **dev-JIT** — each workload through the JIT tier
 //!   (`subscript_codegen::jit_bench`).
 //! - **dev iteration** — one complete check + lower + JIT-finalize of
@@ -60,11 +60,25 @@ use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
 use subscript_codegen::{
-    emit_c, jit_bench_with_warmup_floor, jit_compile_time, posix_feature_arguments,
-    runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    unreferenced_code_removal_arguments, CCompilerStyle, ReloadSession,
+    emit_c, host_c_compiler, jit_bench_with_warmup_floor, jit_compile_time, runtime_staticlib_path,
+    tool_output_report, ReloadSession,
 };
 use subscript_compiler::{check_program, SourceFile};
+
+#[path = "../c_toolchain.rs"]
+mod c_toolchain;
+
+#[cfg(test)]
+mod c_toolchain_tests {
+    include!("../c_toolchain_tests.rs");
+
+    #[test]
+    fn unix_subject_arguments_are_byte_identical() {
+        // Cost: two command constructions and argument comparisons; no compiler execution.
+        const UNIX_BASELINE_PIN: &[&str] = &["-O2", "-ffp-contract=off"];
+        assert_unix_subject_arguments(UNIX_BASELINE_PIN);
+    }
+}
 
 /// The entry's frozen golden output (`specs/blocks/compiler.md` §2).
 const A22_GOLDEN: &[u8] = include_bytes!("../../../corpus/accept/a22-matrix-propagation.expected");
@@ -78,7 +92,7 @@ const SHIP_BENCH_ENTRY_C: &str = concat!(
     include_str!("../../aot-entry.c")
 );
 
-/// Flags the C baseline is compiled with. `-O2` is the criterion's
+/// Recorded Unix C baseline flags. `-O2` is the criterion's
 /// (§3); `-ffp-contract=off` matches the language's f32 arithmetic,
 /// which never contracts a multiply-add into an FMA.
 const BASELINE_CFLAGS: [&str; 2] = ["-O2", "-ffp-contract=off"];
@@ -691,9 +705,8 @@ fn write_report(
     w(
         report,
         format_args!(
-            "C compiler:  {} [{}]",
-            cc_version(),
-            BASELINE_CFLAGS.join(" ")
+            "C compiler:  {}",
+            c_toolchain::description(&host_c_compiler().map_err(|e| format!("C compiler: {e}"))?)
         ),
     )?;
     w(
@@ -1253,56 +1266,6 @@ fn measure_reload(warmup: usize, timed: usize) -> Result<OneShotSubject, Fail> {
     )
 }
 
-/// First line of the C compiler's version banner, for the report.
-fn cc_version() -> String {
-    Command::new(host_cc())
-        .arg("--version")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.lines().next().map(str::to_string))
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-/// Finds `name` on `PATH`, returning its full path when an executable
-/// file exists. On Windows the `.exe` extension is tried as well.
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
-    for dir in std::env::split_paths(&path) {
-        for ext in exts {
-            let cand = dir.join(format!("{name}{ext}"));
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    None
-}
-
-/// Resolves the C compiler used for the C subjects. The compiler is clang
-/// (compiler.md §11), matching the ship path: `$CC`
-/// verbatim when set, else `clang` on `PATH`, else — on Windows only — the
-/// standard LLVM install (`%ProgramFiles%\LLVM\bin\clang.exe`). Falls back
-/// to the bare name `clang`, so a missing toolchain surfaces as a clear
-/// error rather than a silent skip.
-fn host_cc() -> std::ffi::OsString {
-    if let Some(cc) = std::env::var_os("CC") {
-        return cc;
-    }
-    if let Some(p) = find_on_path("clang") {
-        return p.into_os_string();
-    }
-    #[cfg(windows)]
-    if let Some(pf) = std::env::var_os("ProgramFiles") {
-        let llvm = PathBuf::from(pf).join("LLVM").join("bin").join("clang.exe");
-        if llvm.is_file() {
-            return llvm.into_os_string();
-        }
-    }
-    "clang".into()
-}
-
 /// A temporary directory outside the repository, removed on drop.
 struct WorkDir {
     /// Directory path.
@@ -1504,11 +1467,8 @@ fn measure_c(
     write_file(&source, workload.baseline_c.as_bytes())?;
 
     let started = Instant::now();
-    let build = Command::new(host_cc())
-        .args(BASELINE_CFLAGS)
-        .arg(&source)
-        .arg("-o")
-        .arg(&exe)
+    let cc = host_c_compiler().map_err(|e| format!("C compiler: {e}"))?;
+    let build = c_toolchain::subject_command(&cc, &[&source], &exe, dir, None)
         .output()
         .map_err(|e| format!("the platform C compiler could not be run: {e}"))?;
     let compile = started.elapsed();
@@ -1533,14 +1493,14 @@ fn measure_c(
 }
 
 /// Emits C from the entry's typed HIR (the ship tier — compiler.md §11),
-/// compiles it with the same flags as the hand C baseline, links it with
+/// compiles it with the ship flags, links it with
 /// the runtime static library, and measures it under the same harness
 /// protocol (`specs/tracking/p4-performance.md`).
 ///
 /// The emitted translation unit carries the language's semantics (C2
 /// value-class copies, checked growable-array indexing and push growth,
 /// f32-precision arithmetic) and calls the runtime for arrays, strings,
-/// and Q14 formatting, so this measures the shipped path through clang,
+/// and Q14 formatting. This measures the host C compiler output,
 /// timed on the whole `subscript_export_main` call.
 fn measure_ship(
     workload: &Workload,
@@ -1575,25 +1535,8 @@ fn measure_ship(
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
 
     let started = Instant::now();
-    let build = Command::new(host_cc())
-        // Match the ship path's dialect (run_c_aot, compiler block §11):
-        // the emitted C is C11. The hand baseline keeps its §9-recorded
-        // flags; this subject stands in for the ship tier, so it tracks
-        // the ship tier's `-std`.
-        .arg("-std=c11")
-        .args(posix_feature_arguments())
-        .args(BASELINE_CFLAGS)
-        // The emitted ship-tier C requires two's-complement signed
-        // wrap; `-fwrapv` makes signed overflow defined (matching the
-        // language and the run_c_aot gate build).
-        .arg("-fwrapv")
-        .arg(&source)
-        .arg(&entry)
-        .arg(&staticlib)
-        .args(runtime_system_libraries(CCompilerStyle::Unix))
-        .args(unreferenced_code_removal_arguments(CCompilerStyle::Unix))
-        .arg("-o")
-        .arg(&exe)
+    let cc = host_c_compiler().map_err(|e| format!("C compiler: {e}"))?;
+    let build = c_toolchain::subject_command(&cc, &[&source, &entry], &exe, dir, Some(&staticlib))
         .output()
         .map_err(|e| format!("the platform C compiler could not be run: {e}"))?;
     let compile = started.elapsed();

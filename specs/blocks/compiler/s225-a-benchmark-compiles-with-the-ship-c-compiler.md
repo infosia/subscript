@@ -29,8 +29,14 @@ the perf gate.
 2. Each harness compiles its C baseline with the same compiler as the
    ship tier, with the optimization flags of rule 1 for that compiler.
    A ratio then compares two outputs of one compiler.
-3. On a Unix host, the compiler and the flags of each subject do not
-   change. A test pins the Unix arguments.
+3. On a Unix host, the arguments of each subject do not change. A test
+   pins them. The compiler is the capable clang of `host_c_compiler`.
+   It is the compiler of the pin when `$CC`, or the `clang` on `PATH`,
+   is capable. Otherwise the harness now uses the newest capable
+   `clang-NN`, as the ship tier does, or it stops with the error of the
+   ship tier. *(Amended after the Phase Review, M1.)*
+3a. A harness with no C compiler stops with an error. It does not report
+   the subject as unavailable (§8.3).
 4. The report header states the compiler, its version, and the flags of
    each subject.
 5. The limits of §3 and §222 do not change in this section. If
