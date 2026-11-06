@@ -1248,9 +1248,9 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
     let hir = check_program(&files).expect("host export checks cleanly");
     let c = emit_c(&hir).expect("host export emits C").source;
     let wrapper = c
-        .split("void subscript_export_adopt")
+        .split("static void sub_host_adopt")
         .nth(1)
-        .expect("parameterized host wrapper");
+        .expect("parameterized host wrapper body");
     assert!(
         wrapper.starts_with("(subscript_rt_context* ctx, void* a0, int32_t a1)"),
         "{wrapper}"
@@ -1274,9 +1274,9 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
     let program = emit_c(&hir).expect("wire entry emits C");
     let wrapper = program
         .source
-        .split("void subscript_export_configure")
+        .split("static void sub_host_configure")
         .nth(1)
-        .expect("wire entry wrapper");
+        .expect("wire entry wrapper body");
     let validation = wrapper.find("a0 == 16").expect("wire value validation");
     let trap = wrapper
         .find("subscript_rt_trap_wire_enum(ctx,")

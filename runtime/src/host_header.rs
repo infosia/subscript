@@ -142,11 +142,15 @@ pub fn render() -> Result<String, String> {
         crate::TrapKind::NullNarrowing as u32,
         crate::TrapKind::SharedNullNarrowing as u32,
     ));
+    out.push_str(&format!("/* Generator value trap (compiler.md §145). */\n#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE {}u\n\n", crate::TrapKind::GeneratorDoneValue as u32));
     out.push_str(&format!(
         "/* Task group trap (compiler.md §170). */\n#define SUBSCRIPT_RT_TRAP_TASK_GROUP {}u\n\n",
         crate::TrapKind::TaskGroup as u32
     ));
-    out.push_str(&format!("/* Generator value trap (compiler.md §145). */\n#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE {}u\n\n", crate::TrapKind::GeneratorDoneValue as u32));
+    out.push_str(&format!(
+        "/* Host entry reentry trap (compiler.md §223). */\n#define SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY {}u\n\n",
+        crate::TrapKind::HostEntryReentry as u32
+    ));
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -653,6 +657,14 @@ mod tests {
  * drive other zero-argument `void` exports using the symbol
  * `subscript_export_<name>` and this same C signature.
  *
+ * compiler.md §223: a host entry is `subscript_init`, each
+ * `subscript_export_<name>`, `subscript_rt_ctx_async_step`, and
+ * `subscript_rt_ctx_async_step_budget`. A call of a host entry while a host
+ * entry of the same subscript_rt_context runs, from a foreign function or from a callback
+ * that C calls, runs no script code. It sets the trap kind
+ * `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with that
+ * trap when the foreign call returns.
+ *
  * compiler.md §142 rules 1 and 2:
  * A handle value from the host transfers no ownership, by any route:
  * an entry parameter, a foreign-call result, or a field or element of
@@ -672,6 +684,7 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
     fn generated_host_header_names_the_generator_value_trap() {
         let header = render().expect("render host header");
         assert!(header.contains("#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE 32u"));
+        assert!(header.contains("#define SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY 34u"));
     }
 
     #[test]

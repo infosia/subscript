@@ -744,6 +744,9 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_unfinished(ctx: *const Context) 
 /// empty, and returns the work still pending. On a trapped Context this
 /// is a no-op returning the current count; an empty Context returns zero.
 /// `compiler.md` §168 supplies the bounded form.
+/// This API is a host entry (`compiler.md` §223). A call while a host entry
+/// of the same Context runs traps with `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`
+/// and runs no script code.
 ///
 /// # Safety
 ///
@@ -751,9 +754,17 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_unfinished(ctx: *const Context) 
 /// registered frame remains linked and callable.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
-    // SAFETY: exclusive Context contract and queued callbacks were installed
-    // by generated code from the same live program.
-    unsafe { (&mut *ctx).async_step() as u64 }
+    // SAFETY: exclusive Context contract.
+    let ctx = unsafe { &mut *ctx };
+    let began = ctx.begin_host_entry("subscript_rt_ctx_async_step");
+    // SAFETY: queued callbacks were installed by generated code from the
+    // same live program. A refused entry leaves the Context trapped, so the
+    // step runs no job.
+    let pending = unsafe { ctx.async_step() } as u64;
+    if began {
+        ctx.end_host_entry();
+    }
+    pending
 }
 
 /// Starts at most `max_dispatches` jobs and returns checkpoint counts (`compiler.md` §168).
@@ -762,6 +773,9 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
 /// One dispatch runs to its next suspension, completion, or a trap.
 /// The budget does not bound that segment's time. This API is no time limit.
 /// A trapped Context starts no job and returns the current counts.
+/// This API is a host entry (`compiler.md` §223). A call while a host entry
+/// of the same Context runs traps with `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`
+/// and starts no job.
 ///
 /// # Safety
 /// `ctx` follows the exclusive Context contract. All queued generated code remains callable.
@@ -770,8 +784,38 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_step_budget(
     ctx: *mut Context,
     max_dispatches: u64,
 ) -> AsyncStepReport {
-    // SAFETY: the caller supplies a live exclusive Context and live callbacks.
-    unsafe { (&mut *ctx).async_step_budget(max_dispatches) }
+    // SAFETY: the caller supplies a live exclusive Context.
+    let ctx = unsafe { &mut *ctx };
+    let began = ctx.begin_host_entry("subscript_rt_ctx_async_step_budget");
+    // SAFETY: the queued callbacks are live. A refused entry leaves the
+    // Context trapped, so the step starts no job.
+    let report = unsafe { ctx.async_step_budget(max_dispatches) };
+    if began {
+        ctx.end_host_entry();
+    }
+    report
+}
+
+/// Records the trap of a host entry called during a host entry of the same
+/// Context (`compiler.md` §223 rule 3). A ship-tier host entry wrapper calls
+/// it when it reads a raised host-entry-active flag. The message names
+/// `entry`.
+///
+/// # Safety
+///
+/// Shared contract; `entry` addresses `entry_len` readable UTF-8 bytes for
+/// the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_host_entry_reentry(
+    ctx: *mut Context,
+    entry: *const u8,
+    entry_len: u64,
+) {
+    // SAFETY: shared contract supplies a readable compiler-owned byte span.
+    let bytes = unsafe { std::slice::from_raw_parts(entry, entry_len as usize) };
+    let entry = std::str::from_utf8(bytes).unwrap_or("<invalid entry name>");
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.trap_host_entry_reentry(entry);
 }
 
 /// Number of live Context-owned allocations.

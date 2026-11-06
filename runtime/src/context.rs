@@ -122,6 +122,14 @@ pub type AllocationVisitor =
 /// An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
 /// drive other zero-argument `void` exports using the symbol
 /// `subscript_export_<name>` and this same C signature.
+///
+/// compiler.md §223: a host entry is `subscript_init`, each
+/// `subscript_export_<name>`, `subscript_rt_ctx_async_step`, and
+/// `subscript_rt_ctx_async_step_budget`. A call of a host entry while a host
+/// entry of the same Context runs, from a foreign function or from a callback
+/// that C calls, runs no script code. It sets the trap kind
+/// `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with that
+/// trap when the foreign call returns.
 pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 
 /// Fixed ABI of a compiler-generated async-frame resume function.
@@ -595,6 +603,7 @@ pub struct CallbackBinding {
 /// | 4 | reload epoch (`u32`) | coroutine resume, hot-reload mode |
 /// | 8 | function table (`*const *const u8`) | script calls, hot-reload mode |
 /// | 16 | module-global block (`*mut u8`) | global access, ship C and hot reload |
+/// | 24 | host-entry-active flag (`u32`) | ship C host entry wrappers (§223) |
 ///
 /// Everything past the prefix is opaque to generated code. The function
 /// table and reload epoch are read only by code lowered in reload mode;
@@ -605,6 +614,8 @@ pub struct Context {
     reload_epoch: u32,
     fn_table: *const *const u8,
     globals: *mut u8,
+    // compiler.md §223: non-zero while a host entry of this Context runs.
+    host_entry_active: u32,
     // The ship C tier installs one layout-fixed block here. Reload mode
     // instead points `globals` at storage owned by its ReloadSession and
     // leaves this empty.

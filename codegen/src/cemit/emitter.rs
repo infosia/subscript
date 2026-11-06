@@ -1174,7 +1174,7 @@ impl<'m> Emitter<'m> {
                 "(uint64_t)_Alignof(SubscriptModuleGlobals)".into(),
             ],
         );
-        out.push_str("void subscript_init(subscript_rt_context* ctx) {\n");
+        out.push_str("static void sub_module_init(subscript_rt_context* ctx) {\n");
         let _ = writeln!(out, "    if ({init_call} == NULL) return;");
         for global in &self.module.globals {
             let rooted = type_contains_managed(&self.layouts, &global.ty)?;
@@ -1208,7 +1208,9 @@ impl<'m> Emitter<'m> {
         if let Some(initializer) = self.module.initializer {
             let _ = writeln!(out, "    sub_f{}(ctx);", initializer.0);
         }
-        out.push_str("}\n\n");
+        out.push_str("}\n");
+        self.emit_host_entry_guard(out, "subscript_init", "", "sub_module_init(ctx);");
+        out.push('\n');
 
         for entry in self.module.host_entries.clone() {
             let function = self.function(entry.target)?.clone();
@@ -1226,11 +1228,17 @@ impl<'m> Emitter<'m> {
                 );
                 let _ = writeln!(
                     out,
-                    "void subscript_export_{name}(subscript_rt_context* ctx) {{"
+                    "static void sub_host_{name}(subscript_rt_context* ctx) {{"
                 );
                 let _ = writeln!(out, "    void* frame = sub_f{}(ctx);", function.id.0);
                 out.push_str("    if (*(const uint32_t*)ctx != 0u) return;\n");
                 let _ = writeln!(out, "    {kick};\n}}");
+                self.emit_host_entry_guard(
+                    out,
+                    &format!("subscript_export_{name}"),
+                    "",
+                    &format!("sub_host_{name}(ctx);"),
+                );
             } else {
                 let parameters = explicit_parameters(&function).collect::<Vec<_>>();
                 if parameters.len() != entry.signature.parameters.len() {
@@ -1246,10 +1254,10 @@ impl<'m> Emitter<'m> {
                     })
                     .collect::<Result<Vec<_>, String>>()?;
                 let separator = if declaration.is_empty() { "" } else { ", " };
+                let declaration = format!("{separator}{}", declaration.join(", "));
                 let _ = writeln!(
                     out,
-                    "void subscript_export_{name}(subscript_rt_context* ctx{separator}{}) {{",
-                    declaration.join(", ")
+                    "static void sub_host_{name}(subscript_rt_context* ctx{declaration}) {{"
                 );
                 self.emit_host_entry_validations(out, &function, &parameters)?;
                 let mut args = Vec::new();
@@ -1270,6 +1278,16 @@ impl<'m> Emitter<'m> {
                     function.id.0,
                     args.join(", ")
                 );
+                let forwarded = parameters
+                    .iter()
+                    .map(|parameter| format!(", a{}", parameter.value.0))
+                    .collect::<String>();
+                self.emit_host_entry_guard(
+                    out,
+                    &format!("subscript_export_{name}"),
+                    &declaration,
+                    &format!("sub_host_{name}(ctx{forwarded});"),
+                );
             }
         }
         out.push_str("void subscript_kick_async_exports(subscript_rt_context* ctx) {\n");
@@ -1289,6 +1307,52 @@ impl<'m> Emitter<'m> {
         }
         out.push_str("}\n\n");
         Ok(())
+    }
+
+    /// Emits the public host entry `symbol` (compiler.md §223 rules 1–3 and
+    /// 7). It reads the host-entry-active flag once. A raised flag records
+    /// the reentry trap and runs no script code; otherwise the wrapper raises
+    /// the flag, runs `call`, and lowers the flag.
+    fn emit_host_entry_guard(
+        &mut self,
+        out: &mut String,
+        symbol: &str,
+        declaration: &str,
+        call: &str,
+    ) {
+        let offset = rtc::Context::host_entry_active_offset();
+        let trap = self.runtime_call(
+            "void",
+            "subscript_rt_host_entry_reentry",
+            &[
+                "void*".into(),
+                "const unsigned char*".into(),
+                "uint64_t".into(),
+            ],
+            &[
+                "ctx".into(),
+                format!(
+                    "(const unsigned char*){}",
+                    c_string_literal(symbol.as_bytes())
+                ),
+                format!("{}ull", symbol.len()),
+            ],
+        );
+        let _ = writeln!(
+            out,
+            "void {symbol}(subscript_rt_context* ctx{declaration}) {{"
+        );
+        let _ = writeln!(
+            out,
+            "    uint32_t* host_entry_active = (uint32_t*)((unsigned char*)ctx + {offset}u);"
+        );
+        let _ = writeln!(
+            out,
+            "    if (*host_entry_active != 0u) {{ {trap}; return; }}"
+        );
+        out.push_str("    *host_entry_active = 1u;\n");
+        let _ = writeln!(out, "    {call}");
+        out.push_str("    *host_entry_active = 0u;\n}\n");
     }
 
     fn emit_host_entry_validations(

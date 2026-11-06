@@ -1344,7 +1344,7 @@ static bool hostCallScript(
 }
 ```
 
-Four facts describe the protocol:
+Five facts describe the protocol:
 
 - **`enter`/`exit` bracket each entry.** They maintain the runtime's
   script-depth, so trap clearing and the observers behave correctly
@@ -1366,6 +1366,15 @@ Four facts describe the protocol:
   in the Context: `game.ts`'s `session`, created in `init`, is read and
   updated by every following `update`. The state's lifetime is the
   Context's, and it ends at `subscript_rt_ctx_release`.
+- **One host entry at a time.** A host entry is `subscript_init`, each
+  `subscript_export_<name>`, `subscript_rt_ctx_async_step`, and
+  `subscript_rt_ctx_async_step_budget`. Do not call a host entry from a
+  foreign function, or from a callback that C calls during a foreign
+  call. That call runs no script code. It sets the trap kind
+  `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with
+  that trap when the foreign call returns (`specs/blocks/compiler.md`
+  §223). A callback that the script registered stays legal during a
+  foreign call.
 
 So a frame loop is: stage or gather the frame's inputs →
 `hostCallScript(ctx, subscript_export_update)` (or a direct call with

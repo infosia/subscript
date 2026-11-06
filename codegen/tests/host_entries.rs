@@ -48,6 +48,14 @@ fn uncalled_aliases_share_state_header_and_dev_names_without_main() {
  * drive other zero-argument `void` exports using the symbol
  * `subscript_export_<name>` and this same C signature.
  *
+ * compiler.md §223: a host entry is `subscript_init`, each
+ * `subscript_export_<name>`, `subscript_rt_ctx_async_step`, and
+ * `subscript_rt_ctx_async_step_budget`. A call of a host entry while a host
+ * entry of the same subscript_rt_context runs, from a foreign function or from a callback
+ * that C calls, runs no script code. It sets the trap kind
+ * `SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY`, and the outer entry stops with that
+ * trap when the foreign call returns.
+ *
  * compiler.md §142 rules 1 and 2:
  * A handle value from the host transfers no ownership, by any route:
  * an entry parameter, a foreign-call result, or a field or element of

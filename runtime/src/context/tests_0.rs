@@ -271,6 +271,102 @@ fn reload_prefix_offsets_match_the_abi_contract() {
 }
 
 #[test]
+fn host_entry_active_offset_matches_the_abi_contract() {
+    let ctx = Context::new();
+    let base = &*ctx as *const Context as usize;
+    assert_eq!(
+        &ctx.host_entry_active as *const u32 as usize - base,
+        Context::host_entry_active_offset()
+    );
+}
+
+/// compiler.md §223 rules 2 and 3: a second host entry traps and names
+/// itself; the first entry can end and a later entry starts.
+#[test]
+fn a_host_entry_during_a_host_entry_traps_and_names_the_inner_entry() {
+    let mut ctx = Context::new();
+    assert!(!ctx.host_entry_active());
+    assert!(ctx.begin_host_entry("subscript_export_outer"));
+    assert!(ctx.host_entry_active());
+    assert!(!ctx.trapped());
+    assert!(!ctx.begin_host_entry("subscript_export_inner"));
+    let trap = ctx.trap_record().expect("the inner entry traps").clone();
+    assert_eq!(trap.kind, TrapKind::HostEntryReentry);
+    assert_eq!(
+        trap.message,
+        "host entry `subscript_export_inner` called during a host entry of the same Context"
+    );
+    ctx.end_host_entry();
+    assert!(!ctx.host_entry_active());
+    ctx.clear_trap();
+    // Control: after the outer entry ends, the same entry starts.
+    assert!(ctx.begin_host_entry("subscript_export_inner"));
+    assert!(!ctx.trapped());
+    ctx.end_host_entry();
+}
+
+#[test]
+fn trap_host_entry_reentry_records_the_kind_and_the_entry() {
+    let mut ctx = Context::new();
+    ctx.trap_host_entry_reentry("subscript_init");
+    let trap = ctx.trap_record().expect("trap");
+    assert_eq!(trap.kind, TrapKind::HostEntryReentry);
+    assert!(
+        trap.message.contains("`subscript_init`"),
+        "{}",
+        trap.message
+    );
+}
+
+/// The C wrapper entry point and the two step entries (compiler.md §223
+/// rules 1 and 3).
+#[test]
+fn ffi_host_entries_trap_while_a_host_entry_runs() {
+    let mut ctx = Context::new();
+    let name = b"subscript_export_inner";
+    // SAFETY: a live Context and a readable name span.
+    unsafe {
+        crate::ffi::subscript_rt_host_entry_reentry(&mut *ctx, name.as_ptr(), name.len() as u64)
+    };
+    let trap = ctx.trap_record().expect("trap");
+    assert_eq!(trap.kind, TrapKind::HostEntryReentry);
+    assert!(trap.message.contains("`subscript_export_inner`"));
+
+    for budget in [false, true] {
+        let mut ctx = Context::new();
+        // Control: with no host entry active, a step does not trap and
+        // leaves the flag lowered.
+        // SAFETY: an empty live Context has no queued callbacks.
+        unsafe { step(&mut ctx, budget) };
+        assert!(!ctx.trapped());
+        assert!(!ctx.host_entry_active());
+        assert!(ctx.begin_host_entry("subscript_export_outer"));
+        // SAFETY: as above.
+        unsafe { step(&mut ctx, budget) };
+        let trap = ctx.trap_record().expect("the inner step traps");
+        assert_eq!(trap.kind, TrapKind::HostEntryReentry);
+        let entry = if budget {
+            "`subscript_rt_ctx_async_step_budget`"
+        } else {
+            "`subscript_rt_ctx_async_step`"
+        };
+        assert!(trap.message.contains(entry), "{}", trap.message);
+        // The refused step leaves the outer entry's flag raised.
+        assert!(ctx.host_entry_active());
+    }
+
+    unsafe fn step(ctx: &mut Context, budget: bool) {
+        if budget {
+            // SAFETY: the caller supplies a live Context.
+            let _ = unsafe { crate::ffi::subscript_rt_ctx_async_step_budget(ctx, 1) };
+        } else {
+            // SAFETY: the caller supplies a live Context.
+            let _ = unsafe { crate::ffi::subscript_rt_ctx_async_step(ctx) };
+        }
+    }
+}
+
+#[test]
 fn reload_epoch_and_script_depth_track_swaps_and_entries() {
     let mut ctx = Context::new();
     assert_eq!(ctx.reload_epoch(), 0);

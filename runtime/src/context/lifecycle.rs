@@ -33,6 +33,7 @@ impl Context {
             reload_epoch: 0,
             fn_table: std::ptr::null(),
             globals: std::ptr::null_mut(),
+            host_entry_active: 0,
             module_globals: None,
             workers: WorkerSet::default(),
             script_depth: 0,
@@ -313,6 +314,49 @@ impl Context {
     #[must_use]
     pub fn globals_offset() -> usize {
         16
+    }
+
+    /// Byte offset of the host-entry-active flag (ABI contract with the
+    /// ship-tier host entry wrappers, compiler.md §223).
+    #[must_use]
+    pub fn host_entry_active_offset() -> usize {
+        24
+    }
+
+    /// Starts a host entry (compiler.md §223 rules 1–3).
+    ///
+    /// Returns `true` and raises the host-entry-active flag if no host entry
+    /// of this Context runs. Otherwise records the trap
+    /// [`TrapKind::HostEntryReentry`] with a message that names `entry`,
+    /// and returns `false`: the caller runs no script code.
+    pub fn begin_host_entry(&mut self, entry: &str) -> bool {
+        if self.host_entry_active != 0 {
+            self.trap_host_entry_reentry(entry);
+            return false;
+        }
+        self.host_entry_active = 1;
+        true
+    }
+
+    /// Ends the host entry that [`Context::begin_host_entry`] started.
+    pub fn end_host_entry(&mut self) {
+        self.host_entry_active = 0;
+    }
+
+    /// Whether a host entry of this Context runs (compiler.md §223).
+    #[must_use]
+    pub fn host_entry_active(&self) -> bool {
+        self.host_entry_active != 0
+    }
+
+    /// Records the trap of a host entry called during a host entry
+    /// (compiler.md §223 rule 3). The message names `entry`.
+    pub fn trap_host_entry_reentry(&mut self, entry: &str) {
+        self.trap(
+            TrapKind::HostEntryReentry,
+            format!("host entry `{entry}` called during a host entry of the same Context"),
+            0,
+        );
     }
 
     // ----- hot-reload state (dev tier) -----
