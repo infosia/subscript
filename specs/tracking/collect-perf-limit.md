@@ -34,3 +34,27 @@ The dev figures at N ≥ 12 and the ship figures at N = 12 fall under
 the quiet figures because the C baseline rises under load (§213.1
 rule 3). The ship figure at N = 16 reaches 1.29x, and the other four
 runs at that load read 0.93x to 0.99x.
+
+## Measurement on x86-64 with `cl` (§225.2)
+
+Host: 20 logical CPUs, x86-64, Windows, MSVC 19.44.35222, at `75ef5164`.
+Each row is five `perf-gate --gate` runs under N busy processes. The
+figures are those of §213.1. This host has no thread CPU clock in the
+harness, so the dev-JIT figure is a wall minimum (§213.1 rule 1a).
+
+| N | `collect` ship | `collect` dev | `a22` ship | `a22` dev |
+|---|---|---|---|---|
+| 0 | 1.14–1.42 | 2.61–3.52 | 1.73–1.75 | 5.96–6.90 |
+| 5 | 1.28–1.34 | 3.18–3.60 | 1.72–1.77 | 5.89–6.58 |
+| 10 | 1.28–1.30 | 3.08–3.29 | 1.70–1.89 | 5.67–6.73 |
+| 20 | 1.38–1.44 | 3.15–3.50 | 1.73–1.74 | 6.22–8.51 |
+| 30 | 1.45–1.56 | 2.50–5.25 | 1.67–1.97 | 8.90–14.43 |
+| 40 | 1.60–1.68 | 5.96–6.37 | 1.72–2.03 | 19.20–26.60 |
+
+The 25 runs at N ≤ 30 met each limit. At N = 40, two busy processes per
+CPU, each of the five runs missed: four runs read `collect` dev-JIT
+6.04x to 6.37x against 6.00x, and one run read `a22` dev-JIT 26.60x
+against 25.00x.
+
+The `collect` ship figure stays far under the x86-64 limit of 7.50x:
+the highest figure is 1.68x.
