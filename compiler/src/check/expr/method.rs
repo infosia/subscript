@@ -911,11 +911,26 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
+                let explicit = match f {
+                    A::Map | A::FlatMap => self.callback_result_argument(f, c),
+                    _ => None,
+                };
+                if explicit
+                    .as_ref()
+                    .is_some_and(|ty| self.apparent_type(ty) == Type::Error)
+                {
+                    return self.err_expr(pos);
+                }
                 let ret_ctx = match f {
                     A::ForEach => Some(Type::Void),
-                    A::Map | A::FlatMap => None, // `U` inferred from the callback
+                    // `U` comes from the callback, or from an explicit type
+                    // argument (§229 rule 3).
+                    A::Map | A::FlatMap => explicit,
                     _ => Some(Type::Bool),
                 };
+                if matches!(f, A::Map | A::FlatMap) && ret_ctx.is_none() {
+                    self.lambda_result_hint = self.callback_result_context(f, c);
+                }
                 let cb = self.check_arr_callback(
                     &c.args[0],
                     vec![elem.clone()],
@@ -923,6 +938,7 @@ impl<'p> Checker<'p> {
                     fx,
                     CallbackSpec::new(f.name(), "Q27", true),
                 );
+                self.lambda_result_hint = None;
                 let ty = match f {
                     A::ForEach => Type::Void,
                     A::Filter => arr_ty,

@@ -73,3 +73,33 @@ receives it. An explicit type argument of `map` has no effect.
    the callback, report it and stop. Rule 1 then needs a contract change.
 6. The rejection-site total check passes. §212.4 item 5 and §216.4 item 2
    cite this section. No other golden moves.
+
+### 229.3 Phase Review
+
+*(Added 2026-11-06.)* A fresh review of `71497443` and the implementation
+gave one MAJOR and five MINOR findings.
+
+1. MAJOR, realistic, fixed: rule 4 stated that no accepted program
+   changes its meaning, and rule 3 changes programs with an explicit
+   type argument. Rule 3 now states each change.
+2. MINOR, contrived, fixed: the hint of `map` reached the first arrow in
+   a callback that is not an arrow, and changed the diagnostic.
+3. MINOR, realistic, fixed: no golden had a numeric context. `a418` now
+   has `i64[]`, `f64[]`, `flatMap`, a nested `ap`, and `map<i64>`.
+4. MINOR, realistic, fixed: acceptance 2 named a generic class row that
+   cannot reach rule 1.
+5. MINOR, realistic, open: §229.4 item 2.
+6. MINOR, open: §229.4 item 3.
+
+### 229.4 Open
+
+1. `xs.reduce((acc: Mode, x: i32) => "b", "a")` and the `reduceRight`
+   form are accepted, and `tsc` gives TS2769. This predates §229. It is a
+   gap against invariant 5.
+2. A type argument list of the wrong length on an array method has no
+   diagnostic: `xs.map<i32, i32>(…)` and `xs.filter<i32>(…)` are
+   accepted. `tsc` gives TS2558 and TS2345. This predates §229.
+3. `compiler/src/check/expr/method.rs` has 1,986 lines. The next change
+   to it needs a split.
+4. `p.then((v: i32) => "a")` with a `Promise<Mode>` context stays
+   rejected. `tsc` accepts it. Rule 6 keeps it.

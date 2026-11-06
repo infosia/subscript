@@ -1,8 +1,9 @@
 //! A generic call infers from its contextual result type (`compiler.md`
-//! §212), also through `Promise<T>`, `Array<T>`, and `await` (§215).
+//! §212), also through `Promise<T>`, `Array<T>`, and `await` (§215). A
+//! callback result takes the context of the call (§229).
 //!
 //! Cost: each test runs the checker on one short program, with no code
-//! generation and no external process. The whole file took 0.17 s in a
+//! generation and no external process. The whole file took 0.21 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
@@ -618,4 +619,122 @@ export async function main(): Promise<void> {{
     );
     check_program(&[SourceFile::new("test.ts", source.as_str())])
         .unwrap_or_else(|errors| panic!("{errors:?}"));
+}
+
+/// The declarations of the §229 tests, before `main`.
+const CALLBACKS: &str = r#"
+type Mode = "a" | "b";
+function ap<T, U>(x: T, f: (v: T) => U): U { return f(x); }
+class Util { static ap<T, U>(x: T, f: (v: T) => U): U { return f(x); } }
+"#;
+
+fn callback_result(main: &str) -> Result<(), Vec<subscript_compiler::Diagnostic>> {
+    let source = format!(
+        "{PRELUDE}{CALLBACKS}\nexport function main(): void {{\nconst xs: i32[] = [1];\nconst ms: Mode[] = [\"a\"];\nconst s: string = \"a\";\n{main}\n}}\n"
+    );
+    check_program(&[SourceFile::new("test.ts", source.as_str())]).map(|_| ())
+}
+
+fn callback_accepts(main: &str) {
+    if let Err(errors) = callback_result(main) {
+        panic!("{main}: {errors:?}");
+    }
+}
+
+fn callback_rejects(main: &str, message: &str) {
+    let errors = callback_result(main).expect_err(main);
+    assert_eq!(errors.len(), 1, "{main}: {errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100, "{main}: {errors:?}");
+    assert_eq!(errors[0].message, message, "{main}");
+}
+
+const MODES: &str = "type mismatch: the initializer expects `Mode[]`, got `string[]`";
+
+/// §229 rule 1: the callback body of a generic call, `map`, and `flatMap`
+/// takes the contextual candidate of its result type parameter.
+#[test]
+fn a_callback_result_takes_the_context_of_the_call() {
+    for main in [
+        r#"const r: Mode[] = ms.map((x: Mode) => x === "a" ? "b" : "a");"#,
+        r#"const r: Mode[] = xs.map((x: i32) => "a");"#,
+        r#"const r: Mode[] | null = xs.map((x: i32) => "a");"#,
+        "const r: Buf<P>[] = xs.map((x: i32) => empty());",
+        r#"const r: Mode[] = xs.flatMap((x: i32) => ["a"]);"#,
+        r#"const r: Mode = ap(1, (v: i32) => "a");"#,
+        r#"const r: Mode = Util.ap(1, (v: i32) => "b");"#,
+        "const r: Buf<P> = ap(1, (v: i32) => empty());",
+        r#"const r: Mode = ap(1, (v: i32) => ap(v, (w: i32) => "a"));"#,
+        // Rule 4: a context that the body already meets keeps its type.
+        r#"const r: string[] = xs.map((x: i32) => "a");"#,
+    ] {
+        callback_accepts(main);
+    }
+}
+
+/// Controls of rule 1: a call with no context keeps the result of the pin.
+#[test]
+fn a_callback_with_no_context_keeps_its_result() {
+    callback_rejects(
+        r#"const r = xs.map((x: i32) => "a"); const m: Mode[] = r;"#,
+        MODES,
+    );
+    callback_rejects("ap(1, (v: i32) => empty());", &no_candidate("T", "empty"));
+    callback_rejects(
+        r#"const r = ap(1, (v: i32) => "a"); const m: Mode = r;"#,
+        "type mismatch: the initializer expects `Mode`, got `string`",
+    );
+}
+
+/// §229 rule 2: a body result that is not a literal comes before the context.
+#[test]
+fn a_non_literal_body_result_comes_before_the_context() {
+    callback_rejects("const r: Mode[] = xs.map((x: i32) => s);", MODES);
+    callback_rejects(
+        "const r: Mode = ap(1, (v: i32) => s);",
+        "type mismatch: the initializer expects `Mode`, got `string`",
+    );
+}
+
+/// §229 rule 3: an explicit type argument of `map` or `flatMap` sets `U`,
+/// also with no context, and the body must meet it.
+#[test]
+fn an_explicit_type_argument_sets_the_callback_result() {
+    callback_accepts(r#"const r: Mode[] = ms.map<Mode>((x: Mode) => x === "a" ? "b" : "a");"#);
+    callback_accepts(r#"const r = xs.map<Mode>((x: i32) => "a"); const m: Mode[] = r;"#);
+    callback_accepts(r#"const r = xs.flatMap<Mode>((x: i32) => ["b"]); const m: Mode[] = r;"#);
+    let errors = callback_result("const r = xs.map<Mode>((x: i32) => s);").expect_err("map<Mode>");
+    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
+}
+
+/// §229 rule 5: a block body keeps its annotation rule, and an annotated
+/// callback keeps its result type.
+#[test]
+fn an_annotated_or_block_callback_keeps_its_rule() {
+    callback_accepts(r#"const r: Mode[] = xs.map((x: i32): Mode => "a");"#);
+    callback_rejects(
+        r#"const r: Mode[] = xs.map((x: i32): string => "a");"#,
+        MODES,
+    );
+    for main in [
+        r#"const r: Mode[] = xs.map((x: i32) => { return "a"; });"#,
+        r#"const r: Mode[] = xs.map<Mode>((x: i32) => { return "a"; });"#,
+    ] {
+        let errors = callback_result(main).expect_err(main);
+        assert!(
+            errors.iter().any(|error| error.message
+                == "a lambda with a block body requires a return type annotation"),
+            "{main}: {errors:?}"
+        );
+    }
+}
+
+/// §229 rule 1 gives the context to an arrow callback only. An arrow inside
+/// another callback expression keeps the result of the pin.
+#[test]
+fn only_an_arrow_callback_takes_the_context() {
+    callback_accepts(r#"const r: Mode[] = xs.map((x: i32) => "a");"#);
+    callback_rejects(
+        r#"const flag: boolean = xs.length > 0; const r: Mode[] = xs.map(flag ? (x: i32) => "a" : (x: i32) => "b");"#,
+        MODES,
+    );
 }

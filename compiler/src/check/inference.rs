@@ -169,6 +169,67 @@ impl<'p> Checker<'p> {
         self.infer_arguments(&target, &call.args, &contextual, fx, pos)
     }
 
+    /// The explicit `U` of `map<U>` or `flatMap<U>`, as the result type of
+    /// the callback: `U` for `map`, `U[]` for `flatMap` (§229 rule 3). A
+    /// callback with a block body and no result annotation keeps its
+    /// annotation rule, so it gets no result type (§229 rule 5).
+    pub(in crate::check) fn callback_result_argument(
+        &mut self,
+        method: hir::ArrFn,
+        call: &ast::CallExpr,
+    ) -> Option<Type> {
+        let [argument] = call.type_args.as_ref()?.params.as_slice() else {
+            return None;
+        };
+        if let [callback] = call.args.as_slice() {
+            if let ast::Expr::Arrow(arrow) = unparen_expr(&callback.expr) {
+                if arrow.return_type.is_none()
+                    && matches!(&*arrow.body, ast::BlockStmtOrExpr::BlockStmt(_))
+                {
+                    return None;
+                }
+            }
+        }
+        let element = self.resolve_type(argument);
+        Some(match (method, self.apparent_type(&element)) {
+            (_, Type::Error) => Type::Error,
+            (hir::ArrFn::FlatMap, _) => Type::array(element),
+            _ => element,
+        })
+    }
+
+    /// The contextual result of the callback of `map` or `flatMap`: the
+    /// element of the contextual array type for `map`, and that array
+    /// type for `flatMap` (§229 rule 1). The match goes through
+    /// `C | null`, as §212 rule 1 states. Only an arrow callback takes
+    /// it, so no other arrow in the argument reads it.
+    pub(in crate::check) fn callback_result_context(
+        &self,
+        method: hir::ArrFn,
+        call: &ast::CallExpr,
+    ) -> Option<Type> {
+        let [callback] = call.args.as_slice() else {
+            return None;
+        };
+        if callback.spread.is_some() || !matches!(unparen_expr(&callback.expr), ast::Expr::Arrow(_))
+        {
+            return None;
+        }
+        if self.active_call != Some(call.span)
+            || matches!(&call.callee, ast::Callee::Expr(callee) if matches!(**callee, ast::Expr::Invalid(_)))
+        {
+            return None;
+        }
+        let context = self.contextual_instance(self.active_call_context.as_ref())?;
+        let Type::Array(element) = self.apparent_type(&context) else {
+            return None;
+        };
+        Some(match method {
+            hir::ArrFn::FlatMap => Type::Array(element),
+            _ => *element,
+        })
+    }
+
     /// Records the contextual type of the call that starts, and returns
     /// the context of the enclosing call. A call that `mark_operand_calls`
     /// marks has no contextual type (§212 rule 1a).
@@ -415,7 +476,19 @@ impl<'p> Checker<'p> {
                 index < annotations.len()
                     && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)),
             );
+            // §229 rule 1: a callback whose result is a type parameter with a
+            // contextual candidate checks its body with that candidate. The
+            // body still gives the candidate of the parameter (§229 rule 2).
+            if context.is_none() && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)) {
+                self.lambda_result_hint = annotations
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .and_then(|annotation| callback_result_parameter(annotation, parameters))
+                    .and_then(|parameter| contextual.get(parameter).cloned().flatten());
+            }
             let value = self.check_expr(&argument.expr, context.as_ref(), fx);
+            self.lambda_result_hint = None;
             self.generic_callback_context = saved;
             if value.ty == Type::Error {
                 return None;
@@ -716,6 +789,32 @@ fn accepts_null_as_parameter(ty: &ast::TsType, parameter: &str) -> bool {
             .any(|ty| accepts_null_as_parameter(ty, parameter)),
         _ => false,
     }
+}
+
+/// The index of the type parameter that is the result type of the
+/// function type `ty` (§229 rule 1).
+fn callback_result_parameter(ty: &ast::TsType, parameters: &[String]) -> Option<usize> {
+    let ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) = ty
+    else {
+        return match ty {
+            ast::TsType::TsParenthesizedType(parenthesized) => {
+                callback_result_parameter(&parenthesized.type_ann, parameters)
+            }
+            _ => None,
+        };
+    };
+    let ast::TsType::TsTypeRef(reference) = &*function.type_ann.type_ann else {
+        return None;
+    };
+    let ast::TsEntityName::Ident(name) = &reference.type_name else {
+        return None;
+    };
+    if reference.type_params.is_some() {
+        return None;
+    }
+    parameters
+        .iter()
+        .position(|parameter| parameter == name.sym.as_ref())
 }
 
 fn type_mentions_missing(ty: &ast::TsType, parameters: &[String], nonliteral: &[bool]) -> bool {
