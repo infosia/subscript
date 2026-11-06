@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -272,3 +272,4 @@ Every section, with its status:
 | §228 | Two nullable references compare by identity | active | [`s228-two-nullable-references-compare-by-identity.md`](compiler/s228-two-nullable-references-compare-by-identity.md) |
 | §229 | A callback result takes the context of the call | active | [`s229-a-callback-result-takes-the-context-of-the-call.md`](compiler/s229-a-callback-result-takes-the-context-of-the-call.md) |
 | §230 | A built-in call is accepted only where `tsc` accepts it | active | [`s230-a-built-in-call-is-accepted-only-where-tsc-accepts-it.md`](compiler/s230-a-built-in-call-is-accepted-only-where-tsc-accepts-it.md) |
+| §231 | Each call reads its type arguments | active | [`s231-each-call-reads-its-type-arguments.md`](compiler/s231-each-call-reads-its-type-arguments.md) |

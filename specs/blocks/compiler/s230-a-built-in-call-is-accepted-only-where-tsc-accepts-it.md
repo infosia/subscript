@@ -110,12 +110,12 @@ gave seven MINOR findings and no CRITICAL or MAJOR finding.
 
 ### 230.4 Open
 
-1. `xs.reduce((acc: Mode, x: i32) => { return "b"; }, "a")` is accepted,
+1. *(Closed by §231.)* `xs.reduce((acc: Mode, x: i32) => { return "b"; }, "a")` was accepted,
    and `tsc` gives TS2322 and TS2769. Rule 2 keeps a block body.
 2. `xs.flatMap<i32, undefined>(…)` is rejected with "takes 1 type
    argument, got 2". `tsc` accepts it, because its declaration has a
    second type parameter `This`.
-3. A type argument list on a call of a user function or method is
+3. *(Closed by §231.)* A type argument list on a call of a user function or method was
    outside rule 3. `b.get<i32>()` on a non-generic method, `f<i32>(1)`
    on a `const` arrow, and `Reg.f<i32>(1)` on a static field of a
    function type are accepted, and `tsc` gives TS2558. The awaited form
