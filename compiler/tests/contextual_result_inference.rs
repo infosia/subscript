@@ -1,9 +1,10 @@
 //! A generic call infers from its contextual result type (`compiler.md`
 //! §212), also through `Promise<T>`, `Array<T>`, and `await` (§215). A
-//! callback result takes the context of the call (§229).
+//! callback result takes the context of the call (§229, §233), and an
+//! operand takes the context of its expression (§232).
 //!
 //! Cost: each test runs the checker on one short program, with no code
-//! generation and no external process. The whole file took 0.21 s in a
+//! generation and no external process. The whole file took 0.25 s in a
 //! debug build.
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
@@ -870,5 +871,112 @@ fn a_hint_position_reaches_no_kept_operand() {
             no_candidate("T", name),
             "{main}: {errors:?}"
         );
+    }
+}
+
+fn reaction(main: &str) -> Result<(), Vec<subscript_compiler::Diagnostic>> {
+    let source = format!(
+        "{PRELUDE}type Mode = \"a\" | \"b\";\n\
+         async function m(): Promise<Mode> {{ return \"a\"; }}\n\
+         async function w64(): Promise<i64> {{ return 1; }}\n\
+         export async function main(): Promise<void> {{\nconst s: string = \"a\";\n{main}\n}}\n"
+    );
+    check_program(&[SourceFile::new("test.ts", source.as_str())]).map(|_| ())
+}
+
+fn reaction_rejects(main: &str, message: &str) {
+    let errors = reaction(main).expect_err(main);
+    assert_eq!(errors.len(), 1, "{main}: {errors:?}");
+    assert_eq!(errors[0].message, message, "{main}");
+}
+
+/// §233 rules 1 and 2: a contextual `Promise<C>` gives the body of the
+/// fulfillment callback the context `C`, also under `await`, and the
+/// rejection callback keeps §186.1 rule 4.
+#[test]
+fn a_then_callback_result_takes_the_context_of_the_call() {
+    for main in [
+        r#"const p: Promise<Mode> = one().then((x: i32) => "a"); await p;"#,
+        "const p: Promise<Buf<P>> = one().then((x: i32) => empty()); await p;",
+        r#"const p: Promise<Mode> = one().then((x: i32) => "a", (e: Error) => "b"); await p;"#,
+        r#"const r: Mode = await one().then((x: i32) => "b");"#,
+        r#"const p: Promise<Mode> = one().then((x: i32): Mode => "a"); await p;"#,
+    ] {
+        if let Err(errors) = reaction(main) {
+            panic!("{main}: {errors:?}");
+        }
+    }
+}
+
+/// §233 rule 3 and controls: no context keeps the result of the pin, a
+/// non-literal body result comes before the context, an annotated callback
+/// keeps its type, and a block body keeps its annotation rule. Rule 4: a
+/// type argument keeps S013.
+#[test]
+fn a_then_callback_keeps_its_rule_without_a_literal_result() {
+    let promise_string =
+        "type mismatch: the initializer expects `Promise<Mode>`, got `Promise<string>`";
+    reaction_rejects(
+        r#"const p = one().then((x: i32) => "a"); const q: Promise<Mode> = p; await q;"#,
+        promise_string,
+    );
+    reaction_rejects(
+        "const p: Promise<Mode> = one().then((x: i32) => s); await p;",
+        promise_string,
+    );
+    reaction_rejects(
+        r#"const p: Promise<Mode> = one().then((x: i32): string => "a"); await p;"#,
+        promise_string,
+    );
+    let errors =
+        reaction(r#"const p: Promise<Mode> = one().then((x: i32) => { return "a"; }); await p;"#)
+            .expect_err("block body");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message
+                == "a lambda with a block body requires a return type annotation"),
+        "{errors:?}"
+    );
+    let errors =
+        reaction(r#"const p: Promise<Mode> = one().then<Mode>((x: i32) => "a"); await p;"#)
+            .expect_err("type argument");
+    assert_eq!(errors[0].code, RuleCode::S013, "{errors:?}");
+}
+
+/// §233 rule 1a: the string literal result of an async arrow callback has
+/// the type `string`, for each role, as `tsc` gives it (TS2322). A sync
+/// arrow and a numeric literal keep the hint.
+#[test]
+fn an_async_reaction_callback_gives_a_string_literal_the_type_string() {
+    for (main, message) in [
+        (
+            r#"const p: Promise<Mode> = one().then(async (x: i32) => "a"); await p;"#,
+            "type mismatch: the initializer expects `Promise<Mode>`, got `Promise<string>`",
+        ),
+        (
+            r#"const r: Mode = await one().then(async (x: i32) => "b");"#,
+            "type mismatch: the initializer expects `Mode`, got `string`",
+        ),
+        (
+            r#"const p: Promise<Mode> = m().catch(async (e: Error) => "b"); await p;"#,
+            "a `catch` callback must return `Mode`, the value type of the handle; it returns `string`",
+        ),
+        (
+            r#"const p: Promise<Mode> = one().then((x: i32) => "a", async (e: Error) => "b"); await p;"#,
+            "a rejection callback of `.then(...)` must return `Mode`, the value of its fulfillment callback; it returns `string`",
+        ),
+    ] {
+        reaction_rejects(main, message);
+    }
+    for main in [
+        r#"const p: Promise<Mode> = m().catch((e: Error) => "b"); await p;"#,
+        r#"const p: Promise<Mode> = one().then((x: i32) => "a", (e: Error) => "b"); await p;"#,
+        "const p: Promise<i64> = w64().catch(async (e: Error) => 0); await p;",
+        "const p: Promise<i64> = one().then(async (x: i32) => 1); await p;",
+    ] {
+        if let Err(errors) = reaction(main) {
+            panic!("{main}: {errors:?}");
+        }
     }
 }

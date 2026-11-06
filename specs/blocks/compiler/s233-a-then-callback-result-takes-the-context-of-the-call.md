@@ -63,3 +63,30 @@ callback no context.
 5. The rejection-site total check passes. §229.4 item 4 cites this
    section. `a420` has an async entry, so the LIR text snapshot grows by
    its functions. No other golden moves.
+
+### 233.3 Phase Review
+
+*(Added 2026-11-07.)* A fresh review of `21bc2228` and the implementation
+gave one MAJOR and four MINOR findings.
+
+1. MAJOR, realistic, fixed: an async arrow callback took the hint, so
+   `then(async (x: i32) => "a")` with `Promise<Mode>` was accepted, and
+   `tsc` gives TS2322. `catch(async …)` had the same gap before §233.
+   Rule 1a closes it for each callback role.
+2. MINOR, fixed: the `exercises` tag of `a420` differed from the other
+   §186 entries.
+3. MINOR, contrived, fixed: a `| null` path for the context had no
+   reachable case, because `Promise<C> | null` is S011.
+4. MINOR, realistic, open: §233.4.
+5. MINOR, fixed: no unit test had an async callback.
+
+### 233.4 Open
+
+`tsc` accepts each form, and each stays rejected:
+
+1. `async function f(): Promise<Mode> { return v(n).then((x: i32) => "a"); }`:
+   the return context of an async function is `Mode`, not
+   `Promise<Mode>`.
+2. A nested adoption, `then((x: i32) => v(x).then((y: i32) => "a"))`,
+   with `Promise<Mode>`.
+3. `then((x: i32) => "a")` with `Promise<string | null>`.

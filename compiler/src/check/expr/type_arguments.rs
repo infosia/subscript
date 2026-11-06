@@ -287,6 +287,20 @@ fn string_literal_result(results: &[Option<&ast::Expr>]) -> Option<String> {
     out.iter().all(|value| *value == first).then_some(first)
 }
 
+/// Whether each branch of `expr` is a string literal, through parentheses
+/// and conditional branches (§233 rule 1a).
+pub(super) fn is_string_literal_result(expr: &ast::Expr) -> bool {
+    match unparen_expr(expr) {
+        ast::Expr::Lit(ast::Lit::Str(_)) => true,
+        ast::Expr::Tpl(template) => template.exprs.is_empty(),
+        ast::Expr::Cond(conditional) => {
+            is_string_literal_result(&conditional.cons)
+                && is_string_literal_result(&conditional.alt)
+        }
+        _ => false,
+    }
+}
+
 /// Each `return` of a block body, in source order. A nested function has
 /// its own returns, so the walk does not enter one.
 fn return_values<'a>(statements: &'a [ast::Stmt], out: &mut Vec<Option<&'a ast::Expr>>) {

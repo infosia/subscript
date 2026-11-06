@@ -174,11 +174,14 @@ impl<'p> Checker<'p> {
         }
         match method {
             "then" => {
+                // §233 rule 1: a contextual `Promise<C>` gives the body of
+                // the fulfillment callback the context `C`.
+                let context = self.reaction_result_context(call);
                 let (f, f_expr) = self.check_reaction_callback(
                     &call.args[0],
                     Role::Fulfilled,
                     value,
-                    None,
+                    context.as_ref(),
                     method,
                     fx,
                 )?;
@@ -295,7 +298,13 @@ impl<'p> Checker<'p> {
                 self.reject_reaction_arity(role, method, &context, &params, pos);
                 return None;
             }
-            self.lambda_result_hint = hint.cloned();
+            // §233 rule 1a: the string literal result of an async arrow
+            // reaches the call through `PromiseLike`, and `tsc` gives it
+            // the type `string` there. A numeric literal keeps the hint.
+            let string_result = arrow.is_async
+                && matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body)
+                    if super::type_arguments::is_string_literal_result(body));
+            self.lambda_result_hint = hint.filter(|_| !string_result).cloned();
             let checked =
                 self.check_lambda_with(arrow, Some(&context), None, None, fx, pos.clone());
             self.lambda_result_hint = None;

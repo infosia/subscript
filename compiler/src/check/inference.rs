@@ -230,6 +230,18 @@ impl<'p> Checker<'p> {
         })
     }
 
+    /// The value type `C` of the contextual `Promise<C>` of a `then` call,
+    /// the context of its fulfillment callback result (§233 rules 1 and 2).
+    pub(in crate::check) fn reaction_result_context(&self, call: &ast::CallExpr) -> Option<Type> {
+        if self.active_call != Some(call.span) {
+            return None;
+        }
+        match self.apparent_type(self.active_call_context.as_ref()?) {
+            Type::AsyncHandle(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// Records the contextual type of the call that starts, and returns
     /// the context of the enclosing call. A call that `mark_operand_calls`
     /// marks has no contextual type (§212 rule 1a).
