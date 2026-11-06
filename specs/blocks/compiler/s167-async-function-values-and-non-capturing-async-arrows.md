@@ -134,7 +134,7 @@ The Phase Review found these. None is CRITICAL or MAJOR.
 1. A handle-typed expression body with no annotation gives a second,
    cascading S100: the callable type becomes `Promise<Promise<T>>`
    (`const f = async () => value(7);` then a template of `await f()`).
-2. A direct `await s(1)` of a synchronous function that returns a handle
+2. *(Closed by §234.)* A direct `await s(1)` of a synchronous function that returns a handle
    is rejected ("`s` is synchronous and cannot be awaited"), but
    `const f = s; await f(1)` is accepted. `tsc` accepts both. Rule 6
    names calls through values only.

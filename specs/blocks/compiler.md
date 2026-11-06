@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -275,3 +275,4 @@ Every section, with its status:
 | §231 | Each call reads its type arguments | active | [`s231-each-call-reads-its-type-arguments.md`](compiler/s231-each-call-reads-its-type-arguments.md) |
 | §232 | An operand takes the context of its expression | active | [`s232-an-operand-takes-the-context-of-its-expression.md`](compiler/s232-an-operand-takes-the-context-of-its-expression.md) |
 | §233 | A `then` callback result takes the context of the call | active | [`s233-a-then-callback-result-takes-the-context-of-the-call.md`](compiler/s233-a-then-callback-result-takes-the-context-of-the-call.md) |
+| §234 | `await` reads the handle of a synchronous call | active | [`s234-await-reads-the-handle-of-a-synchronous-call.md`](compiler/s234-await-reads-the-handle-of-a-synchronous-call.md) |
