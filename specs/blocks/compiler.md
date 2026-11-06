@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -269,3 +269,4 @@ Every section, with its status:
 | §225 | A benchmark compiles with the ship C compiler | active | [`s225-a-benchmark-compiles-with-the-ship-c-compiler.md`](compiler/s225-a-benchmark-compiles-with-the-ship-c-compiler.md) |
 | §226 | The x86-64 and Windows limits follow the measurement | active | [`s226-the-x86-64-and-windows-limits-follow-the-measurement.md`](compiler/s226-the-x86-64-and-windows-limits-follow-the-measurement.md) |
 | §227 | A fact on both arms of `\|\|` narrows | active | [`s227-a-fact-on-both-arms-of-or-narrows.md`](compiler/s227-a-fact-on-both-arms-of-or-narrows.md) |
+| §228 | Two nullable references compare by identity | active | [`s228-two-nullable-references-compare-by-identity.md`](compiler/s228-two-nullable-references-compare-by-identity.md) |

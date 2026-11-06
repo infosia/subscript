@@ -39,8 +39,8 @@ Problem, measured at `bbd38549`:
    A test against a value that can be null gives no narrowing.
 4a. `a === b`, `!==`, `==`, and `!=` accept a `C | null` or a
    `C | undefined` against its `C`, and compare by identity. `tsc`
-   accepts them. Two `C | null` values stay rejected with S100. `tsc`
-   accepts that form. *(Added 2026-10-31: the coding agent measured that
+   accepts them. Two `C | null` values compare by identity
+   (§228). *(Added 2026-10-31: the coding agent measured that
    the pin rejected the form that rule 4 needs.)*
 5. The S014 texts for `Map.get` and `find` no longer name `string` by any
    rule. The reference states the new set.
@@ -80,7 +80,7 @@ CRITICAL or MAJOR finding and five MINOR findings. About 90 forms of rule
 
 ### 219.4 Open
 
-1. Two `C | null` values in `===` stay rejected (rule 4a). `tsc` accepts
+1. *(Closed by §228.)* Two `C | null` values in `===` stayed rejected (rule 4a). `tsc` accepts
    them.
 2. *(Closed by §227.)* `if (a === "x" || a === "y") a.length` gave S011. `tsc` accepts it. A
    union of facts on one location did not exist.
