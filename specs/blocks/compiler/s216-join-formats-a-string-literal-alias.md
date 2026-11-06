@@ -73,7 +73,7 @@ CRITICAL or MAJOR finding and five MINOR findings.
 
 1. `ms.join(f())`, where `f` changes `ms`: the rewrite evaluates `f`
    after `map`, and `node` evaluates it before. Contrived.
-2. `const r: Mode[] = ms.map((x: Mode) => x === "a" ? "z" : "a");` gives
+2. *(Closed by §229.)* `const r: Mode[] = ms.map((x: Mode) => x === "a" ? "z" : "a");` gave
    S100 "the initializer expects `Mode[]`, got `string[]`": `map` gives
    a callback no return context. `tsc` accepts it. A `: Mode` annotation
    on the callback is accepted.

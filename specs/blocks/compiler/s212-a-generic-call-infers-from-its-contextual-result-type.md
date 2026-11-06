@@ -131,7 +131,7 @@ MAJOR and eight MINOR findings.
 3. `empty() as Buf<P>` takes no contextual candidate: `as` gives no
    context. `tsc` accepts it.
 4. *(Closed by §215.)* `Array<T>` was not a §149.1 rule 2 form.
-5. A lambda result gives no context through a built-in method or a
+5. *(Closed by §229.)* A lambda result gave no context through a built-in method or a
    type parameter with no candidate:
    `const r: Buf<P>[] = xs.map((x: i32) => empty());` and
    `const b: Buf<P> = mapb(new P(), (v: P) => empty());` stay rejected.
