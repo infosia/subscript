@@ -93,10 +93,10 @@ gave one MAJOR and five MINOR findings.
 
 ### 229.4 Open
 
-1. `xs.reduce((acc: Mode, x: i32) => "b", "a")` and the `reduceRight`
+1. *(Closed by §230.)* `xs.reduce((acc: Mode, x: i32) => "b", "a")` and the `reduceRight`
    form are accepted, and `tsc` gives TS2769. This predates §229. It is a
    gap against invariant 5.
-2. A type argument list of the wrong length on an array method has no
+2. *(Closed by §230.)* A type argument list of the wrong length on an array method has no
    diagnostic: `xs.map<i32, i32>(…)` and `xs.filter<i32>(…)` are
    accepted. `tsc` gives TS2558 and TS2345. This predates §229.
 3. `compiler/src/check/expr/method.rs` has 1,986 lines. The next change
