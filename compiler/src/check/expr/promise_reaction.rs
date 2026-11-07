@@ -310,7 +310,13 @@ impl<'p> Checker<'p> {
             self.lambda_result_hint = None;
             checked
         } else {
-            self.check_expr(&argument.expr, None, fx)
+            let mut checked = self.check_expr(&argument.expr, None, fx);
+            // compiler.md §240 rule 2: the `finally` callback place has the
+            // type `() => void`.
+            if matches!(role, Role::Settled) {
+                self.place_value(&mut checked, &Type::func(Vec::new(), Type::Void));
+            }
+            checked
         };
         let Type::Func(signature) = self.apparent_type(&checked.ty) else {
             if self.apparent_type(&checked.ty) != Type::Error {

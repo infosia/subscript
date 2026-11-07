@@ -104,5 +104,7 @@ CRITICAL or MAJOR finding.
    "expects `(i32) => void`, got `(i32) => Promise<void>`". `tsc`
    accepts it. A function type that is not generic gives the same
    result at the pin.
+   *(Decided 2026-11-07 by §240: the S013 reason holds; the form stays
+   rejected.)*
 4. A `void` callback of `catch` on a `Promise<i32>` gives S013, by the
    rule of §186. `tsc` accepts `wi().catch(() => v())`.

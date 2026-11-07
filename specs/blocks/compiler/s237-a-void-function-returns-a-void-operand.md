@@ -145,6 +145,7 @@ limit of rule 4, and the examples of rule 5.
    with a `void` result stays rejected: `const cb: (x: i32) => void =
    named`, and `xs.forEach(named)`. `tsc` accepts both. A function that
    discards the result is a new form.
+   *(Closed 2026-11-07 by §240.)*
 2. A lambda with no result annotation and no context, whose body has
    the type `void`, stays rejected: `const f = () => v();` and
    `const f = async () => v();`. `tsc` accepts both. The binding has

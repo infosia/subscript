@@ -319,12 +319,115 @@ impl<'p> Checker<'p> {
     /// conversion is a `Cast` whose type is exactly `to`: each later stage
     /// reads that type, and no operation runs (rule 5). A value that is not
     /// assignable gets no conversion and keeps its diagnostic.
-    pub(crate) fn place_function_value(&self, value: &mut hir::Expr, to: &Type) {
+    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type) {
+        self.discard_function_result(value, to);
         if !self.needs_function_conversion(&value.ty, to) {
             return;
         }
         let inner = std::mem::replace(value, self.err_expr(value.pos.clone()));
         *value = cast_value(inner, to.clone());
+    }
+
+    /// A reference to a function declaration or a static method, in a place
+    /// of a function type with the result `void` (compiler.md §240 rules 1
+    /// and 2). If the function is not generic and not async, its result is
+    /// not `void` and not a handle, and the function with the result `void`
+    /// fits the place, `value` becomes a lambda with no environment and the
+    /// parameters of the function. The lambda calls the function with its
+    /// arguments and discards the result. Another value is unchanged.
+    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type) {
+        let hir::ExprKind::FuncRef(symbol) = &value.kind else {
+            return;
+        };
+        let Some(place) = self.function_of(to) else {
+            return;
+        };
+        if self.apparent_type(&place.ret) != Type::Void {
+            return;
+        }
+        let Some(sig) = self.fn_sigs.get(symbol.full_text()) else {
+            return;
+        };
+        if sig.generic
+            || sig.is_async
+            || sig.is_generator
+            || matches!(
+                self.apparent_type(&sig.ret),
+                Type::Void | Type::AsyncHandle(_) | Type::Error
+            )
+        {
+            return;
+        }
+        let params: Vec<Type> = sig.params.iter().map(|p| p.ty().clone()).collect();
+        let ret = sig.ret.clone();
+        let discarding = crate::types::FuncType {
+            params: params.clone(),
+            ret: Type::Void,
+        };
+        if !self.function_fits(&discarding, &place) {
+            return;
+        }
+        let pos = value.pos.clone();
+        let names: Vec<String> = (0..params.len())
+            .map(|index| format!("[[discard#{}.{index}]]", self.next_lambda_id))
+            .collect();
+        let call = hir::Expr {
+            pending_work: None,
+            kind: hir::ExprKind::Call {
+                callee: hir::Callee::Func(symbol.clone()),
+                args: names
+                    .iter()
+                    .zip(&params)
+                    .map(|(name, ty)| hir::Expr {
+                        pending_work: None,
+                        kind: hir::ExprKind::Local(name.clone(), ty.clone(), false),
+                        ty: ty.clone(),
+                        pos: pos.clone(),
+                    })
+                    .collect(),
+            },
+            ty: ret,
+            pos: pos.clone(),
+        };
+        let id = hir::LambdaId(self.next_lambda_id);
+        self.next_lambda_id += 1;
+        *value = hir::Expr {
+            pending_work: None,
+            kind: hir::ExprKind::Lambda {
+                id,
+                params: names
+                    .iter()
+                    .zip(&params)
+                    .map(|(name, ty)| hir::Param {
+                        escapes: false,
+                        default_can_raise: false,
+                        name: name.clone(),
+                        ty: ty.clone(),
+                        default: None,
+                        foreign_provenance: None,
+                        pos: pos.clone(),
+                    })
+                    .collect(),
+                is_async: false,
+                owns_environment: false,
+                ret: Type::Void,
+                body: vec![hir::Stmt::Expr(call)],
+                captures: Vec::new(),
+                can_raise: false,
+            },
+            ty: Type::func(params, Type::Void),
+            pos,
+        };
+    }
+
+    /// The check of a value against a place, with no diagnostic (compiler.md
+    /// §240 rule 2a): the value takes the conversion of its place
+    /// ([`Self::place_function_value`]), then its type is checked. Returns
+    /// whether the value fits the place. A value that does not fit is
+    /// unchanged.
+    pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type) -> bool {
+        self.place_function_value(value, to);
+        self.assignable(&value.ty, to)
     }
 
     /// Converts an accepted built-in callback to the function type of its
@@ -333,7 +436,7 @@ impl<'p> Checker<'p> {
     /// the result of the callback when the method reads it from the
     /// callback (compiler.md §235 rule 5a).
     pub(crate) fn place_callback_value(
-        &self,
+        &mut self,
         mut callback: hir::Expr,
         params: &[Type],
         ret: Option<&Type>,
@@ -438,8 +541,7 @@ impl<'p> Checker<'p> {
         fx: &FnCtx,
         what: &str,
     ) {
-        self.place_function_value(from, to);
-        if !self.assignable(&from.ty, to) {
+        if !self.place_value(from, to) {
             if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && self.indexed_nullable_error(
                     from,

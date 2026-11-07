@@ -244,13 +244,12 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&value.ty) == Type::Error {
             return None;
         }
-        // §235 rule 5a: the value of `??=` takes the type of its place.
-        if self.assignable(&value.ty, inner) {
-            self.place_function_value(value, inner);
+        // §235 rule 5a and §240 rule 2a: the value of `??=` takes the type
+        // of its place, by the check that takes the value.
+        if self.place_value(value, inner) {
             return Some(inner.clone());
         }
-        if self.assignable(&value.ty, storage) {
-            self.place_function_value(value, storage);
+        if self.place_value(value, storage) {
             return Some(storage.clone());
         }
         self.require_expr_assignable(value, storage, fx, "the assignment");
@@ -272,11 +271,11 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&value.ty) == Type::Error {
             return None;
         }
-        if !self.assignable(&value.ty, target_ty) {
+        // §240 rule 2a: the check that takes the value decides.
+        if !self.place_value(&mut value, target_ty) {
             self.require_expr_assignable(&mut value, target_ty, fx, "the assignment");
             return None;
         }
-        self.place_function_value(&mut value, target_ty);
         self.require_logical_boolean(left, op).then_some(value)
     }
 

@@ -61690,6 +61690,866 @@ fn f8 "<lambda a426-recursive-void-lambda.ts:34:15>" kind=Lambda exported=false 
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))], ownership: [false] })
   b3(%6: Data(I32)) Some("if.join"):
     -> Return { value: None, pos: Pos { file: "a426-recursive-void-lambda.ts", line: 34, col: 15 } }
+===== a427-named-function-takes-a-void-result-place =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "K" value=false descriptor=false boundary=false align=None @ a427-named-function-takes-a-void-result-place.ts:27:7
+class c2 "Holder" value=false descriptor=false boundary=false align=None @ a427-named-function-takes-a-void-result-place.ts:34:7
+  field d3 "g": Func(FuncType { params: [I32], ret: Void }) defaulted=false absence=false foreign=None @ a427-named-function-takes-a-void-result-place.ts:35:3
+  field d4 "f": Func(FuncType { params: [I32], ret: Void }) defaulted=false absence=false foreign=None @ a427-named-function-takes-a-void-result-place.ts:36:3
+  method m1 "constructor" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "constructor" kind=Constructor { class: ClassId(2), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:37:3
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a427-named-function-takes-a-void-result-place.ts:37:3
+  param %1 "f": Data(Func(FuncType { params: [I32], ret: Void })) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:37:15
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("f")
+  value %2: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 38, col: 5 } }] @ a427-named-function-takes-a-void-result-place.ts:38:10
+    StoreAddress(%2, %1) @ a427-named-function-takes-a-void-result-place.ts:38:10
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 37, col: 3 } }
+fn f2 "named" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a427-named-function-takes-a-void-result-place.ts:7:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:7:16
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("named"), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 8, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 8, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 8, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:8:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a427-named-function-takes-a-void-result-place.ts:8:3
+    %2: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a427-named-function-takes-a-void-result-place.ts:9:10
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 9, col: 3 } }
+fn f3 "two" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a427-named-function-takes-a-void-result-place.ts:12:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:12:14
+  param %1 "i": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:12:22
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(I32) name=Some("i")
+  value %2: Data(Str) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("two"), Operand { index: 0, format: I32 }, Text("@"), Operand { index: 1, format: I32 }])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 13, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:13:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a427-named-function-takes-a-void-result-place.ts:13:3
+    %3: Data(Bool) = Binary(Gt)(%1, Integer(0):I32) @ a427-named-function-takes-a-void-result-place.ts:14:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 14, col: 3 } }
+fn f4 "entry" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a427-named-function-takes-a-void-result-place.ts:17:10
+  param %0 "value": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:17:16
+  param %1 "key": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:17:31
+  value %0: Data(Str) name=Some("value")
+  value %1: Data(Str) name=Some("key")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("entry"), Operand { index: 0, format: Str }, Text("="), Operand { index: 1, format: Str }])(%1, %0) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 18, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:18:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a427-named-function-takes-a-void-result-place.ts:18:3
+    %3: Data(I32) = Length(%0) @ a427-named-function-takes-a-void-result-place.ts:19:16
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 19, col: 3 } }
+fn f5 "member" kind=Free exported=false generator=false async=false -> Str entry=b0 @ a427-named-function-takes-a-void-result-place.ts:22:10
+  param %0 "value": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:22:17
+  value %0: Data(Str) name=Some("value")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("member"), Operand { index: 0, format: Str }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 23, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:23:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a427-named-function-takes-a-void-result-place.ts:23:3
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 24, col: 3 } }
+fn f6 "K.twice" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a427-named-function-takes-a-void-result-place.ts:28:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:28:16
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("twice"), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 29, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 29, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 29, col: 11 } }] @ a427-named-function-takes-a-void-result-place.ts:29:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a427-named-function-takes-a-void-result-place.ts:29:5
+    %2: Data(I32) = Binary(Mul)(%0, Integer(2):I32) @ a427-named-function-takes-a-void-result-place.ts:30:12
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 30, col: 5 } }
+fn f7 "each" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:42:10
+  can-raise
+  param %0 "xs": Data(Array(I32)) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:42:15
+  param %1 "f": Data(Func(FuncType { params: [I32], ret: Void })) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:42:26
+  value %0: Data(Array(I32)) name=Some("xs")
+  value %1: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("f")
+  value %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Array(I32)) name=None
+  value %5: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Array(I32)) name=None
+  value %10: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %11: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(Array(I32)) name=None
+  value %15: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %16: Data(Bool) name=None
+  value %17: Data(I32) name=None
+  value %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %19: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Live }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 43, col: 19 } }] @ a427-named-function-takes-a-void-result-place.ts:43:3
+    %3: Data(I32) = IteratorBound(%2) @ a427-named-function-takes-a-void-result-place.ts:43:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(3))], ownership: [false, false, false, false, false] })
+  b1(%4: Data(Array(I32)), %5: Data(Func(FuncType { params: [I32], ret: Void })), %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %7: Data(I32), %8: Data(I32)) Some("for-of.cond"):
+    %16: Data(Bool) = IteratorHasNext(%6, %7, %8) @ a427-named-function-takes-a-void-result-place.ts:43:3
+    -> ConditionalBranch { condition: Value(ValueId(16)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(4)), Value(ValueId(5))], ownership: [false, false] } }
+  b2 Some("for-of.body"):
+    %17: Data(I32) = IteratorValue(%6, %7, %8) @ a427-named-function-takes-a-void-result-place.ts:43:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%5, %17) invalidates=[ValueId(0), ValueId(4), ValueId(9), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 44, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 44, col: 5 } }] @ a427-named-function-takes-a-void-result-place.ts:44:5
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8))], ownership: [false, false, false, false, false] })
+  b3(%9: Data(Array(I32)), %10: Data(Func(FuncType { params: [I32], ret: Void })), %11: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %12: Data(I32), %13: Data(I32)) Some("for-of.step"):
+    %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%11, %12, %13) @ a427-named-function-takes-a-void-result-place.ts:43:3
+    %19: Data(I32) = Binary(Add)(%12, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:43:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(18)), Value(ValueId(19)), Value(ValueId(13))], ownership: [false, false, false, false, false] })
+  b4(%14: Data(Array(I32)), %15: Data(Func(FuncType { params: [I32], ret: Void }))) Some("for-of.exit"):
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 42, col: 10 } }
+fn f8 "one" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a427-named-function-takes-a-void-result-place.ts:48:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 48, col: 16 } }]
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("one")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 49, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:49:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a427-named-function-takes-a-void-result-place.ts:49:3
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(1) })), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 50, col: 3 } }
+fn f9 "tick" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a427-named-function-takes-a-void-result-place.ts:53:10
+  value %0: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Str) = StringLiteral("tick")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 54, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:54:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%0) @ a427-named-function-takes-a-void-result-place.ts:54:3
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(true) })), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 55, col: 3 } }
+fn f10 "pick" kind=Free exported=false generator=false async=false -> Func(FuncType { params: [I32], ret: Void }) entry=b0 @ a427-named-function-takes-a-void-result-place.ts:58:10
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(14))() @ a427-named-function-takes-a-void-result-place.ts:59:10
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 59, col: 3 } }
+fn f11 "[[Promise.turn]]" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:99:18
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }]
+  b0 Some("entry"):
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }
+fn f12 "[[Promise.finally () => void]]<i32, i32>" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a427-named-function-takes-a-void-result-place.ts:99:18
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }]
+  can-raise
+  param %0 "h": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:99:18
+  param %1 "f": Data(Func(FuncType { params: [], ret: Void })) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:99:18
+  local l0 "[[finally.exception.0]]": Data(Class(ClassId(0))) mutable=false @ a427-named-function-takes-a-void-result-place.ts:99:24
+  local l1 "[[finally.exception.1]]": Data(Str) mutable=false @ a427-named-function-takes-a-void-result-place.ts:99:24
+  local l2 "[[finally.exception.2]]": Data(U32) mutable=false @ a427-named-function-takes-a-void-result-place.ts:99:24
+  value %0: Data(AsyncHandle(I32)) name=Some("h")
+  value %1: Data(Func(FuncType { params: [], ret: Void })) name=Some("f")
+  value %2: Data(I32) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(U32) name=None
+  value %6: Data(AsyncHandle(I32)) name=None
+  value %7: Data(Func(FuncType { params: [], ret: Void })) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(U32) name=None
+  value %10: Data(Class(ClassId(0))) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(U32) name=None
+  value %14: Data(AsyncHandle(I32)) name=Some("h")
+  value %15: Data(Func(FuncType { params: [], ret: Void })) name=Some("f")
+  value %16: Data(AsyncHandle(I32)) name=Some("h")
+  value %17: Data(I32) name=None
+  value %18: Data(AsyncHandle(I32)) name=Some("h")
+  value %19: Data(I32) name=None
+  value %20: Data(AsyncHandle(I32)) name=None
+  value %21: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }] }
+  b1(%2: Data(I32), %14: Data(AsyncHandle(I32)), %15: Data(Func(FuncType { params: [], ret: Void }))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }] @ a427-named-function-takes-a-void-result-place.ts:99:18
+    FinalizerEnter(Some(Return))(%2) @ a427-named-function-takes-a-void-result-place.ts:99:24
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: Void }))], return_type: None })(%15) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }, Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(14)), Value(ValueId(2))], ownership: [false, false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] }
+  b2 Some("catch.landing"):
+    %8: Data(Str) = ExceptionMessage() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    %9: Data(U32) = ExceptionPosition() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    %10: Data(Class(ClassId(0))) = CatchEntry() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(10)), Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(14)), Value(ValueId(15))], ownership: [false, false, false, true, false] })
+  b3 Some("release.landing"):
+    ExceptionPark() @ a427-named-function-takes-a-void-result-place.ts:99:32
+    AsyncHandleRelease(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Unreachable { pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }
+  b4(%16: Data(AsyncHandle(I32)), %17: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(16)), Value(ValueId(17))], ownership: [false, false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] }
+  b5(%18: Data(AsyncHandle(I32)), %19: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a427-named-function-takes-a-void-result-place.ts:99:32
+    AsyncHandleRelease(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }] @ a427-named-function-takes-a-void-result-place.ts:99:24
+    -> Return { value: Some(Value(ValueId(19))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }
+  b6(%3: Data(Class(ClassId(0))), %4: Data(Str), %5: Data(U32), %6: Data(AsyncHandle(I32)), %7: Data(Func(FuncType { params: [], ret: Void }))) Some("finally.exception"):
+    StoreLocal(LocalId(0))(%3) @ a427-named-function-takes-a-void-result-place.ts:99:24
+    StoreLocal(LocalId(1))(%4) @ a427-named-function-takes-a-void-result-place.ts:99:24
+    StoreLocal(LocalId(2))(%5) @ a427-named-function-takes-a-void-result-place.ts:99:24
+    FinalizerEnter(Some(Throw))(%3, %4, %5) @ a427-named-function-takes-a-void-result-place.ts:99:24
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: Void }))], return_type: None })(%7) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }, Trap { kind: Raise(Handler(BlockId(7))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 }, successor: BlockId(8), resume_value: None, arguments: [Value(ValueId(6))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] }
+  b7 Some("release.landing"):
+    ExceptionPark() @ a427-named-function-takes-a-void-result-place.ts:99:32
+    AsyncHandleRelease(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Unreachable { pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }
+  b8(%20: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 }, successor: BlockId(9), resume_value: None, arguments: [Value(ValueId(20))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] }
+  b9(%21: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a427-named-function-takes-a-void-result-place.ts:99:32
+    %11: Data(Class(ClassId(0))) = LoadLocal(LocalId(0))() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    %12: Data(Str) = LoadLocal(LocalId(1))() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    %13: Data(U32) = LoadLocal(LocalId(2))() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    ExceptionRestore(%11, %12, %13) traps=[Trap { kind: Raise(Handler(BlockId(10))), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }] @ a427-named-function-takes-a-void-result-place.ts:99:24
+    -> Unreachable { pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }
+  b10 Some("release.landing"):
+    ExceptionPark() @ a427-named-function-takes-a-void-result-place.ts:99:24
+    AsyncHandleRelease(%21) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }] @ a427-named-function-takes-a-void-result-place.ts:99:24
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }] @ a427-named-function-takes-a-void-result-place.ts:99:24
+    -> Unreachable { pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 24 } }
+fn f13 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:62:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 62, col: 23 } }]
+  can-raise
+  value %0: Data(Array(I32)) name=None
+  value %1: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %3: Data(I32) name=None
+  value %4: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %5: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %9: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(I32) name=None
+  value %14: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %17: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %18: Data(I32) name=None
+  value %19: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %20: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %24: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Bool) name=None
+  value %28: Data(I32) name=None
+  value %29: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %32: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %33: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %34: Data(Map(Str, Str)) name=None
+  value %35: Data(Str) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Map(Str, Str)) name=None
+  value %38: Data(Str) name=None
+  value %39: Data(Str) name=None
+  value %40: Data(Map(Str, Str)) name=None
+  value %41: Data(Func(FuncType { params: [Str, Str], ret: Void })) name=None
+  value %42: Iterator(IteratorType { kind: MapValues, element: Str }) name=None
+  value %43: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %44: Data(I32) name=None
+  value %45: Iterator(IteratorType { kind: MapValues, element: Str }) name=None
+  value %46: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %47: Data(Func(FuncType { params: [Str, Str], ret: Void })) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(I32) name=None
+  value %50: Iterator(IteratorType { kind: MapValues, element: Str }) name=None
+  value %51: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %52: Data(Func(FuncType { params: [Str, Str], ret: Void })) name=None
+  value %53: Data(I32) name=None
+  value %54: Data(I32) name=None
+  value %55: Data(Bool) name=None
+  value %56: Data(Str) name=None
+  value %57: Data(Str) name=None
+  value %58: Iterator(IteratorType { kind: MapValues, element: Str }) name=None
+  value %59: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %60: Data(I32) name=None
+  value %61: Data(Set(Str)) name=None
+  value %62: Data(Str) name=None
+  value %63: Data(Set(Str)) name=None
+  value %64: Data(Str) name=None
+  value %65: Data(Set(Str)) name=None
+  value %66: Data(Func(FuncType { params: [Str], ret: Void })) name=None
+  value %67: Iterator(IteratorType { kind: SetValues, element: Str }) name=None
+  value %68: Data(I32) name=None
+  value %69: Iterator(IteratorType { kind: SetValues, element: Str }) name=None
+  value %70: Data(Func(FuncType { params: [Str], ret: Void })) name=None
+  value %71: Data(I32) name=None
+  value %72: Data(I32) name=None
+  value %73: Iterator(IteratorType { kind: SetValues, element: Str }) name=None
+  value %74: Data(Func(FuncType { params: [Str], ret: Void })) name=None
+  value %75: Data(I32) name=None
+  value %76: Data(I32) name=None
+  value %77: Data(Bool) name=None
+  value %78: Data(Str) name=None
+  value %79: Iterator(IteratorType { kind: SetValues, element: Str }) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(Class(ClassId(2))) name=None
+  value %82: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %83: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %84: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) name=None
+  value %85: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %86: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %87: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) name=None
+  value %88: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %89: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %90: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %91: Data(Bool) name=None
+  value %92: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %93: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %94: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %95: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %96: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %97: Data(Bool) name=None
+  value %98: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %99: Data(Str) name=None
+  value %100: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %101: Data(Bool) name=None
+  value %102: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %103: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %104: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %105: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %106: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %107: Data(Array(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %108: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %109: Data(Array(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %110: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) name=None
+  value %111: Data(I32) name=None
+  value %112: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %113: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) name=None
+  value %114: Data(I32) name=None
+  value %115: Data(I32) name=None
+  value %116: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %117: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) name=None
+  value %118: Data(I32) name=None
+  value %119: Data(I32) name=None
+  value %120: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %121: Data(Bool) name=None
+  value %122: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %123: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) name=None
+  value %124: Data(I32) name=None
+  value %125: Data(AsyncHandle(I32)) name=None
+  value %126: Data(Func(FuncType { params: [], ret: Void })) name=None
+  value %127: Data(AsyncHandle(I32)) name=None
+  value %128: Data(I32) name=None
+  value %129: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 63, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 63, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 63, col: 25 } }] @ a427-named-function-takes-a-void-result-place.ts:63:21
+    %1: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(15))() @ a427-named-function-takes-a-void-result-place.ts:64:14
+    %2: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 64, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:64:3
+    %3: Data(I32) = IteratorBound(%2) @ a427-named-function-takes-a-void-result-place.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(2)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(3))], ownership: [false, false, false, false] })
+  b1(%4: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %5: Data(Func(FuncType { params: [I32], ret: Void })), %6: Data(I32), %7: Data(I32)) Some("array-callback.cond"):
+    %12: Data(Bool) = IteratorHasNext(%4, %6, %7) @ a427-named-function-takes-a-void-result-place.ts:64:3
+    -> ConditionalBranch { condition: Value(ValueId(12)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] } }
+  b2 Some("array-callback.body"):
+    %13: Data(I32) = IteratorValue(%4, %6, %7) @ a427-named-function-takes-a-void-result-place.ts:64:3
+    Call(CallTarget { kind: StaticClosure(FunctionId(15)), parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%5, %13) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 64, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 64, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(7))], ownership: [false, false, false, false] })
+  b3(%8: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %9: Data(Func(FuncType { params: [I32], ret: Void })), %10: Data(I32), %11: Data(I32)) Some("array-callback.step"):
+    %14: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%8, %10, %11) @ a427-named-function-takes-a-void-result-place.ts:64:3
+    %15: Data(I32) = Binary(Add)(%10, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(15)), Value(ValueId(11))], ownership: [false, false, false, false] })
+  b4 Some("array-callback.exit"):
+    %16: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(16))() @ a427-named-function-takes-a-void-result-place.ts:65:14
+    %17: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 65, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:65:3
+    %18: Data(I32) = IteratorBound(%17) @ a427-named-function-takes-a-void-result-place.ts:65:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(17)), Value(ValueId(16)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(18))], ownership: [false, false, false, false] })
+  b5(%19: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %20: Data(Func(FuncType { params: [I32, I32], ret: Void })), %21: Data(I32), %22: Data(I32)) Some("array-callback.cond"):
+    %27: Data(Bool) = IteratorHasNext(%19, %21, %22) @ a427-named-function-takes-a-void-result-place.ts:65:3
+    -> ConditionalBranch { condition: Value(ValueId(27)), then_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b6 Some("array-callback.body"):
+    %28: Data(I32) = IteratorValue(%19, %21, %22) @ a427-named-function-takes-a-void-result-place.ts:65:3
+    Call(CallTarget { kind: StaticClosure(FunctionId(16)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%20, %28, %21) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 65, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 65, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:65:3
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(19)), Value(ValueId(20)), Value(ValueId(21)), Value(ValueId(22))], ownership: [false, false, false, false] })
+  b7(%23: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %24: Data(Func(FuncType { params: [I32, I32], ret: Void })), %25: Data(I32), %26: Data(I32)) Some("array-callback.step"):
+    %29: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%23, %25, %26) @ a427-named-function-takes-a-void-result-place.ts:65:3
+    %30: Data(I32) = Binary(Add)(%25, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:65:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(23)), Value(ValueId(24)), Value(ValueId(30)), Value(ValueId(26))], ownership: [false, false, false, false] })
+  b8 Some("array-callback.exit"):
+    %31: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(17))() @ a427-named-function-takes-a-void-result-place.ts:66:12
+    Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32], ret: Void }))], return_type: None })(%0, %31) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 66, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 66, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:66:3
+    %32: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(18))() @ a427-named-function-takes-a-void-result-place.ts:67:14
+    Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32], ret: Void }))], return_type: None })(%0, %32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 67, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 67, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:67:3
+    %33: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(19))() @ a427-named-function-takes-a-void-result-place.ts:68:32
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%33, Integer(3):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 69, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 69, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:69:3
+    %34: Data(Map(Str, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(Str, Str))) })() count=Uncounted invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 70, col: 13 } }] @ a427-named-function-takes-a-void-result-place.ts:70:13
+    %35: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 71, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:71:9
+    %36: Data(Str) = StringLiteral("x")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 71, col: 14 } }] @ a427-named-function-takes-a-void-result-place.ts:71:14
+    %37: Data(Map(Str, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, Str)), Data(Str), Data(Str)], return_type: Some(Data(Map(Str, Str))) })(%34, %35, %36) count=Uncounted invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 71, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:71:3
+    %38: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 72, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:72:9
+    %39: Data(Str) = StringLiteral("yy")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 72, col: 14 } }] @ a427-named-function-takes-a-void-result-place.ts:72:14
+    %40: Data(Map(Str, Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, Str)), Data(Str), Data(Str)], return_type: Some(Data(Map(Str, Str))) })(%34, %38, %39) count=Uncounted invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 72, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 72, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:72:3
+    %41: Data(Func(FuncType { params: [Str, Str], ret: Void })) = MakeClosure(FunctionId(20))() @ a427-named-function-takes-a-void-result-place.ts:73:13
+    %42: Iterator(IteratorType { kind: MapValues, element: Str }) = IteratorCreate { kind: MapValues, bound: Live }(%34) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:73:3
+    %43: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorCreate { kind: MapKeys, bound: Live }(%34) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:73:3
+    %44: Data(I32) = IteratorBound(%42) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(42)), Value(ValueId(43)), Value(ValueId(41)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(44))], ownership: [false, false, false, false, false] })
+  b9(%45: Iterator(IteratorType { kind: MapValues, element: Str }), %46: Iterator(IteratorType { kind: MapKeys, element: Str }), %47: Data(Func(FuncType { params: [Str, Str], ret: Void })), %48: Data(I32), %49: Data(I32)) Some("for-each.cond"):
+    %55: Data(Bool) = IteratorHasNext(%45, %48, %49) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    -> ConditionalBranch { condition: Value(ValueId(55)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(12), arguments: [], ownership: [] } }
+  b10 Some("for-each.body"):
+    %56: Data(Str) = IteratorValue(%45, %48, %49) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    %57: Data(Str) = IteratorValue(%46, %48, %49) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Str, Str], ret: Void })), Data(Str), Data(Str)], return_type: None })(%47, %56, %57) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:73:3
+    -> Branch(BlockTarget { block: BlockId(11), arguments: [Value(ValueId(45)), Value(ValueId(46)), Value(ValueId(47)), Value(ValueId(48)), Value(ValueId(49))], ownership: [false, false, false, false, false] })
+  b11(%50: Iterator(IteratorType { kind: MapValues, element: Str }), %51: Iterator(IteratorType { kind: MapKeys, element: Str }), %52: Data(Func(FuncType { params: [Str, Str], ret: Void })), %53: Data(I32), %54: Data(I32)) Some("for-each.step"):
+    %58: Iterator(IteratorType { kind: MapValues, element: Str }) = IteratorAdvance(%50, %53, %54) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    %59: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorAdvance(%51, %53, %54) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    %60: Data(I32) = Binary(Add)(%53, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:73:3
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(58)), Value(ValueId(59)), Value(ValueId(52)), Value(ValueId(60)), Value(ValueId(54))], ownership: [false, false, false, false, false] })
+  b12 Some("for-each.exit"):
+    %61: Data(Set(Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Set(Str))) })() invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 74, col: 13 } }] @ a427-named-function-takes-a-void-result-place.ts:74:13
+    %62: Data(Str) = StringLiteral("p")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 75, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:75:9
+    %63: Data(Set(Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(Str)), Data(Str)], return_type: Some(Data(Set(Str))) })(%61, %62) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 75, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 75, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:75:3
+    %64: Data(Str) = StringLiteral("q")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 76, col: 9 } }] @ a427-named-function-takes-a-void-result-place.ts:76:9
+    %65: Data(Set(Str)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Set, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Set(Str)), Data(Str)], return_type: Some(Data(Set(Str))) })(%61, %64) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 76, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 76, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:76:3
+    %66: Data(Func(FuncType { params: [Str], ret: Void })) = MakeClosure(FunctionId(21))() @ a427-named-function-takes-a-void-result-place.ts:77:13
+    %67: Iterator(IteratorType { kind: SetValues, element: Str }) = IteratorCreate { kind: SetValues, bound: Live }(%61) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 77, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:77:3
+    %68: Data(I32) = IteratorBound(%67) @ a427-named-function-takes-a-void-result-place.ts:77:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(67)), Value(ValueId(66)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(68))], ownership: [false, false, false, false] })
+  b13(%69: Iterator(IteratorType { kind: SetValues, element: Str }), %70: Data(Func(FuncType { params: [Str], ret: Void })), %71: Data(I32), %72: Data(I32)) Some("for-each.cond"):
+    %77: Data(Bool) = IteratorHasNext(%69, %71, %72) @ a427-named-function-takes-a-void-result-place.ts:77:3
+    -> ConditionalBranch { condition: Value(ValueId(77)), then_target: BlockTarget { block: BlockId(14), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(16), arguments: [], ownership: [] } }
+  b14 Some("for-each.body"):
+    %78: Data(Str) = IteratorValue(%69, %71, %72) @ a427-named-function-takes-a-void-result-place.ts:77:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Str], ret: Void })), Data(Str)], return_type: None })(%70, %78) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 77, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 77, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:77:3
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(69)), Value(ValueId(70)), Value(ValueId(71)), Value(ValueId(72))], ownership: [false, false, false, false] })
+  b15(%73: Iterator(IteratorType { kind: SetValues, element: Str }), %74: Data(Func(FuncType { params: [Str], ret: Void })), %75: Data(I32), %76: Data(I32)) Some("for-each.step"):
+    %79: Iterator(IteratorType { kind: SetValues, element: Str }) = IteratorAdvance(%73, %75, %76) @ a427-named-function-takes-a-void-result-place.ts:77:3
+    %80: Data(I32) = Binary(Add)(%75, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:77:3
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(79)), Value(ValueId(74)), Value(ValueId(80)), Value(ValueId(76))], ownership: [false, false, false, false] })
+  b16 Some("for-each.exit"):
+    %81: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 78, col: 18 } }] @ a427-named-function-takes-a-void-result-place.ts:78:18
+    %82: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(22))() @ a427-named-function-takes-a-void-result-place.ts:78:29
+    %83: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(23))() @ a427-named-function-takes-a-void-result-place.ts:35:25
+    %84: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(3)))(%81) @ a427-named-function-takes-a-void-result-place.ts:35:3
+    StoreAddress(%84, %83) @ a427-named-function-takes-a-void-result-place.ts:35:3
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2))), Data(Func(FuncType { params: [I32], ret: Void }))], return_type: None })(%81, %82) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 78, col: 18 } }] @ a427-named-function-takes-a-void-result-place.ts:78:18
+    %85: Data(Func(FuncType { params: [I32], ret: Void })) = LoadField(Class(FieldId(4)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 79, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:79:10
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%85, Integer(4):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 79, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 79, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:79:3
+    %86: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(24))() @ a427-named-function-takes-a-void-result-place.ts:80:16
+    %87: Address(AddressType { pointee: Func(FuncType { params: [I32], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(4)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 80, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:80:10
+    StoreAddress(%87, %86) @ a427-named-function-takes-a-void-result-place.ts:80:10
+    %88: Data(Func(FuncType { params: [I32], ret: Void })) = LoadField(Class(FieldId(4)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 81, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:81:10
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%88, Integer(5):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 81, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 81, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:81:3
+    %89: Data(Func(FuncType { params: [I32], ret: Void })) = LoadField(Class(FieldId(3)))(%81) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 82, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:82:10
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%89, Integer(7):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 82, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 82, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:82:3
+    %90: Data(Func(FuncType { params: [I32], ret: Void })) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: Some(Data(Func(FuncType { params: [I32], ret: Void }))) })() invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 83, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:83:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%90, Integer(6):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 83, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 83, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:83:3
+    %91: Data(Bool) = Binary(Ne)(Null:Nullable(Func(FuncType { params: [I32], ret: Void })), Null:Null) @ a427-named-function-takes-a-void-result-place.ts:85:3
+    -> ConditionalBranch { condition: Value(ValueId(91)), then_target: BlockTarget { block: BlockId(17), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(18), arguments: [], ownership: [] } }
+  b17 Some("cond.then"):
+    %94: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(Null:Nullable(Func(FuncType { params: [I32], ret: Void }))) @ a427-named-function-takes-a-void-result-place.ts:85:3
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(94)), Constant(Constant { ty: Nullable(Func(FuncType { params: [I32], ret: Void })), kind: Null })], ownership: [false, false] })
+  b18 Some("cond.else"):
+    %95: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(25))() @ a427-named-function-takes-a-void-result-place.ts:85:15
+    %96: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) = Coerce(%95) @ a427-named-function-takes-a-void-result-place.ts:85:3
+    -> Branch(BlockTarget { block: BlockId(19), arguments: [Value(ValueId(95)), Value(ValueId(96))], ownership: [false, false] })
+  b19(%92: Data(Func(FuncType { params: [I32], ret: Void })), %93: Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) Some("cond.merge"):
+    %97: Data(Bool) = Binary(Ne)(%93, Null:Null) @ a427-named-function-takes-a-void-result-place.ts:86:7
+    -> ConditionalBranch { condition: Value(ValueId(97)), then_target: BlockTarget { block: BlockId(20), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(21), arguments: [], ownership: [] } }
+  b20 Some("if.then"):
+    %98: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(%93) @ a427-named-function-takes-a-void-result-place.ts:87:5
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%98, Integer(8):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 87, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 87, col: 5 } }] @ a427-named-function-takes-a-void-result-place.ts:87:5
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(93))], ownership: [false] })
+  b21 Some("if.else"):
+    %99: Data(Str) = StringLiteral("no handler")() traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 89, col: 11 } }] @ a427-named-function-takes-a-void-result-place.ts:89:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%99) invalidates=[ValueId(0)] @ a427-named-function-takes-a-void-result-place.ts:89:5
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(93))], ownership: [false] })
+  b22(%100: Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) Some("if.join"):
+    %101: Data(Bool) = Binary(Ne)(Null:Nullable(Func(FuncType { params: [I32], ret: Void })), Null:Null) @ a427-named-function-takes-a-void-result-place.ts:92:20
+    -> ConditionalBranch { condition: Value(ValueId(101)), then_target: BlockTarget { block: BlockId(23), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(24), arguments: [], ownership: [] } }
+  b23 Some("cond.then"):
+    %104: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(Null:Nullable(Func(FuncType { params: [I32], ret: Void }))) @ a427-named-function-takes-a-void-result-place.ts:92:20
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(104)), Value(ValueId(100))], ownership: [false, false] })
+  b24 Some("cond.else"):
+    %105: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(26))() @ a427-named-function-takes-a-void-result-place.ts:92:30
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(105)), Value(ValueId(100))], ownership: [false, false] })
+  b25(%102: Data(Func(FuncType { params: [I32], ret: Void })), %103: Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) Some("cond.merge"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%102, Integer(9):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 93, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 93, col: 3 } }] @ a427-named-function-takes-a-void-result-place.ts:93:3
+    %106: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(27))() @ a427-named-function-takes-a-void-result-place.ts:94:41
+    %107: Data(Array(Func(FuncType { params: [I32], ret: Void }))) = ArrayLiteral(%106) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 94, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 94, col: 41 } }] @ a427-named-function-takes-a-void-result-place.ts:94:38
+    %108: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(28))() @ a427-named-function-takes-a-void-result-place.ts:95:47
+    %109: Data(Array(Func(FuncType { params: [I32], ret: Void }))) = ArraySpreadLiteral([Some(Array), None])(%107, %108) count=Uncounted traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 47 } }] @ a427-named-function-takes-a-void-result-place.ts:95:37
+    %110: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) = IteratorCreate { kind: ArrayValues, bound: Live }(%109) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 96, col: 19 } }] @ a427-named-function-takes-a-void-result-place.ts:96:3
+    %111: Data(I32) = IteratorBound(%110) @ a427-named-function-takes-a-void-result-place.ts:96:3
+    -> Branch(BlockTarget { block: BlockId(26), arguments: [Value(ValueId(103)), Value(ValueId(110)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(111))], ownership: [false, false, false, false] })
+  b26(%112: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))), %113: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }), %114: Data(I32), %115: Data(I32)) Some("for-of.cond"):
+    %121: Data(Bool) = IteratorHasNext(%113, %114, %115) @ a427-named-function-takes-a-void-result-place.ts:96:3
+    -> ConditionalBranch { condition: Value(ValueId(121)), then_target: BlockTarget { block: BlockId(27), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(29), arguments: [Value(ValueId(112))], ownership: [false] } }
+  b27 Some("for-of.body"):
+    %122: Data(Func(FuncType { params: [I32], ret: Void })) = IteratorValue(%113, %114, %115) @ a427-named-function-takes-a-void-result-place.ts:96:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%122, Integer(10):I32) invalidates=[ValueId(0), ValueId(107), ValueId(109)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 97, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 97, col: 5 } }] @ a427-named-function-takes-a-void-result-place.ts:97:5
+    -> Branch(BlockTarget { block: BlockId(28), arguments: [Value(ValueId(112)), Value(ValueId(113)), Value(ValueId(114)), Value(ValueId(115))], ownership: [false, false, false, false] })
+  b28(%116: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))), %117: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }), %118: Data(I32), %119: Data(I32)) Some("for-of.step"):
+    %123: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [I32], ret: Void }) }) = IteratorAdvance(%117, %118, %119) @ a427-named-function-takes-a-void-result-place.ts:96:3
+    %124: Data(I32) = Binary(Add)(%118, Integer(1):I32) @ a427-named-function-takes-a-void-result-place.ts:96:3
+    -> Branch(BlockTarget { block: BlockId(26), arguments: [Value(ValueId(116)), Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(119))], ownership: [false, false, false, false] })
+  b29(%120: Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) Some("for-of.exit"):
+    %125: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(8)), parameter_types: [], return_type: Some(Data(I32)) })() invalidates=[ValueId(0), ValueId(107), ValueId(109)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }] @ a427-named-function-takes-a-void-result-place.ts:99:18
+    %126: Data(Func(FuncType { params: [], ret: Void })) = MakeClosure(FunctionId(29))() @ a427-named-function-takes-a-void-result-place.ts:99:32
+    %127: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(12)), parameter_types: [Data(AsyncHandle(I32)), Data(Func(FuncType { params: [], ret: Void }))], return_type: Some(Data(I32)) })(%125, %126) invalidates=[ValueId(0), ValueId(107), ValueId(109)] traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 18 } }] @ a427-named-function-takes-a-void-result-place.ts:99:18
+    -> Suspend { kind: AsyncHandle { handle: ValueId(127), owned: true }, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 12 }, successor: BlockId(30), resume_value: Some(ValueId(128)), arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(107), ValueId(109)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 12 } }] }
+  b30(%128: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 12 } }] @ a427-named-function-takes-a-void-result-place.ts:99:12
+    %129: Data(Str) = Template([Operand { index: 0, format: I32 }])(%128) traps=[Trap { kind: Allocation, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 12 } }] @ a427-named-function-takes-a-void-result-place.ts:99:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%129) invalidates=[ValueId(0), ValueId(107), ValueId(109)] @ a427-named-function-takes-a-void-result-place.ts:99:3
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 62, col: 23 } }
+fn f14 "<lambda a427-named-function-takes-a-void-result-place.ts:59:10>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:59:10
+  param %0 "[[discard#1.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:59:10
+  value %0: Data(I32) name=Some("[[discard#1.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 59, col: 10 } }] @ a427-named-function-takes-a-void-result-place.ts:59:10
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 59, col: 10 } }
+fn f15 "<lambda a427-named-function-takes-a-void-result-place.ts:64:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:64:14
+  param %0 "[[discard#2.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:64:14
+  value %0: Data(I32) name=Some("[[discard#2.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 64, col: 14 } }] @ a427-named-function-takes-a-void-result-place.ts:64:14
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 64, col: 14 } }
+fn f16 "<lambda a427-named-function-takes-a-void-result-place.ts:65:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:65:14
+  param %0 "[[discard#3.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:65:14
+  param %1 "[[discard#3.1]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:65:14
+  value %0: Data(I32) name=Some("[[discard#3.0]]")
+  value %1: Data(I32) name=Some("[[discard#3.1]]")
+  value %2: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 65, col: 14 } }] @ a427-named-function-takes-a-void-result-place.ts:65:14
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 65, col: 14 } }
+fn f17 "<lambda a427-named-function-takes-a-void-result-place.ts:66:12>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:66:12
+  param %0 "[[discard#4.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:66:12
+  value %0: Data(I32) name=Some("[[discard#4.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 66, col: 12 } }] @ a427-named-function-takes-a-void-result-place.ts:66:12
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 66, col: 12 } }
+fn f18 "<lambda a427-named-function-takes-a-void-result-place.ts:67:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:67:14
+  param %0 "[[discard#5.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:67:14
+  value %0: Data(I32) name=Some("[[discard#5.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 67, col: 14 } }] @ a427-named-function-takes-a-void-result-place.ts:67:14
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 67, col: 14 } }
+fn f19 "<lambda a427-named-function-takes-a-void-result-place.ts:68:32>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:68:32
+  param %0 "[[discard#6.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:68:32
+  value %0: Data(I32) name=Some("[[discard#6.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 68, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:68:32
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 68, col: 32 } }
+fn f20 "<lambda a427-named-function-takes-a-void-result-place.ts:73:13>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:73:13
+  param %0 "[[discard#7.0]]": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:73:13
+  param %1 "[[discard#7.1]]": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:73:13
+  value %0: Data(Str) name=Some("[[discard#7.0]]")
+  value %1: Data(Str) name=Some("[[discard#7.1]]")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str), Data(Str)], return_type: Some(Data(I32)) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 13 } }] @ a427-named-function-takes-a-void-result-place.ts:73:13
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 73, col: 13 } }
+fn f21 "<lambda a427-named-function-takes-a-void-result-place.ts:77:13>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:77:13
+  param %0 "[[discard#8.0]]": Data(Str) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:77:13
+  value %0: Data(Str) name=Some("[[discard#8.0]]")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Str)], return_type: Some(Data(Str)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 77, col: 13 } }] @ a427-named-function-takes-a-void-result-place.ts:77:13
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 77, col: 13 } }
+fn f22 "<lambda a427-named-function-takes-a-void-result-place.ts:78:29>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:78:29
+  param %0 "[[discard#9.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:78:29
+  value %0: Data(I32) name=Some("[[discard#9.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 78, col: 29 } }] @ a427-named-function-takes-a-void-result-place.ts:78:29
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 78, col: 29 } }
+fn f23 "<lambda a427-named-function-takes-a-void-result-place.ts:35:25>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:35:25
+  param %0 "[[discard#0.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:35:25
+  value %0: Data(I32) name=Some("[[discard#0.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 35, col: 25 } }] @ a427-named-function-takes-a-void-result-place.ts:35:25
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 35, col: 25 } }
+fn f24 "<lambda a427-named-function-takes-a-void-result-place.ts:80:16>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:80:16
+  param %0 "[[discard#10.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:80:16
+  value %0: Data(I32) name=Some("[[discard#10.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 80, col: 16 } }] @ a427-named-function-takes-a-void-result-place.ts:80:16
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 80, col: 16 } }
+fn f25 "<lambda a427-named-function-takes-a-void-result-place.ts:85:15>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:85:15
+  param %0 "[[discard#11.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:85:15
+  value %0: Data(I32) name=Some("[[discard#11.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 85, col: 15 } }] @ a427-named-function-takes-a-void-result-place.ts:85:15
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 85, col: 15 } }
+fn f26 "<lambda a427-named-function-takes-a-void-result-place.ts:92:30>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:92:30
+  param %0 "[[discard#12.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:92:30
+  value %0: Data(I32) name=Some("[[discard#12.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 92, col: 30 } }] @ a427-named-function-takes-a-void-result-place.ts:92:30
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 92, col: 30 } }
+fn f27 "<lambda a427-named-function-takes-a-void-result-place.ts:94:41>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:94:41
+  param %0 "[[discard#13.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:94:41
+  value %0: Data(I32) name=Some("[[discard#13.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 94, col: 41 } }] @ a427-named-function-takes-a-void-result-place.ts:94:41
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 94, col: 41 } }
+fn f28 "<lambda a427-named-function-takes-a-void-result-place.ts:95:47>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:95:47
+  param %0 "[[discard#14.0]]": Data(I32) kind=Explicit storage=None @ a427-named-function-takes-a-void-result-place.ts:95:47
+  value %0: Data(I32) name=Some("[[discard#14.0]]")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 47 } }] @ a427-named-function-takes-a-void-result-place.ts:95:47
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 95, col: 47 } }
+fn f29 "<lambda a427-named-function-takes-a-void-result-place.ts:99:32>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a427-named-function-takes-a-void-result-place.ts:99:32
+  value %0: Data(Bool) name=None
+  b0 Some("entry"):
+    %0: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [], return_type: Some(Data(Bool)) })() traps=[Trap { kind: Call, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }] @ a427-named-function-takes-a-void-result-place.ts:99:32
+    -> Return { value: None, pos: Pos { file: "a427-named-function-takes-a-void-result-place.ts", line: 99, col: 32 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

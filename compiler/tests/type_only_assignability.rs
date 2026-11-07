@@ -1,9 +1,12 @@
-//! compiler.md §235 rule 5d: each check of a value against a place uses
-//! the check that takes the value, so that it can record a function
-//! conversion. This total check lists each remaining call of the type-only
-//! check `require_assignable` with its reason, and fails on a new call.
+//! compiler.md §235 rule 5d and §240 rule 2a: each check of a value
+//! against a place uses the check that takes the value, so that it can
+//! record a function conversion. This total check lists each remaining call
+//! of the type-only checks `require_assignable`, `assignable`,
+//! `type_fits`, and `function_fits` with its reason, and fails on a new
+//! call.
 //!
-//! Cost: one line scan of the checker sources, with no compilation.
+//! Cost: one line scan of the checker sources (about 200 files) per name,
+//! four in all, with no compilation.
 
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -38,7 +41,7 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
         "expr/aggregate.rs",
         "check_array_spread_lit",
         1,
-        "The element type of a spread source is a type of a collection, not a value.",
+        "The element type of a spread source is a type of a collection, not a value; each other element takes the check that takes the value.",
     ),
     (
         "expr/assign.rs",
@@ -48,8 +51,130 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
     ),
 ];
 
-/// Each call of the type-only check, by file and enclosing function.
+/// Each remaining `assignable` call, by file and enclosing function: the
+/// count of calls and the reason that no conversion applies there.
+const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
+    (
+        "opaque.rs",
+        "generic_overlap",
+        4,
+        "Two types are compared in both directions to decide an overlap; no value flows.",
+    ),
+    (
+        "async_return.rs",
+        "adopt_returned_handle",
+        1,
+        "The value type of a returned handle is compared with the result; a handle value is not a function value.",
+    ),
+    (
+        "generics.rs",
+        "satisfies_constraint_through_parameters",
+        2,
+        "A type argument is compared with a constraint; no value flows.",
+    ),
+    (
+        "rejection_facts.rs",
+        "ts_erased_assignable_inner",
+        1,
+        "A diagnostic classification compares two types after the check failed; no value flows.",
+    ),
+    (
+        "type_rules.rs",
+        "needs_function_conversion",
+        1,
+        "This is the decision of the conversion itself.",
+    ),
+    (
+        "type_rules.rs",
+        "place_value",
+        1,
+        "This is the check that takes the value: it reads the type after the conversion.",
+    ),
+    (
+        "type_rules.rs",
+        "converts_across_spellings",
+        1,
+        "Two nullable spellings of one type are compared; no function conversion applies to an absence spelling.",
+    ),
+    (
+        "type_rules.rs",
+        "require_assignable",
+        1,
+        "This is the type-only check for a type where no value flows; it rejects each type that needs a conversion.",
+    ),
+    (
+        "expr/member.rs",
+        "check_index",
+        2,
+        "An index is compared with `i32`, which is not a function type.",
+    ),
+    (
+        "expr/method.rs",
+        "callback_type_fits",
+        1,
+        "A parameter type of a callback that involves a type parameter is compared; the callback value takes its place in `expect_callback_shape`.",
+    ),
+    (
+        "expr/type_arguments.rs",
+        "reject_widened_reduce_result",
+        1,
+        "`string` is compared with an accumulator type to choose a diagnostic; no value flows.",
+    ),
+];
+
+/// Each remaining `type_fits` or `function_fits` call, by file and
+/// enclosing function: the count of calls and the reason that no
+/// conversion applies there.
+const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
+    (
+        "expr/method.rs",
+        "callback_type_fits",
+        1,
+        "A parameter or result type of a built-in callback is compared with its place; the callback value took the conversion of §240 rule 2 before, and `place_callback_value` converts it after.",
+    ),
+    (
+        "type_rules.rs",
+        "assignable_through_constraints",
+        1,
+        "This is the rule of `assignable` for two function types; it compares types, and a value check calls it after the conversion.",
+    ),
+    (
+        "type_rules.rs",
+        "discard_function_result",
+        1,
+        "This is the decision of the conversion of §240 rule 2 itself.",
+    ),
+    (
+        "type_rules.rs",
+        "function_fits",
+        2,
+        "The recursion of §235 rule 3 over parameter and result types; no value flows.",
+    ),
+    (
+        "type_rules.rs",
+        "needs_function_conversion",
+        1,
+        "This is the decision of the conversion of §235 rule 5a itself.",
+    ),
+    (
+        "type_rules.rs",
+        "type_fits",
+        2,
+        "The recursion of §235 rule 2 over nullable and function types; no value flows.",
+    ),
+];
+
+/// Each call of the type-only check `require_assignable`, by file and
+/// enclosing function.
 fn calls(root: &Path) -> BTreeMap<(String, String), usize> {
+    calls_of(root, "require_assignable")
+}
+
+/// Each call of the type-only check `name`, by file and enclosing
+/// function. The definition of `name` is not a call.
+fn calls_of(root: &Path, name: &str) -> BTreeMap<(String, String), usize> {
+    let needle = format!(".{name}(");
+    let definition = format!("fn {name}");
     let mut found = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -83,10 +208,10 @@ fn calls(root: &Path) -> BTreeMap<(String, String), usize> {
                         .unwrap_or_default()
                         .to_string();
                 }
-                if function == "require_assignable" && code.contains("fn require_assignable") {
+                if function == name && code.contains(&definition) {
                     continue;
                 }
-                let count = code.matches(".require_assignable(").count();
+                let count = code.matches(needle.as_str()).count();
                 if count > 0 {
                     *found.entry((file.clone(), function.clone())).or_insert(0) += count;
                 }
@@ -97,7 +222,14 @@ fn calls(root: &Path) -> BTreeMap<(String, String), usize> {
 }
 
 fn violations(found: &BTreeMap<(String, String), usize>) -> Vec<String> {
-    let allowed: BTreeMap<(String, String), usize> = ALLOWED
+    violations_of(found, ALLOWED)
+}
+
+fn violations_of(
+    found: &BTreeMap<(String, String), usize>,
+    listed: &[(&str, &str, usize, &str)],
+) -> Vec<String> {
+    let allowed: BTreeMap<(String, String), usize> = listed
         .iter()
         .map(|(file, function, count, reason)| {
             assert!(!reason.is_empty());
@@ -131,6 +263,65 @@ fn each_type_only_assignability_call_is_listed() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
     let problems = violations(&calls(&root));
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+#[test]
+fn each_type_only_assignable_call_is_listed() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
+    let problems = violations_of(&calls_of(&root, "assignable"), ALLOWED_ASSIGNABLE);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// The calls of `type_fits` and `function_fits`, by file and enclosing
+/// function.
+fn fits_calls(root: &Path) -> BTreeMap<(String, String), usize> {
+    let mut found = calls_of(root, "type_fits");
+    for (key, count) in calls_of(root, "function_fits") {
+        *found.entry(key).or_insert(0) += count;
+    }
+    found
+}
+
+#[test]
+fn each_type_only_fits_call_is_listed() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
+    let problems = violations_of(&fits_calls(&root), ALLOWED_FITS);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// The firing control of the `type_fits` and `function_fits` scan: a new
+/// unlisted call is a violation.
+#[test]
+fn an_unlisted_fits_call_is_reported() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
+    let mut found = fits_calls(&root);
+    *found
+        .entry(("expr/aggregate.rs".into(), "check_array_spread_lit".into()))
+        .or_insert(0) += 1;
+    let problems = violations_of(&found, ALLOWED_FITS);
+    assert_eq!(
+        problems,
+        ["expr/aggregate.rs::check_array_spread_lit: 1 unlisted type-only call(s); use require_expr_assignable"]
+    );
+}
+
+/// The firing control of the `assignable` scan: a new unlisted call is a
+/// violation.
+#[test]
+fn an_unlisted_assignable_call_is_reported() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
+    let mut found = calls_of(&root, "assignable");
+    *found
+        .entry((
+            "expr/logical_assign.rs".into(),
+            "nullish_assignment_type".into(),
+        ))
+        .or_insert(0) += 1;
+    let problems = violations_of(&found, ALLOWED_ASSIGNABLE);
+    assert_eq!(
+        problems,
+        ["expr/logical_assign.rs::nullish_assignment_type: 1 unlisted type-only call(s); use require_expr_assignable"]
+    );
 }
 
 /// The firing control: a new unlisted call is a violation.

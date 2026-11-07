@@ -965,10 +965,10 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&right.ty) == Type::Null && self.allows_nullable(inner) {
             return Type::nullable(inner.clone());
         }
-        // compiler.md §235 rule 5a: a fitting right operand takes the type
-        // of the place, and the result has that type.
-        if self.assignable(&right.ty, inner) && self.apparent_type(&right.ty) != Type::Error {
-            self.place_function_value(right, inner);
+        // compiler.md §235 rule 5a and §240 rule 2a: a fitting right operand
+        // takes the type of the place, by the check that takes the value,
+        // and the result has that type.
+        if self.apparent_type(&right.ty) != Type::Error && self.place_value(right, inner) {
             return inner.clone();
         }
         if self.apparent_type(&(right.ty)) != Type::Error {

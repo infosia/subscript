@@ -330,7 +330,7 @@ impl<'p> Checker<'p> {
                 // §212 rule 1a: the type of an earlier element is a hint.
                 self.mark_operand_calls(&slot.expr);
             }
-            let expr = self.check_expr(
+            let mut expr = self.check_expr(
                 &slot.expr,
                 if is_spread { None } else { inferred.as_ref() },
                 fx,
@@ -397,13 +397,20 @@ impl<'p> Checker<'p> {
                 self.leave_container_context(saved_context);
                 inferred = Some(admitted);
             }
-            if let Some(expected) = &inferred {
-                self.require_assignable(
-                    &element_ty,
-                    expected,
-                    expr.pos.clone(),
-                    "the array element",
-                );
+            // compiler.md §240 rule 2a: an element is a value, so it takes
+            // the check that takes the value. A spread source gives an
+            // element type, not a value.
+            if let Some(expected) = inferred.clone() {
+                if is_spread {
+                    self.require_assignable(
+                        &element_ty,
+                        &expected,
+                        expr.pos.clone(),
+                        "the array element",
+                    );
+                } else {
+                    self.require_expr_assignable(&mut expr, &expected, fx, "the array element");
+                }
             }
             checked.push(hir::ArrayLitElem { expr, spread });
         }

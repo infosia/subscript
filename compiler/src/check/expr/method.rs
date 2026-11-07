@@ -1815,7 +1815,7 @@ impl<'p> Checker<'p> {
     /// after the mismatch diagnostic otherwise.
     fn expect_callback_shape(
         &mut self,
-        checked: hir::Expr,
+        mut checked: hir::Expr,
         params: &[Type],
         ret: Option<&Type>,
         spec: CallbackSpec<'_>,
@@ -1825,6 +1825,14 @@ impl<'p> Checker<'p> {
             allow_index,
             ..
         } = spec;
+        // compiler.md §240 rule 2: a callback place with the result `void`.
+        if let (Some(ret), Type::Func(own)) = (ret, self.apparent_type(&checked.ty)) {
+            let mut place = params.to_vec();
+            if allow_index && own.params.len() == params.len() + 1 {
+                place.push(Type::I32);
+            }
+            self.discard_function_result(&mut checked, &Type::func(place, ret.clone()));
+        }
         let counted_callback = matches!(method, "Map.groupBy" | "Map.forEach")
             || ArrFn::ALL.iter().any(|operation| {
                 operation.name() == method
