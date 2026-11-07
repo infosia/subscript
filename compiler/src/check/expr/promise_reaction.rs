@@ -282,6 +282,8 @@ impl<'p> Checker<'p> {
             Role::Rejected => (vec![error.clone()], vec![error]),
             Role::Settled => (Vec::new(), Vec::new()),
         };
+        let settled_place =
+            matches!(role, Role::Settled).then(|| Type::func(Vec::new(), Type::Void));
         let mut checked = if let ast::Expr::Arrow(arrow) = unparen_expr(&argument.expr) {
             // A parameter with no default and no context is a TypeScript
             // arity error: report it before its missing annotation.
@@ -310,14 +312,16 @@ impl<'p> Checker<'p> {
             self.lambda_result_hint = None;
             checked
         } else {
-            let mut checked = self.check_expr(&argument.expr, None, fx);
-            // compiler.md §240 rule 2: the `finally` callback place has the
-            // type `() => void`.
-            if matches!(role, Role::Settled) {
-                self.place_value(&mut checked, &Type::func(Vec::new(), Type::Void));
-            }
-            checked
+            // compiler.md §242 rule 1: the `finally` place reaches each
+            // branch of a conditional.
+            self.check_expr(&argument.expr, settled_place.as_ref(), fx)
         };
+        // compiler.md §240 rule 2 and §242 rule 2: the `finally` callback
+        // place has the type `() => void`. An async callback keeps its
+        // result, and its S013 below.
+        if let Some(place) = &settled_place {
+            self.place_value(&mut checked, place);
+        }
         let Type::Func(signature) = self.apparent_type(&checked.ty) else {
             if self.apparent_type(&checked.ty) != Type::Error {
                 self.reject_subset(

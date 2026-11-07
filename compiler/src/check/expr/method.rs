@@ -1741,7 +1741,14 @@ impl<'p> Checker<'p> {
             .then_some(ret.as_ref())
             .flatten()
             .map(|r| Type::func(params.clone(), r.clone()));
+        // compiler.md §242 rule 1a: with an optional index, each leaf of a
+        // conditional takes the place of its own arity.
+        let conditional = matches!(super::unparen_expr(expr), ast::Expr::Cond(_));
+        if conditional && spec.allow_index {
+            self.callback_leaf_place = ret.clone().map(|r| (params.clone(), r));
+        }
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
+        self.callback_leaf_place = None;
         self.expect_callback_shape(checked, &params, ret.as_ref(), spec)
     }
 

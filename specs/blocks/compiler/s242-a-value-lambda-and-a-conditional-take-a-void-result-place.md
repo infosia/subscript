@@ -104,3 +104,43 @@ cost.
    operand does not fit the annotation (rejected).
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 242.3 Phase Review
+
+*(Added 2026-11-07.)* Three fresh reviews of the implementation. The
+contract gained rule 1a, and rule 5 gained the handle exclusion of a
+lambda and of a §240 reference.
+
+1. MAJOR, realistic, fixed: the arity of a conditional's place in an
+   array callback with an optional index was decided from the syntax of
+   each branch. A branch such as `K.two`, `h.f`, `cbs[0]`, or `mk()`
+   that takes the index was rejected, and HEAD accepted it.
+2. MAJOR, realistic, fixed: the `Promise.finally` callback did not take
+   rule 1 or rule 2: `finally((): i32 => 1)` kept S013.
+3. MAJOR, realistic, fixed: the same class as item 1. The place without
+   the index reached nested conditionals and the arguments of generic
+   calls before the arity was known, so
+   `[1, 2].forEach(b ? (c ? two : two2) : two)` was rejected. Rule 1a:
+   each leaf decides the arity of its own place.
+4. MINOR, fixed: a result with a handle in a nested array or a
+   `FixedArray` was discarded. The check now uses the S013 drop check.
+5. MINOR, fixed: the record said that a §240 reference whose result
+   carries a handle kept its diagnostic. At the pin it was accepted.
+6. MINOR, fixed: two stale comments and dead logic in the callback
+   check; a helper shared across modules for a purpose of one of them;
+   a test that could not fail on the rule 5 check; a test comment that
+   cited a section that did not exist.
+7. MINOR, recorded: §242.4 item 1. Item 2 is a measurement of the same
+   review, not a finding.
+8. MINOR, no change: the tracking note and the closed mark of §240.4
+   item 4 are in `specs/`. The coordinator asked for both.
+
+### 242.4 Open
+
+1. A function with fewer parameters does not fit a function type with
+   more parameters: `const f: (x: i32, i: i32) => void = other;` and a
+   conditional of leaves with two arities, such as
+   `[6].forEach(b ? two : (x: i32): void => {})`, are rejected. `tsc`
+   accepts both. This is older than §242.
+2. `finally(id(tick))` keeps S013, and `tsc` accepts it. A lambda with
+   no parameters in an array callback place is S014.

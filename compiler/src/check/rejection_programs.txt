@@ -9508,7 +9508,7 @@ PROGRAM	s186-finally-value			0
 FILE	E	target/s154/forms/s186-finally-value/main.ts
 async function f(): Promise<i32> { return 1; }
 async function g(): Promise<void> {}
-export async function main(): Promise<void> { await f().finally((): i32 => 5); }
+export async function main(): Promise<void> { await f().finally(g); }
 END FILE
 END PROGRAM
 PROGRAM	s186-then-spread			0

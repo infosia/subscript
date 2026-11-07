@@ -280,3 +280,34 @@ fn a_spread_element_and_a_finally_callback_are_places() {
         "a `finally` callback must be `() => void`; it is `() => Promise<void>`"
     );
 }
+
+/// Rule 1: a function whose result carries a handle is not converted, and
+/// keeps the diagnostic of its place: a discarded handle has no holder
+/// that awaits it. The control: a function with a value result is accepted
+/// in the same places.
+#[test]
+fn a_result_that_carries_a_handle_keeps_its_diagnostic() {
+    let jobs = "function jobs(x: i32): Promise<i32>[] { return []; }";
+    for (body, code, message) in [
+        (
+            "function f(): void { each([1], jobs); }",
+            RuleCode::S100,
+            "type mismatch: the argument expects `(i32) => void`, got `(i32) => Promise<i32>[]`",
+        ),
+        (
+            "function f(): void { [1].forEach(jobs); }",
+            RuleCode::S014,
+            "`forEach` cannot carry a counted callback result (§171)",
+        ),
+    ] {
+        let diagnostic = rejects(&format!("{jobs}\n{body}"));
+        assert_eq!(diagnostic.code, code, "{body}: {diagnostic:?}");
+        assert_eq!(diagnostic.message, message, "{body}");
+    }
+    for body in [
+        "function f(): void { each([1], named); }",
+        "function f(): void { [1].forEach(named); }",
+    ] {
+        accepts(body);
+    }
+}

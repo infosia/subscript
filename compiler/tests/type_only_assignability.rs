@@ -146,6 +146,12 @@ const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
+        "discard_lambda_result",
+        1,
+        "This is the decision of the conversion of §242 rule 2 itself.",
+    ),
+    (
+        "type_rules.rs",
         "function_fits",
         2,
         "The recursion of §235 rule 3 over parameter and result types; no value flows.",

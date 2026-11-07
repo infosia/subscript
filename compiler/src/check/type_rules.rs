@@ -328,14 +328,112 @@ impl<'p> Checker<'p> {
         *value = cast_value(inner, to.clone());
     }
 
+    /// The context of the branch `branch` of a conditional (compiler.md
+    /// §242 rule 1a). With the place `leaves` of a built-in callback, a
+    /// nested conditional takes that place for its own leaves, a lambda
+    /// literal takes the place with its own number of parameters, and each
+    /// other leaf has no context. With no such place, the branch takes
+    /// `ctx`.
+    pub(crate) fn leaf_context(
+        &mut self,
+        branch: &ast::Expr,
+        leaves: Option<&(Vec<Type>, Type)>,
+        ctx: Option<&Type>,
+    ) -> Option<Type> {
+        let Some(leaves) = leaves else {
+            return ctx.cloned();
+        };
+        match super::expr::unparen_expr(branch) {
+            ast::Expr::Cond(_) => {
+                self.callback_leaf_place = Some(leaves.clone());
+                None
+            }
+            ast::Expr::Arrow(arrow) => Some(leaf_place(leaves, arrow.params.len())),
+            _ => None,
+        }
+    }
+
+    /// Gives a leaf of a conditional in a built-in callback place the place
+    /// whose arity equals the arity of the type of the leaf (compiler.md
+    /// §242 rule 1a). A nested conditional placed its own leaves.
+    pub(crate) fn place_callback_leaf(
+        &mut self,
+        branch: &ast::Expr,
+        value: &mut hir::Expr,
+        leaves: Option<&(Vec<Type>, Type)>,
+    ) {
+        let Some(leaves) = leaves else {
+            return;
+        };
+        if matches!(super::expr::unparen_expr(branch), ast::Expr::Cond(_)) {
+            return;
+        }
+        let Some(own) = self.function_of(&value.ty) else {
+            return;
+        };
+        let _ = self.place_value(value, &leaf_place(leaves, own.params.len()));
+    }
+
+    /// Whether a call of a place with the result `void` can discard the
+    /// result `ret` (compiler.md §240 rule 1, §242 rules 2 and 5): a value
+    /// that is not `void` and holds no handle at any depth, by the
+    /// predicate of the drop check (§188.1 rule 1). A discarded handle has
+    /// no holder that awaits it.
+    fn result_can_be_discarded(&self, ret: &Type) -> bool {
+        let ret = self.apparent_type(ret);
+        !matches!(ret, Type::Void | Type::Error) && !ret.holds_async_handle()
+    }
+
+    /// A lambda literal with a value result, in a place of a function type
+    /// with the result `void` (compiler.md §242 rules 2 and 3). If the
+    /// lambda is not async, its result is not `void` and carries no handle,
+    /// and the lambda with the result `void` fits the place, the lambda gets
+    /// the result `void`: each `return e;` of its body becomes `e; return;`.
+    /// The body was checked against the annotation before. Returns whether
+    /// the lambda changed.
+    fn discard_lambda_result(&mut self, value: &mut hir::Expr, to: &Type) -> bool {
+        let hir::ExprKind::Lambda {
+            is_async: false,
+            ret,
+            body,
+            ..
+        } = &mut value.kind
+        else {
+            return false;
+        };
+        let Some(place) = self.function_of(to) else {
+            return false;
+        };
+        if self.apparent_type(&place.ret) != Type::Void || !self.result_can_be_discarded(ret) {
+            return false;
+        }
+        let Some(own) = self.function_of(&value.ty) else {
+            return false;
+        };
+        let discarding = crate::types::FuncType {
+            params: own.params.clone(),
+            ret: Type::Void,
+        };
+        if !self.function_fits(&discarding, &place) {
+            return false;
+        }
+        *ret = Type::Void;
+        discard_return_values(body);
+        value.ty = Type::func(own.params, Type::Void);
+        true
+    }
+
     /// A reference to a function declaration or a static method, in a place
     /// of a function type with the result `void` (compiler.md §240 rules 1
     /// and 2). If the function is not generic and not async, its result is
-    /// not `void` and not a handle, and the function with the result `void`
+    /// not `void` and carries no handle, and the function with the result `void`
     /// fits the place, `value` becomes a lambda with no environment and the
     /// parameters of the function. The lambda calls the function with its
     /// arguments and discards the result. Another value is unchanged.
     pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type) {
+        if self.discard_lambda_result(value, to) {
+            return;
+        }
         let hir::ExprKind::FuncRef(symbol) = &value.kind else {
             return;
         };
@@ -351,10 +449,7 @@ impl<'p> Checker<'p> {
         if sig.generic
             || sig.is_async
             || sig.is_generator
-            || matches!(
-                self.apparent_type(&sig.ret),
-                Type::Void | Type::AsyncHandle(_) | Type::Error
-            )
+            || !self.result_can_be_discarded(&sig.ret)
         {
             return;
         }
@@ -731,4 +826,73 @@ fn cast_value(value: hir::Expr, ty: Type) -> hir::Expr {
         ty,
         pos,
     }
+}
+
+/// Makes each `return e;` of `body` into `e; return;` (compiler.md §242
+/// rule 3). A lambda in an expression is a separate function, so the walk
+/// does not enter expressions.
+fn discard_return_values(body: &mut Vec<hir::Stmt>) {
+    let mut index = 0;
+    while index < body.len() {
+        match &mut body[index] {
+            hir::Stmt::Return { value, pos } => {
+                if let Some(value) = value.take() {
+                    let pos = pos.clone();
+                    body[index] = hir::Stmt::Expr(value);
+                    body.insert(index + 1, hir::Stmt::Return { value: None, pos });
+                    index += 1;
+                }
+            }
+            hir::Stmt::If { then, els, .. } => {
+                discard_return_values(then);
+                if let Some(els) = els {
+                    discard_return_values(els);
+                }
+            }
+            hir::Stmt::While { body, .. }
+            | hir::Stmt::DoWhile { body, .. }
+            | hir::Stmt::ForOf { body, .. }
+            | hir::Stmt::GeneratorForOf { body, .. }
+            | hir::Stmt::Block(body) => discard_return_values(body),
+            hir::Stmt::For { body, step, .. } => {
+                discard_return_values(body);
+                discard_return_values(step);
+            }
+            hir::Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    discard_return_values(&mut case.body);
+                }
+            }
+            hir::Stmt::Try { body, handler, .. } => {
+                discard_return_values(body);
+                discard_return_values(handler);
+            }
+            hir::Stmt::Using {
+                body, finalizer, ..
+            } => {
+                discard_return_values(body);
+                if let Some(finalizer) = finalizer {
+                    discard_return_values(finalizer);
+                }
+            }
+            hir::Stmt::Let { .. }
+            | hir::Stmt::Expr(_)
+            | hir::Stmt::Break(_)
+            | hir::Stmt::Continue(_)
+            | hir::Stmt::Throw { .. } => {}
+        }
+        index += 1;
+    }
+}
+
+/// The place of a built-in callback `leaves` for a leaf with `arity`
+/// parameters: the place with the trailing index when the leaf takes one
+/// parameter more (compiler.md §242 rule 1a).
+fn leaf_place(leaves: &(Vec<Type>, Type), arity: usize) -> Type {
+    let (params, ret) = leaves;
+    let mut place = params.clone();
+    if arity == params.len() + 1 {
+        place.push(Type::I32);
+    }
+    Type::func(place, ret.clone())
 }

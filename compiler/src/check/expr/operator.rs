@@ -1705,6 +1705,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let leaves = self.callback_leaf_place.take();
         let cond = self.check_truth_expr(&c.test, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
@@ -1743,7 +1744,9 @@ impl<'p> Checker<'p> {
             .cloned()
             .chain(first_extra.clone())
             .collect();
-        let first = self.check_expr(first_ast, ctx, fx);
+        let first_ctx = self.leaf_context(first_ast, leaves.as_ref(), ctx);
+        let mut first = self.check_expr(first_ast, first_ctx.as_ref(), fx);
+        self.place_callback_leaf(first_ast, &mut first, leaves.as_ref());
         let first_facts = fx.narrowed.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
@@ -1759,7 +1762,10 @@ impl<'p> Checker<'p> {
             .cloned()
             .chain(second_extra)
             .collect();
-        let second = self.check_expr(second_ast, ctx.or(literal_ctx.as_ref()), fx);
+        let second_ctx =
+            self.leaf_context(second_ast, leaves.as_ref(), ctx.or(literal_ctx.as_ref()));
+        let mut second = self.check_expr(second_ast, second_ctx.as_ref(), fx);
+        self.place_callback_leaf(second_ast, &mut second, leaves.as_ref());
         let first_possible: HashSet<_> = first_facts.union(&first_notes).cloned().collect();
         let second_possible: HashSet<_> = fx
             .narrowed

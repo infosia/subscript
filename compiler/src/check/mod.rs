@@ -1326,6 +1326,10 @@ pub(crate) struct Checker<'p> {
     /// The next lambda is the callee of a call, so its body runs at once
     /// (compiler.md §241 rule 2).
     lambda_called_at_once: bool,
+    /// The parameters and the result of a built-in callback place with an
+    /// optional trailing index, for the leaves of the next conditional
+    /// (compiler.md §242 rule 1a).
+    callback_leaf_place: Option<(Vec<Type>, Type)>,
     /// The position of the name of each class, generic class, and enum
     /// declared in a program file, by file and name (compiler.md §241
     /// rule 1).

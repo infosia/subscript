@@ -248,6 +248,7 @@ fn run_with_effects(
         lambda_result_hint: None,
         lambda_void_context: false,
         lambda_called_at_once: false,
+        callback_leaf_place: None,
         declaration_starts: HashMap::new(),
         initializer_call: None,
         active_call: None,

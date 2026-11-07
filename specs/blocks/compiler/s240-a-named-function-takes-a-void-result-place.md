@@ -128,6 +128,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
    The context of the place does not reach the branches there. As an
    argument of a user function, an initializer, or a return value, the
    same conditional is accepted.
+   *(Closed 2026-11-07 by §242.)*
 5. An array literal or a conditional with no context takes the type of
    its first function element, so `const fs = [named, nothing]` and
    `const f = flag ? nothing : named` are rejected. `tsc` accepts both.
