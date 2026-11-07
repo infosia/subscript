@@ -151,7 +151,9 @@ rules 2 to 4.
 
 1. `async function f(): Promise<void> { return work(); }` with
    `work(): Promise<void>` stays rejected: a `void` expression is only
-   a statement. `tsc` accepts it.
+   a statement. `tsc` accepts it. *(Closed: measured accepted at
+   `407bbbf3`; §237 rule 2 gives `return e` with a `void` operand its
+   meaning.)*
 2. An adopted handle that a later completion abandons, and that then
    rejects, traps (`collisions.md` C8, §116.1 rule 4b). `node` reports
    an unhandled rejection and continues.

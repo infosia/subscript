@@ -89,4 +89,5 @@ gave one MAJOR and four MINOR findings.
    `Promise<Mode>`. *(Closed 2026-11-07 by §236 rule 3.)*
 2. A nested adoption, `then((x: i32) => v(x).then((y: i32) => "a"))`,
    with `Promise<Mode>`.
-3. `then((x: i32) => "a")` with `Promise<string | null>`.
+3. `then((x: i32) => "a")` with `Promise<string | null>`. *(Closed:
+   measured accepted at `407bbbf3`.)*
