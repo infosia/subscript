@@ -306,7 +306,17 @@ impl<'p> Checker<'p> {
             let string_result = arrow.is_async
                 && matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body)
                     if super::type_arguments::is_string_literal_result(body));
-            self.lambda_result_hint = hint.filter(|_| !string_result).cloned();
+            // compiler.md §245 rule 1: a body that is a `then` call gives a
+            // handle that the callback adopts, so it takes `Promise<C>`.
+            let nested_then = matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body)
+                if is_then_call(body));
+            self.lambda_result_hint = hint.filter(|_| !string_result).map(|value| {
+                if nested_then {
+                    Type::async_handle(value.clone())
+                } else {
+                    value.clone()
+                }
+            });
             let checked =
                 self.check_lambda_with(arrow, Some(&context), None, None, fx, pos.clone());
             self.lambda_result_hint = None;
@@ -544,4 +554,17 @@ impl Reaction {
             Self::Finally(f) => format!("finally {}", shape(f, "v")),
         }
     }
+}
+
+/// Whether `expr`, through parentheses, is a call of `then` (compiler.md
+/// §245 rule 1).
+fn is_then_call(expr: &ast::Expr) -> bool {
+    let ast::Expr::Call(call) = unparen_expr(expr) else {
+        return false;
+    };
+    let ast::Callee::Expr(callee) = &call.callee else {
+        return false;
+    };
+    matches!(unparen_expr(callee), ast::Expr::Member(member)
+        if matches!(&member.prop, ast::MemberProp::Ident(name) if name.sym.as_ref() == "then"))
 }

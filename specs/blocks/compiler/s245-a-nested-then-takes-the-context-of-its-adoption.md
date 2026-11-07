@@ -55,3 +55,26 @@ type `string`.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves except the LIR text snapshot, by the
    `a431` block only.
+
+### 245.3 Phase Review
+
+*(Added 2026-11-08.)* One fresh review of the implementation. No
+CRITICAL finding.
+
+1. MAJOR, realistic, fixed: the rule also applied to the rejection
+   callback of `then(f, r)` and to the callback of `catch`, and no rule
+   or entry stated it. Rule 1 states it, and `a431` and the unit test
+   have both forms. At the pin each form gave S013.
+2. MINOR, fixed: the rejection half of the unit test claimed more than
+   it shows.
+3. MINOR, fixed: the record of §233.4 item 3 said that the form was
+   accepted. It is accepted as a return value, and rejected as an
+   initializer.
+4. MINOR, recorded: §245.4.
+
+### 245.4 Open
+
+1. A conditional body whose branches are `then` calls keeps the context
+   `C` (rule 2): `v(1).then((x: i32) => x > 0 ? v(x).then((y: i32) => "a") : v(x).then((y: i32) => "b"))`
+   with `Promise<Mode>` gives S100 "the then branch expects `Mode`, got
+   `Promise<string>`". `tsc` accepts it.

@@ -88,6 +88,9 @@ gave one MAJOR and four MINOR findings.
    the return context of an async function is `Mode`, not
    `Promise<Mode>`. *(Closed 2026-11-07 by §236 rule 3.)*
 2. A nested adoption, `then((x: i32) => v(x).then((y: i32) => "a"))`,
-   with `Promise<Mode>`.
-3. `then((x: i32) => "a")` with `Promise<string | null>`. *(Closed:
-   measured accepted at `407bbbf3`.)*
+   with `Promise<Mode>`. *(Closed 2026-11-08 by §245.)*
+3. `then((x: i32) => "a")` with `Promise<string | null>`. As a return
+   value of an async function it is accepted, measured at `407bbbf3`.
+   As an initializer, `const p: Promise<string | null> = v(1).then(…)`,
+   it stays rejected: "the initializer expects `Promise<string | null>`,
+   got `Promise<string>`". `tsc` accepts both.
