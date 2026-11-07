@@ -68,8 +68,8 @@ impl<'p> Checker<'p> {
                 let elem_ty = (**elem_ty).clone();
                 let mut out = Vec::new();
                 for e in elems {
-                    let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
-                    self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
+                    let mut checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
+                    self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
                 hir::Expr {
@@ -96,8 +96,8 @@ impl<'p> Checker<'p> {
                 }
                 let mut out = Vec::new();
                 for e in elems {
-                    let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
-                    self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
+                    let mut checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
+                    self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
                 hir::Expr {
@@ -123,13 +123,18 @@ impl<'p> Checker<'p> {
                     // §212 rule 1a: the type of the first element is a hint.
                     self.mark_operand_calls(&e.expr);
                     let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
-                    let checked = self.check_expr(&e.expr, context, fx);
+                    let mut checked = self.check_expr(&e.expr, context, fx);
                     if self.involves_type_parameter(&elem_ty)
                         || self.involves_type_parameter(&checked.ty)
                     {
                         elem_ty = self.generic_union(&elem_ty, &checked.ty);
                     } else {
-                        self.require_expr_assignable(&checked, &elem_ty, fx, "the array element");
+                        self.require_expr_assignable(
+                            &mut checked,
+                            &elem_ty,
+                            fx,
+                            "the array element",
+                        );
                     }
                     out.push(checked);
                 }
@@ -230,7 +235,7 @@ impl<'p> Checker<'p> {
                 .iter()
                 .find(|(name, _, _)| name == &field.name)
                 .map(|(_, value, _)| *value);
-            let checked = match explicit {
+            let mut checked = match explicit {
                 Some(DescriptorProp::Expr(value)) => {
                     Some(self.check_expr(value, Some(&field.ty), fx))
                 }
@@ -267,8 +272,8 @@ impl<'p> Checker<'p> {
                     None
                 }
             };
-            if let Some(checked) = &checked {
-                self.require_expr_assignable(&checked, &field.ty, fx, "the descriptor member");
+            if let Some(checked) = &mut checked {
+                self.require_expr_assignable(checked, &field.ty, fx, "the descriptor member");
             }
             fields.push(checked);
         }

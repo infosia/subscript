@@ -117,3 +117,53 @@ The reason holds for the other rows. An array of `C` and an array of
 6. If a corpus entry or golden changes its type or output, report it
    and stop. `a422` has no async or generator function, so no golden
    other than its own moves.
+
+### 235.3 Phase Review
+
+*(Added 2026-11-07.)* Three fresh reviews of the implementation. Each
+fix changed the form; the contract gained rules 5a–5d.
+
+1. MAJOR, realistic, fixed: the checker accepted a non-identical
+   function type with no conversion in HIR. A built-in callback with a
+   `C | null` parameter over `C` elements, and a function value as a
+   `push` or `Map.set` argument, stopped in LIR construction. Rule 5a:
+   the checker records a conversion to the type of the place.
+2. MAJOR, realistic, fixed: the same class at built-in value arguments
+   (`unshift`, `fill`, `Map.getOr`).
+3. MINOR, fixed: the contract stated that a nullable function type has
+   another representation. Both are `Repr::Pair`. Rule 1 now names the
+   function type.
+4. CRITICAL, realistic, fixed: the conversion took its target from the
+   value, so `((x: C) => C) | null` was accepted at a `(x: C) => C | null`
+   place, and the program stopped with a fault. Rule 5b: the conversion
+   follows the assignment check, and its target is the type of the
+   place. Reject entry `r492` guards it.
+5. MAJOR, realistic, fixed: `v ??= f` with a nullable function value of
+   a fitting type assigned nothing, and `||=` gave no diagnostic. Rule 2
+   relates two nullable function types.
+6. MINOR, fixed: a converted built-in callback left the inline lowering
+   (2.6 times the time on the development tier) and then added a root
+   slot per call. Rule 5c: it keeps the inline lowering, with no added
+   coercion.
+7. MINOR, fixed: the codegen pass-through of a function value accepted
+   any two function types. `Type::same_function_representation` limits
+   it to the pairs of rule 2.
+8. MAJOR, realistic, fixed: `n ?? id` with a fitting function fallback
+   was accepted with the type `Error`, and both tiers stopped with an
+   internal error. Rule 5d: each value check takes the value, and
+   `require_assignable` rejects a pair that needs a conversion. The test
+   `type_only_assignability` lists each remaining type-only call with
+   its reason.
+9. MINOR, fixed: a capture diagnostic printed a class id; a test sat
+   above its `use`.
+
+### 235.4 Open
+
+1. A conditional with no context, `b ? (x: C): C => x : (x: C): C | null
+   => null`, has no common type (S100). `tsc` accepts it.
+2. Collection element types stay invariant: `Array.from<F>(ids)`,
+   a spread, and a `Set` source with a fitting function element are
+   rejected. `tsc` accepts them.
+3. A `then` callback with a `C | null` parameter, generic inference of
+   `T` from a fitting callback, and an interface method implemented with
+   a fitting type stay rejected. `tsc` accepts them.

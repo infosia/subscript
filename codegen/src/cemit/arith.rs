@@ -271,8 +271,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let expression = if target.function_type().is_some() && source == &Type::Null {
             "(SubFn){0}".into()
         } else if source == target
-            || (target.function_type().is_some()
-                && source.function_type() == target.function_type())
+            // compiler.md §235 rule 5: a function value keeps its code and
+            // its environment when each parameter and the result have one
+            // representation in both types.
+            || source.same_function_representation(target)
         {
             operand.to_string()
         } else if *target == Type::F16 {

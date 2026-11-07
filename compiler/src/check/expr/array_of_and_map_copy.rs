@@ -105,7 +105,7 @@ impl<'p> Checker<'p> {
                     }
                 }
                 let diagnostics_before = self.diags.len();
-                let source = self.check_expr(&argument.expr, declared.as_ref(), fx);
+                let mut source = self.check_expr(&argument.expr, declared.as_ref(), fx);
                 if self.apparent_type(&(source.ty)) == Type::Error
                     || self.diags.len() > diagnostics_before
                 {
@@ -124,7 +124,7 @@ impl<'p> Checker<'p> {
                 }
                 if matches!(self.apparent_type(&source.ty), Type::Map(_, _)) {
                     let ty = declared.unwrap_or_else(|| source.ty.clone());
-                    self.require_expr_assignable(&source, &ty, fx, "the Map source");
+                    self.require_expr_assignable(&mut source, &ty, fx, "the Map source");
                     return hir::Expr {
                         pending_work: None,
                         kind: hir::ExprKind::Call {

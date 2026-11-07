@@ -215,6 +215,16 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         13,
     ),
+    (
+        "r491-function-type-variance-wrong-direction.ts",
+        RuleCode::S100,
+        17,
+    ),
+    (
+        "r492-nullable-function-value-to-function-type.ts",
+        RuleCode::S100,
+        18,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

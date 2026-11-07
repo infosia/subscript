@@ -762,7 +762,7 @@ it as a candidate to accept.
 | 22 | A class or a `FixedArray` in a template interpolation; an array that `join` rejects | Interpolation formats scalars, strings, enums, and literal aliases (Q14). An array is its `join` (`compiler.md` §204). | a method call |
 | 23 | An empty array literal with no context | The language has no `any[]` and no evolving array type (C4, S001). | `const xs: i32[] = [];` |
 | 24 | A `switch` on `boolean`; `for await` over values that are not handles; a `for…of` head that assigns an existing binding | A `switch` dispatches on integer, enum, string, or alias constants (§41). `for await` reads async iteration (§26.1). No lowering is decided for an assigning head. | `if`; `await` in the body; a `const` head |
-| 25 | Instances or function types with other type arguments or parameter types | Types match only when their arguments are identical: no implicit conversion (C3), no structural substitution (C1), and no variance. | the identical type |
+| 25 | Instances or function types with other type arguments or parameter types | Types match only when their arguments are identical: no implicit conversion (C3), no structural substitution (C1), and no variance. Exception: a function type takes a nullable handle variance (`compiler.md` §235). | the identical type |
 | 26 | (removed by `compiler.md` §159: an assignment narrows a nullable location) | | |
 | 27 | A call of an unannotated generator before the checker reads its body | The yield type comes from the body. | a `Generator<T>` result annotation |
 | 28 | A type-parameter default (`<T = i32>`) | No lowering is decided. | an explicit type argument |

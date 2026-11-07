@@ -315,10 +315,11 @@ impl<'p> Checker<'p> {
                 if result.terminal {
                     return result.expr;
                 }
-                self.require_assignable(
-                    &result.expr.ty.clone(),
+                let mut result = result;
+                self.require_expr_assignable(
+                    &mut result.expr,
                     &signature.element_ty,
-                    result.expr.pos.clone(),
+                    fx,
                     "the assignment",
                 );
                 hir::Expr {
@@ -395,10 +396,11 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 };
-                self.require_assignable(
-                    &result.expr.ty.clone(),
+                let mut result = result;
+                self.require_expr_assignable(
+                    &mut result.expr,
                     parameter.ty(),
-                    result.expr.pos.clone(),
+                    fx,
                     "the assignment",
                 );
                 let callee = if let Some(receiver) = receiver {
@@ -883,8 +885,8 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         let (test, value) = self.stabilize_nullable_operand(left, inner.clone(), fx);
-        let right = self.check_expr(&binary.right, Some(&inner), fx);
-        let result_ty = self.nullish_result_type(&inner, &right, "the right operand");
+        let mut right = self.check_expr(&binary.right, Some(&inner), fx);
+        let result_ty = self.nullish_result_type(&inner, &mut right, fx, "the right operand");
         self.render_nullish_cond(vec![test], value, right, result_ty, pos)
     }
 
@@ -904,29 +906,31 @@ impl<'p> Checker<'p> {
                 let (test, value) =
                     self.stabilize_nullable_operand(plan.value, (*inner).clone(), fx);
                 plan.tests.push(test);
-                let right = self.check_expr(right_ast, Some(&inner), fx);
-                let result_ty = self.nullish_result_type(&inner, &right, "the right operand");
+                let mut right = self.check_expr(right_ast, Some(&inner), fx);
+                let result_ty =
+                    self.nullish_result_type(&inner, &mut right, fx, "the right operand");
                 self.render_nullish_cond(plan.tests, value, right, result_ty, pos)
             }
             value_ty => {
-                let right = self.check_expr(right_ast, Some(&value_ty), fx);
+                let mut right = self.check_expr(right_ast, Some(&value_ty), fx);
                 // §195.4 rule 1: the `null` literal gives `T | null`.
                 if self.apparent_type(&right.ty) == Type::Null && self.allows_nullable(&value_ty) {
                     let result_ty = Type::nullable(value_ty);
                     return self.render_nullish_cond(plan.tests, plan.value, right, result_ty, pos);
                 }
-                self.require_assignable(
-                    &right.ty.clone(),
-                    &value_ty,
-                    right.pos.clone(),
-                    "the right operand",
-                );
+                self.require_expr_assignable(&mut right, &value_ty, fx, "the right operand");
                 self.render_nullish_cond(plan.tests, plan.value, right, value_ty, pos)
             }
         }
     }
 
-    fn nullish_result_type(&mut self, inner: &Type, right: &hir::Expr, what: &str) -> Type {
+    fn nullish_result_type(
+        &mut self,
+        inner: &Type,
+        right: &mut hir::Expr,
+        fx: &FnCtx,
+        what: &str,
+    ) -> Type {
         if right.ty == *inner {
             return inner.clone();
         }
@@ -940,8 +944,14 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&right.ty) == Type::Null && self.allows_nullable(inner) {
             return Type::nullable(inner.clone());
         }
+        // compiler.md §235 rule 5a: a fitting right operand takes the type
+        // of the place, and the result has that type.
+        if self.assignable(&right.ty, inner) && self.apparent_type(&right.ty) != Type::Error {
+            self.place_function_value(right, inner);
+            return inner.clone();
+        }
         if self.apparent_type(&(right.ty)) != Type::Error {
-            self.require_assignable(&right.ty.clone(), inner, right.pos.clone(), what);
+            self.require_expr_assignable(right, inner, fx, what);
         }
         Type::Error
     }
@@ -1737,7 +1747,7 @@ impl<'p> Checker<'p> {
             .collect();
         note_paths.extend_facts(first_possible.intersection(&second_possible).cloned());
         let joined = first_facts.intersection(&fx.narrowed).cloned().collect();
-        let (then, els) = if reverse {
+        let (mut then, mut els) = if reverse {
             (second, first)
         } else {
             (first, second)
@@ -1754,13 +1764,8 @@ impl<'p> Checker<'p> {
         } else if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty) {
             self.generic_union(&then.ty, &els.ty)
         } else if let Some(context) = ctx {
-            self.require_assignable(
-                &then.ty.clone(),
-                context,
-                then.pos.clone(),
-                "the then branch",
-            );
-            self.require_assignable(&els.ty.clone(), context, els.pos.clone(), "the else branch");
+            self.require_expr_assignable(&mut then, context, fx, "the then branch");
+            self.require_expr_assignable(&mut els, context, fx, "the else branch");
             self.conditional_join(&then.ty, &els.ty)
                 .unwrap_or_else(|| context.clone())
         } else {
@@ -1832,11 +1837,9 @@ impl<'p> Checker<'p> {
         }
         let arg = match &y.arg {
             Some(arg) => {
-                let e = self.check_expr(arg, known_yield.as_ref(), fx);
+                let mut e = self.check_expr(arg, known_yield.as_ref(), fx);
                 match &known_yield {
-                    Some(t) => {
-                        self.require_assignable(&e.ty.clone(), &t.clone(), e.pos.clone(), "yield")
-                    }
+                    Some(t) => self.require_expr_assignable(&mut e, &t.clone(), fx, "yield"),
                     None => {
                         if let Some(frame) = fx.frames.last_mut() {
                             frame.yield_ty = Some(e.ty.clone());

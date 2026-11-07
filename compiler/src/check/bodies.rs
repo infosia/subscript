@@ -99,11 +99,11 @@ impl<'p> Checker<'p> {
                 fx.with_synthetic_owner(
                     SyntheticOwnerKind::Initializer(self.pos(value.span())),
                     |fx| {
-                        let checked = self.check_expr(value, Some(&field_ty), fx);
-                        self.require_assignable(
-                            &checked.ty.clone(),
+                        let mut checked = self.check_expr(value, Some(&field_ty), fx);
+                        self.require_expr_assignable(
+                            &mut checked,
                             &field_ty,
-                            checked.pos.clone(),
+                            fx,
                             "the descriptor member default",
                         );
                         checked
@@ -170,11 +170,11 @@ impl<'p> Checker<'p> {
                                 fx.with_synthetic_owner(
                                     SyntheticOwnerKind::Initializer(self.pos(init.span())),
                                     |fx| {
-                                        let e = self.check_expr(init, Some(sig.ty()), fx);
-                                        self.require_assignable(
-                                            &e.ty.clone(),
+                                        let mut e = self.check_expr(init, Some(sig.ty()), fx);
+                                        self.require_expr_assignable(
+                                            &mut e,
                                             sig.ty(),
-                                            e.pos.clone(),
+                                            fx,
                                             "the initializer",
                                         );
                                         e
@@ -419,11 +419,11 @@ impl<'p> Checker<'p> {
                         fx.with_synthetic_owner(
                             SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
                             |fx| {
-                                let e = self.check_expr(&a.right, Some(ps.ty()), fx);
-                                self.require_assignable(
-                                    &e.ty.clone(),
+                                let mut e = self.check_expr(&a.right, Some(ps.ty()), fx);
+                                self.require_expr_assignable(
+                                    &mut e,
                                     ps.ty(),
-                                    e.pos.clone(),
+                                    fx,
                                     "the default value",
                                 );
                                 e
@@ -531,12 +531,12 @@ impl<'p> Checker<'p> {
                                     fx.with_synthetic_owner(
                                         SyntheticOwnerKind::Initializer(self.pos(value.span())),
                                         |fx| {
-                                            let expression =
+                                            let mut expression =
                                                 self.check_expr(value, Some(signature.ty()), fx);
-                                            self.require_assignable(
-                                                &expression.ty.clone(),
+                                            self.require_expr_assignable(
+                                                &mut expression,
                                                 signature.ty(),
-                                                expression.pos.clone(),
+                                                fx,
                                                 "the static field initializer",
                                             );
                                             expression
@@ -609,11 +609,11 @@ impl<'p> Checker<'p> {
                         fx.with_synthetic_owner(
                             SyntheticOwnerKind::Initializer(self.pos(value.span())),
                             |fx| {
-                                let e = self.check_expr(value, Some(&field_ty), fx);
-                                self.require_assignable(
-                                    &e.ty.clone(),
+                                let mut e = self.check_expr(value, Some(&field_ty), fx);
+                                self.require_expr_assignable(
+                                    &mut e,
                                     &field_ty,
-                                    e.pos.clone(),
+                                    fx,
                                     "the field initializer",
                                 );
                                 e

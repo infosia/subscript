@@ -210,12 +210,8 @@ impl<'p> Checker<'p> {
         }
         if let Type::Class(id) = &self.apparent_type(&obj.ty) {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
-                self.require_assignable(
-                    &index.ty.clone(),
-                    &signature.index_ty,
-                    index.pos.clone(),
-                    "the index",
-                );
+                let mut index = index;
+                self.require_expr_assignable(&mut index, &signature.index_ty, fx, "the index");
                 return hir::Expr {
                     pending_work: None,
                     kind: ExprKind::Call {

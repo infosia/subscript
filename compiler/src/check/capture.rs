@@ -659,6 +659,8 @@ fn value_name(module: &hir::Module, expr: &Expr) -> String {
             "value `{}`",
             super::identity::module_declaration_label(module, symbol)
         ),
+        // A §235 conversion of a lambda keeps the name of the lambda.
+        E::Cast(inner) if matches!(inner.kind, E::Lambda { .. }) => value_name(module, inner),
         E::Lambda { captures, .. } => format!(
             "lambda capturing {}",
             captures

@@ -1050,10 +1050,10 @@ impl<'p> Checker<'p> {
                 Type::Str
             };
             let context = (index == 1).then_some(&second_type);
-            let value = self.check_expr(&arg.expr, context, fx);
+            let mut value = self.check_expr(&arg.expr, context, fx);
             if index == 1 {
                 self.require_expr_assignable(
-                    &value,
+                    &mut value,
                     &second_type,
                     fx,
                     if name == "split" {
@@ -1117,7 +1117,8 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
 
-        self.require_expr_assignable(&pattern, &Type::Str, fx, "the pattern");
+        // A `string` place takes no function conversion.
+        self.require_expr_assignable(&mut pattern.clone(), &Type::Str, fx, "the pattern");
         let function = match name {
             "replace" => StrFn::Replace,
             "replaceAll" => StrFn::ReplaceAll,
@@ -1284,7 +1285,7 @@ impl<'p> Checker<'p> {
                 if self.apparent_type(&(value.ty)) == Type::Date {
                     value.ty = Type::I64;
                 } else {
-                    self.require_expr_assignable(&value, &Type::I64, fx, "the argument");
+                    self.require_expr_assignable(&mut value, &Type::I64, fx, "the argument");
                 }
                 let args = vec![value];
                 hir::Expr {

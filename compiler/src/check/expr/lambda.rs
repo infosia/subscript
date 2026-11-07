@@ -274,8 +274,8 @@ impl<'p> Checker<'p> {
             let default = if let Some(value) = self.finish_initializer(&mut initializer) {
                 Some(value)
             } else if let ast::Pat::Assign(assign) = pattern {
-                let value = self.check_expr(&assign.right, Some(p.ty()), fx);
-                self.require_expr_assignable(&value, p.ty(), fx, "the default value");
+                let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
+                self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
                 Some(value)
             } else {
                 None
@@ -333,9 +333,14 @@ impl<'p> Checker<'p> {
                         );
                         return out;
                     }
-                    let checked = self.check_expr(e, ret.as_ref().or(result_hint), fx);
+                    let mut checked = self.check_expr(e, ret.as_ref().or(result_hint), fx);
                     if let Some(ret) = &ret {
-                        self.require_expr_assignable(&checked, &ret.clone(), fx, "the lambda body");
+                        self.require_expr_assignable(
+                            &mut checked,
+                            &ret.clone(),
+                            fx,
+                            "the lambda body",
+                        );
                     } else {
                         ret = Some(checked.ty.clone());
                         if a.is_async {
@@ -343,7 +348,7 @@ impl<'p> Checker<'p> {
                                 Type::AsyncHandle(inner) => *inner,
                                 _ => checked.ty.clone(),
                             };
-                            self.require_return_assignable(&checked, &expected, fx);
+                            self.require_return_assignable(&mut checked, &expected, fx);
                             ret = Some(expected);
                         }
                     }

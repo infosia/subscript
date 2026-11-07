@@ -570,11 +570,6 @@ const ALLOWLIST: &[AllowGroup] = &[
         sites: &[("opaque.rs", "instance_restriction", 0xf12696b35ade54b9)],
     },
     AllowGroup {
-        name: "concrete-callback-identity",
-        reason: "The parameter branch uses assignability; the equality branch excludes all type parameters (§143 rule 1b).",
-        sites: &[("expr/method.rs", "callback_type_fits", 0xd5a79fdca669ba16)],
-    },
-    AllowGroup {
         name: "json-graph-identity",
         reason: "JSON helper graphs exclude opaque types under §143 rule 2a; each key preserves its declared concrete type.",
         sites: &[

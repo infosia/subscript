@@ -61,8 +61,8 @@ impl<'p> Checker<'p> {
                 spread = true;
                 continue;
             }
-            let value = self.check_expr(&argument.expr, Some(elem), fx);
-            self.require_expr_assignable(&value, elem, fx, "the argument");
+            let mut value = self.check_expr(&argument.expr, Some(elem), fx);
+            self.require_expr_assignable(&mut value, elem, fx, "the argument");
             if self.transfers_async_origins(elem) {
                 let origins = self.expr_async_origins(&value, fx);
                 fx.handle_async_origins(&origins);

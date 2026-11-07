@@ -246,7 +246,19 @@ pub(super) fn static_array_callback(
     ) {
         return None;
     }
-    let callback = args.get(1)?;
+    // compiler.md §235 rule 5c: a converted lambda or named function keeps
+    // its static call, so the fact reads the callback inside the `Cast`.
+    let callback = match &args.get(1)?.kind {
+        hir::ExprKind::Cast(inner)
+            if matches!(
+                inner.kind,
+                hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
+            ) =>
+        {
+            inner
+        }
+        _ => args.get(1)?,
+    };
     (has_fixed_receiver(args)
         || matches!(
             callback.kind,

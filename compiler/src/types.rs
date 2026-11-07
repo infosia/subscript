@@ -735,6 +735,33 @@ impl Type {
         }
     }
 
+    /// Whether two function types have one representation at each
+    /// parameter and at the result: the same type, or two types that
+    /// differ only by an outer `| null` (compiler.md §235 rule 5). A code
+    /// generator passes a function value between two such types with no
+    /// operation.
+    #[must_use]
+    pub fn same_function_representation(&self, other: &Type) -> bool {
+        fn pair(a: &Type, b: &Type) -> bool {
+            let strip = |ty: &Type| match ty {
+                Type::Nullable(inner, _) => inner.as_ref().clone(),
+                other => other.clone(),
+            };
+            let (a, b) = (strip(a), strip(b));
+            a == b
+                || matches!((&a, &b), (Type::Func(_), Type::Func(_)))
+                    && a.same_function_representation(&b)
+        }
+        match (self.function_type(), other.function_type()) {
+            (Some(f), Some(g)) => {
+                f.params.len() == g.params.len()
+                    && f.params.iter().zip(&g.params).all(|(a, b)| pair(a, b))
+                    && pair(&f.ret, &g.ret)
+            }
+            _ => false,
+        }
+    }
+
     /// The immediate type arguments, including function parameters and results.
     #[must_use]
     pub fn contained_types(&self) -> Vec<&Type> {
@@ -1159,6 +1186,21 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_function_representation_admits_only_an_outer_null() {
+        let class = Type::Class(ClassId(1));
+        let f = |params: Vec<Type>, ret: Type| Type::func(params, ret);
+        let base = f(vec![class.clone()], class.clone());
+        assert!(base.same_function_representation(&f(
+            vec![Type::nullable(class.clone())],
+            Type::nullable(class.clone())
+        )));
+        assert!(base.same_function_representation(&Type::nullable(base.clone())));
+        assert!(!base.same_function_representation(&f(vec![Type::I64], class.clone())));
+        assert!(!base.same_function_representation(&f(vec![], class.clone())));
+        assert!(!base.same_function_representation(&class));
+    }
 
     #[test]
     fn generator_done_value_uses_every_inline_zero_component() {

@@ -319,7 +319,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             if source == &Type::Null {
                 return self.zero(target);
             }
-            if source.function_type() == target.function_type() && matches!(value, RV::Pair(..)) {
+            // compiler.md §235 rule 5: a function value keeps its code and its
+            // environment when each parameter and the result have one
+            // representation in both types.
+            if source.same_function_representation(target) && matches!(value, RV::Pair(..)) {
                 return Ok(value);
             }
             return Err(internal("function conversion requires a matching pair"));

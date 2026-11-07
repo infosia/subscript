@@ -133,7 +133,7 @@ impl<'p> Checker<'p> {
         if op.is_some() {
             self.mark_operand_calls(&a.right);
         }
-        let value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
+        let mut value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
         let signature_write = match &place {
             Place::IndexSignature {
                 receiver,
@@ -166,7 +166,7 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             }
-            let (receiver, index, value) = if let Some((bin, _)) = operation {
+            let (receiver, index, mut value) = if let Some((bin, _)) = operation {
                 let prefix = prefix
                     .as_deref_mut()
                     .expect("a statement assignment must provide compound-write storage");
@@ -196,7 +196,7 @@ impl<'p> Checker<'p> {
             } else {
                 (receiver, index, value)
             };
-            self.require_expr_assignable(&value, &signature.element_ty, fx, "the assignment");
+            self.require_expr_assignable(&mut value, &signature.element_ty, fx, "the assignment");
             return hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Call {
@@ -256,7 +256,7 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
-            let value = if let Some((bin, _)) = operation {
+            let mut value = if let Some((bin, _)) = operation {
                 let read = place.into_read(self);
                 let Some(binary_op) = assign_binary_op(bin) else {
                     return self.err_expr(pos);
@@ -275,7 +275,7 @@ impl<'p> Checker<'p> {
             } else {
                 value
             };
-            self.require_expr_assignable(&value, parameter.ty(), fx, "the assignment");
+            self.require_expr_assignable(&mut value, parameter.ty(), fx, "the assignment");
             return hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Call {
@@ -329,7 +329,7 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
-            let (recv, value) = if let Some((bin, _)) = operation {
+            let (recv, mut value) = if let Some((bin, _)) = operation {
                 let prefix =
                     prefix.expect("a statement assignment must provide compound-write storage");
                 let recv = self.stabilize_compound_operand(recv, "receiver", prefix);
@@ -358,7 +358,7 @@ impl<'p> Checker<'p> {
             } else {
                 (recv, value)
             };
-            self.require_expr_assignable(&value, parameter.ty(), fx, "the assignment");
+            self.require_expr_assignable(&mut value, parameter.ty(), fx, "the assignment");
             return hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Call {
@@ -393,7 +393,7 @@ impl<'p> Checker<'p> {
         };
         if op.is_none() {
             self.check_function_binding_assignment(&target, &a.right, &value, fx);
-            self.require_expr_assignable(&value, &target_ty, fx, "the assignment");
+            self.require_expr_assignable(&mut value, &target_ty, fx, "the assignment");
         } else {
             self.require_assignable(
                 &if op.is_some() {
@@ -735,13 +735,18 @@ impl<'p> Checker<'p> {
                     context.write = false;
                 }
                 self.mark_operand_calls(&c.expr);
-                let index = self.check_expr(&c.expr, Some(&index_context), fx);
+                let mut index = self.check_expr(&c.expr, Some(&index_context), fx);
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;
                 }
                 if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if let Some(signature) = self.classes[id.0].index_signature.clone() {
-                        self.require_expr_assignable(&index, &signature.index_ty, fx, "the index");
+                        self.require_expr_assignable(
+                            &mut index,
+                            &signature.index_ty,
+                            fx,
+                            "the index",
+                        );
                         return Place::IndexSignature {
                             receiver: obj,
                             index,

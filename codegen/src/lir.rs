@@ -348,7 +348,11 @@ struct CallParam {
 struct StaticCallback {
     target: l::CallTargetKind,
     callable: Option<l::Operand>,
+    /// The own function type of the callback.
     ty: Type,
+    /// The function type of the place when a `Cast` converts the callback
+    /// (compiler.md §235 rule 5c), else the own type.
+    place: Type,
 }
 
 /// The arguments of one call, between the explicit arguments and the

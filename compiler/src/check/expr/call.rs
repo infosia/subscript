@@ -576,10 +576,10 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(spread_pos);
             }
-            let checked = self.check_expr(&argument.expr, Some(expected), fx);
+            let mut checked = self.check_expr(&argument.expr, Some(expected), fx);
             if self.involves_type_parameter(expected) || self.involves_type_parameter(&checked.ty) {
                 self.require_expr_assignable(
-                    &checked,
+                    &mut checked,
                     expected,
                     fx,
                     &format!("`Context.{name}` argument"),
@@ -1591,11 +1591,11 @@ impl<'p> Checker<'p> {
                 generic_callee && matches!(super::unparen_expr(&arg.expr), ast::Expr::Arrow(_));
             let saved_context =
                 std::mem::replace(&mut self.generic_callback_context, callback_context);
-            let checked =
+            let mut checked =
                 prechecked.unwrap_or_else(|| self.check_expr(&arg.expr, param_ty.as_ref(), fx));
             self.generic_callback_context = saved_context;
             if let Some(param_ty) = param_ty {
-                self.require_expr_assignable(&checked, &param_ty, fx, "the argument");
+                self.require_expr_assignable(&mut checked, &param_ty, fx, "the argument");
                 if self.transfers_async_origins(&param_ty) {
                     let origins = self.expr_async_origins(&checked, fx);
                     fx.handle_async_origins(&origins);

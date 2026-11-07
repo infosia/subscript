@@ -205,13 +205,8 @@ impl Checker<'_> {
         if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
-        let text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
-        self.require_assignable(
-            &text.ty.clone(),
-            &Type::Str,
-            text.pos.clone(),
-            "`JSON.parse` text",
-        );
+        let mut text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
+        self.require_expr_assignable(&mut text, &Type::Str, fx, "`JSON.parse` text");
         if self.apparent_type(&(text.ty)) == Type::Error {
             return self.err_expr(pos);
         }

@@ -384,7 +384,7 @@ pub(super) const ARRAYTOFIXEDARRAY: DivergenceEntry = DivergenceEntry {
     collision: "collisions.md Q3",
 };
 pub(super) const FUNCTIONPARAMETERIDENTITY: DivergenceEntry = DivergenceEntry {
- ts: "function take(f: (x: i64) => void): void {} function g(x: i32): void {} function f(): void { take(g); }", subscript: "no equivalent; use the identical type", why: "Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.", collision: "C24", // row 25,
+ ts: "function take(f: (x: i64) => void): void {} function g(x: i32): void {} function f(): void { take(g); }", subscript: "no equivalent; use the identical type", why: "Types require identical arguments and parameters, with no implicit conversion or structural substitution. Exception: the nullable handle variance of a function type (compiler.md §235).", collision: "C24", // row 25,
 };
 pub(super) const IMPORTANNOTATION: DivergenceEntry = DivergenceEntry {
  ts: "// file: main.ts\nexport function f(x: import(\"./other\").C): void {}\n// file: other.ts\nexport class C { x: i32 = 1; }\n", subscript: "no equivalent; use a namespace import to qualify the type", why: "The only type qualifier is a namespace import; an annotation names a declared or builtin type.", collision: "C24", // row 17

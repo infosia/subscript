@@ -209,6 +209,17 @@ impl<'p> Checker<'p> {
                 return true;
             }
         }
+        // §235 rules 2 and 3: a concrete function type, or a nullable
+        // pair of them, takes a nullable handle variance. A type parameter
+        // keeps the §143 composite rules above.
+        if self.function_shaped(from)
+            && self.function_shaped(to)
+            && !self.involves_type_parameter(from)
+            && !self.involves_type_parameter(to)
+            && self.type_fits(from, to)
+        {
+            return true;
+        }
         match (from, to) {
             // §195.1 rule 2: `null` converts to the `null` spelling only.
             (Type::Null, Type::Nullable(_, spelling)) => *spelling == crate::types::Absence::Null,
@@ -219,6 +230,124 @@ impl<'p> Checker<'p> {
             (f, Type::Object) => self.is_reference_class(f),
             _ => false,
         }
+    }
+
+    /// Whether `ty` is a handle type: a reference class, `string`, an
+    /// array, `Map`, `Set`, or a function type (compiler.md §235 rule 1).
+    /// A value of `T` and a value of `T | null` have the same
+    /// representation for these.
+    pub(crate) fn is_handle_type(&self, ty: &Type) -> bool {
+        self.is_reference_class(ty)
+            || matches!(
+                self.apparent_type(ty),
+                Type::Str | Type::Array(_) | Type::Func(_)
+            )
+    }
+
+    /// Whether `s` fits `t` (compiler.md §235 rule 2): the same type, `t`
+    /// is `s | null` for a handle type `s`, two function types that rule 3
+    /// relates, or `s0 | null` and `t0 | null` where `s0` fits `t0`.
+    pub(crate) fn type_fits(&self, s: &Type, t: &Type) -> bool {
+        if self.apparent_type(s) == self.apparent_type(t) {
+            return true;
+        }
+        match (self.apparent_type(s), self.apparent_type(t)) {
+            (
+                Type::Nullable(s0, crate::types::Absence::Null),
+                Type::Nullable(t0, crate::types::Absence::Null),
+            ) => self.type_fits(&s0, &t0),
+            (_, Type::Nullable(inner, crate::types::Absence::Null)) => {
+                self.apparent_type(&inner) == self.apparent_type(s) && self.is_handle_type(s)
+            }
+            (Type::Func(f), Type::Func(g)) => self.function_fits(&f, &g),
+            _ => false,
+        }
+    }
+
+    /// The function type of `ty` through `| null`, if `ty` is a function
+    /// type or a nullable function type.
+    fn function_of(&self, ty: &Type) -> Option<crate::types::FuncType> {
+        match self.apparent_type(ty) {
+            Type::Func(function) => Some(*function),
+            Type::Nullable(inner, _) => match self.apparent_type(&inner) {
+                Type::Func(function) => Some(*function),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn function_shaped(&self, ty: &Type) -> bool {
+        self.function_of(ty).is_some()
+    }
+
+    /// Whether the function type `f` is assignable to the function type
+    /// `g` (compiler.md §235 rule 3): the same parameter count, the result
+    /// of `f` fits the result of `g`, and each parameter of `g` fits the
+    /// parameter of `f`. No conversion runs (rule 5).
+    pub(crate) fn function_fits(
+        &self,
+        f: &crate::types::FuncType,
+        g: &crate::types::FuncType,
+    ) -> bool {
+        f.params.len() == g.params.len()
+            && self.type_fits(&f.ret, &g.ret)
+            && g.params
+                .iter()
+                .zip(&f.params)
+                .all(|(g_param, f_param)| self.type_fits(g_param, f_param))
+    }
+
+    /// Whether a value of `from` needs a conversion at a place of `to`:
+    /// rule 3 relates two function types that are not identical
+    /// (compiler.md §235 rule 5a).
+    pub(crate) fn needs_function_conversion(&self, from: &Type, to: &Type) -> bool {
+        if self.involves_type_parameter(from) || self.involves_type_parameter(to) {
+            return false;
+        }
+        let (Some(f), Some(g)) = (self.function_of(from), self.function_of(to)) else {
+            return false;
+        };
+        // Two types that fit each other way are the same type, maybe under
+        // another spelling, so the place needs no conversion.
+        f != g && !self.function_fits(&g, &f) && self.assignable(from, to)
+    }
+
+    /// Converts a function value to the type `to` of its place when the
+    /// value is assignable to `to` and rule 3 relates two function types
+    /// that are not identical (compiler.md §235 rules 5a and 5b). The
+    /// conversion is a `Cast` whose type is exactly `to`: each later stage
+    /// reads that type, and no operation runs (rule 5). A value that is not
+    /// assignable gets no conversion and keeps its diagnostic.
+    pub(crate) fn place_function_value(&self, value: &mut hir::Expr, to: &Type) {
+        if !self.needs_function_conversion(&value.ty, to) {
+            return;
+        }
+        let inner = std::mem::replace(value, self.err_expr(value.pos.clone()));
+        *value = cast_value(inner, to.clone());
+    }
+
+    /// Converts an accepted built-in callback to the function type of its
+    /// place: the parameters that the method passes (with the trailing
+    /// index when the callback takes it), and the result type `ret`, or
+    /// the result of the callback when the method reads it from the
+    /// callback (compiler.md §235 rule 5a).
+    pub(crate) fn place_callback_value(
+        &self,
+        mut callback: hir::Expr,
+        params: &[Type],
+        ret: Option<&Type>,
+    ) -> hir::Expr {
+        let Type::Func(own) = self.apparent_type(&callback.ty) else {
+            return callback;
+        };
+        let mut place_params = params.to_vec();
+        if own.params.len() == params.len() + 1 {
+            place_params.push(Type::I32);
+        }
+        let place = Type::func(place_params, ret.cloned().unwrap_or(own.ret));
+        self.place_function_value(&mut callback, &place);
+        callback
     }
 
     pub(super) fn contains_string_alias(ty: &Type) -> bool {
@@ -265,16 +394,24 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Emits the rule-specific diagnostic for a failed assignment.
+    /// Emits the rule-specific diagnostic for a failed assignment of a
+    /// type where no value flows. Such a check cannot record a conversion,
+    /// so it accepts no function type that needs one (compiler.md §235
+    /// rule 5d): a value check uses [`Self::require_expr_assignable`].
     pub(crate) fn require_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
-        if self.assignable(from, to) {
+        if self.assignable(from, to) && !self.needs_function_conversion(from, to) {
             return;
         }
         self.report_not_assignable(from, to, pos, what);
     }
 
     /// Async returns carry a fulfilled value, without handle adoption (§167).
-    pub(super) fn require_return_assignable(&mut self, from: &hir::Expr, to: &Type, fx: &FnCtx) {
+    pub(super) fn require_return_assignable(
+        &mut self,
+        from: &mut hir::Expr,
+        to: &Type,
+        fx: &FnCtx,
+    ) {
         if fx.frames.last().is_some_and(|frame| frame.is_async)
             && matches!(self.apparent_type(&from.ty), Type::AsyncHandle(inner) if self.assignable(&inner, to))
             && self.apparent_type(to) != Type::Error
@@ -309,11 +446,12 @@ impl<'p> Checker<'p> {
     /// Keeps the C17 classification at an assignment rejection.
     pub(super) fn require_expr_assignable(
         &mut self,
-        from: &hir::Expr,
+        from: &mut hir::Expr,
         to: &Type,
         fx: &FnCtx,
         what: &str,
     ) {
+        self.place_function_value(from, to);
         if !self.assignable(&from.ty, to) {
             if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && self.indexed_nullable_error(
@@ -491,5 +629,17 @@ impl<'p> Checker<'p> {
                 );
             }
         }
+    }
+}
+
+/// A `Cast` of `value` to `ty`, the conversion node of compiler.md §235
+/// rule 5a.
+fn cast_value(value: hir::Expr, ty: Type) -> hir::Expr {
+    let pos = value.pos.clone();
+    hir::Expr {
+        pending_work: None,
+        kind: hir::ExprKind::Cast(Box::new(value)),
+        ty,
+        pos,
     }
 }

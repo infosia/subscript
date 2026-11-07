@@ -171,9 +171,9 @@ impl<'p> Checker<'p> {
                 ) else {
                     return self.err_expr(pos);
                 };
-                let value = self.check_expr(&a.right, Some(&inner), fx);
+                let mut value = self.check_expr(&a.right, Some(&inner), fx);
                 let result_ty = self
-                    .nullish_assignment_type(&value, &inner, &storage.ty, fx)
+                    .nullish_assignment_type(&mut value, &inner, &storage.ty, fx)
                     .map(|result_ty| (inner, result_ty));
                 (value, result_ty)
             }
@@ -236,7 +236,7 @@ impl<'p> Checker<'p> {
     /// diagnostic.
     fn nullish_assignment_type(
         &mut self,
-        value: &hir::Expr,
+        value: &mut hir::Expr,
         inner: &Type,
         storage: &Type,
         fx: &FnCtx,
@@ -244,10 +244,13 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&value.ty) == Type::Error {
             return None;
         }
+        // §235 rule 5a: the value of `??=` takes the type of its place.
         if self.assignable(&value.ty, inner) {
+            self.place_function_value(value, inner);
             return Some(inner.clone());
         }
         if self.assignable(&value.ty, storage) {
+            self.place_function_value(value, storage);
             return Some(storage.clone());
         }
         self.require_expr_assignable(value, storage, fx, "the assignment");
@@ -265,14 +268,15 @@ impl<'p> Checker<'p> {
         op: LogicalAssign,
         fx: &mut FnCtx,
     ) -> Option<hir::Expr> {
-        let value = self.check_expr(&a.right, Some(target_ty), fx);
+        let mut value = self.check_expr(&a.right, Some(target_ty), fx);
         if self.apparent_type(&value.ty) == Type::Error {
             return None;
         }
         if !self.assignable(&value.ty, target_ty) {
-            self.require_expr_assignable(&value, target_ty, fx, "the assignment");
+            self.require_expr_assignable(&mut value, target_ty, fx, "the assignment");
             return None;
         }
+        self.place_function_value(&mut value, target_ty);
         self.require_logical_boolean(left, op).then_some(value)
     }
 
@@ -607,9 +611,9 @@ impl<'p> Checker<'p> {
                 ) else {
                     return Checked::Expr(self.err_expr(pos));
                 };
-                let value = self.check_expr(&a.right, Some(&inner), fx);
+                let mut value = self.check_expr(&a.right, Some(&inner), fx);
                 if self.apparent_type(&value.ty) != Type::Error {
-                    self.require_expr_assignable(&value, &parameter, fx, "the assignment");
+                    self.require_expr_assignable(&mut value, &parameter, fx, "the assignment");
                 }
                 value
             }

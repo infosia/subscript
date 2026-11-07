@@ -826,7 +826,7 @@ impl<'p> Checker<'p> {
                 // not default to `i32` and poison `U`. Only an
                 // un-annotated arrow leaves `U` to `init` itself.
                 let (acc_ctx, checked_cb, resolved_acc) = self.reduce_acc_context(c, fx);
-                let init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
+                let mut init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
                 if matches!(self.apparent_type(&init.ty), Type::Error) {
                     return self.err_expr(pos);
                 }
@@ -835,7 +835,7 @@ impl<'p> Checker<'p> {
                     // reported against the init, not the callback.
                     Some(u) => {
                         self.require_expr_assignable(
-                            &init,
+                            &mut init,
                             u,
                             fx,
                             &format!("the `{}` init", f.name()),
@@ -1085,9 +1085,9 @@ impl<'p> Checker<'p> {
         let items_type = explicit
             .as_ref()
             .map(|(_, element)| Type::array(element.clone()));
-        let items = self.check_expr(&c.args[0].expr, items_type.as_ref(), fx);
+        let mut items = self.check_expr(&c.args[0].expr, items_type.as_ref(), fx);
         if let Some(expected) = &items_type {
-            self.require_expr_assignable(&items, expected, fx, "the `Map.groupBy` items");
+            self.require_expr_assignable(&mut items, expected, fx, "the `Map.groupBy` items");
         }
         let elem = match &self.apparent_type(&items.ty) {
             Type::Array(elem) => (**elem).clone(),
@@ -1750,7 +1750,8 @@ impl<'p> Checker<'p> {
         if self.involves_type_parameter(from) || self.involves_type_parameter(to) {
             self.assignable(from, to)
         } else {
-            from == to
+            // compiler.md §235 rule 4: a built-in callback takes rule 2.
+            self.type_fits(from, to)
         }
     }
 
@@ -1892,7 +1893,7 @@ impl<'p> Checker<'p> {
             _ => false,
         };
         if ok {
-            return checked;
+            return self.place_callback_value(checked, params, ret);
         }
         if let Type::Func(ft) = &self.apparent_type(&checked.ty) {
             let accepted_arity = ft.params.len() == params.len()

@@ -96,7 +96,7 @@ pub enum Divergence {
     ArrayConcatArgumentCount,
     /// The coroutine next call drives the frame without an input value.
     GeneratorNextArgumentCount,
-    /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
+    /// Types require identical arguments and parameters, with no implicit conversion or structural substitution. Exception: the nullable handle variance of a function type (compiler.md §235).
     FunctionParameterIdentity,
     /// The admitted surface excludes this source form.
     ArrayToFixedArray,

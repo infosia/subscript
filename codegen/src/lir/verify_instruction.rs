@@ -530,7 +530,8 @@ pub(super) fn verify_instruction_contract(
                     ));
                 }
             } else {
-                if !call_parameters_match(&operand_types, &target.parameter_types)
+                if !(call_parameters_match(&operand_types, &target.parameter_types)
+                    || callback_operands_match(module, &operand_types, &target.parameter_types))
                     || result_type != target.return_type
                 {
                     bad("call signature disagrees with its target", errors);
@@ -1143,6 +1144,47 @@ fn call_parameters_match(actual: &[l::ValueType], declared: &[l::ValueType]) -> 
             .iter()
             .zip(declared)
             .all(|(actual, declared)| call_type_matches(actual, declared))
+}
+
+/// Whether each operand type is its parameter type, or a handle type whose
+/// parameter type is its `| null` form: the two have one representation, so
+/// a static callback passes the operand with no coercion (compiler.md §235
+/// rule 5c).
+fn callback_operands_match(
+    module: &l::Module,
+    actual: &[l::ValueType],
+    declared: &[l::ValueType],
+) -> bool {
+    let is_value = |class: ClassId| {
+        module
+            .classes
+            .get(class.0)
+            .is_some_and(|class| class.is_value)
+    };
+    actual.len() == declared.len()
+        && actual.iter().zip(declared).all(|(actual, declared)| {
+            call_type_matches(actual, declared)
+                || matches!((actual, declared), (l::ValueType::Data(actual), l::ValueType::Data(declared))
+                    if handle_null_widening(actual, declared, is_value))
+        })
+}
+
+/// Whether `declared` is `actual | null` and `actual` is a handle type: a
+/// reference class, `string`, an array, `Map`, `Set`, or a function type.
+pub(super) fn handle_null_widening(
+    actual: &Type,
+    declared: &Type,
+    is_value: impl Fn(ClassId) -> bool,
+) -> bool {
+    let Type::Nullable(inner, subscript_compiler::Absence::Null) = declared else {
+        return false;
+    };
+    **inner == *actual
+        && match actual {
+            Type::Str | Type::Array(_) | Type::Map(..) | Type::Set(_) | Type::Func(_) => true,
+            Type::Class(class) => !is_value(*class),
+            _ => false,
+        }
 }
 
 pub(super) fn declared_parameters_match(

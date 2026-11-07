@@ -426,8 +426,8 @@ impl<'p> Checker<'p> {
             ast::Expr::TsSatisfies(s) => {
                 let target = self.resolve_type(&s.type_ann);
                 let context = (!holds_empty_array_literal(&s.expr)).then_some(&target);
-                let value = self.check_expr(&s.expr, context, fx);
-                self.require_expr_assignable(&value, &target, fx, "the initializer");
+                let mut value = self.check_expr(&s.expr, context, fx);
+                self.require_expr_assignable(&mut value, &target, fx, "the initializer");
                 value
             }
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),

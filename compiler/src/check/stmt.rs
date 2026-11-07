@@ -362,7 +362,7 @@ impl<'p> Checker<'p> {
                 self.task_group_local = saved_group_local;
                 continue;
             }
-            let init = if let Some(init_ast) = &d.init {
+            let mut init = if let Some(init_ast) = &d.init {
                 if declarations.len() > 1 {
                     let (init, prefix) = fx.with_synthetic_owner(
                         super::SyntheticOwnerKind::Declarator(self.pos(d.span)),
@@ -396,7 +396,7 @@ impl<'p> Checker<'p> {
             let ty = match ann {
                 Some(ann) => {
                     if !matches!(init.kind, hir::ExprKind::Unassigned) {
-                        self.require_expr_assignable(&init, &ann, fx, "the initializer");
+                        self.require_expr_assignable(&mut init, &ann, fx, "the initializer");
                     }
                     ann
                 }
@@ -561,8 +561,8 @@ impl<'p> Checker<'p> {
                     }
                     Some(checked)
                 } else {
-                    let checked = self.check_expr(arg, Some(&ret), fx);
-                    self.require_return_assignable(&checked, &ret, fx);
+                    let mut checked = self.check_expr(arg, Some(&ret), fx);
+                    self.require_return_assignable(&mut checked, &ret, fx);
                     if self.transfers_async_origins(&checked.ty) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
@@ -1505,13 +1505,13 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
     ) -> hir::Expr {
         self.mark_operand_calls(t);
-        let checked = self.check_expr(t, Some(disc_ty), fx);
+        let mut checked = self.check_expr(t, Some(disc_ty), fx);
         if let Some((alias_name, members)) = alias_switch {
             match t {
                 ast::Expr::Lit(ast::Lit::Str(label)) => {
                     let label = label.value.to_string();
                     if let Some(index) = members.iter().position(|member| member == &label) {
-                        self.require_expr_assignable(&checked, disc_ty, fx, "the case label");
+                        self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
                         if !alias_members_seen.insert(index) {
                             *alias_labels_valid = false;
                             self.reject_subset(RejectionSite::LiteralAliasDuplicateCase, format!(
@@ -1538,7 +1538,7 @@ impl<'p> Checker<'p> {
         {
             // §143 rule 1a: case labels compare values, rather than assign them.
         } else {
-            self.require_expr_assignable(&checked, disc_ty, fx, "the case label");
+            self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
         }
         checked
     }

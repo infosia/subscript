@@ -765,6 +765,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     target: l::CallTargetKind::Function(function),
                     callable: None,
                     ty: callback.ty.clone(),
+                    place: callback.ty.clone(),
                 })
             }
             hir::ExprKind::Lambda {
@@ -780,12 +781,29 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     target: l::CallTargetKind::StaticClosure(function),
                     callable: Some(callable),
                     ty: callback.ty.clone(),
+                    place: callback.ty.clone(),
+                })
+            }
+            // compiler.md §235 rule 5c: a converted lambda or named function
+            // keeps the static call, and the call binds each operand to the
+            // own parameter type of the callback.
+            hir::ExprKind::Cast(inner)
+                if matches!(
+                    inner.kind,
+                    hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
+                ) =>
+            {
+                let own = self.lower_static_callback(inner)?;
+                Ok(StaticCallback {
+                    place: callback.ty.clone(),
+                    ..own
                 })
             }
             _ => Ok(StaticCallback {
                 target: l::CallTargetKind::Indirect,
                 callable: Some(self.require_expr(callback)?),
                 ty: callback.ty.clone(),
+                place: callback.ty.clone(),
             }),
         }
     }
@@ -807,11 +825,30 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             operands.push(callable);
             parameter_types.push(l::ValueType::Data(callback.ty.clone()));
         }
-        operands.extend(arguments);
+        // compiler.md §235 rule 5c: the one binding of each operand of the
+        // place type to the own parameter type of the callback. An operand
+        // whose parameter type is its `| null` form has one representation,
+        // so it passes with no coercion and no new value.
+        for (argument, parameter) in arguments.into_iter().zip(&signature.params) {
+            let actual = self.operand_type(&argument, pos)?;
+            let same = matches!(&actual, l::ValueType::Data(actual)
+            if super::verify_instruction::handle_null_widening(actual, parameter, |class| {
+                self.lowering
+                    .hir
+                    .classes
+                    .get(class.0)
+                    .is_some_and(|class| class.is_value)
+            }));
+            operands.push(if same {
+                argument
+            } else {
+                self.coerce_operand(argument, l::ValueType::Data(parameter.clone()), pos)?
+            });
+        }
         parameter_types.extend(signature.params.iter().cloned().map(l::ValueType::Data));
         let return_type =
             (signature.ret != Type::Void).then(|| l::ValueType::Data(signature.ret.clone()));
-        self.emit(
+        let result = self.emit(
             l::InstructionKind::Call(l::CallTarget {
                 kind: callback.target.clone(),
                 parameter_types,
@@ -822,7 +859,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             true,
             traps,
             pos.clone(),
-        )
+        )?;
+        // The result takes the result type of the place.
+        match (result, &callback.place) {
+            (Some(result), Type::Func(place)) if place.ret != signature.ret => Ok(Some(
+                self.coerce_operand(result, l::ValueType::Data(place.ret.clone()), pos)?,
+            )),
+            (result, _) => Ok(result),
+        }
     }
 
     fn emit_static_array_push(
@@ -887,7 +931,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         // A seed can suspend, and a closure cannot live across a suspension
         // (compiler.md §220.1 rule 10b).
-        let (callback, initial) = if matches!(callback_expr.kind, hir::ExprKind::Lambda { .. }) {
+        let own_callback = match &callback_expr.kind {
+            hir::ExprKind::Cast(inner) => inner,
+            _ => callback_expr,
+        };
+        let (callback, initial) = if matches!(own_callback.kind, hir::ExprKind::Lambda { .. }) {
             let initial = self.lower_reduce_seed(operation, args, expr)?;
             (self.lower_static_callback(callback_expr)?, initial)
         } else {

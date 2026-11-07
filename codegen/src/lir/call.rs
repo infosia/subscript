@@ -38,7 +38,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 args.first().map(|argument| &argument.ty),
                 Some(Type::Array(_))
             );
+            // compiler.md §235 rule 5c: a converted callback is known too.
             let known_callback = args.get(1).is_some_and(|callback| {
+                let callback = match &callback.kind {
+                    hir::ExprKind::Cast(inner) => inner,
+                    _ => callback,
+                };
                 matches!(
                     callback.kind,
                     hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
