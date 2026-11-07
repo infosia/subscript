@@ -83,3 +83,28 @@ static field declared later, is the C14 initialization order check
    accepted control in the same program shape.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 241.3 Phase Review
+
+*(Added 2026-11-07.)* Two fresh reviews of the implementation. The
+contract gained parameter defaults in rule 2 and the `const enum`
+exception of rule 1.
+
+1. MAJOR, realistic, fixed: the default of a lambda parameter with no
+   type annotation, `const f = (x = B.k(1)): i32 => x;` before `B`, was
+   rejected. `tsc` accepts it. The parameter types were decided in a
+   frame cloned from the outer frame, so the default took the outer
+   evaluation. Each frame context now states its evaluation where it
+   is built (`FnCtx::new` takes an `Evaluation`).
+2. MINOR, fixed: a `const enum` read before its declaration was
+   rejected. `tsc` with the options of the project accepts it.
+3. MINOR, fixed: the unit test had no firing control for rule 3, and
+   no case for the deferred member forms of rule 2.
+4. MINOR, recorded: §241.4 item 1.
+
+### 241.4 Open
+
+1. A read or a write of a static field before its class gives two S100
+   at one site: the diagnostic of rule 1, and the C14 diagnostic
+   "`B.z` is accessed before its declaration". `tsc` gives one TS2449.
+   The program is rejected in both.

@@ -112,6 +112,7 @@ rejection_classes! {
     Self::CatchBindingInvalidAnnotation => (RuleCode::S010, TscRejects),
     Self::ImmediateNameWriteBeforeDeclaration => (RuleCode::S100, TscRejects),
     Self::ImmediateShadowedNameRead => (RuleCode::S100, TscRejects),
+    Self::ClassReadBeforeDeclaration => (RuleCode::S100, TscRejects),
     Self::ConstructorFieldReadUnassigned => (RuleCode::S100, TscRejects),
     Self::FieldAssignmentNestedUnassignedExit => (RuleCode::S100, TscRejects),
     Self::FieldAssignmentMissingUnassignedExit => (RuleCode::S100, TscRejects),

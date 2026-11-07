@@ -85,7 +85,11 @@ impl<'p> Checker<'p> {
             ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos, false),
             ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
             other => {
+                // compiler.md §241 rule 2: a lambda that is the callee runs
+                // at once.
+                self.lambda_called_at_once = matches!(other, ast::Expr::Arrow(_));
                 let value = self.check_expr(other, None, fx);
+                self.lambda_called_at_once = false;
                 self.check_indirect_call(value, c, fx, pos)
             }
         }
@@ -106,7 +110,7 @@ impl<'p> Checker<'p> {
                 let callee = checker.check_ident(id, None, fx);
                 return checker.check_indirect_call(callee, c, fx, pos);
             }
-            let item = checker.scope_item(&name, &ident_pos);
+            let item = checker.scope_item(&name, &ident_pos, fx);
             if matches!(
                 item,
                 Some(ScopeItem::Func(_) | ScopeItem::GenericFunc(_) | ScopeItem::Foreign(_))
@@ -784,7 +788,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         let receiver_pos = self.pos(receiver.span);
-        let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos) else {
+        let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos, fx) else {
             return None;
         };
         self.mark_user_call(call, true);
@@ -1764,7 +1768,7 @@ impl<'p> Checker<'p> {
             return self.check_container_new(&name, n, ctx, fx, pos, ident_pos);
         }
         let mut checked = None;
-        let class_id = match self.scope_item(&name, &ident_pos) {
+        let class_id = match self.scope_item(&name, &ident_pos, fx) {
             Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
                 if let Some(arguments) = &n.args {
                     self.check_poisoned_arguments(arguments, fx);

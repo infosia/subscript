@@ -114,6 +114,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::SwitchCaseWriteOutsideDeclaration,
     RejectionSite::BlockNameReadBeforeDeclaration,
     RejectionSite::ImmediateShadowedNameRead,
+    RejectionSite::ClassReadBeforeDeclaration,
     RejectionSite::BlockPendingReadWithoutProgramShadow,
     RejectionSite::BlockNameWriteBeforeDeclaration,
     RejectionSite::ImmediateNameWriteBeforeDeclaration,

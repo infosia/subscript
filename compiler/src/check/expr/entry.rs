@@ -832,7 +832,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Ident(ident) => {
                 let name = ident.sym.to_string();
                 let callee_pos = self.pos(ident.span);
-                let item = self.scope_item(&name, &callee_pos);
+                let item = self.scope_item(&name, &callee_pos, fx);
                 if matches!(item, Some(ScopeItem::Poisoned))
                     || matches!(&item, Some(ScopeItem::Global(g)) if self.global_sigs.get(g).is_some_and(|s| matches!(s.state, crate::check::initializer::TypeState::Rejected)))
                 {

@@ -554,7 +554,7 @@ impl<'p> Checker<'p> {
             }
             return self.err_expr(pos);
         }
-        let item = self.scope_item(&name, &pos);
+        let item = self.scope_item(&name, &pos, fx);
         match item {
             Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
                 self.err_expr(pos)

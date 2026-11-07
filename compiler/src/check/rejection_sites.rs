@@ -145,6 +145,7 @@ pub(crate) enum RejectionSite {
     SwitchCaseWriteOutsideDeclaration,
     BlockNameReadBeforeDeclaration,
     ImmediateShadowedNameRead,
+    ClassReadBeforeDeclaration,
     BlockPendingReadWithoutProgramShadow,
     BlockNameWriteBeforeDeclaration,
     ImmediateNameWriteBeforeDeclaration,

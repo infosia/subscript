@@ -145,3 +145,4 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
    `const early: CB = B.m;`. `tsc` gives TS2449. A static method with a
    `void` result gives the same result, so this is older than §240. It
    is a gap against invariant 5.
+   *(Closed 2026-11-07 by §241.)*

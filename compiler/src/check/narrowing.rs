@@ -829,7 +829,13 @@ mod tests {
     fn scope_exit_discards_only_facts_that_need_its_const_binding() {
         use crate::check::narrowing_fact::FactKind;
         for nested in [false, true] {
-            let mut fx = FnCtx::new(Type::Void, false, None, Default::default());
+            let mut fx = FnCtx::new(
+                Type::Void,
+                false,
+                None,
+                crate::check::Evaluation::AtOnce,
+                Default::default(),
+            );
             let mut scope = super::super::Scope::default();
             scope.const_keys.insert("i".into(), "inner-i".into());
             scope.vars.insert(

@@ -556,7 +556,7 @@ impl<'p> Checker<'p> {
                         pos: ident_pos,
                     });
                 }
-                let item = self.scope_item(&name, &ident_pos);
+                let item = self.scope_item(&name, &ident_pos, fx);
                 if matches!(item, Some(ScopeItem::Poisoned)) {
                     return Place::Local(self.err_expr(ident_pos));
                 }
@@ -849,7 +849,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         let receiver_pos = self.pos(ident.span);
-        let Some(ScopeItem::Class(class)) = self.scope_item(&name, &receiver_pos) else {
+        let Some(ScopeItem::Class(class)) = self.scope_item(&name, &receiver_pos, fx) else {
             return self
                 .check_namespace_member(obj, prop, prop_pos, fx, true)
                 .map(Place::StaticField);

@@ -8,7 +8,7 @@ impl<'p> Checker<'p> {
     /// file's top-level scope, then the global ambient scope (mirror
     /// declarations, §12.2). A type-only import binding reports S100 once
     /// per use site and resolves poisoned (compiler.md §134 rule 2).
-    pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos) -> Option<ScopeItem> {
+    pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos, fx: &FnCtx) -> Option<ScopeItem> {
         if self
             .rejected_local_names
             .iter()
@@ -55,7 +55,43 @@ impl<'p> Checker<'p> {
             );
             return Some(ScopeItem::Poisoned);
         }
-        self.peek_scope_item(name)
+        let item = self.peek_scope_item(name);
+        self.reject_read_before_declaration(name, item.as_ref(), pos, fx);
+        item
+    }
+
+    /// Rejects a value reference to a class, a generic class, or an enum of
+    /// this file before the start of its declaration, when the reference
+    /// is evaluated at once (compiler.md §241 rules 1 to 3). A reference in
+    /// a deferred frame (§241 rule 2) runs after the declaration.
+    fn reject_read_before_declaration(
+        &mut self,
+        name: &str,
+        item: Option<&ScopeItem>,
+        pos: &Pos,
+        fx: &FnCtx,
+    ) {
+        if !matches!(
+            item,
+            Some(ScopeItem::Class(_) | ScopeItem::GenericClass(_) | ScopeItem::Enum(_))
+        ) || fx.frames.iter().any(|frame| frame.deferred)
+        {
+            return;
+        }
+        let Some(start) = self
+            .declaration_starts
+            .get(&(self.cur_file, name.to_string()))
+        else {
+            return;
+        };
+        if (pos.line, pos.col) >= (start.line, start.col) {
+            return;
+        }
+        self.reject_subset(
+            RejectionSite::ClassReadBeforeDeclaration,
+            format!("`{name}` is used before its declaration"),
+            pos.clone(),
+        );
     }
 
     /// Resolves a name as a value without a use: an existence or shadow

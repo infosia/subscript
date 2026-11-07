@@ -166,6 +166,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::SwitchCaseWriteOutsideDeclaration => WitnessEntry::General { files: &["c-lookup-switch-write"], variant: Some(Divergence::DeclarationScope), reason: "" },
         RejectionSite::BlockNameReadBeforeDeclaration => WitnessEntry::General { files: &["c-lookup-shadow-class", "block-name-read-before-declaration", "block-name-read-before-declaration-witness-2"], variant: Some(Divergence::BlockNameReadBeforeDeclaration), reason: "" },
         RejectionSite::ImmediateShadowedNameRead => WitnessEntry::General { files: &["c-corpus-r154-namespace-read-before-declaration", "c-corpus-r155-class-read-before-declaration"], variant: None, reason: "" },
+        RejectionSite::ClassReadBeforeDeclaration => WitnessEntry::General { files: &["class-read-before-declaration"], variant: None, reason: "" },
         RejectionSite::BlockPendingReadWithoutProgramShadow => WitnessEntry::General { files: &["s173-pending-lambda", "c-lookup-pending-closure"], variant: Some(Divergence::DeclarationScope), reason: "" },
         RejectionSite::BlockNameWriteBeforeDeclaration => WitnessEntry::General { files: &["c-lookup-write-closure"], variant: Some(Divergence::BlockNameWriteBeforeDeclaration), reason: "" },
         RejectionSite::ImmediateNameWriteBeforeDeclaration => WitnessEntry::General { files: &["c-lookup-pending-write"], variant: None, reason: "" },

@@ -141,7 +141,7 @@ impl<'p> Checker<'p> {
             return Some(self.err_expr(prop_pos));
         }
         let receiver_pos = self.pos(id.span);
-        match self.scope_item(&name, &receiver_pos) {
+        match self.scope_item(&name, &receiver_pos, fx) {
             Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
                 Some(self.err_expr(prop_pos))
             }
@@ -750,7 +750,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let entry_pos = self.pos(ident.span);
-        let item = self.scope_item(ident.sym.as_ref(), &entry_pos);
+        let item = self.scope_item(ident.sym.as_ref(), &entry_pos, fx);
         if matches!(item, Some(ScopeItem::Poisoned)) {
             self.check_poisoned_arguments(&c.args, fx);
             return self.err_expr(pos);

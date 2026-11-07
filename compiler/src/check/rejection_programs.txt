@@ -9826,3 +9826,11 @@ function scale(n: i32): i32 { function times(x: i32): i32 { return x * n; } retu
 export function main(): void { print(`${scale(3)}`); }
 END FILE
 END PROGRAM
+PROGRAM	class-read-before-declaration	TS2449		0
+FILE	E	target/s154/forms/class-read-before-declaration/main.ts
+type CB = (x: i32) => void;
+const early: CB = B.m;
+class B { static m(x: i32): void {} }
+export function main(): void { early(1); }
+END FILE
+END PROGRAM

@@ -802,6 +802,19 @@ fn field_list(first: &str, rest: &[String]) -> NamedFields {
     }
 }
 
+/// When the code of a frame runs, relative to the code around it
+/// (compiler.md §241 rule 2). Each frame states it where it is built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Evaluation {
+    /// The code runs at once: a top-level initializer or statement, a
+    /// static field initializer, or a lambda that is called at once.
+    AtOnce,
+    /// The code runs later: a function, a method, a getter, a setter, a
+    /// constructor, an instance field initializer, a parameter default,
+    /// or a lambda that is not called at once.
+    Deferred,
+}
+
 /// One function (or lambda) frame.
 #[derive(Debug, Clone)]
 pub(crate) struct Frame {
@@ -820,6 +833,11 @@ pub(crate) struct Frame {
     /// one return per leaf, and whether its leaves gave the diagnostic of
     /// compiler.md §237 rule 5.
     pub void_split: Option<(Pos, bool)>,
+    /// The body runs later than the code around it: a function, a method,
+    /// a getter, a setter, a constructor, an instance field initializer, a
+    /// parameter default, or a lambda that is not called at once
+    /// (compiler.md §241 rule 2).
+    pub deferred: bool,
     pub lambda_id: Option<hir::LambdaId>,
     pub captures: Shared<Vec<hir::Capture>>,
     pub this_ty: Option<Type>,
@@ -1056,6 +1074,7 @@ impl FnCtx {
         ret: Type,
         is_generator: bool,
         this_ty: Option<Type>,
+        evaluation: Evaluation,
         diagnostics: DiagnosticSink,
     ) -> Self {
         FnCtx {
@@ -1078,6 +1097,7 @@ impl FnCtx {
                 contextual_void: false,
                 rejects_return_operand: false,
                 void_split: None,
+                deferred: evaluation == Evaluation::Deferred,
                 lambda_id: None,
                 captures: Vec::new().into(),
                 this_ty: this_ty.clone(),
@@ -1303,6 +1323,13 @@ pub(crate) struct Checker<'p> {
     /// The next lambda with no result annotation takes `void` as the
     /// context of its result (compiler.md §238 rule 2).
     lambda_void_context: bool,
+    /// The next lambda is the callee of a call, so its body runs at once
+    /// (compiler.md §241 rule 2).
+    lambda_called_at_once: bool,
+    /// The position of the name of each class, generic class, and enum
+    /// declared in a program file, by file and name (compiler.md §241
+    /// rule 1).
+    declaration_starts: HashMap<(usize, String), Pos>,
     initializer_call: Option<swc_common::Span>,
     active_call: Option<swc_common::Span>,
     /// The contextual type of the active call (§212 rule 1).
@@ -1510,7 +1537,13 @@ mod tests {
         use crate::{hir, types::Type, Pos};
 
         let diagnostics = DiagnosticSink::default();
-        let mut fx = FnCtx::new(Type::Void, false, None, diagnostics.clone());
+        let mut fx = FnCtx::new(
+            Type::Void,
+            false,
+            None,
+            super::Evaluation::AtOnce,
+            diagnostics.clone(),
+        );
         let pos = Pos::new("test.ts", 1, 1);
         let statement = hir::Stmt::Let {
             name: "[[early]]".into(),

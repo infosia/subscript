@@ -49,6 +49,7 @@ impl<'p> Checker<'p> {
         let generic_context = self.generic_callback_context;
         let result_hint = self.lambda_result_hint.take();
         let void_context = std::mem::take(&mut self.lambda_void_context);
+        let called_at_once = std::mem::take(&mut self.lambda_called_at_once);
         let value = self.with_expression_work(|checker| {
             if a.is_async && a.type_params.is_some() {
                 checker.reject_subset(
@@ -169,7 +170,7 @@ impl<'p> Checker<'p> {
                 ret = Some(Type::Error);
             }
             checker.generic_callback_context = false;
-            checker.decide_lambda_parameters(&mut params, fx);
+            checker.decide_lambda_parameters(&mut params, evaluation_of(called_at_once), fx);
             if checker.deciding_type
                 && decided_from_syntax
                 && ret.as_ref().is_some_and(|t| *t != Type::Error)
@@ -184,6 +185,7 @@ impl<'p> Checker<'p> {
                         source: a.clone(),
                         params,
                         result: result.clone(),
+                        called_at_once,
                     },
                     fx,
                 );
@@ -212,6 +214,9 @@ impl<'p> Checker<'p> {
                     pos,
                 };
             }
+            // The body checks with the fact that the lambda is called at
+            // once (compiler.md §241 rule 2).
+            checker.lambda_called_at_once = called_at_once;
             checker.check_lambda_body(a, params, ret, result_hint.as_ref(), fx, pos)
         });
         self.generic_callback_context = generic_context;
@@ -246,6 +251,8 @@ impl<'p> Checker<'p> {
             contextual_void: !a.is_async && a.return_type.is_none() && ret == Some(Type::Void),
             rejects_return_operand: false,
             void_split: None,
+            deferred: evaluation_of(std::mem::take(&mut self.lambda_called_at_once))
+                == crate::check::Evaluation::Deferred,
             lambda_id: Some(id),
             captures: Vec::new().into(),
             this_ty: None,
@@ -532,4 +539,14 @@ fn returns_a_value(statements: &[ast::Stmt]) -> bool {
         }
         _ => false,
     })
+}
+
+/// The evaluation of a lambda body: at once when the lambda is the callee
+/// of a call (compiler.md §241 rule 2).
+fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
+    if called_at_once {
+        crate::check::Evaluation::AtOnce
+    } else {
+        crate::check::Evaluation::Deferred
+    }
 }

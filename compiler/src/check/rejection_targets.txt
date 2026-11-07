@@ -34,6 +34,7 @@ SwitchCaseWriteOutsideDeclaration	c-lookup-switch-write	S100	`x` is assigned in 
 ImmediateShadowedNameRead	c-corpus-r155-class-read-before-declaration	S100	`Foo` is read before its declaration in this block
 ImmediateShadowedNameRead	c-corpus-r154-namespace-read-before-declaration	S100	`Math` is read before its declaration in this block
 BlockNameReadBeforeDeclaration	c-lookup-shadow-class	S100	`C` is read before its declaration in this block
+ClassReadBeforeDeclaration	class-read-before-declaration	S100	`B` is used before its declaration
 BlockPendingReadWithoutProgramShadow	c-lookup-pending-closure	S100	`x` is read before its declaration in this block
 ImmediateNameWriteBeforeDeclaration	c-lookup-pending-write	S100	`x` is assigned before its declaration in this block
 BlockNameWriteBeforeDeclaration	c-lookup-write-closure	S100	`x` is assigned before its declaration in this block

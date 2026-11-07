@@ -55,6 +55,8 @@ pub(crate) enum DeferredWork {
         source: ast::ArrowExpr,
         params: Vec<ParamSig>,
         result: Type,
+        /// The lambda is the callee of a call (compiler.md §241 rule 2).
+        called_at_once: bool,
     },
     Arguments {
         source: Vec<ast::ExprOrSpread>,
@@ -186,7 +188,13 @@ impl<'p> Checker<'p> {
         }
         let mut source = sig.initializer;
         let ty = if let Some(source) = &mut source {
-            let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+            let mut fx = FnCtx::new(
+                Type::Void,
+                false,
+                None,
+                Evaluation::AtOnce,
+                self.diags.clone(),
+            );
             fx.lexical_class = source.class;
             if source.class.is_some() {
                 fx.frames[0].missing_this_site = Some(RejectionSite::ThisStaticField);
@@ -200,7 +208,13 @@ impl<'p> Checker<'p> {
                 self.inferred_function_required(
                     &source.expression,
                     value,
-                    &FnCtx::new(Type::Void, false, None, self.diags.clone()),
+                    &FnCtx::new(
+                        Type::Void,
+                        false,
+                        None,
+                        Evaluation::AtOnce,
+                        self.diags.clone(),
+                    ),
                 )
             })
         });
@@ -231,7 +245,13 @@ impl<'p> Checker<'p> {
             sig.state = TypeState::InProgress;
         }
         let ty = if let Some(source) = &mut source {
-            let mut fx = FnCtx::new(Type::Void, false, Some(Type::Class(id)), self.diags.clone());
+            let mut fx = FnCtx::new(
+                Type::Void,
+                false,
+                Some(Type::Class(id)),
+                Evaluation::Deferred,
+                self.diags.clone(),
+            );
             fx.lexical_class = Some(id);
             if self.classes[id.0].is_descriptor {
                 fx.descriptor_default = Some(Type::Class(id));
@@ -263,7 +283,15 @@ impl<'p> Checker<'p> {
         ty
     }
 
-    pub(crate) fn decide_lambda_parameters(&mut self, params: &mut [ParamSig], fx: &FnCtx) {
+    /// Decides the parameter types of a lambda in a frame of the lambda.
+    /// `evaluation` is the evaluation of the lambda body, so a default of a
+    /// lambda that is called at once runs at once (compiler.md §241 rule 2).
+    pub(crate) fn decide_lambda_parameters(
+        &mut self,
+        params: &mut [ParamSig],
+        evaluation: Evaluation,
+        fx: &FnCtx,
+    ) {
         if params
             .iter()
             .all(|param| !matches!(param.state, TypeState::Undecided | TypeState::InProgress))
@@ -272,10 +300,11 @@ impl<'p> Checker<'p> {
         }
         let mut context = fx.clone();
         let mut frame = context.frames.last().cloned().unwrap_or_else(|| {
-            FnCtx::new(Type::Void, false, None, self.diags.clone())
+            FnCtx::new(Type::Void, false, None, evaluation, self.diags.clone())
                 .frames
                 .remove(0)
         });
+        frame.deferred = evaluation == Evaluation::Deferred;
         frame.is_lambda = true;
         frame.lambda_id = None;
         frame.this_ty = None;
@@ -457,7 +486,13 @@ impl<'p> Checker<'p> {
         {
             return;
         }
-        let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+        let mut fx = FnCtx::new(
+            Type::Void,
+            false,
+            None,
+            Evaluation::Deferred,
+            self.diags.clone(),
+        );
         self.enter_local_function_class(name, &mut fx);
         self.decide_parameters_in(
             &mut sig.params,
@@ -568,7 +603,13 @@ impl<'p> Checker<'p> {
         {
             return;
         }
-        let mut fx = FnCtx::new(Type::Void, false, Some(Type::Class(id)), self.diags.clone());
+        let mut fx = FnCtx::new(
+            Type::Void,
+            false,
+            Some(Type::Class(id)),
+            Evaluation::Deferred,
+            self.diags.clone(),
+        );
         fx.lexical_class = Some(id);
         self.decide_parameters_in(&mut params, &mut fx, Some(&ParameterOwner::Constructor(id)));
     }
@@ -594,6 +635,7 @@ impl<'p> Checker<'p> {
             Type::Void,
             false,
             (!is_static).then_some(Type::Class(id)),
+            Evaluation::Deferred,
             self.diags.clone(),
         );
         fx.lexical_class = Some(id);
@@ -718,7 +760,9 @@ impl<'p> Checker<'p> {
                     source,
                     params,
                     result,
+                    called_at_once,
                 } => {
+                    self.lambda_called_at_once = called_at_once;
                     *value = self.check_lambda_body(
                         &source,
                         params,

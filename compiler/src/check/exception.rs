@@ -604,7 +604,7 @@ impl Checker<'_> {
                     .is_some_and(|binding| binding.type_only);
             if type_only {
                 let right_pos = self.pos(id.span);
-                self.scope_item(name, &right_pos);
+                self.scope_item(name, &right_pos, fx);
                 if self.caught_operand(&b.left, fx).is_none() {
                     self.check_expr(&b.left, None, fx);
                 }

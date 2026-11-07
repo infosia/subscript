@@ -13,7 +13,13 @@ impl<'p> Checker<'p> {
                 }
                 ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => self.check_body_decl(d, false),
                 ast::ModuleItem::Stmt(s) => {
-                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+                    let mut fx = FnCtx::new(
+                        Type::Void,
+                        false,
+                        None,
+                        Evaluation::AtOnce,
+                        self.diags.clone(),
+                    );
                     let mut out = Vec::new();
                     self.check_stmt(s, &mut fx, &mut out);
                     let out = if has_dispose_binding(&out) {
@@ -85,7 +91,13 @@ impl<'p> Checker<'p> {
             let Some(field_ty) = field_ty else {
                 continue;
             };
-            let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+            let mut fx = FnCtx::new(
+                Type::Void,
+                false,
+                None,
+                Evaluation::Deferred,
+                self.diags.clone(),
+            );
             fx.lexical_class = Some(id);
             fx.descriptor_default = Some(Type::Class(id));
             let mut initializer = self.class_sigs[id.0]
@@ -167,7 +179,13 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     let pos = self.pos(binding.id.span);
-                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+                    let mut fx = FnCtx::new(
+                        Type::Void,
+                        false,
+                        None,
+                        Evaluation::AtOnce,
+                        self.diags.clone(),
+                    );
                     let cached = self.finish_initializer(&mut sig.initializer);
                     let init = if let Some(value) = cached {
                         value
@@ -267,6 +285,7 @@ impl<'p> Checker<'p> {
             sig.ret.clone(),
             sig.is_generator,
             this_ty,
+            Evaluation::Deferred,
             self.diags.clone(),
         );
         fx.lexical_class = lexical_class;
@@ -532,7 +551,13 @@ impl<'p> Checker<'p> {
                             continue;
                         };
                         let pos = self.pos(key.span);
-                        let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+                        let mut fx = FnCtx::new(
+                            Type::Void,
+                            false,
+                            None,
+                            Evaluation::AtOnce,
+                            self.diags.clone(),
+                        );
                         fx.lexical_class = Some(id);
                         fx.frames[0].missing_this_site = Some(RejectionSite::ThisStaticField);
                         let cached = self.finish_initializer(&mut signature.initializer);
@@ -609,7 +634,13 @@ impl<'p> Checker<'p> {
                         let mut fx = self
                             .initializer_context
                             .get_or_insert_with(|| {
-                                FnCtx::new(Type::Void, false, None, self.diags.clone())
+                                FnCtx::new(
+                                    Type::Void,
+                                    false,
+                                    None,
+                                    Evaluation::Deferred,
+                                    self.diags.clone(),
+                                )
                             })
                             .clone();
                         fx.lexical_class = Some(id);
@@ -656,8 +687,13 @@ impl<'p> Checker<'p> {
                         is_async: false,
                         yield_known: true,
                     };
-                    let mut fx =
-                        FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
+                    let mut fx = FnCtx::new(
+                        Type::Void,
+                        false,
+                        Some(this_ty.clone()),
+                        Evaluation::Deferred,
+                        self.diags.clone(),
+                    );
                     fx.lexical_class = Some(id);
                     fx.constructor_body = true;
                     fx.frames[0].rejects_return_operand = true;

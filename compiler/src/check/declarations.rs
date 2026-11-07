@@ -23,6 +23,15 @@ impl<'p> Checker<'p> {
         );
     }
 
+    /// Records the position of the name of a class, a generic class, or an
+    /// enum of a program file (compiler.md §241 rule 1).
+    fn record_declaration_start(&mut self, file: usize, name: &str, pos: &Pos) {
+        if !self.prog.files[file].dts {
+            self.declaration_starts
+                .insert((file, name.to_string()), pos.clone());
+        }
+    }
+
     pub(super) fn register_scope_binding(
         &mut self,
         file: usize,
@@ -334,6 +343,9 @@ impl<'p> Checker<'p> {
         let name = c.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
+        if !c.declare {
+            self.record_declaration_start(file, &name, &pos);
+        }
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class, &name);
         if c.class
             .type_params
@@ -571,6 +583,11 @@ impl<'p> Checker<'p> {
     fn collect_enum(&mut self, file: usize, e: &ast::TsEnumDecl) {
         let name = e.id.sym.to_string();
         let pos = self.pos(e.id.span);
+        // compiler.md §241 rule 1: a `const enum` has no value at run time,
+        // so a read before it is not a read before its declaration.
+        if !e.declare && !e.is_const {
+            self.record_declaration_start(file, &name, &pos);
+        }
         let diagnostics_before = self.diags.len();
         let mut members = Vec::new();
         // `None` means the previous member's value + 1 overflows i32, so
