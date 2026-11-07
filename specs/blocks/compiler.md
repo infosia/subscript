@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -279,3 +279,4 @@ Every section, with its status:
 | §235 | A function type takes a nullable handle variance | active | [`s235-a-function-type-takes-a-nullable-handle-variance.md`](compiler/s235-a-function-type-takes-a-nullable-handle-variance.md) |
 | §236 | An async return adopts a handle | active | [`s236-an-async-return-adopts-a-handle.md`](compiler/s236-an-async-return-adopts-a-handle.md) |
 | §237 | A `void` function returns a `void` operand | active | [`s237-a-void-function-returns-a-void-operand.md`](compiler/s237-a-void-function-returns-a-void-operand.md) |
+| §238 | A lambda with no value result is `void` | active | [`s238-a-lambda-with-no-value-result-is-void.md`](compiler/s238-a-lambda-with-no-value-result-is-void.md) |
