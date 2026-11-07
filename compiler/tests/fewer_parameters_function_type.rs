@@ -165,9 +165,9 @@ fn the_other_forms_keep_their_diagnostic() {
             "type mismatch: the initializer expects `(i32, i32, i32) => void`, got `(i32, i32) => void`",
         ),
         (
-            "function f(): void { [1].forEach(() => print(\"z\")); }",
+            "function f(): void { [1].forEach((x: i32, i: i32, all: i32[]) => print(\"z\")); }",
             RuleCode::S014,
-            "`forEach` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 0 (Q27)",
+            "`forEach callback with the container parameter` is rejected: Passing the iterated container reference to its callback violates C5's non-escaping-by-construction rule; use `callback(value, index)` (Q27)",
         ),
     ] {
         let diagnostic = rejects(body);
@@ -184,31 +184,30 @@ fn the_other_forms_keep_their_diagnostic() {
     }
 }
 
-/// Rule 3: a built-in callback keeps its arity rules for a reference to a
-/// function declaration with fewer parameters. The control in the same
-/// places: a function with the arity of the place is accepted.
+/// Rule 3 with compiler.md §244: a built-in callback takes a reference with
+/// fewer parameters at its smallest arity, and rejects a function value
+/// with an environment and a function with a default parameter with the
+/// cause (§244 rule 4a). The controls: the references of the place arity.
 #[test]
-fn a_built_in_callback_keeps_its_arity() {
+fn a_built_in_callback_pads_a_reference_and_names_an_unadapted_value() {
+    for body in [
+        "function f(): void { [1, 2].forEach(none); }",
+        "function f(b: boolean): void { [1, 2].forEach(b ? one : none); }",
+        "function f(): i32 { return [1, 2].reduce(inc, 0); }",
+        "function f(): void { new Set<i32>().forEach(none); }",
+    ] {
+        accepts(body);
+    }
     for (body, code, message) in [
         (
-            "function f(): void { [1, 2].forEach(none); }",
+            "function f(fv: () => void): void { [1, 2].forEach(fv); }",
             RuleCode::S014,
-            "`forEach` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 0 (Q27)",
+            "`forEach` callback `fv` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it",
         ),
         (
-            "function f(b: boolean): void { [1, 2].forEach(b ? one : none); }",
-            RuleCode::S100,
-            "conditional branches have no common type: `(i32) => void` and `() => void`",
-        ),
-        (
-            "function f(): i32 { return [1, 2].reduce(inc, 0); }",
+            "function d(x: i32 = 1): void {}\nfunction f(m: Map<string, i32>): void { m.forEach(d); }",
             RuleCode::S014,
-            "`reduce` callbacks take 2 parameter(s), or 3 with a trailing `i32` index; got 1 (Q27)",
-        ),
-        (
-            "function f(): void { new Set<i32>().forEach(none); }",
-            RuleCode::S014,
-            "`Set.forEach` callbacks take exactly 1 parameter(s); extra lib callback parameters are not accepted (Q24)",
+            "`Map.forEach` callback `d` has fewer parameters than the place and a default parameter, which has no adapter; use a lambda that calls it",
         ),
     ] {
         let diagnostic = rejects(body);

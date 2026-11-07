@@ -612,6 +612,9 @@ impl Divergence {
             }
             Divergence::SourceConstructionDomain => established_tail::SOURCECONSTRUCTIONDOMAIN,
             Divergence::CallbackParameterShape => established_tail::CALLBACKPARAMETERSHAPE,
+            Divergence::CallbackFewerParametersUnadapted => {
+                established_tail::CALLBACKFEWERPARAMETERSUNADAPTED
+            }
             Divergence::JsonCallArguments => established_tail::JSONCALLARGUMENTS,
             Divergence::JsonTypeDomain => established_tail::JSONTYPEDOMAIN,
             Divergence::StringSearchPattern => established_tail::STRINGSEARCHPATTERN,

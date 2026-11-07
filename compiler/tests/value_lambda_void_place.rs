@@ -60,11 +60,13 @@ fn a_built_in_callback_place_reaches_each_branch() {
     ] {
         accepts(body);
     }
-    // A function with fewer parameters does not fit a function type with
-    // more parameters, so branches of two counts of parameters have no
-    // common type and stay rejected. `tsc` accepts this form.
-    let control =
-        rejects("function f(b: boolean): void { [6].forEach(b ? two : (x: i32): void => {}); }");
+    // A leaf with fewer parameters takes the place of the largest arity
+    // (compiler.md §244 rule 2). A leaf with more parameters than the place
+    // allows keeps the diagnostic.
+    accepts("function f(b: boolean): void { [6].forEach(b ? two : (x: i32): void => {}); }");
+    let control = rejects(
+        "function f(b: boolean): void { [6].forEach(b ? two : (x: i32, i: i32, j: i32): void => {}); }",
+    );
     assert_eq!(control.code, RuleCode::S100, "{control:?}");
 }
 
@@ -247,8 +249,13 @@ function id<F>(f: F): F { return f; }";
     ] {
         accepts(&format!("{declarations}\n{body}"));
     }
-    let control = rejects(&format!(
+    // Leaves of two arities take the largest (compiler.md §244 rule 2); a
+    // leaf with more parameters than the place allows keeps the diagnostic.
+    accepts(&format!(
         "{declarations}\nfunction f(b: boolean, c: boolean): void {{ [4].forEach(b ? (c ? tv : named) : two2); }}"
+    ));
+    let control = rejects(&format!(
+        "{declarations}\nfunction f(b: boolean, c: boolean): void {{ [4].forEach(b ? (c ? tv : (x: i32, i: i32, j: i32): void => {{}}) : two2); }}"
     ));
     assert_eq!(control.code, RuleCode::S100, "{control:?}");
 }

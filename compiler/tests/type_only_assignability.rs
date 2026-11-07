@@ -86,7 +86,7 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
-        "place_value_with",
+        "place_value",
         1,
         "This is the check that takes the value: it reads the type after the conversion.",
     ),
@@ -109,7 +109,7 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
         "An index is compared with `i32`, which is not a function type.",
     ),
     (
-        "expr/method.rs",
+        "expr/callback_shape.rs",
         "callback_type_fits",
         1,
         "A parameter type of a callback that involves a type parameter is compared; the callback value takes its place in `expect_callback_shape`.",
@@ -127,7 +127,7 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
 /// conversion applies there.
 const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
     (
-        "expr/method.rs",
+        "expr/callback_shape.rs",
         "callback_type_fits",
         1,
         "A parameter or result type of a built-in callback is compared with its place; the callback value took the conversion of §240 rule 2 before, and `place_callback_value` converts it after.",

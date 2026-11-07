@@ -288,6 +288,10 @@ macro_rules! rejection_classes {
                     Self::CallbackParameterCount => {
                         (RuleCode::S014, Diverges(Divergence::CallbackParameterShape))
                     }
+                    Self::CallbackFewerParametersUnadapted => (
+                        RuleCode::S014,
+                        Diverges(Divergence::CallbackFewerParametersUnadapted),
+                    ),
                     Self::ContextMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::JsonMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::ArrayFromValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),

@@ -1480,6 +1480,10 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s038.ts", "s038-d.ts"],
             variant: Divergence::CallbackParameterShape,
         },
+        RejectionSite::CallbackFewerParametersUnadapted => WitnessEntry::Reachable {
+            files: &["s244-environment.ts", "s244-default.ts"],
+            variant: Divergence::CallbackFewerParametersUnadapted,
+        },
         RejectionSite::ContextMember => WitnessEntry::Reachable {
             files: &["s039.ts", "s039-b.ts"],
             variant: Divergence::CompilerOwnedValue,
@@ -1695,6 +1699,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::ArrayFromSpread,
     RejectionSite::ArrayFromSource,
     RejectionSite::CallbackParameterCount,
+    RejectionSite::CallbackFewerParametersUnadapted,
     RejectionSite::ContextMember,
     RejectionSite::JsonMember,
     RejectionSite::ArrayFromValue,

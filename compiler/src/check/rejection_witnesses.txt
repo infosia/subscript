@@ -530,7 +530,7 @@ s037.ts	expr/method.rs:1022 check_array_from	TS2769	S014
 `Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, or string; got `i32`
 export function main(): void { Array.from(1); }
 ===
-s038.ts	expr/method.rs:1470 callback_params_for_arity	TS2345	S014		
+s038.ts	expr/callback_shape.rs callback_params_for_arity	TS2345	S014		
 `map` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 4 (Q27)
 export function main(): void { const xs: i32[] = [1]; xs.map((v: i32, index: i32, array: i32[], extra: i32): i32 => v); }
 ===
@@ -1301,9 +1301,18 @@ s034-d.ts	expr/method.rs:948 check_array_from		S014
 `Array.from<T>` takes exactly one type argument
 export function main(): void { const xs: i32[] = [1]; Array.from<i32, i32>(xs, (v: i32): i32 => v); }
 ===
-s038-d.ts	expr/method.rs:1470 callback_params_for_arity		S014		
-`map` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 0 (Q27)
-export function main(): void { const xs: i32[] = [1]; xs.map((): i32 => 1); }
+s038-d.ts	expr/callback_shape.rs callback_params_for_arity		S014		
+`Map.forEach` callbacks take exactly 2 parameter(s); extra lib callback parameters are not accepted (Q24)
+export function main(): void { const m = new Map<string, i32>(); m.forEach((v: i32, k: string, all: Map<string, i32>): void => {}); }
+===
+s244-environment.ts	expr/callback_shape.rs reject_unadapted_fewer_parameters		S014		§244
+`forEach` callback `f` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it
+export function main(): void { const xs: i32[] = [1]; const f = (): void => print("e"); xs.forEach(f); }
+===
+s244-default.ts	expr/callback_shape.rs reject_unadapted_fewer_parameters		S014		§244
+`reduce` callback `d` has fewer parameters than the place and a default parameter, which has no adapter; use a lambda that calls it
+function d(acc: i32 = 3): i32 { return acc; }
+export function main(): void { const xs: i32[] = [1]; print(`${xs.reduce(d, 0)}`); }
 ===
 r27-string-match-old.ts	REGEX_STRING_REJECTIONS/string / match	TS2322	S014		
 `match` is rejected: The match result requires an optional numeric index, but the language requires a definite `i32` index. (Q31)
@@ -1480,7 +1489,7 @@ s171-nested-counted-element.ts	expr/method.rs check_array_method		S014		§171
 `includes` cannot carry a counted element type (§171)
 export function main(): void { const jobs: Promise<i32>[][] = []; jobs.includes([]); }
 ===
-s171-counted-callback-result.ts	expr/method.rs expect_callback_shape		S014		§171
+s171-counted-callback-result.ts	expr/callback_shape.rs expect_callback_shape		S014		§171
 `map` cannot carry a counted callback result (§171)
 export function main(): void { const values: i32[] = [1]; values.map((value: i32): Promise<i32>[] => []); }
 ===
@@ -1491,7 +1500,7 @@ export function main(): void {
   values.forEach((value: Promise<i32>[][], key: i32): void => {});
 }
 ===
-s172-counted-map-callback-result.ts	expr/method.rs expect_callback_shape		S014		§172
+s172-counted-map-callback-result.ts	expr/callback_shape.rs expect_callback_shape		S014		§172
 `Map.forEach` cannot carry a counted callback result (§171)
 export function main(): void {
   const values: Map<i32, i32> = new Map<i32, i32>();

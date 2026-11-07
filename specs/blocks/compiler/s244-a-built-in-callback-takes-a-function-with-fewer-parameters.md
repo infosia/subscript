@@ -83,3 +83,44 @@ lowering (§235 rule 5c), so the added parameters have no cost.
    (rejected) as a control.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 244.3 Phase Review
+
+*(Added 2026-11-08.)* Two fresh reviews of the implementation. The
+contract gained rule 4a. No CRITICAL finding. The first review measured
+about 120 callback forms; dev, ship, and `node` gave the same bytes.
+
+1. MAJOR, realistic, fixed: a function value with fewer parameters that
+   rule 1 does not take, such as a local `f` in `xs.forEach(f)`, got
+   the diagnostic and the reason of a callback with too many
+   parameters. Rule 4a: a site of its own, `CallbackFewerParametersUnadapted`.
+2. MAJOR, realistic, fixed: the same class. A value with fewer
+   parameters whose types do not fit, such as
+   `m.forEach((k: string) => print(k))` on a `Map<string, i32>`, got the
+   arity diagnostic. It now gets the type mismatch of the place, so no
+   value with fewer parameters reaches the arity diagnostic.
+3. MINOR, fixed: a conditional with a leaf that has a default parameter
+   got the environment text of rule 4a. A conditional now gets the
+   diagnostic of its branches.
+4. MINOR, fixed: a stale citation, stale witness locations, a stale
+   test name, dead code (`ParameterCount`), and an async control that
+   was missing.
+5. MINOR, recorded: §244.4.
+
+### 244.4 Open
+
+1. A conditional of leaves with fewer parameters in a `map` or `reduce`
+   callback stays rejected:
+   `xs.map(t ? ((v: i32): i32 => v) : ((v: i32, i: i32): i32 => i))`.
+   `tsc` accepts it. §242 rule 1a places leaves only where the place
+   is known before the argument is checked. This is older than §244.
+2. Rule 4a does not classify the leaves of a conditional, so
+   `[7].forEach(b ? one : f)` with a local `f` gets "conditional
+   branches have no common type", not the cause. `tsc` accepts it.
+3. The reason of `CallbackParameterShape`, "a parameter for the
+   container itself is not passed", is true for the third parameter of
+   `Map.forEach` and of `Set.forEach`. It is not true for an extra
+   index on `sort`, or for `map` with four parameters. This is older
+   than §244.
+4. A conditional diagnostic names the padded type of a leaf, such as
+   `(i32, i32) => void` for `one`.

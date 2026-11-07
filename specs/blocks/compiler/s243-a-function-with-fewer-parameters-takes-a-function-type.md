@@ -114,4 +114,4 @@ CRITICAL or MAJOR finding.
    owner question as §240.4 item 1.
 2. A built-in callback with fewer parameters keeps S014 (Q22, Q24,
    Q27): `[1].forEach(() => …)` and `[1].forEach(none)`. `tsc` accepts
-   both.
+   both. *(Closed 2026-11-08 by §244.)*

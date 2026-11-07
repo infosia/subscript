@@ -319,16 +319,8 @@ impl<'p> Checker<'p> {
     /// conversion is a `Cast` whose type is exactly `to`: each later stage
     /// reads that type, and no operation runs (rule 5). A value that is not
     /// assignable gets no conversion and keeps its diagnostic.
-    /// `count` is the number of parameters that the place takes from a
-    /// function value: a built-in callback takes only the same number
-    /// (compiler.md §243 rule 3).
-    pub(crate) fn place_function_value(
-        &mut self,
-        value: &mut hir::Expr,
-        to: &Type,
-        count: ParameterCount,
-    ) {
-        self.discard_function_result(value, to, count);
+    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type) {
+        self.discard_function_result(value, to);
         if !self.needs_function_conversion(&value.ty, to) {
             return;
         }
@@ -345,7 +337,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn leaf_context(
         &mut self,
         branch: &ast::Expr,
-        leaves: Option<&(Vec<Type>, Type)>,
+        leaves: Option<&CallbackLeaves>,
         ctx: Option<&Type>,
     ) -> Option<Type> {
         let Some(leaves) = leaves else {
@@ -353,37 +345,74 @@ impl<'p> Checker<'p> {
         };
         match super::expr::unparen_expr(branch) {
             ast::Expr::Cond(_) => {
-                self.callback_leaf_place = Some(leaves.clone());
+                self.callback_leaf_place = Some(CallbackLeaves {
+                    nested: true,
+                    ..leaves.clone()
+                });
                 None
             }
-            ast::Expr::Arrow(arrow) => Some(leaf_place(leaves, arrow.params.len())),
+            ast::Expr::Arrow(arrow) => Some(leaves.place(arrow.params.len())),
             _ => None,
         }
     }
 
-    /// Gives a leaf of a conditional in a built-in callback place the place
-    /// whose arity equals the arity of the type of the leaf (compiler.md
-    /// §242 rule 1a). A nested conditional placed its own leaves.
-    pub(crate) fn place_callback_leaf(
+    /// Gives each leaf of the conditional with the branches `then` and
+    /// `els` the place of the largest arity of the leaves that the place
+    /// allows (compiler.md §242 rule 1a, §244 rule 2). A leaf with fewer
+    /// parameters takes that place as in §244 rule 1. A nested conditional
+    /// takes the type of the place when its two branches have it, and
+    /// gives the diagnostic of no common type when they do not.
+    pub(crate) fn place_callback_leaves(
         &mut self,
-        branch: &ast::Expr,
-        value: &mut hir::Expr,
-        leaves: Option<&(Vec<Type>, Type)>,
+        then: &mut hir::Expr,
+        els: &mut hir::Expr,
+        leaves: &CallbackLeaves,
     ) {
-        let Some(leaves) = leaves else {
+        let mut arities = Vec::new();
+        for branch in [&*then, &*els] {
+            self.leaf_arities(branch, &mut arities);
+        }
+        let Some(&largest) = arities.iter().max() else {
             return;
         };
-        if matches!(super::expr::unparen_expr(branch), ast::Expr::Cond(_)) {
+        // A leaf with more parameters than the place allows keeps its
+        // type, so its conditional has no common type.
+        let place = leaves.place(largest.clamp(leaves.params.len(), leaves.params.len() + 1));
+        self.place_leaves(then, &place);
+        self.place_leaves(els, &place);
+    }
+
+    fn leaf_arities(&self, expr: &hir::Expr, out: &mut Vec<usize>) {
+        if let hir::ExprKind::Cond { then, els, .. } = &expr.kind {
+            self.leaf_arities(then, out);
+            self.leaf_arities(els, out);
+        } else if let Some(function) = self.function_of(&expr.ty) {
+            out.push(function.params.len());
+        }
+    }
+
+    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type) {
+        if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
+            self.place_leaves(then, place);
+            self.place_leaves(els, place);
+            if self.apparent_type(&then.ty) == self.apparent_type(&els.ty) {
+                expr.ty = then.ty.clone();
+            } else {
+                let message = format!(
+                    "conditional branches have no common type: `{}` and `{}`",
+                    self.type_name(&then.ty),
+                    self.type_name(&els.ty),
+                );
+                self.reject_subset(
+                    RejectionSite::ConditionalJoinGeneralUnionAndUndefined,
+                    message,
+                    expr.pos.clone(),
+                );
+                expr.ty = Type::Error;
+            }
             return;
         }
-        let Some(own) = self.function_of(&value.ty) else {
-            return;
-        };
-        let _ = self.place_value_with(
-            value,
-            &leaf_place(leaves, own.params.len()),
-            ParameterCount::Same,
-        );
+        let _ = self.place_value(expr, place);
     }
 
     /// Whether a call of a place with the result `void` can discard the
@@ -442,19 +471,12 @@ impl<'p> Checker<'p> {
     /// function declaration or a static method becomes a lambda with no
     /// environment that calls it, when the place has more parameters or a
     /// `void` result that discards the value. Another value is unchanged.
-    pub(crate) fn discard_function_result(
-        &mut self,
-        value: &mut hir::Expr,
-        to: &Type,
-        count: ParameterCount,
-    ) {
-        if count == ParameterCount::Fewer {
-            self.pad_lambda_parameters(value, to);
-        }
+    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type) {
+        self.pad_lambda_parameters(value, to);
         if self.discard_lambda_result(value, to) {
             return;
         }
-        self.adapt_function_reference(value, to, count);
+        self.adapt_function_reference(value, to);
     }
 
     /// Whether the first parameters of the place `place` fit the parameters
@@ -511,12 +533,7 @@ impl<'p> Checker<'p> {
     /// `void` and the function a value result to discard. The function is
     /// not generic, not async, and not a generator. With more parameters in
     /// the place, it has no default parameter. Another value is unchanged.
-    fn adapt_function_reference(
-        &mut self,
-        value: &mut hir::Expr,
-        to: &Type,
-        count: ParameterCount,
-    ) {
+    fn adapt_function_reference(&mut self, value: &mut hir::Expr, to: &Type) {
         let hir::ExprKind::FuncRef(symbol) = &value.kind else {
             return;
         };
@@ -533,8 +550,7 @@ impl<'p> Checker<'p> {
         if sig.generic
             || sig.is_async
             || sig.is_generator
-            || (fewer
-                && (count == ParameterCount::Same || sig.params.iter().any(|p| p.has_default)))
+            || (fewer && sig.params.iter().any(|p| p.has_default))
             || (!fewer && !discards)
             || !self.prefix_fits(&own, &sig.ret, &place)
         {
@@ -608,18 +624,7 @@ impl<'p> Checker<'p> {
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
     pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type) -> bool {
-        self.place_value_with(value, to, ParameterCount::Fewer)
-    }
-
-    /// [`Self::place_value`] for a place that takes a function with `count`
-    /// parameters (compiler.md §243 rule 3).
-    pub(crate) fn place_value_with(
-        &mut self,
-        value: &mut hir::Expr,
-        to: &Type,
-        count: ParameterCount,
-    ) -> bool {
-        self.place_function_value(value, to, count);
+        self.place_function_value(value, to);
         self.assignable(&value.ty, to)
     }
 
@@ -642,7 +647,7 @@ impl<'p> Checker<'p> {
             place_params.push(Type::I32);
         }
         let place = Type::func(place_params, ret.cloned().unwrap_or(own.ret));
-        self.place_function_value(&mut callback, &place, ParameterCount::Same);
+        self.place_function_value(&mut callback, &place);
         callback
     }
 
@@ -983,28 +988,29 @@ fn discard_return_values(body: &mut Vec<hir::Stmt>) {
     }
 }
 
-/// The place of a built-in callback `leaves` for a leaf with `arity`
-/// parameters: the place with the trailing index when the leaf takes one
-/// parameter more (compiler.md §242 rule 1a).
-fn leaf_place(leaves: &(Vec<Type>, Type), arity: usize) -> Type {
-    let (params, ret) = leaves;
-    let mut place = params.clone();
-    if arity == params.len() + 1 {
-        place.push(Type::I32);
-    }
-    Type::func(place, ret.clone())
+/// The place of a built-in callback with an optional trailing index, for
+/// the leaves of a conditional (compiler.md §242 rule 1a, §244 rule 2).
+#[derive(Debug, Clone)]
+pub(crate) struct CallbackLeaves {
+    /// The parameters of the place without the index.
+    pub(crate) params: Vec<Type>,
+    /// The result of the place.
+    pub(crate) ret: Type,
+    /// The conditional is a branch of another conditional, which places
+    /// the leaves of both.
+    pub(crate) nested: bool,
 }
 
-/// The number of parameters that a place takes from a function value
-/// (compiler.md §243 rule 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ParameterCount {
-    /// The place takes a function with as many parameters as its type: the
-    /// callback of a built-in method.
-    Same,
-    /// The place takes a lambda literal or a function declaration with
-    /// fewer parameters (§243 rules 1 and 2).
-    Fewer,
+impl CallbackLeaves {
+    /// The place for a leaf with `arity` parameters: the place with the
+    /// trailing index when the leaf takes one parameter more.
+    fn place(&self, arity: usize) -> Type {
+        let mut place = self.params.clone();
+        if arity == self.params.len() + 1 {
+            place.push(Type::I32);
+        }
+        Type::func(place, self.ret.clone())
+    }
 }
 
 /// A parameter of a lambda that the checker makes, with no default.

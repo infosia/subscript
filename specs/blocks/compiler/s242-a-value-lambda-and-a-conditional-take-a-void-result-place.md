@@ -144,6 +144,6 @@ lambda and of a §240 reference.
    accepts both. This is older than §242.
    *(The first form closed 2026-11-07 by §243. The conditional is a
    built-in callback, which keeps its arity rules, so it stays
-   rejected.)*
+   rejected.)* *(The conditional closed 2026-11-08 by §244.)*
 2. `finally(id(tick))` keeps S013, and `tsc` accepts it. A lambda with
    no parameters in an array callback place is S014.

@@ -358,11 +358,13 @@ pub(super) fn cells() -> Vec<Cell> {
                         && ((api.owner == "FixedArray" && position == 0)
                             || (api.name == "MapConstructor.groupBy" && position == 1))
                     {
+                        // compiler.md §244 rule 4a: a function value with
+                        // fewer parameters names the cause.
                         Some(Divergence {
                             code: RuleCode::S014,
-                            record: "stdlib.md §12",
-                            message: "callbacks take",
-                            token: "fixed-arity checking",
+                            record: "compiler.md §244",
+                            message: "fewer parameters than the place",
+                            token: "the new environment has no owner",
                         })
                     } else {
                         None

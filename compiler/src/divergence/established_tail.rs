@@ -177,10 +177,17 @@ pub(super) const SOURCECONSTRUCTIONDOMAIN: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const CALLBACKPARAMETERSHAPE: DivergenceEntry = DivergenceEntry {
-                ts: "const xs: i32[] = [1]; xs.map((): i32 => 1);",
-                subscript: "const xs: i32[] = [1]; xs.map((value: i32): i32 => value);",
-                why: "A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI.",
-                collision: "stdlib.md §12",
+                ts: "const m = new Map<string, i32>(); m.forEach((v: i32, k: string, all: Map<string, i32>): void => {});",
+                subscript: "const m = new Map<string, i32>(); m.forEach((v: i32, k: string): void => {});",
+                why: "A container callback takes its element parameters and an optional index; a parameter for the container itself is not passed.",
+                collision: "stdlib.md §10.4",
+            };
+
+pub(super) const CALLBACKFEWERPARAMETERSUNADAPTED: DivergenceEntry = DivergenceEntry {
+                ts: "const xs: i32[] = [1]; const f = (): void => {}; xs.forEach(f);",
+                subscript: "const xs: i32[] = [1]; const f = (): void => {}; xs.forEach((x: i32): void => f());",
+                why: "A function value with fewer parameters needs an adapter; a new environment for it has no owner, and a default parameter has no adapter.",
+                collision: "compiler.md §244",
             };
 
 pub(super) const JSONCALLARGUMENTS: DivergenceEntry = DivergenceEntry {

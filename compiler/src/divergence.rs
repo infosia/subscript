@@ -850,8 +850,10 @@ pub enum Divergence {
     ExplicitIntrinsicTypeArguments,
     /// Source construction accepts arrays, FixedArray, Set, and string; null and JavaScript array-like objects are outside this domain.
     SourceConstructionDomain,
-    /// A container callback declares its element parameters and an optional index; omitted element parameters do not match the runtime callback ABI.
+    /// A container callback takes its element parameters and an optional index; a parameter for the container itself is not passed.
     CallbackParameterShape,
+    /// A function value with fewer parameters needs an adapter; a new environment for it has no owner, and a default parameter has no adapter.
+    CallbackFewerParametersUnadapted,
     /// JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface.
     JsonCallArguments,
     /// JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation.
@@ -1473,6 +1475,7 @@ impl Divergence {
         Divergence::ExplicitIntrinsicTypeArguments,
         Divergence::SourceConstructionDomain,
         Divergence::CallbackParameterShape,
+        Divergence::CallbackFewerParametersUnadapted,
         Divergence::JsonCallArguments,
         Divergence::JsonTypeDomain,
         Divergence::StringSearchPattern,

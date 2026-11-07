@@ -32,10 +32,6 @@ not move.
 
 ## Form
 
-- `compiler/src/check/type_rules.rs`. `place_function_value` and
-  `place_value` take a `ParameterCount`: `Fewer` for the places of §240
-  rule 2, `Same` for a built-in callback (`place_callback_value`, the
-  leaves of §242 rule 1a, and `expect_callback_shape`).
 - `pad_lambda_parameters` (rule 1): a lambda literal with fewer
   parameters, whose parameters and result fit the first parameters and
   the result of the place (`prefix_fits`), takes the trailing parameters
@@ -50,11 +46,13 @@ not move.
   function a value result. With fewer parameters, a function with a
   default parameter, a generic function, and an async function are not
   converted.
-- A unit test pins rule 3 for a reference in a built-in callback
-  (`forEach`, a conditional, `reduce`, `Set.forEach`). A mutation of the
-  three `ParameterCount::Same` uses to `Fewer` fails it.
-- `compiler/tests/type_only_assignability.rs` lists `prefix_fits` and
-  the renamed `place_value_with`.
+- The built-in arity rules that stay (compiler.md §244 rule 4) are
+  pinned by the default-parameter and function-value checks in
+  `compiler/tests/built_in_callback_fewer_parameters.rs` and
+  `compiler/tests/fewer_parameters_function_type.rs`. Since §244, a
+  built-in callback place pads a value with fewer parameters as rule 1
+  and rule 2 do, so the place takes no separate parameter count.
+- `compiler/tests/type_only_assignability.rs` lists `prefix_fits`.
 
 ## Files
 

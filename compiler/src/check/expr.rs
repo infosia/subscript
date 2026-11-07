@@ -7,6 +7,7 @@ mod array_of_and_map_copy;
 mod assign;
 mod await_handle;
 mod call;
+mod callback_shape;
 mod container_new;
 mod entry;
 mod lambda;

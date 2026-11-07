@@ -1745,8 +1745,7 @@ impl<'p> Checker<'p> {
             .chain(first_extra.clone())
             .collect();
         let first_ctx = self.leaf_context(first_ast, leaves.as_ref(), ctx);
-        let mut first = self.check_expr(first_ast, first_ctx.as_ref(), fx);
-        self.place_callback_leaf(first_ast, &mut first, leaves.as_ref());
+        let first = self.check_expr(first_ast, first_ctx.as_ref(), fx);
         let first_facts = fx.narrowed.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
@@ -1764,8 +1763,7 @@ impl<'p> Checker<'p> {
             .collect();
         let second_ctx =
             self.leaf_context(second_ast, leaves.as_ref(), ctx.or(literal_ctx.as_ref()));
-        let mut second = self.check_expr(second_ast, second_ctx.as_ref(), fx);
-        self.place_callback_leaf(second_ast, &mut second, leaves.as_ref());
+        let second = self.check_expr(second_ast, second_ctx.as_ref(), fx);
         let first_possible: HashSet<_> = first_facts.union(&first_notes).cloned().collect();
         let second_possible: HashSet<_> = fx
             .narrowed
@@ -1783,7 +1781,15 @@ impl<'p> Checker<'p> {
         fx.ended_shared_narrowing.extend_facts(first_notes);
         fx.finish_narrowing_join(&note_paths);
 
-        let ty = if self.joins_null_and_undefined(&then.ty, &els.ty) {
+        // compiler.md §242 rule 1a and §244 rule 2: the outer conditional
+        // places each leaf after all of them are checked.
+        let nested = leaves.as_ref().is_some_and(|leaves| leaves.nested);
+        if let Some(leaves) = leaves.as_ref().filter(|leaves| !leaves.nested) {
+            self.place_callback_leaves(&mut then, &mut els, leaves);
+        }
+        let ty = if nested {
+            then.ty.clone()
+        } else if self.joins_null_and_undefined(&then.ty, &els.ty) {
             // §195.1 rule 3: `tsc` types the conditional `T | null | undefined`,
             // with or without a contextual type (§195.11 rule 6).
             self.reject_both_spellings(pos.clone());
