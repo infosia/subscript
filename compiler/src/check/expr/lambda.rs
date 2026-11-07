@@ -258,6 +258,7 @@ impl<'p> Checker<'p> {
         let saved_loops = std::mem::take(&mut fx.loop_break_facts);
         let saved_switches = std::mem::take(&mut fx.switch_break_facts);
         let saved_depth = std::mem::replace(&mut fx.loop_depth, 0);
+        let saved_adoptions = std::mem::take(&mut fx.adoptions);
         let saved_switch_depth = std::mem::replace(&mut fx.switch_depth, 0);
         let saved_reachable = std::mem::replace(&mut fx.flow_reachable, true);
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
@@ -321,6 +322,17 @@ impl<'p> Checker<'p> {
             crate::check::SyntheticOwnerKind::ArrowBody(body_pos),
             |fx| match &*a.body {
                 ast::BlockStmtOrExpr::Expr(e) => {
+                    // compiler.md §236 rule 3: an unannotated body whose
+                    // leaves mix a handle and a value takes the value type
+                    // of its handle leaf, and splits as a return does.
+                    if a.is_async && ret.is_none() {
+                        if let Some(value) = self.mixed_body_result(e, fx) {
+                            if let Some(frame) = fx.frames.last_mut() {
+                                frame.ret = value.clone();
+                            }
+                            ret = Some(value);
+                        }
+                    }
                     if a.is_async && ret.is_some() {
                         let mut out = Vec::new();
                         self.check_return(
@@ -333,6 +345,7 @@ impl<'p> Checker<'p> {
                         );
                         return out;
                     }
+                    let diagnostics = self.diags.len();
                     let mut checked = self.check_expr(e, ret.as_ref().or(result_hint), fx);
                     if let Some(ret) = &ret {
                         self.require_expr_assignable(
@@ -348,11 +361,24 @@ impl<'p> Checker<'p> {
                                 Type::AsyncHandle(inner) => *inner,
                                 _ => checked.ty.clone(),
                             };
+                            ret = Some(expected.clone());
+                            // compiler.md §236 rule 1: a handle body adopts
+                            // the handle.
+                            let mut out = Vec::new();
+                            let body_pos = checked.pos.clone();
+                            match self
+                                .adopt_returned_handle(checked, &expected, fx, &body_pos, &mut out)
+                            {
+                                None => return out,
+                                Some(value) => checked = value,
+                            }
                             self.require_return_assignable(&mut checked, &expected, fx);
-                            ret = Some(expected);
                         }
                     }
-                    if self.transfers_async_origins(&checked.ty) {
+                    // A rejected body reads its handles, so it gives no
+                    // second diagnostic.
+                    if self.transfers_async_origins(&checked.ty) || self.diags.len() != diagnostics
+                    {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
@@ -397,6 +423,8 @@ impl<'p> Checker<'p> {
         } else {
             body
         };
+        let adoptions = std::mem::replace(&mut fx.adoptions, saved_adoptions);
+        let body = self.adoption_epilogue(body, adoptions, &pos);
         fx.narrowed = saved_narrowed;
         fx.ended_shared_narrowing = saved_notes;
         fx.loop_break_facts = saved_loops;

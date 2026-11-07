@@ -934,8 +934,6 @@ pub enum Divergence {
     AsyncFunctionShape,
     /// An async arrow captures a local binding.
     AsyncArrowCapture,
-    /// An async return carries a fulfilled value, without handle adoption.
-    AsyncReturnHandle,
     /// An async call whose handle no holder awaits.
     DroppedAsyncHandle,
     /// A forbidden `this` form in a field initializer.
@@ -1523,7 +1521,6 @@ impl Divergence {
         Divergence::AwaitOutsideAsync,
         Divergence::AsyncFunctionShape,
         Divergence::AsyncArrowCapture,
-        Divergence::AsyncReturnHandle,
         Divergence::DroppedAsyncHandle,
         Divergence::ThisInFieldInitializer,
         Divergence::ClassIndexSignature,

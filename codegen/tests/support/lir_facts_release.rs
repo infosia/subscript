@@ -1,6 +1,6 @@
 //! Exception-exit ownership facts derived from lexical HIR scopes (§116.1 rule 4b).
 
-use super::{all_declared_functions, stops_statement_sequence, try_body_raises};
+use super::{all_declared_functions, sequence_exits, stops_statement_sequence, try_body_raises};
 use std::collections::BTreeMap;
 use subscript_compiler::{hir, lir as l, Pos, Type};
 
@@ -164,6 +164,9 @@ fn block_releases(
 #[derive(Clone)]
 struct Hooks {
     bindings: Vec<hir::UsingBinding>,
+    /// The `finally` statements of a `try` statement: each exit runs them,
+    /// as each exit runs the hooks of the bindings.
+    finalizer: Option<Vec<hir::Stmt>>,
     owners: usize,
     caught: usize,
 }
@@ -234,14 +237,32 @@ impl Walk<'_> {
 
     fn exit_hooks(&mut self, depth: usize, returning: bool) {
         let state = (self.owners, self.caught);
-        for hook in self.hooks[depth..].to_vec().iter().rev() {
+        let hooks = self.hooks.clone();
+        for (index, hook) in hooks.iter().enumerate().skip(depth).rev() {
             self.owners = hook.owners + usize::from(returning);
             self.caught = hook.caught;
             for binding in hook.bindings.iter().rev() {
                 self.statement(&binding.hook());
             }
+            if let Some(finalizer) = &hook.finalizer {
+                let stops = !sequence_exits(self.hir, finalizer).next;
+                self.finalizer(&hooks[..index], finalizer);
+                if stops {
+                    break;
+                }
+            }
         }
         (self.owners, self.caught) = state;
+    }
+
+    /// Walks one placement of a `finally` block, inside the scopes of
+    /// `outer`. The lowering places it at each exit of its `try` block.
+    fn finalizer(&mut self, outer: &[Hooks], finalizer: &[hir::Stmt]) {
+        let hooks = std::mem::replace(&mut self.hooks, outer.to_vec());
+        let controls = std::mem::take(&mut self.controls);
+        self.sequence(finalizer);
+        self.hooks = hooks;
+        self.controls = controls;
     }
 
     fn statement(&mut self, stmt: &hir::Stmt) {
@@ -393,11 +414,12 @@ impl Walk<'_> {
             S::Using {
                 bindings,
                 body,
-                finalizer: _,
-                pos: _,
+                finalizer,
+                pos,
             } => {
                 self.hooks.push(Hooks {
                     bindings: bindings.clone(),
+                    finalizer: finalizer.clone(),
                     owners: self.owners,
                     caught: self.caught,
                 });
@@ -405,7 +427,25 @@ impl Walk<'_> {
                 if super::using::end_places_hooks(self.hir, body) {
                     self.exit_hooks(self.hooks.len() - 1, false);
                 }
-                self.hooks.pop();
+                let hook = self.hooks.pop();
+                // The exception path of the `try` block runs the `finally`
+                // block once more, then raises the exception again.
+                if let Some((hook, finalizer)) = hook
+                    .as_ref()
+                    .and_then(|hook| Some((hook, hook.finalizer.as_ref()?)))
+                    .filter(|_| try_body_raises(self.hir, body))
+                {
+                    let state = (self.owners, self.caught);
+                    (self.owners, self.caught) = (hook.owners, hook.caught);
+                    let outer = self.hooks.clone();
+                    self.finalizer(&outer, finalizer);
+                    // A `finally` block that completes restores the
+                    // exception at the position of the statement.
+                    if sequence_exits(self.hir, finalizer).next {
+                        self.site(pos);
+                    }
+                    (self.owners, self.caught) = state;
+                }
             }
             S::Break(_) | S::Continue(_) => {
                 if let Some(&(depth, _)) = self
@@ -469,6 +509,67 @@ export async function main(): Promise<void> { const h = returning(true); await h
     assert!(
         findings.iter().any(
             |f| f.contains("exception edge releases 1 owned handles; lexical scopes require 2")
+        ),
+        "{findings:?}"
+    );
+}
+
+/// A `finally` block runs at each exit of its `try` block: the `return`,
+/// the end, and the exception path. A raise site in it releases the owners
+/// of the enclosing scopes at each placement. Removing the release of one
+/// placement fires.
+// Cost: one checker call, one lowering, and two fact comparisons; no
+// native build.
+#[test]
+fn a_finally_raise_counts_the_owners_at_each_placement() {
+    let source = r#"async function value(n: i32): Promise<i32> { await Context.suspend(); return n; }
+function boom(b: boolean): void { if (b) { throw new Error("boom"); } }
+async function fin(b: boolean): Promise<i32> {
+  const h: Promise<i32> = value(1);
+  try { boom(b); if (b) { return 2; } } finally { boom(!b); }
+  return await h;
+}
+export async function main(): Promise<void> { print(`${await fin(false)}`); }
+"#;
+    let hir = subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+        "finally-placement.ts",
+        source,
+    )])
+    .expect("checks");
+    let mut lir = subscript_codegen::lir::lower_module(&hir).expect("lowers");
+    let mut findings = Vec::new();
+    compare(&hir, &lir, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    let site = Pos::new("finally-placement.ts", 5, 51);
+    let function = lir
+        .functions
+        .iter_mut()
+        .find(|function| function.source_name == "fin")
+        .expect("fin");
+    let landings: Vec<l::BlockId> = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| instruction.pos == site)
+        .filter_map(l::Instruction::raise_edge)
+        .filter_map(|edge| match edge {
+            l::RaiseEdge::Handler(block) => Some(*block),
+            l::RaiseEdge::Propagate => None,
+        })
+        .collect();
+    // The return, the end, and the exception path each place the `finally`.
+    assert_eq!(landings.len(), 3, "{landings:?}");
+    let landing = &mut function.blocks[landings[0].0 as usize];
+    let release = landing
+        .instructions
+        .iter()
+        .position(|i| matches!(i.kind, l::InstructionKind::AsyncHandleRelease))
+        .expect("the landing releases the handle local");
+    landing.instructions.remove(release);
+    compare(&hir, &lir, &mut findings);
+    assert!(
+        findings.iter().any(
+            |f| f.contains("exception edge releases 0 owned handles; lexical scopes require 1")
         ),
         "{findings:?}"
     );

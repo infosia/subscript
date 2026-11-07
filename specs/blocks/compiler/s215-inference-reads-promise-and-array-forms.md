@@ -45,6 +45,8 @@ An async factory is the async form of the §212 request, and
    `const b: i32 = (await az())[0];`.
 5. `return af();` in an async function stays rejected, also with written
    type arguments: §167.1 rule 3 has no promise adoption.
+   *(Amended 2026-11-07, §236: an async return adopts a handle, so
+   `return af();` is accepted, with the context `Promise<T>`.)*
 6. No accepted program changes its meaning. A literal array at an
    `Array<T>` parameter now gives a candidate, as at a `T[]` parameter,
    so `arrv([1, 2], 3.5)`, `arrv<T>(a: Array<T>, v: T)`, gives the §149

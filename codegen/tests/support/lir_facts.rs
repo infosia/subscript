@@ -1703,7 +1703,9 @@ fn walk_expr<'a>(hir: &hir::Module, expr: &'a hir::Expr, visit: &mut impl FnMut(
                     walk_expr(hir, expression, visit);
                 }
             }
-            walk_statement_expression_roots(hir, body, &mut |expression| {
+            // `using::hook_facts` places each finalizer of a lambda body, as it
+            // places each finalizer of a declared function.
+            walk_placed_statement_expression_roots(hir, body, &mut |expression| {
                 walk_expr(hir, expression, visit);
             });
             return;

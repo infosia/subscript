@@ -80,6 +80,7 @@ mod signatures;
 mod snapshot;
 mod source_alias;
 use snapshot::Shared;
+mod async_return;
 mod stmt;
 mod type_rules;
 mod tyres;
@@ -855,6 +856,10 @@ pub(crate) struct FnCtx {
     pub shadowed_narrowing_scopes: Shared<std::collections::BTreeSet<usize>>,
     pub ended_shared_narrowing: NarrowingFacts,
     pub loop_depth: u32,
+    /// The handle locals of the adopted returns of this function, one for
+    /// each handle type, and their completion state local (compiler.md
+    /// §236 rule 2a).
+    pub adoptions: Vec<async_return::Adoption>,
     pub switch_depth: u32,
     pub switch_break_facts: Shared<SwitchBreakFacts>,
     pub loop_break_facts: Shared<LoopBreakFacts>,
@@ -1095,6 +1100,7 @@ impl FnCtx {
             shadowed_narrowing_scopes: Default::default(),
             ended_shared_narrowing: Default::default(),
             loop_depth: 0,
+            adoptions: Vec::new(),
             switch_depth: 0,
             switch_break_facts: Vec::new().into(),
             loop_break_facts: Vec::new().into(),

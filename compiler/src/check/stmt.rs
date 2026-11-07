@@ -559,11 +559,30 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
+                    // The rejected return reads its handle, so the handle
+                    // gives no second diagnostic (compiler.md §236.4).
+                    let origins = self.expr_async_origins(&checked, fx);
+                    fx.handle_async_origins(&origins);
                     Some(checked)
                 } else {
-                    let mut checked = self.check_expr(arg, Some(&ret), fx);
+                    if self.split_mixed_return(arg, &ret, fx, out) {
+                        return;
+                    }
+                    // compiler.md §236 rule 3: a returned handle takes the
+                    // context `Promise<T>`.
+                    let context = self.return_context(arg, &ret, fx);
+                    let diagnostics = self.diags.len();
+                    let checked = self.check_expr(arg, Some(&context), fx);
+                    let Some(mut checked) =
+                        self.adopt_returned_handle(checked, &ret, fx, &pos, out)
+                    else {
+                        return;
+                    };
                     self.require_return_assignable(&mut checked, &ret, fx);
-                    if self.transfers_async_origins(&checked.ty) {
+                    // A rejected return reads its handles, so it gives no
+                    // second diagnostic (compiler.md §236.4).
+                    if self.transfers_async_origins(&checked.ty) || self.diags.len() != diagnostics
+                    {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }

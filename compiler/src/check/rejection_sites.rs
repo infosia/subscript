@@ -589,7 +589,6 @@ pub(crate) enum RejectionSite {
     AsyncArrowFunction,
     AsyncArrowResultAnnotation,
     AsyncArrowCapture,
-    AsyncReturnHandle,
     GeneratorArrowFunction,
     FunctionValueParameterAnnotationNeeded,
     GenericClassDefaultParameterAnnotationNeeded,

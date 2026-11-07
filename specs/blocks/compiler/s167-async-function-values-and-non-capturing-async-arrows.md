@@ -51,6 +51,8 @@ function (§92).
    `i32`, got `Promise<i32>`"). The checker does not convert that body
    to an `await`. Round 2 measured that the conversion completes one
    turn earlier than `node` adoption in all three tiers.
+   *(Amended 2026-11-07, §236: an async return and a handle body adopt
+   the handle, with the order of turns of `node`.)*
 4. An async arrow result annotation that is not `Promise<T>` is rejected
    with S100. `tsc` rejects it (TS1064). This site is `TscRejects`.
 5. An async arrow that captures a local, a parameter, or `this` is

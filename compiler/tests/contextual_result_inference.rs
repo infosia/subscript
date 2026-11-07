@@ -516,10 +516,10 @@ fn a_literal_hint_does_not_pass_through_await() {
     accept_async("const c: boolean = true; const a: i32 = c ? await az() : 1;");
 }
 
-/// §215 rule 5: `return af();` stays rejected, also with written type
-/// arguments, because an async function has no promise adoption.
+/// compiler.md §236 rules 1, 3, and 4: a returned handle adopts the handle,
+/// also in a `try` statement, and its call takes the context `Promise<C>`.
 #[test]
-fn a_returned_handle_stays_rejected() {
+fn a_returned_handle_adopts_with_the_context() {
     let body = |statement: &str| {
         format!(
             "{PRELUDE}
@@ -528,21 +528,12 @@ export function main(): void {{}}
 "
         )
     };
-    let message = |statement: &str| {
+    for statement in ["return af();", "return af<P>();", "return await af();"] {
         let source = body(statement);
-        let errors =
-            check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
-        errors[0].message.clone()
-    };
-    assert_eq!(message("return af();"), no_candidate("T", "af"));
-    assert_eq!(
-        message("return af<P>();"),
-        "type mismatch: the return value expects `Buf<P>`, got `Promise<Buf<P>>`"
-    );
-    // The control: an explicit `await` takes the context of the result.
-    let source = body("return await af();");
+        check_program(&[SourceFile::new("test.ts", source.as_str())])
+            .unwrap_or_else(|errors| panic!("{statement}: {errors:?}"));
+    }
+    let source = body("try { return af(); } finally { print(\"f\"); }");
     check_program(&[SourceFile::new("test.ts", source.as_str())])
         .unwrap_or_else(|errors| panic!("{errors:?}"));
 }

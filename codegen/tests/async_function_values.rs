@@ -166,7 +166,7 @@ fn static_async_value_field_matches_instance_field_control() {
 }
 
 #[test]
-fn handle_expression_body_rejects_with_explicit_await_order_control() {
+fn handle_expression_body_adopts_with_explicit_await_order_control() {
     for explicit_await in [true, false] {
         let body = if explicit_await { "await h" } else { "h" };
         let source = format!(
@@ -190,12 +190,12 @@ fn handle_expression_body_rejects_with_explicit_await_order_control() {
                 b"turn 0\nturn 1\nresult 7\nturn 2\nturn 3\nturn 4\n",
             );
         } else {
-            let diagnostics = check_program(&files(&source)).expect_err("handle body rejects");
-            assert!(diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == subscript_compiler::RuleCode::S100
-                    && diagnostic.message
-                        == "type mismatch: the return value expects `i32`, got `Promise<i32>`"
-            }));
+            // compiler.md §236: the handle body adopts the handle, one turn
+            // after the explicit await. Node supplies the output order.
+            compare(
+                &source,
+                b"turn 0\nturn 1\nturn 2\nresult 7\nturn 3\nturn 4\n",
+            );
         }
     }
 }

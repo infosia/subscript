@@ -98,8 +98,10 @@ fn async_body_requires_observation_with_awaited_control() {
     }
 }
 
+/// compiler.md §236: a returned handle adopts the handle, and the explicit
+/// `await` is the control. A `try` statement adopts too (rule 4).
 #[test]
-fn handle_returns_reject_with_explicit_await_controls() {
+fn handle_returns_adopt_with_explicit_await_controls() {
     for declaration in [
         "const job = async (h: Promise<i32>): Promise<i32> => BODY;",
         "const job: (h: Promise<i32>) => Promise<i32> = async (h) => BODY;",
@@ -107,24 +109,23 @@ fn handle_returns_reject_with_explicit_await_controls() {
         "const job = async (h: Promise<i32>): Promise<i32> => { return BODY; };",
         "async function job(h: Promise<i32>): Promise<i32> { return BODY; }",
     ] {
-        let rejected = declaration.replace("BODY", "h");
-        let diagnostics = check_program(&[SourceFile::new("return.ts", rejected)])
-            .expect_err("handle return rejects");
-        assert_eq!(diagnostics.len(), 1, "{declaration}: {diagnostics:?}");
-        assert_eq!(diagnostics[0].code, RuleCode::S100);
-        assert_eq!(
-            diagnostics[0].message,
-            "type mismatch: the return value expects `i32`, got `Promise<i32>`"
-        );
-        assert_eq!(
-            diagnostics[0].divergence,
-            Some(subscript_compiler::divergence::Divergence::AsyncReturnHandle)
-        );
         check_program(&[SourceFile::new(
-            "control.ts",
-            declaration.replace("BODY", "await h"),
+            "return.ts",
+            declaration.replace("BODY", "h"),
         )])
-        .expect("explicit await checks");
+        .unwrap_or_else(|errors| panic!("{declaration}: {errors:?}"));
+    }
+    for declaration in [
+        "const job = async (h: Promise<i32>): Promise<i32> => { try { return BODY; } finally { print(\"f\"); } };",
+        "async function job(h: Promise<i32>): Promise<i32> { try { return BODY; } finally { print(\"f\"); } }",
+    ] {
+        for body in ["h", "await h"] {
+            check_program(&[SourceFile::new(
+                "return.ts",
+                declaration.replace("BODY", body),
+            )])
+            .unwrap_or_else(|errors| panic!("{declaration}: {errors:?}"));
+        }
     }
 }
 
@@ -186,7 +187,6 @@ fn listed_diagnostics_render_the_contract_text() {
     let started = std::time::Instant::now();
     for (source, message, rule, ts, replacement, reason) in [
         ("function* values(): Generator<i32> { new TaskGroup(); yield 1; }\nexport function main(): void {}", "TaskGroup is not allowed in a generator body", "A generator body cannot use a TaskGroup because a dropped iterator has no scope exit.", "function* values(): Generator<i32> { new TaskGroup(); yield 1; }\nexport function main(): void {}", "async function values(): Promise<void> { const g = new TaskGroup(); await g.join(); }\nexport function main(): void {}", "A dropped generator does not execute a lexical scope exit. Put the group in an async function and await its join. (collisions.md C24)"),
-        ("async function value(n: i32): Promise<i32> { return n; } async function probe(): Promise<void> { const f = async () => value(7); print(`${await f()}`); }\nexport function main(): void {}", "type mismatch: the return value expects `i32`, got `Promise<i32>`", "Constructs outside the decided language surface are rejected.", "async function f(h: Promise<i32>): Promise<i32> { return h; }", "async function f(h: Promise<i32>): Promise<i32> { return await h; }", "An async return carries its fulfilled value. The language has no implicit handle adoption. (compiler.md §167)"),
         ("function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }\nexport function main(): void {}", "async arrow captures mutable `n`; copy it into a `const` first, or use a class with a field", "An async arrow can own const captures. Copy a mutable value into a const or use a class field.", "function f(): void { let n: i32 = 1; const job = async (): Promise<i32> => n; }", "function f(): void { let n: i32 = 1; const copy = n; const job = async (): Promise<i32> => copy; }\nexport function main(): void {}", "An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field. (collisions.md C24)"),
         ("async function probe(): Promise<void> { await ((): string => \"x\")(); }\nexport function main(): void {}", "await requires a call that returns an async handle", "Constructs outside the decided language surface are rejected.", " async function probe(): Promise<void> { await (() : i32 => 1)(); }\nexport function main(): void {}", "async function probe(): Promise<void> { (() : i32 => 1)(); }\nexport function main(): void {}", "The call returns a synchronous value. It supplies no async completion for an await. (compiler.md §167)"),
         ("function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply(id, 3); }", "generic function `id` has no first-class value; call it directly or use a lambda", "Constructs outside the decided language surface are rejected.", "function id<T>(x:T):T{return x;} function apply<T>(f:(x:T)=>T,x:T):T{return f(x);} export function main():void { apply(id,3); }", "function id<T>(x: T): T { return x; } function apply(f: (x: i32) => i32, x: i32): i32 { return f(x); } export function main(): void { apply((x: i32): i32 => id<i32>(x), 3); }", "Generic function values require instantiation outside the admitted inference surface. (compiler.md §149.1)"),
@@ -220,29 +220,30 @@ fn listed_diagnostics_render_the_contract_text() {
 
 // Cost: five checker calls; rejected consumers and constrained-generic controls.
 #[test]
-fn rejected_handle_body_keeps_the_intended_consumer_type() {
+fn adopted_handle_body_keeps_the_intended_consumer_type() {
     let started = std::time::Instant::now();
-    for (consumer, count) in [
-        ("print(`${await f()}`);", 1),
-        ("const s: string = await f();", 2),
-    ] {
-        let source = format!("async function value(n: i32): Promise<i32> {{ return n; }} async function probe(): Promise<void> {{ const f = async () => value(7); {consumer} }} export function main(): void {{}}");
-        let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
-            .expect_err("handle body rejects");
-        assert_eq!(diagnostics.len(), count, "{diagnostics:?}");
-        assert_eq!(
-            diagnostics[0].message,
-            "type mismatch: the return value expects `i32`, got `Promise<i32>`"
-        );
-        if count == 2 {
-            assert!(
-                diagnostics[1]
-                    .message
-                    .contains("expects `string`, got `i32`"),
-                "{diagnostics:?}"
-            );
-        }
-    }
+    // compiler.md §236 rule 1: the handle body adopts the handle, so the
+    // consumer reads `i32`.
+    let source = |consumer: &str| {
+        format!("async function value(n: i32): Promise<i32> {{ return n; }} async function probe(): Promise<void> {{ const f = async () => value(7); {consumer} }} export function main(): void {{}}")
+    };
+    check_program(&[SourceFile::entry(
+        "main.ts",
+        source("print(`${await f()}`);"),
+    )])
+    .expect("handle body adopts");
+    let diagnostics = check_program(&[SourceFile::entry(
+        "main.ts",
+        source("const s: string = await f();"),
+    )])
+    .expect_err("the consumer type is i32");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert!(
+        diagnostics[0]
+            .message
+            .contains("expects `string`, got `i32`"),
+        "{diagnostics:?}"
+    );
     for body in [
         "const g = async (v: T) => v; const y: T = await g(x); return y;",
         "const copy: T = x; const g = async () => copy; const typed: () => Promise<T> = g; const y: T = await typed(); return y;",

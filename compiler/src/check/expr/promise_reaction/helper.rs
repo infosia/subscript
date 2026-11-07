@@ -338,7 +338,7 @@ impl Checker<'_> {
     }
 
     /// The async function with an empty body whose `await` is one turn.
-    fn promise_turn(&mut self, pos: &Pos) -> String {
+    pub(in crate::check) fn promise_turn(&mut self, pos: &Pos) -> String {
         let key = "promise-reaction:turn".to_string();
         if let Some(symbol) = self.instance_symbols.get(&key) {
             return symbol.clone();

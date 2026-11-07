@@ -299,7 +299,9 @@ after it (§116.1 rule 4b).
 *Revised 2026-10-06 (§167):* a named async function is a value, and
 an async arrow that captures nothing is accepted. A call through either
 value has the semantics of a direct call (C24 row 36). Accept adds
-`a336`; reject adds `r380`–`r382`; `retired:r140-async-lambda`.
+`a336`; reject adds `r380`, `r381`; `retired:r140-async-lambda`.
+*Revised 2026-11-07 (§236):* an async return adopts a handle.
+`retired:r382-async-arrow-handle-body`; its form is in `a423`.
 *Revised 2026-10-06 (§170):* `TaskGroup` is a language class with no
 JavaScript counterpart. A group joins its tasks and reports a dropped
 group that holds unfinished or failed work. Its corpus entries are not

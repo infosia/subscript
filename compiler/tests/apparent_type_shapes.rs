@@ -570,6 +570,11 @@ const ALLOWLIST: &[AllowGroup] = &[
         sites: &[("opaque.rs", "instance_restriction", 0xf12696b35ade54b9)],
     },
     AllowGroup {
+        name: "async-return-written-handle",
+        reason: "An async return adopts the written `Promise<S>` type only; a type parameter that a `Promise` constrains keeps its diagnostic (compiler.md §236 rule 1).",
+        sites: &[("async_return.rs", "adopt_returned_handle", 0x7410f2cebebcd5ea)],
+    },
+    AllowGroup {
         name: "json-graph-identity",
         reason: "JSON helper graphs exclude opaque types under §143 rule 2a; each key preserves its declared concrete type.",
         sites: &[

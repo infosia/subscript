@@ -120,8 +120,46 @@ a rejection of the handle. This is also a form with a known lowering.
    and stop. `a423` has an async entry, so the LIR text snapshot grows
    by its functions. No other golden moves.
 
+### 236.3 Phase Review
+
+*(Added 2026-11-07.)* Three fresh reviews of the implementation. Each
+fix changed the form; the contract gained rules 2a and the present
+rules 2 to 4.
+
+1. MAJOR, realistic, fixed: a `using` dispose and the close of a
+   `for…of` iterator ran after the `await` of the adopted handle, and
+   `node` runs them at the `return`. The first form counted `try`
+   statements only. Rule 2: the return leaves each scope first, and
+   one epilogue outside each handler does the turn and the `await`.
+   Adoption in a `try` statement then has the meaning of `node`, so the
+   divergence `AsyncReturnHandle`, its site, and `r382` are removed.
+2. MAJOR, realistic, fixed: a conditional `return b ? v() : w()` was
+   rejected, because the context came from a list of callee kinds.
+   Rule 3 reads each leaf; a mixed leaf splits into one return per
+   leaf.
+3. MAJOR, realistic, fixed: a later completion (a `finally` that
+   returns or throws, a dispose that throws) did not replace a pending
+   adoption. Rule 2a: one completion state per function; the last
+   completion wins.
+4. MINOR, fixed: a leaf through a nullable receiver, an unannotated
+   async arrow with a mixed body, stale comments and docs, the
+   `collision` text of the removed divergence, the amend notes of §167
+   and §215, one word for the completion state, and a firing control
+   for the `finally` placement of the release model.
+
 ### 236.4 Open
 
 1. `async function f(): Promise<void> { return work(); }` with
    `work(): Promise<void>` stays rejected: a `void` expression is only
    a statement. `tsc` accepts it.
+2. An adopted handle that a later completion abandons, and that then
+   rejects, traps (`collisions.md` C8, §116.1 rule 4b). `node` reports
+   an unhandled rejection and continues.
+3. The epilogue of an adopting function is lowered at each exit, as a
+   `finally` is. A function with four value returns and one adopting
+   return has 739 lines of C `resume` against 168 for the form with
+   `return await`. One shared epilogue needs a new HIR form.
+4. A call with two arguments that each make a handle, such as
+   `two(v(), v())`, fails the release fact of the LIR test model at
+   `3aa70ee7`. The output of the program is correct. `a423` holds such
+   handles in locals.

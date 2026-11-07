@@ -316,6 +316,8 @@ impl<'p> Checker<'p> {
         } else {
             body
         };
+        let adoptions = std::mem::take(&mut fx.adoptions);
+        let body = self.adoption_epilogue(body, adoptions, &pos);
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
             let ret = Type::generator(yield_ty);

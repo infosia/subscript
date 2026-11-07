@@ -659,12 +659,3 @@ pub(super) const ASYNC_ARROW_CAPTURE: DivergenceEntry = DivergenceEntry {
     why: "An async arrow owns immutable captures. A mutable binding needs an explicit const copy or a class field.",
     collision: "C24",
 };
-
-/// Async returns do not adopt another handle (§167 rule 3).
-pub(super) const ASYNC_RETURN_HANDLE: DivergenceEntry = DivergenceEntry {
-    ts: "async function f(h: Promise<i32>): Promise<i32> { return h; }",
-    subscript: "async function f(h: Promise<i32>): Promise<i32> { return await h; }",
-    why:
-        "An async return carries its fulfilled value. The language has no implicit handle adoption.",
-    collision: "compiler.md §167",
-};

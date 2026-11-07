@@ -550,17 +550,25 @@ impl Interpreter<'_> {
                 Some(value)
             }
             l::InstructionKind::AsyncHandleRetain => {
-                let Value::Coroutine(handle) = operands
+                match operands
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?
-                else {
-                    return Err(self.invalid(
-                        Some(instruction.pos.clone()),
-                        "async retain operand is not a handle",
-                    ));
-                };
-                let mut handle = handle.borrow_mut();
-                handle.owners = handle.owners.saturating_add(1);
+                {
+                    Value::Coroutine(handle) => {
+                        let mut handle = handle.borrow_mut();
+                        handle.owners = handle.owners.saturating_add(1);
+                    }
+                    // A zero handle owns no frame, as a release of it does
+                    // (the held handle of compiler.md §236 rule 2 starts as
+                    // one).
+                    Value::Null => {}
+                    _ => {
+                        return Err(self.invalid(
+                            Some(instruction.pos.clone()),
+                            "async retain operand is not a handle",
+                        ))
+                    }
+                }
                 instruction.result.and_then(|_| operands.first().cloned())
             }
             l::InstructionKind::AsyncHandleRelease => {

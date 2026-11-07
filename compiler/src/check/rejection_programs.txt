@@ -9019,16 +9019,6 @@ FILE	E	target/s154/forms/s167-result/main.ts
 export function main(): void { const f = async (): i32 => 1; }
 END FILE
 END PROGRAM
-PROGRAM	s167-return-handle-arrow			0
-FILE	E	target/s154/forms/s167-return-handle-arrow/main.ts
-export function f(): void { const job = async (h: Promise<i32>): Promise<i32> => h; }
-END FILE
-END PROGRAM
-PROGRAM	s167-return-handle-named			0
-FILE	E	target/s154/forms/s167-return-handle-named/main.ts
-export async function f(h: Promise<i32>): Promise<i32> { return h; }
-END FILE
-END PROGRAM
 PROGRAM	s170-position			0
 FILE	E	target/s154/forms/s170-position/main.ts
 class Holder { group: TaskGroup; constructor(group: TaskGroup) { this.group = group; } } export function main(): void {}

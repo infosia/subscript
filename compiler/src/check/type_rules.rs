@@ -405,29 +405,16 @@ impl<'p> Checker<'p> {
         self.report_not_assignable(from, to, pos, what);
     }
 
-    /// Async returns carry a fulfilled value, without handle adoption (§167).
+    /// Checks a return value against the result type. An async return of a
+    /// handle adopts it before this check (compiler.md §236), so a handle
+    /// that reaches this check is a type mismatch.
     pub(super) fn require_return_assignable(
         &mut self,
         from: &mut hir::Expr,
         to: &Type,
         fx: &FnCtx,
     ) {
-        if fx.frames.last().is_some_and(|frame| frame.is_async)
-            && matches!(self.apparent_type(&from.ty), Type::AsyncHandle(inner) if self.assignable(&inner, to))
-            && self.apparent_type(to) != Type::Error
-        {
-            self.reject_subset(
-                RejectionSite::AsyncReturnHandle,
-                format!(
-                    "type mismatch: the return value expects `{}`, got `{}`",
-                    self.type_name(to),
-                    self.type_name(&from.ty)
-                ),
-                from.pos.clone(),
-            );
-        } else {
-            self.require_expr_assignable(from, to, fx, "the return value");
-        }
+        self.require_expr_assignable(from, to, fx, "the return value");
     }
 
     /// The fix that a rejection of a `string | null` operand states

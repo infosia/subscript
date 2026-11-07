@@ -86,7 +86,7 @@ gave one MAJOR and four MINOR findings.
 
 1. `async function f(): Promise<Mode> { return v(n).then((x: i32) => "a"); }`:
    the return context of an async function is `Mode`, not
-   `Promise<Mode>`.
+   `Promise<Mode>`. *(Closed 2026-11-07 by §236 rule 3.)*
 2. A nested adoption, `then((x: i32) => v(x).then((y: i32) => "a"))`,
    with `Promise<Mode>`.
 3. `then((x: i32) => "a")` with `Promise<string | null>`.

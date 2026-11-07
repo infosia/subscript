@@ -618,7 +618,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::MapCopyNullableSource => WitnessEntry::General { files: &["a-s012"], variant: Some(Divergence::MapCopyNullableSource), reason: "" },
         RejectionSite::AsyncArrowResultAnnotation => WitnessEntry::General { files: &["s167-result"], variant: None, reason: "" },
         RejectionSite::AsyncArrowCapture => WitnessEntry::General { files: &["s167-capture", "s186-then-this"], variant: Some(Divergence::AsyncArrowCapture), reason: "" },
-        RejectionSite::AsyncReturnHandle => WitnessEntry::General { files: &["s167-return-handle-arrow", "s167-return-handle-named"], variant: Some(Divergence::AsyncReturnHandle), reason: "" },
         RejectionSite::AsyncArrowFunction => WitnessEntry::General { files: &["r-s167-generic"], variant: Some(Divergence::AsyncFunctionShape), reason: "" },
         RejectionSite::GeneratorArrowFunction => WitnessEntry::General { files: &[], variant: None, reason: "The TypeScript parser never creates a generator arrow." },
         RejectionSite::LambdaReturnPathMissing => WitnessEntry::General { files: &["lambda-missing-return"], variant: None, reason: "" },

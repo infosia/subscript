@@ -85,7 +85,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r392-abstract-property.ts", RuleCode::S100, 8),
     ("r393-static-arrow-this.ts", RuleCode::S100, 8),
     ("r394-tsc-rejected-reverse-cost.ts", RuleCode::S010, 10),
-    ("r382-async-arrow-handle-body.ts", RuleCode::S100, 9),
     ("r383-unjoined-task-group.ts", RuleCode::S013, 10),
     ("r384-async-task-group-result.ts", RuleCode::S009, 9),
     ("r385-task-group-field.ts", RuleCode::S009, 10),

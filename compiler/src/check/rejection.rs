@@ -1212,7 +1212,6 @@ rejection_classes! {
     }
     Self::AsyncArrowResultAnnotation => (RuleCode::S100, TscRejects),
     Self::AsyncArrowCapture => (RuleCode::S009, Diverges(Divergence::AsyncArrowCapture)),
-    Self::AsyncReturnHandle => (RuleCode::S100, Diverges(Divergence::AsyncReturnHandle)),
     Self::AsyncArrowFunction => (RuleCode::S100, Diverges(Divergence::AsyncFunctionShape)),
     Self::GeneratorArrowFunction => (RuleCode::S100, TscRejects),
     Self::FieldTypeWithoutInitializer => (

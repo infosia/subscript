@@ -653,7 +653,6 @@ impl Divergence {
             Divergence::PromiseObject => established_tail::PROMISEOBJECT,
             Divergence::AwaitOutsideAsync => established_tail::AWAITOUTSIDEASYNC,
             Divergence::AsyncArrowCapture => surface_forms::ASYNC_ARROW_CAPTURE,
-            Divergence::AsyncReturnHandle => surface_forms::ASYNC_RETURN_HANDLE,
             Divergence::AsyncFunctionShape => established_tail::ASYNCFUNCTIONSHAPE,
             Divergence::DroppedAsyncHandle => established_tail::DROPPEDASYNCHANDLE,
             Divergence::ThisInFieldInitializer => established_tail::THISINFIELDINITIALIZER,

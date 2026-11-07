@@ -557,7 +557,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::MapCopyNullableSource,
     RejectionSite::AsyncArrowFunction,
     RejectionSite::AsyncArrowCapture,
-    RejectionSite::AsyncReturnHandle,
     RejectionSite::AsyncArrowResultAnnotation,
     RejectionSite::GeneratorArrowFunction,
     RejectionSite::LambdaReturnCoverage,
