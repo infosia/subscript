@@ -148,9 +148,12 @@ impl<'p> Checker<'p> {
             }
             // compiler.md §238 rule 1: a block with no `return` operand has
             // the result `void`.
-            if ret.is_none()
-                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts))
-            {
+            let void_block = ret.is_none()
+                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts));
+            // compiler.md §239 rule 1: an annotation and a `void` block each
+            // decide the result from the syntax, before the body is checked.
+            let decided_from_syntax = a.return_type.is_some() || void_block;
+            if void_block {
                 ret = Some(if a.is_async {
                     Type::async_handle(Type::Void)
                 } else {
@@ -168,7 +171,7 @@ impl<'p> Checker<'p> {
             checker.generic_callback_context = false;
             checker.decide_lambda_parameters(&mut params, fx);
             if checker.deciding_type
-                && a.return_type.is_some()
+                && decided_from_syntax
                 && ret.as_ref().is_some_and(|t| *t != Type::Error)
             {
                 let result = ret.clone().unwrap_or(Type::Error);

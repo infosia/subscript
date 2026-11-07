@@ -96,6 +96,7 @@ CRITICAL or MAJOR finding.
    `tsc` accepts it. The form with `(n: i32): void =>` is accepted.
    Rule 1 decides the result from the syntax, so the lambda can take
    the path of an annotated lambda. The pin also rejects this form.
+   *(Closed 2026-11-07 by §239.)*
 2. `() => { return v(); }` stays rejected, because rule 1 counts each
    `return` with an operand. `tsc` accepts it.
 3. An async lambda in a place of a function type with the result `void`
