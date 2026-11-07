@@ -242,6 +242,24 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Checks the operand `e` of `return` in a function with a `void`
+    /// result (compiler.md §237 rule 2). Returns the statements of `e` and
+    /// the type of `e` as an expression, with no context: an assignment
+    /// has the type of its value, and an optional chain has the type of its
+    /// member or its call.
+    pub(crate) fn check_void_operand(
+        &mut self,
+        e: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> (Vec<hir::Stmt>, Type) {
+        if let ast::Expr::OptChain(chain) = super::unparen_expr(e) {
+            return self.check_optional_chain_operand(chain, fx);
+        }
+        let checked = self.check_expr_inner(e, None, fx, false);
+        let ty = checked.ty.clone();
+        (vec![hir::Stmt::Expr(checked)], ty)
+    }
+
     fn check_expr_inner(
         &mut self,
         e: &ast::Expr,

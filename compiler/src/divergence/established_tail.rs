@@ -233,11 +233,11 @@ pub(super) const SETALGEBRADOMAIN: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const VOIDVALUE: DivergenceEntry = DivergenceEntry {
-                ts: "function f(): void {} const a = f();",
-                subscript: "function f(): void {} f();",
-                why: "Call a void function as a statement. Use a bare return in a void function. A map callback must return a value.",
-                collision: "C21",
-            };
+    ts: "function f(): void {} const a = f();",
+    subscript: "function f(): void {} f();",
+    why: "Call a void function as a statement. A map callback must return a value.",
+    collision: "C21",
+};
 
 pub(super) const GENERATORDONEVALUE: DivergenceEntry = DivergenceEntry {
                 ts: "const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`);",

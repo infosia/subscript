@@ -323,23 +323,20 @@ export function main(): void {{}}
         .unwrap_or_else(|errors| panic!("{errors:?}"));
 }
 
-/// Rule 1: `void` gives no candidate, so the call keeps the text of its
-/// literal default.
+/// Rule 1: `void` gives no candidate, so a call with no argument for `T`
+/// has no candidate. A literal argument decides `T`, and a lambda whose
+/// result is `void` from its context discards the value (compiler.md §237
+/// rule 4).
 #[test]
 fn void_gives_no_candidate() {
-    let body = "type mismatch: the lambda body expects `void`, got `i32`";
-    reject("run(() => id(1));", RuleCode::S100, body);
-    reject(
-        "const xs: i32[] = [1]; xs.forEach((x: i32) => id(x));",
-        RuleCode::S100,
-        body,
-    );
     reject(
         "const f: () => void = () => zero();",
         RuleCode::S100,
         &no_candidate("T", "zero"),
     );
-    // The control: a call with no result takes the same context.
+    // The controls: a literal default decides `T` in the same position.
+    accept("run(() => id(1));");
+    accept("const xs: i32[] = [1]; xs.forEach((x: i32) => id(x));");
     accept("run(() => { id(1); });");
 }
 

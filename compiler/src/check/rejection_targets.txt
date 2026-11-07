@@ -67,7 +67,6 @@ UsingBindingNotDisposable	using-binding-not-disposable	S100	the class of a `usin
 UsingBindingResourceType	using-binding-resource-type	S100	a `using` binding must be a reference class with a disposal hook, or that class or null
 GeneratorReturnValue	generator-return-value	S100	generator return values are not in the decided surface
 ExplicitVoidReturnValue	explicit-void-return-value	S100	a `void` function cannot return a value
-VoidFunctionReturnValue	void-function-return-value	S100	a `void` function cannot return a value
 ReturnValueMissing	return-value-missing	S100	missing return value of type `i32`
 StatementNonBooleanCondition	c-condition	S100	condition must be boolean, got `i32`
 AsyncForOf	async-for-of	S013	`for await…of` requires the Promise object/iterator surface, which is not in the language

@@ -129,8 +129,15 @@ impl<'p> Checker<'p> {
                 let Some(sig) = self.fn_sigs.get(&name).cloned() else {
                     return;
                 };
-                let function =
-                    self.check_function(&f.function, &name, exported, &sig, (None, None), pos);
+                let function = self.check_function(
+                    &f.function,
+                    &name,
+                    exported,
+                    &sig,
+                    (None, None),
+                    false,
+                    pos,
+                );
                 if let Some(function) = function {
                     self.functions.push(function);
                 }
@@ -228,7 +235,9 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks a function body against its resolved signature and builds
-    /// the HIR function. Returns `None` for poisoned signatures.
+    /// the HIR function. Returns `None` for poisoned signatures. A setter
+    /// keeps the S100 of `return e` (compiler.md §237 rule 1).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn check_function(
         &mut self,
         f: &ast::Function,
@@ -236,6 +245,7 @@ impl<'p> Checker<'p> {
         exported: bool,
         sig: &FnSig,
         this: (Option<Type>, Option<RejectionSite>),
+        is_setter: bool,
         pos: Pos,
     ) -> Option<hir::Function> {
         let (mut this_ty, missing_this_site) = this;
@@ -266,6 +276,7 @@ impl<'p> Checker<'p> {
         fx.frames[0].missing_this_site = missing_this_site;
         fx.frames[0].static_this_class = static_this_class;
         fx.frames[0].is_async = sig.is_async;
+        fx.frames[0].rejects_return_operand = is_setter;
         fx.frames[0].yield_annotated = sig.is_generator && sig.yield_known;
         if sig.is_generator {
             if let Type::Generator(y) = &self.apparent_type(&sig.ret) {
@@ -649,6 +660,7 @@ impl<'p> Checker<'p> {
                         FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
                     fx.lexical_class = Some(id);
                     fx.constructor_body = true;
+                    fx.frames[0].rejects_return_operand = true;
                     fx.frames[0].super_call_available = class.super_class.is_some();
                     fx.parameter_default = true;
                     let mut hir_params = Vec::new();
@@ -801,6 +813,7 @@ impl<'p> Checker<'p> {
                             Some(this_ty.clone()),
                             method.is_static.then_some(RejectionSite::ThisStaticField),
                         ),
+                        method.kind == ast::MethodKind::Setter,
                         pos,
                     ) {
                         if method.is_static {

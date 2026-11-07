@@ -361,7 +361,17 @@ impl<'p> Checker<'p> {
             self.defer_function_body(&template.function, &name, None, false, &pos);
         }
         let function = (check_body && !self.deciding_type)
-            .then(|| self.check_function(&template.function, &name, false, &sig, (None, None), pos))
+            .then(|| {
+                self.check_function(
+                    &template.function,
+                    &name,
+                    false,
+                    &sig,
+                    (None, None),
+                    false,
+                    pos,
+                )
+            })
             .flatten();
         if let Some(function) = function {
             self.functions.push(function);
@@ -501,6 +511,7 @@ impl<'p> Checker<'p> {
                         Some(Type::Class(id)),
                         is_static.then_some(RejectionSite::ThisStaticField),
                     ),
+                    false,
                     pos,
                 )
             })

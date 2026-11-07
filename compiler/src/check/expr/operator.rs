@@ -618,6 +618,22 @@ impl<'p> Checker<'p> {
         self.err_expr(pos)
     }
 
+    /// The statements of an optional chain, and the type of its member or
+    /// its call (compiler.md §237 rule 2).
+    pub(super) fn check_optional_chain_operand(
+        &mut self,
+        chain: &ast::OptChainExpr,
+        fx: &mut FnCtx,
+    ) -> (Vec<hir::Stmt>, Type) {
+        let pos = self.pos(chain.span);
+        let plan = self.check_optional_plan(chain, fx);
+        let ty = plan.value.ty.clone();
+        if self.apparent_type(&ty) == Type::Error {
+            return (vec![hir::Stmt::Expr(self.err_expr(pos))], ty);
+        }
+        (Self::optional_chain_statements(plan, &pos), ty)
+    }
+
     pub(super) fn check_optional_chain_statement(
         &mut self,
         chain: &ast::OptChainExpr,
@@ -639,6 +655,12 @@ impl<'p> Checker<'p> {
             return out;
         }
 
+        out.extend(Self::optional_chain_statements(plan, &pos));
+        out
+    }
+
+    /// The value of `plan` under each null test of the chain.
+    fn optional_chain_statements(plan: OptionalPlan, pos: &Pos) -> Vec<hir::Stmt> {
         let mut body = vec![hir::Stmt::Expr(plan.value)];
         for test in plan.tests.into_iter().rev() {
             body = vec![hir::Stmt::If {
@@ -648,8 +670,7 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             }];
         }
-        out.extend(body);
-        out
+        body
     }
 
     fn check_optional_plan(&mut self, chain: &ast::OptChainExpr, fx: &mut FnCtx) -> OptionalPlan {

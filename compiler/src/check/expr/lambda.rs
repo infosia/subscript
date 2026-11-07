@@ -225,7 +225,9 @@ impl<'p> Checker<'p> {
             yield_ty: None,
             yield_annotated: false,
             is_lambda: true,
-            contextual_void: a.return_type.is_none() && ret == Some(Type::Void),
+            contextual_void: !a.is_async && a.return_type.is_none() && ret == Some(Type::Void),
+            rejects_return_operand: false,
+            void_split: None,
             lambda_id: Some(id),
             captures: Vec::new().into(),
             this_ty: None,
@@ -333,7 +335,12 @@ impl<'p> Checker<'p> {
                             ret = Some(value);
                         }
                     }
-                    if a.is_async && ret.is_some() {
+                    // compiler.md §237 rules 2 and 4: a body of a `void`
+                    // result is a `return` of the body.
+                    let void_result = ret
+                        .as_ref()
+                        .is_some_and(|ty| self.apparent_type(ty) == Type::Void);
+                    if (a.is_async && ret.is_some()) || void_result {
                         let mut out = Vec::new();
                         self.check_return(
                             &ast::ReturnStmt {

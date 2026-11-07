@@ -375,7 +375,6 @@ rejection_classes! {
     Self::GeneratorReturnValue => {
         (RuleCode::S100, Diverges(Divergence::GeneratorReturnValue))
     }
-    Self::VoidFunctionReturnValue => (RuleCode::S100, Diverges(Divergence::VoidValue)),
     Self::ReturnValueMissing => (RuleCode::S100, TscRejects),
     Self::StatementNonBooleanCondition => (
         RuleCode::S100,

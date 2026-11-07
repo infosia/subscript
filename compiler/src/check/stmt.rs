@@ -547,23 +547,10 @@ impl<'p> Checker<'p> {
                     );
                     None
                 } else if ret == Type::Void {
-                    let checked = self.check_expr(arg, None, fx);
-                    if self.apparent_type(&checked.ty) != Type::Error {
-                        self.reject_subset(
-                            if fx.frames.last().is_some_and(|frame| frame.contextual_void) {
-                                RejectionSite::VoidFunctionReturnValue
-                            } else {
-                                RejectionSite::ExplicitVoidReturnValue
-                            },
-                            "a `void` function cannot return a value",
-                            pos.clone(),
-                        );
+                    match self.check_void_return(arg, fx, &pos, out) {
+                        Some(checked) => Some(checked),
+                        None => return,
                     }
-                    // The rejected return reads its handle, so the handle
-                    // gives no second diagnostic (compiler.md §236.4).
-                    let origins = self.expr_async_origins(&checked, fx);
-                    fx.handle_async_origins(&origins);
-                    Some(checked)
                 } else {
                     if self.split_mixed_return(arg, &ret, fx, out) {
                         return;
@@ -611,6 +598,128 @@ impl<'p> Checker<'p> {
             }
         };
         out.push(hir::Stmt::Return { value, pos });
+    }
+
+    /// `return e` in a function with a `void` result (compiler.md §237).
+    /// A constructor and a setter reject each operand (rule 1). A
+    /// conditional splits into one return per leaf, unless each leaf of
+    /// an async function is a handle (rule 2). A `Promise<void>` handle
+    /// adopts (rule 3). A `void` operand is `e; return;` (rule 2). Any
+    /// operand of a lambda that is not async and whose result is `void`
+    /// from its context is `e; return;`, and `e` follows the rules of an
+    /// expression statement (rule 4). Another operand is rejected (rule
+    /// 5), and the rejected return is returned for the caller to place.
+    fn check_void_return(
+        &mut self,
+        arg: &ast::Expr,
+        fx: &mut FnCtx,
+        pos: &crate::Pos,
+        out: &mut Vec<hir::Stmt>,
+    ) -> Option<hir::Expr> {
+        if fx
+            .frames
+            .last()
+            .is_some_and(|frame| frame.rejects_return_operand)
+        {
+            // Rule 1: a constructor or a setter rejects each operand.
+            let diagnostics = self.diags.len();
+            let checked = self.check_expr(arg, None, fx);
+            self.reject_void_return_value(diagnostics, fx, pos);
+            let origins = self.expr_async_origins(&checked, fx);
+            fx.handle_async_origins(&origins);
+            return Some(checked);
+        }
+        // `(e)` has the type of `e`.
+        let arg = super::expr::unparen_expr(arg);
+        let ret = Type::Void;
+        let context = self.return_context(arg, &ret, fx);
+        if context == ret && matches!(arg, ast::Expr::Cond(_)) {
+            // The leaves of one return give one diagnostic at the return.
+            let outer = fx.frames.last_mut().and_then(|frame| {
+                frame
+                    .void_split
+                    .is_none()
+                    .then(|| frame.void_split.replace((pos.clone(), false)))
+            });
+            self.split_return(arg, fx, out);
+            if outer.is_some() {
+                if let Some(frame) = fx.frames.last_mut() {
+                    frame.void_split = None;
+                }
+            }
+            return None;
+        }
+        if context != ret {
+            let diagnostics = self.diags.len();
+            let checked = self.check_expr(arg, Some(&context), fx);
+            let checked = self.adopt_returned_handle(checked, &ret, fx, pos, out)?;
+            self.reject_void_return_value(diagnostics, fx, pos);
+            let origins = self.expr_async_origins(&checked, fx);
+            fx.handle_async_origins(&origins);
+            return Some(checked);
+        }
+        let bare_return = hir::Stmt::Return {
+            value: None,
+            pos: pos.clone(),
+        };
+        if fx.frames.last().is_some_and(|frame| frame.contextual_void) {
+            out.extend(self.check_expr_stmt(arg, fx));
+            out.push(bare_return);
+            return None;
+        }
+        let diagnostics = self.diags.len();
+        let (statements, ty) = self.check_void_operand(arg, fx);
+        if !matches!(self.apparent_type(&ty), Type::Void | Type::Error) {
+            self.reject_void_return_value(diagnostics, fx, pos);
+            // The rejected return reads its handles, so a handle gives no
+            // second diagnostic.
+            self.read_statement_handles(&statements, fx);
+        }
+        out.extend(statements);
+        out.push(bare_return);
+        None
+    }
+
+    /// Rejects a value operand of `return` in a function with a declared
+    /// `void` result (compiler.md §237 rule 5). An operand that gave a
+    /// diagnostic gives no second one. The leaves of a split return give
+    /// one diagnostic, at the return.
+    fn reject_void_return_value(&mut self, diagnostics: usize, fx: &mut FnCtx, pos: &crate::Pos) {
+        if self.diags.len() != diagnostics {
+            return;
+        }
+        let pos = match fx
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.void_split.as_mut())
+        {
+            Some((_, true)) => return,
+            Some((outer, reported)) => {
+                *reported = true;
+                outer.clone()
+            }
+            None => pos.clone(),
+        };
+        self.reject_subset(
+            RejectionSite::ExplicitVoidReturnValue,
+            "a `void` function cannot return a value",
+            pos,
+        );
+    }
+
+    /// Reads the handles of the expressions of `statements`, and of the
+    /// branches of each `if`.
+    fn read_statement_handles(&mut self, statements: &[hir::Stmt], fx: &mut FnCtx) {
+        for statement in statements {
+            match statement {
+                hir::Stmt::Expr(checked) => {
+                    let origins = self.expr_async_origins(checked, fx);
+                    fx.handle_async_origins(&origins);
+                }
+                hir::Stmt::If { then, .. } => self.read_statement_handles(then, fx),
+                _ => {}
+            }
+        }
     }
 
     /// Checks `return undefined;` (compiler.md §195.2 rule 1). In a

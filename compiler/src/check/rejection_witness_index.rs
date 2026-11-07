@@ -214,7 +214,6 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::UsingBindingResourceType => WitnessEntry::General { files: &["using-binding-resource-type", "using-binding-resource-type-witness-2", "using-binding-resource-type-witness-3"], variant: Some(Divergence::UsingBindingResourceType), reason: "" },
         RejectionSite::UsingBindingNotDisposable => WitnessEntry::General { files: &["using-binding-not-disposable", "using-binding-not-disposable-witness-2", "using-binding-not-disposable-witness-3"], variant: None, reason: "" },
         RejectionSite::GeneratorReturnValue => WitnessEntry::General { files: &["generator-return-value"], variant: Some(Divergence::GeneratorReturnValue), reason: "" },
-        RejectionSite::VoidFunctionReturnValue => WitnessEntry::General { files: &["void-function-return-value"], variant: Some(Divergence::VoidValue), reason: "" },
         RejectionSite::ExplicitVoidReturnValue => WitnessEntry::General { files: &["explicit-void-return-value"], variant: None, reason: "" },
         RejectionSite::ReturnValueMissing => WitnessEntry::General { files: &["return-value-missing"], variant: None, reason: "" },
         RejectionSite::StatementNonBooleanCondition => WitnessEntry::General { files: &["c-condition"], variant: Some(Divergence::StatementNonBooleanConditionForm), reason: "" },

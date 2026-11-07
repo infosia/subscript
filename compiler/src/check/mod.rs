@@ -813,6 +813,13 @@ pub(crate) struct Frame {
     pub is_lambda: bool,
     /// A lambda obtains void from its contextual signature, without an annotation.
     pub contextual_void: bool,
+    /// A constructor or a setter: `return e` keeps its S100, and `e` is not
+    /// a `void` operand of compiler.md §237 rule 2 (§237 rule 1).
+    pub rejects_return_operand: bool,
+    /// The position of a `return` whose conditional operand splits into
+    /// one return per leaf, and whether its leaves gave the diagnostic of
+    /// compiler.md §237 rule 5.
+    pub void_split: Option<(Pos, bool)>,
     pub lambda_id: Option<hir::LambdaId>,
     pub captures: Shared<Vec<hir::Capture>>,
     pub this_ty: Option<Type>,
@@ -1069,6 +1076,8 @@ impl FnCtx {
                 yield_annotated: false,
                 is_lambda: false,
                 contextual_void: false,
+                rejects_return_operand: false,
+                void_split: None,
                 lambda_id: None,
                 captures: Vec::new().into(),
                 this_ty: this_ty.clone(),

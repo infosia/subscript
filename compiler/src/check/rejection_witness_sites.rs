@@ -162,7 +162,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::UsingBindingResourceType,
     RejectionSite::UsingBindingNotDisposable,
     RejectionSite::GeneratorReturnValue,
-    RejectionSite::VoidFunctionReturnValue,
     RejectionSite::ExplicitVoidReturnValue,
     RejectionSite::ReturnValueMissing,
     RejectionSite::StatementNonBooleanCondition,

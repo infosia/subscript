@@ -682,16 +682,23 @@ expression of type `void` is accepted only as an expression statement,
 and `void` as a type only as a return type, as the element type of
 `Generator<void>`, and as the result of `Promise<void>`. Every other use
 is rejected with S100: a binding of type `void` (annotated or inferred),
-a `void` parameter, `void[]`, `return f()` and `yield f()` with a `void`
-operand, a `void` argument, a `map` callback that returns `void`, and a
-read of a `void` loop binding or of a `void` `value`. `tsc` accepts
-these forms.
+a `void` parameter, `void[]`, `yield f()` with a `void` operand, a
+`void` argument, a `map` callback that returns `void`, and a read of a
+`void` loop binding or of a `void` `value`. `tsc` accepts these forms.
 
 Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
 `function f(): void {} const a = f();` and
 `xs.map((v: i32): void => {})` give no `tsc` error.
 
-Reject: `r297`, `r298`, `r299`, `r335`–`r343`.
+Reject: `r297`, `r298`, `r299`, `r335`–`r337`, `r339`–`r343`.
+
+*Revised 2026-11-07 (§237):* a function with a `void` result accepts
+`return e` with a `void` operand, as `e; return;`. An async function
+with the result `Promise<void>` adopts a returned `Promise<void>`
+handle. A lambda that is not async and has no result annotation, whose
+result is `void` from its context, accepts a value operand and discards
+it. Accept adds `a424`;
+`retired:r338-void-call-return`.
 
 ### C22. A JavaScript `undefined` is `null` here
 

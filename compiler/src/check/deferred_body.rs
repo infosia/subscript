@@ -62,6 +62,7 @@ impl Checker<'_> {
                             pending.class.map(Type::Class),
                             pending.is_static.then_some(RejectionSite::ThisStaticField),
                         ),
+                        false,
                         pending.pos,
                     ) {
                         if let Some(class) = pending.class.filter(|_| !pending.is_static) {

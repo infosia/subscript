@@ -48,12 +48,15 @@ impl Checker<'_> {
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let in_async = fx.frames.last().is_some_and(|frame| frame.is_async);
-        if !in_async || matches!(self.apparent_type(ret), Type::Void | Type::Error) {
+        if !in_async || matches!(self.apparent_type(ret), Type::Error) {
             return false;
         }
-        let ast::Expr::Cond(conditional) = crate::check::expr::unparen_expr(operand) else {
+        if !matches!(
+            crate::check::expr::unparen_expr(operand),
+            ast::Expr::Cond(_)
+        ) {
             return false;
-        };
+        }
         let mut leaves = Vec::new();
         leaves_of(operand, &mut leaves);
         let handles = leaves
@@ -63,6 +66,21 @@ impl Checker<'_> {
         if handles == 0 || handles == leaves.len() {
             return false;
         }
+        self.split_return(operand, fx, out)
+    }
+
+    /// Splits `return c ? a : b` into `if (c) return a; else return b;`,
+    /// so the condition runs once (compiler.md §236 rule 3, §237 rule 2).
+    /// Returns whether `operand` is a conditional.
+    pub(super) fn split_return(
+        &mut self,
+        operand: &ast::Expr,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) -> bool {
+        let ast::Expr::Cond(conditional) = crate::check::expr::unparen_expr(operand) else {
+            return false;
+        };
         let leaf_return = |leaf: &ast::Expr| {
             Box::new(ast::Stmt::Return(ast::ReturnStmt {
                 span: leaf.span(),
@@ -86,7 +104,7 @@ impl Checker<'_> {
     /// (`split_mixed_return`).
     pub(super) fn return_context(&self, operand: &ast::Expr, ret: &Type, fx: &FnCtx) -> Type {
         let in_async = fx.frames.last().is_some_and(|frame| frame.is_async);
-        if !in_async || matches!(self.apparent_type(ret), Type::Void) {
+        if !in_async {
             return ret.clone();
         }
         let mut leaves = Vec::new();
@@ -284,13 +302,14 @@ impl Checker<'_> {
         let Type::AsyncHandle(value) = checked.ty.clone() else {
             return Some(checked);
         };
-        if !in_async
-            || matches!(
-                self.apparent_type(ret),
-                Type::AsyncHandle(_) | Type::Error | Type::Void
-            )
-            || !self.assignable(&value, ret)
-        {
+        // compiler.md §237 rule 3: a `Promise<void>` result adopts a
+        // `Promise<void>` handle.
+        let adopts = match self.apparent_type(ret) {
+            Type::AsyncHandle(_) | Type::Error => false,
+            Type::Void => self.apparent_type(&value) == Type::Void,
+            _ => self.assignable(&value, ret),
+        };
+        if !in_async || !adopts {
             return Some(checked);
         }
         let origins = self.expr_async_origins(&checked, fx);
@@ -321,8 +340,11 @@ impl Checker<'_> {
             &Type::I32,
             state_value(index + 1, pos),
         )));
+        // A `void` result has no placeholder value.
+        let placeholder = (self.apparent_type(ret) != Type::Void)
+            .then(|| expr(hir::ExprKind::Zero, ret.clone(), pos));
         out.push(hir::Stmt::Return {
-            value: Some(expr(hir::ExprKind::Zero, ret.clone(), pos)),
+            value: placeholder,
             pos: pos.clone(),
         });
         None
@@ -374,28 +396,41 @@ impl Checker<'_> {
                 init: expr(hir::ExprKind::Zero, adoption.ty.clone(), pos),
                 pos: pos.clone(),
             });
-            let ret = hir::Stmt::Return {
-                value: Some(expr(
-                    hir::ExprKind::AsyncHandleAwait(Box::new(local(
-                        &adoption.handle,
-                        &adoption.ty,
-                        pos,
-                    ))),
-                    adoption.value.clone(),
+            let awaited = expr(
+                hir::ExprKind::AsyncHandleAwait(Box::new(local(
+                    &adoption.handle,
+                    &adoption.ty,
                     pos,
-                )),
-                pos: pos.clone(),
-            };
-            selected.push(if index == last {
-                ret
+                ))),
+                adoption.value.clone(),
+                pos,
+            );
+            // A `Promise<void>` handle completes the function with no value
+            // (compiler.md §237 rule 3).
+            let completion = if self.apparent_type(&adoption.value) == Type::Void {
+                vec![
+                    hir::Stmt::Expr(awaited),
+                    hir::Stmt::Return {
+                        value: None,
+                        pos: pos.clone(),
+                    },
+                ]
             } else {
-                hir::Stmt::If {
+                vec![hir::Stmt::Return {
+                    value: Some(awaited),
+                    pos: pos.clone(),
+                }]
+            };
+            if index == last {
+                selected.extend(completion);
+            } else {
+                selected.push(hir::Stmt::If {
                     cond: compare(&state, hir::BinOp::Eq, index + 1, pos),
-                    then: vec![ret],
+                    then: completion,
                     els: None,
                     pos: pos.clone(),
-                }
-            });
+                });
+            }
         }
         let error = Type::Class(self.error_class);
         let caught = format!("{state}.error");

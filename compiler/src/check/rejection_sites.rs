@@ -193,7 +193,6 @@ pub(crate) enum RejectionSite {
     UsingBindingResourceType,
     UsingBindingNotDisposable,
     GeneratorReturnValue,
-    VoidFunctionReturnValue,
     ExplicitVoidReturnValue,
     ReturnValueMissing,
     StatementNonBooleanCondition,

@@ -59626,6 +59626,912 @@ fn f41 "<module initializer>" kind=ModuleInitializer exported=false generator=fa
     %0: Data(Array(Str)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a423-async-return-adopts-a-handle.ts", line: 9, col: 23 } }] @ a423-async-return-adopts-a-handle.ts:9:23
     StoreGlobal(GlobalId(0))(%0) @ a423-async-return-adopts-a-handle.ts:9:7
     -> Return { value: None, pos: Pos { file: "a423-async-return-adopts-a-handle.ts", line: 9, col: 7 } }
+===== a424-void-function-returns-a-void-operand =====
+module initializer=Some(FunctionId(25))
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+global g0 "log": Array(Str) mutable=false @ a424-void-function-returns-a-void-operand.ts:7:7
+global g1 "ys": Array(I32) mutable=false @ a424-void-function-returns-a-void-operand.ts:8:7
+global g2 "arrowVoid": Func(FuncType { params: [], ret: Void }) mutable=false @ a424-void-function-returns-a-void-operand.ts:50:7
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "v" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:10:10
+  value %0: Data(Array(Str)) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:11:3
+    %1: Data(Str) = StringLiteral("v")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 11, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:11:12
+    %2: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%0, %1) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 11, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 11, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:11:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 10, col: 10 } }
+fn f2 "g" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:14:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:14:12
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Array(Str)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:15:3
+    %2: Data(Str) = Template([Text("g"), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 15, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 15, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 15, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:15:12
+    %3: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %2) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 15, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 15, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:15:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 14, col: 10 } }
+fn f3 "step" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a424-void-function-returns-a-void-operand.ts:18:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 18, col: 16 } }]
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 19, col: 3 } }
+fn f4 "ticker" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:22:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 22, col: 16 } }]
+  param %0 "tag": Data(Str) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:22:23
+  value %0: Data(Str) name=Some("tag")
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(Array(Str)) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(1) })], ownership: [false, false] })
+  b1(%1: Data(Str), %2: Data(I32)) Some("for.cond"):
+    %7: Data(Bool) = Binary(Le)(%2, Integer(6):I32) @ a424-void-function-returns-a-void-operand.ts:23:24
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false] } }
+  b2 Some("for.body"):
+    %8: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:24:5
+    %9: Data(Str) = Template([Operand { index: 0, format: Str }, Text("turn"), Operand { index: 1, format: I32 }])(%1, %2) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:24:14
+    %10: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%8, %9) invalidates=[ValueId(8)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 24, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:24:5
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 25, col: 5 }, successor: BlockId(5), resume_value: Some(ValueId(11)), arguments: [Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false], invalidates: [ValueId(8)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 25, col: 5 } }] }
+  b3(%3: Data(Str), %4: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%4, Integer(1):I32) @ a424-void-function-returns-a-void-operand.ts:23:32
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(12))], ownership: [false, false] })
+  b4(%5: Data(Str), %6: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 22, col: 16 } }
+  b5(%11: Data(I32), %13: Data(Str), %14: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:25:5
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14))], ownership: [false, false] })
+fn f5 "settledWork" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:29:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 29, col: 16 } }]
+  value %0: Data(Array(Str)) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:30:3
+    %1: Data(Str) = StringLiteral("sw")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 30, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:30:12
+    %2: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%0, %1) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 30, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 30, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:30:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 29, col: 16 } }
+fn f6 "pendingWork" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:33:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 33, col: 16 } }]
+  value %0: Data(I32) name=None
+  value %1: Data(Array(Str)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Array(Str)) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(I32) name=None
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 34, col: 3 }, successor: BlockId(1), resume_value: Some(ValueId(0)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 34, col: 3 } }] }
+  b1(%0: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:34:3
+    %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:35:3
+    %2: Data(Str) = StringLiteral("pw-mid")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 35, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:35:12
+    %3: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %2) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 35, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 35, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:35:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 36, col: 3 }, successor: BlockId(2), resume_value: Some(ValueId(4)), arguments: [], ownership: [], invalidates: [ValueId(1)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 36, col: 3 } }] }
+  b2(%4: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:36:3
+    %5: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:37:3
+    %6: Data(Str) = StringLiteral("pw-done")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 37, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:37:12
+    %7: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%5, %6) invalidates=[ValueId(1), ValueId(5)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 37, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 37, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:37:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 33, col: 16 } }
+fn f7 "failingWork" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:40:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 40, col: 16 } }]
+  can-raise
+  value %0: Data(I32) name=None
+  value %1: Data(Array(Str)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(Str) name=None
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 41, col: 3 }, successor: BlockId(1), resume_value: Some(ValueId(0)), arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 41, col: 3 } }] }
+  b1(%0: Data(I32)) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:41:3
+    %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:42:3
+    %2: Data(Str) = StringLiteral("fw-mid")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 42, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:42:12
+    %3: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %2) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 42, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 42, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:42:3
+    %4: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:43:9
+    %5: Data(Str) = StringLiteral("Error")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:43:9
+    %6: Data(Str) = StringLiteral("work-failed")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 19 } }] @ a424-void-function-returns-a-void-operand.ts:43:19
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(U32), Data(Str), Data(Str)], return_type: None })(%4, Integer(0):U32, %5, %6) invalidates=[ValueId(1)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:43:9
+    %7: Data(Str) = LoadField(Class(FieldId(1)))(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:43:3
+    %8: Data(Str) = LoadField(Class(FieldId(2)))(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:43:3
+    Throw(%4, %7, %8) traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:43:3
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 43, col: 3 } }
+fn f8 "returnsVoid" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:46:10
+  b0 Some("entry"):
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 47, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:47:10
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 47, col: 3 } }
+fn f9 "awaitWork" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:52:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 52, col: 16 } }]
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 53, col: 10 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 53, col: 10 } }] }
+  b1 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:53:10
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 53, col: 3 } }
+fn f10 "[[Promise.turn]]" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:56:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }]
+  b0 Some("entry"):
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }
+fn f11 "adoptSettled" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:56:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }]
+  can-raise
+  value %0: Data(AsyncHandle(Void)) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(AsyncHandle(Void)) name=None
+  value %4: Data(AsyncHandle(Void)) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(AsyncHandle(Void)) name=None
+  value %8: Data(AsyncHandle(Void)) name=None
+  value %9: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = Zero() @ a424-void-function-returns-a-void-operand.ts:56:16
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:56:16
+    %4: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:57:10
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:57:10
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:57:3
+    %5: Data(Bool) = Binary(Ne)(Integer(1):I32, Integer(0):I32) @ a424-void-function-returns-a-void-operand.ts:56:16
+    -> ConditionalBranch { condition: Value(ValueId(5)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b1(%1: Data(Class(ClassId(0))), %2: Data(I32), %3: Data(AsyncHandle(Void))) Some("catch"):
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }
+  b2 Some("if.then"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(4))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] }
+  b3 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Constant(Constant { ty: I32, kind: Integer(1) }), Value(ValueId(4))], ownership: [false, true] })
+  b4(%8: Data(AsyncHandle(Void))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:56:16
+    -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(8))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] }
+  b5(%9: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:56:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:56:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }
+  b6 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:56:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:56:16
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:56:16
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 56, col: 16 } }
+  b7(%6: Data(I32), %7: Data(AsyncHandle(Void))) Some("if.join"):
+    AsyncHandleRelease(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:57:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 57, col: 3 } }
+fn f12 "adoptPending" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:60:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }]
+  can-raise
+  value %0: Data(AsyncHandle(Void)) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(AsyncHandle(Void)) name=None
+  value %4: Data(AsyncHandle(Void)) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(AsyncHandle(Void)) name=None
+  value %8: Data(AsyncHandle(Void)) name=None
+  value %9: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = Zero() @ a424-void-function-returns-a-void-operand.ts:60:16
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:60:16
+    %4: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:61:10
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:61:10
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:61:3
+    %5: Data(Bool) = Binary(Ne)(Integer(1):I32, Integer(0):I32) @ a424-void-function-returns-a-void-operand.ts:60:16
+    -> ConditionalBranch { condition: Value(ValueId(5)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b1(%1: Data(Class(ClassId(0))), %2: Data(I32), %3: Data(AsyncHandle(Void))) Some("catch"):
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }
+  b2 Some("if.then"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(4))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] }
+  b3 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Constant(Constant { ty: I32, kind: Integer(1) }), Value(ValueId(4))], ownership: [false, true] })
+  b4(%8: Data(AsyncHandle(Void))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:60:16
+    -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(8))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] }
+  b5(%9: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:60:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:60:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }
+  b6 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:60:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:60:16
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:60:16
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 60, col: 16 } }
+  b7(%6: Data(I32), %7: Data(AsyncHandle(Void))) Some("if.join"):
+    AsyncHandleRelease(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:61:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 61, col: 3 } }
+fn f13 "adoptFailing" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:64:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }]
+  can-raise
+  value %0: Data(AsyncHandle(Void)) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(AsyncHandle(Void)) name=None
+  value %4: Data(AsyncHandle(Void)) name=None
+  value %5: Data(Bool) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(AsyncHandle(Void)) name=None
+  value %8: Data(AsyncHandle(Void)) name=None
+  value %9: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = Zero() @ a424-void-function-returns-a-void-operand.ts:64:16
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:64:16
+    %4: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(7)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:65:10
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 10 } }] @ a424-void-function-returns-a-void-operand.ts:65:10
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:65:3
+    %5: Data(Bool) = Binary(Ne)(Integer(1):I32, Integer(0):I32) @ a424-void-function-returns-a-void-operand.ts:64:16
+    -> ConditionalBranch { condition: Value(ValueId(5)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b1(%1: Data(Class(ClassId(0))), %2: Data(I32), %3: Data(AsyncHandle(Void))) Some("catch"):
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }
+  b2 Some("if.then"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(4))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] }
+  b3 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Constant(Constant { ty: I32, kind: Integer(1) }), Value(ValueId(4))], ownership: [false, true] })
+  b4(%8: Data(AsyncHandle(Void))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:64:16
+    -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(8))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] }
+  b5(%9: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:64:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:64:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }
+  b6 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:64:16
+    AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:64:16
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:64:16
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 64, col: 16 } }
+  b7(%6: Data(I32), %7: Data(AsyncHandle(Void))) Some("if.join"):
+    AsyncHandleRelease(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:65:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 65, col: 3 } }
+fn f14 "mixed" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:68:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }]
+  can-raise
+  param %0 "b": Data(Bool) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:68:22
+  value %0: Data(Bool) name=Some("b")
+  value %1: Data(AsyncHandle(Void)) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(AsyncHandle(Void)) name=None
+  value %6: Data(AsyncHandle(Void)) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(AsyncHandle(Void)) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(Bool) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(AsyncHandle(Void)) name=None
+  value %15: Data(AsyncHandle(Void)) name=None
+  value %16: Data(AsyncHandle(Void)) name=None
+  value %17: Data(AsyncHandle(Void)) name=None
+  value %18: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %1: Data(AsyncHandle(Void)) = Zero() @ a424-void-function-returns-a-void-operand.ts:68:16
+    AsyncHandleRetain(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b1(%2: Data(Class(ClassId(0))), %3: Data(Bool), %4: Data(I32), %5: Data(AsyncHandle(Void))) Some("catch"):
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }
+  b2 Some("if.then"):
+    %6: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:69:14
+    AsyncHandleRelease(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:69:14
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:69:14
+    %7: Data(Bool) = Binary(Ne)(Integer(1):I32, Integer(0):I32) @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] } }
+  b3 Some("if.else"):
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 30 } }] @ a424-void-function-returns-a-void-operand.ts:69:30
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:69:30
+    %11: Data(Bool) = Binary(Ne)(Integer(0):I32, Integer(0):I32) @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(10), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(11), arguments: [], ownership: [] } }
+  b4 Some("if.then"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 }, successor: BlockId(6), resume_value: None, arguments: [Value(ValueId(6))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] }
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(1) }), Value(ValueId(6))], ownership: [false, false, true] })
+  b6(%15: Data(AsyncHandle(Void))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Suspend { kind: AsyncHandle { handle: ValueId(15), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 }, successor: BlockId(7), resume_value: None, arguments: [Value(ValueId(15))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] }
+  b7(%16: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    AsyncHandleRelease(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }
+  b8 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:68:16
+    AsyncHandleRelease(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }
+  b9(%8: Data(Bool), %9: Data(I32), %10: Data(AsyncHandle(Void))) Some("if.join"):
+    AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:69:14
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 14 } }
+  b10 Some("if.then"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 }, successor: BlockId(12), resume_value: None, arguments: [Value(ValueId(1))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] }
+  b11 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(15), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(1))], ownership: [false, false, true] })
+  b12(%17: Data(AsyncHandle(Void))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Suspend { kind: AsyncHandle { handle: ValueId(17), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 }, successor: BlockId(13), resume_value: None, arguments: [Value(ValueId(17))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] }
+  b13(%18: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(14))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    AsyncHandleRelease(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }
+  b14 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:68:16
+    AsyncHandleRelease(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:68:16
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 68, col: 16 } }
+  b15(%12: Data(Bool), %13: Data(I32), %14: Data(AsyncHandle(Void))) Some("if.join"):
+    AsyncHandleRelease(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 30 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 30 } }] @ a424-void-function-returns-a-void-operand.ts:69:30
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 69, col: 30 } }
+fn f15 "chooseVoid" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:72:10
+  param %0 "b": Data(Bool) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:72:21
+  value %0: Data(Bool) name=Some("b")
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("if.then"):
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 73, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:73:14
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 73, col: 14 } }
+  b2 Some("if.else"):
+    Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: None })(Integer(9):I32) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 73, col: 20 } }] @ a424-void-function-returns-a-void-operand.ts:73:20
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 73, col: 20 } }
+fn f16 "inTryFinally" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:76:10
+  value %0: Data(Array(Str)) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Array(Str)) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %0: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:78:5
+    %1: Data(Str) = StringLiteral("try")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 78, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:78:14
+    %2: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%0, %1) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 78, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 78, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:78:5
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 79, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:79:12
+    FinalizerEnter(Some(Return))() @ a424-void-function-returns-a-void-operand.ts:79:5
+    %3: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:81:5
+    %4: Data(Str) = StringLiteral("finally")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 81, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:81:14
+    %5: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%3, %4) invalidates=[ValueId(0), ValueId(3)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 81, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 81, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:81:5
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 79, col: 5 } }
+fn f17 "runOne" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:85:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 85, col: 16 } }]
+  can-raise
+  param %0 "tag": Data(Str) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:85:23
+  param %1 "f": Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:85:36
+  value %0: Data(Str) name=Some("tag")
+  value %1: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=Some("f")
+  value %2: Data(AsyncHandle(Void)) name=None
+  value %3: Data(Class(ClassId(0))) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %6: Data(AsyncHandle(Void)) name=None
+  value %7: Data(Array(Str)) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(Class(ClassId(0))) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(U32) name=None
+  value %13: Data(Bool) name=None
+  value %14: Data(Array(Str)) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %22: Data(Str) name=Some("tag")
+  value %23: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=Some("f")
+  value %24: Data(AsyncHandle(Void)) name=None
+  value %25: Data(AsyncHandle(Void)) name=None
+  value %26: Data(AsyncHandle(Void)) name=None
+  value %27: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %2: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Str)], return_type: None })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 86, col: 28 } }] @ a424-void-function-returns-a-void-operand.ts:86:28
+    %6: Data(AsyncHandle(Void)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: Some(Data(AsyncHandle(Void))) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 11 } }, Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 11 } }] @ a424-void-function-returns-a-void-operand.ts:88:11
+    -> Suspend { kind: AsyncHandle { handle: ValueId(6), owned: true }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 5 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 5 } }] }
+  b1(%3: Data(Class(ClassId(0))), %4: Data(Str), %5: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })), %26: Data(AsyncHandle(Void))) Some("catch"):
+    %12: Data(U32) = LoadField(Class(FieldId(0)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 91, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:91:9
+    %13: Data(Bool) = Binary(Lt)(%12, Integer(7):U32) @ a424-void-function-returns-a-void-operand.ts:91:9
+    -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] } }
+  b2 Some("catch.landing"):
+    %10: Data(Class(ClassId(0))) = CatchEntry() @ a424-void-function-returns-a-void-operand.ts:87:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(10)), Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false, false, false] })
+  b3(%22: Data(Str), %23: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })), %24: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 88, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:88:5
+    %7: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:89:5
+    %8: Data(Str) = Template([Operand { index: 0, format: Str }, Text("-done")])(%22) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 89, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 89, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:89:14
+    %9: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%7, %8) invalidates=[ValueId(7)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 89, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 89, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:89:5
+    -> Branch(BlockTarget { block: BlockId(8), arguments: [Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24))], ownership: [false, false, false] })
+  b4 Some("catch.landing"):
+    %11: Data(Class(ClassId(0))) = CatchEntry() @ a424-void-function-returns-a-void-operand.ts:87:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(11)), Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(24))], ownership: [false, false, false, false] })
+  b5 Some("if.then"):
+    %14: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:92:7
+    %15: Data(Str) = LoadField(Class(FieldId(2)))(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 26 } }] @ a424-void-function-returns-a-void-operand.ts:92:28
+    %16: Data(Str) = Template([Operand { index: 0, format: Str }, Text("!"), Operand { index: 1, format: Str }])(%4, %15) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:92:16
+    %17: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%14, %16) invalidates=[ValueId(7), ValueId(14)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 7 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 92, col: 7 } }] @ a424-void-function-returns-a-void-operand.ts:92:7
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(4)), Value(ValueId(5))], ownership: [false, false] })
+  b6 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(4)), Value(ValueId(5))], ownership: [false, false] })
+  b7(%18: Data(Str), %19: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))) Some("if.join"):
+    -> Branch(BlockTarget { block: BlockId(8), arguments: [Value(ValueId(18)), Value(ValueId(19)), Value(ValueId(26))], ownership: [false, false, false] })
+  b8(%20: Data(Str), %21: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })), %27: Data(AsyncHandle(Void))) Some("try.join"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(27), owned: false }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 }, successor: BlockId(9), resume_value: None, arguments: [Value(ValueId(27))], ownership: [false], invalidates: [ValueId(7), ValueId(14)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }] }
+  b9(%25: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(10))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:95:3
+    AsyncHandleRelease(%25) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 85, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 85, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:85:16
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 85, col: 16 } }
+  b10 Some("release.landing"):
+    ExceptionPark() @ a424-void-function-returns-a-void-operand.ts:95:3
+    AsyncHandleRelease(%25) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:95:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:95:3
+    -> Unreachable { pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 95, col: 3 } }
+fn f18 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:98:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 98, col: 23 } }]
+  can-raise
+  value %0: Data(Array(I32)) name=None
+  value %1: Data(Func(FuncType { params: [], ret: Void })) name=None
+  value %2: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %4: Data(I32) name=None
+  value %5: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %6: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %10: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Bool) name=None
+  value %14: Data(I32) name=None
+  value %15: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %19: Data(I32) name=None
+  value %20: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %21: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %25: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Bool) name=None
+  value %29: Data(I32) name=None
+  value %30: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %33: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %34: Data(Array(Str)) name=None
+  value %35: Data(Array(I32)) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Str) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Array(Str)) name=None
+  value %41: Data(Str) name=None
+  value %42: Data(Str) name=None
+  value %43: Data(Array(Str)) name=None
+  value %44: Data(Str) name=None
+  value %45: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %46: Data(Str) name=None
+  value %47: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %48: Data(Str) name=None
+  value %49: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %50: Data(Str) name=None
+  value %51: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %52: Data(Str) name=None
+  value %53: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %54: Data(Str) name=None
+  value %55: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) name=None
+  value %56: Data(Array(Str)) name=None
+  value %57: Data(Str) name=None
+  value %58: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 99, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 99, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 99, col: 25 } }] @ a424-void-function-returns-a-void-operand.ts:99:21
+    Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [], return_type: None })() invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 100, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:100:3
+    %1: Data(Func(FuncType { params: [], ret: Void })) = LoadGlobal(GlobalId(2))() @ a424-void-function-returns-a-void-operand.ts:101:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: Void }))], return_type: None })(%1) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 101, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 101, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:101:3
+    Call(CallTarget { kind: Function(FunctionId(16)), parameter_types: [], return_type: None })() invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 102, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:102:3
+    Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(Bool)], return_type: None })(Boolean(true):Bool) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 103, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:103:3
+    Call(CallTarget { kind: Function(FunctionId(15)), parameter_types: [Data(Bool)], return_type: None })(Boolean(false):Bool) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 104, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:104:3
+    %2: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(19))() @ a424-void-function-returns-a-void-operand.ts:105:14
+    %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 105, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:105:3
+    %4: Data(I32) = IteratorBound(%3) @ a424-void-function-returns-a-void-operand.ts:105:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(2)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(4))], ownership: [false, false, false, false] })
+  b1(%5: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %6: Data(Func(FuncType { params: [I32], ret: Void })), %7: Data(I32), %8: Data(I32)) Some("array-callback.cond"):
+    %13: Data(Bool) = IteratorHasNext(%5, %7, %8) @ a424-void-function-returns-a-void-operand.ts:105:3
+    -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] } }
+  b2 Some("array-callback.body"):
+    %14: Data(I32) = IteratorValue(%5, %7, %8) @ a424-void-function-returns-a-void-operand.ts:105:3
+    Call(CallTarget { kind: StaticClosure(FunctionId(19)), parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%6, %14) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 105, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 105, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:105:3
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8))], ownership: [false, false, false, false] })
+  b3(%9: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %10: Data(Func(FuncType { params: [I32], ret: Void })), %11: Data(I32), %12: Data(I32)) Some("array-callback.step"):
+    %15: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%9, %11, %12) @ a424-void-function-returns-a-void-operand.ts:105:3
+    %16: Data(I32) = Binary(Add)(%11, Integer(1):I32) @ a424-void-function-returns-a-void-operand.ts:105:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(16)), Value(ValueId(12))], ownership: [false, false, false, false] })
+  b4 Some("array-callback.exit"):
+    %17: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(20))() @ a424-void-function-returns-a-void-operand.ts:106:14
+    %18: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:106:3
+    %19: Data(I32) = IteratorBound(%18) @ a424-void-function-returns-a-void-operand.ts:106:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(18)), Value(ValueId(17)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(19))], ownership: [false, false, false, false] })
+  b5(%20: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %21: Data(Func(FuncType { params: [I32], ret: Void })), %22: Data(I32), %23: Data(I32)) Some("array-callback.cond"):
+    %28: Data(Bool) = IteratorHasNext(%20, %22, %23) @ a424-void-function-returns-a-void-operand.ts:106:3
+    -> ConditionalBranch { condition: Value(ValueId(28)), then_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] } }
+  b6 Some("array-callback.body"):
+    %29: Data(I32) = IteratorValue(%20, %22, %23) @ a424-void-function-returns-a-void-operand.ts:106:3
+    Call(CallTarget { kind: StaticClosure(FunctionId(20)), parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%21, %29) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:106:3
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(20)), Value(ValueId(21)), Value(ValueId(22)), Value(ValueId(23))], ownership: [false, false, false, false] })
+  b7(%24: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %25: Data(Func(FuncType { params: [I32], ret: Void })), %26: Data(I32), %27: Data(I32)) Some("array-callback.step"):
+    %30: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%24, %26, %27) @ a424-void-function-returns-a-void-operand.ts:106:3
+    %31: Data(I32) = Binary(Add)(%26, Integer(1):I32) @ a424-void-function-returns-a-void-operand.ts:106:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(24)), Value(ValueId(25)), Value(ValueId(31)), Value(ValueId(27))], ownership: [false, false, false, false] })
+  b8 Some("array-callback.exit"):
+    %32: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(21))() @ a424-void-function-returns-a-void-operand.ts:107:32
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%32, Integer(3):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 108, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 108, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:108:3
+    %33: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(22))() @ a424-void-function-returns-a-void-operand.ts:109:35
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%33, Integer(4):I32) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 113, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 113, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:113:3
+    %34: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:114:3
+    %35: Data(Array(I32)) = LoadGlobal(GlobalId(1))() @ a424-void-function-returns-a-void-operand.ts:114:18
+    %36: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 26 } }] @ a424-void-function-returns-a-void-operand.ts:114:26
+    %37: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%35, %36) invalidates=[ValueId(0), ValueId(34), ValueId(35)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 18 } }] @ a424-void-function-returns-a-void-operand.ts:114:18
+    %38: Data(Str) = Template([Text("ys="), Operand { index: 0, format: Str }])(%37) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:114:12
+    %39: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%34, %38) invalidates=[ValueId(0), ValueId(34), ValueId(35)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 114, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:114:3
+    %40: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:115:9
+    %41: Data(Str) = StringLiteral(" ")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 115, col: 18 } }] @ a424-void-function-returns-a-void-operand.ts:115:18
+    %42: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%40, %41) invalidates=[ValueId(0), ValueId(34), ValueId(35), ValueId(40)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 115, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 115, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:115:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%42) invalidates=[ValueId(0), ValueId(34), ValueId(35), ValueId(40)] @ a424-void-function-returns-a-void-operand.ts:115:3
+    %43: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:116:3
+    Call(CallTarget { kind: BuiltinMethod(ArrayClear), parameter_types: [Data(Array(Str))], return_type: None })(%43) count=Uncounted invalidates=[ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 116, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 116, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:116:3
+    %44: Data(Str) = StringLiteral("aw")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 117, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:117:16
+    %45: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = FunctionRef(FunctionId(9))() @ a424-void-function-returns-a-void-operand.ts:117:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(44), ValueId(45)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 117, col: 3 }, successor: BlockId(9), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 117, col: 3 } }] }
+  b9 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 117, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:117:3
+    %46: Data(Str) = StringLiteral("as")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 118, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:118:16
+    %47: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = FunctionRef(FunctionId(11))() @ a424-void-function-returns-a-void-operand.ts:118:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(46), ValueId(47)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 118, col: 3 }, successor: BlockId(10), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 118, col: 3 } }] }
+  b10 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 118, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:118:3
+    %48: Data(Str) = StringLiteral("ap")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 119, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:119:16
+    %49: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = FunctionRef(FunctionId(12))() @ a424-void-function-returns-a-void-operand.ts:119:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(48), ValueId(49)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 119, col: 3 }, successor: BlockId(11), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 119, col: 3 } }] }
+  b11 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 119, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:119:3
+    %50: Data(Str) = StringLiteral("af")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 120, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:120:16
+    %51: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = FunctionRef(FunctionId(13))() @ a424-void-function-returns-a-void-operand.ts:120:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(50), ValueId(51)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 120, col: 3 }, successor: BlockId(12), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 120, col: 3 } }] }
+  b12 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 120, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:120:3
+    %52: Data(Str) = StringLiteral("mh")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:121:16
+    %53: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = MakeClosure(FunctionId(23))() @ a424-void-function-returns-a-void-operand.ts:121:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(52), ValueId(53)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 3 }, successor: BlockId(13), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 3 } }] }
+  b13 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:121:3
+    %54: Data(Str) = StringLiteral("mv")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 16 } }] @ a424-void-function-returns-a-void-operand.ts:122:16
+    %55: Data(Func(FuncType { params: [], ret: AsyncHandle(Void) })) = MakeClosure(FunctionId(24))() @ a424-void-function-returns-a-void-operand.ts:122:22
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(17)), parameter_types: [Data(Str), Data(Func(FuncType { params: [], ret: AsyncHandle(Void) }))], return_type: None }, operands: [ValueId(54), ValueId(55)] }, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 3 }, successor: BlockId(14), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43)], traps: [Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 3 } }] }
+  b14 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 3 } }] @ a424-void-function-returns-a-void-operand.ts:122:3
+    %56: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:123:9
+    %57: Data(Str) = StringLiteral(" ")() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 123, col: 18 } }] @ a424-void-function-returns-a-void-operand.ts:123:18
+    %58: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(Str)) })(%56, %57) invalidates=[ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43), ValueId(56)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 123, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 123, col: 9 } }] @ a424-void-function-returns-a-void-operand.ts:123:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%58) invalidates=[ValueId(0), ValueId(34), ValueId(35), ValueId(40), ValueId(43), ValueId(56)] @ a424-void-function-returns-a-void-operand.ts:123:3
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 98, col: 23 } }
+fn f19 "<lambda a424-void-function-returns-a-void-operand.ts:105:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:105:14
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:105:14
+  value %0: Data(I32) name=Some("x")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32)], return_type: None })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 105, col: 26 } }] @ a424-void-function-returns-a-void-operand.ts:105:26
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 105, col: 26 } }
+fn f20 "<lambda a424-void-function-returns-a-void-operand.ts:106:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:106:14
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:106:14
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Array(I32)) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Array(I32)) = LoadGlobal(GlobalId(1))() @ a424-void-function-returns-a-void-operand.ts:106:26
+    %2: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%1, %0) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 26 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 26 } }] @ a424-void-function-returns-a-void-operand.ts:106:26
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 106, col: 26 } }
+fn f21 "<lambda a424-void-function-returns-a-void-operand.ts:107:32>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:107:32
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:107:32
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Array(I32)) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Array(I32)) = LoadGlobal(GlobalId(1))() @ a424-void-function-returns-a-void-operand.ts:107:44
+    %2: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a424-void-function-returns-a-void-operand.ts:107:52
+    %3: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%1, %2) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 107, col: 44 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 107, col: 44 } }] @ a424-void-function-returns-a-void-operand.ts:107:44
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 107, col: 44 } }
+fn f22 "<lambda a424-void-function-returns-a-void-operand.ts:109:35>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:109:35
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a424-void-function-returns-a-void-operand.ts:109:35
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Array(Str)) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Array(I32)) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a424-void-function-returns-a-void-operand.ts:110:5
+    %2: Data(Str) = Template([Text("block"), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 110, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 110, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 110, col: 14 } }] @ a424-void-function-returns-a-void-operand.ts:110:14
+    %3: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %2) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 110, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 110, col: 5 } }] @ a424-void-function-returns-a-void-operand.ts:110:5
+    %4: Data(Array(I32)) = LoadGlobal(GlobalId(1))() @ a424-void-function-returns-a-void-operand.ts:111:12
+    %5: Data(I32) = Binary(Mul)(%0, Integer(100):I32) @ a424-void-function-returns-a-void-operand.ts:111:20
+    %6: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%4, %5) invalidates=[ValueId(1), ValueId(4)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 111, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 111, col: 12 } }] @ a424-void-function-returns-a-void-operand.ts:111:12
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 111, col: 5 } }
+fn f23 "<lambda a424-void-function-returns-a-void-operand.ts:121:22>" kind=Lambda exported=false generator=false async=false -> AsyncHandle(Void) entry=b0 @ a424-void-function-returns-a-void-operand.ts:121:22
+  value %0: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(Bool)], return_type: None })(Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 43 } }] @ a424-void-function-returns-a-void-operand.ts:121:43
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 121, col: 43 } }
+fn f24 "<lambda a424-void-function-returns-a-void-operand.ts:122:22>" kind=Lambda exported=false generator=false async=false -> AsyncHandle(Void) entry=b0 @ a424-void-function-returns-a-void-operand.ts:122:22
+  value %0: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(14)), parameter_types: [Data(Bool)], return_type: None })(Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 43 } }] @ a424-void-function-returns-a-void-operand.ts:122:43
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 122, col: 43 } }
+fn f25 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:7:7
+  value %0: Data(Array(Str)) name=None
+  value %1: Data(Array(I32)) name=None
+  value %2: Data(Func(FuncType { params: [], ret: Void })) name=None
+  b0 Some("entry"):
+    %0: Data(Array(Str)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 7, col: 23 } }] @ a424-void-function-returns-a-void-operand.ts:7:23
+    StoreGlobal(GlobalId(0))(%0) @ a424-void-function-returns-a-void-operand.ts:7:7
+    %1: Data(Array(I32)) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 8, col: 19 } }] @ a424-void-function-returns-a-void-operand.ts:8:19
+    StoreGlobal(GlobalId(1))(%1) @ a424-void-function-returns-a-void-operand.ts:8:7
+    %2: Data(Func(FuncType { params: [], ret: Void })) = MakeClosure(FunctionId(26))() @ a424-void-function-returns-a-void-operand.ts:50:19
+    StoreGlobal(GlobalId(2))(%2) @ a424-void-function-returns-a-void-operand.ts:50:7
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 7, col: 7 } }
+fn f26 "<lambda a424-void-function-returns-a-void-operand.ts:50:19>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a424-void-function-returns-a-void-operand.ts:50:19
+  b0 Some("entry"):
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 50, col: 31 } }] @ a424-void-function-returns-a-void-operand.ts:50:31
+    -> Return { value: None, pos: Pos { file: "a424-void-function-returns-a-void-operand.ts", line: 50, col: 31 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

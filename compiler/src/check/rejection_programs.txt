@@ -2990,12 +2990,6 @@ function f():void {return 1;}
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	void-function-return-value			0
-FILE	E	target/s154/forms/void-function-return-value/main.ts
-
-export function main(): void { const f:()=>void=()=>{return 1;}; }
-END FILE
-END PROGRAM
 PROGRAM	return-value-missing	TS2322		0
 FILE	E	target/s154/forms/return-value-missing/main.ts
 function f():i32 {return;}
