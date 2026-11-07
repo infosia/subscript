@@ -1300,6 +1300,9 @@ pub(crate) struct Checker<'p> {
     /// The contextual result type of the next lambda with no result
     /// annotation; the body still decides the result (§186 rule 6).
     lambda_result_hint: Option<Type>,
+    /// The next lambda with no result annotation takes `void` as the
+    /// context of its result (compiler.md §238 rule 2).
+    lambda_void_context: bool,
     initializer_call: Option<swc_common::Span>,
     active_call: Option<swc_common::Span>,
     /// The contextual type of the active call (§212 rule 1).

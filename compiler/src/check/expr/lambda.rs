@@ -48,6 +48,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let generic_context = self.generic_callback_context;
         let result_hint = self.lambda_result_hint.take();
+        let void_context = std::mem::take(&mut self.lambda_void_context);
         let value = self.with_expression_work(|checker| {
             if a.is_async && a.type_params.is_some() {
                 checker.reject_subset(
@@ -125,7 +126,10 @@ impl<'p> Checker<'p> {
                                 )
                         })
                         .cloned()
-                });
+                })
+                // compiler.md §238 rule 2: a `void` result of the parameter
+                // type of a generic call is the context of the result.
+                .or_else(|| (void_context && !a.is_async).then_some(Type::Void));
 
             if a.is_async
                 && ret.as_ref().is_some_and(|ty| {
@@ -141,6 +145,17 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return checker.err_expr(pos);
+            }
+            // compiler.md §238 rule 1: a block with no `return` operand has
+            // the result `void`.
+            if ret.is_none()
+                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts))
+            {
+                ret = Some(if a.is_async {
+                    Type::async_handle(Type::Void)
+                } else {
+                    Type::Void
+                });
             }
             if ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_)) {
                 checker.reject_subset(
@@ -353,7 +368,19 @@ impl<'p> Checker<'p> {
                         return out;
                     }
                     let diagnostics = self.diags.len();
-                    let mut checked = self.check_expr(e, ret.as_ref().or(result_hint), fx);
+                    let mut checked = match &ret {
+                        Some(ret) => self.check_expr(e, Some(ret), fx),
+                        None => self.check_expr_keeping_void(e, result_hint, fx),
+                    };
+                    // compiler.md §238 rule 1: a body of type `void` gives
+                    // the result `void`.
+                    if ret.is_none() && self.apparent_type(&checked.ty) == Type::Void {
+                        ret = Some(Type::Void);
+                        if let Some(frame) = fx.frames.last_mut() {
+                            frame.ret = Type::Void;
+                        }
+                        return vec![hir::Stmt::Expr(checked)];
+                    }
                     if let Some(ret) = &ret {
                         self.require_expr_assignable(
                             &mut checked,
@@ -469,4 +496,37 @@ impl<'p> Checker<'p> {
             pos,
         }
     }
+}
+
+/// Whether a `return` of `statements` has an operand (compiler.md §238
+/// rule 1). A `return` in a nested function, lambda, or class is not a
+/// `return` of the block.
+fn returns_a_value(statements: &[ast::Stmt]) -> bool {
+    statements.iter().any(|statement| match statement {
+        ast::Stmt::Return(r) => r.arg.is_some(),
+        ast::Stmt::Block(block) => returns_a_value(&block.stmts),
+        ast::Stmt::If(i) => {
+            returns_a_value(std::slice::from_ref(&i.cons))
+                || i.alt
+                    .as_deref()
+                    .is_some_and(|alt| returns_a_value(std::slice::from_ref(alt)))
+        }
+        ast::Stmt::While(w) => returns_a_value(std::slice::from_ref(&w.body)),
+        ast::Stmt::DoWhile(d) => returns_a_value(std::slice::from_ref(&d.body)),
+        ast::Stmt::For(f) => returns_a_value(std::slice::from_ref(&f.body)),
+        ast::Stmt::ForIn(f) => returns_a_value(std::slice::from_ref(&f.body)),
+        ast::Stmt::ForOf(f) => returns_a_value(std::slice::from_ref(&f.body)),
+        ast::Stmt::Labeled(l) => returns_a_value(std::slice::from_ref(&l.body)),
+        ast::Stmt::Switch(s) => s.cases.iter().any(|case| returns_a_value(&case.cons)),
+        ast::Stmt::Try(t) => {
+            returns_a_value(&t.block.stmts)
+                || t.handler
+                    .as_ref()
+                    .is_some_and(|handler| returns_a_value(&handler.body.stmts))
+                || t.finalizer
+                    .as_ref()
+                    .is_some_and(|finalizer| returns_a_value(&finalizer.stmts))
+        }
+        _ => false,
+    })
 }

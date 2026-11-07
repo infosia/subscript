@@ -149,6 +149,7 @@ limit of rule 4, and the examples of rule 5.
    the type `void`, stays rejected: `const f = () => v();` and
    `const f = async () => v();`. `tsc` accepts both. The binding has
    the type of the lambda, and its result type is `void`.
+   *(Closed 2026-11-07 by §238.)*
 3. `function f(): void { return undefined; }` stays rejected with the
    diagnostic of `collisions.md` C7. `tsc` accepts it.
 4. In an async function with the result `Promise<void>`,
@@ -162,3 +163,4 @@ limit of rule 4, and the examples of rule 5.
    `each(xs, (x: i32) => g(x))` with
    `each<T>(xs: T[], f: (x: T) => void)` stay rejected. `tsc` accepts
    both. The annotated form `(): void => v()` is accepted.
+   *(Closed 2026-11-07 by §238.)*

@@ -561,6 +561,18 @@ impl<'p> Checker<'p> {
             // §229 rule 1: a callback whose result is a type parameter with a
             // contextual candidate checks its body with that candidate. The
             // body still gives the candidate of the parameter (§229 rule 2).
+            // §238 rule 2: a function type with the result `void` gives
+            // that result as context, with no candidate of its parameters.
+            if context.is_none()
+                && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_))
+                && annotations
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .is_some_and(returns_void)
+            {
+                self.lambda_void_context = true;
+            }
             if context.is_none() && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)) {
                 self.lambda_result_hint = annotations
                     .get(index)
@@ -571,6 +583,7 @@ impl<'p> Checker<'p> {
             }
             let value = self.check_expr(&argument.expr, context.as_ref(), fx);
             self.lambda_result_hint = None;
+            self.lambda_void_context = false;
             self.generic_callback_context = saved;
             if value.ty == Type::Error {
                 return None;
@@ -934,6 +947,22 @@ fn type_mentions_missing(ty: &ast::TsType, parameters: &[String], nonliteral: &[
                         type_mentions_missing(&annotation.type_ann, parameters, nonliteral)
                     })
                 })
+        }
+        _ => false,
+    }
+}
+
+/// Whether `annotation` is a function type with the result `void`
+/// (compiler.md §238 rule 2).
+fn returns_void(annotation: &ast::TsType) -> bool {
+    match annotation {
+        ast::TsType::TsParenthesizedType(inner) => returns_void(&inner.type_ann),
+        ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
+            matches!(
+                &*function.type_ann.type_ann,
+                ast::TsType::TsKeywordType(keyword)
+                    if keyword.kind == ast::TsKeywordTypeKind::TsVoidKeyword
+            )
         }
         _ => false,
     }

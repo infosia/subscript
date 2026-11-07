@@ -399,7 +399,7 @@ fn supplied_defaults_do_not_add_initializer_reads() {
 fn async_poison_does_not_report_another_callee_error() {
     let diagnostics = check_program(&[SourceFile::entry(
         "main.ts",
-        "const runner = async () => { }; async function use(): Promise<void> { await runner(); }",
+        "const runner = async () => { return 1; }; async function use(): Promise<void> { await runner(); }",
     )])
     .unwrap_err();
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
@@ -730,7 +730,7 @@ fn nested_initializer_cycles_do_not_inherit_the_function_value_decision() {
 #[test]
 fn a_rejected_block_result_still_checks_non_result_statements() {
     for source in [
-        "function f(): void { let counter = 0; const noret = () => { counter += 10; }; }",
+        "function f(): void { let counter = 0; const noret = () => { counter += 10; return 1; }; }",
         "function f(): void { let counter = 0; const noret = () => { counter += 10; return missing; }; }",
     ] {
     let diagnostics = check_program(&[SourceFile::entry(

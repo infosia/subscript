@@ -176,6 +176,29 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
+        self.check_expr_with_policy(e, ctx, fx, allow_embedded_header_receiver, false)
+    }
+
+    /// Checks the expression body of a lambda with no result type: a body
+    /// of type `void` gives the result `void` (compiler.md §238 rule 1), so
+    /// the expression keeps its `void` type.
+    pub(crate) fn check_expr_keeping_void(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        self.check_expr_with_policy(e, ctx, fx, false, true)
+    }
+
+    fn check_expr_with_policy(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        allow_embedded_header_receiver: bool,
+        keep_void: bool,
+    ) -> hir::Expr {
         let previous_numeric = fx.descriptor_numeric_operand;
         if fx.descriptor_default.is_some() {
             if matches!(e, ast::Expr::Bin(b) if matches!(b.op,
@@ -225,7 +248,7 @@ impl<'p> Checker<'p> {
                 checked.pos.clone(),
             );
             self.err_expr(checked.pos)
-        } else if self.apparent_type(&checked.ty) == Type::Void {
+        } else if !keep_void && self.apparent_type(&checked.ty) == Type::Void {
             self.reject_subset(
                 if ctx.is_some_and(|ty| !matches!(self.apparent_type(ty), Type::Void | Type::Error))
                 {

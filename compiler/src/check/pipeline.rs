@@ -246,6 +246,7 @@ fn run_with_effects(
         deciding_type: false,
         generic_callback_context: false,
         lambda_result_hint: None,
+        lambda_void_context: false,
         initializer_call: None,
         active_call: None,
         active_call_context: None,

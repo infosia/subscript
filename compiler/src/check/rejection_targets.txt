@@ -1,6 +1,5 @@
 ParserLoneSurrogateEscape	c-parse-surrogate	S100	a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character
 BlockLambdaReturnAnnotationMissing	a-s105	S100	a lambda with a block body requires a return type annotation
-BlockLambdaReturnAnnotationMissing	new-shared-nullable-call	S100	a lambda with a block body requires a return type annotation
 ParserSyntaxError	a-s214	S100	parse error: A `set` accessor must have exactly one parameter
 ParserSyntaxError	a-s231	S100	parse error: Expression expected
 ParserSyntaxError	parser-syntax-error	S100	parse error: A `get` accessor cannot have parameters
