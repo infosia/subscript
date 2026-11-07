@@ -1838,7 +1838,11 @@ impl<'p> Checker<'p> {
             if allow_index && own.params.len() == params.len() + 1 {
                 place.push(Type::I32);
             }
-            self.discard_function_result(&mut checked, &Type::func(place, ret.clone()));
+            self.discard_function_result(
+                &mut checked,
+                &Type::func(place, ret.clone()),
+                crate::check::type_rules::ParameterCount::Same,
+            );
         }
         let counted_callback = matches!(method, "Map.groupBy" | "Map.forEach")
             || ArrFn::ALL.iter().any(|operation| {

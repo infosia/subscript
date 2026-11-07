@@ -319,8 +319,16 @@ impl<'p> Checker<'p> {
     /// conversion is a `Cast` whose type is exactly `to`: each later stage
     /// reads that type, and no operation runs (rule 5). A value that is not
     /// assignable gets no conversion and keeps its diagnostic.
-    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type) {
-        self.discard_function_result(value, to);
+    /// `count` is the number of parameters that the place takes from a
+    /// function value: a built-in callback takes only the same number
+    /// (compiler.md §243 rule 3).
+    pub(crate) fn place_function_value(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        count: ParameterCount,
+    ) {
+        self.discard_function_result(value, to, count);
         if !self.needs_function_conversion(&value.ty, to) {
             return;
         }
@@ -371,7 +379,11 @@ impl<'p> Checker<'p> {
         let Some(own) = self.function_of(&value.ty) else {
             return;
         };
-        let _ = self.place_value(value, &leaf_place(leaves, own.params.len()));
+        let _ = self.place_value_with(
+            value,
+            &leaf_place(leaves, own.params.len()),
+            ParameterCount::Same,
+        );
     }
 
     /// Whether a call of a place with the result `void` can discard the
@@ -423,45 +435,120 @@ impl<'p> Checker<'p> {
         true
     }
 
-    /// A reference to a function declaration or a static method, in a place
-    /// of a function type with the result `void` (compiler.md §240 rules 1
-    /// and 2). If the function is not generic and not async, its result is
-    /// not `void` and carries no handle, and the function with the result `void`
-    /// fits the place, `value` becomes a lambda with no environment and the
-    /// parameters of the function. The lambda calls the function with its
-    /// arguments and discards the result. Another value is unchanged.
-    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type) {
+    /// Converts a function value to its place (compiler.md §240 rule 2,
+    /// §242 rule 2, §243 rules 1 and 2). A lambda literal with fewer
+    /// parameters takes the trailing parameters of the place, then a lambda
+    /// literal with a value result takes a `void` result. A reference to a
+    /// function declaration or a static method becomes a lambda with no
+    /// environment that calls it, when the place has more parameters or a
+    /// `void` result that discards the value. Another value is unchanged.
+    pub(crate) fn discard_function_result(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        count: ParameterCount,
+    ) {
+        if count == ParameterCount::Fewer {
+            self.pad_lambda_parameters(value, to);
+        }
         if self.discard_lambda_result(value, to) {
             return;
         }
+        self.adapt_function_reference(value, to, count);
+    }
+
+    /// Whether the first parameters of the place `place` fit the parameters
+    /// `params`, and a value of the result `ret` fits the result of the
+    /// place, or the place discards it (compiler.md §243 rules 1 and 2).
+    fn prefix_fits(&self, params: &[Type], ret: &Type, place: &crate::types::FuncType) -> bool {
+        params.len() <= place.params.len()
+            && place
+                .params
+                .iter()
+                .zip(params)
+                .all(|(place_param, param)| self.type_fits(place_param, param))
+            && (self.type_fits(ret, &place.ret)
+                || (self.apparent_type(&place.ret) == Type::Void
+                    && self.result_can_be_discarded(ret)))
+    }
+
+    /// A lambda literal with `N` parameters, in a place of a function type
+    /// with `M > N` parameters, takes the `M - N` trailing parameters of
+    /// the place (compiler.md §243 rule 1). The added parameters have no
+    /// name in the source, and the body does not read them.
+    fn pad_lambda_parameters(&mut self, value: &mut hir::Expr, to: &Type) {
+        let (Some(place), Some(own)) = (self.function_of(to), self.function_of(&value.ty)) else {
+            return;
+        };
+        let hir::ExprKind::Lambda { id, params, .. } = &mut value.kind else {
+            return;
+        };
+        if own.params.len() >= place.params.len()
+            || !self.prefix_fits(&own.params, &own.ret, &place)
+        {
+            return;
+        }
+        let pos = value.pos.clone();
+        let mut padded = own.params.clone();
+        for (index, ty) in place.params.iter().enumerate().skip(own.params.len()) {
+            params.push(synthetic_param(
+                format!("[[pad#{}.{index}]]", id.0),
+                ty,
+                &pos,
+            ));
+            padded.push(ty.clone());
+        }
+        // The lambda keeps its own parameter types; a place of other types
+        // that fit adds the cast of §235 rule 5a after this.
+        value.ty = Type::func(padded, own.ret);
+    }
+
+    /// A reference to a function declaration or a static method in a place
+    /// of a function type (compiler.md §240 rules 1 and 2, §243 rule 2). It
+    /// becomes a lambda with no environment and the parameters of the
+    /// place, which calls the function with its own number of arguments,
+    /// when the place has more parameters, or when the place has the result
+    /// `void` and the function a value result to discard. The function is
+    /// not generic, not async, and not a generator. With more parameters in
+    /// the place, it has no default parameter. Another value is unchanged.
+    fn adapt_function_reference(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        count: ParameterCount,
+    ) {
         let hir::ExprKind::FuncRef(symbol) = &value.kind else {
             return;
         };
         let Some(place) = self.function_of(to) else {
             return;
         };
-        if self.apparent_type(&place.ret) != Type::Void {
-            return;
-        }
         let Some(sig) = self.fn_sigs.get(symbol.full_text()) else {
             return;
         };
+        let own: Vec<Type> = sig.params.iter().map(|p| p.ty().clone()).collect();
+        let fewer = own.len() < place.params.len();
+        let discards = self.apparent_type(&place.ret) == Type::Void
+            && self.apparent_type(&sig.ret) != Type::Void;
         if sig.generic
             || sig.is_async
             || sig.is_generator
-            || !self.result_can_be_discarded(&sig.ret)
+            || (fewer
+                && (count == ParameterCount::Same || sig.params.iter().any(|p| p.has_default)))
+            || (!fewer && !discards)
+            || !self.prefix_fits(&own, &sig.ret, &place)
         {
             return;
         }
-        let params: Vec<Type> = sig.params.iter().map(|p| p.ty().clone()).collect();
-        let ret = sig.ret.clone();
-        let discarding = crate::types::FuncType {
-            params: params.clone(),
-            ret: Type::Void,
+        let symbol = symbol.clone();
+        let ret = if discards {
+            Type::Void
+        } else {
+            sig.ret.clone()
         };
-        if !self.function_fits(&discarding, &place) {
-            return;
-        }
+        let call_ret = sig.ret.clone();
+        let mut params = own.clone();
+        params.extend(place.params.iter().skip(own.len()).cloned());
         let pos = value.pos.clone();
         let names: Vec<String> = (0..params.len())
             .map(|index| format!("[[discard#{}.{index}]]", self.next_lambda_id))
@@ -469,10 +556,10 @@ impl<'p> Checker<'p> {
         let call = hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Call {
-                callee: hir::Callee::Func(symbol.clone()),
+                callee: hir::Callee::Func(symbol),
                 args: names
                     .iter()
-                    .zip(&params)
+                    .zip(&own)
                     .map(|(name, ty)| hir::Expr {
                         pending_work: None,
                         kind: hir::ExprKind::Local(name.clone(), ty.clone(), false),
@@ -481,8 +568,16 @@ impl<'p> Checker<'p> {
                     })
                     .collect(),
             },
-            ty: ret,
+            ty: call_ret,
             pos: pos.clone(),
+        };
+        let body = if discards || self.apparent_type(&ret) == Type::Void {
+            vec![hir::Stmt::Expr(call)]
+        } else {
+            vec![hir::Stmt::Return {
+                value: Some(call),
+                pos: pos.clone(),
+            }]
         };
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
@@ -493,24 +588,16 @@ impl<'p> Checker<'p> {
                 params: names
                     .iter()
                     .zip(&params)
-                    .map(|(name, ty)| hir::Param {
-                        escapes: false,
-                        default_can_raise: false,
-                        name: name.clone(),
-                        ty: ty.clone(),
-                        default: None,
-                        foreign_provenance: None,
-                        pos: pos.clone(),
-                    })
+                    .map(|(name, ty)| synthetic_param(name.clone(), ty, &pos))
                     .collect(),
                 is_async: false,
                 owns_environment: false,
-                ret: Type::Void,
-                body: vec![hir::Stmt::Expr(call)],
+                ret: ret.clone(),
+                body,
                 captures: Vec::new(),
                 can_raise: false,
             },
-            ty: Type::func(params, Type::Void),
+            ty: Type::func(params, ret),
             pos,
         };
     }
@@ -521,7 +608,18 @@ impl<'p> Checker<'p> {
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
     pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type) -> bool {
-        self.place_function_value(value, to);
+        self.place_value_with(value, to, ParameterCount::Fewer)
+    }
+
+    /// [`Self::place_value`] for a place that takes a function with `count`
+    /// parameters (compiler.md §243 rule 3).
+    pub(crate) fn place_value_with(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        count: ParameterCount,
+    ) -> bool {
+        self.place_function_value(value, to, count);
         self.assignable(&value.ty, to)
     }
 
@@ -544,7 +642,7 @@ impl<'p> Checker<'p> {
             place_params.push(Type::I32);
         }
         let place = Type::func(place_params, ret.cloned().unwrap_or(own.ret));
-        self.place_function_value(&mut callback, &place);
+        self.place_function_value(&mut callback, &place, ParameterCount::Same);
         callback
     }
 
@@ -895,4 +993,29 @@ fn leaf_place(leaves: &(Vec<Type>, Type), arity: usize) -> Type {
         place.push(Type::I32);
     }
     Type::func(place, ret.clone())
+}
+
+/// The number of parameters that a place takes from a function value
+/// (compiler.md §243 rule 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParameterCount {
+    /// The place takes a function with as many parameters as its type: the
+    /// callback of a built-in method.
+    Same,
+    /// The place takes a lambda literal or a function declaration with
+    /// fewer parameters (§243 rules 1 and 2).
+    Fewer,
+}
+
+/// A parameter of a lambda that the checker makes, with no default.
+fn synthetic_param(name: String, ty: &Type, pos: &Pos) -> hir::Param {
+    hir::Param {
+        escapes: false,
+        default_can_raise: false,
+        name,
+        ty: ty.clone(),
+        default: None,
+        foreign_provenance: None,
+        pos: pos.clone(),
+    }
 }

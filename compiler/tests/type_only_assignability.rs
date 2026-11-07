@@ -86,7 +86,7 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
-        "place_value",
+        "place_value_with",
         1,
         "This is the check that takes the value: it reads the type after the conversion.",
     ),
@@ -140,9 +140,9 @@ const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
-        "discard_function_result",
-        1,
-        "This is the decision of the conversion of §240 rule 2 itself.",
+        "prefix_fits",
+        2,
+        "This is the decision of the conversions of §240 rule 2 and §243 rules 1 and 2 itself.",
     ),
     (
         "type_rules.rs",

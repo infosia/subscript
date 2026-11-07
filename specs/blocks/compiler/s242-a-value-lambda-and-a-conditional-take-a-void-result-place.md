@@ -142,5 +142,8 @@ lambda and of a §240 reference.
    conditional of leaves with two arities, such as
    `[6].forEach(b ? two : (x: i32): void => {})`, are rejected. `tsc`
    accepts both. This is older than §242.
+   *(The first form closed 2026-11-07 by §243. The conditional is a
+   built-in callback, which keeps its arity rules, so it stays
+   rejected.)*
 2. `finally(id(tick))` keeps S013, and `tsc` accepts it. A lambda with
    no parameters in an array callback place is S014.

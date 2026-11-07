@@ -89,3 +89,29 @@ rejected.
    (rejected) as a control.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 243.3 Phase Review
+
+*(Added 2026-11-07.)* One fresh review of the implementation. No
+CRITICAL or MAJOR finding.
+
+1. MINOR, fixed: no test pinned rule 3 for a named function in a
+   built-in callback. A mutation of the parameter count of the built-in
+   callback paths passed every test.
+2. MINOR, fixed: the type of a lambda of rule 1 took the parameter
+   types of the place for its first `N` parameters, while its HIR
+   parameters kept its own. The type now has the own parameters and
+   the trailing parameters of the place, and the §235 conversion
+   applies, as for rule 2. Outputs did not change.
+3. MINOR, recorded: the generic control is rejected before the check of
+   rule 4, by "generic function has no first-class value". No source
+   form reaches the generic branch of rule 2.
+
+### 243.4 Open
+
+1. A function value with an environment stays rejected in a place with
+   more parameters: `const h: CB2 = fv;`. `tsc` accepts it. The same
+   owner question as §240.4 item 1.
+2. A built-in callback with fewer parameters keeps S014 (Q22, Q24,
+   Q27): `[1].forEach(() => …)` and `[1].forEach(none)`. `tsc` accepts
+   both.
