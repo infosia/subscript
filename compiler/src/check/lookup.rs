@@ -323,15 +323,22 @@ impl<'p> Checker<'p> {
                 }
                 if frame.is_lambda {
                     if !frame.captures.iter().any(|capture| capture.name == name) {
-                        frame.captures.push(hir::Capture {
-                            name: name.to_string(),
-                            ty: local.ty.clone(),
-                        });
+                        frame.captures.push(local_capture(name, &local));
                     }
                     remaining -= 1;
                 }
             }
         }
         Some(local)
+    }
+}
+
+/// The capture of the local `name` by a lambda: its storage type, not a
+/// narrowed type (compiler.md §246 rule 3). A lambda written in the source
+/// and the adapter of §246 rule 1 both take it.
+pub(crate) fn local_capture(name: &str, local: &Local) -> hir::Capture {
+    hir::Capture {
+        name: name.to_string(),
+        ty: local.ty.clone(),
     }
 }

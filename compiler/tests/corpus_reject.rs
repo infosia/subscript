@@ -234,6 +234,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         8,
     ),
+    (
+        "r495-a-parameter-function-value-takes-no-adapter.ts",
+        RuleCode::S100,
+        15,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

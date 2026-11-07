@@ -246,10 +246,10 @@ impl<'p> Checker<'p> {
         }
         // §235 rule 5a and §240 rule 2a: the value of `??=` takes the type
         // of its place, by the check that takes the value.
-        if self.place_value(value, inner) {
+        if self.place_value(value, inner, fx) {
             return Some(inner.clone());
         }
-        if self.place_value(value, storage) {
+        if self.place_value(value, storage, fx) {
             return Some(storage.clone());
         }
         self.require_expr_assignable(value, storage, fx, "the assignment");
@@ -272,7 +272,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         // §240 rule 2a: the check that takes the value decides.
-        if !self.place_value(&mut value, target_ty) {
+        if !self.place_value(&mut value, target_ty, fx) {
             self.require_expr_assignable(&mut value, target_ty, fx, "the assignment");
             return None;
         }

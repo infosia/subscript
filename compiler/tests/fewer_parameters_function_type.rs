@@ -147,7 +147,7 @@ fn the_other_forms_keep_their_diagnostic() {
         (
             "function f(fv: (x: i32) => void): void { const h: CB2 = fv; }",
             RuleCode::S100,
-            "type mismatch: the initializer expects `(i32, i32) => void`, got `(i32) => void`",
+            "function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function f(): void { eachi([1], gen); }",
@@ -202,7 +202,7 @@ fn a_built_in_callback_pads_a_reference_and_names_an_unadapted_value() {
         (
             "function f(fv: () => void): void { [1, 2].forEach(fv); }",
             RuleCode::S014,
-            "`forEach` callback `fv` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it",
+            "`forEach` callback `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function d(x: i32 = 1): void {}\nfunction f(m: Map<string, i32>): void { m.forEach(d); }",

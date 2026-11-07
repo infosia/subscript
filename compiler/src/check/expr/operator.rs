@@ -968,7 +968,7 @@ impl<'p> Checker<'p> {
         // compiler.md §235 rule 5a and §240 rule 2a: a fitting right operand
         // takes the type of the place, by the check that takes the value,
         // and the result has that type.
-        if self.apparent_type(&right.ty) != Type::Error && self.place_value(right, inner) {
+        if self.apparent_type(&right.ty) != Type::Error && self.place_value(right, inner, fx) {
             return inner.clone();
         }
         if self.apparent_type(&(right.ty)) != Type::Error {
@@ -1785,7 +1785,7 @@ impl<'p> Checker<'p> {
         // places each leaf after all of them are checked.
         let nested = leaves.as_ref().is_some_and(|leaves| leaves.nested);
         if let Some(leaves) = leaves.as_ref().filter(|leaves| !leaves.nested) {
-            self.place_callback_leaves(&mut then, &mut els, leaves);
+            self.place_callback_leaves(&mut then, &mut els, leaves, fx);
         }
         let ty = if nested {
             then.ty.clone()

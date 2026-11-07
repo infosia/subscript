@@ -116,6 +116,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
 1. A function value with an environment in a place with the result
    `void` stays rejected: `const cb2: (x: i32) => void = fv;`. `tsc`
    accepts it. The new environment needs an owner.
+   *(Closed 2026-11-08 by §246.)*
 2. An async function in a place with the result `void` gives the type
    mismatch diagnostic, not S013. The rejection is correct; the
    diagnostic does not name the dropped handle.

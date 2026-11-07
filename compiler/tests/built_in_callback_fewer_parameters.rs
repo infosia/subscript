@@ -123,7 +123,7 @@ fn the_other_forms_keep_their_diagnostic() {
         (
             "function f(fv: () => void): void { [1].forEach(fv); }",
             RuleCode::S014,
-            "`forEach` callback `fv` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it",
+            "`forEach` callback `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function f(): void { [1].forEach(gen); }",
@@ -160,15 +160,16 @@ fn the_other_forms_keep_their_diagnostic() {
     }
 }
 
-/// Rule 4a: a value with fewer parameters that rule 1 does not take names
-/// its cause. The controls in the same shape: the same value with the
-/// arity of the place, and a lambda that calls it.
+/// Rule 4a and compiler.md §246 rule 5: a value with fewer parameters that
+/// rule 1 does not take names its cause. The controls in the same shape:
+/// the same value with the arity of the place, a lambda that calls it, and
+/// a const local, which takes the adapter (§246 rule 1).
 #[test]
 fn an_unadapted_value_names_its_cause() {
     for (body, message) in [
         (
-            "function f(): void { const xs: i32[] = [1]; const g = (): void => print(\"e\"); xs.forEach(g); }",
-            "`forEach` callback `g` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it",
+            "function f(): void { const xs: i32[] = [1]; let g = (): void => print(\"e\"); xs.forEach(g); }",
+            "`forEach` callback `g` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function dr(acc: i32 = 3): i32 { return acc; }\nfunction f(): i32 { const xs: i32[] = [1]; return xs.reduce(dr, 0); }",
@@ -181,6 +182,7 @@ fn an_unadapted_value_names_its_cause() {
     }
     for body in [
         "function f(): void { const xs: i32[] = [1]; const g = (x: i32): void => print(\"e\"); xs.forEach(g); }",
+        "function f(): void { const xs: i32[] = [1]; const g = (): void => print(\"e\"); xs.forEach(g); }",
         "function f(): void { const xs: i32[] = [1]; const g = (): void => print(\"e\"); xs.forEach((x: i32): void => g()); }",
         "function dr(acc: i32, x: i32 = 3): i32 { return acc; }\nfunction f(): i32 { const xs: i32[] = [1]; return xs.reduce(dr, 0); }",
         "function dr(acc: i32 = 3): i32 { return acc; }\nfunction f(): i32 { const xs: i32[] = [1]; return xs.reduce((acc: i32): i32 => dr(acc), 0); }",

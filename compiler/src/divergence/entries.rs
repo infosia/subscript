@@ -615,6 +615,9 @@ impl Divergence {
             Divergence::CallbackFewerParametersUnadapted => {
                 established_tail::CALLBACKFEWERPARAMETERSUNADAPTED
             }
+            Divergence::FunctionValueAdapterNeedsConstName => {
+                established_tail::FUNCTIONVALUEADAPTERNEEDSCONSTNAME
+            }
             Divergence::JsonCallArguments => established_tail::JSONCALLARGUMENTS,
             Divergence::JsonTypeDomain => established_tail::JSONTYPEDOMAIN,
             Divergence::StringSearchPattern => established_tail::STRINGSEARCHPATTERN,

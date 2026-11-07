@@ -1484,6 +1484,10 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s244-environment.ts", "s244-default.ts"],
             variant: Divergence::CallbackFewerParametersUnadapted,
         },
+        RejectionSite::FunctionValueAdapterNeedsConstName => WitnessEntry::Reachable {
+            files: &["s246-parameter.ts", "s246-let-local.ts"],
+            variant: Divergence::FunctionValueAdapterNeedsConstName,
+        },
         RejectionSite::ContextMember => WitnessEntry::Reachable {
             files: &["s039.ts", "s039-b.ts"],
             variant: Divergence::CompilerOwnedValue,
@@ -1700,6 +1704,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::ArrayFromSource,
     RejectionSite::CallbackParameterCount,
     RejectionSite::CallbackFewerParametersUnadapted,
+    RejectionSite::FunctionValueAdapterNeedsConstName,
     RejectionSite::ContextMember,
     RejectionSite::JsonMember,
     RejectionSite::ArrayFromValue,

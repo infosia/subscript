@@ -872,9 +872,9 @@ impl<'p> Checker<'p> {
                     // shape, never check it twice.
                     Some(v) => self.expect_callback_shape(
                         v,
-                        &[acc_ty.clone(), elem],
-                        Some(&acc_ty),
+                        (&[acc_ty.clone(), elem], Some(&acc_ty)),
                         CallbackSpec::new(f.name(), "Q27", true),
+                        fx,
                     ),
                     None => self.check_arr_callback_with_resolved(
                         &c.args[0],
@@ -1734,7 +1734,7 @@ impl<'p> Checker<'p> {
             // An annotation may override the context; the resulting
             // function type must still match one accepted shape (the
             // return stays free when it is inferred).
-            return self.expect_callback_shape(checked, &params, ret.as_ref(), spec);
+            return self.expect_callback_shape(checked, (&params, ret.as_ref()), spec, fx);
         }
         // A function value (named reference or function-typed local).
         // A dual-arity Array callback has no single contextual function
@@ -1758,7 +1758,7 @@ impl<'p> Checker<'p> {
         }
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
         self.callback_leaf_place = None;
-        self.expect_callback_shape(checked, &params, ret.as_ref(), spec)
+        self.expect_callback_shape(checked, (&params, ret.as_ref()), spec, fx)
     }
 
     /// Emits the Q22 rejection for a known out-of-subset `Array`

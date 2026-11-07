@@ -852,8 +852,10 @@ pub enum Divergence {
     SourceConstructionDomain,
     /// A container callback takes its element parameters and an optional index; a parameter for the container itself is not passed.
     CallbackParameterShape,
-    /// A function value with fewer parameters needs an adapter; a new environment for it has no owner, and a default parameter has no adapter.
+    /// A callback value needs an adapter here: only a const local or a module const takes one, and a default parameter has none.
     CallbackFewerParametersUnadapted,
+    /// Only a const local or a module const takes an adapter; copy the value into a const local, or write the lambda that calls it.
+    FunctionValueAdapterNeedsConstName,
     /// JSON intrinsics take one argument; replacer, spacing, and reviver overloads are outside the declared interface.
     JsonCallArguments,
     /// JSON helpers require a supported static data shape; RegExp and container parse targets have no helper representation.
@@ -1476,6 +1478,7 @@ impl Divergence {
         Divergence::SourceConstructionDomain,
         Divergence::CallbackParameterShape,
         Divergence::CallbackFewerParametersUnadapted,
+        Divergence::FunctionValueAdapterNeedsConstName,
         Divergence::JsonCallArguments,
         Divergence::JsonTypeDomain,
         Divergence::StringSearchPattern,

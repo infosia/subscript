@@ -358,13 +358,13 @@ pub(super) fn cells() -> Vec<Cell> {
                         && ((api.owner == "FixedArray" && position == 0)
                             || (api.name == "MapConstructor.groupBy" && position == 1))
                     {
-                        // compiler.md §244 rule 4a: a function value with
-                        // fewer parameters names the cause.
+                        // compiler.md §246 rule 5: a parameter takes no
+                        // adapter, and the diagnostic names the cause.
                         Some(Divergence {
                             code: RuleCode::S014,
-                            record: "compiler.md §244",
-                            message: "fewer parameters than the place",
-                            token: "the new environment has no owner",
+                            record: "compiler.md §246",
+                            message: "needs an adapter for this place",
+                            token: "only a const local or a module",
                         })
                     } else {
                         None

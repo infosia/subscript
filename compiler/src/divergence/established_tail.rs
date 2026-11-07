@@ -184,10 +184,17 @@ pub(super) const CALLBACKPARAMETERSHAPE: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const CALLBACKFEWERPARAMETERSUNADAPTED: DivergenceEntry = DivergenceEntry {
-                ts: "const xs: i32[] = [1]; const f = (): void => {}; xs.forEach(f);",
-                subscript: "const xs: i32[] = [1]; const f = (): void => {}; xs.forEach((x: i32): void => f());",
-                why: "A function value with fewer parameters needs an adapter; a new environment for it has no owner, and a default parameter has no adapter.",
-                collision: "compiler.md §244",
+                ts: "const xs: i32[] = [1]; let f = (): void => {}; xs.forEach(f);",
+                subscript: "const xs: i32[] = [1]; const f = (): void => {}; xs.forEach(f);",
+                why: "A callback value needs an adapter here: only a const local or a module const takes one, and a default parameter has none.",
+                collision: "compiler.md §246",
+            };
+
+pub(super) const FUNCTIONVALUEADAPTERNEEDSCONSTNAME: DivergenceEntry = DivergenceEntry {
+                ts: "let f = (x: i32): void => {}; const h: (x: i32, y: i32) => void = f;",
+                subscript: "const f = (x: i32): void => {}; const h: (x: i32, y: i32) => void = f;",
+                why: "Only a const local or a module const takes an adapter; copy the value into a const local, or write the lambda that calls it.",
+                collision: "compiler.md §246",
             };
 
 pub(super) const JSONCALLARGUMENTS: DivergenceEntry = DivergenceEntry {

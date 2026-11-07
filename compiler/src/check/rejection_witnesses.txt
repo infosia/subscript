@@ -1305,11 +1305,22 @@ s038-d.ts	expr/callback_shape.rs callback_params_for_arity		S014
 `Map.forEach` callbacks take exactly 2 parameter(s); extra lib callback parameters are not accepted (Q24)
 export function main(): void { const m = new Map<string, i32>(); m.forEach((v: i32, k: string, all: Map<string, i32>): void => {}); }
 ===
-s244-environment.ts	expr/callback_shape.rs reject_unadapted_fewer_parameters		S014		§244
-`forEach` callback `f` is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it
-export function main(): void { const xs: i32[] = [1]; const f = (): void => print("e"); xs.forEach(f); }
+s244-environment.ts	expr/callback_shape.rs reject_unadapted_callback		S014		§246
+`forEach` callback `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+function g(fv: () => void): void { const xs: i32[] = [1]; xs.forEach(fv); }
+export function main(): void { g((): void => print("e")); }
 ===
-s244-default.ts	expr/callback_shape.rs reject_unadapted_fewer_parameters		S014		§244
+s246-parameter.ts	type_rules.rs require_expr_assignable		S100		§246
+function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+function run(cb: (x: i32, y: i32) => void): void { cb(1, 2); }
+function g(fv: (x: i32) => void): void { run(fv); }
+export function main(): void { g((x: i32): void => print(`${x}`)); }
+===
+s246-let-local.ts	type_rules.rs require_expr_assignable		S100		§246
+function value `f` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+export function main(): void { let f = (x: i32): void => print(`${x}`); const h: (x: i32, y: i32) => void = f; h(1, 2); }
+===
+s244-default.ts	expr/callback_shape.rs reject_unadapted_callback		S014		§244
 `reduce` callback `d` has fewer parameters than the place and a default parameter, which has no adapter; use a lambda that calls it
 function d(acc: i32 = 3): i32 { return acc; }
 export function main(): void { const xs: i32[] = [1]; print(`${xs.reduce(d, 0)}`); }

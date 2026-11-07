@@ -266,7 +266,7 @@ impl<'p> Checker<'p> {
 
     /// The function type of `ty` through `| null`, if `ty` is a function
     /// type or a nullable function type.
-    fn function_of(&self, ty: &Type) -> Option<crate::types::FuncType> {
+    pub(crate) fn function_of(&self, ty: &Type) -> Option<crate::types::FuncType> {
         match self.apparent_type(ty) {
             Type::Func(function) => Some(*function),
             Type::Nullable(inner, _) => match self.apparent_type(&inner) {
@@ -319,8 +319,8 @@ impl<'p> Checker<'p> {
     /// conversion is a `Cast` whose type is exactly `to`: each later stage
     /// reads that type, and no operation runs (rule 5). A value that is not
     /// assignable gets no conversion and keeps its diagnostic.
-    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type) {
-        self.discard_function_result(value, to);
+    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
+        self.discard_function_result(value, to, fx);
         if !self.needs_function_conversion(&value.ty, to) {
             return;
         }
@@ -367,6 +367,7 @@ impl<'p> Checker<'p> {
         then: &mut hir::Expr,
         els: &mut hir::Expr,
         leaves: &CallbackLeaves,
+        fx: &FnCtx,
     ) {
         let mut arities = Vec::new();
         for branch in [&*then, &*els] {
@@ -378,8 +379,8 @@ impl<'p> Checker<'p> {
         // A leaf with more parameters than the place allows keeps its
         // type, so its conditional has no common type.
         let place = leaves.place(largest.clamp(leaves.params.len(), leaves.params.len() + 1));
-        self.place_leaves(then, &place);
-        self.place_leaves(els, &place);
+        self.place_leaves(then, &place, fx);
+        self.place_leaves(els, &place, fx);
     }
 
     fn leaf_arities(&self, expr: &hir::Expr, out: &mut Vec<usize>) {
@@ -391,10 +392,10 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type) {
+    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, fx: &FnCtx) {
         if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
-            self.place_leaves(then, place);
-            self.place_leaves(els, place);
+            self.place_leaves(then, place, fx);
+            self.place_leaves(els, place, fx);
             if self.apparent_type(&then.ty) == self.apparent_type(&els.ty) {
                 expr.ty = then.ty.clone();
             } else {
@@ -412,7 +413,7 @@ impl<'p> Checker<'p> {
             }
             return;
         }
-        let _ = self.place_value(expr, place);
+        let _ = self.place_value(expr, place, fx);
     }
 
     /// Whether a call of a place with the result `void` can discard the
@@ -471,12 +472,12 @@ impl<'p> Checker<'p> {
     /// function declaration or a static method becomes a lambda with no
     /// environment that calls it, when the place has more parameters or a
     /// `void` result that discards the value. Another value is unchanged.
-    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type) {
+    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
         self.pad_lambda_parameters(value, to);
         if self.discard_lambda_result(value, to) {
             return;
         }
-        self.adapt_function_reference(value, to);
+        self.adapt_function_reference(value, to, fx);
     }
 
     /// Whether the first parameters of the place `place` fit the parameters
@@ -525,46 +526,181 @@ impl<'p> Checker<'p> {
         value.ty = Type::func(padded, own.ret);
     }
 
-    /// A reference to a function declaration or a static method in a place
-    /// of a function type (compiler.md §240 rules 1 and 2, §243 rule 2). It
-    /// becomes a lambda with no environment and the parameters of the
-    /// place, which calls the function with its own number of arguments,
-    /// when the place has more parameters, or when the place has the result
-    /// `void` and the function a value result to discard. The function is
-    /// not generic, not async, and not a generator. With more parameters in
-    /// the place, it has no default parameter. Another value is unchanged.
-    fn adapt_function_reference(&mut self, value: &mut hir::Expr, to: &Type) {
-        let hir::ExprKind::FuncRef(symbol) = &value.kind else {
-            return;
+    /// The callee of an adapter (compiler.md §240 rule 2, §243 rule 2,
+    /// §246 rules 1 and 2): a function declaration or a static method, a
+    /// const local of a function type, or a module-level `const` of a
+    /// function type. A const local is captured by value, as a lambda
+    /// written in the source captures it. Another value has no adapter.
+    fn adapter_callee(&self, value: &hir::Expr, fx: &FnCtx) -> Option<AdapterCallee> {
+        let value_callee = |function: crate::types::FuncType,
+                            captures: Vec<hir::Capture>,
+                            has_default: bool| AdapterCallee {
+            callee: hir::Callee::Value(Box::new(value.clone())),
+            refused: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
+            own: function.params,
+            ret: function.ret,
+            captures,
+            has_default,
         };
-        let Some(place) = self.function_of(to) else {
-            return;
-        };
-        let Some(sig) = self.fn_sigs.get(symbol.full_text()) else {
-            return;
-        };
-        let own: Vec<Type> = sig.params.iter().map(|p| p.ty().clone()).collect();
-        let fewer = own.len() < place.params.len();
-        let discards = self.apparent_type(&place.ret) == Type::Void
-            && self.apparent_type(&sig.ret) != Type::Void;
-        if sig.generic
-            || sig.is_async
-            || sig.is_generator
-            || (fewer && sig.params.iter().any(|p| p.has_default))
-            || (!fewer && !discards)
-            || !self.prefix_fits(&own, &sig.ret, &place)
-        {
-            return;
+        match &value.kind {
+            hir::ExprKind::FuncRef(symbol) => {
+                let sig = self.fn_sigs.get(symbol.full_text())?;
+                Some(AdapterCallee {
+                    callee: hir::Callee::Func(symbol.clone()),
+                    own: sig.params.iter().map(|p| p.ty().clone()).collect(),
+                    ret: sig.ret.clone(),
+                    captures: Vec::new(),
+                    refused: sig.generic || sig.is_async || sig.is_generator,
+                    has_default: sig.params.iter().any(|p| p.has_default),
+                })
+            }
+            hir::ExprKind::Local(name, ..) => {
+                let local = fx
+                    .scopes
+                    .iter()
+                    .rev()
+                    .find_map(|scope| scope.vars.get(name).cloned())?;
+                if local.mutable || local.caught {
+                    return None;
+                }
+                let Type::Func(function) = self.apparent_type(&value.ty) else {
+                    return None;
+                };
+                // The capture of a written lambda (compiler.md §246 rule 3).
+                Some(value_callee(
+                    *function,
+                    vec![super::lookup::local_capture(name, &local)],
+                    local.function_value_required.is_some(),
+                ))
+            }
+            hir::ExprKind::Global(symbol) => {
+                let sig = self.global_sigs.get(symbol.full_text())?;
+                if sig.mutable {
+                    return None;
+                }
+                let has_default = sig.function_value_required.is_some();
+                let Type::Func(function) = self.apparent_type(&value.ty) else {
+                    return None;
+                };
+                Some(value_callee(*function, Vec::new(), has_default))
+            }
+            _ => None,
         }
-        let symbol = symbol.clone();
+    }
+
+    /// Whether `value` is a function value that is not a name of
+    /// compiler.md §246 rules 1 and 2, and that rule 1 would take if it were
+    /// a const local name (§246 rule 5). The decision is the one of rule 1:
+    /// the same callee facts, the same fit of the adapter, and the
+    /// value-taking check of the adapted type against the place.
+    pub(crate) fn needs_adapter_name(&self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+        if matches!(
+            value.kind,
+            hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. } | hir::ExprKind::Cond { .. }
+        ) || self.adapter_callee(value, fx).is_some()
+        {
+            return false;
+        }
+        // The callee of a const local name with the type of `value`.
+        let Type::Func(function) = self.apparent_type(&value.ty) else {
+            return false;
+        };
+        let target = AdapterCallee {
+            callee: hir::Callee::Value(Box::new(value.clone())),
+            refused: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
+            own: function.params,
+            ret: function.ret,
+            captures: Vec::new(),
+            has_default: false,
+        };
+        self.function_of(to)
+            .and_then(|place| self.adapter_shape(&target, &place))
+            .is_some_and(|shape| self.assignable(&shape.ty, to))
+    }
+
+    /// The shape of the adapter of `target` in the place `place`, when the
+    /// place needs one and `target` takes it (compiler.md §240 rule 2,
+    /// §243 rule 2, §246 rule 1): the place has more parameters, or the
+    /// result `void` and the value a value result to discard. The value is
+    /// not refused, has no default parameter when the place has more
+    /// parameters, and its parameters and result fit the place.
+    fn adapter_shape(
+        &self,
+        target: &AdapterCallee,
+        place: &crate::types::FuncType,
+    ) -> Option<AdapterShape> {
+        let fewer = target.own.len() < place.params.len();
+        let discards = self.apparent_type(&place.ret) == Type::Void
+            && self.apparent_type(&target.ret) != Type::Void;
+        if target.refused
+            || (fewer && target.has_default)
+            || (!fewer && !discards)
+            || !self.prefix_fits(&target.own, &target.ret, place)
+        {
+            return None;
+        }
         let ret = if discards {
             Type::Void
         } else {
-            sig.ret.clone()
+            target.ret.clone()
         };
-        let call_ret = sig.ret.clone();
-        let mut params = own.clone();
-        params.extend(place.params.iter().skip(own.len()).cloned());
+        let mut params = target.own.clone();
+        params.extend(place.params.iter().skip(target.own.len()).cloned());
+        Some(AdapterShape {
+            ty: Type::func(params.clone(), ret.clone()),
+            params,
+            ret,
+            discards,
+        })
+    }
+
+    /// The text of the diagnostic of compiler.md §246 rule 5 for `value`,
+    /// after `subject`, such as "callback".
+    pub(crate) fn adapter_name_message(&self, value: &hir::Expr, subject: &str) -> String {
+        let name = match &value.kind {
+            hir::ExprKind::Local(name, ..) => Some(name.clone()),
+            hir::ExprKind::Global(symbol) => Some(symbol.source_name()),
+            _ => None,
+        };
+        let subject = match name {
+            Some(name) => format!("{subject} `{name}`"),
+            None => subject.to_string(),
+        };
+        format!(
+            "{subject} needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it"
+        )
+    }
+
+    /// A function value in a place of a function type (compiler.md §240
+    /// rules 1 and 2, §243 rule 2, §246 rules 1 and 2). A reference to a
+    /// function declaration, a static method, a const local, or a module
+    /// `const` becomes a lambda with the parameters of the place, which
+    /// calls the value with its own number of arguments, when the place
+    /// has more parameters, or when the place has the result `void` and the
+    /// value a value result to discard. A const local is captured by value.
+    /// The value is not generic, not async, and not a generator. With more
+    /// parameters in the place, it has no default parameter. Another value
+    /// is unchanged.
+    fn adapt_function_reference(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
+        let Some(place) = self.function_of(to) else {
+            return;
+        };
+        let Some(target) = self.adapter_callee(value, fx) else {
+            return;
+        };
+        let Some(AdapterShape {
+            params,
+            ret,
+            discards,
+            ..
+        }) = self
+            .adapter_shape(&target, &place)
+            .filter(|shape| self.assignable(&shape.ty, to))
+        else {
+            return;
+        };
+        let own = target.own;
+        let call_ret = target.ret;
         let pos = value.pos.clone();
         let names: Vec<String> = (0..params.len())
             .map(|index| format!("[[discard#{}.{index}]]", self.next_lambda_id))
@@ -572,7 +708,7 @@ impl<'p> Checker<'p> {
         let call = hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Call {
-                callee: hir::Callee::Func(symbol),
+                callee: target.callee,
                 args: names
                     .iter()
                     .zip(&own)
@@ -610,7 +746,7 @@ impl<'p> Checker<'p> {
                 owns_environment: false,
                 ret: ret.clone(),
                 body,
-                captures: Vec::new(),
+                captures: target.captures,
                 can_raise: false,
             },
             ty: Type::func(params, ret),
@@ -623,8 +759,8 @@ impl<'p> Checker<'p> {
     /// ([`Self::place_function_value`]), then its type is checked. Returns
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
-    pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type) -> bool {
-        self.place_function_value(value, to);
+    pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+        self.place_function_value(value, to, fx);
         self.assignable(&value.ty, to)
     }
 
@@ -638,6 +774,7 @@ impl<'p> Checker<'p> {
         mut callback: hir::Expr,
         params: &[Type],
         ret: Option<&Type>,
+        fx: &FnCtx,
     ) -> hir::Expr {
         let Type::Func(own) = self.apparent_type(&callback.ty) else {
             return callback;
@@ -647,7 +784,7 @@ impl<'p> Checker<'p> {
             place_params.push(Type::I32);
         }
         let place = Type::func(place_params, ret.cloned().unwrap_or(own.ret));
-        self.place_function_value(&mut callback, &place);
+        self.place_function_value(&mut callback, &place, fx);
         callback
     }
 
@@ -739,7 +876,18 @@ impl<'p> Checker<'p> {
         fx: &FnCtx,
         what: &str,
     ) {
-        if !self.place_value(from, to) {
+        if !self.place_value(from, to, fx) {
+            // compiler.md §246 rule 5: a value that fits with an adapter
+            // names the cause.
+            if self.needs_adapter_name(from, to, fx) {
+                let message = self.adapter_name_message(from, "function value");
+                self.reject_subset(
+                    RejectionSite::FunctionValueAdapterNeedsConstName,
+                    message,
+                    from.pos.clone(),
+                );
+                return;
+            }
             if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && self.indexed_nullable_error(
                     from,
@@ -1024,4 +1172,26 @@ fn synthetic_param(name: String, ty: &Type, pos: &Pos) -> hir::Param {
         foreign_provenance: None,
         pos: pos.clone(),
     }
+}
+
+/// The callee of an adapter and the facts that decide it (compiler.md
+/// §246 rules 1, 2, and 4).
+struct AdapterCallee {
+    callee: hir::Callee,
+    own: Vec<Type>,
+    ret: Type,
+    /// The captured const local, as a lambda written in the source has.
+    captures: Vec<hir::Capture>,
+    /// A generic, async, or generator value takes no adapter.
+    refused: bool,
+    has_default: bool,
+}
+
+/// The parameters, the result, and the type of an adapter (compiler.md
+/// §246 rule 1).
+struct AdapterShape {
+    params: Vec<Type>,
+    ret: Type,
+    ty: Type,
+    discards: bool,
 }

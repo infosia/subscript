@@ -90,3 +90,26 @@ adapter from the value.
 6. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves, except the LIR text snapshot by the
    `a432` block if `main` is async.
+
+### 246.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding.
+
+1. MAJOR, realistic, fixed: a narrowed nullable const local passed the
+   check, and the lowering failed. The capture of the adapter had the
+   narrowed type, and a written lambda captures the storage type. The
+   adapter and a written lambda now take their capture from one helper.
+2. MAJOR, realistic, fixed: the diagnostic of rule 5 was given for a
+   nullable value that no adapter makes fit. Rule 5 now uses the fit of
+   rule 1 and the value-taking check of the adapted type.
+3. MINOR, recorded: §246.4.
+4. MINOR, recorded: the interpreter ran only in the sweep of the gate.
+   This is a note on coverage.
+
+### 246.4 Open
+
+1. A conditional leaf that is not a name of rules 1 and 2 gets two
+   different diagnostics. With a parameter `p`, `[1].forEach(b ? p : both)`
+   gives "conditional branches have no common type", and
+   `run(b ? p : both)` gives the text of rule 5. Rule 6 covers names
+   only.

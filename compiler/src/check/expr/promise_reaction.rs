@@ -330,7 +330,7 @@ impl<'p> Checker<'p> {
         // place has the type `() => void`. An async callback keeps its
         // result, and its S013 below.
         if let Some(place) = &settled_place {
-            self.place_value(&mut checked, place);
+            self.place_value(&mut checked, place, fx);
         }
         let Type::Func(signature) = self.apparent_type(&checked.ty) else {
             if self.apparent_type(&checked.ty) != Type::Error {

@@ -4,7 +4,7 @@
 
 use crate::check::rejection::RejectionSite;
 
-use crate::check::Checker;
+use crate::check::{Checker, FnCtx};
 use crate::diag::Pos;
 use crate::hir::{self, ArrFn};
 use crate::types::Type;
@@ -82,42 +82,42 @@ impl Checker<'_> {
         None
     }
 
-    /// Rejects a callback value with fewer parameters than the place that
-    /// compiler.md §244 rule 1 does not take, with the cause (rule 4a): an
-    /// adapter for a function value needs a new environment that no rule
-    /// gives an owner, and a function with a default parameter has no
-    /// adapter. Returns whether it gave the diagnostic.
-    fn reject_unadapted_fewer_parameters(&mut self, checked: &hir::Expr, method: &str) -> bool {
-        let (name, defaulted) = match &checked.kind {
-            hir::ExprKind::FuncRef(symbol) => {
-                let defaulted = self
-                    .fn_sigs
-                    .get(symbol.full_text())
-                    .is_some_and(|sig| sig.params.iter().any(|p| p.has_default));
-                if !defaulted {
-                    return false;
-                }
-                (Some(hir::source_name(symbol.full_text())), true)
-            }
-            // A lambda literal that rule 1 does not pad, and a conditional,
-            // get the type mismatch of the place or of their branches.
-            hir::ExprKind::Lambda { .. } | hir::ExprKind::Cond { .. } => return false,
-            hir::ExprKind::Local(name, ..) => (Some(name.clone()), false),
-            hir::ExprKind::Global(symbol) => (Some(symbol.source_name()), false),
-            _ => (None, false),
+    /// Rejects a callback value that the place takes only with an adapter
+    /// it cannot have, with the cause (compiler.md §244 rule 4a, §246 rule
+    /// 5): a function with a default parameter has no adapter, and only a
+    /// const local or a module `const` takes one. Returns whether it gave
+    /// the diagnostic. A lambda literal and a conditional get the type
+    /// mismatch of the place or of their branches.
+    fn reject_unadapted_callback(
+        &mut self,
+        checked: &hir::Expr,
+        place: &Type,
+        method: &str,
+        fx: &FnCtx,
+    ) -> bool {
+        let defaulted = match &checked.kind {
+            hir::ExprKind::FuncRef(symbol) => self
+                .fn_sigs
+                .get(symbol.full_text())
+                .is_some_and(|sig| sig.params.iter().any(|p| p.has_default))
+                .then(|| hir::source_name(symbol.full_text())),
+            _ => None,
         };
-        let callback = match name {
-            Some(name) => format!("callback `{name}`"),
-            None => "callback".to_string(),
+        let fewer = match (self.function_of(&checked.ty), self.function_of(place)) {
+            (Some(own), Some(place)) => own.params.len() < place.params.len(),
+            _ => false,
         };
-        let message = if defaulted {
+        let message = if let Some(name) = defaulted.filter(|_| fewer) {
             format!(
-                "`{method}` {callback} has fewer parameters than the place and a default parameter, which has no adapter; use a lambda that calls it"
+                "`{method}` callback `{name}` has fewer parameters than the place and a default parameter, which has no adapter; use a lambda that calls it"
+            )
+        } else if self.needs_adapter_name(checked, place, fx) {
+            format!(
+                "`{method}` {}",
+                self.adapter_name_message(checked, "callback")
             )
         } else {
-            format!(
-                "`{method}` {callback} is a function value with fewer parameters than the place; an adapter for it needs a new environment, which no rule gives an owner; use a lambda that calls it"
-            )
+            return false;
         };
         self.reject_subset(
             RejectionSite::CallbackFewerParametersUnadapted,
@@ -134,9 +134,9 @@ impl Checker<'_> {
     pub(super) fn expect_callback_shape(
         &mut self,
         mut checked: hir::Expr,
-        params: &[Type],
-        ret: Option<&Type>,
+        (params, ret): (&[Type], Option<&Type>),
         spec: CallbackSpec<'_>,
+        fx: &FnCtx,
     ) -> hir::Expr {
         let CallbackSpec {
             method,
@@ -148,7 +148,7 @@ impl Checker<'_> {
         if let Type::Func(own) = self.apparent_type(&checked.ty) {
             if own.params.len() < params.len() {
                 let place = Type::func(params.to_vec(), ret.cloned().unwrap_or(own.ret));
-                self.discard_function_result(&mut checked, &place);
+                self.discard_function_result(&mut checked, &place, fx);
             }
         }
         // compiler.md §240 rule 2: a callback place with the result `void`.
@@ -157,7 +157,7 @@ impl Checker<'_> {
             if allow_index && own.params.len() == params.len() + 1 {
                 place.push(Type::I32);
             }
-            self.discard_function_result(&mut checked, &Type::func(place, ret.clone()));
+            self.discard_function_result(&mut checked, &Type::func(place, ret.clone()), fx);
         }
         let counted_callback = matches!(method, "Map.groupBy" | "Map.forEach")
             || ArrFn::ALL.iter().any(|operation| {
@@ -227,7 +227,7 @@ impl Checker<'_> {
             _ => false,
         };
         if ok {
-            return self.place_callback_value(checked, params, ret);
+            return self.place_callback_value(checked, params, ret, fx);
         }
         if let Type::Func(ft) = &self.apparent_type(&checked.ty) {
             let accepted_arity = ft.params.len() == params.len()
@@ -236,11 +236,17 @@ impl Checker<'_> {
             // rule 1 does not take names its cause, or gets the type
             // mismatch of the place below. Only a value with more
             // parameters than the place allows reaches the arity diagnostic.
-            if ft.params.len() < params.len() {
-                if self.reject_unadapted_fewer_parameters(&checked, method) {
-                    return self.err_expr(checked.pos);
-                }
-            } else if !accepted_arity {
+            let mut place = params.to_vec();
+            if allow_index && ft.params.len() == params.len() + 1 {
+                place.push(Type::I32);
+            }
+            let place = Type::func(place, ret.cloned().unwrap_or(ft.ret.clone()));
+            if (ft.params.len() < params.len() || accepted_arity)
+                && self.reject_unadapted_callback(&checked, &place, method, fx)
+            {
+                return self.err_expr(checked.pos);
+            }
+            if ft.params.len() > params.len() && !accepted_arity {
                 let pos = checked.pos.clone();
                 let _ = self.callback_params_for_arity(
                     params,

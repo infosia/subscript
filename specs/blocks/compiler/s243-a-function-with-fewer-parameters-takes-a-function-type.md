@@ -111,7 +111,7 @@ CRITICAL or MAJOR finding.
 
 1. A function value with an environment stays rejected in a place with
    more parameters: `const h: CB2 = fv;`. `tsc` accepts it. The same
-   owner question as §240.4 item 1.
+   owner question as §240.4 item 1. *(Closed 2026-11-08 by §246.)*
 2. A built-in callback with fewer parameters keeps S014 (Q22, Q24,
    Q27): `[1].forEach(() => …)` and `[1].forEach(none)`. `tsc` accepts
    both. *(Closed 2026-11-08 by §244.)*

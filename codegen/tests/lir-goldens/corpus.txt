@@ -63335,6 +63335,663 @@ fn f23 "<lambda a431-nested-then-takes-the-context-of-its-adoption.ts:47:61>" ki
   value %0: Data(I32) name=Some("y")
   b0 Some("entry"):
     -> Return { value: Some(Constant(Constant { ty: StringAlias(StringAliasId(0)), kind: Integer(0) })), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 47, col: 73 } }
+===== a432-a-const-local-function-value-takes-an-adapter-that-captures-it =====
+module initializer=Some(FunctionId(25))
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+global g0 "G": Func(FuncType { params: [I32], ret: Void }) mutable=false @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:7
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "run" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:14:10
+  can-raise
+  param %0 "cb": Data(Func(FuncType { params: [I32, I32], ret: Void })) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:14:14
+  value %0: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=Some("cb")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%0, Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 15, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 15, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:15:3
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 14, col: 10 } }
+fn f2 "both" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:18:10
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:18:15
+  param %1 "y": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:18:23
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(I32) name=Some("y")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("both "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 19, col: 9 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:19:3
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 18, col: 10 } }
+fn f3 "pick" kind=Free exported=false generator=false async=false -> Nullable(Func(FuncType { params: [I32], ret: Void })) entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:22:10
+  param %0 "b": Data(Bool) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:22:15
+  value %0: Data(Bool) name=Some("b")
+  value %1: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %4: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %3: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(7))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:24:7
+    %4: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) = Coerce(%3) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:24:7
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: Nullable(Func(FuncType { params: [I32], ret: Void })), kind: Null }), Value(ValueId(0))], ownership: [false, false] })
+  b3(%1: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))), %2: Data(Bool)) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 23, col: 3 } }
+fn f4 "step" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:30:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 30, col: 16 } }]
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 31, col: 3 } }
+fn f5 "later" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:34:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 34, col: 16 } }]
+  can-raise
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %5: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %6: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(8))(Integer(50):I32) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:36:14
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 39, col: 3 }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 39, col: 3 } }] }
+  b1(%1: Data(I32), %5: Data(Func(FuncType { params: [I32], ret: Void }))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:39:3
+    %2: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(9))(%5) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 40, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 40, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(I32)) }, operands: [] }, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 41, col: 3 }, successor: BlockId(2), resume_value: Some(ValueId(3)), arguments: [Value(ValueId(5))], ownership: [false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 41, col: 3 } }] }
+  b2(%3: Data(I32), %6: Data(Func(FuncType { params: [I32], ret: Void }))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:41:3
+    %4: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(10))(%6) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%4, Integer(3):I32, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 43, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 43, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:43:3
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 34, col: 16 } }
+fn f6 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:46:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 46, col: 23 } }]
+  can-raise
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %1: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %2: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %3: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %4: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %5: Data(Map(Str, I32)) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Map(Str, I32)) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(Map(Str, I32)) name=None
+  value %10: Data(Func(FuncType { params: [I32, Str], ret: Void })) name=None
+  value %11: Iterator(IteratorType { kind: MapValues, element: I32 }) name=None
+  value %12: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %13: Data(I32) name=None
+  value %14: Iterator(IteratorType { kind: MapValues, element: I32 }) name=None
+  value %15: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %16: Data(Func(FuncType { params: [I32, Str], ret: Void })) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(I32) name=None
+  value %19: Iterator(IteratorType { kind: MapValues, element: I32 }) name=None
+  value %20: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %21: Data(Func(FuncType { params: [I32, Str], ret: Void })) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(Bool) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(Str) name=None
+  value %27: Iterator(IteratorType { kind: MapValues, element: I32 }) name=None
+  value %28: Iterator(IteratorType { kind: MapKeys, element: Str }) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %31: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %32: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %33: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %34: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %35: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %36: Data(Array(I32)) name=None
+  value %37: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %38: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %39: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %40: Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %41: Data(Str) name=None
+  value %42: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %43: Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %44: Data(Str) name=None
+  value %45: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %46: Data(Bool) name=None
+  value %47: Data(Array(I32)) name=None
+  value %48: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  value %49: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=None
+  value %50: Data(Bool) name=None
+  value %51: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %52: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(11))(Integer(10):I32) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:49:14
+    %1: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(12))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%1, Integer(5):I32, Integer(6):I32) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 53, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 53, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:53:3
+    %2: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(13))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 54, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 54, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:3
+    %3: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(14))(Integer(10):I32) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:55:14
+    %4: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(15))(%3) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%4, Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 60, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 60, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:60:3
+    %5: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(Str, I32))) })() count=Uncounted traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 61, col: 13 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:61:13
+    %6: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 62, col: 9 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:62:9
+    %7: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, I32)), Data(Str), Data(I32)], return_type: Some(Data(Map(Str, I32))) })(%5, %6, Integer(1):I32) count=Uncounted traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 62, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 62, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:62:3
+    %8: Data(Str) = StringLiteral("b")() traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 63, col: 9 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:63:9
+    %9: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, I32)), Data(Str), Data(I32)], return_type: Some(Data(Map(Str, I32))) })(%5, %8, Integer(2):I32) count=Uncounted traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 63, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 63, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:63:3
+    %10: Data(Func(FuncType { params: [I32, Str], ret: Void })) = MakeClosure(FunctionId(16))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+    %11: Iterator(IteratorType { kind: MapValues, element: I32 }) = IteratorCreate { kind: MapValues, bound: Live }(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    %12: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorCreate { kind: MapKeys, bound: Live }(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    %13: Data(I32) = IteratorBound(%11) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(10)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(13))], ownership: [false, false, false, false, false] })
+  b1(%14: Iterator(IteratorType { kind: MapValues, element: I32 }), %15: Iterator(IteratorType { kind: MapKeys, element: Str }), %16: Data(Func(FuncType { params: [I32, Str], ret: Void })), %17: Data(I32), %18: Data(I32)) Some("for-each.cond"):
+    %24: Data(Bool) = IteratorHasNext(%14, %17, %18) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    -> ConditionalBranch { condition: Value(ValueId(24)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [], ownership: [] } }
+  b2 Some("for-each.body"):
+    %25: Data(I32) = IteratorValue(%14, %17, %18) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    %26: Data(Str) = IteratorValue(%15, %17, %18) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, Str], ret: Void })), Data(I32), Data(Str)], return_type: None })(%16, %25, %26) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(14)), Value(ValueId(15)), Value(ValueId(16)), Value(ValueId(17)), Value(ValueId(18))], ownership: [false, false, false, false, false] })
+  b3(%19: Iterator(IteratorType { kind: MapValues, element: I32 }), %20: Iterator(IteratorType { kind: MapKeys, element: Str }), %21: Data(Func(FuncType { params: [I32, Str], ret: Void })), %22: Data(I32), %23: Data(I32)) Some("for-each.step"):
+    %27: Iterator(IteratorType { kind: MapValues, element: I32 }) = IteratorAdvance(%19, %22, %23) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    %28: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorAdvance(%20, %22, %23) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    %29: Data(I32) = Binary(Add)(%22, Integer(1):I32) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(27)), Value(ValueId(28)), Value(ValueId(21)), Value(ValueId(29)), Value(ValueId(23))], ownership: [false, false, false, false, false] })
+  b4 Some("for-each.exit"):
+    %30: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(17))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%30) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 65, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 65, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:3
+    %31: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(18))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:66:17
+    %32: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(19))(%31) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%32) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 69, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 69, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:3
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] } }
+  b5 Some("cond.then"):
+    %34: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(20))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(34))], ownership: [false] })
+  b6 Some("cond.else"):
+    %35: Data(Func(FuncType { params: [I32, I32], ret: Void })) = FunctionRef(FunctionId(2))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:16
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(35))], ownership: [false] })
+  b7(%33: Data(Func(FuncType { params: [I32, I32], ret: Void }))) Some("cond.merge"):
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%33) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 70, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 70, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:3
+    %36: Data(Array(I32)) = ArrayLiteral(Integer(8):I32, Integer(9):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 3 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 4 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 7 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:3
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(8), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(9), arguments: [], ownership: [] } }
+  b8 Some("cond.then"):
+    %38: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(21))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(38))], ownership: [false] })
+  b9 Some("cond.else"):
+    %39: Data(Func(FuncType { params: [I32, I32], ret: Void })) = FunctionRef(FunctionId(2))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:27
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(39))], ownership: [false] })
+  b10(%37: Data(Func(FuncType { params: [I32, I32], ret: Void }))) Some("cond.merge"):
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 8, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%36, %37) invalidates=[ValueId(36)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 3 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:3
+    %40: Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(Str, Func(FuncType { params: [I32], ret: Void })))) })() count=Uncounted invalidates=[ValueId(36)] traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 72, col: 20 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:72:20
+    %41: Data(Str) = StringLiteral("h")() traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 73, col: 16 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:16
+    %42: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(22))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:21
+    %43: Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))), Data(Str), Data(Func(FuncType { params: [I32], ret: Void }))], return_type: Some(Data(Map(Str, Func(FuncType { params: [I32], ret: Void })))) })(%40, %41, %42) count=Uncounted invalidates=[ValueId(36)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 73, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 73, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:3
+    %44: Data(Str) = StringLiteral("h")() traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 76, col: 30 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:76:30
+    %45: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, Func(FuncType { params: [I32], ret: Void }))), Data(Str)], return_type: Some(Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) })(%40, %44) count=Uncounted invalidates=[ValueId(36)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 76, col: 17 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:76:17
+    %46: Data(Bool) = Binary(Ne)(%45, Null:Null) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:77:7
+    -> ConditionalBranch { condition: Value(ValueId(46)), then_target: BlockTarget { block: BlockId(11), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(12), arguments: [], ownership: [] } }
+  b11 Some("if.then"):
+    %47: Data(Array(I32)) = ArrayLiteral(Integer(20):I32, Integer(21):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 6 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 10 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:78:5
+    %48: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(%45) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:78:22
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 8, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32], ret: Void }))], return_type: None })(%47, %48) invalidates=[ValueId(36), ValueId(47)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 78, col: 5 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:78:5
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [], ownership: [] })
+  b12 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(13), arguments: [], ownership: [] })
+  b13 Some("if.join"):
+    %49: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Bool)], return_type: Some(Data(Nullable(Func(FuncType { params: [I32], ret: Void })))) })(Boolean(true):Bool) invalidates=[ValueId(36), ValueId(47)] traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 80, col: 30 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:80:30
+    %50: Data(Bool) = Binary(Ne)(%49, Null:Null) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:81:7
+    -> ConditionalBranch { condition: Value(ValueId(50)), then_target: BlockTarget { block: BlockId(14), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(15), arguments: [], ownership: [] } }
+  b14 Some("if.then"):
+    %51: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(23))(%49) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+    Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%51) invalidates=[ValueId(36), ValueId(47)] traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 82, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 82, col: 5 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:5
+    %52: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(24))(%49) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%52, Integer(22):I32, Integer(23):I32) invalidates=[ValueId(36), ValueId(47)] traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 84, col: 5 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 84, col: 5 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:84:5
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [], ownership: [] })
+  b15 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [], ownership: [] })
+  b16 Some("if.join"):
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 86, col: 3 }, successor: BlockId(17), resume_value: None, arguments: [], ownership: [], invalidates: [ValueId(36), ValueId(47)], traps: [Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 86, col: 3 } }] }
+  b17 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 86, col: 3 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:86:3
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 46, col: 23 } }
+fn f7 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:24:7>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:24:7
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:24:7
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("picked "), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 25, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 25, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 25, col: 15 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:25:15
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:25:9
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 24, col: 7 } }
+fn f8 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:36:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:36:14
+  param %0 "k2": Data(I32) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:36:14
+  param %1 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:36:14
+  value %0: Data(I32) name=Some("k2")
+  value %1: Data(I32) name=Some("x")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, %0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:37:17
+    %3: Data(Str) = Template([Text("fa "), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 37, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 37, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 37, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:37:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:37:5
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 36, col: 14 } }
+fn f9 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+  can-raise
+  param %0 "fa": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+  param %1 "[[discard#3.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+  param %2 "[[discard#3.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fa")
+  value %1: Data(I32) name=Some("[[discard#3.0]]")
+  value %2: Data(I32) name=Some("[[discard#3.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 40, col: 7 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 40, col: 7 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:40:7
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 40, col: 7 } }
+fn f10 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+  can-raise
+  param %0 "fa": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+  param %1 "[[discard#4.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+  param %2 "[[discard#4.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fa")
+  value %1: Data(I32) name=Some("[[discard#4.0]]")
+  value %2: Data(I32) name=Some("[[discard#4.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 42, col: 18 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 42, col: 18 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:42:18
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 42, col: 18 } }
+fn f11 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:49:14>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:49:14
+  param %0 "k": Data(I32) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:49:14
+  param %1 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:49:14
+  value %0: Data(I32) name=Some("k")
+  value %1: Data(I32) name=Some("x")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, %0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:50:17
+    %3: Data(Str) = Template([Text("fv "), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 50, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 50, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 50, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:50:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:50:5
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 49, col: 14 } }
+fn f12 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+  can-raise
+  param %0 "fv": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+  param %1 "[[discard#6.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+  param %2 "[[discard#6.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fv")
+  value %1: Data(I32) name=Some("[[discard#6.0]]")
+  value %2: Data(I32) name=Some("[[discard#6.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 52, col: 18 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 52, col: 18 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:52:18
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 52, col: 18 } }
+fn f13 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+  can-raise
+  param %0 "fv": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+  param %1 "[[discard#7.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+  param %2 "[[discard#7.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fv")
+  value %1: Data(I32) name=Some("[[discard#7.0]]")
+  value %2: Data(I32) name=Some("[[discard#7.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 54, col: 7 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 54, col: 7 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:54:7
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 54, col: 7 } }
+fn f14 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:55:14>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:55:14
+  param %0 "k": Data(I32) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:55:14
+  param %1 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:55:14
+  value %0: Data(I32) name=Some("k")
+  value %1: Data(I32) name=Some("x")
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%1, %0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:56:17
+    %3: Data(Str) = Template([Text("fr "), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 56, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 56, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 56, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:56:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:56:5
+    %4: Data(I32) = Binary(Mul)(%1, Integer(2):I32) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:57:12
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 57, col: 5 } }
+fn f15 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19
+  can-raise
+  param %0 "fr": Data(Func(FuncType { params: [I32], ret: I32 })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19
+  param %1 "[[discard#9.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19
+  value %0: Data(Func(FuncType { params: [I32], ret: I32 })) name=Some("fr")
+  value %1: Data(I32) name=Some("[[discard#9.0]]")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 59, col: 19 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 59, col: 19 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:59:19
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 59, col: 19 } }
+fn f16 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+  can-raise
+  param %0 "fv": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+  param %1 "[[discard#10.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+  param %2 "[[discard#10.1]]": Data(Str) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fv")
+  value %1: Data(I32) name=Some("[[discard#10.0]]")
+  value %2: Data(Str) name=Some("[[discard#10.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 13 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 13 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:64:13
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 64, col: 13 } }
+fn f17 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+  can-raise
+  param %0 "[[discard#11.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+  param %1 "[[discard#11.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+  value %0: Data(I32) name=Some("[[discard#11.0]]")
+  value %1: Data(I32) name=Some("[[discard#11.1]]")
+  value %2: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %2: Data(Func(FuncType { params: [I32], ret: Void })) = LoadGlobal(GlobalId(0))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%2, %0) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 65, col: 7 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 65, col: 7 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:65:7
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 65, col: 7 } }
+fn f18 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:66:17>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:66:17
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:66:17
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("plain "), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 67, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 67, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 67, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:67:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:67:5
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 66, col: 17 } }
+fn f19 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+  can-raise
+  param %0 "plain": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+  param %1 "[[discard#13.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+  param %2 "[[discard#13.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("plain")
+  value %1: Data(I32) name=Some("[[discard#13.0]]")
+  value %2: Data(I32) name=Some("[[discard#13.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 69, col: 7 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 69, col: 7 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:69:7
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 69, col: 7 } }
+fn f20 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+  can-raise
+  param %0 "fv": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+  param %1 "[[discard#14.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+  param %2 "[[discard#14.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fv")
+  value %1: Data(I32) name=Some("[[discard#14.0]]")
+  value %2: Data(I32) name=Some("[[discard#14.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 70, col: 11 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 70, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:70:11
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 70, col: 11 } }
+fn f21 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+  can-raise
+  param %0 "fv": Data(Func(FuncType { params: [I32], ret: Void })) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+  param %1 "[[discard#15.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+  param %2 "[[discard#15.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=Some("fv")
+  value %1: Data(I32) name=Some("[[discard#15.0]]")
+  value %2: Data(I32) name=Some("[[discard#15.1]]")
+  b0 Some("entry"):
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 22 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 22 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:71:22
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 71, col: 22 } }
+fn f22 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:21>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:21
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:73:21
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("handler "), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 74, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 74, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 74, col: 11 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:74:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:74:5
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 73, col: 21 } }
+fn f23 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+  can-raise
+  param %0 "picked": Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+  param %1 "[[discard#17.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+  param %2 "[[discard#17.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+  value %0: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=Some("picked")
+  value %1: Data(I32) name=Some("[[discard#17.0]]")
+  value %2: Data(I32) name=Some("[[discard#17.1]]")
+  value %3: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %3: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%3, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 82, col: 9 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 82, col: 9 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:82:9
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 82, col: 9 } }
+fn f24 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+  can-raise
+  param %0 "picked": Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) kind=Capture storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+  param %1 "[[discard#18.0]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+  param %2 "[[discard#18.1]]": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+  value %0: Data(Nullable(Func(FuncType { params: [I32], ret: Void }))) name=Some("picked")
+  value %1: Data(I32) name=Some("[[discard#18.0]]")
+  value %2: Data(I32) name=Some("[[discard#18.1]]")
+  value %3: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %3: Data(Func(FuncType { params: [I32], ret: Void })) = NarrowNonNull(Local)(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+    Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: Void })), Data(I32)], return_type: None })(%3, %1) traps=[Trap { kind: Call, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 83, col: 21 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 83, col: 21 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:83:21
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 83, col: 21 } }
+fn f25 "<module initializer>" kind=ModuleInitializer exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:7
+  value %0: Data(Func(FuncType { params: [I32], ret: Void })) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: Void })) = MakeClosure(FunctionId(26))() @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:16
+    StoreGlobal(GlobalId(0))(%0) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:7
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 10, col: 7 } }
+fn f26 "<lambda a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:16>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:16
+  param %0 "x": Data(I32) kind=Explicit storage=None @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:10:16
+  value %0: Data(I32) name=Some("x")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Template([Text("G "), Operand { index: 0, format: I32 }])(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 11, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 11, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 11, col: 9 } }] @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:11:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts:11:3
+    -> Return { value: None, pos: Pos { file: "a432-a-const-local-function-value-takes-an-adapter-that-captures-it.ts", line: 10, col: 16 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

@@ -129,18 +129,21 @@ fn the_place_holds_a_discarding_lambda() {
     );
 }
 
-/// Rule 4: a function value with an environment, an async function, and a
-/// generic function keep their present diagnostic.
+/// Rule 4 with compiler.md §246: a parameter and a `let` local take no
+/// adapter and name the cause (§246 rule 5); an async function and a
+/// generic function keep their present diagnostic. A const local takes the
+/// adapter (§246 rule 1).
 #[test]
 fn a_value_with_an_environment_an_async_or_a_generic_function_stays_rejected() {
+    accepts("function f(): void { const l = (x: i32): i32 => x; const cb: (x: i32) => void = l; }");
     for (body, message) in [
         (
             "function f(fv: (x: i32) => i32): void { const cb: (x: i32) => void = fv; }",
-            "type mismatch: the initializer expects `(i32) => void`, got `(i32) => i32`",
+            "function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
-            "function f(): void { const l = (x: i32): i32 => x; const cb: (x: i32) => void = l; }",
-            "type mismatch: the initializer expects `(i32) => void`, got `(i32) => i32`",
+            "function f(): void { let l = (x: i32): i32 => x; const cb: (x: i32) => void = l; }",
+            "function value `l` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function f(xs: i32[]): void { each(xs, an); }",

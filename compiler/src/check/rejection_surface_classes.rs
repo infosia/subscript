@@ -292,6 +292,10 @@ macro_rules! rejection_classes {
                         RuleCode::S014,
                         Diverges(Divergence::CallbackFewerParametersUnadapted),
                     ),
+                    Self::FunctionValueAdapterNeedsConstName => (
+                        RuleCode::S100,
+                        Diverges(Divergence::FunctionValueAdapterNeedsConstName),
+                    ),
                     Self::ContextMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::JsonMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::ArrayFromValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),

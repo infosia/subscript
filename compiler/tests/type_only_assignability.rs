@@ -86,6 +86,18 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
+        "adapt_function_reference",
+        1,
+        "The type of the adapter of compiler.md §246 rule 1 is checked against the place before the adapter is built; the value then takes the check that takes the value.",
+    ),
+    (
+        "type_rules.rs",
+        "needs_adapter_name",
+        1,
+        "The diagnostic of compiler.md §246 rule 5 decides with the adapted type that rule 1 would build; no value is placed.",
+    ),
+    (
+        "type_rules.rs",
         "place_value",
         1,
         "This is the check that takes the value: it reads the type after the conversion.",
