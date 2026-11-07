@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -284,3 +284,4 @@ Every section, with its status:
 | §240 | A named function takes a `void` result place | active | [`s240-a-named-function-takes-a-void-result-place.md`](compiler/s240-a-named-function-takes-a-void-result-place.md) |
 | §241 | A class read before its declaration is rejected | active | [`s241-a-class-read-before-its-declaration-is-rejected.md`](compiler/s241-a-class-read-before-its-declaration-is-rejected.md) |
 | §242 | A value lambda and a conditional take a `void` result place | active | [`s242-a-value-lambda-and-a-conditional-take-a-void-result-place.md`](compiler/s242-a-value-lambda-and-a-conditional-take-a-void-result-place.md) |
+| §243 | A function with fewer parameters takes a function type | active | [`s243-a-function-with-fewer-parameters-takes-a-function-type.md`](compiler/s243-a-function-with-fewer-parameters-takes-a-function-type.md) |
