@@ -141,7 +141,8 @@ lambda and of a §240 reference.
    more parameters: `const f: (x: i32, i: i32) => void = other;` and a
    conditional of leaves with two arities, such as
    `[6].forEach(b ? two : (x: i32): void => {})`, are rejected. `tsc`
-   accepts both. This is older than §242.
+   accepts both. This is older than §242. *(Closed by §243 and §244;
+   both forms are accepted at `b9bef6f9`.)*
    *(The first form closed 2026-11-07 by §243. The conditional is a
    built-in callback, which keeps its arity rules, so it stays
    rejected.)* *(The conditional closed 2026-11-08 by §244.)*

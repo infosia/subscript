@@ -117,6 +117,8 @@ about 120 callback forms; dev, ship, and `node` gave the same bytes.
 2. Rule 4a does not classify the leaves of a conditional, so
    `[7].forEach(b ? one : f)` with a local `f` gets "conditional
    branches have no common type", not the cause. `tsc` accepts it.
+   *(Closed by §246 for a const local `f`, accepted at `b9bef6f9`. A
+   leaf that §246 rule 4 rejects is §246.4 item 1.)*
 3. The reason of `CallbackParameterShape`, "a parameter for the
    container itself is not passed", is true for the third parameter of
    `Map.forEach` and of `Set.forEach`. It is not true for an extra

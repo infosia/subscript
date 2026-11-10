@@ -100,6 +100,7 @@ gave one MAJOR and five MINOR findings.
    diagnostic: `xs.map<i32, i32>(…)` and `xs.filter<i32>(…)` are
    accepted. `tsc` gives TS2558 and TS2345. This predates §229.
 3. `compiler/src/check/expr/method.rs` has 1,986 lines. The next change
-   to it needs a split.
+   to it needs a split. *(Closed: the file has 1,793 lines at
+   `b9bef6f9`.)*
 4. *(Closed by §233.)* `p.then((v: i32) => "a")` with a `Promise<Mode>` context stays
    rejected. `tsc` accepts it. Rule 6 keeps it.
