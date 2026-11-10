@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246, §247 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -288,3 +288,4 @@ Every section, with its status:
 | §244 | A built-in callback takes a function with fewer parameters | active | [`s244-a-built-in-callback-takes-a-function-with-fewer-parameters.md`](compiler/s244-a-built-in-callback-takes-a-function-with-fewer-parameters.md) |
 | §245 | A nested `then` takes the context of its adoption | active | [`s245-a-nested-then-takes-the-context-of-its-adoption.md`](compiler/s245-a-nested-then-takes-the-context-of-its-adoption.md) |
 | §246 | A const local function value takes an adapter that captures it | active | [`s246-a-const-local-function-value-takes-an-adapter-that-captures-it.md`](compiler/s246-a-const-local-function-value-takes-an-adapter-that-captures-it.md) |
+| §247 | A `void` result place names the handle that it drops | active | [`s247-a-void-result-place-names-the-handle-it-drops.md`](compiler/s247-a-void-result-place-names-the-handle-it-drops.md) |
