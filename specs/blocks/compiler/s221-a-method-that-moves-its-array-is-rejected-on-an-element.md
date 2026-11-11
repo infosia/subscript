@@ -165,3 +165,6 @@ A fresh review of the rejection gave three MAJOR and six MINOR findings.
 5. A JIT `for…of` binding of a large element now copies: 100,000,000 visits
    of 260 bytes take 1.12 s against 0.70 s on a debug CLI. The cost comes
    from the declared size.
+   *(Measured 2026-11-12 on a release CLI: the copy adds 8% or less up
+   to 64 bytes, 23% at 128 bytes, and 61% at 260 bytes. No change;
+   `specs/tracking/jit-for-of-copy-cost.md`.)*
