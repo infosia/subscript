@@ -393,6 +393,61 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// The type of a list of function values with no context (compiler.md
+    /// §248 rules 1 to 3): the type of the first value that each other
+    /// value fits by the value-taking check of §240 rule 2a. Each other
+    /// value then takes that type as its place, as a leaf of §242 rule 1a
+    /// does, with its adapter. Returns `None` and changes nothing when a
+    /// value is not of a function type, a value involves a type
+    /// parameter, or no value has such a type.
+    pub(crate) fn place_function_list(
+        &mut self,
+        values: &mut [&mut hir::Expr],
+        fx: &FnCtx,
+    ) -> Option<Type> {
+        if values.iter().any(|value| {
+            !matches!(self.apparent_type(&value.ty), Type::Func(_))
+                || self.involves_type_parameter(&value.ty)
+        }) {
+            return None;
+        }
+        let mut selected = None;
+        for candidate in 0..values.len() {
+            let ty = values[candidate].ty.clone();
+            let mut each_fits = true;
+            for (index, value) in values.iter().enumerate() {
+                if index != candidate && !self.leaves_fit(value, &ty, fx) {
+                    each_fits = false;
+                    break;
+                }
+            }
+            if each_fits {
+                selected = Some((candidate, ty));
+                break;
+            }
+        }
+        let (selected, ty) = selected?;
+        for (index, value) in values.iter_mut().enumerate() {
+            if index != selected {
+                self.place_leaves(value, &ty, "function value", fx);
+            }
+        }
+        Some(ty)
+    }
+
+    /// Whether each leaf of `value` fits `to` by the value-taking check of
+    /// compiler.md §240 rule 2a. The check runs on a copy, so `value` and
+    /// the lambda numbering stay unchanged.
+    fn leaves_fit(&mut self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+        if let hir::ExprKind::Cond { then, els, .. } = &value.kind {
+            return self.leaves_fit(then, to, fx) && self.leaves_fit(els, to, fx);
+        }
+        let next_lambda_id = self.next_lambda_id;
+        let fits = self.place_value(&mut value.clone(), to, fx);
+        self.next_lambda_id = next_lambda_id;
+        fits
+    }
+
     /// Places each leaf of `expr` at `place`. A leaf that drops a handle
     /// gets the diagnostic of compiler.md §247 rule 1 after `subject`, as
     /// the callback itself gets it.

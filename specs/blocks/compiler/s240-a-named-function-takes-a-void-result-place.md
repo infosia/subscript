@@ -135,6 +135,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
    its first function element, so `const fs = [named, nothing]` and
    `const f = flag ? nothing : named` are rejected. `tsc` accepts both.
    The pin gives the same result.
+   *(Closed 2026-11-11 by §248.)*
 6. `Worker.spawn(work)` with a value result keeps the exact-shape
    diagnostic of Q35. `tsc` accepts it.
 7. A generic call with no type argument infers its type argument from

@@ -1802,7 +1802,15 @@ impl<'p> Checker<'p> {
             self.conditional_join(&then.ty, &els.ty)
                 .unwrap_or_else(|| context.clone())
         } else {
-            match self.conditional_join(&then.ty, &els.ty) {
+            // compiler.md §248 rule 2: function branches take the type that
+            // the other branch fits.
+            let join = self.conditional_join(&then.ty, &els.ty).or_else(|| {
+                leaves
+                    .is_none()
+                    .then(|| self.place_function_list(&mut [&mut then, &mut els], fx))
+                    .flatten()
+            });
+            match join {
                 Some(ty) => ty,
                 None => {
                     let site = if self.apparent_type(&then.ty).is_numeric()

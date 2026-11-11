@@ -118,25 +118,37 @@ impl<'p> Checker<'p> {
                 }
                 let first = self.check_expr(&elems[0].expr, None, fx);
                 let mut elem_ty = first.ty.clone();
+                // compiler.md §248 rule 1: a list of function values is
+                // checked whole before the type of the list is selected.
+                let function_list = matches!(self.apparent_type(&elem_ty), Type::Func(_))
+                    && !self.involves_type_parameter(&elem_ty);
                 let mut out = vec![first];
+                let mut deferred = Vec::new();
                 for e in &elems[1..] {
                     // §212 rule 1a: the type of the first element is a hint.
                     self.mark_operand_calls(&e.expr);
                     let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
-                    let mut checked = self.check_expr(&e.expr, context, fx);
-                    if self.involves_type_parameter(&elem_ty)
-                        || self.involves_type_parameter(&checked.ty)
-                    {
-                        elem_ty = self.generic_union(&elem_ty, &checked.ty);
+                    let checked = self.check_expr(&e.expr, context, fx);
+                    if function_list {
+                        deferred.push(checked);
                     } else {
-                        self.require_expr_assignable(
-                            &mut checked,
-                            &elem_ty,
-                            fx,
-                            "the array element",
-                        );
+                        elem_ty = self.place_array_element(&mut out, checked, elem_ty, fx);
                     }
-                    out.push(checked);
+                }
+                if function_list {
+                    let mut values: Vec<&mut hir::Expr> =
+                        out.iter_mut().chain(deferred.iter_mut()).collect();
+                    match self.place_function_list(&mut values, fx) {
+                        Some(ty) => {
+                            elem_ty = ty;
+                            out.append(&mut deferred);
+                        }
+                        None => {
+                            for checked in deferred {
+                                elem_ty = self.place_array_element(&mut out, checked, elem_ty, fx);
+                            }
+                        }
+                    }
                 }
                 let elem_ty = self.container_argument(
                     ContainerSlot::ArrayElement,
@@ -151,6 +163,28 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+    }
+
+    /// Checks one element of a context-free array literal after the first
+    /// against the element type `elem_ty`, and returns the element type
+    /// (§212 rule 1a). A type parameter joins the element types.
+    fn place_array_element(
+        &mut self,
+        out: &mut Vec<hir::Expr>,
+        mut checked: hir::Expr,
+        elem_ty: Type,
+        fx: &FnCtx,
+    ) -> Type {
+        let elem_ty = if self.involves_type_parameter(&elem_ty)
+            || self.involves_type_parameter(&checked.ty)
+        {
+            self.generic_union(&elem_ty, &checked.ty)
+        } else {
+            self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
+            elem_ty
+        };
+        out.push(checked);
+        elem_ty
     }
 
     pub(super) fn check_descriptor_lit(

@@ -60,3 +60,39 @@ candidate fits, so the order does not matter.
    function types has no form here (`collisions.md` C7).
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 248.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The review found no accepted program that changes its
+type, diagnostics, or output.
+
+1. MINOR, recorded: §248.4 items 1 and 2.
+2. MINOR, recorded: in a rejected function list, the diagnostics of
+   later elements now come before the element mismatches, because each
+   element is checked before the type is selected. The count does not
+   change.
+3. MINOR, fixed in the contract: rule 1 named only the first element
+   that does not fit. Each such element gets its diagnostic.
+4. MINOR, recorded: `compiler/src/check/expr/operator.rs` has 1,990
+   lines. The next change to the conditional code moves `check_cond`
+   and its helpers into a module of their own first.
+5. MINOR, fixed: the header of `a433` named `capture`, and `a433` has no
+   capture.
+6. Outside the diff, older than §248: §248.4 item 3.
+
+### 248.4 Open
+
+1. A conditional element of a context-free list takes the first element
+   as its context (§212 rule 1a), so its branches fail before the list
+   type is selected: `[none, b ? one : nv]` and `[none, b ? one : one]`
+   give two branch diagnostics. `tsc` accepts both.
+2. A spread element does not take part in the selection:
+   `const base = [one]; const hs = [none, ...base];` gives S100 "the
+   array element expects `() => void`, got `(i32) => void`". `tsc`
+   accepts it.
+3. A lambda with a parameter that has no type annotation, in a
+   context-free array literal, takes its parameter types from the first
+   element (§212 rule 1a): `` const fs = [one, (x) => print(`u ${x}`)]; ``
+   is accepted and runs. `tsc` 5.9.2 rejects it with TS7006 "Parameter
+   'x' implicitly has an 'any' type". This breaks invariant 5.
