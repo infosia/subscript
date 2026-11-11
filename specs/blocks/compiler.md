@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246, §247, §248, §249 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246, §247, §248, §249, §250 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -291,3 +291,4 @@ Every section, with its status:
 | §247 | A `void` result place names the handle that it drops | active | [`s247-a-void-result-place-names-the-handle-it-drops.md`](compiler/s247-a-void-result-place-names-the-handle-it-drops.md) |
 | §248 | A context-free list of functions takes the type that each fits | active | [`s248-a-context-free-list-of-functions-takes-the-type-that-each-fits.md`](compiler/s248-a-context-free-list-of-functions-takes-the-type-that-each-fits.md) |
 | §249 | An element hint gives no parameter types to a lambda | active | [`s249-an-element-hint-gives-no-parameter-types-to-a-lambda.md`](compiler/s249-an-element-hint-gives-no-parameter-types-to-a-lambda.md) |
+| §250 | A `void` function returns `undefined` | active | [`s250-a-void-function-returns-undefined.md`](compiler/s250-a-void-function-returns-undefined.md) |
