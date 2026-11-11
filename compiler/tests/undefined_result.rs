@@ -40,7 +40,7 @@ fn assert_accepted(body: &str) {
 
 const POSITION: &str =
     "`T | undefined` is legal only as the result type of a function declaration or a class method";
-const TOKEN: &str = "`undefined` is legal only in `return undefined;` and in an absence comparison";
+const TOKEN: &str = "`undefined` is legal only as a result `T | undefined`, as a result `void`, and in an absence comparison";
 
 #[test]
 fn return_undefined_in_a_null_result_is_the_token_row_without_a_block() {

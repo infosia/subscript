@@ -170,7 +170,7 @@ This rule restates §144.1 rule 1, as §144.1 rule 2 requires.
 |---|---|---|
 | `T \| undefined` outside the result position | S012 | `` `T \| undefined` is legal only as the result type of a function declaration or a class method `` |
 | a nested `undefined` spelling (§195.1 rule 6) | S012 | `` the `undefined` spelling is legal only as the whole type of a value `` |
-| the `undefined` token outside §195.2 rule 1 | S012 | `` `undefined` is legal only in `return undefined;` and in an absence comparison `` |
+| the `undefined` token outside §195.2 rule 1 | S012 | `` `undefined` is legal only as a result `T \| undefined`, as a result `void`, and in an absence comparison `` *(Text of `compiler.md` §250 rule 4.)* |
 | `return;` or the end of the body | S012 | `` a function whose result is `T \| undefined` returns with `return undefined;` `` |
 | `===` or `!==` across spellings, one operand a literal or the token | S012 | `` `===` compares a `null` and an `undefined` absence; use `==` `` |
 | `===` or `!==` across spellings, two values | S012 | `` `===` compares a `null` and an `undefined` absence; two absent values are not equal under JavaScript `` |

@@ -1117,7 +1117,14 @@ impl<'p> Checker<'p> {
             &*binary.right
         };
         if left_undefined && right_undefined {
-            self.reject_subset(RejectionSite::UndefinedEqualityPair, "`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member", self.pos(undefined_source.span()));
+            self.reject_subset(
+                RejectionSite::UndefinedEqualityPair,
+                format!(
+                    "{}; compare it with a nullable value or an absence-capable descriptor member",
+                    crate::check::diagnostic_text::UNDEFINED_PLACES
+                ),
+                self.pos(undefined_source.span()),
+            );
             return Some(self.err_expr(pos));
         }
 
@@ -1170,7 +1177,7 @@ impl<'p> Checker<'p> {
             Type::Null => crate::types::Absence::Null,
             Type::Nullable(_, spelling) => spelling,
             _ => {
-                self.reject_subset(RejectionSite::UndefinedEqualityNonMember, "`undefined` is legal only in `return undefined;` and in an absence comparison; compare it with a nullable value or an absence-capable descriptor member", token_pos);
+                self.reject_subset(RejectionSite::UndefinedEqualityNonMember, format!("{}; compare it with a nullable value or an absence-capable descriptor member", crate::check::diagnostic_text::UNDEFINED_PLACES), token_pos);
                 return self.err_expr(pos);
             }
         };

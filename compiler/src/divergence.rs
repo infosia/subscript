@@ -436,9 +436,9 @@ pub enum Divergence {
     UndefinedResultFunctionValue,
     /// On a nullable value or element, a search result needs both `null` and `undefined`, and the two share one representation (compiler.md §195.5 rule 3).
     NullableElementSearch,
-    /// The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.
+    /// The undefined token is a `T | undefined` or `void` result, or an absence comparison with a nullable value or an absence-capable descriptor member.
     UndefinedEqualityPair,
-    /// The undefined token appears in `return undefined;` and in an absence comparison with a nullable value or an absence-capable descriptor member.
+    /// The undefined token is a `T | undefined` or `void` result, or an absence comparison with a nullable value or an absence-capable descriptor member.
     UndefinedEqualityNonMember,
     /// A bare yield carries no value, so only a void generator can use it.
     BareYieldNonVoid,

@@ -497,7 +497,7 @@ impl<'p> Checker<'p> {
                 } else {
                     RejectionSite::UndefinedValue
                 },
-                "`undefined` is legal only in `return undefined;` and in an absence comparison",
+                crate::check::diagnostic_text::UNDEFINED_PLACES,
                 pos.clone(),
             );
             return self.err_expr(pos);

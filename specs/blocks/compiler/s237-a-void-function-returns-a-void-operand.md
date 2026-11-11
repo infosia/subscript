@@ -153,6 +153,7 @@ limit of rule 4, and the examples of rule 5.
    *(Closed 2026-11-07 by §238.)*
 3. `function f(): void { return undefined; }` stays rejected with the
    diagnostic of `collisions.md` C7. `tsc` accepts it.
+   *(Closed 2026-11-11 by §250.)*
 4. In an async function with the result `Promise<void>`,
    `return s?.am()` with an async `am(): Promise<void>` stays rejected.
    `tsc` accepts it. The operand is a `Promise<void> | undefined`,

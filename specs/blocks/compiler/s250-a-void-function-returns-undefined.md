@@ -58,3 +58,35 @@ decided surface"), and this section does not change it.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves, except the LIR text snapshot by the
    `a435` block if its `main` is async.
+
+### 250.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding.
+
+1. MAJOR, realistic, fixed: `return undefined;` in a setter or a
+   constructor was accepted, and `tsc` rejects it. The check of the
+   literal ran before the rule of §237 rule 1, which rejects each
+   operand there. The literal is now one case of the return in a
+   function with the result `void`, after that rule. Rule 1 of the
+   contract now states it.
+2. MINOR, fixed: the leaves of a conditional that §237 splits take the
+   literal as `return;`. Rule 3 of the contract now states it, and
+   `a435` has the form.
+3. MINOR, contrived, recorded: §250.4 item 1.
+4. MINOR, fixed: a comment of the checker named two of the three places
+   where `undefined` is legal.
+5. MINOR, fixed: the why of two divergences dropped the word
+   "descriptor".
+6. MINOR, fixed: the unit test of rule 2 did not check that the body of
+   the lambda is empty.
+
+The texts of §195 and `collisions.md` C7 now name the result `void`.
+
+### 250.4 Open
+
+1. A binding named `undefined` is read as the literal, because the
+   check of the literal reads the syntax only. So
+   `function f(undefined: i32): void { return undefined; }` is
+   accepted, and it returns nothing. `tsc` rejects it with TS2322 "Type
+   'number' is not assignable to type 'void'". `tsc` accepts a binding
+   named `undefined`, so a rejection of the binding does not close it.

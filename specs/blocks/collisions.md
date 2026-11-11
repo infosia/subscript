@@ -218,8 +218,9 @@ with no initializer (A a Q32 alias) declares an absence-capable
 member — absent is distinct from every value, spellable only by
 omission, read only through `!== undefined` or `!= undefined` presence
 narrowing (and the inverse `===`/`==`, `compiler.md` §144);
-that comparison is the single legal appearance of the `undefined`
-token (C7 stands everywhere else). `compiler.md` §43; accept adds
+that comparison is one of the legal appearances of the `undefined`
+token. The others are a result `T | undefined` (`compiler.md` §195)
+and a result `void` (`compiler.md` §250). C7 stands everywhere else. `compiler.md` §43; accept adds
 `a118`, reject adds `r117`–`r118`.
 *Revised 2026-09-02 (R39.5, `compiler.md` §82.3):* `a ?? b` is legal
 when `a` has type `Ref | null`; the result is `Ref` or `Ref | null`

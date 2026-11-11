@@ -476,8 +476,9 @@ The two spellings are different types, as in `tsc`:
   type of a local or an expression that holds that result. A field, a
   parameter, an annotated local, an arrow result, and a type argument
   reject it (S012).
-- The `undefined` token is legal only in `return undefined;` and in a
-  comparison with a nullable value.
+- The `undefined` token is legal only as a `T | undefined` or a `void`
+  result, and in a comparison with a nullable value. In a `void`
+  function, `return undefined;` is `return;`.
 - A `Ref | undefined` value does not convert to `Ref | null`. Write
   `x ?? null` or test `x === undefined` first.
 - `===` and `!==` between the two spellings are rejected (S012):

@@ -607,7 +607,8 @@ impl<'p> Checker<'p> {
     }
 
     /// `return e` in a function with a `void` result (compiler.md §237).
-    /// A constructor and a setter reject each operand (rule 1). A
+    /// A constructor and a setter reject each operand (rule 1). Else the
+    /// literal `undefined` is `return;` (§250 rules 1 to 3). A
     /// conditional splits into one return per leaf, unless each leaf of
     /// an async function is a handle (rule 2). A `Promise<void>` handle
     /// adopts (rule 3). A `void` operand is `e; return;` (rule 2). Any
@@ -634,6 +635,15 @@ impl<'p> Checker<'p> {
             let origins = self.expr_async_origins(&checked, fx);
             fx.handle_async_origins(&origins);
             return Some(checked);
+        }
+        // compiler.md §250 rules 1 to 3: the literal `undefined` is
+        // `return;`.
+        if super::expr::is_undefined_token(arg) {
+            out.push(hir::Stmt::Return {
+                value: None,
+                pos: pos.clone(),
+            });
+            return None;
         }
         // `(e)` has the type of `e`.
         let arg = super::expr::unparen_expr(arg);
@@ -745,7 +755,10 @@ impl<'p> Checker<'p> {
                 let name = self.type_name(ret);
                 self.reject_subset(
                     RejectionSite::UndefinedReturnValue,
-                    format!("`undefined` is legal only in `return undefined;` and in an absence comparison; this function returns `{name}`, not `T | undefined`"),
+                    format!(
+                        "{}; this function returns `{name}`, not `T | undefined`",
+                        crate::check::diagnostic_text::UNDEFINED_PLACES
+                    ),
                     pos.clone(),
                 );
                 self.err_expr(pos)
