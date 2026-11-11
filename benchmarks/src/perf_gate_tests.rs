@@ -130,6 +130,47 @@ fn excessive_spread_voids_only_the_reporting_run() {
     );
 }
 
+/// The problems of the reasons of `workload`: each reason states the limit
+/// that it justifies, formatted as the report formats it. The x86-64 ship
+/// limit is in `ship_scope`, and the Windows dev limit is in the dev
+/// reason.
+fn reason_problems(workload: &Workload) -> Vec<String> {
+    let mut problems = Vec::new();
+    let ship = format!("{:.2}x", workload.ship_limit.x86_64);
+    if !workload.ship_scope.contains(&ship) {
+        problems.push(format!(
+            "{}: ship_scope does not state {ship}: {}",
+            workload.name, workload.ship_scope
+        ));
+    }
+    let dev = format!("{:.2}x", workload.dev_limit.windows);
+    if !workload.dev_limit.reason.contains(&dev) {
+        problems.push(format!(
+            "{}: the dev reason does not state {dev}: {}",
+            workload.name, workload.dev_limit.reason
+        ));
+    }
+    problems
+}
+
+#[test]
+fn each_reason_states_the_limit_of_its_workload() {
+    // Cost: four string searches; no workload execution.
+    for workload in &WORKLOADS {
+        assert_eq!(reason_problems(workload), Vec::<String>::new());
+    }
+    // The firing control: a copy of `a22` with the reasons of `collect`.
+    let swapped = Workload {
+        ship_scope: WORKLOADS[1].ship_scope,
+        dev_limit: DevLimit {
+            reason: WORKLOADS[1].dev_limit.reason,
+            ..WORKLOADS[0].dev_limit
+        },
+        ..WORKLOADS[0]
+    };
+    assert_eq!(reason_problems(&swapped).len(), 2);
+}
+
 /// The ship-tier limit of `a22` on aarch64.
 const SHIP_LIMIT: f64 = WORKLOADS[0].ship_limit.aarch64;
 

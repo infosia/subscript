@@ -47,3 +47,4 @@ CRITICAL or MAJOR finding.
    and §226 sets the x86-64 ship limit and the Windows dev limits.
 2. No test reads `ship_scope`, so a swap of the two reasons in
    `perf-gate.rs` passes.
+   *(Closed 2026-11-12: a test reads each reason against its limit.)*

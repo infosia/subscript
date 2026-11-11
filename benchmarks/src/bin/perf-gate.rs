@@ -290,7 +290,7 @@ const WORKLOADS: [Workload; 2] = [
             aarch64: 1.50,
             x86_64: 2.50,
         },
-        ship_scope: "§10a names the x86-64 cost, and it is open.",
+        ship_scope: "§3: six x86-64 runs reached 2.18x; 2.50x adds 15% margin. §10a names the cost, and it is open.",
         dev_limit: DevLimit {
             windows: 31.00,
             other: 25.00,
