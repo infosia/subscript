@@ -559,7 +559,13 @@ impl<'p> Checker<'p> {
                     // context `Promise<T>`.
                     let context = self.return_context(arg, &ret, fx);
                     let diagnostics = self.diags.len();
-                    let checked = self.check_expr(arg, Some(&context), fx);
+                    let kind = fx
+                        .frames
+                        .last()
+                        .map_or(crate::check::expr::ContextKind::Contextual, |frame| {
+                            frame.result_kind
+                        });
+                    let checked = self.check_expr_as(arg, Some(&context), kind, fx);
                     let Some(mut checked) =
                         self.adopt_returned_handle(checked, &ret, fx, &pos, out)
                     else {

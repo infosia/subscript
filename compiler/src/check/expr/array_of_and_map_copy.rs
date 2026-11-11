@@ -47,7 +47,12 @@ impl<'p> Checker<'p> {
         let context = declared
             .as_ref()
             .or_else(|| ctx.filter(|ty| matches!(&self.apparent_type(ty), Type::Array(_))));
-        self.check_array_lit(&literal, context, fx, pos)
+        self.check_array_lit(
+            &literal,
+            (context, super::entry::ContextKind::Contextual),
+            fx,
+            pos,
+        )
     }
 
     pub(super) fn check_map_copy(

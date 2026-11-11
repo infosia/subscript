@@ -702,16 +702,24 @@ fn every_generic_parameter_supplies_the_rule_six_context() {
     }
 }
 
+/// compiler.md §249 rule 2a: a function value argument fixes the type
+/// parameter, and a lambda argument takes that type as its context, in
+/// each of three accepted forms. The control: with no argument that fixes
+/// it, the lambda keeps the parameter divergence.
 #[test]
-fn generic_function_value_candidates_keep_the_parameter_divergence() {
+fn a_function_value_argument_types_a_lambda_argument() {
     for source in [
         "function firstOr<T>(xs: T[], fallback: T): T { return fallback; } const handlers = [(x: i32): i32 => x]; firstOr(handlers, (x) => x + 1);",
         "function pair<T>(a: T, b: T): T { return b; } pair((x: i32): i32 => x, (x) => x + 1);",
+        "function pair<T>(a: T, b: T): T { return b; } pair((x) => x + 1, (x: i32): i32 => x);",
     ] {
-        let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
-        assert!(diagnostics.iter().any(|d| d.message == "parameters require a type annotation"
-            && d.divergence == Some(subscript_compiler::divergence::Divergence::GenericCallbackParameterAnnotationNeeded)), "{source}: {diagnostics:?}");
+        check_program(&[SourceFile::entry("main.ts", source)])
+            .unwrap_or_else(|diagnostics| panic!("{source}: {diagnostics:?}"));
     }
+    let source = "function pair<T>(a: T, b: T): T { return b; } pair((x) => x + 1, (x) => x + 1);";
+    let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
+    assert!(diagnostics.iter().any(|d| d.message == "parameters require a type annotation"
+        && d.divergence == Some(subscript_compiler::divergence::Divergence::GenericCallbackParameterAnnotationNeeded)), "{source}: {diagnostics:?}");
 }
 
 #[test]

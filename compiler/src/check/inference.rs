@@ -20,6 +20,33 @@ fn deferred_literal(expr: &ast::Expr) -> bool {
     }
 }
 
+/// Whether `expr` holds a lambda with a parameter that has no type
+/// annotation, as its value or in an element, a branch, a member, or a
+/// lambda result. Such an argument of a generic call is checked after the
+/// arguments that fix its type parameters (compiler.md §249 rule 2a).
+fn context_sensitive(expr: &ast::Expr) -> bool {
+    match unparen_expr(expr) {
+        ast::Expr::Arrow(arrow) => {
+            arrow.params.iter().any(
+                |pattern| matches!(pattern, ast::Pat::Ident(binding) if binding.type_ann.is_none()),
+            ) || matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body) if context_sensitive(body))
+        }
+        ast::Expr::Cond(conditional) => {
+            context_sensitive(&conditional.cons) || context_sensitive(&conditional.alt)
+        }
+        ast::Expr::Array(array) => array
+            .elems
+            .iter()
+            .flatten()
+            .any(|element| context_sensitive(&element.expr)),
+        ast::Expr::Object(object) => object.props.iter().any(|property| {
+            matches!(property, ast::PropOrSpread::Prop(prop)
+                if matches!(&**prop, ast::Prop::KeyValue(pair) if context_sensitive(&pair.value)))
+        }),
+        _ => false,
+    }
+}
+
 fn pattern_annotation(pattern: &ast::Pat) -> Option<&ast::TsType> {
     match pattern {
         ast::Pat::Ident(binding) => binding.type_ann.as_ref().map(|ann| &*ann.type_ann),
@@ -495,6 +522,34 @@ impl<'p> Checker<'p> {
         None
     }
 
+    /// The inferred type of a type parameter from its candidates: the
+    /// first candidate that is not `null`, joined with each other one,
+    /// and nullable when a candidate is `null` (§149 rule 4, §212 rule 3).
+    /// Returns no type with no candidate, and the two candidates that
+    /// conflict.
+    fn join_candidates(&self, values: &[Type]) -> Result<Option<Type>, (Type, Type)> {
+        let has_null = values.contains(&Type::Null);
+        let mut values = values.iter().filter(|value| **value != Type::Null).cloned();
+        let Some(mut inferred) = values.next() else {
+            return Ok(None);
+        };
+        for candidate in values {
+            if candidate == inferred {
+                continue;
+            }
+            inferred = match (&inferred, &candidate) {
+                (Type::Nullable(inner, _), value) if inner.as_ref() == value => inferred.clone(),
+                (value, Type::Nullable(inner, _)) if inner.as_ref() == value => candidate.clone(),
+                _ => return Err((inferred, candidate)),
+            };
+        }
+        if has_null && !matches!(inferred, Type::Nullable(_, _)) && self.allows_nullable(&inferred)
+        {
+            inferred = Type::nullable(inferred);
+        }
+        Ok(Some(inferred))
+    }
+
     /// Checks each non-literal once and gives deferred literals the instance's context.
     /// A contextual candidate follows the non-literal candidates and
     /// precedes the literal defaults. A non-literal argument has the
@@ -516,9 +571,32 @@ impl<'p> Checker<'p> {
         let mut has_context: Vec<bool> = (0..parameters.len())
             .map(|index| contextual.get(index).is_some_and(Option::is_some))
             .collect();
-        for (index, argument) in args.iter().enumerate() {
+        // compiler.md §249 rule 2a: an argument that holds a lambda with a
+        // parameter that has no annotation is checked after the others,
+        // with the type parameters that they fix.
+        let order: Vec<usize> = (0..args.len())
+            .filter(|index| !context_sensitive(&args[*index].expr))
+            .chain((0..args.len()).filter(|index| context_sensitive(&args[*index].expr)))
+            .collect();
+        let mut fixed_by_others = false;
+        for index in order {
+            let argument = &args[index];
             if argument.spread.is_some() || deferred_literal(&argument.expr) {
                 continue;
+            }
+            if context_sensitive(&argument.expr) && !fixed_by_others {
+                fixed_by_others = true;
+                for (parameter, values) in candidates.iter().enumerate() {
+                    // The inferred type of the candidates so far (rule 2a).
+                    let fixed = self.join_candidates(values).ok().flatten();
+                    if contextual.len() <= parameter {
+                        contextual.resize(parameter + 1, None);
+                    }
+                    if let (Some(fixed), None) = (fixed, &contextual[parameter]) {
+                        contextual[parameter] = Some(fixed);
+                        has_context[parameter] = true;
+                    }
+                }
             }
             let context = annotations
                 .get(index)
@@ -649,9 +727,16 @@ impl<'p> Checker<'p> {
         }
         let mut types = Vec::new();
         for (parameter, values) in parameters.iter().zip(candidates) {
-            let has_null = values.contains(&Type::Null);
-            let mut values = values.into_iter().filter(|value| *value != Type::Null);
-            let Some(mut inferred) = values.next() else {
+            let inferred = match self.join_candidates(&values) {
+                Ok(inferred) => inferred,
+                Err((inferred, candidate)) => {
+                    self.reject_subset(if self.apparent_type(&inferred).is_numeric() && self.apparent_type(&candidate).is_numeric() { RejectionSite::GenericInferenceConflictingCandidates } else { RejectionSite::GenericInferenceIncompatibleKinds }, format!(
+                        "cannot infer type parameter `{parameter}` of `{}`: conflicting candidates `{}` and `{}`; use explicit type arguments",
+                        target.name, self.type_name(&inferred), self.type_name(&candidate)), pos.clone());
+                    return None;
+                }
+            };
+            let Some(inferred) = inferred else {
                 let site = if args.len() < target.required {
                     RejectionSite::GenericInferenceRequiredArgumentMissing
                 } else {
@@ -667,33 +752,6 @@ impl<'p> Checker<'p> {
                 );
                 return None;
             };
-            for candidate in values {
-                if candidate == inferred {
-                    continue;
-                }
-                let joined = match (&inferred, &candidate) {
-                    (Type::Nullable(inner, _), value) if inner.as_ref() == value => {
-                        Some(inferred.clone())
-                    }
-                    (value, Type::Nullable(inner, _)) if inner.as_ref() == value => {
-                        Some(candidate.clone())
-                    }
-                    _ => None,
-                };
-                let Some(joined) = joined else {
-                    self.reject_subset(if self.apparent_type(&inferred).is_numeric() && self.apparent_type(&candidate).is_numeric() { RejectionSite::GenericInferenceConflictingCandidates } else { RejectionSite::GenericInferenceIncompatibleKinds }, format!(
-                        "cannot infer type parameter `{parameter}` of `{}`: conflicting candidates `{}` and `{}`; use explicit type arguments",
-                        target.name, self.type_name(&inferred), self.type_name(&candidate)), pos.clone());
-                    return None;
-                };
-                inferred = joined;
-            }
-            if has_null
-                && !matches!(inferred, Type::Nullable(_, _))
-                && self.allows_nullable(&inferred)
-            {
-                inferred = Type::nullable(inferred);
-            }
             types.push(inferred);
         }
         let site = (pos.file.clone(), pos.line, pos.col);

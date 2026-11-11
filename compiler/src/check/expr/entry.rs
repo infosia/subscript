@@ -169,6 +169,19 @@ impl<'p> Checker<'p> {
         self.check_expr_with_header_receiver(e, ctx, fx, false)
     }
 
+    /// Checks one expression with an expected type of the kind `kind`. A
+    /// hint types a literal, and gives no parameter types to a lambda
+    /// (compiler.md §249 rule 1).
+    pub(crate) fn check_expr_as(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        kind: ContextKind,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        self.check_expr_with_policy(e, (ctx, kind), fx, false, false)
+    }
+
     pub(super) fn check_expr_with_header_receiver(
         &mut self,
         e: &ast::Expr,
@@ -176,7 +189,13 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
-        self.check_expr_with_policy(e, ctx, fx, allow_embedded_header_receiver, false)
+        self.check_expr_with_policy(
+            e,
+            (ctx, ContextKind::Contextual),
+            fx,
+            allow_embedded_header_receiver,
+            false,
+        )
     }
 
     /// Checks the expression body of a lambda with no result type: a body
@@ -188,13 +207,13 @@ impl<'p> Checker<'p> {
         ctx: Option<&Type>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        self.check_expr_with_policy(e, ctx, fx, false, true)
+        self.check_expr_with_policy(e, (ctx, ContextKind::Contextual), fx, false, true)
     }
 
     fn check_expr_with_policy(
         &mut self,
         e: &ast::Expr,
-        ctx: Option<&Type>,
+        (ctx, kind): (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
         keep_void: bool,
@@ -213,7 +232,14 @@ impl<'p> Checker<'p> {
                 fx.descriptor_numeric_operand = false;
             }
         }
-        let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
+        // compiler.md §249 rule 1a: only the forms that `reads_hint` names
+        // read a hint. Each other form reads a hint as no context.
+        let expected = match kind {
+            ContextKind::Hint if !reads_hint(e) => None,
+            _ => ctx,
+        };
+        let checked =
+            self.check_expr_inner(e, (expected, kind), fx, allow_embedded_header_receiver);
         fx.descriptor_numeric_operand = previous_numeric;
         if self.apparent_type(&checked.ty) == Type::TaskGroup
             && fx.frames.iter().any(|frame| frame.is_generator)
@@ -278,7 +304,7 @@ impl<'p> Checker<'p> {
         if let ast::Expr::OptChain(chain) = super::unparen_expr(e) {
             return self.check_optional_chain_operand(chain, fx);
         }
-        let checked = self.check_expr_inner(e, None, fx, false);
+        let checked = self.check_expr_inner(e, (None, ContextKind::Contextual), fx, false);
         let ty = checked.ty.clone();
         (vec![hir::Stmt::Expr(checked)], ty)
     }
@@ -286,13 +312,13 @@ impl<'p> Checker<'p> {
     fn check_expr_inner(
         &mut self,
         e: &ast::Expr,
-        ctx: Option<&Type>,
+        expected: (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         self.expression_work.push(None);
         let mut checked =
-            self.check_expr_inner_untracked(e, ctx, fx, allow_embedded_header_receiver);
+            self.check_expr_inner_untracked(e, expected, fx, allow_embedded_header_receiver);
         if let Some(work) = self.expression_work.pop().flatten() {
             checked.pending_work = Some(work);
         }
@@ -302,17 +328,18 @@ impl<'p> Checker<'p> {
     fn check_expr_inner_untracked(
         &mut self,
         e: &ast::Expr,
-        ctx: Option<&Type>,
+        (ctx, kind): (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
         let mut checked = match e {
-            ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
+            ast::Expr::Paren(p) => self.check_expr_with_policy(
                 &p.expr,
-                ctx,
+                (ctx, kind),
                 fx,
                 allow_embedded_header_receiver,
+                false,
             ),
             ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
@@ -429,15 +456,15 @@ impl<'p> Checker<'p> {
             ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
             ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
-            ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
+            ast::Expr::Cond(c) => self.check_cond(c, (ctx, kind), fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
             ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
-            ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
-            ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
+            ast::Expr::Arrow(a) => self.check_lambda(a, (ctx, kind), fx, pos),
+            ast::Expr::Array(a) => self.check_array_lit(a, (ctx, kind), fx, pos),
             ast::Expr::Object(object) => {
                 match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
                     Some(id) if self.classes[id.0].is_descriptor => {
-                        self.check_descriptor_lit(object, id, fx, pos)
+                        self.check_descriptor_lit(object, (id, kind), fx, pos)
                     }
                     Some(_) => {
                         self.reject_subset(
@@ -632,7 +659,7 @@ impl<'p> Checker<'p> {
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
-        let checked = self.check_expr_inner(root, None, fx, false);
+        let checked = self.check_expr_inner(root, (None, ContextKind::Contextual), fx, false);
         let mut statements = prefix.into_statements();
         statements.push(hir::Stmt::Expr(checked));
         statements
@@ -1176,4 +1203,38 @@ fn holds_empty_array_literal(e: &ast::Expr) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether the form of `e` reads a hint (compiler.md §249 rule 1a): a
+/// literal; a binary or a unary operator, which gives its context to its
+/// operands as it does for a contextual type; a descriptor literal; an
+/// array literal; a conditional; a parenthesis; and a lambda, for its
+/// result only. An operand call takes no contextual candidate (§212 rule
+/// 1a).
+fn reads_hint(e: &ast::Expr) -> bool {
+    matches!(
+        e,
+        ast::Expr::Lit(_)
+            | ast::Expr::Bin(_)
+            | ast::Expr::Unary(_)
+            | ast::Expr::Object(_)
+            | ast::Expr::Array(_)
+            | ast::Expr::Cond(_)
+            | ast::Expr::Paren(_)
+            | ast::Expr::Arrow(_)
+    )
+}
+
+/// The kind of an expected type (compiler.md §249 rule 1). A contextual
+/// type comes from a declaration: an annotation, a parameter, a result,
+/// or an assignment target. A hint is the type of an earlier element of
+/// an array literal with no contextual type (§212 rule 1a), or a context
+/// that a hint gives to an inner expression. A hint types a literal, and
+/// gives no parameter types to a lambda.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContextKind {
+    /// A contextual type.
+    Contextual,
+    /// A hint.
+    Hint,
 }

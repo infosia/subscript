@@ -633,7 +633,7 @@ pub(super) const FUNCTIONVALUEPARAMETERANNOTATIONNEEDED: DivergenceEntry = Diver
 pub(super) const GENERICCALLBACKPARAMETERANNOTATIONNEEDED: DivergenceEntry = DivergenceEntry {
     ts: "function each<T>(xs: T[], f: (x: T) => void): void {} each([1, 2], (x) => {}); export function main(): void {}",
     subscript: "function each<T>(xs: T[], f: (x: T) => void): void {} each([1, 2], (x: i32): void => {}); export function main(): void {}",
-    why: "Generic argument inference checks callback parameters before the callee supplies their context; annotate each callback parameter.",
+    why: "A type parameter that no non-literal argument fixes gives a callback no parameter types (compiler.md §197 rule 3, §249 rule 2a). Annotate each callback parameter.",
     collision: "C24", // row 4
 };
 

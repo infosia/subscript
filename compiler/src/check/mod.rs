@@ -819,6 +819,8 @@ pub(crate) enum Evaluation {
 #[derive(Debug, Clone)]
 pub(crate) struct Frame {
     pub ret: Type,
+    /// The kind of the context that gives `ret` (compiler.md §249 rule 1).
+    pub result_kind: crate::check::expr::ContextKind,
     pub is_generator: bool,
     pub is_async: bool,
     pub yield_ty: Option<Type>,
@@ -1089,6 +1091,7 @@ impl FnCtx {
             arithmetic_write: false,
             frames: vec![Frame {
                 ret,
+                result_kind: crate::check::expr::ContextKind::Contextual,
                 is_generator,
                 is_async: false,
                 yield_ty: None,

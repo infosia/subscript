@@ -1729,8 +1729,14 @@ impl<'p> Checker<'p> {
             ) else {
                 return self.err_expr(a_pos);
             };
-            let checked =
-                self.check_lambda_with(a, Some(&expected), ret.as_ref(), resolved_first, fx, a_pos);
+            let checked = self.check_lambda_with(
+                a,
+                Some(&expected),
+                (ret.as_ref(), super::entry::ContextKind::Contextual),
+                resolved_first,
+                fx,
+                a_pos,
+            );
             // An annotation may override the context; the resulting
             // function type must still match one accepted shape (the
             // return stays free when it is inferred).

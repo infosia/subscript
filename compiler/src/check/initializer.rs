@@ -766,7 +766,7 @@ impl<'p> Checker<'p> {
                     *value = self.check_lambda_body(
                         &source,
                         params,
-                        Some(result),
+                        (Some(result), crate::check::expr::ContextKind::Contextual),
                         None,
                         &mut deferred.frame,
                         value.pos.clone(),

@@ -244,6 +244,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S013,
         21,
     ),
+    (
+        "r497-an-element-hint-gives-no-parameter-types-to-a-lambda.ts",
+        RuleCode::S100,
+        13,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

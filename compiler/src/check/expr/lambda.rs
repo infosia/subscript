@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
+use super::entry::ContextKind;
 use crate::check::{Checker, FnCtx, Frame, Local, ParamSig, Scope};
 use crate::diag::Pos;
 use crate::hir::{self, ExprKind};
@@ -15,7 +16,7 @@ impl<'p> Checker<'p> {
     pub(super) fn check_lambda(
         &mut self,
         a: &ast::ArrowExpr,
-        ctx: Option<&Type>,
+        (ctx, kind): (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -30,7 +31,10 @@ impl<'p> Checker<'p> {
             Some(ft) => (Some(ft.params.as_slice()), Some(&ft.ret)),
             None => (None, None),
         };
-        self.check_lambda_with(a, param_ctx, ret_ctx, None, fx, pos)
+        // compiler.md §249 rule 1: a hint gives no parameter types, and the
+        // result context that it gives is a hint too.
+        let param_ctx = param_ctx.filter(|_| kind == ContextKind::Contextual);
+        self.check_lambda_with(a, param_ctx, (ret_ctx, kind), None, fx, pos)
     }
 
     /// [`Self::check_lambda`] with the contextual function type split
@@ -41,7 +45,7 @@ impl<'p> Checker<'p> {
         &mut self,
         a: &ast::ArrowExpr,
         param_ctx: Option<&[Type]>,
-        ret_ctx: Option<&Type>,
+        (ret_ctx, ret_kind): (Option<&Type>, ContextKind),
         resolved_first: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
@@ -217,7 +221,14 @@ impl<'p> Checker<'p> {
             // The body checks with the fact that the lambda is called at
             // once (compiler.md §241 rule 2).
             checker.lambda_called_at_once = called_at_once;
-            checker.check_lambda_body(a, params, ret, result_hint.as_ref(), fx, pos)
+            // The result takes the kind of its context; an annotation or a
+            // rule of the body gives a contextual type.
+            let result_kind = if a.return_type.is_none() && ret.is_some() && ret.as_ref() == ret_ctx {
+                ret_kind
+            } else {
+                ContextKind::Contextual
+            };
+            checker.check_lambda_body(a, params, (ret, result_kind), result_hint.as_ref(), fx, pos)
         });
         self.generic_callback_context = generic_context;
         value
@@ -227,7 +238,7 @@ impl<'p> Checker<'p> {
         &mut self,
         a: &ast::ArrowExpr,
         params: Vec<ParamSig>,
-        mut ret: Option<Type>,
+        (mut ret, result_kind): (Option<Type>, ContextKind),
         result_hint: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
@@ -243,6 +254,7 @@ impl<'p> Checker<'p> {
         self.next_lambda_id += 1;
         let frame = Frame {
             ret: ret.clone().unwrap_or(Type::Error),
+            result_kind,
             is_generator: false,
             is_async: a.is_async,
             yield_ty: None,
@@ -379,7 +391,7 @@ impl<'p> Checker<'p> {
                     }
                     let diagnostics = self.diags.len();
                     let mut checked = match &ret {
-                        Some(ret) => self.check_expr(e, Some(ret), fx),
+                        Some(ret) => self.check_expr_as(e, Some(ret), result_kind, fx),
                         None => self.check_expr_keeping_void(e, result_hint, fx),
                     };
                     // compiler.md §238 rule 1: a body of type `void` gives

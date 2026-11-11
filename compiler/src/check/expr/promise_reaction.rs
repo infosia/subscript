@@ -317,8 +317,14 @@ impl<'p> Checker<'p> {
                     value.clone()
                 }
             });
-            let checked =
-                self.check_lambda_with(arrow, Some(&context), None, None, fx, pos.clone());
+            let checked = self.check_lambda_with(
+                arrow,
+                Some(&context),
+                (None, super::entry::ContextKind::Contextual),
+                None,
+                fx,
+                pos.clone(),
+            );
             self.lambda_result_hint = None;
             checked
         } else {

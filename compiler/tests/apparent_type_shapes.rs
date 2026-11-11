@@ -543,7 +543,8 @@ const ALLOWLIST: &[AllowGroup] = &[
         name: "inferred-argument-identity",
         reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1). A contextual candidate reads the apparent type that contextual_instance returns (§197 rule 3). A contextual result candidate keeps a type parameter of the context, so its `| null` match reads the declared type (§212 rule 1).",
         sites: &[
-            ("inference.rs", "infer_arguments", 0x8f0b3c9969205471),
+            ("inference.rs", "infer_arguments", 0x738d00c84ee68e4c),
+            ("inference.rs", "join_candidates", 0xb463c42da0fab087),
             ("inference.rs", "contextual_result_candidates", 0x51a4525d7dde06e6),
             ("inference.rs", "infer_constructor_arguments", 0x7764f382d2239c63),
             ("inference.rs", "infer_container_arguments", 0x7bfed925f60a198f),
@@ -554,13 +555,13 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup {
         name: "conditional-type-identity",
         reason: "The conditional join compares declared concrete types and their absence spellings (§195.1 rule 2); check_cond routes all type parameters to generic_union (§143).",
-        sites: &[("expr/operator.rs", "conditional_join", 0x777b9391a80804dc)],
+        sites: &[("expr/conditional.rs", "conditional_join", 0x777b9391a80804dc)],
     },
     AllowGroup {
         name: "absence-spelling-join",
         reason: "The join reads the absence spelling of each union member and keeps T identity (§195.11 rule 5); the members of an apparent union are apparent shapes.",
         sites: &[
-            ("expr/operator.rs", "joins_null_and_undefined", 0xec43e1a1bee7238f),
+            ("expr/conditional.rs", "joins_null_and_undefined", 0xec43e1a1bee7238f),
             ("opaque.rs", "spelled_join", 0x704a65ba76c07d0b),
         ],
     },

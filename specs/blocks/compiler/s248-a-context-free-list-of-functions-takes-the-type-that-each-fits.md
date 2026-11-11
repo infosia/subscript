@@ -96,3 +96,4 @@ type, diagnostics, or output.
    element (§212 rule 1a): `` const fs = [one, (x) => print(`u ${x}`)]; ``
    is accepted and runs. `tsc` 5.9.2 rejects it with TS7006 "Parameter
    'x' implicitly has an 'any' type". This breaks invariant 5.
+   *(Closed 2026-11-11 by §249.)*

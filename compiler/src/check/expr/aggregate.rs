@@ -4,6 +4,7 @@ use crate::check::rejection::RejectionSite;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
+use super::entry::ContextKind;
 use crate::check::{Checker, ContainerSlot, FnCtx};
 use crate::diag::Pos;
 use crate::hir::{self, ExprKind};
@@ -27,7 +28,7 @@ impl<'p> Checker<'p> {
     pub(super) fn check_array_lit(
         &mut self,
         a: &ast::ArrayLit,
-        ctx: Option<&Type>,
+        (ctx, kind): (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -36,7 +37,7 @@ impl<'p> Checker<'p> {
             .flatten()
             .any(|element| element.spread.is_some())
         {
-            return self.check_array_spread_lit(a, ctx, fx, pos);
+            return self.check_array_spread_lit(a, (ctx, kind), fx, pos);
         }
         let mut elems: Vec<&ast::ExprOrSpread> = Vec::new();
         for e in &a.elems {
@@ -68,7 +69,7 @@ impl<'p> Checker<'p> {
                 let elem_ty = (**elem_ty).clone();
                 let mut out = Vec::new();
                 for e in elems {
-                    let mut checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
+                    let mut checked = self.check_expr_as(&e.expr, Some(&elem_ty), kind, fx);
                     self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
@@ -96,7 +97,7 @@ impl<'p> Checker<'p> {
                 }
                 let mut out = Vec::new();
                 for e in elems {
-                    let mut checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
+                    let mut checked = self.check_expr_as(&e.expr, Some(&elem_ty), kind, fx);
                     self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
@@ -126,9 +127,8 @@ impl<'p> Checker<'p> {
                 let mut deferred = Vec::new();
                 for e in &elems[1..] {
                     // §212 rule 1a: the type of the first element is a hint.
-                    self.mark_operand_calls(&e.expr);
                     let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
-                    let checked = self.check_expr(&e.expr, context, fx);
+                    let checked = self.check_expr_as(&e.expr, context, ContextKind::Hint, fx);
                     if function_list {
                         deferred.push(checked);
                     } else {
@@ -190,7 +190,7 @@ impl<'p> Checker<'p> {
     pub(super) fn check_descriptor_lit(
         &mut self,
         object: &ast::ObjectLit,
-        class_id: crate::types::ClassId,
+        (class_id, kind): (crate::types::ClassId, ContextKind),
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -271,7 +271,7 @@ impl<'p> Checker<'p> {
                 .map(|(_, value, _)| *value);
             let mut checked = match explicit {
                 Some(DescriptorProp::Expr(value)) => {
-                    Some(self.check_expr(value, Some(&field.ty), fx))
+                    Some(self.check_expr_as(value, Some(&field.ty), kind, fx))
                 }
                 Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, None, fx)),
                 None if field.is_defaulted => None,
@@ -329,7 +329,7 @@ impl<'p> Checker<'p> {
     fn check_array_spread_lit(
         &mut self,
         a: &ast::ArrayLit,
-        ctx: Option<&Type>,
+        (ctx, kind): (Option<&Type>, ContextKind),
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -360,13 +360,16 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let is_spread = slot.spread.is_some();
-            if context_elem.is_none() {
-                // §212 rule 1a: the type of an earlier element is a hint.
-                self.mark_operand_calls(&slot.expr);
-            }
-            let mut expr = self.check_expr(
+            // §212 rule 1a: with no context, an earlier element gives a hint.
+            let element_kind = if context_elem.is_some() {
+                kind
+            } else {
+                ContextKind::Hint
+            };
+            let mut expr = self.check_expr_as(
                 &slot.expr,
                 if is_spread { None } else { inferred.as_ref() },
+                element_kind,
                 fx,
             );
             let (spread, element_ty) = if is_spread {

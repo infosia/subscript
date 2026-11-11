@@ -70,5 +70,72 @@ parameter with no annotation has the implicit type `any`, which
 2. After the change `r497` gives the S100 of rule 1 at each lambda.
 3. A unit test pins rules 1 to 3: each table form, a nested list, and
    the controls of rule 2 (an annotated list, a parameter place, `??`).
-4. If a corpus entry or golden changes, report it and stop. No golden
+4. The accept entry
+   `a434-a-generic-argument-takes-the-type-that-other-arguments-fix`
+   holds the forms of rule 2a. It passes `tsc`, carries `js-comparable`,
+   and equals `node`.
+5. If a corpus entry or golden changes, report it and stop. No golden
    moves.
+
+### 249.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding.
+
+1. MAJOR, realistic, fixed: the hint still gave parameter types through
+   the result of a lambda element and through a member of a descriptor
+   literal. A mark on the syntax of the element could not close the
+   class. The expected type now carries its kind, a contextual type or
+   a hint, and a lambda takes parameter types from a contextual type
+   only.
+2. MAJOR, realistic, fixed: a generic call where another argument fixes
+   the type parameter, such as `two(one, [one, (x) => …])`, was rejected
+   after the change, and `tsc` accepts it. Rule 2a: an argument that
+   holds such a lambda is checked after the other arguments, with the
+   type parameters that they fix.
+3. MINOR, contrived: a mark stayed when a lambda had an error context.
+   The marks are gone.
+4. MINOR, recorded: §249.4 items 1 and 2.
+
+A second review of the implementation, after the change of the form. No
+CRITICAL finding.
+
+1. MAJOR, realistic, fixed: a hint still reached lambda parameters
+   through the inference of a generic call, a `new`, and `Array.of`
+   from their contextual result, such as
+   `[mk, () => wrap((x) => …)]`. Rule 1a: one place decides which forms
+   read a hint, and each other form reads a hint as no context. The
+   mark of a call operand at an element is gone.
+2. MINOR, fixed: rule 2a fixed a type parameter from its first
+   candidate, so the order of the other arguments decided acceptance.
+   It now uses the inferred type of the candidates. §249.4 item 3.
+3. MINOR, fixed: a test name stated that a divergence stays, and the
+   test pins three accepted forms.
+4. MINOR, contrived, recorded: §249.4 item 4.
+5. MINOR, older, recorded: §249.4 item 5.
+
+After the second review, a measurement against the pin CLI found a
+rule 4 break: an operator with literal operands in a context-free list
+after a typed element, such as `[a, 1 + 2]` with `a: f32`, gave S007.
+Rule 1a now names the operators. The tracking note compares each form
+that reads a context at the pin.
+
+### 249.4 Open
+
+1. `[one, (x) => …] as CB[]` gives the S100 of rule 1 beside the
+   rejection of `as` that it had at the pin. The program is rejected in
+   both.
+2. `((x) => …) as CB` gives the S100 of rule 1 alone. `tsc` accepts it,
+   because `as` gives a context to its operand there. `as` gives no
+   context here.
+3. A nullable function type gives a lambda no parameter types.
+   `const f: CB | null = (x) => …` gives the S100 of rule 1, and `tsc`
+   accepts it. So `three(one, maybe(), (x) => …)` with
+   `maybe(): CB | null` and `three<T>(a: T, b: T, c: T): T` gives the
+   S100 in each order of the first two arguments. `tsc` accepts both.
+4. Rule 2a checks an argument that holds a lambda after the other
+   arguments. So a state that flows from one argument to the next, such
+   as narrowing, sees the other order. No realistic program was found
+   where this changes acceptance.
+5. The S100 at a lambda in a generic call that a hint reaches carries
+   the divergence block "TypeScript accepts: each([1, 2], (x) => {})".
+   `tsc` rejects those forms with TS7006, so the block is wrong there.
