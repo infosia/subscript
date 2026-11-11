@@ -120,6 +120,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
 2. An async function in a place with the result `void` gives the type
    mismatch diagnostic, not S013. The rejection is correct; the
    diagnostic does not name the dropped handle.
+   *(Closed 2026-11-11 by §247.)*
 3. A function with a result `T | undefined` keeps the C7 diagnostic
    "a function whose result is `T | undefined` may only be called" in
    a place with the result `void`. `tsc` accepts it. The lambda of rule

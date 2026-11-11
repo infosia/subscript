@@ -92,6 +92,12 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
+        "dropped_handle",
+        1,
+        "The diagnostic of compiler.md §247 rule 1 decides with the adapted type that the adapter would build; no value is placed.",
+    ),
+    (
+        "type_rules.rs",
         "needs_adapter_name",
         1,
         "The diagnostic of compiler.md §246 rule 5 decides with the adapted type that rule 1 would build; no value is placed.",
@@ -152,9 +158,15 @@ const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "type_rules.rs",
-        "prefix_fits",
-        2,
-        "This is the decision of the conversions of §240 rule 2 and §243 rules 1 and 2 itself.",
+        "prefix_parameters_fit",
+        1,
+        "This is the parameter half of the decision of the conversions of §240 rule 2 and §243 rules 1 and 2 itself.",
+    ),
+    (
+        "type_rules.rs",
+        "result_fits",
+        1,
+        "This is the result half of the decision of the conversions of §240 rule 2 and §243 rules 1 and 2 itself.",
     ),
     (
         "type_rules.rs",

@@ -143,6 +143,28 @@ impl Checker<'_> {
             allow_index,
             ..
         } = spec;
+        // compiler.md §247 rule 1: a callback that fits a place with the
+        // result `void`, except for the handle that the place drops, names
+        // the handle. A counted result that is not a handle keeps §171.
+        if let (Some(ret), Type::Func(own)) = (ret, self.apparent_type(&checked.ty)) {
+            let mut place = params.to_vec();
+            if allow_index && own.params.len() == params.len() + 1 {
+                place.push(Type::I32);
+            }
+            let place = Type::func(place, ret.clone());
+            if let Some(handle) = self.dropped_handle(&checked, &place, fx) {
+                let message = format!(
+                    "`{method}` {}",
+                    self.dropped_handle_message(&checked, &handle, &place, "callback")
+                );
+                self.reject_subset(
+                    RejectionSite::VoidPlaceDropsAsyncHandle,
+                    message,
+                    checked.pos.clone(),
+                );
+                return self.err_expr(checked.pos);
+            }
+        }
         // compiler.md §244 rule 1: a value with fewer parameters takes the
         // place of the smallest arity.
         if let Type::Func(own) = self.apparent_type(&checked.ty) {

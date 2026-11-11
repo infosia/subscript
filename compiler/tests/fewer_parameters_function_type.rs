@@ -139,8 +139,9 @@ fn a_named_function_takes_the_parameters_of_the_place() {
 }
 
 /// Rules 3 and 4: a function value with an environment, a generic
-/// function, an async function, a function with a default parameter, and
-/// a built-in callback with fewer parameters keep their diagnostic.
+/// function, a function with a default parameter, and a built-in callback
+/// with fewer parameters keep their diagnostic. An async function gets the
+/// S013 of compiler.md §247.
 #[test]
 fn the_other_forms_keep_their_diagnostic() {
     for (body, code, message) in [
@@ -156,8 +157,8 @@ fn the_other_forms_keep_their_diagnostic() {
         ),
         (
             "function f(): void { eachi([1], an); }",
-            RuleCode::S100,
-            "type mismatch: the argument expects `(i32, i32) => void`, got `(i32) => Promise<void>`",
+            RuleCode::S013,
+            "function value `an` returns `Promise<void>`, which the place `(i32, i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it",
         ),
         (
             "function f(): void { const h: (x: i32, y: i32, z: i32) => void = dflt; }",

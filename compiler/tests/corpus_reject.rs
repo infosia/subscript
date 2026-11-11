@@ -239,6 +239,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         15,
     ),
+    (
+        "r496-a-void-result-place-names-the-handle-it-drops.ts",
+        RuleCode::S013,
+        21,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
@@ -1839,11 +1844,12 @@ fn counted_map_callbacks_reject_recursive_and_substituted_value_types() {
     let callback_result =
         "export function main(): void { const m: Map<i32, i32> = new Map<i32, i32>(); \
         m.forEach((v: i32, k: i32): Promise<i32>[] => []); }";
+    // compiler.md §247 rule 1: the `void` place drops the handle result.
     let diagnostics = check_program(&[SourceFile::new("map-callback-result.ts", callback_result)])
         .expect_err("counted Map callback result");
     assert!(diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == RuleCode::S014));
+        .any(|diagnostic| diagnostic.code == RuleCode::S013));
     let generic = "function visit<T>(m: Map<i32, T>): void { m.forEach((v: T, k: i32): void => {}); } \
                    export function main(): void { visit<Promise<i32>[]>(new Map<i32, Promise<i32>[]>()); }";
     let diagnostics = check_program(&[SourceFile::new("generic-map-callback.ts", generic)])

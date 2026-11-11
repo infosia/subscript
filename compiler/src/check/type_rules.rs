@@ -379,8 +379,9 @@ impl<'p> Checker<'p> {
         // A leaf with more parameters than the place allows keeps its
         // type, so its conditional has no common type.
         let place = leaves.place(largest.clamp(leaves.params.len(), leaves.params.len() + 1));
-        self.place_leaves(then, &place, fx);
-        self.place_leaves(els, &place, fx);
+        let subject = format!("`{}` callback", leaves.method);
+        self.place_leaves(then, &place, &subject, fx);
+        self.place_leaves(els, &place, &subject, fx);
     }
 
     fn leaf_arities(&self, expr: &hir::Expr, out: &mut Vec<usize>) {
@@ -392,11 +393,18 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, fx: &FnCtx) {
+    /// Places each leaf of `expr` at `place`. A leaf that drops a handle
+    /// gets the diagnostic of compiler.md §247 rule 1 after `subject`, as
+    /// the callback itself gets it.
+    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, subject: &str, fx: &FnCtx) {
         if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
-            self.place_leaves(then, place, fx);
-            self.place_leaves(els, place, fx);
-            if self.apparent_type(&then.ty) == self.apparent_type(&els.ty) {
+            self.place_leaves(then, place, subject, fx);
+            self.place_leaves(els, place, subject, fx);
+            if self.apparent_type(&then.ty) == Type::Error
+                || self.apparent_type(&els.ty) == Type::Error
+            {
+                expr.ty = Type::Error;
+            } else if self.apparent_type(&then.ty) == self.apparent_type(&els.ty) {
                 expr.ty = then.ty.clone();
             } else {
                 let message = format!(
@@ -413,7 +421,19 @@ impl<'p> Checker<'p> {
             }
             return;
         }
-        let _ = self.place_value(expr, place, fx);
+        if self.place_value(expr, place, fx) {
+            return;
+        }
+        // compiler.md §247 rule 3: the leaf that holds the handle names it.
+        if let Some(handle) = self.dropped_handle(expr, place, fx) {
+            let message = self.dropped_handle_message(expr, &handle, place, subject);
+            self.reject_subset(
+                RejectionSite::VoidPlaceDropsAsyncHandle,
+                message,
+                expr.pos.clone(),
+            );
+            expr.ty = Type::Error;
+        }
     }
 
     /// Whether a call of a place with the result `void` can discard the
@@ -484,15 +504,26 @@ impl<'p> Checker<'p> {
     /// `params`, and a value of the result `ret` fits the result of the
     /// place, or the place discards it (compiler.md §243 rules 1 and 2).
     fn prefix_fits(&self, params: &[Type], ret: &Type, place: &crate::types::FuncType) -> bool {
+        self.prefix_parameters_fit(params, place) && self.result_fits(ret, place)
+    }
+
+    /// Whether the first parameters of the place `place` fit the parameters
+    /// `params` (compiler.md §243 rules 1 and 2).
+    fn prefix_parameters_fit(&self, params: &[Type], place: &crate::types::FuncType) -> bool {
         params.len() <= place.params.len()
             && place
                 .params
                 .iter()
                 .zip(params)
                 .all(|(place_param, param)| self.type_fits(place_param, param))
-            && (self.type_fits(ret, &place.ret)
-                || (self.apparent_type(&place.ret) == Type::Void
-                    && self.result_can_be_discarded(ret)))
+    }
+
+    /// Whether a value of the result `ret` fits the result of the place
+    /// `place`, or the place discards it (compiler.md §240 rule 1, §242
+    /// rule 5).
+    fn result_fits(&self, ret: &Type, place: &crate::types::FuncType) -> bool {
+        self.type_fits(ret, &place.ret)
+            || (self.apparent_type(&place.ret) == Type::Void && self.result_can_be_discarded(ret))
     }
 
     /// A lambda literal with `N` parameters, in a place of a function type
@@ -536,7 +567,8 @@ impl<'p> Checker<'p> {
                             captures: Vec<hir::Capture>,
                             has_default: bool| AdapterCallee {
             callee: hir::Callee::Value(Box::new(value.clone())),
-            refused: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
+            refused: false,
+            is_async: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
             own: function.params,
             ret: function.ret,
             captures,
@@ -550,7 +582,8 @@ impl<'p> Checker<'p> {
                     own: sig.params.iter().map(|p| p.ty().clone()).collect(),
                     ret: sig.ret.clone(),
                     captures: Vec::new(),
-                    refused: sig.generic || sig.is_async || sig.is_generator,
+                    refused: sig.generic || sig.is_generator,
+                    is_async: sig.is_async,
                     has_default: sig.params.iter().any(|p| p.has_default),
                 })
             }
@@ -601,21 +634,96 @@ impl<'p> Checker<'p> {
         {
             return false;
         }
-        // The callee of a const local name with the type of `value`.
-        let Type::Func(function) = self.apparent_type(&value.ty) else {
+        let Some(target) = self.callee_facts(value, fx) else {
             return false;
         };
-        let target = AdapterCallee {
+        self.function_of(to)
+            .and_then(|place| self.adapter_shape(&target, &place, false))
+            .is_some_and(|shape| self.assignable(&shape.ty, to))
+    }
+
+    /// The facts of `value` as the callee of an adapter: those of
+    /// [`Self::adapter_callee`], or, for another value of a function type,
+    /// those of a const local name with its type (compiler.md §246 rule 5,
+    /// §247 rule 1).
+    fn callee_facts(&self, value: &hir::Expr, fx: &FnCtx) -> Option<AdapterCallee> {
+        if let Some(callee) = self.adapter_callee(value, fx) {
+            return Some(callee);
+        }
+        let Type::Func(function) = self.apparent_type(&value.ty) else {
+            return None;
+        };
+        Some(AdapterCallee {
             callee: hir::Callee::Value(Box::new(value.clone())),
-            refused: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
+            refused: false,
+            is_async: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
             own: function.params,
             ret: function.ret,
             captures: Vec::new(),
             has_default: false,
+        })
+    }
+
+    /// The result of `value` when the place `to` drops it and the result
+    /// holds an async handle (compiler.md §247 rule 1): the place is a
+    /// function type with the result `void`, and the value fits it with the
+    /// adapter of §240 rule 2, §243, or §246, except for its result. The
+    /// decision is the one of the adapter: [`Self::adapter_shape`] with the
+    /// result that the place drops, and the adapted type fits the place. A
+    /// result that contains the error type has its diagnostic already. A
+    /// conditional is not a value here; each of its leaves is (§247 rule
+    /// 3).
+    pub(crate) fn dropped_handle(&self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> Option<Type> {
+        if matches!(value.kind, hir::ExprKind::Cond { .. }) {
+            return None;
+        }
+        let place = self.function_of(to)?;
+        if self.apparent_type(&place.ret) != Type::Void {
+            return None;
+        }
+        // The result of the value is the one of its type: the signature of
+        // an async function records the awaited result.
+        let Type::Func(function) = self.apparent_type(&value.ty) else {
+            return None;
         };
-        self.function_of(to)
-            .and_then(|place| self.adapter_shape(&target, &place))
-            .is_some_and(|shape| self.assignable(&shape.ty, to))
+        let ret = self.apparent_type(&function.ret);
+        if !ret.holds_async_handle() || super::interface::poisoned(&ret) {
+            return None;
+        }
+        let target = AdapterCallee {
+            ret: function.ret.clone(),
+            ..self.callee_facts(value, fx)?
+        };
+        self.adapter_shape(&target, &place, true)
+            .filter(|shape| self.assignable(&shape.ty, to))
+            .map(|_| function.ret)
+    }
+
+    /// The text of the diagnostic of compiler.md §247 rule 2 for `value`
+    /// with the result `handle` in the place `to`, after `subject`, such as
+    /// "callback".
+    pub(crate) fn dropped_handle_message(
+        &self,
+        value: &hir::Expr,
+        handle: &Type,
+        to: &Type,
+        subject: &str,
+    ) -> String {
+        let name = match &value.kind {
+            hir::ExprKind::FuncRef(symbol) => Some(hir::source_name(symbol.full_text())),
+            hir::ExprKind::Local(name, ..) => Some(name.clone()),
+            hir::ExprKind::Global(symbol) => Some(symbol.source_name()),
+            _ => None,
+        };
+        let subject = match name {
+            Some(name) => format!("{subject} `{name}`"),
+            None => subject.to_string(),
+        };
+        let handle = self.type_name(handle);
+        format!(
+            "{subject} returns `{handle}`, which the place `{}` drops, and no holder awaits the handle; a place with the result `{handle}` can await it",
+            self.type_name(to)
+        )
     }
 
     /// The shape of the adapter of `target` in the place `place`, when the
@@ -623,19 +731,31 @@ impl<'p> Checker<'p> {
     /// §243 rule 2, §246 rule 1): the place has more parameters, or the
     /// result `void` and the value a value result to discard. The value is
     /// not refused, has no default parameter when the place has more
-    /// parameters, and its parameters and result fit the place.
+    /// parameters, and its parameters and result fit the place. With
+    /// `drops_handle`, the result of the value holds an async handle that
+    /// the `void` place drops (compiler.md §247 rule 1): the shape is the
+    /// one that the adapter has if the handle were a value to discard, so
+    /// an async value is not refused and the result fits.
     fn adapter_shape(
         &self,
         target: &AdapterCallee,
         place: &crate::types::FuncType,
+        drops_handle: bool,
     ) -> Option<AdapterShape> {
         let fewer = target.own.len() < place.params.len();
-        let discards = self.apparent_type(&place.ret) == Type::Void
-            && self.apparent_type(&target.ret) != Type::Void;
+        let place_void = self.apparent_type(&place.ret) == Type::Void;
+        let discards = place_void && self.apparent_type(&target.ret) != Type::Void;
+        let result_fits = if drops_handle {
+            place_void
+        } else {
+            self.result_fits(&target.ret, place)
+        };
         if target.refused
+            || (target.is_async && !drops_handle)
             || (fewer && target.has_default)
             || (!fewer && !discards)
-            || !self.prefix_fits(&target.own, &target.ret, place)
+            || !self.prefix_parameters_fit(&target.own, place)
+            || !result_fits
         {
             return None;
         }
@@ -694,7 +814,7 @@ impl<'p> Checker<'p> {
             discards,
             ..
         }) = self
-            .adapter_shape(&target, &place)
+            .adapter_shape(&target, &place, false)
             .filter(|shape| self.assignable(&shape.ty, to))
         else {
             return;
@@ -877,6 +997,17 @@ impl<'p> Checker<'p> {
         what: &str,
     ) {
         if !self.place_value(from, to, fx) {
+            // compiler.md §247 rule 1: a value that fits except for the
+            // handle that the place drops names the handle.
+            if let Some(handle) = self.dropped_handle(from, to, fx) {
+                let message = self.dropped_handle_message(from, &handle, to, "function value");
+                self.reject_subset(
+                    RejectionSite::VoidPlaceDropsAsyncHandle,
+                    message,
+                    from.pos.clone(),
+                );
+                return;
+            }
             // compiler.md §246 rule 5: a value that fits with an adapter
             // names the cause.
             if self.needs_adapter_name(from, to, fx) {
@@ -1144,6 +1275,8 @@ pub(crate) struct CallbackLeaves {
     pub(crate) params: Vec<Type>,
     /// The result of the place.
     pub(crate) ret: Type,
+    /// The method that takes the callback, as its diagnostics name it.
+    pub(crate) method: String,
     /// The conditional is a branch of another conditional, which places
     /// the leaves of both.
     pub(crate) nested: bool,
@@ -1182,8 +1315,12 @@ struct AdapterCallee {
     ret: Type,
     /// The captured const local, as a lambda written in the source has.
     captures: Vec<hir::Capture>,
-    /// A generic, async, or generator value takes no adapter.
+    /// A generic or generator value takes no adapter.
     refused: bool,
+    /// An async function, or a value whose result is an async handle,
+    /// takes no adapter. Its handle result names the diagnostic of
+    /// compiler.md §247.
+    is_async: bool,
     has_default: bool,
 }
 

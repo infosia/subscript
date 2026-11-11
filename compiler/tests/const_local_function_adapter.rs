@@ -174,8 +174,8 @@ fn the_adapter_escapes_as_a_written_lambda_does() {
 
 /// Rules 4 and 5: a `let` local, a parameter, a field read, an element
 /// read, and a call result take no adapter, and the diagnostic names the
-/// cause. An async function value and a function with a default parameter
-/// keep their present diagnostic.
+/// cause. An async function value gets the S013 of compiler.md §247, and
+/// a function with a default parameter keeps the type mismatch.
 #[test]
 fn another_value_names_the_cause() {
     for (body, name) in [
@@ -202,18 +202,20 @@ fn another_value_names_the_cause() {
             "{body}: {diagnostic:?}"
         );
     }
-    for (body, message) in [
+    for (body, code, message) in [
         (
             "function f(): void { const fa = async (x: i32): Promise<void> => {}; run(fa); }",
-            "type mismatch: the argument expects `(i32, i32) => void`, got `(i32) => Promise<void>`",
+            RuleCode::S013,
+            "function value `fa` returns `Promise<void>`, which the place `(i32, i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it",
         ),
         (
             "function f(): void { const fd = (x: i32, y: i32 = 1): void => {}; const h: (x: i32, y: i32, z: i32) => void = fd; }",
+            RuleCode::S100,
             "type mismatch: the initializer expects `(i32, i32, i32) => void`, got `(i32, i32) => void`",
         ),
     ] {
         let diagnostic = rejects(body);
-        assert_eq!(diagnostic.code, RuleCode::S100, "{body}: {diagnostic:?}");
+        assert_eq!(diagnostic.code, code, "{body}: {diagnostic:?}");
         assert_eq!(diagnostic.message, message, "{body}");
     }
 }

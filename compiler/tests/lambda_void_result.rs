@@ -186,11 +186,12 @@ fn a_generic_void_callback_takes_the_void_context() {
     let control = rejects("function f(): void { const r = mapOne(1, (x: i32) => { return x; }); }");
     assert_eq!(control.code, RuleCode::S100);
     assert_eq!(control.message, BLOCK_ANNOTATION);
+    // compiler.md §247 rule 1: the `void` place drops the handle result.
     let control = rejects("function f(xs: i32[]): void { each(xs, async (x: i32) => 1); }");
-    assert_eq!(control.code, RuleCode::S100);
+    assert_eq!(control.code, RuleCode::S013);
     assert_eq!(
         control.message,
-        "type mismatch: the argument expects `(i32) => void`, got `(i32) => Promise<i32>`"
+        "function value returns `Promise<i32>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>` can await it"
     );
     let control = rejects("function f(): void { const g = (x: i32) => { return x; }; }");
     assert_eq!(control.message, BLOCK_ANNOTATION);

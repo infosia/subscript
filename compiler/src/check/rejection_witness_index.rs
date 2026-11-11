@@ -1448,7 +1448,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
                 "s031.ts",
                 "s031-b.ts",
                 "s171-counted-callback-result.ts",
-                "s172-counted-map-callback-result.ts",
+                "s171-counted-map-groupby-result.ts",
             ],
             variant: Divergence::MethodTypeDomain,
         },
@@ -1487,6 +1487,10 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::FunctionValueAdapterNeedsConstName => WitnessEntry::Reachable {
             files: &["s246-parameter.ts", "s246-let-local.ts"],
             variant: Divergence::FunctionValueAdapterNeedsConstName,
+        },
+        RejectionSite::VoidPlaceDropsAsyncHandle => WitnessEntry::Reachable {
+            files: &["s247-argument.ts", "s247-callback.ts"],
+            variant: Divergence::DroppedAsyncHandle,
         },
         RejectionSite::ContextMember => WitnessEntry::Reachable {
             files: &["s039.ts", "s039-b.ts"],
@@ -1705,6 +1709,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::CallbackParameterCount,
     RejectionSite::CallbackFewerParametersUnadapted,
     RejectionSite::FunctionValueAdapterNeedsConstName,
+    RejectionSite::VoidPlaceDropsAsyncHandle,
     RejectionSite::ContextMember,
     RejectionSite::JsonMember,
     RejectionSite::ArrayFromValue,

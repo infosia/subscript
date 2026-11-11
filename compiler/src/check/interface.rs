@@ -35,7 +35,7 @@ impl InterfaceMember {
 
 /// True when `ty` contains the error type: the declaration that gives
 /// it already reported its diagnostic.
-fn poisoned(ty: &Type) -> bool {
+pub(crate) fn poisoned(ty: &Type) -> bool {
     *ty == Type::Error || ty.contained_types().into_iter().any(poisoned)
 }
 

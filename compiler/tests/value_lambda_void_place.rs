@@ -196,26 +196,27 @@ fn the_lambda_has_the_result_void() {
     );
 }
 
-/// Rule 5: an async lambda keeps its diagnostic, and a `T | undefined`
-/// annotation keeps its diagnostic. A generator lambda has no source form:
-/// an arrow is never a generator.
+/// Rule 5: an async lambda and a lambda whose result holds a handle name
+/// the handle that the place drops (compiler.md §247 rule 1). A
+/// `T | undefined` annotation keeps its diagnostic. A generator lambda has
+/// no source form: an arrow is never a generator.
 #[test]
-fn an_async_lambda_and_an_undefined_result_keep_their_diagnostic() {
+fn an_async_lambda_names_the_dropped_handle_and_an_undefined_result_keeps_its_diagnostic() {
     let diagnostic =
         rejects("function f(): void { each([1], async (x: i32): Promise<i32> => x); }");
-    assert_eq!(diagnostic.code, RuleCode::S100, "{diagnostic:?}");
+    assert_eq!(diagnostic.code, RuleCode::S013, "{diagnostic:?}");
     assert_eq!(
         diagnostic.message,
-        "type mismatch: the argument expects `(i32) => void`, got `(i32) => Promise<i32>`"
+        "function value returns `Promise<i32>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>` can await it"
     );
-    // A result that carries a handle keeps its diagnostic: a discarded
-    // handle has no holder that awaits it.
+    // A result that carries a handle names it: a discarded handle has no
+    // holder that awaits it.
     let diagnostic = rejects(
         "function f(m: Map<i32, i32>): void { m.forEach((v: i32, k: i32): Promise<i32>[] => []); }",
     );
     assert_eq!(
         diagnostic.message,
-        "`Map.forEach` cannot carry a counted callback result (§171)"
+        "`Map.forEach` callback returns `Promise<i32>[]`, which the place `(i32, i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[]` can await it"
     );
     let errors =
         check("function f(): void { const cb: CB = (x: i32): B | undefined => undefined; }")
@@ -260,35 +261,36 @@ function id<F>(f: F): F { return f; }";
     assert_eq!(control.code, RuleCode::S100, "{control:?}");
 }
 
-/// Rule 5: a result that holds a handle at any depth keeps the diagnostic
-/// of its place, for a lambda and for a §240 reference. The predicate is
-/// the one of the drop check (§188.1 rule 1). The control: the same places
-/// accept a result that holds no handle.
+/// Rule 5: a result that holds a handle at any depth is not discarded. The
+/// place names the handle that it drops (compiler.md §247 rule 1), for a
+/// lambda and for a §240 reference. The predicate is the one of the drop
+/// check (§188.1 rule 1). The control: the same places accept a result
+/// that holds no handle.
 #[test]
-fn a_result_that_holds_a_handle_keeps_its_diagnostic() {
+fn a_result_that_holds_a_handle_names_the_dropped_handle() {
     let declarations = "async function one(x: i32): Promise<i32> { return x; }
 function mk(x: i32): Promise<i32>[][] { return [[one(x)]]; }
 function plain(x: i32): i32[][] { return [[x]]; }";
     for (body, code, message) in [
         (
             "function f(): void { const cb: CB = (x: i32): Promise<i32>[][] => [[one(x)]]; }",
-            RuleCode::S100,
-            "type mismatch: the initializer expects `(i32) => void`, got `(i32) => Promise<i32>[][]`",
+            RuleCode::S013,
+            "function value returns `Promise<i32>[][]`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[][]` can await it",
         ),
         (
             "function f(): void { const cb: CB = (x: i32): FixedArray<Promise<i32>, 1> => [one(x)]; }",
-            RuleCode::S100,
-            "type mismatch: the initializer expects `(i32) => void`, got `(i32) => FixedArray<Promise<i32>, 1>`",
+            RuleCode::S013,
+            "function value returns `FixedArray<Promise<i32>, 1>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `FixedArray<Promise<i32>, 1>` can await it",
         ),
         (
             "function f(): void { const cb: CB = mk; }",
-            RuleCode::S100,
-            "type mismatch: the initializer expects `(i32) => void`, got `(i32) => Promise<i32>[][]`",
+            RuleCode::S013,
+            "function value `mk` returns `Promise<i32>[][]`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[][]` can await it",
         ),
         (
             "function f(): void { [1].forEach(mk); }",
-            RuleCode::S014,
-            "`forEach` cannot carry a counted callback result (§171)",
+            RuleCode::S013,
+            "`forEach` callback `mk` returns `Promise<i32>[][]`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[][]` can await it",
         ),
     ] {
         let diagnostic = rejects(&format!("{declarations}\n{body}"));

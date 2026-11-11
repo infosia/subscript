@@ -130,32 +130,36 @@ fn the_place_holds_a_discarding_lambda() {
 }
 
 /// Rule 4 with compiler.md §246: a parameter and a `let` local take no
-/// adapter and name the cause (§246 rule 5); an async function and a
-/// generic function keep their present diagnostic. A const local takes the
-/// adapter (§246 rule 1).
+/// adapter and name the cause (§246 rule 5); an async function names the
+/// handle that the place drops (§247 rule 1), and a generic function keeps
+/// its present diagnostic. A const local takes the adapter (§246 rule 1).
 #[test]
 fn a_value_with_an_environment_an_async_or_a_generic_function_stays_rejected() {
     accepts("function f(): void { const l = (x: i32): i32 => x; const cb: (x: i32) => void = l; }");
-    for (body, message) in [
+    for (body, code, message) in [
         (
             "function f(fv: (x: i32) => i32): void { const cb: (x: i32) => void = fv; }",
+            RuleCode::S100,
             "function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function f(): void { let l = (x: i32): i32 => x; const cb: (x: i32) => void = l; }",
+            RuleCode::S100,
             "function value `l` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it",
         ),
         (
             "function f(xs: i32[]): void { each(xs, an); }",
-            "type mismatch: the argument expects `(i32) => void`, got `(i32) => Promise<void>`",
+            RuleCode::S013,
+            "function value `an` returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it",
         ),
         (
             "function f(xs: i32[]): void { each(xs, gen); }",
+            RuleCode::S100,
             "generic function `gen` has no first-class value; call it directly or use a lambda",
         ),
     ] {
         let diagnostic = rejects(body);
-        assert_eq!(diagnostic.code, RuleCode::S100, "{body}: {diagnostic:?}");
+        assert_eq!(diagnostic.code, code, "{body}: {diagnostic:?}");
         assert_eq!(diagnostic.message, message, "{body}");
     }
 }
@@ -270,10 +274,10 @@ fn a_spread_element_and_a_finally_callback_are_places() {
     );
     assert_eq!(element.expr.ty, Type::func(vec![Type::I32], Type::Void));
     let control = rejects("function f(base: Cb[]): void { const all: Cb[] = [...base, an]; }");
-    assert_eq!(control.code, RuleCode::S100, "{control:?}");
+    assert_eq!(control.code, RuleCode::S013, "{control:?}");
     assert_eq!(
         control.message,
-        "type mismatch: the array element expects `(i32) => void`, got `(i32) => Promise<void>`"
+        "function value `an` returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it"
     );
     let control =
         rejects("async function f(): Promise<void> { print(`${await one().finally(atick)}`); }");
@@ -284,23 +288,23 @@ fn a_spread_element_and_a_finally_callback_are_places() {
     );
 }
 
-/// Rule 1: a function whose result carries a handle is not converted, and
-/// keeps the diagnostic of its place: a discarded handle has no holder
-/// that awaits it. The control: a function with a value result is accepted
-/// in the same places.
+/// Rule 1: a function whose result carries a handle is not converted. The
+/// place names the handle that it drops (compiler.md §247 rule 1): a
+/// dropped handle has no holder that awaits it. The control: a function
+/// with a value result is accepted in the same places.
 #[test]
-fn a_result_that_carries_a_handle_keeps_its_diagnostic() {
+fn a_result_that_carries_a_handle_names_the_dropped_handle() {
     let jobs = "function jobs(x: i32): Promise<i32>[] { return []; }";
     for (body, code, message) in [
         (
             "function f(): void { each([1], jobs); }",
-            RuleCode::S100,
-            "type mismatch: the argument expects `(i32) => void`, got `(i32) => Promise<i32>[]`",
+            RuleCode::S013,
+            "function value `jobs` returns `Promise<i32>[]`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[]` can await it",
         ),
         (
             "function f(): void { [1].forEach(jobs); }",
-            RuleCode::S014,
-            "`forEach` cannot carry a counted callback result (§171)",
+            RuleCode::S013,
+            "`forEach` callback `jobs` returns `Promise<i32>[]`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<i32>[]` can await it",
         ),
     ] {
         let diagnostic = rejects(&format!("{jobs}\n{body}"));

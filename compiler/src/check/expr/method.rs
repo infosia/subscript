@@ -1753,6 +1753,7 @@ impl<'p> Checker<'p> {
                     .map(|ret| crate::check::type_rules::CallbackLeaves {
                         params: params.clone(),
                         ret,
+                        method: spec.method.to_string(),
                         nested: false,
                     });
         }

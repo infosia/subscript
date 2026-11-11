@@ -104,8 +104,9 @@ fn the_leaves_take_the_largest_arity() {
 }
 
 /// Rule 4: more parameters than the place allows, a function value with an
-/// environment, a generic function, an async function, and a function with
-/// a default parameter keep their diagnostic. The controls: the same
+/// environment, a generic function, and a function with a default
+/// parameter keep their diagnostic. An async function gets the S013 of
+/// compiler.md §247. The controls: the same
 /// places with an accepted callback.
 #[test]
 fn the_other_forms_keep_their_diagnostic() {
@@ -132,8 +133,8 @@ fn the_other_forms_keep_their_diagnostic() {
         ),
         (
             "function f(): void { [1].forEach(an); }",
-            RuleCode::S014,
-            "`forEach` cannot carry a counted callback result (§171)",
+            RuleCode::S013,
+            "`forEach` callback `an` returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it",
         ),
         (
             "function f(m: Map<string, i32>): void { m.forEach(d); }",
@@ -142,8 +143,8 @@ fn the_other_forms_keep_their_diagnostic() {
         ),
         (
             "function f(): void { [1].forEach(async (): Promise<void> => {}); }",
-            RuleCode::S014,
-            "`forEach` cannot carry a counted callback result (§171)",
+            RuleCode::S013,
+            "`forEach` callback returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it",
         ),
     ] {
         let diagnostic = rejects(body);

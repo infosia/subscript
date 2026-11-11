@@ -296,6 +296,9 @@ macro_rules! rejection_classes {
                         RuleCode::S100,
                         Diverges(Divergence::FunctionValueAdapterNeedsConstName),
                     ),
+                    Self::VoidPlaceDropsAsyncHandle => {
+                        (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle))
+                    }
                     Self::ContextMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::JsonMember => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::ArrayFromValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),

@@ -62,3 +62,31 @@ that cause, and the lambda form already gets it.
    controls of rule 4.
 4. The witnesses and divergence entries move with the site. If a corpus
    entry or golden changes, report it and stop. No golden moves.
+
+### 247.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding.
+
+1. MINOR, fixed: the leaf of a callback conditional did not name the
+   method, and the callback itself names it. The leaf now takes the
+   subject of the callback.
+2. MINOR, contrived, recorded: §247.4.
+3. MINOR, fixed: the check of rule 1 derived the refusal of an adapter a
+   second time. It now takes the facts of the adapter callee, and the
+   fit of the adapter decides with the result that the place drops.
+4. MINOR, fixed: a result that contains the error type gave a second
+   diagnostic. It now gives none.
+5. MINOR, fixed: a witness of §171 had the name and the tag of §172.
+6. MINOR, fixed: two test names stated that the diagnostic stays, and
+   the tests pin S013.
+
+Rule 4 of the contract now states its scope.
+
+### 247.4 Open
+
+1. In a callback conditional, a leaf with parameters that do not fit
+   gets no diagnostic when the other leaf drops a handle. With
+   `wf(x: f64): Promise<void>`, `[1].forEach(b ? wf : work)` gives one
+   S013 on `work`. The user place gives a diagnostic on each leaf. The
+   program is rejected in both places.
