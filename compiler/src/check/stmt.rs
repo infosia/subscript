@@ -1682,6 +1682,11 @@ impl<'p> Checker<'p> {
             && self.generic_overlap(disc_ty, &checked.ty)
         {
             // §143 rule 1a: case labels compare values, rather than assign them.
+        } else if self.apparent_type(disc_ty) == Type::Str
+            && matches!(self.apparent_type(&checked.ty), Type::StringAlias(_))
+        {
+            // Section 259: a case label compares values without conversion.
+            self.require_assignable(&checked.ty, disc_ty, checked.pos.clone(), "the case label");
         } else {
             self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
         }

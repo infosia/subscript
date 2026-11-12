@@ -963,7 +963,6 @@ QueryAnnotation	QueryAnnotation	S100	type annotation form outside the decided su
 IndexedAnnotation	IndexedAnnotation	S100	type annotation form outside the decided surface
 ModuleInitializerMissing	worker-endpoint-module-global	S100	module-level variables require an initializer
 ParserSyntaxError	WithStatement	S100	parse error: The 'with' statement is not supported. All symbols in a 'with' block will have type 'any'.
-LiteralAliasToString	LiteralAliasToString	S100	type mismatch: the return value expects `string`, got `A`
 BooleanMember	a-s157	S100	`boolean` has no member `valueOf`
 BooleanMember	BooleanMember	S100	`boolean` has no member `toString`
 NumericObjectMember	a-probe-unconstrained-object	S018	`i32` has no member `valueOf`
@@ -1545,3 +1544,4 @@ StrictEqualityAcrossSpellings	s195-strict-cross	S012	`===` compares a `null` and
 ConversionAcrossSpellings	s195-cross-conversion	S012	`T | undefined` and `T | null` do not convert to each other: the initializer expects `Box | null`, got `Box | undefined`
 UndefinedResultHostEntry	s195-host-entry	S012	a function that crosses the C boundary has no `T | undefined`; entry export `pick` returns `Box | undefined`
 UndefinedResultFunctionValue	s195-function-value	S100	a function whose result is `T | undefined` may only be called
+AliasArrayToStringArray	alias-array-to-string-array	S100	type mismatch: the initializer expects `string[]`, got `Mode[]`

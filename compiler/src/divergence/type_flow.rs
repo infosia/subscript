@@ -66,3 +66,11 @@ pub(super) const FUNCTION_VALUE_OPTIONAL_ARGUMENTS: DivergenceEntry = Divergence
     why: "A function type has no optional parameter (C7).",
     collision: "C24",
 };
+
+/// Q32 and compiler.md section 259 rule 5 keep the array layouts distinct.
+pub(super) const ALIAS_ARRAY_TO_STRING_ARRAY: DivergenceEntry = DivergenceEntry {
+    ts: "type Mode = \"a\" | \"b\"; function f(ms: Mode[]): void { const xs: string[] = ms; }",
+    subscript: "no equivalent; convert each element into a new string array",
+    why: "Alias arrays hold i32 discriminants. String arrays hold string handles. A conversion requires a new array and costs depend on its length.",
+    collision: "collisions.md Q32",
+};

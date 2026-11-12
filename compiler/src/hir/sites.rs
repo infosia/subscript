@@ -141,6 +141,10 @@ impl Expr {
             && matches!(declared, Some(Type::Nullable(inner, _)) if inner.as_ref() == &self.ty);
         let mut sites = match &self.kind {
             K::Str(_) => vec![allocation(&self.pos)],
+            // Section 259: the conversion has the effect of a string literal.
+            K::Cast(inner) if self.ty == Type::Str && matches!(inner.ty, Type::StringAlias(_)) => {
+                vec![allocation(&self.pos)]
+            }
             K::Binary { op, left, .. } if *op == B::Add && left.ty == Type::Str => {
                 vec![allocation(&self.pos)]
             }

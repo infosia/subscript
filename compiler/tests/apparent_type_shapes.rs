@@ -661,7 +661,10 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b). The nested-nominality guard requires a declared compound type (§173 rule 3).", sites: &[
         ("type_rules.rs", "assignable_through_constraints", 0x31a177474a276034),
-        ("type_rules.rs", "report_not_assignable", 0xcf2adcc527a57718),
+        ("type_rules.rs", "report_not_assignable", 0x667ba08eb1797cc9),
+    ] },
+    AllowGroup { name: "string-value-place", reason: "Section 259 checks the nullable inner type after apparent_type resolves the target.", sites: &[
+        ("type_rules.rs", "place_value", 0xdfaee0ea686405d5),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[
         ("type_rules.rs", "contains_string_alias", 0xf9567ff408902747),

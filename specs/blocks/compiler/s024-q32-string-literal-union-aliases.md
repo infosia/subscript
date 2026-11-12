@@ -20,6 +20,10 @@ rejection. The rejection codes are whatever the checker's existing
 mismatch paths produce — pinned by the corpus entries, not minted
 anew unless no existing code fits.
 
+*(Revised 2026-11-13 by §259: a value of an alias converts to `string`
+at a place that expects `string`. The comparison rules above do not
+change.)*
+
 ### 24.2 Lowering (both tiers)
 
 An alias value is an `i32` discriminant, member index in declaration

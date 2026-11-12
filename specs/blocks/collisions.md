@@ -1693,6 +1693,16 @@ Accept: `a369`, `a370`. Reject: `r421`.
     literals and same-alias values; template-literal interpolation
     prints the member string. Comparison or assignment with plain
     `string` (or another alias) is rejected.
+    *Revised 2026-11-13 (`compiler.md` §259):* a value of an alias
+    converts to `string` at a place that expects `string`,
+    `string | null`, or `string | undefined`. The text is the member
+    spelling. A `string` where an alias is expected, a comparison
+    with `string`, a `string` member, an operator with a `string`
+    operand, and `Alias[]` where `string[]` is expected stay
+    rejected. A `case` label with an alias value in a `switch` over
+    a `string` is a comparison, and stays rejected. The conversion
+    reads the static string table of the alias. Accept: `a443`.
+    Reject: `r501`.
   - **Representation**: an `i32` discriminant (declaration order);
     a per-alias static string table used **only** for formatting —
     comparisons lower to integer compares, never string compares.

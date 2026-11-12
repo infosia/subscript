@@ -286,7 +286,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(RV::Scalar(handle))
     }
 
-    fn format_value(
+    pub(super) fn format_value(
         &mut self,
         value: RV,
         format: l::FormatKind,

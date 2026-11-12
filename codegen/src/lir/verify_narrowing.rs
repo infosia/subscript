@@ -53,7 +53,8 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
     use l::InstructionKind as K;
     match kind {
         K::Copy | K::Cast | K::Coerce | K::NarrowNonNull(_) => true,
-        K::StringLiteral(_)
+        K::AliasString(_)
+        | K::StringLiteral(_)
         | K::StringOperand
         | K::LoadLocal(_)
         | K::StoreLocal(_)

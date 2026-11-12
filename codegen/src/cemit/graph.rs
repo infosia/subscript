@@ -263,6 +263,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 self.assign(out, result, &operands[0])
             }
+            l::InstructionKind::AliasString(alias) => {
+                let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::Allocation)?;
+                let call =
+                    self.format_value(l::FormatKind::StringAlias(*alias), &operands[0], &trap)?;
+                self.assign(out, result, &call)?;
+                self.emit_pending_check(out);
+                Ok(())
+            }
             l::InstructionKind::StringLiteral(text) => {
                 let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::Allocation)?;
                 let pos = self.emitter.pos_id(&trap.pos);

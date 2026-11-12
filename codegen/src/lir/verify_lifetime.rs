@@ -157,7 +157,8 @@ fn read_operands(
         Call(target) | AsyncHandleCreate(target) => {
             call_reads(module, target, instruction.operands.len())?
         }
-        StringLiteral(_)
+        AliasString(_)
+        | StringLiteral(_)
         | LoadLocal(_)
         | StoreLocal(_)
         | AddressOfLocal(_)

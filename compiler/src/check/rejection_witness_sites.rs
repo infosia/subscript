@@ -3,6 +3,7 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::AliasArrayToStringArray,
     RejectionSite::FileModuleDisabled,
     RejectionSite::FileModuleArguments,
     RejectionSite::FileModuleEncoding,
@@ -466,7 +467,6 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::NullableAssignmentShared,
     RejectionSite::ImplicitNumericAssignment,
     RejectionSite::NullableValueClassAssignment,
-    RejectionSite::LiteralAliasToString,
     RejectionSite::EnumToInteger,
     RejectionSite::ArrayToFixedArray,
     RejectionSite::FunctionParameterIdentity,

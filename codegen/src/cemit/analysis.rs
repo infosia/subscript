@@ -434,6 +434,7 @@ pub(super) fn declaration_can_use_instruction_assignment(kind: &l::InstructionKi
     matches!(
         kind,
         l::InstructionKind::Copy
+            | l::InstructionKind::AliasString(_)
             | l::InstructionKind::StringLiteral(_)
             | l::InstructionKind::Zero
             | l::InstructionKind::LoadLocal(_)

@@ -15,6 +15,12 @@ use std::{collections::BTreeMap, fs, path::Path};
 const ALLOWED: &[(&str, &str, usize, &str)] = &[
     (
         "stmt.rs",
+        "check_switch_case_test",
+        1,
+        "A case label is compared with the discriminant, not stored. An alias label against a string discriminant takes no conversion (section 259 rule 4).",
+    ),
+    (
+        "stmt.rs",
         "check_for_of",
         2,
         "The binding annotation and the element type are compared in both directions, so they are the same type and need no conversion.",

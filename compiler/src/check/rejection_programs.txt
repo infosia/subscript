@@ -6169,12 +6169,6 @@ export {};
 function f(): void { null.toString(); }
 END FILE
 END PROGRAM
-PROGRAM	LiteralAliasToString			0
-FILE	E	target/s154/forms/LiteralAliasToString/main.ts
-export {};
-type A = "a"|"b"; function f(a: A): string { return a; }
-END FILE
-END PROGRAM
 PROGRAM	EnumToInteger			0
 FILE	E	target/s154/forms/EnumToInteger/main.ts
 export {};
@@ -9832,5 +9826,10 @@ type CB = (x: i32) => void;
 const early: CB = B.m;
 class B { static m(x: i32): void {} }
 export function main(): void { early(1); }
+END FILE
+END PROGRAM
+PROGRAM	alias-array-to-string-array			0
+FILE	E	main.ts
+type Mode = "a" | "b"; function f(ms: Mode[]): void { const xs: string[] = ms; }
 END FILE
 END PROGRAM

@@ -935,6 +935,14 @@ impl<'p> Checker<'p> {
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
     pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+        // Section 259: only a value place converts an alias to string.
+        let target = self.apparent_type(to);
+        if matches!(self.apparent_type(&value.ty), Type::StringAlias(_))
+            && (target == Type::Str
+                || matches!(target, Type::Nullable(ref inner, _) if **inner == Type::Str))
+        {
+            *value = cast_value(value.clone(), Type::Str);
+        }
         self.place_function_value(value, to, fx);
         self.assignable(&value.ty, to)
     }
@@ -1197,7 +1205,12 @@ impl<'p> Checker<'p> {
                 "type mismatch: {} expects `{}`, got `{}`{}",
                 what, to_n, from_n, fix
             );
-            if matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_))) {
+            if matches!((&self.apparent_type(from), &self.apparent_type(to)),
+                (Type::Array(element), Type::Array(target))
+                if matches!(**element, Type::StringAlias(_)) && **target == Type::Str)
+            {
+                self.reject_subset(RejectionSite::AliasArrayToStringArray, message, pos);
+            } else if matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_))) {
                 let compatible = match (&self.apparent_type(from), &self.apparent_type(to)) {
                     (Type::StringAlias(a), Type::StringAlias(b)) => self.string_aliases[a.0]
                         .members
@@ -1217,7 +1230,6 @@ impl<'p> Checker<'p> {
             } else {
                 self.reject_subset(
                     match (&self.apparent_type(from), &self.apparent_type(to)) {
-                        (Type::StringAlias(_), Type::Str) => RejectionSite::LiteralAliasToString,
                         (Type::Enum(_), integer) if self.apparent_type(integer).is_integer() => {
                             RejectionSite::EnumToInteger
                         }

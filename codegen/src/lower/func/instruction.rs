@@ -178,6 +178,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("Copy has no operand type"))?,
                 )?,
             ),
+            l::InstructionKind::AliasString(alias) => Some(RV::Scalar(self.format_value(
+                operands[0],
+                l::FormatKind::StringAlias(*alias),
+                instruction.traps.first(),
+                &instruction.pos,
+            )?)),
             l::InstructionKind::StringLiteral(text) => {
                 Some(self.string_literal(text, &instruction.traps, &instruction.pos)?)
             }

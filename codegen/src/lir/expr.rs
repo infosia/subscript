@@ -281,6 +281,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 value,
                 update,
             } => Some(self.lower_assignment(*op, *update, target, value, expr, true)?),
+            K::Cast(value) if expr.ty == Type::Str && matches!(value.ty, Type::StringAlias(_)) => {
+                Some(self.lower_alias_string(value, expr)?)
+            }
             K::Cast(value) => {
                 let value = self.require_expr(value)?;
                 let kind = if matches!(self.operand_type(&value, &expr.pos)?,
@@ -669,6 +672,30 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(l::Operand::Value(
             self.blocks[merge.0 as usize].parameters[0],
         ))
+    }
+
+    // Section 259: one operation interns the selected alias member.
+    fn lower_alias_string(
+        &mut self,
+        expr: &hir::Expr,
+        whole: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        let pos = &whole.pos;
+        let traps =
+            convert_traps(&whole.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
+        let Type::StringAlias(alias) = expr.ty else {
+            return Err(self.error(pos, "an alias conversion requires an alias"));
+        };
+        let value = self.require_expr(expr)?;
+        self.emit(
+            l::InstructionKind::AliasString(alias),
+            vec![value],
+            Some(l::ValueType::Data(Type::Str)),
+            false,
+            traps,
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "an alias string produced no value"))
     }
 
     fn lower_cond(

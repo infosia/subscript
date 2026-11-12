@@ -365,12 +365,6 @@ pub(super) const LITERALALIASMETHOD: DivergenceEntry = DivergenceEntry {
     why: "The lib surface is a subset, and a C function pointer has no properties.",
     collision: "C24", // row 30,
 };
-pub(super) const LITERALALIASTOSTRING: DivergenceEntry = DivergenceEntry {
-    ts: "type A = \"a\"|\"b\"; function f(a: A): string { return a; }",
-    subscript: "no equivalent; use the admitted type or operation",
-    why: "A literal alias is a closed nominal set; assignment to plain string is rejected.",
-    collision: "collisions.md Q32",
-};
 pub(super) const ENUMTOINTEGER: DivergenceEntry = DivergenceEntry {
     ts: "enum E { A } function f(e: E): i32 { return e; }",
     subscript: "no equivalent; convert to the integer or use a template",

@@ -1075,7 +1075,8 @@ fn instruction_arity(
     match &instruction.kind {
         K::GeneratorClose => Arity::Exact(1),
         K::GeneratorIsClosing | K::GeneratorFinalizer(_) => Arity::Exact(0),
-        K::Copy
+        K::AliasString(_)
+        | K::Copy
         | K::Unary(_)
         | K::Cast
         | K::NarrowNonNull(_)

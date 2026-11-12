@@ -432,7 +432,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         )
     }
 
-    fn format_value(
+    pub(super) fn format_value(
         &mut self,
         format: l::FormatKind,
         value: &str,

@@ -13,6 +13,7 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::AliasArrayToStringArray => (RuleCode::S100, Diverges(Divergence::AliasArrayToStringArray)),
     Self::FileModuleDisabled => (RuleCode::S100, Diverges(Divergence::FileModuleDisabled)),
     Self::FileModuleEncoding => (RuleCode::S100, Diverges(Divergence::FileModuleEncoding)),
     Self::FileModuleNumberArray => (RuleCode::S100, Diverges(Divergence::FileModuleNumberArray)),
@@ -1012,9 +1013,6 @@ rejection_classes! {
         RuleCode::S011,
         Diverges(Divergence::NullableValueClassAssignment),
     ),
-    Self::LiteralAliasToString => {
-        (RuleCode::S100, Diverges(Divergence::LiteralAliasToString))
-    }
     Self::EnumToInteger => (RuleCode::S100, Diverges(Divergence::EnumToInteger)),
     Self::ArrayToFixedArray => (RuleCode::S100, Diverges(Divergence::ArrayToFixedArray)),
     Self::FunctionParameterIdentity => (

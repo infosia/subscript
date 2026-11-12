@@ -669,6 +669,8 @@ pub enum InstructionKind {
     Copy,
     /// Materialize a string literal.
     StringLiteral(String),
+    /// Intern the member spelling of an alias (section 259).
+    AliasString(crate::StringAliasId),
     /// Read one local.
     LoadLocal(LocalId),
     /// Write one local.

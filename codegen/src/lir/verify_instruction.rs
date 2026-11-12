@@ -294,6 +294,13 @@ pub(super) fn verify_instruction_contract(
                 bad("string operand signature is invalid", errors);
             }
         }
+        l::InstructionKind::AliasString(alias) => {
+            if operand_types != vec![l::ValueType::Data(Type::StringAlias(*alias))]
+                || result_type != Some(l::ValueType::Data(Type::Str))
+            {
+                bad("alias string signature is invalid", errors);
+            }
+        }
         l::InstructionKind::StringLiteral(_) => {
             if !instruction.operands.is_empty()
                 || result_type != Some(l::ValueType::Data(Type::Str))

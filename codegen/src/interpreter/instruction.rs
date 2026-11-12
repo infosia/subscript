@@ -147,6 +147,31 @@ impl Interpreter<'_> {
                     result_ty,
                 )?,
             ),
+            l::InstructionKind::AliasString(alias) => {
+                let Value::I(value) = operands[0] else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "alias value is not an integer",
+                    ));
+                };
+                let definition = self
+                    .module
+                    .string_aliases
+                    .get(alias.0)
+                    .ok_or_else(|| self.invalid(None, "string alias is missing"))?;
+                let index = if let Some(wires) = &definition.wire_values {
+                    wires.iter().position(|wire| i64::from(*wire) == value)
+                } else {
+                    usize::try_from(value).ok()
+                };
+                let text = definition
+                    .members
+                    .get(index.unwrap_or(usize::MAX))
+                    .ok_or_else(|| self.invalid(None, "string alias value has no member"))?;
+                let handle = self.context.alloc_str(text.as_bytes(), 0);
+                self.check_runtime(&instruction.pos)?;
+                Some(Value::Handle(handle))
+            }
             l::InstructionKind::StringLiteral(text) => Some(Value::Handle(
                 self.alloc_string(text.as_bytes(), &instruction.pos)?,
             )),

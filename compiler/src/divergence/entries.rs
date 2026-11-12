@@ -120,6 +120,7 @@ impl Divergence {
             Divergence::ThisStaticMethodMember => super::type_flow::THISSTATICMETHODMEMBER,
             Divergence::ErasedAssignableEquality => super::type_flow::ERASEDASSIGNABLEEQUALITY,
             Divergence::DeclaredFieldWithoutValue => super::type_flow::DECLAREDFIELDWITHOUTVALUE,
+            Divergence::AliasArrayToStringArray => super::type_flow::ALIAS_ARRAY_TO_STRING_ARRAY,
             Divergence::ErasedAssignableTypeMismatch => {
                 super::type_flow::ERASEDASSIGNABLETYPEMISMATCH
             }
@@ -132,7 +133,6 @@ impl Divergence {
             Divergence::FunctionParameterIdentity => expression_forms::FUNCTIONPARAMETERIDENTITY,
             Divergence::ArrayToFixedArray => expression_forms::ARRAYTOFIXEDARRAY,
             Divergence::EnumToInteger => expression_forms::ENUMTOINTEGER,
-            Divergence::LiteralAliasToString => expression_forms::LITERALALIASTOSTRING,
             Divergence::LiteralAliasMethod => expression_forms::LITERALALIASMETHOD,
             Divergence::EnumMethod => expression_forms::ENUMMETHOD,
             Divergence::FunctionMethod => expression_forms::FUNCTIONMETHOD,

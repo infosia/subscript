@@ -84,6 +84,8 @@ pub enum Divergence {
     DeclaredFieldWithoutValue,
     /// Types require identical arguments; sized numerics erase to number in TypeScript.
     ErasedAssignableTypeMismatch,
+    /// An alias array cannot share string-handle storage (section 259).
+    AliasArrayToStringArray,
     /// Only nullable types carry a null value.
     NonNullableNullEquality,
     /// A const assertion has no decided literal-preservation lowering.
@@ -102,8 +104,6 @@ pub enum Divergence {
     ArrayToFixedArray,
     /// The language has no implicit conversion, and an assertion does not check membership.
     EnumToInteger,
-    /// The admitted surface excludes this source form.
-    LiteralAliasToString,
     /// The lib surface is a subset, and a C function pointer has no properties.
     LiteralAliasMethod,
     /// The lib surface is a subset, and a C function pointer has no properties.
@@ -1094,6 +1094,7 @@ impl Divergence {
         Divergence::ErasedAssignableEquality,
         Divergence::DeclaredFieldWithoutValue,
         Divergence::ErasedAssignableTypeMismatch,
+        Divergence::AliasArrayToStringArray,
         Divergence::NonNullableNullEquality,
         Divergence::DynamicImportCall,
         Divergence::AbstractMethodBodyMissing,
@@ -1107,7 +1108,6 @@ impl Divergence {
         Divergence::FunctionParameterIdentity,
         Divergence::ArrayToFixedArray,
         Divergence::EnumToInteger,
-        Divergence::LiteralAliasToString,
         Divergence::LiteralAliasMethod,
         Divergence::EnumMethod,
         Divergence::FunctionMethod,

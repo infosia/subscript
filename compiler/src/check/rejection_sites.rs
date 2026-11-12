@@ -5,6 +5,7 @@ use crate::divergence::Divergence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RejectionSite {
+    AliasArrayToStringArray,
     FileModuleDisabled,
     FileModuleArguments,
     FileModuleEncoding,
@@ -498,7 +499,6 @@ pub(crate) enum RejectionSite {
     NullableAssignmentShared,
     ImplicitNumericAssignment,
     NullableValueClassAssignment,
-    LiteralAliasToString,
     EnumToInteger,
     ArrayToFixedArray,
     FunctionParameterIdentity,
