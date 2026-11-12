@@ -701,6 +701,8 @@ pub enum Divergence {
     FixedArrayLengthRange,
     /// A C array layout needs a non-negative integer literal length at compile time.
     FixedArrayLengthLiteral,
+    /// C has no array with the length zero, so a FixedArray length is at least 1 (invariant 1).
+    FixedArrayLengthZero,
     /// A generic constraint uses nominal class identity, rather than TypeScript structural compatibility.
     GenericConstraintIdentity,
     /// A namespace qualifier exposes only the declared named exports; a default export stays outside the module surface.
@@ -1403,6 +1405,7 @@ impl Divergence {
         Divergence::AsyncReturnArgumentCount,
         Divergence::FixedArrayLengthRange,
         Divergence::FixedArrayLengthLiteral,
+        Divergence::FixedArrayLengthZero,
         Divergence::GenericConstraintIdentity,
         Divergence::NamespaceUnexportedMember,
         Divergence::RunnerMainMissing,

@@ -140,6 +140,9 @@ struct Emitter<'m> {
     long_string_symbols: HashMap<Vec<u8>, String>,
     /// The plan of each foreign callee, built on its first call (§189).
     crossing_plans: subscript_compiler::crossing::Plans,
+    /// Each aggregate type whose C name the emitter writes (compiler.md
+    /// §254 rule 2). The `typedef` set comes from it.
+    named_aggregates: std::cell::RefCell<Vec<Type>>,
 }
 
 struct BoundaryPtrWriteback {
@@ -261,19 +264,6 @@ struct DeclarationScopes {
 struct Coalescing {
     parents: Vec<usize>,
     groups: Vec<root_storage::InterferenceGroup>,
-}
-
-fn collect_aggregates(ty: &Type, result: &mut Vec<Type>) {
-    match ty {
-        Type::FixedArray(element, _) | Type::IterResult(element) => {
-            collect_aggregates(element, result);
-            if !result.contains(ty) {
-                result.push(ty.clone());
-            }
-        }
-        Type::Class(_) | Type::Func(_) | Type::Array(_) | Type::Nullable(_, _) => {}
-        _ => {}
-    }
 }
 
 fn runtime_header_declares(symbol: &str) -> bool {

@@ -59,3 +59,22 @@ Two causes:
 4. The witnesses, the divergence entry, and the collision id move with
    the site. If a corpus entry or golden changes, report it and stop. No
    golden moves.
+
+### 254.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The review emitted each accept entry of the corpus, 328
+entries, and found no aggregate name outside `program.c` or before its
+`typedef`.
+
+1. MINOR, contrived, fixed: the environment and frame structs named
+   types after the set of rule 2 was read. Each such type was also
+   named in a body, so no program reached the gap. The emitter now
+   writes that text before it reads the set.
+2. MINOR, recorded in the tracking note: the order of the typedefs
+   follows the order of the names, and an aggregate that no C text names
+   gets no typedef. The output of each program does not change.
+3. MINOR, fixed: the emitter test repeated two forms of `a438`. It keeps
+   the nested form only.
+4. MINOR, fixed: the text of `collisions.md` Q3 and of the tracking
+   note.

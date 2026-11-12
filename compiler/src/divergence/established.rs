@@ -611,6 +611,13 @@ pub(super) const FIXEDARRAYLENGTHLITERAL: DivergenceEntry = DivergenceEntry {
     collision: "collisions.md Q3",
 };
 
+pub(super) const FIXEDARRAYLENGTHZERO: DivergenceEntry = DivergenceEntry {
+    ts: "function f(x: FixedArray<i32, 0>): void {}\nexport function main(): void {}",
+    subscript: "no equivalent; use a FixedArray length of at least 1, or a dynamic array",
+    why: "C has no array with the length zero, so a FixedArray length is at least 1 (invariant 1).",
+    collision: "collisions.md Q3",
+};
+
 pub(super) const GENERICCONSTRAINTIDENTITY: DivergenceEntry = DivergenceEntry {
                 ts: "class C { x: i32 = 1; } class D { x: i32 = 1; } function f<T extends C>(x:T): void {} export function main(): void { f<D>(new D()); }",
                 subscript: "no equivalent; pass an instance of the declared constraint class",

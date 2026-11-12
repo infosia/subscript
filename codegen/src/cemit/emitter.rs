@@ -30,6 +30,7 @@ impl<'m> Emitter<'m> {
             long_string_data: String::new(),
             long_string_symbols: HashMap::new(),
             crossing_plans: subscript_compiler::crossing::Plans::default(),
+            named_aggregates: std::cell::RefCell::new(Vec::new()),
         })
     }
 
@@ -170,12 +171,26 @@ impl<'m> Emitter<'m> {
         format!("SubC{}", id.0)
     }
 
+    /// The C name of `FixedArray<element, count>`. The emitter records
+    /// the type, so it gets a `typedef` (compiler.md §254 rule 2).
     pub(super) fn fixed_array_name(&self, element: &Type, count: u32) -> Result<String, String> {
+        self.name_aggregate(Type::FixedArray(Box::new(element.clone()), count));
         Ok(format!("SubFA_{}_{count}", self.element_tag(element)?))
     }
 
+    /// The C name of the iterator result of `value`, recorded as
+    /// [`Self::fixed_array_name`] records its type.
     fn iter_result_name(&self, value: &Type) -> Result<String, String> {
+        self.name_aggregate(Type::IterResult(Box::new(value.clone())));
         Ok(format!("SubIR_{}", self.type_tag(value)?))
+    }
+
+    /// Records an aggregate type whose C name the emitter writes.
+    fn name_aggregate(&self, ty: Type) {
+        let mut named = self.named_aggregates.borrow_mut();
+        if !named.contains(&ty) {
+            named.push(ty);
+        }
     }
 
     /// The tag of a `FixedArray` element (§217.1 rule 9). Unlike `type_tag`,
@@ -336,8 +351,6 @@ impl<'m> Emitter<'m> {
             return Err("no exported `main(): void` entry point".into());
         }
 
-        let mut types = String::new();
-        self.emit_types(&mut types)?;
         let mut globals = String::new();
         self.emit_globals(&mut globals)?;
         let mut prototypes = String::new();
@@ -350,6 +363,10 @@ impl<'m> Emitter<'m> {
         self.emit_worker_adapters()?;
         prototypes.push_str(&self.helper_prototypes);
         bodies.push_str(&self.helpers);
+        // compiler.md §254 rule 2: the types come last, from each aggregate
+        // type that the code above names.
+        let mut types = String::new();
+        self.emit_types(&mut types)?;
 
         let mut source = "#include \"program.h\"\n".to_owned();
         // MSVC can discard a shadow-root store before a plain switch (§210).
@@ -468,8 +485,13 @@ impl<'m> Emitter<'m> {
         for class in &self.module.classes {
             let _ = writeln!(out, "typedef struct SubC{} SubC{};", class.id.0, class.id.0);
         }
+        // compiler.md §254 rule 2: the environment and frame types name
+        // their members before the set of aggregate types is read, and
+        // follow the aggregate types in the text.
+        let environments_and_frames = self.environment_and_frame_types()?;
+        let ordered = self.ordered_aggregate_types()?;
         let mut iterator_results = std::collections::HashSet::new();
-        for ty in self.ordered_aggregate_types()? {
+        for ty in ordered.iter().cloned() {
             match ty {
                 Type::FixedArray(element, count) => {
                     let name = self.fixed_array_name(&element, count)?;
@@ -555,6 +577,28 @@ impl<'m> Emitter<'m> {
                 _ => {}
             }
         }
+        // A name that the text above writes is a part of a type in the
+        // set, which the order reads, so the record holds no other type.
+        if let Some(missing) = self
+            .named_aggregates
+            .borrow()
+            .iter()
+            .find(|ty| !ordered.contains(ty))
+        {
+            return Err(internal(format!(
+                "aggregate type {missing:?} is named after its typedef set"
+            )));
+        }
+        out.push_str(&environments_and_frames);
+        out.push('\n');
+        Ok(())
+    }
+
+    /// The text of the closure environment types and of the frame types,
+    /// which names the C type of each member.
+    fn environment_and_frame_types(&self) -> Result<String, String> {
+        let mut text = String::new();
+        let out = &mut text;
         let mut closure_environment_types = Vec::new();
         for function in &self.module.functions {
             if matches!(function.kind, l::FunctionKind::Lambda) && !function.is_async {
@@ -583,36 +627,11 @@ impl<'m> Emitter<'m> {
                 self.emit_frame_type(out, function)?;
             }
         }
-        out.push('\n');
-        Ok(())
-    }
-
-    fn aggregate_types(&self) -> Vec<Type> {
-        let mut result = Vec::new();
-        let mut add = |ty: &Type| collect_aggregates(ty, &mut result);
-        for class in &self.module.classes {
-            for field in &class.fields {
-                add(&field.ty);
-            }
-        }
-        for global in &self.module.globals {
-            add(&global.ty);
-        }
-        for function in &self.module.functions {
-            add(&function.return_type);
-            for value in &function.values {
-                match &value.ty {
-                    l::ValueType::Data(ty) => add(ty),
-                    l::ValueType::Address(address) => add(&address.pointee),
-                    l::ValueType::Iterator(iterator) => add(&iterator.element),
-                }
-            }
-        }
-        result
+        Ok(text)
     }
 
     fn ordered_aggregate_types(&self) -> Result<Vec<Type>, String> {
-        let mut roots = self.aggregate_types();
+        let mut roots = self.named_aggregates.borrow().clone();
         roots.extend(
             self.module
                 .classes

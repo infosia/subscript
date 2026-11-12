@@ -921,6 +921,7 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::FixedArrayLengthLiteral),
     ),
+    Self::FixedArrayLengthZero => (RuleCode::S100, Diverges(Divergence::FixedArrayLengthZero)),
     Self::FixedArrayByteLimit => {
         (RuleCode::S100, Diverges(Divergence::AggregateLayoutLimit))
     }

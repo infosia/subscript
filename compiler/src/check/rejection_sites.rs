@@ -457,6 +457,7 @@ pub(crate) enum RejectionSite {
     FixedArrayTypeArgumentCount,
     FixedArrayLengthRange,
     FixedArrayLengthLiteral,
+    FixedArrayLengthZero,
     FixedArrayByteLimit,
     ArrayTypeArgumentCount,
     BuiltinArrayTypeArgumentCount,

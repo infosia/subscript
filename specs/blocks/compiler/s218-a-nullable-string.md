@@ -177,6 +177,7 @@ and four MINOR findings, and one cost finding.
    no such loop.
 2. A zero-length `FixedArray` live across a suspension panics the JIT,
    and `(SubFA_i32_0){0}` fails the C compile. Contrived.
+   *(Closed 2026-11-12 by §254.)*
 3. `xs.reduce<string | null>((acc, x) => …, null)` ignores the type
    argument for a lambda with no parameter types. It stays rejected. The
    annotated form passes.

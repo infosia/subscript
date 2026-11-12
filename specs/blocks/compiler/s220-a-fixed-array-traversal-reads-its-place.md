@@ -155,4 +155,5 @@ is in `codegen/src/lir/builder.rs`, and `a409` pins it.
 2. An unused `const e: FixedArray<i32, 0>[] = []` fails the C compile:
    `use of undeclared identifier 'SubFA_i32_0'`. `subscript run` accepts
    it. Contrived. §218.4 item 2 has the same type.
+   *(Closed 2026-11-12 by §254.)*
 3. `ElementSource` in the runtime has one variant.

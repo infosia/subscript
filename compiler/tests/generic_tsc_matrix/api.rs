@@ -304,7 +304,7 @@ pub(super) fn cells() -> Vec<Cell> {
                             code: RuleCode::S100,
                             record: "Q3",
                             message: "non-negative integer literal",
-                            token: "non-negative integer literal",
+                            token: "positive integer literal",
                         })
                     } else if api.name == "FixedArray.map"
                         && position == 1

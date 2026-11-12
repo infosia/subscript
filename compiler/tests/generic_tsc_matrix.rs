@@ -1735,7 +1735,7 @@ fn restriction_records_resolve_each_supported_source() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     for (record, token) in [
         ("C2", VALUE_FIELD.token),
-        ("Q3", "non-negative integer literal"),
+        ("Q3", "positive integer literal"),
         ("compiler.md §124", "a lambda captures only `const`"),
         (
             "stdlib.md §18.1",

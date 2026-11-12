@@ -417,6 +417,17 @@ impl<'p> Checker<'p> {
                         lit: ast::TsLit::Number(n),
                         ..
                     }) if n.value >= 0.0 && n.value.fract() == 0.0 => {
+                        // compiler.md §254 rule 1: C has no array with the
+                        // length zero.
+                        if n.value == 0.0 {
+                            let p = self.pos(args.params[1].span());
+                            self.reject_subset(
+                                RejectionSite::FixedArrayLengthZero,
+                                "a `FixedArray` length is at least 1; C has no array with the length zero",
+                                p,
+                            );
+                            return Type::Error;
+                        }
                         if n.value > f64::from(u32::MAX) {
                             let p = self.pos(args.params[1].span());
                             self.reject_subset(

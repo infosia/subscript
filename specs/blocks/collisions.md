@@ -913,8 +913,10 @@ Accept: `a369`, `a370`. Reject: `r421`.
   readonly length: i32; }`. `N` is not used structurally (a plain array
   literal must remain assignable for construction); this compiler reads
   `N` from the annotation and enforces length and element type. Lowers to
-  a C array `T[N]` in-place. `N` must be a non-negative integer literal:
-  a type parameter or any other type in `N` is rejected with S100,
+  a C array `T[N]` in-place. `N` must be a positive integer literal:
+  C has no array with the length zero (`compiler.md` §254, `r500`).
+  `tsc` accepts the length 0.
+  A type parameter or any other type in `N` is rejected with S100,
   where `tsc` accepts every `number` type there.
 - **Q4/Q15 (arrays and slices)** — `T[]` is the language's dynamic array:
   Context-allocated storage, explicit growth via `push`. The permitted

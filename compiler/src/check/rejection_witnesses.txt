@@ -1326,6 +1326,15 @@ function each(xs: i32[], f: (x: i32) => void): void { for (const x of xs) { f(x)
 async function work(x: i32): Promise<void> { print(`${x}`); }
 export function main(): void { each([1], work); }
 ===
+s254-annotation.ts	tyres.rs resolve_type_ref		S100		§254
+a `FixedArray` length is at least 1; C has no array with the length zero
+export function main(): void { const e: FixedArray<i32, 0>[] = []; print(`${e.length}`); }
+===
+s254-result.ts	tyres.rs resolve_type_ref		S100		§254
+a `FixedArray` length is at least 1; C has no array with the length zero
+function mk(): FixedArray<i32, 0> { return []; }
+export function main(): void { print(`${mk().length}`); }
+===
 s247-callback.ts	expr/callback_shape.rs expect_callback_shape		S013		§247
 `forEach` callback returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it
 export function main(): void { [1].forEach(async (x: i32): Promise<void> => { print(`${x}`); }); }

@@ -510,6 +510,7 @@ impl Divergence {
             Divergence::AsyncReturnArgumentCount => established::ASYNCRETURNARGUMENTCOUNT,
             Divergence::FixedArrayLengthRange => established::FIXEDARRAYLENGTHRANGE,
             Divergence::FixedArrayLengthLiteral => established::FIXEDARRAYLENGTHLITERAL,
+            Divergence::FixedArrayLengthZero => established::FIXEDARRAYLENGTHZERO,
             Divergence::GenericConstraintIdentity => established::GENERICCONSTRAINTIDENTITY,
             Divergence::NamespaceUnexportedMember => established::NAMESPACEUNEXPORTEDMEMBER,
             Divergence::RunnerMainMissing => established::RUNNERMAINMISSING,

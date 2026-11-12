@@ -1488,6 +1488,10 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s246-parameter.ts", "s246-let-local.ts"],
             variant: Divergence::FunctionValueAdapterNeedsConstName,
         },
+        RejectionSite::FixedArrayLengthZero => WitnessEntry::Reachable {
+            files: &["s254-annotation.ts", "s254-result.ts"],
+            variant: Divergence::FixedArrayLengthZero,
+        },
         RejectionSite::VoidPlaceDropsAsyncHandle => WitnessEntry::Reachable {
             files: &["s247-argument.ts", "s247-callback.ts"],
             variant: Divergence::DroppedAsyncHandle,
@@ -1710,6 +1714,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::CallbackFewerParametersUnadapted,
     RejectionSite::FunctionValueAdapterNeedsConstName,
     RejectionSite::VoidPlaceDropsAsyncHandle,
+    RejectionSite::FixedArrayLengthZero,
     RejectionSite::ContextMember,
     RejectionSite::JsonMember,
     RejectionSite::ArrayFromValue,

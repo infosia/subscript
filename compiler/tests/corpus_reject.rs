@@ -259,6 +259,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         9,
     ),
+    (
+        "r500-a-fixedarray-length-is-at-least-one.ts",
+        RuleCode::S100,
+        8,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (
