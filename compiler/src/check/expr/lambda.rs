@@ -329,6 +329,7 @@ impl<'p> Checker<'p> {
             } else if let ast::Pat::Assign(assign) = pattern {
                 let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
                 self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
+                self.discharge_parameter_default(&value, p.ty(), fx);
                 Some(value)
             } else {
                 None

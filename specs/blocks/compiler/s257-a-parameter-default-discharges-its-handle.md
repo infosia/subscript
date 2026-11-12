@@ -57,6 +57,19 @@ The accept entry has no lambda form (§257.4 item 1).
    `a441` block. No other golden moves. If another corpus entry or
    golden changes, report it and stop.
 
+### 257.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The discharge uses the predicate and the origin set of
+an argument (§188 rule 3). The review measured rule 2 at a function, a
+method, a static method, a constructor, a lambda, and a generator.
+
+1. MINOR, contrived, recorded: §257.4 item 2.
+2. MINOR, realistic, fixed: no test reached the discharge of a
+   constructor default. The unit test now has a constructor form.
+3. MINOR, fixed: the text of the tracking note on an unannotated
+   default.
+
 ### 257.4 Open
 
 1. A call through a function value passes every parameter, so a lambda
@@ -64,3 +77,12 @@ The accept entry has no lambda form (§257.4 item 1).
    called as `await f()` gives S100 "`f` expects 1 argument(s), got 0:
    a call through a function value passes every parameter". `tsc`
    accepts it. An immediately called lambda gives the same S100.
+2. A default that reads an earlier parameter discharges it, as an
+   argument does.
+   `async function f(p: Promise<i32>, q: Promise<i32> = p)` with
+   `return await q;` is accepted, and with `q: Promise<i32>` and
+   no default it gives S013 at `p`. If a call passes `q` and `p`
+   rejects, nothing awaits `p`, and the program traps
+   (`uncaught-exception`). The check of §188 does not follow control
+   flow, and it accepts the same drop through
+   `const r = c ? p : q; await r;`.

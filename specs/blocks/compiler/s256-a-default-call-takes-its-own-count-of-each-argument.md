@@ -103,6 +103,7 @@ its control with explicit arguments.
    `one(p: Promise<i32> = v(), k: i32 = 2)` with `return (await p) + k;`
    gives "an async handle is dropped without any await of its
    completion" at `v()`. `tsc` accepts it.
+   *(Closed 2026-11-12 by §257.)*
 3. A default that can raise and does not run user code leaks one
    retained count for each raise. A `@Descriptor` default `d: D = {}`,
    where a field initializer of `D` throws, after a fresh generator or

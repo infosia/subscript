@@ -458,6 +458,7 @@ impl<'p> Checker<'p> {
                                     fx,
                                     "the default value",
                                 );
+                                self.discharge_parameter_default(&e, ps.ty(), fx);
                                 e
                             },
                         )
@@ -720,7 +721,11 @@ impl<'p> Checker<'p> {
                                 ast::Pat::Assign(a) => Some(
                                     fx.with_synthetic_owner(
                                         SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                                        |fx| self.check_expr(&a.right, Some(ps.ty()), fx),
+                                        |fx| {
+                                            let e = self.check_expr(&a.right, Some(ps.ty()), fx);
+                                            self.discharge_parameter_default(&e, ps.ty(), fx);
+                                            e
+                                        },
                                     )
                                     .0,
                                 ),

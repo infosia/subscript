@@ -96,6 +96,21 @@ impl<'p> Checker<'p> {
         ty.holds_async_handle() || matches!(ty, Type::Array(_))
     }
 
+    /// Discharges the origins of a parameter default whose parameter type
+    /// transfers them, as an argument of that type does (`compiler.md`
+    /// §257.1 rule 1, §188.1 rule 3).
+    pub(crate) fn discharge_parameter_default(
+        &self,
+        default: &hir::Expr,
+        param_ty: &Type,
+        fx: &mut FnCtx,
+    ) {
+        if self.transfers_async_origins(param_ty) {
+            let origins = self.expr_async_origins(default, fx);
+            fx.handle_async_origins(&origins);
+        }
+    }
+
     /// Makes a value whose type holds a handle an origin
     /// (`compiler.md` §188.1 rule 2).
     pub(crate) fn track_async_call_result(
