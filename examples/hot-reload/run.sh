@@ -8,6 +8,6 @@ EXAMPLES_DIR=$(CDPATH= cd -- "$DEMO_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$EXAMPLES_DIR/.." && pwd)
 
 cd "$REPO_ROOT"
-cargo build --offline -p subscript-cli 1>&2
+cargo build --target-dir "$REPO_ROOT/target" --offline -p subscript-cli 1>&2
 cd "$DEMO_DIR"
 exec "$REPO_ROOT/target/debug/subscript" run --watch demo.ts

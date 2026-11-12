@@ -49,7 +49,7 @@ ENTRY_ID=${ENTRY_ID:-a22-matrix-propagation}
 cd "$REPO_ROOT"
 
 # 1. Emit the ship-tier C translation unit and the generated C entry.
-cargo build --offline --release -p subscript-cli
+cargo build --target-dir "$TARGET_DIR" --offline --release -p subscript-cli
 if [ -d "$ACCEPT_DIR/$ENTRY_ID" ]; then
     ENTRY_SOURCE="$ENTRY_ID/main.ts"
 else
@@ -68,7 +68,7 @@ LINKED=""
 HOST_OS=$(uname -s)
 HOST_ARCH=$(uname -m)
 if [ "$HOST_OS" = "Darwin" ]; then
-    cargo build --offline --release -p subscript-runtime --target aarch64-apple-ios
+    cargo build --target-dir "$TARGET_DIR" --offline --release -p subscript-runtime --target aarch64-apple-ios
     xcrun --sdk iphoneos clang --target=arm64-apple-ios -miphoneos-version-min=10.0 \
         -std=c11 -O2 -fwrapv -ffp-contract=off \
         "$OUT_DIR/program.c" \
@@ -85,7 +85,7 @@ fi
 #    Mach-O, and execute it as a native smoke check. libSystem supplies
 #    the runtime system libraries (§11b), so this link needs no extra libraries.
 if [ "$HOST_OS" = "Darwin" ]; then
-    cargo build --offline --release -p subscript-runtime
+    cargo build --target-dir "$TARGET_DIR" --offline --release -p subscript-runtime
     "${CC:-clang}" -std=c11 -O2 -fwrapv -ffp-contract=off \
         "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
@@ -118,7 +118,7 @@ fi
 #    before the Android NDK requirement so an ordinary Linux host always
 #    exercises its ship target.
 if [ "$HOST_OS" = "Linux" ] && [ "$HOST_ARCH" = "x86_64" ]; then
-    cargo build --offline --release -p subscript-runtime
+    cargo build --target-dir "$TARGET_DIR" --offline --release -p subscript-runtime
     "${CC:-clang}" -std=c11 -O2 -fwrapv -ffp-contract=off \
         "$OUT_DIR/program.c" \
         "$OUT_DIR/entry.c" \
@@ -177,7 +177,7 @@ else
     export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_CC"
     export CC_aarch64_linux_android="$ANDROID_CC"
     export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
-    cargo build --offline --release -p subscript-runtime --target aarch64-linux-android
+    cargo build --target-dir "$TARGET_DIR" --offline --release -p subscript-runtime --target aarch64-linux-android
     # `rustc --print native-static-libs --target aarch64-linux-android`
     # reports this target's system-library set.
     "$ANDROID_CC" --target=aarch64-linux-android24 -std=c11 -O2 -fwrapv -ffp-contract=off \

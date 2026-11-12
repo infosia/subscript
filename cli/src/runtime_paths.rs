@@ -56,8 +56,7 @@ fn resolve_runtime_paths_with(
             None => {
                 let root = repository.as_ref().ok_or_else(missing_resolution_message)?;
                 build_default(root)?;
-                let archive = root
-                    .join("target")
+                let archive = runtime_target_dir(root)
                     .join("release")
                     .join(runtime_staticlib_name());
                 require_file(archive, "in-repo runtime archive")?
@@ -128,11 +127,24 @@ fn missing_resolution_message() -> String {
     )
 }
 
-fn build_runtime(repository: &Path) -> Result<(), String> {
+// §262: the command and the archive lookup use this directory.
+fn runtime_target_dir(repository: &Path) -> PathBuf {
+    repository.join("target")
+}
+
+fn runtime_build_command(repository: &Path) -> Command {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
-    let output = Command::new(cargo)
+    let mut command = Command::new(cargo);
+    command
         .args(["build", "--offline", "--release", "-p", "subscript-runtime"])
         .current_dir(repository)
+        .arg("--target-dir")
+        .arg(runtime_target_dir(repository));
+    command
+}
+
+fn build_runtime(repository: &Path) -> Result<(), String> {
+    let output = runtime_build_command(repository)
         .output()
         .map_err(|error| format!("build the in-repo runtime archive: {error}"))?;
     if output.status.success() {
@@ -203,6 +215,35 @@ mod tests {
                 .as_ref(),
         )?;
         Ok(RuntimePaths { library, include })
+    }
+
+    // §262: read the command without a cargo process.
+    #[test]
+    fn runtime_build_uses_lookup_target_directory() -> Result<(), String> {
+        let directory = TestDir::new()?;
+        let expected = fake_repository(&directory)?;
+        let command = runtime_build_command(&directory.0);
+        let args: Vec<_> = command.get_args().collect();
+        let target = args
+            .windows(2)
+            .find(|pair| pair[0] == "--target-dir")
+            .expect("runtime build must pass --target-dir")[1];
+        assert_eq!(Path::new(target), directory.0.join("target"));
+        assert_eq!(command.get_current_dir(), Some(directory.0.as_path()));
+        let resolved = resolve_runtime_paths_with(
+            RuntimeOverrides::default(),
+            RuntimeEnvironment::default(),
+            &directory.0,
+            |_| Ok(()),
+        )?;
+        assert_eq!(resolved, expected);
+        assert_eq!(
+            resolved.library,
+            Path::new(target)
+                .join("release")
+                .join(runtime_staticlib_name())
+        );
+        Ok(())
     }
 
     #[test]

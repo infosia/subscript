@@ -10,7 +10,7 @@ ENGINE_DIR="$EXAMPLES_DIR/engine"
 OUT_DIR="$REPO_ROOT/target/examples-host"
 
 cd "$REPO_ROOT"
-cargo build --offline --release -p subscript-cli 1>&2
+cargo build --target-dir "$REPO_ROOT/target" --offline --release -p subscript-cli 1>&2
 "$REPO_ROOT/target/release/subscript" build \
     --source "$HOST_DIR/game.ts" \
     --mirror "$ENGINE_DIR/engine.generated.d.ts" \

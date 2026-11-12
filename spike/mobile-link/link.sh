@@ -23,7 +23,7 @@ TARGET_DIR="$REPO_ROOT/target"
 STUB_NAME=libsubscript_runtime_stub.a
 
 # 1. Build the emitter and produce both objects into out/.
-cargo build --offline --release --manifest-path "$SPIKE_DIR/Cargo.toml"
+cargo build --target-dir "$TARGET_DIR" --offline --release --manifest-path "$SPIKE_DIR/Cargo.toml"
 "$TARGET_DIR/release/mobile-link-spike" "$OUT_DIR"
 
 # 2. Android: cross-build the runtime stub and link with NDK clang.
@@ -40,7 +40,7 @@ fi
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_CC"
 export CC_aarch64_linux_android="$ANDROID_CC"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
-(cd "$SPIKE_DIR/runtime-stub" && cargo build --offline --release --target aarch64-linux-android)
+(cd "$SPIKE_DIR/runtime-stub" && cargo build --target-dir "$TARGET_DIR" --offline --release --target aarch64-linux-android)
 "$ANDROID_CC" \
     "$OUT_DIR/spike-aarch64-linux-android.o" \
     "$SPIKE_DIR/main.c" \
@@ -48,7 +48,7 @@ export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
     -o "$OUT_DIR/spike-android"
 
 # 3. iOS: cross-build the runtime stub and link with Xcode clang.
-(cd "$SPIKE_DIR/runtime-stub" && cargo build --offline --release --target aarch64-apple-ios)
+(cd "$SPIKE_DIR/runtime-stub" && cargo build --target-dir "$TARGET_DIR" --offline --release --target aarch64-apple-ios)
 xcrun --sdk iphoneos clang -target arm64-apple-ios -miphoneos-version-min=10.0 \
     "$OUT_DIR/spike-aarch64-apple-ios.o" \
     "$SPIKE_DIR/main.c" \
