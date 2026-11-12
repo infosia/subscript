@@ -140,3 +140,4 @@ closed the list.
    the lowering: `all(xs: Promise<i32>[] = [], k: i32 = 0)` called as
    `all()` gives "stores counted operand 0 (value 0) without a fresh
    single-use owner or a preceding retain". This is older than §255.
+   *(Closed 2026-11-12 by §256.)*

@@ -109,17 +109,49 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .iter()
             .map(|value| self.operand_type(value, &default.pos))
             .collect::<Result<Vec<_>, _>>()?;
-        let stored = parameter_types
-            .iter()
-            .enumerate()
-            .filter(|(_, ty)| matches!(ty, l::ValueType::Data(_)))
-            .map(|(index, ty)| StoredOperand {
+        // compiler.md §256 rule 1: the call passes each earlier argument to
+        // the default and to the callee, so each pass takes a count of its
+        // own. A value with one owner only is retained twice before each
+        // default call, and then one count is released. The default call and
+        // the callee each move one retained count: the LIR verifier takes a
+        // fresh owner at a store only for a single use. Another value
+        // acquires its count as an argument does.
+        let mut stored = Vec::new();
+        for (index, ty) in parameter_types.iter().enumerate() {
+            if !matches!(ty, l::ValueType::Data(_)) {
+                continue;
+            }
+            let single_owner = matches!(&operands[index], l::Operand::Value(value)
+                if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner)
+                    && !self.moved_async_owners.contains(value));
+            let action = if single_owner && is_async_owner_type(ty) {
+                let kind = if matches!(ty, l::ValueType::Data(Type::AsyncHandle(_))) {
+                    l::InstructionKind::AsyncHandleRetain
+                } else {
+                    l::InstructionKind::AsyncHandleArrayRetain
+                };
+                for _ in 0..2 {
+                    self.emit(
+                        kind.clone(),
+                        vec![operands[index].clone()],
+                        None,
+                        false,
+                        self.read_lifetime(ty, &default.pos),
+                        default.pos.clone(),
+                    )?;
+                }
+                self.release_owner(operands[index].clone(), ty, &default.pos)?;
+                OwnerStoreAction::Move
+            } else {
+                OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument)
+            };
+            stored.push(StoredOperand {
                 index,
                 ty: ty.clone(),
-                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
+                action,
                 pos: default.pos.clone(),
-            })
-            .collect();
+            });
+        }
         let mut traps = if params[index].default_can_raise || self.lowering.reload {
             vec![l::Trap {
                 kind: l::TrapKind::Raise(l::RaiseEdge::Propagate),

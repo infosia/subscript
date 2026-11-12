@@ -76,14 +76,39 @@ its own, so the `h` controls run.
    `a440` block. No other golden moves. If another corpus entry or
    golden changes, report it and stop.
 
+### 256.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The review measured the live bytes of the development
+tier for a raising default after a held argument, two omitted defaults,
+a counted default passed to a later default, and a method. Each equals
+its control with explicit arguments.
+
+1. MINOR, realistic, recorded: §256.4 item 3.
+2. MINOR, realistic, fixed: no test checked rule 2. A unit test now
+   pins the retain and release counts of `w(v())` and of `take3(gen())`
+   with two omitted defaults.
+3. MINOR, contrived, fixed: rule 1, §256.4 item 1, and the comment of
+   the lowering gave one retain for each pass. The lowering does two
+   retains and one release for each default call.
+
 ### 256.4 Open
 
 1. Rule 1 does one retain and one release more for each omitted
-   default than one retain needs. A single retain fails the LIR verifier: the owner then
-   has three uses, and the verifier accepts a fresh owner at a store only
-   at one use. A verifier that counts the retains before a store accepts
+   default than one retain needs. A single retain fails the LIR
+   verifier: the owner then has three uses, and the verifier accepts a
+   fresh owner at a store only at one use. A verifier that counts the retains before a store accepts
    the single retain. The cost is not measured.
 2. An async handle that a parameter default creates gets S013.
    `one(p: Promise<i32> = v(), k: i32 = 2)` with `return (await p) + k;`
    gives "an async handle is dropped without any await of its
    completion" at `v()`. `tsc` accepts it.
+3. A default that can raise and does not run user code leaks one
+   retained count for each raise. A `@Descriptor` default `d: D = {}`,
+   where a field initializer of `D` throws, after a fresh generator or
+   async handle, leaks 40 or 16 bytes for each raise. The explicit form
+   `gx(gen(), {})` leaks the same under §255 rule 1 site 2:
+   `runs_user_code` does not read an omitted field initializer of a
+   descriptor literal, and the check of a raise site does. The same
+   gap applies to each default call under hot reload, which gives each
+   default call a raise edge. This is not measured.
