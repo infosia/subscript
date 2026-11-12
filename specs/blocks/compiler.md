@@ -298,3 +298,4 @@ Every section, with its status:
 | §254 | Each `FixedArray` type has a C form | active | [`s254-each-fixedarray-type-has-a-c-form.md`](compiler/s254-each-fixedarray-type-has-a-c-form.md) |
 | §255 | An operand hold is a release owner | active | [`s255-an-operand-hold-is-a-release-owner.md`](compiler/s255-an-operand-hold-is-a-release-owner.md) |
 | §256 | A default call takes its own count of each argument | active | [`s256-a-default-call-takes-its-own-count-of-each-argument.md`](compiler/s256-a-default-call-takes-its-own-count-of-each-argument.md) |
+| §257 | A parameter default discharges its handle | active | [`s257-a-parameter-default-discharges-its-handle.md`](compiler/s257-a-parameter-default-discharges-its-handle.md) |
