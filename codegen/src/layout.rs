@@ -239,10 +239,10 @@ pub(crate) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u
     ensure_supported_size(sum & !mask, context)
 }
 
-/// Build-time state: memoized class layouts plus an in-progress set
-/// for cycle detection (a value class containing itself, directly or
-/// transitively, has no finite layout).
-struct ClassShape {
+/// Section 261: the layout input record for one class.
+/// `Layouts::build` and the reload declaration hash read this record.
+#[derive(Debug)]
+pub(crate) struct ClassShape {
     name: String,
     is_value: bool,
     is_boundary: bool,
@@ -250,6 +250,23 @@ struct ClassShape {
     fields: Vec<Type>,
 }
 
+// Section 261: layout and reload read the same class input record.
+pub(crate) fn class_shape(class: &hir::ClassDef) -> ClassShape {
+    ClassShape {
+        name: class.name.clone(),
+        is_value: class.is_value,
+        is_boundary: class.is_boundary,
+        alignment: class
+            .alignment_override
+            .as_ref()
+            .map(|alignment| alignment.value),
+        fields: class.fields.iter().map(|field| field.ty.clone()).collect(),
+    }
+}
+
+/// Build-time state: memoized class layouts plus an in-progress set
+/// for cycle detection (a value class containing itself, directly or
+/// transitively, has no finite layout).
 struct Builder<'m> {
     classes: &'m [ClassShape],
     slots: Vec<Option<ClassLayout>>,
@@ -340,20 +357,7 @@ impl Layouts {
     /// value class may be declared after the class embedding it);
     /// containment cycles are an error.
     pub fn build(module: &hir::Module) -> Result<Layouts, String> {
-        let classes = module
-            .classes
-            .iter()
-            .map(|class| ClassShape {
-                name: class.name.clone(),
-                is_value: class.is_value,
-                is_boundary: class.is_boundary,
-                alignment: class
-                    .alignment_override
-                    .as_ref()
-                    .map(|alignment| alignment.value),
-                fields: class.fields.iter().map(|field| field.ty.clone()).collect(),
-            })
-            .collect::<Vec<_>>();
+        let classes = module.classes.iter().map(class_shape).collect::<Vec<_>>();
         Self::build_shapes(&classes)
     }
 

@@ -200,10 +200,10 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
         push(
             label("class", &c.name, &c.pos, ambiguous),
             &format!(
-                "{}|{}|{}|{}",
+                "{}|{}|{:?}|{}",
                 c.pos.file,
                 c.name,
-                if c.is_value { "value" } else { "reference" },
+                crate::layout::class_shape(c),
                 fields.join(";")
             ),
         );
@@ -1349,6 +1349,12 @@ mod tests {
         let b = hash_of("export function main(): void {\n  print(\"b\");\n  print(\"c\");\n}\n");
         assert_eq!(a, b);
         assert_eq!(a.first_difference(&b), None);
+
+        // Section 261: constructor and method bodies do not change layout inputs.
+        let a = hash_of("@ValueType class V { x: i32; constructor() { this.x = 1; } get(): i32 { return this.x; } }");
+        let b = hash_of("@ValueType class V { x: i32; constructor() { this.x = 2; } get(): i32 { return this.x + 1; } }");
+        assert_eq!(a, b);
+        assert_eq!(a.first_difference(&b), None);
     }
 
     #[test]
@@ -1365,6 +1371,51 @@ mod tests {
         let b = hash_of("class C { x: i32; y: i32; constructor() { this.x = 1; this.y = 2; } }\nexport function main(): void {}\n");
         assert_ne!(a, b);
         assert_eq!(a.first_difference(&b).as_deref(), Some("class C"));
+    }
+
+    // Section 261: an explicit alignment change must change the class hash.
+    #[test]
+    fn declaration_hash_changes_for_alignment() {
+        let a = hash_of("@ValueType({ align: 4 })\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {}\n");
+        let b = hash_of("@ValueType({ align: 16 })\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {}\n");
+        assert_ne!(a, b);
+        assert_eq!(a.first_difference(&b).as_deref(), Some("class V"));
+    }
+
+    // Section 261: a mirror class comes from an ambient declaration.
+    // A source edit that changes the boundary kind also changes the declaration file.
+    #[test]
+    fn declaration_hash_changes_for_boundary_kind() {
+        let a = subscript_compiler::check_program(&[SourceFile::new(
+            "live.ts",
+            "@ValueType class V { x: i32 = 0; }",
+        )])
+        .expect("value class checks");
+        let b = subscript_compiler::check_program(&[SourceFile::ambient(
+            "live.ts",
+            "declare class V { x: i32; }",
+        )])
+        .expect("boundary class checks");
+        let value = a.classes.iter().find(|c| c.name == "V").unwrap();
+        let boundary = b.classes.iter().find(|c| c.name == "V").unwrap();
+        assert!(value.is_value && boundary.is_value);
+        assert!(!value.is_boundary && boundary.is_boundary);
+        assert!(value.alignment_override.is_none() && boundary.alignment_override.is_none());
+        assert_eq!(
+            value.fields.iter().map(|f| &f.ty).collect::<Vec<_>>(),
+            boundary.fields.iter().map(|f| &f.ty).collect::<Vec<_>>()
+        );
+        let a = declaration_hash(&a);
+        let b = declaration_hash(&b);
+        // Section 261: compare the class entry apart from the module run order.
+        let class_entry = |hash: &DeclarationHash| {
+            hash.entries
+                .iter()
+                .find(|(name, _)| name == "class V")
+                .unwrap()
+                .1
+        };
+        assert_ne!(class_entry(&a), class_entry(&b));
     }
 
     #[test]

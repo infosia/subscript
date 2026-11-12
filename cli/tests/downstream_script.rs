@@ -7,6 +7,9 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 const COMMITTED: &str = "# committed lockfile\n";
 const CHANGED: &str = "# developer lockfile\n";
@@ -21,8 +24,9 @@ impl Downstream {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let sequence = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "subscript-downstream-test-{}-{nonce}",
+            "subscript-downstream-test-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         std::fs::create_dir(&dir).unwrap();
