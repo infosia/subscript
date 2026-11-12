@@ -23,10 +23,7 @@ impl<'p> Checker<'p> {
         if ctx.is_some_and(|ty| self.apparent_type(ty) == Type::Error) {
             return self.err_expr(pos);
         }
-        let ctx_fn = match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
-            Some(Type::Func(ft)) => Some((**ft).clone()),
-            _ => None,
-        };
+        let ctx_fn = ctx.and_then(|ty| self.lambda_context(ty));
         let (param_ctx, ret_ctx) = match &ctx_fn {
             Some(ft) => (Some(ft.params.as_slice()), Some(&ft.ret)),
             None => (None, None),
@@ -35,6 +32,22 @@ impl<'p> Checker<'p> {
         // result context that it gives is a hint too.
         let param_ctx = param_ctx.filter(|_| kind == ContextKind::Contextual);
         self.check_lambda_with(a, param_ctx, (ret_ctx, kind), None, fx, pos)
+    }
+
+    /// The function type that the contextual type `ctx` gives a lambda: a
+    /// function type, or the function type `F` of `F | null` (compiler.md
+    /// §251 rule 1). Another type gives no function type.
+    pub(crate) fn lambda_context(&self, ctx: &Type) -> Option<crate::types::FuncType> {
+        match self.apparent_type(ctx) {
+            Type::Func(function) => Some(*function),
+            Type::Nullable(inner, crate::types::Absence::Null) => {
+                match self.apparent_type(&inner) {
+                    Type::Func(function) => Some(*function),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     /// [`Self::check_lambda`] with the contextual function type split

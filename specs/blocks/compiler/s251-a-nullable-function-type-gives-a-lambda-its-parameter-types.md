@@ -69,3 +69,23 @@ of the union.
    context keeps its S100.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 251.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding.
+
+1. MINOR, realistic, fixed: a lambda that annotates its parameters and
+   not its result also takes the result context of `F` (rule 1). So
+   `const d: ((x: i32) => f64) | null = (x: i32) => 7 / 2;` prints
+   `3.5`, as in a place `F`. The tracking note stated the opposite, and
+   no test pinned it. A unit assertion and a tracking row now pin it.
+2. MINOR, realistic, recorded: §251.4 item 1.
+3. MINOR, fixed: the status of the tracking note.
+
+### 251.4 Open
+
+1. A contextual type `F | undefined` gives a lambda no context.
+   `function r(): CB | undefined { return (x) => …; }` gives the S100
+   "parameters require a type annotation", and `tsc` accepts it. The
+   type is legal only as a result type (§195).

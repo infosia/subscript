@@ -139,17 +139,13 @@ fn a_generic_argument_takes_the_type_that_another_argument_fixes() {
     }
     accepts("function f(): void { three(one, one, (x) => print(`t ${x}`)); }");
     // The inferred type of the other arguments, in either order: with
-    // `maybe()` it is `CB | null`, and a nullable function context gives
-    // no parameter types (§249.4).
+    // `maybe()` it is `CB | null`, which gives the parameter types of `CB`
+    // (§251 rule 2).
     for body in [
         "function f(): void { three(one, maybe(), (x) => print(`t ${x}`)); }",
         "function f(): void { three(maybe(), one, (x) => print(`t ${x}`)); }",
     ] {
-        let diagnostic = rejects(body);
-        assert_eq!(
-            diagnostic.message, "parameters require a type annotation",
-            "{body}"
-        );
+        accepts(body);
     }
 }
 

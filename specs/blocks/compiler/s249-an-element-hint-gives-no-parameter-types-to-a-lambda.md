@@ -132,6 +132,7 @@ that reads a context at the pin.
    accepts it. So `three(one, maybe(), (x) => …)` with
    `maybe(): CB | null` and `three<T>(a: T, b: T, c: T): T` gives the
    S100 in each order of the first two arguments. `tsc` accepts both.
+   *(Closed 2026-11-12 by §251.)*
 4. Rule 2a checks an argument that holds a lambda after the other
    arguments. So a state that flows from one argument to the next, such
    as narrowing, sees the other order. No realistic program was found
