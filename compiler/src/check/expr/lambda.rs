@@ -415,7 +415,7 @@ impl<'p> Checker<'p> {
                         if let Some(frame) = fx.frames.last_mut() {
                             frame.ret = Type::Void;
                         }
-                        return vec![hir::Stmt::Expr(checked)];
+                        return self.void_leaf_statements(checked);
                     }
                     if let Some(ret) = &ret {
                         self.require_expr_assignable(

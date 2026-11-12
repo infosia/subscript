@@ -451,6 +451,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         use ast::BinaryOp as B;
+        let void_leaves = self.void_leaf_place.take();
         if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
             if let Some(presence) = self.check_absence_presence_comparison(b, fx, pos.clone()) {
                 return presence;
@@ -465,8 +466,17 @@ impl<'p> Checker<'p> {
                     .flatten();
                 let left = self.check_expr(&b.left, left_ctx.as_ref(), fx);
                 let right_ctx = self.operand_context(&b.right, ctx);
-                let right = self.check_logical_right(&left, b, right_ctx.as_ref(), fx);
-                for side in [&left, &right] {
+                let right = self.check_logical_right(&left, b, right_ctx.as_ref(), void_leaves, fx);
+                // compiler.md §258 rule 2: a `void` right operand in a
+                // statement place.
+                let void_right =
+                    void_leaves.is_some() && self.apparent_type(&right.ty) == Type::Void;
+                let sides: &[&hir::Expr] = if void_right {
+                    &[&left]
+                } else {
+                    &[&left, &right]
+                };
+                for side in sides {
                     if !self.instance_restriction(
                         crate::check::opaque::InstanceRestriction::BooleanContext,
                         &side.ty,
@@ -480,7 +490,9 @@ impl<'p> Checker<'p> {
                         );
                     }
                 }
-                let ty = if self.involves_type_parameter(&left.ty)
+                let ty = if void_right {
+                    Type::Void
+                } else if self.involves_type_parameter(&left.ty)
                     || self.involves_type_parameter(&right.ty)
                 {
                     if b.op == B::LogicalAnd
@@ -1608,13 +1620,15 @@ impl<'p> Checker<'p> {
 
     /// Checks the right operand of `&&` with the facts that hold when the
     /// left operand is true, and of `||` with the facts that hold when it
-    /// is false (compiler.md §133). A kill inside the operand ends a fact
+    /// is false (compiler.md §133). In a statement place the operand is a
+    /// statement place (§258 rule 2). A kill inside the operand ends a fact
     /// (§124), and the facts end with the operand.
     fn check_logical_right(
         &mut self,
         left: &hir::Expr,
         b: &ast::BinExpr,
         ctx: Option<&Type>,
+        void_leaves: Option<super::VoidLeafPlace>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
         let note_paths = fx.narrowing_note_paths();
@@ -1626,7 +1640,16 @@ impl<'p> Checker<'p> {
         };
         let mut base = fx.narrowed.clone();
         fx.narrowed = base.iter().cloned().chain(extra).collect();
-        let right = self.check_expr(&b.right, ctx, fx);
+        let right = match void_leaves {
+            Some(place) => self.check_void_leaf(
+                &b.right,
+                ctx,
+                super::entry::ContextKind::Contextual,
+                place,
+                fx,
+            ),
+            None => self.check_expr(&b.right, ctx, fx),
+        };
         // Keep kills: facts removed inside the operand stay removed.
         base.retain(|key| fx.narrowed.contains(key));
         fx.narrowed = base;

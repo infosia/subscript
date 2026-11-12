@@ -661,3 +661,5 @@ mod promise_reaction;
 
 mod task_group;
 mod type_arguments;
+mod void_leaves;
+pub(crate) use void_leaves::VoidLeafPlace;

@@ -1,0 +1,19 @@
+b true n 2
+g 1
+g 3
+g 4
+g 6
+b false n 1
+g 2
+k
+g 5
+g 6
+b false n 0
+g 2
+k
+z
+g 7
+g 9
+g 10
+e
+g 11

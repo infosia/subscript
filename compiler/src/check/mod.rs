@@ -1344,6 +1344,9 @@ pub(crate) struct Checker<'p> {
     /// optional trailing index, for the leaves of the next conditional
     /// (compiler.md §242 rule 1a).
     callback_leaf_place: Option<type_rules::CallbackLeaves>,
+    /// The place of the leaves of the next conditional, `&&`, or `||`
+    /// (compiler.md §258 rules 2 and 3).
+    void_leaf_place: Option<expr::VoidLeafPlace>,
     /// The position of the name of each class, generic class, and enum
     /// declared in a program file, by file and name (compiler.md §241
     /// rule 1).

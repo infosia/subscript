@@ -701,6 +701,12 @@ result is `void` from its context, accepts a value operand and discards
 it. Accept adds `a424`;
 `retired:r338-void-call-return`.
 
+*Revised 2026-11-12 (§258):* in an expression statement, and in the
+expression body of a lambda with a `void` context, a conditional with
+a `void` branch and `a && b` or `a || b` with a `void` right operand
+are accepted, as an `if`. A lambda with no context accepts a
+conditional whose branches are each `void`. Accept adds `a442`.
+
 ### C22. A JavaScript `undefined` is `null` here
 
 Where `node` gives `undefined` for a value that a checked program holds

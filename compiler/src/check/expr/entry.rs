@@ -215,14 +215,43 @@ impl<'p> Checker<'p> {
 
     /// Checks the expression body of a lambda with no result type: a body
     /// of type `void` gives the result `void` (compiler.md §238 rule 1), so
-    /// the expression keeps its `void` type.
+    /// the expression keeps its `void` type. A conditional body whose
+    /// leaves are each `void` is `void` (§258 rule 3).
     pub(crate) fn check_expr_keeping_void(
         &mut self,
         e: &ast::Expr,
         ctx: Option<&Type>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        self.check_expr_with_policy(e, (ctx, ContextKind::Contextual), fx, false, true)
+        let e = self.enter_void_leaf_place(e, super::VoidLeafPlace::VoidResult);
+        let checked = self.check_expr_keeping_void_as(e, ctx, ContextKind::Contextual, fx);
+        self.void_leaf_place = None;
+        checked
+    }
+
+    /// Checks one expression that keeps a `void` type.
+    pub(super) fn check_expr_keeping_void_as(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        kind: ContextKind,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        self.check_expr_with_policy(e, (ctx, kind), fx, false, true)
+    }
+
+    /// Rejects a `void` value at `pos`. The site names a destination of a
+    /// type that is not `void`.
+    pub(super) fn reject_void_value(&mut self, ctx: Option<&Type>, pos: Pos) {
+        self.reject_subset(
+            if ctx.is_some_and(|ty| !matches!(self.apparent_type(ty), Type::Void | Type::Error)) {
+                RejectionSite::VoidExpressionNonVoidDestination
+            } else {
+                RejectionSite::VoidExpressionValue
+            },
+            "a `void` expression is only allowed as an expression statement",
+            pos,
+        );
     }
 
     fn check_expr_with_policy(
@@ -290,16 +319,7 @@ impl<'p> Checker<'p> {
             );
             self.err_expr(checked.pos)
         } else if !keep_void && self.apparent_type(&checked.ty) == Type::Void {
-            self.reject_subset(
-                if ctx.is_some_and(|ty| !matches!(self.apparent_type(ty), Type::Void | Type::Error))
-                {
-                    RejectionSite::VoidExpressionNonVoidDestination
-                } else {
-                    RejectionSite::VoidExpressionValue
-                },
-                "a `void` expression is only allowed as an expression statement",
-                checked.pos.clone(),
-            );
+            self.reject_void_value(ctx, checked.pos.clone());
             self.err_expr(checked.pos)
         } else {
             checked
@@ -674,9 +694,13 @@ impl<'p> Checker<'p> {
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
+        // compiler.md §258 rule 2: a conditional, `&&`, or `||` takes
+        // `void` leaves.
+        let root = self.enter_void_leaf_place(root, super::VoidLeafPlace::Statement);
         let checked = self.check_expr_inner(root, (None, ContextKind::Contextual), fx, false);
+        self.void_leaf_place = None;
         let mut statements = prefix.into_statements();
-        statements.push(hir::Stmt::Expr(checked));
+        statements.extend(self.void_leaf_statements(checked));
         statements
     }
 

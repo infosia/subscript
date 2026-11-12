@@ -1,5 +1,5 @@
 //! Checks the conditional expression (compiler.md §146, §195.1, §242
-//! rule 1a, §248 rule 2, §249 rule 1).
+//! rule 1a, §248 rule 2, §249 rule 1, §258).
 
 use crate::check::narrowing_fact::FactSet;
 use crate::check::rejection::RejectionSite;
@@ -90,6 +90,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let leaves = self.callback_leaf_place.take();
+        let void_leaves = self.void_leaf_place.take();
         let cond = self.check_truth_expr(&c.test, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
@@ -134,12 +135,21 @@ impl<'p> Checker<'p> {
             true => super::entry::ContextKind::Contextual,
             false => kind,
         };
-        let first = self.check_expr_as(
-            first_ast,
-            first_ctx.as_ref(),
-            branch_kind(leaves.is_some()),
-            fx,
-        );
+        let first = match void_leaves {
+            Some(place) => self.check_void_leaf(
+                first_ast,
+                first_ctx.as_ref(),
+                branch_kind(leaves.is_some()),
+                place,
+                fx,
+            ),
+            None => self.check_expr_as(
+                first_ast,
+                first_ctx.as_ref(),
+                branch_kind(leaves.is_some()),
+                fx,
+            ),
+        };
         let first_facts = fx.narrowed.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
@@ -161,7 +171,12 @@ impl<'p> Checker<'p> {
             None if leaves.is_none() => super::entry::ContextKind::Hint,
             _ => branch_kind(leaves.is_some()),
         };
-        let second = self.check_expr_as(second_ast, second_ctx.as_ref(), second_kind, fx);
+        let second = match void_leaves {
+            Some(place) => {
+                self.check_void_leaf(second_ast, second_ctx.as_ref(), second_kind, place, fx)
+            }
+            None => self.check_expr_as(second_ast, second_ctx.as_ref(), second_kind, fx),
+        };
         let first_possible: HashSet<_> = first_facts.union(&first_notes).cloned().collect();
         let second_possible: HashSet<_> = fx
             .narrowed
@@ -185,7 +200,12 @@ impl<'p> Checker<'p> {
         if let Some(leaves) = leaves.as_ref().filter(|leaves| !leaves.nested) {
             self.place_callback_leaves(&mut then, &mut els, leaves, fx);
         }
-        let ty = if nested {
+        // compiler.md §258 rules 2 and 3: a `void` leaf in a statement
+        // place, or beside another `void` leaf in a lambda body.
+        let void_join = void_leaves.and_then(|place| self.void_leaf_join(&then, &els, ctx, place));
+        let ty = if let Some(ty) = void_join {
+            ty
+        } else if nested {
             then.ty.clone()
         } else if self.joins_null_and_undefined(&then.ty, &els.ty) {
             // §195.1 rule 3: `tsc` types the conditional `T | null | undefined`,

@@ -78,3 +78,30 @@ value (C21).
    of rules 3 and 4, each with its diagnostic.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 258.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The review checked about 75 forms against `tsc`, and
+the checker rejects each form that `tsc` rejects. The development tier,
+the ship tier, and `node` gave the same output for the order of
+evaluation, the short circuit, an `await` leaf, and a `yield` leaf.
+
+1. MINOR, realistic, fixed: rule 2 stated that a value leaf is dropped
+   in each statement place. The checker drops it only beside a `void`
+   leaf. Rule 2 now states that condition, and §258.4 item 1 records
+   the forms.
+2. MINOR, fixed: C21 had no revision for this section.
+3. MINOR, recorded: §258.4 item 2.
+
+### 258.4 Open
+
+1. A statement with no `void` leaf keeps the checks of a value. `tsc`
+   accepts each form. `b ? 1 : "s";` gives S100 "conditional branches
+   have no common type". `b && 5;`, `b && k();`, and `b && (n = 3);`
+   give S100 "logical operators require booleans, got `i32`".
+2. These forms keep their rejection, and `tsc` accepts each:
+   `(b && g(1)) || g(2);` (the left operand is not a statement place),
+   `b ? c?.m() : g(1);` (S012), `gr((n) => n > 0 && g(n))` with a
+   generic context, `const f = async (n: i32) => n > 0 && g(n);`, and
+   `[b ? g(1) : g(2)];`.

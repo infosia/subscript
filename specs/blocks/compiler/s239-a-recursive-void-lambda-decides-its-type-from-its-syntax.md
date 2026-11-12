@@ -69,6 +69,7 @@ of the pin and a binary of the change differs only at `a426`.
 1. An expression body whose leaves are each `void`, with no context,
    stays rejected: `const f = (n: i32) => n > 0 ? g(n) : print("e");`
    with `g(n: i32): void`. `tsc` accepts it.
+   *(Closed 2026-11-12 by §258.)*
 2. A local lambda that calls itself stays rejected with S100 "`loc` is
    read before its declaration in this block":
    `const loc = (k: i32) => { if (k > 0) loc(k - 1); };` in a function
