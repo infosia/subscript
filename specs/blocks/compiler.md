@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246, §247, §248, §249, §250, §251, §252 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118, §195, §196, §197, §198, §199, §200, §201, §202, §203, §204, §205, §206, §207, §208, §209, §212, §215, §216, §217, §218, §219, §221, §227, §228, §229, §230, §231, §232, §233, §234, §235, §236, §237, §238, §239, §240, §241, §242, §243, §244, §245, §246, §247, §248, §249, §250, §251, §252, §253 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75, §220 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214 |
@@ -294,3 +294,4 @@ Every section, with its status:
 | §250 | A `void` function returns `undefined` | active | [`s250-a-void-function-returns-undefined.md`](compiler/s250-a-void-function-returns-undefined.md) |
 | §251 | A nullable function type gives a lambda its parameter types | active | [`s251-a-nullable-function-type-gives-a-lambda-its-parameter-types.md`](compiler/s251-a-nullable-function-type-gives-a-lambda-its-parameter-types.md) |
 | §252 | A lambda in a type parameter place names no TypeScript form | active | [`s252-a-lambda-in-a-type-parameter-place-names-no-typescript-form.md`](compiler/s252-a-lambda-in-a-type-parameter-place-names-no-typescript-form.md) |
+| §253 | A binding named `undefined` is a binding | active | [`s253-a-binding-named-undefined-is-a-binding.md`](compiler/s253-a-binding-named-undefined-is-a-binding.md) |
