@@ -398,6 +398,9 @@ tree.
 5. On exit, by every path, it deletes the file it wrote and runs
    `git checkout -- Cargo.lock` in the downstream checkout. It exits
    with the gate's status.
+   *(Revised 2026-11-13 by §260: the script refuses a changed or an
+   untracked `Cargo.lock` before it writes a file, and a signal gives
+   exit 128 plus the signal number.)*
 6. The script is not a CI gate. It runs once before a pin candidate
    is named; the result is recorded with the candidate in the
    tracking note. A red run yields the smallest failing program as a
