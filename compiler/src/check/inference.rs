@@ -47,6 +47,19 @@ fn context_sensitive(expr: &ast::Expr) -> bool {
     }
 }
 
+/// Whether the argument `argument` of a generic callee takes the site of
+/// a generic callback (compiler.md §252 rule 1): a lambda in a place of a
+/// function type `F`, or `F | null`, with `function_params` parameters,
+/// and the lambda has no more parameters than `F`.
+pub(super) fn generic_callback_place(function_params: Option<usize>, argument: &ast::Expr) -> bool {
+    match unparen_expr(argument) {
+        ast::Expr::Arrow(lambda) => {
+            function_params.is_some_and(|count| lambda.params.len() <= count)
+        }
+        _ => false,
+    }
+}
+
 fn pattern_annotation(pattern: &ast::Pat) -> Option<&ast::TsType> {
     match pattern {
         ast::Pat::Ident(binding) => binding.type_ann.as_ref().map(|ann| &*ann.type_ann),
@@ -522,6 +535,53 @@ impl<'p> Checker<'p> {
         None
     }
 
+    /// The count of parameters of the function type that the declared
+    /// annotation of a parameter of `target` names, before the substitution
+    /// of its type arguments: a function type `F`, or `F | null` (compiler.md
+    /// §252 rule 1, §251). A type parameter names no function type.
+    fn declared_function_arity(
+        &self,
+        annotation: &ast::TsType,
+        target: &InferenceTarget<'_>,
+    ) -> Option<usize> {
+        match annotation {
+            ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
+                Some(function.params.len())
+            }
+            ast::TsType::TsParenthesizedType(parenthesized) => {
+                self.declared_function_arity(&parenthesized.type_ann, target)
+            }
+            ast::TsType::TsUnionOrIntersectionType(
+                ast::TsUnionOrIntersectionType::TsUnionType(union),
+            ) => {
+                let mut members = union.types.iter().filter(|member| {
+                    !matches!(&***member, ast::TsType::TsKeywordType(keyword)
+                        if keyword.kind == ast::TsKeywordTypeKind::TsNullKeyword)
+                });
+                match (members.next(), members.next()) {
+                    (Some(member), None) => self.declared_function_arity(member, target),
+                    _ => None,
+                }
+            }
+            ast::TsType::TsTypeRef(reference) => {
+                let ast::TsEntityName::Ident(name) = &reference.type_name else {
+                    return None;
+                };
+                let name = name.sym.as_ref();
+                if target.type_params.iter().any(|parameter| parameter == name) {
+                    return None;
+                }
+                // A type alias is not generic (compiler.md §202 rule 7), so it
+                // resolves with no type argument.
+                self.type_aliases
+                    .get(name)
+                    .and_then(|ty| self.lambda_context(ty))
+                    .map(|function| function.params.len())
+            }
+            _ => None,
+        }
+    }
+
     /// The inferred type of a type parameter from its candidates: the
     /// first candidate that is not `null`, joined with each other one,
     /// and nullable when a candidate is `null` (§149 rule 4, §212 rule 3).
@@ -631,11 +691,17 @@ impl<'p> Checker<'p> {
                         Some(context)
                     }
                 });
-            let saved = std::mem::replace(
-                &mut self.generic_callback_context,
-                index < annotations.len()
-                    && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)),
+            // compiler.md §252 rule 1: a call that infers its type
+            // arguments reads the declared type of the place.
+            let callback_place = generic_callback_place(
+                annotations
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .and_then(|annotation| self.declared_function_arity(annotation, target)),
+                &argument.expr,
             );
+            let saved = std::mem::replace(&mut self.generic_callback_context, callback_place);
             // §229 rule 1: a callback whose result is a type parameter with a
             // contextual candidate checks its body with that candidate. The
             // body still gives the candidate of the parameter (§229 rule 2).

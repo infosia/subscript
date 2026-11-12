@@ -140,3 +140,4 @@ that reads a context at the pin.
 5. The S100 at a lambda in a generic call that a hint reaches carries
    the divergence block "TypeScript accepts: each([1, 2], (x) => {})".
    `tsc` rejects those forms with TS7006, so the block is wrong there.
+   *(Closed 2026-11-12 by §252.)*

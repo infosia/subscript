@@ -59,3 +59,28 @@ accepts, as a cause that does not apply.
    controls `lone`, `each`, and `fn` that keep the block.
 4. The witnesses and divergence entries move with the site. If a corpus
    entry or golden changes, report it and stop. No golden moves.
+
+### 252.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding.
+
+1. MINOR, contrived, fixed: a lambda with more parameters than the
+   function type of its place kept the block, and `tsc` rejects it
+   (TS2345, TS7006). `wrap<CB>((x, y) => {})` and `lone((x, y) => {})`
+   gave the block, and `new Box<CB>((x, y) => {})` did not, so the two
+   writers of the site disagreed. Rule 1 now names the parameter count
+   and the type after an explicit substitution. Both writers read one
+   predicate.
+2. MINOR, fixed: no test reached the writer of a call with explicit
+   type arguments. A unit test now pins it.
+3. MINOR, contrived, recorded: §252.4 item 1.
+
+### 252.4 Open
+
+1. A `const` with a nullable function type and the initializer `null`
+   keeps its declared type as an argument. With
+   `two<T>(a: T, b: T)`, `const g: CB | null = null; two(g, (x) => …);`
+   is accepted, and the lambda takes the parameter types of `CB`
+   (§251). `tsc` narrows `g` to `null`, infers `T` as `null`, and gives
+   TS2345 and TS7006. Before §251 the lambda gave S100.

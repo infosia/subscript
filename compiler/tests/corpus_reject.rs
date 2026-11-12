@@ -249,6 +249,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         13,
     ),
+    (
+        "r498-a-lambda-in-a-type-parameter-place-names-no-typescript-form.ts",
+        RuleCode::S100,
+        26,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

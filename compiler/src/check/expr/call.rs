@@ -1591,8 +1591,17 @@ impl<'p> Checker<'p> {
                 self.cycle(self.pos(arg.expr.span()));
             }
             let param_ty = params.get(i).map(|p| p.ty().clone());
-            let callback_context =
-                generic_callee && matches!(super::unparen_expr(&arg.expr), ast::Expr::Arrow(_));
+            // compiler.md §252 rule 1: a call with its type arguments, given
+            // or inferred, reads the type of the place after the
+            // substitution.
+            let callback_context = generic_callee
+                && crate::check::inference::generic_callback_place(
+                    param_ty
+                        .as_ref()
+                        .and_then(|ty| self.lambda_context(ty))
+                        .map(|function| function.params.len()),
+                    &arg.expr,
+                );
             let saved_context =
                 std::mem::replace(&mut self.generic_callback_context, callback_context);
             let mut checked =

@@ -684,8 +684,11 @@ fn generic_class_method_defaults_reject_class_parameter_types_only() {
     module("class Cell<T> { a: T[] = []; b = this.a; constructor(a: T[]) { this.a = a; } pick(n = this.a.length): i32 { return n; } pair(other: T[] = this.a): T[] { return other; } } function f<T>(k: T, other = k): T { return other; }");
 }
 
+/// compiler.md §252 rule 2: a lambda in a place whose declared type is a
+/// type parameter has no context, and `tsc` rejects its parameter, so the
+/// diagnostic carries no divergence block.
 #[test]
-fn every_generic_parameter_supplies_the_rule_six_context() {
+fn a_lambda_in_a_type_parameter_place_has_no_block() {
     for source in [
         "function g<T>(v: T): void {} g((x) => 1);",
         "function g<T>(v: T): void {} g<i32>((x) => 1);",
@@ -696,7 +699,7 @@ fn every_generic_parameter_supplies_the_rule_six_context() {
             diagnostics
                 .iter()
                 .any(|d| d.message == "parameters require a type annotation"
-                    && d.divergence == Some(subscript_compiler::divergence::Divergence::GenericCallbackParameterAnnotationNeeded)),
+                    && d.divergence.is_none()),
             "{diagnostics:?}"
         );
     }
@@ -705,7 +708,8 @@ fn every_generic_parameter_supplies_the_rule_six_context() {
 /// compiler.md §249 rule 2a: a function value argument fixes the type
 /// parameter, and a lambda argument takes that type as its context, in
 /// each of three accepted forms. The control: with no argument that fixes
-/// it, the lambda keeps the parameter divergence.
+/// it, the lambda has no context. Its place is a type parameter, so the
+/// diagnostic is a `tsc` rejection with no block (§252 rule 2).
 #[test]
 fn a_function_value_argument_types_a_lambda_argument() {
     for source in [
@@ -718,8 +722,12 @@ fn a_function_value_argument_types_a_lambda_argument() {
     }
     let source = "function pair<T>(a: T, b: T): T { return b; } pair((x) => x + 1, (x) => x + 1);";
     let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
-    assert!(diagnostics.iter().any(|d| d.message == "parameters require a type annotation"
-        && d.divergence == Some(subscript_compiler::divergence::Divergence::GenericCallbackParameterAnnotationNeeded)), "{source}: {diagnostics:?}");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.message == "parameters require a type annotation" && d.divergence.is_none()),
+        "{source}: {diagnostics:?}"
+    );
 }
 
 #[test]
