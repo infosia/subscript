@@ -165,3 +165,4 @@ rules 2 to 4.
    `two(v(), v())`, fails the release fact of the LIR test model at
    `3aa70ee7`. The output of the program is correct. `a423` holds such
    handles in locals.
+   *(Closed 2026-11-12 by §255.)*

@@ -1,0 +1,21 @@
+plain 2
+throws caught
+rejects caught
+held 2
+array 2
+generator 31
+for-of 2
+generator const 31
+generator let 31
+capture caught
+after 1
+push caught 2
+task 1
+task 1
+read caught
+store caught
+ps 1
+default caught
+fixed 1
+fixed 1
+fixed caught

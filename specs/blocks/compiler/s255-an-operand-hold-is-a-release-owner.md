@@ -96,6 +96,33 @@ owners of the HIR, so it requires 0 releases where the lowering releases
    `a439` block. No other golden moves. If another corpus entry or
    golden changes, report it and stop.
 
+### 255.3 Phase Review
+
+Two fresh reviews of the implementation. No CRITICAL finding.
+
+1. MAJOR, realistic, fixed (first review): the lowering took holds at
+   sites that rule 1 did not name, so a correct program failed the
+   model: `tasks.push(start(i))` with a `let tasks`, a read
+   `hs[it(1)]`, and the second hold of an assignment base. An audit of
+   each hold site of the lowering gave the six sites of rule 1.
+2. MINOR, fixed (first review): the model counted `Promise.all` as user
+   code, and the lowering does not. Rule 2 states it.
+3. MAJOR, realistic, fixed (second review): the model counted the edges
+   in a parameter default once per call. The lowering emits a default
+   once per parameter, so a function with a raising default and two
+   calls failed the model. Rule 4 states the count.
+4. MINOR, contrived, fixed (second review): the hold of a `for…of`
+   subject over a `FixedArray` place lasts to the end of the loop. Rule 3
+   states it.
+5. MAJOR, realistic, recorded (second review): §255.4 item 4. It is a
+   defect of the lowering that is older than §255.
+
+Before the implementation, the coding agent stopped three times on a
+difference between rule 1 and the lowering: a counted operand that is
+not an async handle, a binding of a `for…of` loop, and a capture. Each
+stop amended rule 1. An audit of each binding of the lowering then
+closed the list.
+
 ### 255.4 Open
 
 1. A `const` binding of a `for…of` loop over an array cannot change in one
