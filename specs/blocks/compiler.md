@@ -302,3 +302,4 @@ Every section, with its status:
 | §258 | A conditional in a statement place takes `void` leaves | active | [`s258-a-conditional-in-a-statement-place-takes-void-leaves.md`](compiler/s258-a-conditional-in-a-statement-place-takes-void-leaves.md) |
 | §259 | A string-literal alias converts to `string` | active | [`s259-a-string-literal-alias-converts-to-string.md`](compiler/s259-a-string-literal-alias-converts-to-string.md) |
 | §260 | The downstream script keeps a changed lockfile | active | [`s260-the-downstream-script-keeps-a-changed-lockfile.md`](compiler/s260-the-downstream-script-keeps-a-changed-lockfile.md) |
+| §261 | The reload fingerprint holds each layout input | active | [`s261-the-reload-fingerprint-holds-each-layout-input.md`](compiler/s261-the-reload-fingerprint-holds-each-layout-input.md) |
