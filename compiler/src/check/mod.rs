@@ -557,6 +557,17 @@ pub(crate) struct Scope {
     pub dispose_on_exit: bool,
 }
 
+impl Scope {
+    /// Whether this scope owns a binding of `name`: a local, a name that a
+    /// later declaration of the scope owns, or a name that a `switch` case
+    /// declares.
+    pub(crate) fn owns(&self, name: &str) -> bool {
+        self.vars.contains_key(name)
+            || self.pending.contains(name)
+            || self.switch_declarations.contains_key(name)
+    }
+}
+
 fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
     fn statement_has_dispose(statement: &hir::Stmt) -> bool {
         matches!(statement, hir::Stmt::Let { dispose: true, .. })

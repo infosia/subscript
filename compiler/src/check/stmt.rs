@@ -533,9 +533,7 @@ impl<'p> Checker<'p> {
             && fx.frames.last().is_some_and(|frame| frame.is_lambda);
         let value = match &r.arg {
             Some(arg) if poisoned_result => Some(self.err_expr(self.pos(arg.span()))),
-            Some(arg)
-                if !is_generator && ret != Type::Void && super::expr::is_undefined_token(arg) =>
-            {
+            Some(arg) if !is_generator && ret != Type::Void && self.is_undefined_token(arg, fx) => {
                 Some(self.check_return_undefined(arg, &ret))
             }
             Some(arg) => {
@@ -638,7 +636,7 @@ impl<'p> Checker<'p> {
         }
         // compiler.md §250 rules 1 to 3: the literal `undefined` is
         // `return;`.
-        if super::expr::is_undefined_token(arg) {
+        if self.is_undefined_token(arg, fx) {
             out.push(hir::Stmt::Return {
                 value: None,
                 pos: pos.clone(),

@@ -10,9 +10,9 @@ use crate::hir::{self, BinOp, Callee, ExprKind, UnOp};
 use crate::types::Type;
 
 use super::{
-    assign_binary_op, flatten_optional_chain, is_place_expr, is_undefined_ident, literalish,
-    opt_call_as_call, unparen_expr, write_spelling, BinResult, BinUse, OptionalPlan, OptionalStep,
-    Place, PlaceSource, WriteExpression,
+    assign_binary_op, flatten_optional_chain, is_place_expr, literalish, opt_call_as_call,
+    unparen_expr, write_spelling, BinResult, BinUse, OptionalPlan, OptionalStep, Place,
+    PlaceSource, WriteExpression,
 };
 
 impl<'p> Checker<'p> {
@@ -1105,8 +1105,8 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> Option<hir::Expr> {
-        let left_undefined = is_undefined_ident(&binary.left);
-        let right_undefined = is_undefined_ident(&binary.right);
+        let left_undefined = self.is_undefined_token(&binary.left, fx);
+        let right_undefined = self.is_undefined_token(&binary.right, fx);
         if !left_undefined && !right_undefined {
             return None;
         }

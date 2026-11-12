@@ -254,6 +254,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         26,
     ),
+    (
+        "r499-a-binding-named-undefined-is-a-binding.ts",
+        RuleCode::S100,
+        9,
+    ),
     ("r405-foreign-result-pair.ts", RuleCode::S100, 11),
     ("r406-foreign-result-embedded-pair.ts", RuleCode::S100, 11),
     (

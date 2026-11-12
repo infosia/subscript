@@ -135,6 +135,24 @@ impl<'p> Checker<'p> {
             .or_else(|| self.ambient_scope.get(name))
     }
 
+    /// Whether `e`, through parentheses, is the token `undefined` of C7:
+    /// the identifier `undefined` with no binding of that name in scope
+    /// (compiler.md §253 rule 1). The checker admits the token in its three
+    /// legal places: the result of a function with the result
+    /// `T | undefined` (§195.2 rule 1), the result of a function with the
+    /// result `void` (§250), and an absence comparison (§43). Each other
+    /// place rejects it.
+    pub(crate) fn is_undefined_token(&self, e: &ast::Expr, fx: &FnCtx) -> bool {
+        super::expr::is_undefined_name(e) && !self.binds_name("undefined", fx)
+    }
+
+    /// Whether a binding of `name` is in scope: a local of a scope of
+    /// `fx`, also one that a later declaration of the scope owns, or a
+    /// binding of the file or of the global scope.
+    pub(crate) fn binds_name(&self, name: &str, fx: &FnCtx) -> bool {
+        fx.scopes.iter().any(|scope| scope.owns(name)) || self.scope_binding(name).is_some()
+    }
+
     /// Looks a name up in the local scope stack. A hit that crosses a
     /// lambda boundary is a capture: it is recorded on every crossed
     /// lambda frame and must refer to a `const` binding (C5).
@@ -162,9 +180,7 @@ impl<'p> Checker<'p> {
         let mut crossed = 0usize;
         let mut found: Option<(usize, Local)> = None;
         for scope in fx.scopes.iter().rev() {
-            let owns_name = scope.vars.contains_key(name)
-                || scope.pending.contains(name)
-                || scope.switch_declarations.contains_key(name);
+            let owns_name = scope.owns(name);
             let scope_name = if scope.is_switch {
                 "this switch body"
             } else {

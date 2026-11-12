@@ -54,3 +54,26 @@ the syntax only (`is_undefined_token`), so a binding does not change it.
    outer scope.
 4. If a corpus entry or golden changes its type or output, report it
    and stop. No golden moves.
+
+### 253.3 Phase Review
+
+One fresh review of the implementation. No CRITICAL finding, and no
+MAJOR finding. The review compared the scope test of rule 1 with the
+lookup that reads the binding, at 30 forms of binding, and found no
+form where the two disagree.
+
+1. MINOR, contrived, fixed: the predicate that a scope owns a name was
+   written three times. `Scope::owns` now holds it, and each reader
+   uses it.
+2. MINOR, contrived, no change: a binding with a rejected initializer
+   gives a second diagnostic at `return undefined;`. `tsc` also gives
+   two errors.
+3. MINOR, contrived, recorded: §253.4 item 1.
+
+### 253.4 Open
+
+1. A type parameter named `undefined` is accepted:
+   `function f<undefined>(x: i32): void { return undefined; }` runs.
+   `tsc` rejects it with TS2368 "Type parameter name cannot be
+   'undefined'". This is older than §253: a type parameter is not a
+   value binding, so rule 1 does not apply.

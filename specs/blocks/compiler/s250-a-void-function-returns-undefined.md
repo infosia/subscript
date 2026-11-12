@@ -90,3 +90,4 @@ The texts of §195 and `collisions.md` C7 now name the result `void`.
    accepted, and it returns nothing. `tsc` rejects it with TS2322 "Type
    'number' is not assignable to type 'void'". `tsc` accepts a binding
    named `undefined`, so a rejection of the binding does not close it.
+   *(Closed 2026-11-12 by §253.)*

@@ -216,20 +216,14 @@ fn literalish(e: &ast::Expr) -> bool {
     }
 }
 
-/// Whether an expression is the `undefined` token, in parentheses or not.
-pub(super) fn is_undefined_token(e: &ast::Expr) -> bool {
-    is_undefined_ident(e)
-}
-
-/// Recognizes the one token whose ordinary identifier path is rejected
-/// (C7). The checker admits it before general expression checking in its
-/// three legal places: the result of a function with the result
-/// `T | undefined` (compiler.md §195.2 rule 1), the result of a function
-/// with the result `void` (§250), and an absence comparison (§43).
-fn is_undefined_ident(e: &ast::Expr) -> bool {
+/// Whether an expression is the identifier `undefined`, in parentheses or
+/// not. The identifier is the token of C7 only with no binding of that
+/// name in scope: `Checker::is_undefined_token` decides (compiler.md §253
+/// rule 1).
+pub(super) fn is_undefined_name(e: &ast::Expr) -> bool {
     match e {
         ast::Expr::Ident(id) => id.sym.as_ref() == "undefined",
-        ast::Expr::Paren(paren) => is_undefined_ident(&paren.expr),
+        ast::Expr::Paren(paren) => is_undefined_name(&paren.expr),
         _ => false,
     }
 }

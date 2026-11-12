@@ -487,7 +487,9 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let name = id.sym.to_string();
         let pos = self.pos(id.span);
-        if name == "undefined" {
+        // compiler.md §253 rule 1: a binding named `undefined` is read as
+        // a binding.
+        if name == "undefined" && !self.binds_name(&name, fx) {
             self.reject_subset(
                 if matches!(
                     ctx.map(|ty| self.apparent_type(ty)),
@@ -502,11 +504,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if let Some(scope) = fx.scopes.iter().rposition(|s| {
-            s.vars.contains_key(&name)
-                || s.pending.contains(&name)
-                || s.switch_declarations.contains_key(&name)
-        }) {
+        if let Some(scope) = fx.scopes.iter().rposition(|s| s.owns(&name)) {
             if fx.parameter_decisions.contains(&(scope, name.clone())) {
                 self.cycle(pos.clone());
                 return self.err_expr(pos);

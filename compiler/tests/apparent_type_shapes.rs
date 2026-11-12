@@ -688,7 +688,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("expr/namespace.rs", "check_worker_spawn", 0x5debbbffdf4b6cb8),
             ("host_entries.rs", "populate", 0x19f942a8ec1b1313),
             ("pipeline.rs", "visit_expr", 0xbfa87e28830c1a2f),
-            ("stmt.rs", "check_return", 0xf5a688aebb2615fa),
+            ("stmt.rs", "check_return", 0xcc9ffd8cdbdfaf84),
         ],
     },
 
