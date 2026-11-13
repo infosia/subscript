@@ -305,3 +305,4 @@ Every section, with its status:
 | §261 | The reload fingerprint holds each layout input | active | [`s261-the-reload-fingerprint-holds-each-layout-input.md`](compiler/s261-the-reload-fingerprint-holds-each-layout-input.md) |
 | §262 | A runtime build writes where its reader reads | active | [`s262-a-runtime-build-writes-where-its-reader-reads.md`](compiler/s262-a-runtime-build-writes-where-its-reader-reads.md) |
 | §263 | A raw registration is `unsafe` | active | [`s263-a-raw-registration-is-unsafe.md`](compiler/s263-a-raw-registration-is-unsafe.md) |
+| §264 | A foreign call releases its scratch before the trap check | active | [`s264-a-foreign-call-releases-its-scratch-before-the-trap-check.md`](compiler/s264-a-foreign-call-releases-its-scratch-before-the-trap-check.md) |
