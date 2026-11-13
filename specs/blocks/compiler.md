@@ -307,3 +307,4 @@ Every section, with its status:
 | §263 | A raw registration is `unsafe` | active | [`s263-a-raw-registration-is-unsafe.md`](compiler/s263-a-raw-registration-is-unsafe.md) |
 | §264 | A foreign call releases its scratch before the trap check | active | [`s264-a-foreign-call-releases-its-scratch-before-the-trap-check.md`](compiler/s264-a-foreign-call-releases-its-scratch-before-the-trap-check.md) |
 | §265 | A header binds with its own directory | active | [`s265-a-header-binds-with-its-own-directory.md`](compiler/s265-a-header-binds-with-its-own-directory.md) |
+| §266 | A failed load watches each file it tried | active | [`s266-a-failed-load-watches-each-file-it-tried.md`](compiler/s266-a-failed-load-watches-each-file-it-tried.md) |
