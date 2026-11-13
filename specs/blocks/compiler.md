@@ -315,3 +315,4 @@ Every section, with its status:
 | §271 | A Map or Set iteration ends with its owner | active | [`s271-a-map-or-set-iteration-ends-with-its-owner.md`](compiler/s271-a-map-or-set-iteration-ends-with-its-owner.md) |
 | §272 | A session with a failed initializer runs no entry | active | [`s272-a-session-with-a-failed-initializer-runs-no-entry.md`](compiler/s272-a-session-with-a-failed-initializer-runs-no-entry.md) |
 | §273 | The suspension live-in analysis reaches a fixed point | active | [`s273-the-suspension-live-in-analysis-reaches-a-fixed-point.md`](compiler/s273-the-suspension-live-in-analysis-reaches-a-fixed-point.md) |
+| §274 | A capturing lambda that escapes owns its environment | active | [`s274-a-capturing-lambda-that-escapes-owns-its-environment.md`](compiler/s274-a-capturing-lambda-that-escapes-owns-its-environment.md) |
