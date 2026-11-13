@@ -149,6 +149,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::DescriptorRequiredMemberMissing => WitnessEntry::General { files: &["a-s008"], variant: None, reason: "" },
 
         RejectionSite::EnabledModuleUnknown => WitnessEntry::General { files: &[], variant: None, reason: "options.enabled_modules names another module; no source program reaches this input guard." },
+        RejectionSite::DuplicateModuleStem => WitnessEntry::General { files: &[], variant: None, reason: "Duplicate host module stems are a program input error; compiler/tests/duplicate_module_stem.rs checks this guard." },
         RejectionSite::SourceFilesEmpty => WitnessEntry::General { files: &[], variant: None, reason: "files.is_empty(); no source program reaches this input guard." },
         RejectionSite::ParserLoneSurrogateEscape => WitnessEntry::General { files: &["c-parse-surrogate"], variant: Some(Divergence::LoneSurrogateEscape), reason: "" },
         RejectionSite::ParserSyntaxError => WitnessEntry::General { files: &["a-s214", "a-s231", "parser-syntax-error", "parser-syntax-error-witness-2", "parser-syntax-error-witness-3", "parser-syntax-error-witness-4", "parser-syntax-error-witness-5", "parser-syntax-error-witness-6", "parser-syntax-error-witness-7", "parser-syntax-error-witness-8", "parser-syntax-error-witness-9", "parser-syntax-error-witness-10", "c-parse-identifier-surrogate", "c-parse-invalid", "WithStatement"], variant: None, reason: "" },

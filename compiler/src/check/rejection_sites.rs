@@ -127,6 +127,7 @@ pub(crate) enum RejectionSite {
     BindingPatternSourceKind,
     BindingPatternNonIterableSource,
 
+    DuplicateModuleStem,
     SourceFilesEmpty,
     EnabledModuleUnknown,
     ParserLoneSurrogateEscape,

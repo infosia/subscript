@@ -96,6 +96,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::MapCallbackArgumentCount,
     RejectionSite::SetCallbackArgumentCount,
     RejectionSite::DescriptorRequiredMemberMissing,
+    RejectionSite::DuplicateModuleStem,
     RejectionSite::SourceFilesEmpty,
     RejectionSite::EnabledModuleUnknown,
     RejectionSite::ParserLoneSurrogateEscape,

@@ -47,7 +47,8 @@ each group's programs in one process costs 0.04–0.12 s.
    catch-all over a syntax kind, an operator, a receiver type, or a
    callee origin splits by that fact.
 2. **The site states its code and its class.** One exhaustive `match`
-   maps each site to its `RuleCode` and to one of two classes:
+   maps each site to its `RuleCode` and to one of two classes
+   *(three since §267 rule 5: `ProgramInput` for a host input)*:
    - `Diverges(Divergence)`: a `tsc`-accepted program reaches the
      site, or the site is S014 (§153 rule 1). The diagnostic carries
      the variant.

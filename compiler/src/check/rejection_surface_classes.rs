@@ -5,7 +5,7 @@ macro_rules! rejection_classes {
     ($($core:tt)*) => {
         impl RejectionSite {
             pub(crate) fn class(self) -> (RuleCode, RejectionClass) {
-                use RejectionClass::{Diverges, TscRejects};
+                use RejectionClass::{Diverges, ProgramInput, TscRejects};
                 match self {
                     $($core)*
                     Self::ProvenanceUnknownKind => {

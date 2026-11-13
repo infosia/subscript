@@ -84,7 +84,7 @@ impl ParsedProgram {
 
 /// Derives the import stem from a file name: base name without a
 /// trailing `.ts`.
-fn stem_of(name: &str) -> String {
+pub(crate) fn stem_of(name: &str) -> String {
     let base = name.rsplit('/').next().unwrap_or(name);
     base.strip_suffix(".ts").unwrap_or(base).to_string()
 }

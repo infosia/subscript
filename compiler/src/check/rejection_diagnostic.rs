@@ -16,13 +16,15 @@ impl Checker<'_> {
 pub(crate) enum RejectionClass {
     Diverges(Divergence),
     TscRejects,
+    // A host input error, not a subset rejection (compiler.md §267 rule 5).
+    ProgramInput,
 }
 
 impl RejectionClass {
     pub(crate) fn divergence(self) -> Option<Divergence> {
         match self {
             Self::Diverges(variant) => Some(variant),
-            Self::TscRejects => None,
+            Self::TscRejects | Self::ProgramInput => None,
         }
     }
 }

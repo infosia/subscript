@@ -222,8 +222,9 @@ rejection_classes! {
     Self::BindingPatternSourceKind => {
         (RuleCode::S100, Diverges(Divergence::PatternSourceShape))
     }
-    Self::SourceFilesEmpty => (RuleCode::S100, TscRejects),
-    Self::EnabledModuleUnknown => (RuleCode::S100, TscRejects),
+    Self::DuplicateModuleStem => (RuleCode::S100, ProgramInput),
+    Self::SourceFilesEmpty => (RuleCode::S100, ProgramInput),
+    Self::EnabledModuleUnknown => (RuleCode::S100, ProgramInput),
     Self::ParserLoneSurrogateEscape => {
         (RuleCode::S100, Diverges(Divergence::LoneSurrogateEscape))
     }

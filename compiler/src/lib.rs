@@ -79,6 +79,7 @@ pub struct CheckOptions {
 pub struct SourceFile {
     /// File name used in diagnostics and for import resolution (the
     /// base name without `.ts` is the module stem).
+    /// Non-ambient files must have distinct stems (compiler.md §267 rule 1).
     pub name: String,
     /// Full source text.
     pub source: String,
@@ -162,6 +163,21 @@ pub fn check_program_with(
             "no source files given",
             Pos::new(String::new(), 1, 1),
         )]);
+    }
+    // Reject duplicate module stems before any pass (compiler.md §267 rule 1).
+    let mut stems = std::collections::HashMap::new();
+    for file in files.iter().filter(|file| !file.dts) {
+        let stem = parse::stem_of(&file.name);
+        if let Some(first) = stems.insert(stem.clone(), &file.name) {
+            return Err(vec![diagnostic(
+                RejectionSite::DuplicateModuleStem,
+                format!(
+                    "duplicate module stem `{stem}`: `{first}` and `{}`",
+                    file.name
+                ),
+                Pos::new(&file.name, 1, 1),
+            )]);
+        }
     }
     let unknown: Vec<_> = options
         .enabled_modules
