@@ -20,6 +20,7 @@ NODE=${NODE:-node}
 TSC=${TSC:-node_modules/.bin/tsc}
 CC=${CC:-cc}
 GIT=${GIT:-git}
+HYGIENE=${HYGIENE:-tools/hygiene.sh}
 record=
 scratch=
 interrupted=0
@@ -294,6 +295,6 @@ if [ "$shape" = full ]; then
     run release "$CARGO" test --offline --locked --workspace --no-fail-fast --release || :
     run clippy "$CARGO" clippy --offline --locked --workspace --all-targets || :
     run tsc "$TSC" -p tsconfig.json || :
-    run hygiene tools/hygiene.sh || :
+    run hygiene "$HYGIENE" || :
 fi
 finish

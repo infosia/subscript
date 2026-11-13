@@ -1,3 +1,5 @@
+#![cfg(debug_assertions)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -89,6 +91,13 @@ esac
             "tsc",
             "#!/bin/sh\ncase \"$1\" in -v) echo 'Version stub';; -p) echo 'tsc ran';; *) exit 92;; esac\n",
         );
+        stubs.write(
+            "hygiene",
+            &format!(
+                "#!/bin/sh\necho 'hygiene stub ran'\nexit {}\n",
+                if case == "hygiene-failed" { 1 } else { 0 }
+            ),
+        );
         stubs.write("cc", "#!/bin/sh\necho 'cc stub'\necho 'second cc line'\n");
         stubs.write(
             "git",
@@ -136,7 +145,8 @@ esac
             .env("NODE", self.dir.join("node"))
             .env("TSC", self.dir.join("tsc"))
             .env("CC", self.dir.join("cc"))
-            .env("GIT", self.dir.join("git"));
+            .env("GIT", self.dir.join("git"))
+            .env("HYGIENE", self.dir.join("hygiene"));
         command
     }
 
@@ -303,7 +313,10 @@ fn full_fails_on_release_skip() {
     assert!(release.contains(" test --offline --locked --workspace --no-fail-fast --release\nenvironment: SUBSCRIPT_FULL_INTERPRETER_SWEEP=1\n"));
     assert!(release.contains("tests: 5/0/3\ngate-skip count: 1\n```text\ngate-skip: stub_suite unset fixture variable\n```"));
     assert!(release.contains("release sweep: 1"));
-    assert!(release.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
+    assert!(release.contains(&format!(
+        "## hygiene\ncommand: {}\n",
+        stubs.dir.join("hygiene").display()
+    )));
 }
 
 #[test]
@@ -339,7 +352,21 @@ fn full_continues_after_failed_tests() {
     assert!(record.contains("exit status: 1\ntests: 2/1/0\ngate-skip count: 0\n"));
     assert!(record.contains("release sweep: 1"));
     assert!(record.contains("stdout:\n```text\ntsc ran\n"));
-    assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\nenvironment: none\n"));
+    let hygiene = record.split("## hygiene\n").nth(1).unwrap();
+    assert!(hygiene.contains("stdout:\n```text\nhygiene stub ran\n"));
+    assert!(record.find("## tsc\n").unwrap() < record.find("## hygiene\n").unwrap());
+    assert_eq!(
+        hygiene
+            .lines()
+            .filter(|line| line.starts_with("## "))
+            .collect::<Vec<_>>(),
+        ["## Modified or deleted goldens"]
+    );
+
+    assert!(record.contains(&format!(
+        "## hygiene\ncommand: {}\nenvironment: none\n",
+        stubs.dir.join("hygiene").display()
+    )));
 }
 
 #[test]
@@ -356,7 +383,10 @@ fn full_fails_above_codegen_clippy_baseline() {
     assert!(record
         .contains(" clippy --offline --locked --workspace --all-targets\nenvironment: none\n"));
     assert!(record.contains("warning: `subscript-codegen` (lib) generated 14 warnings"));
-    assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
+    assert!(record.contains(&format!(
+        "## hygiene\ncommand: {}\n",
+        stubs.dir.join("hygiene").display()
+    )));
 }
 
 #[test]
@@ -400,7 +430,10 @@ fn full_passes_at_all_clippy_baselines() {
         "full",
         "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 0",
     );
-    assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\nenvironment: none\n"));
+    assert!(record.contains(&format!(
+        "## hygiene\ncommand: {}\nenvironment: none\n",
+        stubs.dir.join("hygiene").display()
+    )));
     assert!(record.contains("tests: 5/0/3\ngate-skip count: 0\n"));
 }
 
@@ -416,7 +449,10 @@ fn full_fails_above_compiler_clippy_baseline() {
         "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 8/18/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-compiler` (lib) generated 8 warnings"));
-    assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
+    assert!(record.contains(&format!(
+        "## hygiene\ncommand: {}\n",
+        stubs.dir.join("hygiene").display()
+    )));
 }
 
 #[test]
@@ -431,7 +467,10 @@ fn full_fails_above_runtime_clippy_baseline() {
         "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/19/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-runtime` (lib) generated 19 warnings"));
-    assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
+    assert!(record.contains(&format!(
+        "## hygiene\ncommand: {}\n",
+        stubs.dir.join("hygiene").display()
+    )));
 }
 
 /// §85 rule 5: the moved-golden list is a `.expected` file, an
@@ -554,4 +593,31 @@ fn term_during_debug_deletes_the_partial_record() {
             .to_string_lossy()
             .starts_with("subscript-gate.")
     }));
+}
+
+#[test]
+fn full_fails_on_hygiene_failure() {
+    let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let stubs = Stubs::new("hygiene-failed");
+    let output = stubs.run("full");
+    assert_eq!(output.status.code(), Some(1));
+    let record = assert_record(
+        &output,
+        "full",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 1",
+    );
+    let hygiene = record.split("## hygiene\n").nth(1).unwrap();
+    assert!(hygiene.contains("stdout:\n```text\nhygiene stub ran\n"));
+    assert!(hygiene.contains("exit status: 1\n"));
+}
+
+#[test]
+fn hygiene_script_appears_only_as_the_default() {
+    let script = std::fs::read_to_string(root().join("tools/gate.sh")).unwrap();
+    let lines: Vec<_> = script
+        .lines()
+        .filter(|line| line.contains("tools/hygiene.sh"))
+        .collect();
+    assert_eq!(lines, ["HYGIENE=${HYGIENE:-tools/hygiene.sh}"]);
+    assert!(script.contains("run hygiene \"$HYGIENE\""));
 }
