@@ -841,3 +841,34 @@ fn watched_async_corpus_matches_run_and_a_body_edit() -> Result<(), String> {
     }
     Ok(())
 }
+
+// compiler.md §272 rule 5: watch waits after an initializer trap and retries on an edit.
+#[test]
+fn watch_recovers_from_failed_initializer() -> Result<(), String> {
+    let broken = "print('init'); throw new Error('init failed'); const g: i32 = 7; export function main(): void { print(`${g}`); }";
+    let mut watch = WatchSession::new(false);
+    let WatchOutcome::Started(call) = watch.step(&files(broken)).outcome else {
+        panic!("expected start")
+    };
+    assert_eq!(call.trap.expect("initializer trap").stdout, b"init\n");
+    let WatchOutcome::Swapped(call) = watch
+        .step(&files(&broken.replace("init failed", "retry failed")))
+        .outcome
+    else {
+        panic!("expected swap")
+    };
+    let trap = call.trap.expect("refused entry");
+    assert!(trap.message.contains("initializer trap"));
+    assert_eq!(trap.stdout, b"init\n");
+    assert_eq!(
+        call_output(
+            watch
+                .step(&files(
+                    &broken.replace("throw new Error('init failed');", "")
+                ))
+                .outcome
+        )?,
+        b"init\n7\n"
+    );
+    Ok(())
+}

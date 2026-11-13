@@ -217,6 +217,7 @@ fn call_main(session: &mut ReloadSession) -> Result<WatchCall, String> {
             output: session.take_output(),
             trap: None,
         }),
+        // compiler.md §272 rule 5: an initializer refusal follows the trap path.
         Err(RunError::Trap(trap)) => {
             // The call output is available in `trap.stdout`.
             let _ = session.take_output();
