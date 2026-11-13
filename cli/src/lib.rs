@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
-use program_loader::load_program;
+use program_loader::{load_program, LoadedProgram};
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory,
@@ -34,6 +34,7 @@ struct Failure {
     code: u8,
     message: String,
     verbatim: bool,
+    tried_paths: Vec<(PathBuf, FileStamp)>,
 }
 
 impl Failure {
@@ -42,6 +43,7 @@ impl Failure {
             code: PROGRAM_ERROR,
             message: message.into(),
             verbatim: false,
+            tried_paths: Vec::new(),
         }
     }
 
@@ -50,6 +52,7 @@ impl Failure {
             code: USAGE_ERROR,
             message: message.into(),
             verbatim: false,
+            tried_paths: Vec::new(),
         }
     }
 
@@ -58,6 +61,7 @@ impl Failure {
             code: PROGRAM_ERROR,
             message: message.into(),
             verbatim: true,
+            tried_paths: Vec::new(),
         }
     }
 }
@@ -156,7 +160,7 @@ fn boundary_command<O: Write, E: Write>(
         .source
         .as_ref()
         .ok_or_else(|| Failure::usage("boundary requires <file.ts>"))?;
-    let files = load_program(source, &parsed.mirrors)?;
+    let files = load_program(source, &parsed.mirrors)?.files;
     let module =
         subscript_compiler::check_program_with(&files, &module_options(&parsed.enabled_modules))
             .map_err(|diagnostics| rejection(&files, diagnostics))?;
@@ -809,29 +813,39 @@ fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>,
 }
 
 /// The files that the first load read, with the stamps taken before
-/// that load, and the load result. A program error keeps the entry
-/// watched; any other load failure ends the watch.
-type InitialWatch = (WatchedFiles, Result<Vec<SourceFile>, Failure>);
+/// that load, and the load result. A failure watches each attempted path.
+type InitialWatch = (WatchedFiles, Result<LoadedProgram, Failure>);
+
+// compiler.md §266 rules 2 and 7: use each stamp from before its read.
+fn attempted_watch(
+    source: &Path,
+    tried: &[(PathBuf, FileStamp)],
+    before: &WatchedFiles,
+) -> WatchedFiles {
+    let mut paths = vec![program_loader::watch_path(source)];
+    let mut stamps = vec![before.stamps[0]];
+    for (path, stamp) in tried {
+        if !paths.contains(path) {
+            paths.push(path.clone());
+            stamps.push(*stamp);
+        }
+    }
+    WatchedFiles { paths, stamps }
+}
 
 fn initial_watch_load(
     source: &Path,
-    load: impl FnOnce(&Path) -> Result<Vec<SourceFile>, Failure>,
+    load: impl FnOnce(&Path) -> Result<LoadedProgram, Failure>,
 ) -> Result<InitialWatch, Failure> {
-    let before_load = WatchedFiles::new(std::fs::canonicalize(source).into_iter().collect());
+    let before_load = WatchedFiles::new(vec![program_loader::watch_path(source)]);
     match load(source) {
-        Ok(files) => {
-            let paths = loaded_file_paths(source, &files)?;
-            Ok((before_load.after_load(paths), Ok(files)))
-        }
+        Ok(loaded) => Ok((
+            attempted_watch(source, &loaded.tried_paths, &before_load),
+            Ok(loaded),
+        )),
         Err(failure) if failure.code == PROGRAM_ERROR => {
-            // A parser diagnostic can be raised while the loader is
-            // discovering imports, before it can return a SourceFile set.
-            // Keep watching the entry so the first parseable edit can
-            // re-derive the complete loaded file set.
-            let entry = std::fs::canonicalize(source).map_err(|error| {
-                Failure::usage(format!("resolve source {}: {error}", source.display()))
-            })?;
-            Ok((before_load.after_load(vec![entry]), Err(failure)))
+            let watched = attempted_watch(source, &failure.tried_paths, &before_load);
+            Ok((watched, Err(failure)))
         }
         Err(failure) => Err(failure),
     }
@@ -844,11 +858,38 @@ fn run_watch<O: Write, E: Write>(
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
+    run_watch_controlled(
+        source,
+        deny_warnings,
+        enabled_modules,
+        stdout,
+        stderr,
+        |path| load_program(path, &[]),
+        || {
+            std::thread::sleep(WATCH_POLL_INTERVAL);
+            true
+        },
+    )
+}
+
+fn run_watch_controlled<O: Write, E: Write>(
+    source: &Path,
+    deny_warnings: bool,
+    enabled_modules: Vec<String>,
+    stdout: &mut O,
+    stderr: &mut E,
+    mut load: impl FnMut(&Path) -> Result<LoadedProgram, Failure>,
+    mut poll: impl FnMut() -> bool,
+) -> Result<u8, Failure> {
     let mut session = WatchSession::new_with_modules(deny_warnings, enabled_modules);
-    let (mut watched, initial) = initial_watch_load(source, |path| load_program(path, &[]))?;
+    let (mut watched, initial) = initial_watch_load(source, &mut load)?;
     match initial {
-        Ok(initial_files) => {
+        Ok(loaded) => {
+            let initial_files = loaded.files;
             let initial = session.step(&initial_files);
+            if !matches!(initial.outcome, WatchOutcome::WaitingForFix) {
+                watched = watched.after_load(loaded_file_paths(source, &initial_files)?);
+            }
             if let WatchOutcome::Failed { message } = &initial.outcome {
                 if !initial.warnings.is_empty() {
                     write_warnings(&initial_files, &initial.warnings, stderr)?;
@@ -863,33 +904,32 @@ fn run_watch<O: Write, E: Write>(
         }
     }
 
-    loop {
-        std::thread::sleep(WATCH_POLL_INTERVAL);
+    while poll() {
         if !watched.changed() {
             continue;
         }
         watched.refresh();
 
-        let files = match load_program(source, &[]) {
-            Ok(files) => files,
+        let loaded = match load(source) {
+            Ok(loaded) => loaded,
             Err(failure) => {
+                watched = attempted_watch(source, &failure.tried_paths, &watched);
                 session.invalidate_loaded_sources();
                 write_watch_failure(&failure, stderr)?;
                 continue;
             }
         };
-        let paths = match loaded_file_paths(source, &files) {
-            Ok(paths) => paths,
-            Err(failure) => {
-                session.invalidate_loaded_sources();
-                write_watch_failure(&failure, stderr)?;
-                continue;
-            }
-        };
-        watched = watched.after_load(paths);
+        let attempted = attempted_watch(source, &loaded.tried_paths, &watched);
+        let files = loaded.files;
         let step = session.step(&files);
+        watched = if matches!(step.outcome, WatchOutcome::WaitingForFix) {
+            attempted
+        } else {
+            attempted.after_load(loaded_file_paths(source, &files)?)
+        };
         write_watch_step(&files, step, stdout, stderr)?;
     }
+    Ok(SUCCESS)
 }
 
 fn write_watch_failure<E: Write>(failure: &Failure, stderr: &mut E) -> Result<(), Failure> {
@@ -988,7 +1028,7 @@ fn load_and_check(
     mirrors: &[PathBuf],
     enabled_modules: &[String],
 ) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
-    let files = load_program(source, mirrors)?;
+    let files = load_program(source, mirrors)?.files;
     let warnings = accepted_warnings(&files, enabled_modules)?;
     Ok((files, warnings))
 }
@@ -1239,6 +1279,157 @@ mod tests {
         .map_err(|failure| failure.message)?;
         assert!(initial.is_err_and(|failure| failure.code == PROGRAM_ERROR));
         assert!(watched.changed());
+        Ok(())
+    }
+
+    // compiler.md §266 rules 2–3: polls use no real sleep.
+    #[test]
+    fn failed_load_module_edit_reloads() -> Result<(), String> {
+        failed_load_retry(false, false)
+    }
+
+    #[test]
+    fn failed_load_missing_module_creation_reloads() -> Result<(), String> {
+        failed_load_retry(true, false)
+    }
+
+    #[test]
+    fn failed_load_after_start_reloads() -> Result<(), String> {
+        failed_load_retry(false, true)?;
+        failed_load_retry(true, true)
+    }
+
+    fn failed_load_retry(missing: bool, later: bool) -> Result<(), String> {
+        let entry = TestFile::program("")?;
+        let module = TestFile::program("export function helper(: void {\n")?;
+        let unused = TestFile::program("")?;
+        let stem = module.0.file_stem().unwrap().to_string_lossy();
+        std::fs::write(
+            &entry.0,
+            format!(
+            "import {{ helper }} from './{stem}';\nexport function main(): void {{ helper(); }}\n"
+        ),
+        )
+        .map_err(|e| e.to_string())?;
+        if missing {
+            std::fs::remove_file(&module.0).map_err(|e| e.to_string())?;
+        }
+        let broken_entry = std::fs::read_to_string(&entry.0).map_err(|e| e.to_string())?;
+        if later {
+            std::fs::write(&entry.0, "export function main(): void {}\n")
+                .map_err(|e| e.to_string())?;
+        }
+        let mut loads = 0;
+        let mut tick = 0;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        run_watch_controlled(
+            &entry.0,
+            false,
+            Vec::new(),
+            &mut stdout,
+            &mut stderr,
+            |path| {
+                loads += 1;
+                load_program(path, &[])
+            },
+            || {
+                tick += 1;
+                if later && tick == 1 {
+                    std::fs::write(&entry.0, &broken_entry).unwrap();
+                    return true;
+                }
+                match tick - usize::from(later) {
+                    1 => true,
+                    2 => {
+                        std::fs::write(&unused.0, "unrelated edit").unwrap();
+                        true
+                    }
+                    3 => {
+                        std::fs::write(
+                            &module.0,
+                            "export function helper(): void { print('fixed'); }\n",
+                        )
+                        .unwrap();
+                        true
+                    }
+                    _ => false,
+                }
+            },
+        )
+        .map_err(|e| e.message)?;
+        assert_eq!(
+            String::from_utf8_lossy(&stderr)
+                .matches("watch: waiting for a fix")
+                .count(),
+            1,
+            "one failure per change"
+        );
+        if later {
+            assert!(stdout.is_empty());
+            assert!(
+                String::from_utf8_lossy(&stderr).contains("watch: refused: module run order/set")
+            );
+        } else {
+            assert_eq!(stdout, b"fixed\n");
+        }
+        assert_eq!(
+            loads,
+            2 + usize::from(later),
+            "only attempted paths trigger a load"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn failed_load_missing_entry_exits_without_poll() -> Result<(), String> {
+        let entry = TestFile::program("")?;
+        std::fs::remove_file(&entry.0).map_err(|e| e.to_string())?;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            execute(
+                os_args([
+                    OsStr::new("run"),
+                    OsStr::new("--watch"),
+                    entry.0.as_os_str()
+                ]),
+                &mut stdout,
+                &mut stderr
+            ),
+            USAGE_ERROR
+        );
+        assert!(stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&stderr).contains("waiting"));
+        Ok(())
+    }
+
+    #[test]
+    fn failed_load_enabled_module_keeps_run_diagnostics() -> Result<(), String> {
+        let entry = TestFile::program("import { readFile } from 'node:fs/promises';\nimport './absent266';\nexport function main(): void {}\n")?;
+        let loaded = load_program(&entry.0, &[]).map_err(|e| e.message)?;
+        let options = module_options(&["node:fs/promises".to_owned()]);
+        let diagnostics =
+            subscript_compiler::check_program_with(&loaded.files, &options).unwrap_err();
+        let expected = format!("{}\n", render_diagnostics(&loaded.files, &diagnostics));
+        assert!(!expected.contains("--enable-module"));
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            execute(
+                os_args([
+                    OsStr::new("run"),
+                    entry.0.as_os_str(),
+                    OsStr::new("--enable-module"),
+                    OsStr::new("node:fs/promises")
+                ]),
+                &mut stdout,
+                &mut stderr
+            ),
+            PROGRAM_ERROR
+        );
+        assert_eq!(String::from_utf8_lossy(&stderr), expected);
+        assert!(stdout.is_empty());
         Ok(())
     }
 
