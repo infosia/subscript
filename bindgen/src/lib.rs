@@ -294,3 +294,50 @@ mod source_path_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod graph_test {
+    use crate::{
+        clangfe::Parsed,
+        cparse::{CField, Decl},
+        emit::Kind,
+    };
+    use std::collections::HashMap;
+    thread_local! { pub static CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+    pub fn measure(mut run: impl FnMut(&Parsed, &HashMap<String, Kind>)) {
+        for depth in [16, 20, 24] {
+            let mut parsed = Parsed::default();
+            let mut registry = HashMap::new();
+            for i in 0..=depth {
+                let name = format!("S{i}");
+                registry.insert(name.clone(), Kind::Boundary);
+                let fields = if i == depth {
+                    vec![]
+                } else {
+                    (0..2)
+                        .map(|j| CField {
+                            base: format!("S{}", i + 1),
+                            name: format!("f{j}"),
+                            pointer: false,
+                            is_const: false,
+                            nullable: false,
+                            array_len: None,
+                        })
+                        .collect()
+                };
+                parsed.decls.push(Decl::Struct { name, fields });
+            }
+            CALLS.set(0);
+            let start = std::time::Instant::now();
+            run(&parsed, &registry);
+            eprintln!(
+                "depth={depth} calls={} time={:?}",
+                CALLS.get(),
+                start.elapsed()
+            );
+            if depth == 24 {
+                assert!(CALLS.get() <= 4 * (depth + 1));
+            }
+        }
+    }
+}

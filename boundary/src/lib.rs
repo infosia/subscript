@@ -226,3 +226,65 @@ pub fn c_kind(spelling: &str) -> Option<&'static Kind> {
     };
     KINDS.iter().find(|kind| kind.c_type == canonical)
 }
+
+#[cfg(test)]
+mod graph_test {
+    use super::*;
+    use std::cell::Cell;
+    pub struct Graph {
+        pub depth: usize,
+        pub calls: Cell<usize>,
+    }
+    impl StructView for Graph {
+        type Struct = usize;
+        fn structs(&self) -> Vec<usize> {
+            (0..=self.depth).collect()
+        }
+        fn copying(&self) -> Option<&[usize]> {
+            Some(&[])
+        }
+        fn cycles(&self) -> Option<&[usize]> {
+            Some(&[])
+        }
+        fn fields(&self, s: usize) -> Option<Vec<FieldShape<usize>>> {
+            self.calls.set(self.calls.get() + 1);
+            Some(if s == self.depth {
+                vec![]
+            } else {
+                vec![FieldShape::Embedded(s + 1); 2]
+            })
+        }
+    }
+    impl ReadView for Graph {
+        fn name(&self, s: usize) -> String {
+            s.to_string()
+        }
+        fn members(&self, s: usize) -> Option<Vec<ReadMember<usize>>> {
+            self.fields(s).map(|fields| {
+                fields
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, shape)| ReadMember::new(i.to_string(), shape, false))
+                    .collect()
+            })
+        }
+    }
+    pub fn measure(mut run: impl FnMut(&Graph)) {
+        for depth in [16, 20, 24] {
+            let graph = Graph {
+                depth,
+                calls: Cell::new(0),
+            };
+            let start = std::time::Instant::now();
+            run(&graph);
+            eprintln!(
+                "depth={depth} calls={} time={:?}",
+                graph.calls.get(),
+                start.elapsed()
+            );
+            if depth == 24 {
+                assert!(graph.calls.get() <= 4 * (depth + 1));
+            }
+        }
+    }
+}

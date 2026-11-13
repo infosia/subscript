@@ -157,7 +157,7 @@ pub fn struct_pass<V: StructView>(view: &V, s: V::Struct) -> StructPass {
         } else {
             StructPass::Scratch
         }
-    } else if builds_cycle(view, s, bytes, &mut Vec::new()) {
+    } else if builds_cycle(view, s, bytes, &mut Vec::new(), &mut Vec::new()) {
         StructPass::Cycle
     } else {
         StructPass::Scratch
@@ -197,9 +197,16 @@ pub fn copying_structs<V: StructView>(view: &V) -> Vec<V::Struct> {
 /// that keeps it (§187 rule 9).
 #[must_use]
 pub fn cycle_structs<V: StructView>(view: &V) -> Vec<V::Struct> {
+    // compiler.md §269 rules 1 and 2: share completed walks for one bytes set.
+    let mut done = Vec::new();
     view.structs()
         .into_iter()
-        .filter(|s| struct_pass(view, *s) == StructPass::Cycle)
+        .filter(|s| match view.copying() {
+            Some(bytes) if view.cycles().is_none() => {
+                !bytes.contains(s) && builds_cycle(view, *s, bytes, &mut Vec::new(), &mut done)
+            }
+            _ => struct_pass(view, *s) == StructPass::Cycle,
+        })
         .collect()
 }
 
@@ -321,9 +328,13 @@ fn builds_cycle<V: StructView>(
     s: V::Struct,
     bytes: &[V::Struct],
     active: &mut Vec<V::Struct>,
+    done: &mut Vec<(V::Struct, bool)>,
 ) -> bool {
     if active.contains(&s) {
         return true;
+    }
+    if let Some((_, result)) = done.iter().find(|(owner, _)| *owner == s) {
+        return *result;
     }
     let Some(fields) = view.fields(s) else {
         return false;
@@ -331,10 +342,12 @@ fn builds_cycle<V: StructView>(
     active.push(s);
     let cycle = fields.iter().any(|field| {
         field.nested().is_some_and(|nested| {
-            !bytes.contains(&nested) && builds_cycle(view, nested, bytes, active)
+            !bytes.contains(&nested) && builds_cycle(view, nested, bytes, active, done)
         })
     });
     active.pop();
+    // compiler.md §269 rule 1: keep each completed cycle decision.
+    done.push((s, cycle));
     cycle
 }
 
@@ -446,35 +459,35 @@ pub fn writes_back<V: StructView>(view: &V, s: V::Struct) -> bool {
     writes_back_from(view, s, &mut Vec::new())
 }
 
-fn writes_back_from<V: StructView>(view: &V, s: V::Struct, active: &mut Vec<V::Struct>) -> bool {
-    if active.contains(&s) {
+fn writes_back_from<V: StructView>(view: &V, s: V::Struct, visited: &mut Vec<V::Struct>) -> bool {
+    if visited.contains(&s) {
         return false;
     }
     let Some(fields) = view.fields(s) else {
         return false;
     };
-    active.push(s);
+    visited.push(s);
     let found = fields.iter().any(|field| match *field {
         FieldShape::Embedded(nested) => {
             struct_pass(view, nested) == StructPass::Scratch
-                && writes_back_from(view, nested, active)
+                && writes_back_from(view, nested, visited)
         }
         FieldShape::Pointer {
             target, constant, ..
         } => match member_pass(view, StructPass::Scratch, target, !constant) {
             PointerPass::ScratchWrittenBack => true,
-            PointerPass::ScratchReadOnly => writes_back_from(view, target, active),
+            PointerPass::ScratchReadOnly => writes_back_from(view, target, visited),
             PointerPass::ScriptMemory | PointerPass::Cycle => false,
         },
         FieldShape::Pair {
             elements: Some(element),
         } => {
             struct_pass(view, element) == StructPass::Scratch
-                && writes_back_from(view, element, active)
+                && writes_back_from(view, element, visited)
         }
         _ => false,
     });
-    active.pop();
+    // compiler.md §269 rule 1: retain the visited set for this query.
     found
 }
 
@@ -488,18 +501,22 @@ pub fn builds_scratch<V: StructView>(view: &V, s: V::Struct) -> bool {
     builds_scratch_from(view, s, &mut Vec::new())
 }
 
-fn builds_scratch_from<V: StructView>(view: &V, s: V::Struct, active: &mut Vec<V::Struct>) -> bool {
-    if active.contains(&s) {
+fn builds_scratch_from<V: StructView>(
+    view: &V,
+    s: V::Struct,
+    visited: &mut Vec<V::Struct>,
+) -> bool {
+    if visited.contains(&s) {
         return false;
     }
     let Some(fields) = view.fields(s) else {
         return false;
     };
-    active.push(s);
+    visited.push(s);
     let found = fields.iter().any(|field| match *field {
         FieldShape::Embedded(nested) => {
             struct_pass(view, nested) == StructPass::Scratch
-                && builds_scratch_from(view, nested, active)
+                && builds_scratch_from(view, nested, visited)
         }
         FieldShape::Pointer {
             target, constant, ..
@@ -512,7 +529,7 @@ fn builds_scratch_from<V: StructView>(view: &V, s: V::Struct, active: &mut Vec<V
         } => struct_pass(view, element) == StructPass::Scratch,
         _ => false,
     });
-    active.pop();
+    // compiler.md §269 rule 1: retain the visited set for this query.
     found
 }
 
@@ -984,5 +1001,103 @@ mod tests {
         for (field, expected) in cases {
             assert_eq!(copy_back(&field), expected, "{field:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod graph_walk_test {
+    use super::*;
+
+    /// compiler.md §269 rules 1 and 4: share completed decisions across roots.
+    #[test]
+    fn cycle_structs_shares_done_across_roots() {
+        use std::cell::Cell;
+        use std::collections::BTreeSet;
+
+        struct Graph {
+            edges: Vec<Vec<usize>>,
+            calls: Cell<usize>,
+        }
+        impl StructView for Graph {
+            type Struct = usize;
+            fn structs(&self) -> Vec<usize> {
+                (0..self.edges.len()).collect()
+            }
+            fn copying(&self) -> Option<&[usize]> {
+                Some(&[])
+            }
+            fn fields(&self, s: usize) -> Option<Vec<FieldShape<usize>>> {
+                self.calls.set(self.calls.get() + 1);
+                Some(
+                    self.edges[s]
+                        .iter()
+                        .copied()
+                        .map(FieldShape::Embedded)
+                        .collect(),
+                )
+            }
+        }
+
+        // The pin walk uses only its current path. It has no completed memo.
+        fn plain_cycle(edges: &[Vec<usize>], s: usize, path: &mut Vec<usize>) -> bool {
+            if path.contains(&s) {
+                return true;
+            }
+            path.push(s);
+            let found = edges[s].iter().any(|&next| plain_cycle(edges, next, path));
+            path.pop();
+            found
+        }
+
+        let graph = Graph {
+            // Roots 0 and 1 share the acyclic diamond 2 -> (3, 4) -> 5.
+            // Root 1 also reaches the cycle 6 -> 7 -> 6, after the diamond.
+            edges: vec![
+                vec![2],
+                vec![2, 6],
+                vec![3, 4],
+                vec![5],
+                vec![5],
+                vec![],
+                vec![7],
+                vec![6],
+            ],
+            calls: Cell::new(0),
+        };
+        let expected: BTreeSet<_> = (0..graph.edges.len())
+            .filter(|&s| plain_cycle(&graph.edges, s, &mut Vec::new()))
+            .collect();
+        assert!(graph.cycles().is_none());
+        assert!(graph.copying().is_some());
+        let start = std::time::Instant::now();
+        let actual: BTreeSet<_> = cycle_structs(&graph).into_iter().collect();
+        let elapsed = start.elapsed();
+        assert_eq!(actual, expected);
+        assert_eq!(graph.calls.get(), graph.edges.len());
+        eprintln!("shared roots: calls={} time={elapsed:?}", graph.calls.get());
+    }
+
+    #[test]
+    fn shared_graph_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(!builds_cycle(g, 0, &[], &mut Vec::new(), &mut Vec::new()));
+        });
+    }
+}
+
+#[cfg(test)]
+mod shared_pass_tests {
+    use super::*;
+    #[test]
+    fn write_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(!writes_back(g, 0));
+        });
+    }
+    #[test]
+    fn scratch_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(!builds_scratch(g, 0));
+        });
     }
 }

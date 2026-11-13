@@ -191,8 +191,10 @@ impl HeaderStructs<'_> {
         self.holds(aggregate, &mut Vec::new())
     }
 
-    fn holds<'s>(&'s self, aggregate: &'s str, visiting: &mut Vec<&'s str>) -> bool {
-        if visiting.contains(&aggregate)
+    fn holds<'s>(&'s self, aggregate: &'s str, visited: &mut Vec<&'s str>) -> bool {
+        #[cfg(test)]
+        crate::graph_test::CALLS.set(crate::graph_test::CALLS.get() + 1);
+        if visited.contains(&aggregate)
             || !matches!(self.registry.get(aggregate), Some(Kind::Boundary))
         {
             return false;
@@ -203,7 +205,7 @@ impl HeaderStructs<'_> {
         let Ok(pairs) = embedded_array_pairs(aggregate, fields, self.registry) else {
             return false;
         };
-        visiting.push(aggregate);
+        visited.push(aggregate);
         // A fixed array of structs is outside the scope.
         let holds = fields.iter().enumerate().any(|(index, field)| {
             match self.field_shape(&pairs, index, field) {
@@ -213,12 +215,12 @@ impl HeaderStructs<'_> {
                 Some(FieldShape::Embedded(nested) | FieldShape::Pointer { target: nested, .. })
                     if field.array_len.is_none() =>
                 {
-                    self.holds(nested, visiting)
+                    self.holds(nested, visited)
                 }
                 _ => false,
             }
         });
-        visiting.pop();
+        // compiler.md §269 rule 1: retain the visited set for this query.
         holds
     }
 }
@@ -317,5 +319,17 @@ impl<'a> HeaderStructs<'a> {
                 })
                 .collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod shared_graph_tests {
+    use super::*;
+    #[test]
+    fn holds_cost() {
+        crate::graph_test::measure(|p, r| {
+            let view = HeaderStructs::new(p, r);
+            assert!(!view.holds_view_or_pair("S0"));
+        });
     }
 }

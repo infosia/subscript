@@ -464,32 +464,32 @@ impl WrittenBack {
 fn written_back_member<V: ReadView>(
     view: &V,
     s: V::Struct,
-    active: &mut Vec<V::Struct>,
+    visited: &mut Vec<V::Struct>,
 ) -> Option<(String, String)> {
-    if active.contains(&s) {
+    if visited.contains(&s) {
         return None;
     }
     let members = view.members(s)?;
-    active.push(s);
+    visited.push(s);
     let found = members.iter().find_map(|member| match member.shape {
         FieldShape::Embedded(nested) if struct_pass(view, nested) == StructPass::Scratch => {
-            written_back_member(view, nested, active)
+            written_back_member(view, nested, visited)
         }
         FieldShape::Pointer { target, .. } => {
             match member_pass(view, StructPass::Scratch, target, member.mutable) {
                 PointerPass::ScratchWrittenBack => Some((view.name(s), member.name.clone())),
-                PointerPass::ScratchReadOnly => written_back_member(view, target, active),
+                PointerPass::ScratchReadOnly => written_back_member(view, target, visited),
                 PointerPass::ScriptMemory | PointerPass::Cycle => None,
             }
         }
         FieldShape::Pair {
             elements: Some(element),
         } if struct_pass(view, element) == StructPass::Scratch => {
-            written_back_member(view, element, active)
+            written_back_member(view, element, visited)
         }
         _ => None,
     });
-    active.pop();
+    // compiler.md §269 rule 1: retain each visited struct for this query.
     found
 }
 
@@ -544,7 +544,7 @@ impl Unreadable {
 /// This is the one walk of §187 rule 3. It visits every member that the
 /// root reaches, whatever the route: embedded structs, pair elements, and
 /// pointer targets, and decides each with [`member_read`]. A struct that
-/// is already on the path at the same root and reach is read where it
+/// was already visited at the same root and reach is read where it
 /// first appears.
 #[must_use]
 pub fn first_unreadable<V: ReadView>(
@@ -555,7 +555,7 @@ pub fn first_unreadable<V: ReadView>(
 ) -> Option<Unreadable> {
     Walk {
         view,
-        active: Vec::new(),
+        visited: Vec::new(),
         from_input: matches!(root, ReadRoot::Input(_)),
     }
     .structure(s, root, reach, None)
@@ -563,7 +563,7 @@ pub fn first_unreadable<V: ReadView>(
 
 struct Walk<'v, V: ReadView> {
     view: &'v V,
-    active: Vec<(V::Struct, ReadRoot, Reach)>,
+    visited: Vec<(V::Struct, ReadRoot, Reach)>,
     /// True when the walk starts at an input, so it records the member
     /// through which C writes.
     from_input: bool,
@@ -578,12 +578,12 @@ impl<V: ReadView> Walk<'_, V> {
         through: Option<(String, String)>,
     ) -> Option<Unreadable> {
         let key = (s, root, reach);
-        if self.active.contains(&key) {
+        if self.visited.contains(&key) {
             return None;
         }
         let members = self.view.members(s)?;
         let owner = self.view.name(s);
-        self.active.push(key);
+        self.visited.push(key);
         let mut found = None;
         for member in &members {
             let kind = MemberKind::of(self.view, root.pass(), &member.shape, member.mutable);
@@ -598,7 +598,8 @@ impl<V: ReadView> Walk<'_, V> {
                 break;
             }
         }
-        self.active.pop();
+        // compiler.md §269 rule 2: the key includes the root and reach.
+        // A successful read has no diagnostic path to preserve.
         found
     }
 
@@ -684,14 +685,18 @@ impl StructCycle {
 /// whose pass is [`StructPass::Cycle`] has a cycle member.
 #[must_use]
 pub fn first_cycle<V: ReadView>(view: &V, s: V::Struct) -> Option<StructCycle> {
-    cycle_member(view, s, &mut Vec::new())
+    cycle_member(view, s, &mut Vec::new(), &mut Vec::new())
 }
 
 fn cycle_member<V: ReadView>(
     view: &V,
     s: V::Struct,
     active: &mut Vec<V::Struct>,
+    done: &mut Vec<V::Struct>,
 ) -> Option<StructCycle> {
+    if done.contains(&s) {
+        return None;
+    }
     let members = view.members(s)?;
     active.push(s);
     let mut found = None;
@@ -708,13 +713,17 @@ fn cycle_member<V: ReadView>(
                 member: member.name.clone(),
             });
         } else {
-            found = cycle_member(view, nested, active);
+            found = cycle_member(view, nested, active, done);
         }
         if found.is_some() {
             break;
         }
     }
     active.pop();
+    // compiler.md §269 rules 1 and 3: cache only paths with no cycle.
+    if found.is_none() {
+        done.push(s);
+    }
     found
 }
 
@@ -1613,5 +1622,33 @@ mod tests {
                  {tail}"
             )
         );
+    }
+}
+
+#[cfg(test)]
+mod graph_walk_test {
+    use super::*;
+    #[test]
+    fn shared_graph_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(cycle_member(g, 0, &mut Vec::new(), &mut Vec::new()).is_none());
+        });
+    }
+}
+
+#[cfg(test)]
+mod shared_read_tests {
+    use super::*;
+    #[test]
+    fn read_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(first_unreadable(g, 0, ReadRoot::Value, Reach::Root).is_none());
+        });
+    }
+    #[test]
+    fn write_member_cost() {
+        crate::graph_test::measure(|g| {
+            assert!(written_back_member(g, 0, &mut Vec::new()).is_none());
+        });
     }
 }

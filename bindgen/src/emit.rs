@@ -654,9 +654,11 @@ fn validate_lowerable_boundary_aggregate(
     registry: &HashMap<String, Kind>,
     root: &str,
     aggregate: &str,
-    visiting: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
 ) -> Result<(), ParseError> {
-    if !visiting.insert(aggregate.to_string()) {
+    #[cfg(test)]
+    crate::graph_test::CALLS.set(crate::graph_test::CALLS.get() + 1);
+    if !visited.insert(aggregate.to_string()) {
         return Ok(());
     }
     let fields = parsed.decls.iter().find_map(|decl| match decl {
@@ -695,7 +697,7 @@ fn validate_lowerable_boundary_aggregate(
                     registry,
                     root,
                     &field.base,
-                    visiting,
+                    visited,
                 )?;
             }
             continue;
@@ -707,7 +709,7 @@ fn validate_lowerable_boundary_aggregate(
                     registry,
                     root,
                     &field.base,
-                    visiting,
+                    visited,
                 )?;
             }
             continue;
@@ -722,20 +724,16 @@ fn validate_lowerable_boundary_aggregate(
                     field.name
                 )));
             }
-            Some(Kind::Boundary) => validate_lowerable_boundary_aggregate(
-                parsed,
-                registry,
-                root,
-                &field.base,
-                visiting,
-            )?,
+            Some(Kind::Boundary) => {
+                validate_lowerable_boundary_aggregate(parsed, registry, root, &field.base, visited)?
+            }
             // §187 rules 8 and 15: the scratch build lowers a callback field.
             Some(Kind::FnPtr | Kind::Enum | Kind::Handle | Kind::Alias | Kind::External)
             | Some(Kind::CEnum(_))
             | None => {}
         }
     }
-    visiting.remove(aggregate);
+    // compiler.md §269 rule 1: retain the visited set for this query.
     Ok(())
 }
 
@@ -759,9 +757,11 @@ fn collect_recursive_string_owners(
     aggregate: &str,
     direct_string_owners: &HashSet<String>,
     lowered: &mut HashSet<String>,
-    visiting: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
 ) -> Result<(), ParseError> {
-    if !visiting.insert(aggregate.to_string()) {
+    #[cfg(test)]
+    crate::graph_test::CALLS.set(crate::graph_test::CALLS.get() + 1);
+    if !visited.insert(aggregate.to_string()) {
         return Ok(());
     }
     if direct_string_owners.contains(aggregate) {
@@ -772,7 +772,7 @@ fn collect_recursive_string_owners(
         _ => None,
     });
     let Some(fields) = fields else {
-        visiting.remove(aggregate);
+        // compiler.md §269 rule 1: retain the visited set for this query.
         return Ok(());
     };
     let pairs = embedded_array_pairs(aggregate, fields, registry)?;
@@ -794,11 +794,11 @@ fn collect_recursive_string_owners(
                 &field.base,
                 direct_string_owners,
                 lowered,
-                visiting,
+                visited,
             )?;
         }
     }
-    visiting.remove(aggregate);
+    // compiler.md §269 rule 1: retain the visited set for this query.
     Ok(())
 }
 
@@ -1621,3 +1621,28 @@ pub(super) fn lang_scalar(base: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod shared_graph_tests {
+    use super::*;
+    #[test]
+    fn lowerable_cost() {
+        crate::graph_test::measure(|p, r| {
+            validate_lowerable_boundary_aggregate(p, r, "S0", "S0", &mut HashSet::new()).unwrap();
+        });
+    }
+    #[test]
+    fn owners_cost() {
+        crate::graph_test::measure(|p, r| {
+            collect_recursive_string_owners(
+                p,
+                r,
+                "S0",
+                &HashSet::new(),
+                &mut HashSet::new(),
+                &mut HashSet::new(),
+            )
+            .unwrap();
+        });
+    }
+}

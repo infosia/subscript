@@ -90,7 +90,14 @@ pub(crate) fn select(
                 subscript_boundary::ReadRoot::Value,
                 subscript_boundary::Reach::Root,
             )?;
-            validate_struct(parsed, registry, function, result, &mut Vec::new())?;
+            validate_struct(
+                parsed,
+                registry,
+                function,
+                result,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )?;
         }
         selected.insert(
             function.clone(),
@@ -119,11 +126,17 @@ fn validate_struct(
     function: &str,
     name: &str,
     visiting: &mut Vec<String>,
+    done: &mut Vec<String>,
 ) -> Result<(), ParseError> {
+    #[cfg(test)]
+    crate::graph_test::CALLS.set(crate::graph_test::CALLS.get() + 1);
     if visiting.iter().any(|item| item == name) {
         return Err(ParseError(format!(
             "completion function `{function}` struct `{name}` has a recursive value layout"
         )));
+    }
+    if done.iter().any(|item| item == name) {
+        return Ok(());
     }
     visiting.push(name.to_string());
     let fields = parsed
@@ -152,9 +165,22 @@ fn validate_struct(
             return Err(ParseError(format!("completion function `{function}` struct `{name}` field `{}` is outside §178 rule 6", field.name)));
         }
         if !scalar {
-            validate_struct(parsed, registry, function, &field.base, visiting)?;
+            validate_struct(parsed, registry, function, &field.base, visiting, done)?;
         }
     }
     visiting.pop();
+    // compiler.md §269 rules 1 and 3: cache only successful validation.
+    done.push(name.to_string());
     Ok(())
+}
+
+#[cfg(test)]
+mod shared_graph_tests {
+    use super::*;
+    #[test]
+    fn completion_cost() {
+        crate::graph_test::measure(|p, r| {
+            validate_struct(p, r, "f", "S0", &mut Vec::new(), &mut Vec::new()).unwrap();
+        });
+    }
 }
