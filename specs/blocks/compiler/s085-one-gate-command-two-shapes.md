@@ -156,10 +156,11 @@ and names no command either.
    executables; the location was measured as irrelevant.
 7. **The script owns no test.** It runs the commands above and reads
    their stdout. It sets no `CARGO_TARGET_DIR`, so a run measures the
-   checkout it is in. `CARGO`, `NODE`, `TSC`, `CC`, and `GIT` are
-   read from the environment with the defaults `cargo`, `node`,
-   `node_modules/.bin/tsc`, `cc`, and `git`, so a test can substitute
-   a stub. `GIT` serves every `git` call the script makes.
+   checkout it is in. `CARGO`, `NODE`, `TSC`, `CC`, `GIT`, and
+   `HYGIENE` (§276) are read from the environment with the defaults
+   `cargo`, `node`, `node_modules/.bin/tsc`, `cc`, `git`, and
+   `tools/hygiene.sh`, so a test can substitute a stub. `GIT` serves
+   every `git` call the script makes.
 
 ### 85.2 Sites
 
@@ -236,8 +237,8 @@ and names no command either.
    `goldens-moved 1` against a hand-written `0`; a commit during a
    gate had failed one case the same way the day before. A test that
    reads the checkout's state is a test that the checkout can fail.)*
-   `TSC` and `CC` point at stubs the test writes; `hygiene.sh` runs
-   for real, on the checkout, because it reads the tree.
+   `TSC`, `CC`, and `HYGIENE` point at stubs the test writes (§276
+   replaces the earlier rule that `hygiene.sh` runs for real here).
 2. `cargo test -p subscript-codegen --test lir` in the release
    profile without the sweep variable prints exactly one `gate-skip:`
    line; `cargo test -p subscript-benchmarks --test perf_gate` in the
