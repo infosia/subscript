@@ -71,3 +71,6 @@ Case (d) checks the stub path and output after `tsc`, as the last step.
 The text check permits the real hygiene path only as the default value.
 The release test binary contains no tests.
 The full gate result is below. The expected moves are debug +2 (the two new cases) and release −14 (the whole suite, by rule 5).
+
+## §277 — the a22 interpreter run
+

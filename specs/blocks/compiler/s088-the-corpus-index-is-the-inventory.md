@@ -33,7 +33,8 @@ entries), the second being the complement of one cost exclusion.
    `// interpreter: no — <reason>` on an accept or trap entry the
    reference interpreter does not run;
    `// cost: benchmark` on an entry whose purpose is cost and which
-   the debug interpreter sweep omits.
+   the debug interpreter sweep omits. (§277: `a22` now carries
+   `interpreter: no`, so no runnable entry carries this key.)
    The reason text of today's `INTERPRETER_EXCLUSIONS` moves to the
    entry, one per entry, unchanged.
 3. **A suite derives its selection.** `codegen/tests/lir.rs` reads the
@@ -55,7 +56,8 @@ entries), the second being the complement of one cost exclusion.
    prints the `gate-skip:` line of §85.1 rule 4 as today; the debug
    omission of a `cost: benchmark` entry prints one too, which is
    new: at `f2c2481` the debug omission printed nothing. The debug
-   count of a `full` run becomes 2 (`perf_gate` and this line).
+   count of a `full` run becomes 2 (`perf_gate` and this line). (§277: no
+   runnable `cost: benchmark` entry remains, so the debug count is 1.)
    *(Corrected 2026-09-06 after the review: "as today" was wrong for
    the debug line.)*
 
