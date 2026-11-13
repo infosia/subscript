@@ -89,13 +89,51 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
         return Ok(());
     }
 
-    let predecessors = predecessors(function);
     let reachable = reachable_blocks(function);
     let function_parameters = function
         .parameters
         .iter()
         .map(|parameter| parameter.value)
         .collect::<HashSet<_>>();
+
+    // compiler.md §273 rule 1: reuse the CFG dominators for pruned SSA.
+    let mut preds = predecessors(function);
+    // compiler.md §273 rule 6: dead edges cannot affect reachable dominators.
+    for predecessors in &mut preds {
+        predecessors.retain(|pred| reachable[pred.0 as usize]);
+    }
+    let dom = dominators(function, &preds);
+    let mut children = vec![Vec::new(); block_count];
+    let mut frontier = vec![BTreeSet::new(); block_count];
+    for block in &function.blocks {
+        let index = block.id.0 as usize;
+        if !reachable[index] || block.id == function.entry {
+            continue;
+        }
+        if let Some(parent) = dom[index]
+            .iter()
+            .filter(|candidate| **candidate != block.id && reachable[candidate.0 as usize])
+            .max_by_key(|candidate| dom[candidate.0 as usize].len())
+        {
+            children[parent.0 as usize].push(index);
+        }
+    }
+    for block in &function.blocks {
+        let index = block.id.0 as usize;
+        if !reachable[index] {
+            continue;
+        }
+        for pred in &preds[index] {
+            if !reachable[pred.0 as usize] {
+                continue;
+            }
+            for candidate in &dom[pred.0 as usize] {
+                if *candidate == block.id || !dom[index].contains(candidate) {
+                    frontier[candidate.0 as usize].insert(index);
+                }
+            }
+        }
+    }
 
     for origin in origins {
         let mut special = vec![None; block_count];
@@ -105,84 +143,64 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 .find_map(|(candidate, parameter)| (*candidate == origin).then_some(*parameter));
         }
         let mut merges = vec![None; block_count];
-        let mut incoming = vec![None; block_count];
-        let mut outgoing = vec![None; block_count];
-
-        loop {
-            let mut changed = false;
-            for block_index in 0..block_count {
-                if !reachable[block_index] {
-                    continue;
-                }
-                let block_id = function.blocks[block_index].id;
-                let block_parameter_definition = function.blocks[block_index]
-                    .parameters
-                    .iter()
-                    .take_while(|value| (value.0 as usize) < original_value_count)
-                    .any(|value| *value == origin);
-                let function_parameter_definition =
-                    block_id == function.entry && function_parameters.contains(&origin);
-                let instruction_definition = function.blocks[block_index]
+        let mut definitions = vec![false; block_count];
+        let mut pending = VecDeque::new();
+        for (index, block) in function.blocks.iter().enumerate() {
+            definitions[index] = special[index].is_some()
+                || block.parameters.contains(&origin)
+                || (block.id == function.entry && function_parameters.contains(&origin))
+                || block
                     .instructions
                     .iter()
                     .any(|instruction| instruction.result == Some(origin));
-
-                let next_in = if let Some(parameter) = special[block_index] {
-                    Some(parameter)
-                } else if block_parameter_definition || function_parameter_definition {
-                    Some(origin)
-                } else if let Some(parameter) = merges[block_index] {
-                    Some(parameter)
-                } else {
-                    let pred_versions = predecessors[block_index]
-                        .iter()
-                        .filter(|predecessor| reachable[predecessor.0 as usize])
-                        .map(|predecessor| outgoing[predecessor.0 as usize])
-                        .collect::<Vec<_>>();
-                    let versions = pred_versions.into_iter().flatten().collect::<BTreeSet<_>>();
-                    if versions.is_empty() {
-                        None
-                    } else {
-                        if versions.len() == 1 {
-                            versions.first().copied()
-                        } else if live_in[block_index].contains(&origin) {
-                            let definition = function.values[origin.0 as usize].clone();
-                            let parameter = l::ValueId(function.values.len() as u32);
-                            function.values.push(l::Value {
-                                id: parameter,
-                                ty: definition.ty,
-                                fresh_owner: definition.fresh_owner,
-                                source_name: definition.source_name,
-                            });
-                            value_origins.push(origin);
-                            function.blocks[block_index].parameters.push(parameter);
-                            merges[block_index] = Some(parameter);
-                            changed = true;
-                            Some(parameter)
-                        } else {
-                            versions.first().copied()
-                        }
-                    }
-                };
-                let next_out = if block_parameter_definition
-                    || function_parameter_definition
-                    || instruction_definition
+            if reachable[index] && definitions[index] {
+                pending.push_back(index);
+            }
+        }
+        // compiler.md §273 rules 1 to 3: each frontier site enters the queue once.
+        while let Some(definition) = pending.pop_front() {
+            for &index in &frontier[definition] {
+                if !live_in[index].contains(&origin)
+                    || special[index].is_some()
+                    || merges[index].is_some()
                 {
-                    Some(origin)
-                } else {
-                    next_in
-                };
-                if incoming[block_index] != next_in {
-                    incoming[block_index] = next_in;
-                    changed = true;
+                    continue;
                 }
-                if outgoing[block_index] != next_out {
-                    outgoing[block_index] = next_out;
-                    changed = true;
+                let definition = function.values[origin.0 as usize].clone();
+                let parameter = l::ValueId(function.values.len() as u32);
+                function.values.push(l::Value {
+                    id: parameter,
+                    ty: definition.ty,
+                    fresh_owner: definition.fresh_owner,
+                    source_name: definition.source_name,
+                });
+                value_origins.push(origin);
+                function.blocks[index].parameters.push(parameter);
+                merges[index] = Some(parameter);
+                if !definitions[index] {
+                    pending.push_back(index);
                 }
             }
-            if !changed {
-                break;
+        }
+        let mut incoming = vec![None; block_count];
+        let mut outgoing = vec![None; block_count];
+        let mut walk = vec![(function.entry.0 as usize, None)];
+        while let Some((index, inherited)) = walk.pop() {
+            let block = &function.blocks[index];
+            incoming[index] = special[index].or(merges[index]).or(inherited);
+            outgoing[index] = if block.parameters.contains(&origin)
+                || (block.id == function.entry && function_parameters.contains(&origin))
+                || block
+                    .instructions
+                    .iter()
+                    .any(|instruction| instruction.result == Some(origin))
+            {
+                Some(origin)
+            } else {
+                incoming[index]
+            };
+            for &child in children[index].iter().rev() {
+                walk.push((child, outgoing[index]));
             }
         }
 
@@ -559,5 +577,165 @@ fn append_normal_edge_argument(
         | l::Terminator::Unreachable { .. }
         | l::Terminator::Trap(_)
         | l::Terminator::Suspend { .. } => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use subscript_compiler::SourceFile;
+
+    fn source(condition: &str) -> String {
+        format!(
+            r#"
+function* gen(): Generator<i32> {{ yield 1; yield 2; }}
+export async function main(): Promise<void> {{
+  let n: i32 = 0;
+  for (let r: i32 = 0; r < 1; r++) {{
+    for (const j of [0, 1]) {{ {condition} }}
+    for (const x of gen()) {{ await Context.suspend(); n++; }}
+  }}
+  print(`end ${{n}}`);
+}}
+"#
+        )
+    }
+
+    #[test]
+    fn suspension_live_in_fixed_point() {
+        // compiler.md §273 acceptance 1 and 3: a regression must fail in time.
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let files = [SourceFile::new("a445.ts", include_str!(
+                "../../../corpus/accept/a445-the-suspension-live-in-analysis-reaches-a-fixed-point.ts"
+            ))];
+            let hir = subscript_compiler::check_program(&files).expect("a445 checks");
+            let lir = super::super::lower_module(&hir).expect("a445 analysis ends");
+            assert_eq!(crate::interpreter::interpret(&lir).expect("a445 runs"),
+                include_bytes!("../../../corpus/accept/a445-the-suspension-live-in-analysis-reaches-a-fixed-point.expected"));
+            for condition in ["if (j > 0) { break; }", "if (j > 0) {}"] {
+                let files = [SourceFile::new("fixed-point.ts", source(condition))];
+                let hir = subscript_compiler::check_program(&files).expect("source checks");
+                let lir = super::super::lower_module(&hir).expect("suspension analysis ends");
+                assert_eq!(
+                    crate::interpreter::interpret(&lir).expect("LIR runs"),
+                    b"end 2\n"
+                );
+            }
+            send.send(()).unwrap();
+        });
+        receive
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("suspension analysis must finish within 10 seconds");
+    }
+
+    #[test]
+    fn suspension_live_in_control_matches_pin() {
+        let files = [SourceFile::new("fixed-point.ts", source(""))];
+        let hir = subscript_compiler::check_program(&files).expect("source checks");
+        let lir = super::super::lower_module(&hir).expect("control lowers");
+        let main = lir
+            .functions
+            .iter()
+            .find(|f| f.source_name == "main")
+            .unwrap();
+        // compiler.md §273 acceptance 3: pin control blocks and merge origins.
+        let shape = main
+            .blocks
+            .iter()
+            .map(|b| (b.source_name.as_deref(), b.parameters.len()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shape,
+            vec![
+                (Some("entry"), 0),
+                (Some("for.cond"), 2),
+                (Some("for.body"), 0),
+                (Some("for.step"), 2),
+                (Some("for.exit"), 2),
+                (Some("for-of.cond"), 5),
+                (Some("for-of.body"), 0),
+                (Some("for-of.step"), 5),
+                (Some("for-of.exit"), 2),
+                (Some("generator-for-of.next"), 3),
+                (Some("generator-for-of.body"), 0),
+                (Some("generator-for-of.exhausted"), 2),
+                (Some("generator-for-of.consumer-exit"), 2),
+                (Some("generator-for-of.exit"), 2),
+                (Some("async.resume"), 3),
+            ]
+        );
+        let header = &main.blocks[9];
+        let resume = &main.blocks[14];
+        assert_eq!(
+            main.liveness.value_origins[header.parameters[2].0 as usize],
+            l::ValueId(26)
+        );
+        assert_eq!(
+            resume
+                .parameters
+                .iter()
+                .map(|v| main.liveness.value_origins[v.0 as usize])
+                .collect::<Vec<_>>(),
+            vec![l::ValueId(26), l::ValueId(27), l::ValueId(28)]
+        );
+    }
+
+    #[test]
+    fn unreachable_predecessor_preserves_dominance_and_renaming() {
+        let files = [SourceFile::new("fixed-point.ts", source(""))];
+        let hir = subscript_compiler::check_program(&files).unwrap();
+        let mut lir = super::super::lower_module(&hir).unwrap();
+        let main = lir
+            .functions
+            .iter_mut()
+            .find(|f| f.source_name == "main")
+            .unwrap();
+        let origin = l::ValueId(26);
+        let mut entry = main.blocks[8].clone();
+        entry.id = l::BlockId(0);
+        entry.parameters.clear();
+        entry.terminator = main.blocks[10].terminator.clone();
+        if let l::Terminator::Suspend {
+            successor,
+            arguments,
+            ownership,
+            ..
+        } = &mut entry.terminator
+        {
+            *successor = l::BlockId(1);
+            arguments.clear();
+            ownership.clear();
+        }
+        let mut resume = main.blocks[6].clone();
+        resume.id = l::BlockId(1);
+        resume.instructions.clear();
+        resume.terminator = l::Terminator::Branch(l::BlockTarget {
+            block: l::BlockId(2),
+            arguments: vec![],
+            ownership: vec![],
+        });
+        let mut use_block = main.blocks[13].clone();
+        use_block.id = l::BlockId(2);
+        use_block.parameters.clear();
+        use_block.instructions[0].operands = vec![l::Operand::Value(origin)];
+        use_block.terminator = main.blocks[4].terminator.clone();
+        let mut dead = resume.clone();
+        dead.id = l::BlockId(3);
+        main.blocks = vec![entry, resume, use_block, dead];
+        main.entry = l::BlockId(0);
+        let reachable = reachable_blocks(main);
+        let mut preds = predecessors(main);
+        for predecessors in &mut preds {
+            predecessors.retain(|p| reachable[p.0 as usize]);
+        }
+        assert!(dominators(main, &preds)[2].contains(&l::BlockId(1)));
+        thread_suspension_live_ins(main).unwrap();
+        let release = &main.blocks[2].instructions[0];
+        let l::Operand::Value(version) = release.operands[0] else {
+            panic!("release value")
+        };
+        assert_ne!(version, origin);
+        assert_eq!(main.liveness.value_origins[version.0 as usize], origin);
     }
 }
