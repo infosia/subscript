@@ -6,7 +6,10 @@ fn task(ctx: &mut Context, fail: bool) -> *mut u8 {
     unsafe { ctx.async_register(input, 0) };
     if fail {
         let object = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(object, "failed".into(), 41);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(object, "failed".into(), 41)
+        };
         ctx.async_complete_exception(input);
     } else {
         unsafe { ctx.async_complete(input, std::ptr::null(), 0) };

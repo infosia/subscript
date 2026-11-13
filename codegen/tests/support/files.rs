@@ -36,7 +36,8 @@ impl Fixture {
         provider.userdata = (&mut *self.state as *mut State).cast();
         provider.read = Some(read);
         provider.write = Some(write);
-        config.file_provider = Some(provider);
+        // SAFETY: the host state and callbacks outlive each test run and session (section 263).
+        config = unsafe { config.with_file_provider(provider) };
         config
     }
     pub fn root(&self) -> &std::path::Path {

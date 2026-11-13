@@ -180,6 +180,8 @@ fn object_free_releases_all_failed_fields_before_it_frees_storage() {
                 subscript_rt_async_register_uncounted(&mut *ctx, frame, 0);
                 if fail {
                     let error = ctx.alloc(24, 1, 0);
+
+                    // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
                     ctx.raise_exception(error, "Error: field".into(), 7);
                     ctx.async_complete_exception(frame);
                 } else {

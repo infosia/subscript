@@ -572,7 +572,10 @@ fn completion_during_script_preserves_a_pending_exception() {
         let (handle, endpoint) = shaped_source(&mut ctx, kind);
         let object = ctx.alloc(8, 42, 1);
         ctx.enter_script();
-        ctx.raise_exception(object, "Error: outer".to_owned(), 21);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(object, "Error: outer".to_owned(), 21)
+        };
         assert_eq!(
             unsafe { deliver(&mut ctx, endpoint, kind) },
             CompletionStatus::Ok

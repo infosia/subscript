@@ -77,7 +77,7 @@ pub struct RunConfig<'a> {
     /// Standard modules enabled by this build.
     pub enabled_modules: &'a [&'a str],
     /// Development-tier file provider copied before module initialization.
-    pub file_provider: Option<subscript_runtime::ffi::FileProvider>,
+    pub(crate) file_provider: Option<subscript_runtime::ffi::FileProvider>,
     /// Native libraries available to foreign calls.
     pub native_libraries: &'a [NativeLibrary],
     /// Object-level Context allocation number to reject.
@@ -101,6 +101,20 @@ impl<'a> RunConfig<'a> {
     #[must_use]
     pub fn with_enabled_modules(mut self, modules: &'a [&'a str]) -> Self {
         self.enabled_modules = modules;
+        self
+    }
+
+    /// Installs the development-tier file provider (compiler.md section 263).
+    ///
+    /// # Safety
+    /// The userdata and callbacks remain valid while a run or session that uses this config is alive.
+    /// Each callback must accept the supplied userdata. Use the provider on the Context owner thread.
+    #[must_use]
+    pub unsafe fn with_file_provider(
+        mut self,
+        provider: subscript_runtime::ffi::FileProvider,
+    ) -> Self {
+        self.file_provider = Some(provider);
         self
     }
 
@@ -927,3 +941,14 @@ mod finally_tests;
 
 #[cfg(test)]
 mod private_name_tests;
+
+#[cfg(test)]
+mod raw_registration_tests {
+    #[test]
+    fn file_provider_builder_copies_provider() {
+        let provider = subscript_runtime::ffi::FileProvider::default();
+        // SAFETY: the default provider has no userdata or callbacks (section 263).
+        let config = unsafe { super::RunConfig::default().with_file_provider(provider) };
+        assert!(config.file_provider.is_some());
+    }
+}

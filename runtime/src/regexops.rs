@@ -718,7 +718,10 @@ mod tests {
 
             let mut root = handle as usize;
             let root_ptr = &mut root as *mut usize;
-            ctx.root_add(root_ptr as usize, 1);
+            unsafe {
+                // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+                ctx.root_add(root_ptr as usize, 1)
+            };
             ctx.collect();
             assert!(ctx.is_live(handle as usize), "{tier}");
             assert_eq!(ctx.regex_store().values.len(), 1, "{tier}");

@@ -978,11 +978,18 @@ impl ReloadSession {
             native_libraries: libraries.to_vec(),
             check_options,
         };
+        // SAFETY: with_file_provider requires host state and callbacks to outlive this session (section 263).
         unsafe {
             session.ctx.set_file_provider(config.file_provider);
         }
-        session.ctx.set_fn_table(session.table.as_ptr());
-        session.ctx.set_globals(session.globals.ptr);
+        unsafe {
+            // SAFETY: ReloadSession retains the table and JIT modules until after Context drop (section 263).
+            session.ctx.set_fn_table(session.table.as_ptr())
+        };
+        unsafe {
+            // SAFETY: ReloadSession retains its globals block until after Context drop (section 263).
+            session.ctx.set_globals(session.globals.ptr)
+        };
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
@@ -1281,7 +1288,10 @@ impl ReloadSession {
         self.async_runner = gen.async_runner;
         self.runner_error = hirm.runner_main().err();
         self.positions = gen.positions;
-        self.ctx.set_fn_table(self.table.as_ptr());
+        unsafe {
+            // SAFETY: ReloadSession retains the table and JIT modules until after Context drop (section 263).
+            self.ctx.set_fn_table(self.table.as_ptr())
+        };
         self.ctx.bump_reload_epoch();
         Ok(())
     }

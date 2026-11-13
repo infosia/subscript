@@ -34,6 +34,8 @@ fn collection_releases_failed_fields_and_maps_in_task_id_order_with_a_fulfilled_
                         ctx.async_register(frame, 0);
                         if fail {
                             let error = ctx.alloc(24, 1, 0);
+
+                            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
                             ctx.raise_exception(error, format!("Error: {index}"), 40 + index);
                             ctx.async_complete_exception(frame);
                         } else {
@@ -198,7 +200,10 @@ fn collection_sweeps_on_consumer_early_return_and_unwind() {
         let mut ctx = Context::new();
         let object = ctx.alloc(8, 900, 0);
         let mut root = object as usize;
-        ctx.shadow_push((&raw mut root) as usize, 1);
+        unsafe {
+            // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+            ctx.shadow_push((&raw mut root) as usize, 1)
+        };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             Context::with_collection(
                 &mut *ctx,
@@ -245,7 +250,10 @@ fn reachable_words_follow_live_payloads_and_stop_at_scalar_storage() {
         }
         assert!(!ctx.reachable_words(&[scalar as usize]).contains(&202));
         let mut host_root = parent as usize;
-        ctx.shadow_push((&raw mut host_root) as usize, 1);
+        unsafe {
+            // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+            ctx.shadow_push((&raw mut host_root) as usize, 1)
+        };
         assert!(ctx.reachable_words(&[]).contains(&101));
         ctx.shadow_pop();
     }

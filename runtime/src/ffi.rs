@@ -573,6 +573,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_trap_message(
 /// `ctx` follows the exclusive Context contract. `observer`, when
 /// present, must be callable with `userdata` and obey the no-re-entry
 /// rule above.
+/// The callback and its userdata remain valid until removal, replacement, or Context drop.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_ctx_set_trap_observer(
     ctx: *mut Context,
@@ -580,7 +581,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_trap_observer(
     userdata: *mut std::ffi::c_void,
 ) {
     // SAFETY: exclusive Context contract.
-    unsafe { &mut *ctx }.set_trap_observer(observer, userdata);
+    unsafe {
+        // SAFETY: the C caller retains the callback and userdata until removal, replacement, or Context drop (section 263).
+        (&mut *ctx).set_trap_observer(observer, userdata)
+    };
 }
 
 /// Installs the callback invoked for each line printed by `ctx`. Passing a
@@ -600,6 +604,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_trap_observer(
 ///
 /// `ctx` follows the exclusive Context contract. `observer`, when present,
 /// must be callable with `userdata` and obey the no-re-entry rule above.
+/// The callback and its userdata remain valid until removal, replacement, or Context drop.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_ctx_set_print_observer(
     ctx: *mut Context,
@@ -607,7 +612,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_print_observer(
     userdata: *mut std::ffi::c_void,
 ) {
     // SAFETY: exclusive Context contract.
-    unsafe { &mut *ctx }.set_print_observer(observer, userdata);
+    unsafe {
+        // SAFETY: the C caller retains the callback and userdata until removal, replacement, or Context drop (section 263).
+        (&mut *ctx).set_print_observer(observer, userdata)
+    };
 }
 
 /// Installs the observation-only callback invoked for optional runtime
@@ -637,6 +645,7 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_print_observer(
 ///
 /// `ctx` follows the exclusive Context contract. `observer`, when present,
 /// must be callable with `userdata` and obey the no-re-entry rule above.
+/// The callback and its userdata remain valid until removal, replacement, or Context drop.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_ctx_set_diagnostics_observer(
     ctx: *mut Context,
@@ -644,7 +653,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_diagnostics_observer(
     userdata: *mut std::ffi::c_void,
 ) {
     // SAFETY: exclusive Context contract.
-    unsafe { &mut *ctx }.set_diagnostics_observer(observer, userdata);
+    unsafe {
+        // SAFETY: the C caller retains the callback and userdata until removal, replacement, or Context drop (section 263).
+        (&mut *ctx).set_diagnostics_observer(observer, userdata)
+    };
 }
 
 /// Sets the callback-binding count advisory threshold.

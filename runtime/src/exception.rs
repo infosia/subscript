@@ -113,7 +113,11 @@ impl Context {
     /// A trap wins over an exception: when the Context is trapped, the
     /// call records nothing. A raise over a pending exception is a
     /// code-generation defect. It records an internal trap.
-    pub fn raise_exception(&mut self, object: *mut u8, message: String, pos_id: u32) {
+    ///
+    /// # Safety
+    /// The object is a live exception handle of this Context and remains valid until the exception is consumed.
+    /// See compiler.md section 263.
+    pub unsafe fn raise_exception(&mut self, object: *mut u8, message: String, pos_id: u32) {
         if self.trap_flag == STATE_TRAP {
             return;
         }
@@ -300,7 +304,10 @@ pub unsafe extern "C" fn subscript_rt_exception_throw(
         }
     };
     let text = exception_message(&read(name), &read(message));
-    ctx.raise_exception(object, text, pos_id);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(object, text, pos_id)
+    };
 }
 
 /// Reads the pending report into a rooted string value for a finalizer.
@@ -351,7 +358,10 @@ pub unsafe extern "C" fn subscript_rt_exception_restore(
     // SAFETY: exclusive Context contract and live string contract.
     let ctx = unsafe { &mut *ctx };
     let message = String::from_utf8_lossy(unsafe { ctx.str_bytes(text) }).into_owned();
-    ctx.raise_exception(object, message, position);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(object, message, position)
+    };
 }
 
 /// A catch entry: takes the pending Error object and clears the word.
@@ -429,7 +439,10 @@ mod tests {
 
     fn raised(ctx: &mut Context) -> *mut u8 {
         let object = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(object, "Error: failure".to_string(), 7);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(object, "Error: failure".to_string(), 7)
+        };
         object
     }
 
@@ -484,7 +497,10 @@ mod tests {
         assert!(!ctx.exception_pending());
         assert_eq!(ctx.pending_exception_object(), None);
         let object = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(object, "Error: later".to_string(), 9);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(object, "Error: later".to_string(), 9)
+        };
         assert!(!ctx.exception_pending(), "a trap wins over a later raise");
         assert_eq!(
             ctx.trap_record().map(|record| (record.kind, record.pos_id)),
@@ -567,7 +583,10 @@ mod tests {
         // SAFETY: the trampoline passes the live Context.
         let ctx = unsafe { &mut *ctx };
         let object = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(object, "Error: callback failed".to_string(), 12);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(object, "Error: callback failed".to_string(), 12)
+        };
     }
 
     #[test]
@@ -607,7 +626,10 @@ mod tests {
         assert_eq!(ctx.parked_exception_count(), 1);
         // A hook that throws and catches inside parks nothing.
         let inner = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(inner, "Error: inner".to_string(), 11);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(inner, "Error: inner".to_string(), 11)
+        };
         assert_eq!(ctx.catch_exception(), inner);
         ctx.resume_exception();
         assert!(ctx.exception_pending());
@@ -629,7 +651,10 @@ mod tests {
         // SAFETY: live Context.
         unsafe { subscript_rt_exception_park(&mut *ctx) };
         let second = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(second, "Error: second".to_string(), 8);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(second, "Error: second".to_string(), 8)
+        };
         // SAFETY: live Context.
         unsafe { subscript_rt_exception_park(&mut *ctx) };
         assert_eq!(ctx.parked_exception_count(), 2);
@@ -700,7 +725,10 @@ mod tests {
         let first = raised(&mut ctx);
         assert_eq!(ctx.pending_exception_object(), Some(first));
         let second = ctx.alloc(24, 1, 0);
-        ctx.raise_exception(second, "Error: second".to_string(), 9);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(second, "Error: second".to_string(), 9)
+        };
         assert_eq!(
             ctx.trap_record().map(|record| record.kind),
             Some(TrapKind::Internal)

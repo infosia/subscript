@@ -151,7 +151,10 @@ fn assert_popped_element_is_unreachable(mut ctx: Box<Context>, tier: &str) {
     let x = ctx.alloc(16, 1, 0);
     let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
     let mut root = h as usize;
-    ctx.root_add((&mut root as *mut usize) as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add((&mut root as *mut usize) as usize, 1)
+    };
     let value = x as usize;
     // SAFETY: `h` is a live word array, and `value` is readable.
     unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
@@ -171,7 +174,10 @@ fn assert_array_tail_violation_is_reported(mut ctx: Box<Context>, tier: &str) {
     // SAFETY: `clean` is a live word array, and `clean_value` is readable.
     unsafe { ctx.array_push(clean, (&raw const clean_value).cast(), 0) };
     let mut roots = [h as usize, clean as usize];
-    ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len())
+    };
     let value = 7usize;
     // SAFETY: `h` is a live word array, and `value` is readable.
     unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };

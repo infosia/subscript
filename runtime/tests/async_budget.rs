@@ -198,7 +198,10 @@ fn aggregate_trap_stays_pending_until_clearance() {
     unsafe {
         ctx.async_register(input, 0);
     }
-    ctx.raise_exception(error, "aggregate failure".to_string(), 9);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(error, "aggregate failure".to_string(), 9)
+    };
     ctx.async_complete_exception(input);
     let jobs = ctx.array_new(std::mem::size_of::<*mut u8>(), 0);
     unsafe {

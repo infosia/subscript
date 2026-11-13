@@ -223,11 +223,14 @@ pub unsafe extern "C" fn subscript_rt_trap_wire_enum(
 ///
 /// # Safety
 ///
-/// Shared contract; the range outlives the script run.
+/// Shared contract; the range contains `words` readable 8-byte slots until the Context drops.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_root_add(ctx: *mut Context, base: *mut u8, words: u64) {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.root_add(base as usize, words as usize);
+    unsafe {
+        // SAFETY: the C caller guarantees that the root range stays readable until Context drop (section 263).
+        (&mut *ctx).root_add(base as usize, words as usize)
+    };
 }
 
 /// Pushes a shadow frame of `slots` managed-local slots at `base`.
@@ -238,7 +241,10 @@ pub unsafe extern "C" fn subscript_rt_root_add(ctx: *mut Context, base: *mut u8,
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_shadow_push(ctx: *mut Context, base: *mut u8, slots: u64) {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.shadow_push(base as usize, slots as usize);
+    unsafe {
+        // SAFETY: the C caller guarantees that the range stays valid until the matching pop (section 263).
+        (&mut *ctx).shadow_push(base as usize, slots as usize)
+    };
 }
 
 /// Pops the most recent shadow frame.

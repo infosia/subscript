@@ -96,6 +96,7 @@ pub(super) fn execute_entry(
 
     let needs_panic_stdout_fallback = write_through.is_none();
     let mut ctx = Context::new();
+    // SAFETY: with_file_provider requires host state and callbacks to outlive this run (section 263).
     unsafe {
         ctx.set_file_provider(file_provider);
     }
@@ -103,10 +104,13 @@ pub(super) fn execute_entry(
         bytes: Vec::new(),
         write_through,
     });
-    ctx.set_print_observer(
-        Some(capture_stdout_line),
-        (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
-    );
+    unsafe {
+        // SAFETY: capture_stdout_line is static; the stdout Box stays live until observer removal (section 263).
+        ctx.set_print_observer(
+            Some(capture_stdout_line),
+            (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
+        )
+    };
     // The hook flushes the buffer the observer fills.
     let aborting_stdout =
         needs_panic_stdout_fallback.then(|| AbortingStdoutGuard::install(&stdout.bytes));
@@ -165,7 +169,10 @@ pub(super) fn execute_entry(
         let pos = lowered.positions.report_position(r.pos_id);
         (r.kind, r.message.clone(), pos)
     });
-    ctx.set_print_observer(None, std::ptr::null_mut());
+    unsafe {
+        // SAFETY: capture_stdout_line is static; the stdout Box stays live until observer removal (section 263).
+        ctx.set_print_observer(None, std::ptr::null_mut())
+    };
     drop(aborting_stdout);
     let stdout = stdout.bytes;
     match trap {

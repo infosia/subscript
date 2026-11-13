@@ -36,7 +36,10 @@ fn result(ctx: &mut Context, frame: *mut u8) -> *mut u8 {
 
 fn fail(ctx: &mut Context, frame: *mut u8, message: &str, position: u32) {
     let error = ctx.alloc(24, 1, 0);
-    ctx.raise_exception(error, message.to_string(), position);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(error, message.to_string(), position)
+    };
     ctx.async_complete_exception(frame);
 }
 

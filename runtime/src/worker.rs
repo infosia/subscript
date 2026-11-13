@@ -460,7 +460,7 @@ fn run_worker(
     // until all workers join and drops the parent Context before its JIT
     // modules, so reconstructing the exact table pointer here is valid for
     // the worker Context's entire lifetime.
-    ctx.set_fn_table(fn_table as *const *const u8);
+    unsafe { ctx.set_fn_table(fn_table as *const *const u8) };
     let ctx_ptr = std::ptr::from_mut(ctx.as_mut());
     let mut inbox = WorkerInbox { queue: input };
     let mut outbox = WorkerOutbox { queue: output };

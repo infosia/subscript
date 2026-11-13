@@ -115,6 +115,8 @@ fn map_clear_releases_all_nested_values_after_the_first_exception() {
                     subscript_rt_async_register_uncounted(ctx, frame, 0);
                     if fail {
                         let error = context.alloc(24, 1, 0);
+
+                        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
                         context.raise_exception(error, "Error: lost".into(), 7);
                         context.async_complete_exception(frame);
                     } else {

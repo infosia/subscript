@@ -139,7 +139,10 @@ fn recursive_last_holder_release_reports_the_unobserved_exception() {
         let frame = ctx.alloc(16, CLASS_GENERATOR, 0);
         // SAFETY: the fresh allocation contains the async header.
         unsafe { ctx.async_register(frame, 0) };
-        ctx.raise_exception(std::ptr::null_mut(), "Error: inner".into(), 23);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(std::ptr::null_mut(), "Error: inner".into(), 23)
+        };
         ctx.async_complete_exception(frame);
         assert!(!ctx.trapped());
         let (value, description) = match shape {

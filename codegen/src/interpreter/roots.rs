@@ -140,8 +140,11 @@ impl Interpreter<'_> {
             .filter(|key| !seen.contains(key))
             .copied()
             .collect::<Vec<_>>();
-        self.context
-            .shadow_push(words.as_ptr() as usize, words.len());
+        unsafe {
+            // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+            self.context
+                .shadow_push(words.as_ptr() as usize, words.len())
+        };
         let first = Context::with_collection(
             self,
             |owner| &mut owner.context,

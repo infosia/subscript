@@ -135,7 +135,10 @@ fn clear_releases_in_index_order_and_stops_at_the_first_trap() {
         unsafe {
             ctx.async_register(frame, 0);
         }
-        ctx.raise_exception(std::ptr::null_mut(), message.into(), position);
+        unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            ctx.raise_exception(std::ptr::null_mut(), message.into(), position)
+        };
         ctx.async_complete_exception(frame);
         unsafe {
             ctx.array_push(array, (&raw const frame).cast(), 0);

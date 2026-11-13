@@ -1641,7 +1641,10 @@ unsafe fn callback_failed(ctx: *mut Context, state: &mut CallbackState, error: I
             object,
             message: text,
             ..
-        } => unsafe { (*ctx).raise_exception(*object as *mut u8, text.clone(), 0) },
+        } => unsafe {
+            // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+            (*ctx).raise_exception(*object as *mut u8, text.clone(), 0)
+        },
         _ => unsafe { (*ctx).trap(RuntimeTrapKind::Internal, message, 0) },
     }
     state.error = Some(error);

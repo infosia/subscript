@@ -16,7 +16,9 @@ use crate::context::Context;
 ///
 /// Shared contract; `code`/`env` are a language function value (a
 /// non-capturing wrapper, so `env` is null); `userdata1`/`userdata2`
-/// outlive the run.
+/// must remain valid for each callback that uses them.
+/// The code remains callable until the Context drops.
+/// Managed userdata can be deleted; the runtime rejects callbacks with deleted managed userdata.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_cb_bind(
     ctx: *mut Context,
@@ -26,7 +28,10 @@ pub unsafe extern "C" fn subscript_rt_cb_bind(
     userdata2: *mut u8,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2)
+    unsafe {
+        // SAFETY: the C caller supplies Context-lifetime code and userdata valid for each callback (section 263).
+        (&mut *ctx).bind_callback(code, env, userdata1, userdata2)
+    }
 }
 
 /// The generic C-ABI callback trampoline (§14.4). A C API invokes

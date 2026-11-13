@@ -103,7 +103,13 @@ impl Context {
     /// Both userdata slots (§14.4) are stored and delivered to the
     /// language callback; a one-slot callback-info passes `userdata2` as
     /// null.
-    pub fn register_callback(
+    ///
+    /// # Safety
+    /// The code remains callable until the registration ends and all active calls return; the environment must be null.
+    /// Host userdata must remain valid for each callback that uses it.
+    /// Managed userdata can be deleted; the runtime rejects callbacks with deleted managed userdata.
+    /// See compiler.md section 263.
+    pub unsafe fn register_callback(
         &mut self,
         code: *const u8,
         env: *const u8,
@@ -320,7 +326,10 @@ pub unsafe extern "C" fn subscript_rt_cb_register(
     userdata2: *mut u8,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.register_callback(code, env, userdata1, userdata2)
+    unsafe {
+        // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+        (&mut *ctx).register_callback(code, env, userdata1, userdata2)
+    }
 }
 
 /// The explicit-lifetime C-ABI callback trampoline (§111 rule 4).
@@ -678,14 +687,20 @@ mod tests {
         let userdata = std::ptr::from_mut(&mut userdata);
         let code = code_of(counting);
 
-        let first = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
         assert!(!first.is_null(), "§111 rule 3 creates one record");
         assert_eq!(ctx.live_registration_count(), 1);
         assert!(ctx.registration_is_open(first));
         assert_eq!(ctx.registration_active_calls(first), Some(0));
 
         // §111 rule 3: the same (code, userdata) is a second record.
-        let second = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let second = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
         assert_ne!(first, second, "§111 rule 3 forbids interning");
         assert_eq!(ctx.live_registration_count(), 2);
     }
@@ -699,8 +714,14 @@ mod tests {
         let userdata = ctx.alloc(16, 1, 20);
         assert!(!userdata.is_null());
         let code = code_of(counting);
-        let first = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
-        let second = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
+        let second = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
 
         assert!(ctx.release_callback_registration(first.cast()));
         assert_eq!(ctx.live_registration_count(), 1);
@@ -726,14 +747,19 @@ mod tests {
             "null is not an open registration"
         );
 
-        let binding = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let binding = unsafe {
+            // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+            ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
         assert!(
             !ctx.release_callback_registration(binding.cast()),
             "a §14.4a binding is not a registration"
         );
 
-        let registration =
-            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
         // The firing control: the same call on the open registration.
         assert!(ctx.release_callback_registration(registration.cast()));
         assert_eq!(ctx.live_registration_count(), 0);
@@ -754,12 +780,15 @@ mod tests {
         // carries a live allocation.
         let userdata = ctx.alloc(16, 1, 27);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(release_two_times),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(release_two_times),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         SUBJECT.with(|cell| cell.set(registration));
 
         fire(registration);
@@ -797,12 +826,15 @@ mod tests {
         // SAFETY: `outer` has 8 writable payload bytes.
         unsafe { outer.cast::<usize>().write(inner as usize) };
 
-        let registration = ctx.register_callback(
-            code_of(release_then_collect),
-            std::ptr::null(),
-            outer,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(release_then_collect),
+                std::ptr::null(),
+                outer,
+                std::ptr::null_mut(),
+            )
+        };
         SUBJECT.with(|cell| cell.set(registration));
 
         fire(registration);
@@ -842,12 +874,15 @@ mod tests {
         // carries a live allocation.
         let userdata = ctx.alloc(16, 1, 21);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(fire_again),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(fire_again),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         SUBJECT.with(|cell| cell.set(registration));
         NESTING_LEFT.with(|cell| cell.set(1));
 
@@ -876,12 +911,15 @@ mod tests {
         // carries a live allocation.
         let userdata = ctx.alloc(16, 1, 22);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(trapping),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(trapping),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
 
         fire(registration);
 
@@ -906,12 +944,15 @@ mod tests {
         let mut ctx = Context::new();
         let userdata = ctx.alloc(16, 1, 30);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(counting),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: code is static; managed userdata is live here. Liveness checks skip it after explicit delete (section 263).
+            ctx.register_callback(
+                code_of(counting),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         ctx.delete(userdata as usize, 31);
 
         fire(registration);
@@ -945,12 +986,15 @@ mod tests {
         let mut userdata = 1u8;
         let userdata = std::ptr::from_mut(&mut userdata);
         let before = live_records();
-        let registration = ctx.register_callback(
-            code_of(counting),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(counting),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         assert_eq!(live_records(), before + 1);
 
         assert!(ctx.release_callback_registration(registration.cast()));
@@ -973,12 +1017,15 @@ mod tests {
         let userdata = ctx.alloc(16, 1, 28);
         assert!(!userdata.is_null());
         let before = live_records();
-        let registration = ctx.register_callback(
-            code_of(release_and_count_records),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(release_and_count_records),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         SUBJECT.with(|cell| cell.set(registration));
         assert_eq!(live_records(), before + 1);
 
@@ -1013,7 +1060,10 @@ mod tests {
             let userdata = std::ptr::from_mut(&mut userdata);
             let code = code_of(counting);
             for _ in 0..8 {
-                ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+                unsafe {
+                    // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+                    ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+                };
             }
             assert_eq!(ctx.live_registration_count(), 8);
             assert_eq!(live_records(), before + 8);
@@ -1032,8 +1082,10 @@ mod tests {
             let first = ctx.alloc(16, 1, 40);
             let second = ctx.alloc(16, 2, 41);
             assert!(!first.is_null() && !second.is_null(), "{tier}");
-            let registration =
-                ctx.register_callback(code_of(counting), std::ptr::null(), first, second);
+            let registration = unsafe {
+                // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+                ctx.register_callback(code_of(counting), std::ptr::null(), first, second)
+            };
 
             ctx.collect();
 
@@ -1062,12 +1114,15 @@ mod tests {
             );
             let freed = ctx.alloc(16, 1, 42);
             assert!(!freed.is_null(), "{tier}");
-            ctx.register_callback(
-                code_of(counting),
-                std::ptr::null(),
-                freed,
-                std::ptr::null_mut(),
-            );
+            unsafe {
+                // SAFETY: code is static; managed userdata is live here. Liveness checks skip it after explicit delete (section 263).
+                ctx.register_callback(
+                    code_of(counting),
+                    std::ptr::null(),
+                    freed,
+                    std::ptr::null_mut(),
+                )
+            };
             ctx.delete(freed as usize, 43);
 
             ctx.collect();
@@ -1103,26 +1158,35 @@ mod tests {
 
         let mut ctx = Context::new();
         let mut observed = Advisories::default();
-        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
+        unsafe {
+            // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+            ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut observed).cast())
+        };
         ctx.set_binding_count_advisory(2);
         let code = code_of(counting);
         let mut first = 1u8;
         let mut second = 2u8;
 
-        ctx.bind_callback(
-            code,
-            std::ptr::null(),
-            std::ptr::from_mut(&mut first),
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+            ctx.bind_callback(
+                code,
+                std::ptr::null(),
+                std::ptr::from_mut(&mut first),
+                std::ptr::null_mut(),
+            )
+        };
         assert!(observed.0.is_empty(), "one binding is below the threshold");
 
-        ctx.register_callback(
-            code,
-            std::ptr::null(),
-            std::ptr::from_mut(&mut second),
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code,
+                std::ptr::null(),
+                std::ptr::from_mut(&mut second),
+                std::ptr::null_mut(),
+            )
+        };
         assert_eq!(
             observed.0,
             [(
@@ -1168,12 +1232,15 @@ mod tests {
         let mut quiet = Context::new();
         let unobserved = quiet.alloc(16, 1, 50);
         assert!(!unobserved.is_null());
-        quiet.register_callback(
-            code_of(counting),
-            std::ptr::null(),
-            unobserved,
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            // SAFETY: code is static; managed userdata is live here. Liveness checks skip it after explicit delete (section 263).
+            quiet.register_callback(
+                code_of(counting),
+                std::ptr::null(),
+                unobserved,
+                std::ptr::null_mut(),
+            )
+        };
         quiet.delete(unobserved as usize, 51);
         assert!(!quiet.trapped(), "the default free path must not trap");
         assert!(!quiet.is_live(unobserved as usize));
@@ -1182,14 +1249,20 @@ mod tests {
         let mut ctx = Context::new();
         let registered = ctx.alloc(16, 1, 52);
         assert!(!registered.is_null());
-        ctx.register_callback(
-            code_of(counting),
-            std::ptr::null(),
-            std::ptr::null_mut(),
-            registered,
-        );
+        unsafe {
+            // SAFETY: code is static; managed userdata is live here. Liveness checks skip it after explicit delete (section 263).
+            ctx.register_callback(
+                code_of(counting),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                registered,
+            )
+        };
         let mut advisory = Advisory::default();
-        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast());
+        unsafe {
+            // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+            ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast())
+        };
 
         ctx.delete(registered as usize, 53);
 
@@ -1267,9 +1340,14 @@ mod tests {
         let mut userdata = 1u8;
         let userdata = std::ptr::from_mut(&mut userdata);
 
-        let one = first.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
-        let other =
-            second.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let one = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            first.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
+        let other = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            second.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+        };
 
         // SAFETY: both registrations are live and were never released.
         unsafe {
@@ -1328,12 +1406,15 @@ mod tests {
         // carries a live allocation.
         let userdata = ctx.alloc(16, 1, 24);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(release_then_fire_again),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(release_then_fire_again),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
         SUBJECT.with(|cell| cell.set(registration));
         NESTING_LEFT.with(|cell| cell.set(1));
 
@@ -1433,12 +1514,15 @@ mod tests {
         let mut ctx = Context::new();
         let userdata = ctx.alloc(16, 1, 26);
         assert!(!userdata.is_null());
-        let registration = ctx.register_callback(
-            code_of(counting),
-            std::ptr::null(),
-            userdata,
-            std::ptr::null_mut(),
-        );
+        let registration = unsafe {
+            // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+            ctx.register_callback(
+                code_of(counting),
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+            )
+        };
 
         fire(registration);
 
@@ -1480,12 +1564,10 @@ mod tests {
         let start = Instant::now();
         let mut records = Vec::with_capacity(N);
         for &object in &userdata {
-            records.push(ctx.register_callback(
-                code,
-                std::ptr::null(),
-                object,
-                std::ptr::null_mut(),
-            ));
+            records.push(unsafe {
+                // SAFETY: the linked code and host userdata remain valid until the registration ends (section 263).
+                ctx.register_callback(code, std::ptr::null(), object, std::ptr::null_mut())
+            });
         }
         let register = start.elapsed();
         assert_eq!(ctx.live_registration_count(), N);
@@ -1537,10 +1619,13 @@ mod tests {
 
         let mut control = Context::new();
         let mut counted = Counted::default();
-        control.set_diagnostics_observer(
-            Some(count_bindings),
-            std::ptr::from_mut(&mut counted).cast(),
-        );
+        unsafe {
+            // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+            control.set_diagnostics_observer(
+                Some(count_bindings),
+                std::ptr::from_mut(&mut counted).cast(),
+            )
+        };
         control.set_binding_count_advisory(N as u64);
         let control_empty = control.live_bytes();
         let start = Instant::now();
@@ -1557,10 +1642,16 @@ mod tests {
 
         let start = Instant::now();
         for &object in &control_userdata {
-            control.bind_callback(code, std::ptr::null(), object, std::ptr::null_mut());
+            unsafe {
+                // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+                control.bind_callback(code, std::ptr::null(), object, std::ptr::null_mut())
+            };
         }
         let control_bind = start.elapsed();
-        control.set_diagnostics_observer(None, std::ptr::null_mut());
+        unsafe {
+            // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+            control.set_diagnostics_observer(None, std::ptr::null_mut())
+        };
         assert_eq!(
             counted.calls, 1,
             "the control reaches the threshold at the N-th record"

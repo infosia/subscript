@@ -102,9 +102,12 @@ pub unsafe extern "C" fn subscript_rt_file_operation(
     endpoint: *const CompletionEndpoint,
 ) {
     let roots = [path as usize, data as usize];
+
     unsafe {
-        (*ctx).shadow_push(roots.as_ptr() as usize, roots.len());
-    }
+        // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+        (*ctx).shadow_push(roots.as_ptr() as usize, roots.len())
+    };
+
     unsafe {
         dispatch(ctx, operation, path, data, endpoint);
     }

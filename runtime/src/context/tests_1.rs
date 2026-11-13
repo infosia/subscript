@@ -119,7 +119,10 @@ fn collect_frees_unreachable_and_keeps_rooted() {
     let dropped = ctx.alloc(8, 1, 0);
     let mut slot: usize = kept as usize;
     let slot_ptr: *mut usize = &mut slot;
-    ctx.root_add(slot_ptr as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(slot_ptr as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(kept as usize));
     assert!(!ctx.is_live(dropped as usize));
@@ -139,7 +142,10 @@ fn collect_moves_unreachable_records_out_of_the_swept_map() {
     let kept = ctx.alloc(8, 1, 0);
     let dropped = ctx.alloc(8, 1, 0);
     let mut root = kept as usize;
-    ctx.root_add(&mut root as *mut usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&mut root as *mut usize as usize, 1)
+    };
 
     ctx.collect();
 
@@ -236,7 +242,10 @@ fn ship_mode_collect_frees_and_removes_unreachable() {
     let _dropped = ctx.alloc(8, 1, 0);
     assert_eq!(ctx.allocation_count(), 2);
     let mut slot: usize = kept as usize;
-    ctx.root_add(&mut slot as *mut usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&mut slot as *mut usize as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(kept as usize));
     // The unreachable block is released, not poisoned.
@@ -253,7 +262,10 @@ fn dev_collect_does_not_trace_handle_address_in_string_payload() {
         ctx.alloc_str(&bytes, 0)
     };
     let mut root = string as usize;
-    ctx.root_add(&mut root as *mut usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&mut root as *mut usize as usize, 1)
+    };
 
     ctx.collect();
 
@@ -270,7 +282,10 @@ fn dev_collect_traces_handle_address_in_reference_payload() {
     // SAFETY: outer payload is 8 writable bytes.
     unsafe { (outer as *mut usize).write(inner as usize) };
     let mut slot: usize = outer as usize;
-    ctx.root_add(&mut slot as *mut usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&mut slot as *mut usize as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(outer as usize));
     assert!(ctx.is_live(inner as usize));
@@ -287,7 +302,10 @@ fn mark_trace_environment_child() {
     // SAFETY: `outer` has one writable payload word.
     unsafe { outer.cast::<usize>().write(inner) };
     let root = outer as usize;
-    ctx.root_add(&root as *const usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&root as *const usize as usize, 1)
+    };
 
     ctx.collect();
 }
@@ -336,7 +354,10 @@ fn ship_collect_does_not_trace_handle_address_in_string_payload() {
         ctx.alloc_str(&bytes, 0)
     };
     let mut roots = [small_string as usize, large_string as usize];
-    ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len())
+    };
 
     ctx.collect();
 
@@ -359,7 +380,10 @@ fn ship_collect_traces_handle_address_in_reference_payload() {
     // SAFETY: large_outer has at least one writable payload word.
     unsafe { (large_outer as *mut usize).write(large_target as usize) };
     let mut roots = [small_outer as usize, large_outer as usize];
-    ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len())
+    };
 
     ctx.collect();
 
@@ -377,7 +401,10 @@ fn root_ranges_scan_every_word() {
     let a = ctx.alloc(8, 1, 0);
     let b = ctx.alloc(8, 1, 0);
     let range = [a as usize, b as usize];
-    ctx.root_add(range.as_ptr() as usize, 2);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(range.as_ptr() as usize, 2)
+    };
     ctx.collect();
     assert!(ctx.is_live(a as usize));
     assert!(ctx.is_live(b as usize));
@@ -388,7 +415,10 @@ fn shadow_frames_root_locals_and_pop_unroots_them() {
     let mut ctx = Context::new();
     let p = ctx.alloc(8, 1, 0);
     let slots = [p as usize];
-    ctx.shadow_push(slots.as_ptr() as usize, 1);
+    unsafe {
+        // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+        ctx.shadow_push(slots.as_ptr() as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(p as usize));
     ctx.shadow_pop();
@@ -521,7 +551,10 @@ fn array_data_is_reached_by_conservative_marking() {
         ctx.array_push(h, &v as *const usize as *const u8, 0);
     }
     let mut slot: usize = h as usize;
-    ctx.root_add(&mut slot as *mut usize as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(&mut slot as *mut usize as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(h as usize));
     assert!(
@@ -694,7 +727,10 @@ fn ship_collect_releases_unreachable_and_keeps_rooted() {
     unsafe { (kept as *mut usize).write(inner as usize) };
     let mut slot: usize = kept as usize;
     let slot_ptr: *mut usize = &mut slot;
-    ctx.root_add(slot_ptr as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(slot_ptr as usize, 1)
+    };
     assert_eq!(ctx.live_count(), 4);
     ctx.collect();
     assert!(ctx.is_live(kept as usize));
@@ -745,7 +781,10 @@ fn ship_large_allocations_membership_trace_collect_and_delete() {
     unsafe { (big.add(LARGEST_BLOCK) as *mut usize).write(inner as usize) };
     let mut slot: usize = big as usize;
     let slot_ptr: *mut usize = &mut slot;
-    ctx.root_add(slot_ptr as usize, 1);
+    unsafe {
+        // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+        ctx.root_add(slot_ptr as usize, 1)
+    };
     ctx.collect();
     assert!(ctx.is_live(big as usize));
     assert!(

@@ -164,13 +164,21 @@ impl Context {
     /// One word for a scalar managed global; several for a global
     /// aggregate (e.g. a `FixedArray` of references) whose interior
     /// holds handles.
-    pub fn root_add(&mut self, base: usize, words: usize) {
+    ///
+    /// # Safety
+    /// The range contains `words` readable 8-byte slots until the Context drops.
+    /// See compiler.md section 263.
+    pub unsafe fn root_add(&mut self, base: usize, words: usize) {
         self.roots.push((base, words));
     }
 
     /// Pushes a shadow frame: `slots` consecutive 8-byte slots at
     /// `base`, each holding a managed local (or null).
-    pub fn shadow_push(&mut self, base: usize, slots: usize) {
+    ///
+    /// # Safety
+    /// The range contains `slots` readable 8-byte slots until the matching shadow pop.
+    /// See compiler.md section 263.
+    pub unsafe fn shadow_push(&mut self, base: usize, slots: usize) {
         self.shadow.push((base, slots));
     }
 
@@ -1008,7 +1016,13 @@ impl Context {
     ///
     /// Both userdata slots (§14.4) are stored and delivered to the language
     /// callback; a one-slot callback-info passes `userdata2` as null.
-    pub fn bind_callback(
+    ///
+    /// # Safety
+    /// The code remains callable until the Context drops; the environment must be null.
+    /// Host userdata must remain valid for each callback that uses it.
+    /// Managed userdata can be deleted; the runtime rejects callbacks with deleted managed userdata.
+    /// See compiler.md section 263.
+    pub unsafe fn bind_callback(
         &mut self,
         code: *const u8,
         env: *const u8,

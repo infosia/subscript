@@ -440,8 +440,14 @@ fn fn_table_and_globals_pointers_round_trip() {
     let mut ctx = Context::new();
     let table: [*const u8; 2] = [std::ptr::null(), std::ptr::null()];
     let mut block = [0u8; 16];
-    ctx.set_fn_table(table.as_ptr());
-    ctx.set_globals(block.as_mut_ptr());
+    unsafe {
+        // SAFETY: the owner retains the table and code until the Context stops using them (section 263).
+        ctx.set_fn_table(table.as_ptr())
+    };
+    unsafe {
+        // SAFETY: the owner retains the global block while the Context uses it (section 263).
+        ctx.set_globals(block.as_mut_ptr())
+    };
     assert_eq!(ctx.fn_table, table.as_ptr());
     assert_eq!(ctx.globals, block.as_mut_ptr());
 }
@@ -481,13 +487,19 @@ fn print_observer_controls_delivery_and_sink_retention() {
 
     let mut ctx = Context::new();
     let mut observed = Vec::<Vec<u8>>::new();
-    ctx.set_print_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata until observer removal (section 263).
+        ctx.set_print_observer(Some(observe), std::ptr::from_mut(&mut observed).cast())
+    };
     ctx.print_line(b"first");
     ctx.print_line(b"second");
     assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
     assert!(ctx.stdout_bytes().is_empty());
 
-    ctx.set_print_observer(None, std::ptr::from_mut(&mut observed).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata until observer removal (section 263).
+        ctx.set_print_observer(None, std::ptr::from_mut(&mut observed).cast())
+    };
     ctx.print_line(b"after-unset");
     assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
     assert_eq!(ctx.stdout_bytes(), b"after-unset\n");
@@ -507,12 +519,21 @@ fn callback_bindings_are_interned_by_identity() {
     let userdata2 = std::ptr::from_mut(&mut userdata2);
     let other_userdata2 = std::ptr::from_mut(&mut other_userdata2);
 
-    let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
-    let repeated = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+    let first = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2)
+    };
+    let repeated = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2)
+    };
     assert_eq!(first, repeated);
     assert_eq!(ctx.callbacks.len(), 1);
 
-    let second = ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
+    let second = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2)
+    };
     assert_ne!(first, second);
     assert_eq!(ctx.callbacks.len(), 2);
 }
@@ -541,26 +562,35 @@ fn binding_count_advisory_reports_distinct_identity_at_threshold() {
 
     let mut ctx = Context::new();
     let mut observed = Advisories::default();
-    ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut observed).cast())
+    };
     ctx.set_binding_count_advisory(2);
     let code = callback_code as *const () as *const u8;
     let mut first_userdata = 1u8;
     let mut second_userdata = 2u8;
 
-    ctx.bind_callback(
-        code,
-        std::ptr::null(),
-        std::ptr::from_mut(&mut first_userdata),
-        std::ptr::null_mut(),
-    );
+    unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut first_userdata),
+            std::ptr::null_mut(),
+        )
+    };
     assert!(observed.0.is_empty(), "below-threshold binding advised");
 
-    ctx.bind_callback(
-        code,
-        std::ptr::null(),
-        std::ptr::from_mut(&mut second_userdata),
-        std::ptr::null_mut(),
-    );
+    unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut second_userdata),
+            std::ptr::null_mut(),
+        )
+    };
     assert_eq!(
         observed.0,
         [(
@@ -572,14 +602,21 @@ fn binding_count_advisory_reports_distinct_identity_at_threshold() {
 
     let mut zero_ctx = Context::new();
     let mut zero_observed = Advisories::default();
-    zero_ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut zero_observed).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+        zero_ctx
+            .set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut zero_observed).cast())
+    };
     zero_ctx.set_binding_count_advisory(0);
-    zero_ctx.bind_callback(
-        code,
-        std::ptr::null(),
-        std::ptr::from_mut(&mut first_userdata),
-        std::ptr::null_mut(),
-    );
+    unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        zero_ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            std::ptr::from_mut(&mut first_userdata),
+            std::ptr::null_mut(),
+        )
+    };
     assert_eq!(
         zero_observed.0,
         [(
@@ -610,12 +647,21 @@ fn binding_count_advisory_skips_same_identity_reregistration_at_threshold() {
     let code = callback_code as *const () as *const u8;
     let mut userdata = 1u8;
     let userdata = std::ptr::from_mut(&mut userdata);
-    let first = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+    let first = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+    };
 
     let mut calls = 0u32;
-    ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut calls).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut calls).cast())
+    };
     ctx.set_binding_count_advisory(1);
-    let repeated = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+    let repeated = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut())
+    };
 
     assert_eq!(first, repeated);
     assert_eq!(ctx.callbacks.len(), 1);
@@ -632,11 +678,17 @@ fn callback_reregistration_has_zero_record_growth_at_frame_scale() {
     let mut userdata2 = 2u8;
     let userdata1 = std::ptr::from_mut(&mut userdata1);
     let userdata2 = std::ptr::from_mut(&mut userdata2);
-    let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+    let first = unsafe {
+        // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+        ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2)
+    };
 
     for _ in 1..10_000 {
         assert_eq!(
-            ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2),
+            unsafe {
+                // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+                ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2)
+            },
             first
         );
     }
@@ -656,12 +708,15 @@ fn callback_userdata_rooted_survives_collect() {
         let first = ctx.alloc(16, 1, 10);
         let second = ctx.alloc(16, 2, 11);
         assert!(!first.is_null() && !second.is_null(), "{tier}");
-        ctx.bind_callback(
-            callback_code as *const () as *const u8,
-            std::ptr::null(),
-            first,
-            second,
-        );
+        unsafe {
+            // SAFETY: the linked code and host userdata remain valid for this Context (section 263).
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                first,
+                second,
+            )
+        };
 
         ctx.collect();
 
@@ -680,12 +735,15 @@ fn callback_userdata_freed_slot_is_skipped_at_mark() {
         let freed = ctx.alloc(16, 1, 12);
         let unrooted = ctx.alloc(16, 2, 13);
         assert!(!freed.is_null() && !unrooted.is_null(), "{tier}");
-        ctx.bind_callback(
-            callback_code as *const () as *const u8,
-            std::ptr::null(),
-            freed,
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            // SAFETY: code is static; managed userdata is live here. Collection skips the slot after explicit delete (section 263).
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                freed,
+                std::ptr::null_mut(),
+            )
+        };
         ctx.delete(freed as usize, 14);
 
         ctx.collect();
@@ -732,14 +790,20 @@ fn diagnostics_observer_advises_on_callback_userdata_free() {
     let mut ctx = Context::new();
     let registered = ctx.alloc(16, 1, 15);
     assert!(!registered.is_null());
-    ctx.bind_callback(
-        callback_code as *const () as *const u8,
-        std::ptr::null(),
-        std::ptr::null_mut(),
-        registered,
-    );
+    unsafe {
+        // SAFETY: code is static; managed userdata is live here. Collection skips the slot after explicit delete (section 263).
+        ctx.bind_callback(
+            callback_code as *const () as *const u8,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            registered,
+        )
+    };
     let mut advisory = Advisory::default();
-    ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast());
+    unsafe {
+        // SAFETY: the host retains the callback and userdata through the last diagnostic (section 263).
+        ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast())
+    };
 
     ctx.delete(registered as usize, 91);
 
@@ -769,12 +833,15 @@ fn diagnostics_observer_unset_has_zero_change() {
         );
         let registered = ctx.alloc(16, 1, 16);
         assert!(!registered.is_null(), "{tier}");
-        ctx.bind_callback(
-            callback_code as *const () as *const u8,
-            std::ptr::null(),
-            registered,
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            // SAFETY: code is static; managed userdata is live here. Collection skips the slot after explicit delete (section 263).
+            ctx.bind_callback(
+                callback_code as *const () as *const u8,
+                std::ptr::null(),
+                registered,
+                std::ptr::null_mut(),
+            )
+        };
 
         ctx.delete(registered as usize, 92);
 
@@ -961,7 +1028,10 @@ fn the_byte_counter_matches_the_walk_after_a_collection() {
         let kept = ctx.alloc(24, 1, 0);
         let dropped = ctx.alloc(64, 1, 0);
         let mut root = kept as usize;
-        ctx.root_add(&mut root as *mut usize as usize, 1);
+        unsafe {
+            // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+            ctx.root_add(&mut root as *mut usize as usize, 1)
+        };
         let before = ctx.live_bytes();
 
         ctx.collect();
@@ -1047,7 +1117,10 @@ fn collection_reports_a_live_byte_counter_that_left_the_live_set() {
     for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
         let kept = ctx.alloc(24, 1, 0);
         let mut root = kept as usize;
-        ctx.root_add(&mut root as *mut usize as usize, 1);
+        unsafe {
+            // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+            ctx.root_add(&mut root as *mut usize as usize, 1)
+        };
         ctx.collect();
         ctx.test_offset_live_bytes_counter(1);
 

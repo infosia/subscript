@@ -94,10 +94,16 @@ fn globals_with_one_source_name_keep_distinct_storage() {
             .map(|id| id.map_or(std::ptr::null(), |id| module.get_finalized_function(id)))
             .collect::<Vec<_>>();
         let mut ctx = Context::new();
-        ctx.set_fn_table(table.as_ptr());
+        unsafe {
+            // SAFETY: the owner retains the table and code until the Context stops using them (section 263).
+            ctx.set_fn_table(table.as_ptr())
+        };
         let mut globals = vec![0_u64; (lowered.globals_size as usize).div_ceil(8)];
         if reload {
-            ctx.set_globals(globals.as_mut_ptr().cast());
+            unsafe {
+                // SAFETY: the owner retains the global block while the Context uses it (section 263).
+                ctx.set_globals(globals.as_mut_ptr().cast())
+            };
         }
         type Entry = unsafe extern "C" fn(*mut Context);
         // SAFETY: both finalized entries take one live Context; the module outlives each call.

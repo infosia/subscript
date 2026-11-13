@@ -504,11 +504,14 @@ impl Context {
             crate::exception::Completion::Exception(payload) => {
                 payload.observed = true;
                 let exception = payload.exception.clone();
-                self.raise_exception(
-                    exception.object as *mut u8,
-                    exception.message,
-                    exception.pos_id,
-                );
+                unsafe {
+                    // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+                    self.raise_exception(
+                        exception.object as *mut u8,
+                        exception.message,
+                        exception.pos_id,
+                    )
+                };
                 return true;
             }
         };
@@ -871,11 +874,14 @@ impl Context {
                 }
             }
             Some(crate::exception::Completion::Exception(payload)) if fulfilled => {
-                self.raise_exception(
-                    payload.exception.object as *mut u8,
-                    payload.exception.message,
-                    payload.exception.pos_id,
-                );
+                unsafe {
+                    // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+                    self.raise_exception(
+                        payload.exception.object as *mut u8,
+                        payload.exception.message,
+                        payload.exception.pos_id,
+                    )
+                };
                 self.async_complete_exception(handle);
             }
             Some(_) => {}

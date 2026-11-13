@@ -42,7 +42,10 @@ fn spawn(ctx: &mut Context, resume: AsyncResume, handle: *mut u8) -> *mut u8 {
 /// exit, as generated code does (`compiler.md` §116.2 rule 2).
 fn raise_and_unwind(context: &mut Context, frame: *mut u8) -> u8 {
     let object = context.alloc(24, 1, 0);
-    context.raise_exception(object, "Error: body failed".to_string(), THROW_POSITION);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        context.raise_exception(object, "Error: body failed".to_string(), THROW_POSITION)
+    };
     // SAFETY: the test passes a live frame of this Context.
     unsafe { subscript_rt_async_complete_exception(context, frame) };
     1
@@ -107,7 +110,10 @@ unsafe extern "C" fn awaiting_resume(ctx: *mut Context, frame: *mut u8, _out: *m
 fn completed_with_exception(ctx: &mut Context) -> (*mut u8, *mut u8) {
     let frame = spawn(ctx, throwing_resume, std::ptr::null_mut());
     let object = ctx.alloc(24, 1, 0);
-    ctx.raise_exception(object, "TypeError: stored".to_string(), THROW_POSITION);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(object, "TypeError: stored".to_string(), THROW_POSITION)
+    };
     ctx.async_complete_exception(frame);
     (frame, object)
 }
@@ -218,7 +224,10 @@ fn a_host_root_settles_and_a_trap_passes() {
 
     let mut ctx = Context::new();
     let object = ctx.alloc(24, 1, 0);
-    ctx.raise_exception(object, "Error: unregistered".to_string(), 8);
+    unsafe {
+        // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+        ctx.raise_exception(object, "Error: unregistered".to_string(), 8)
+    };
     ctx.async_complete_exception(object);
     assert_eq!(
         ctx.trap_record().map(|record| record.kind),

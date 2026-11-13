@@ -437,6 +437,7 @@ void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint
  *
  * `ctx` follows the exclusive subscript_rt_context contract. `observer`, when present,
  * must be callable with `userdata` and obey the no-re-entry rule above.
+ * The callback and its userdata remain valid until removal, replacement, or subscript_rt_context drop.
  */
 void subscript_rt_ctx_set_diagnostics_observer(subscript_rt_context* ctx, subscript_rt_diagnostics_observer observer, void* userdata);
 /**
@@ -498,6 +499,7 @@ void subscript_rt_ctx_set_now(subscript_rt_context* ctx, int64_t ms);
  *
  * `ctx` follows the exclusive subscript_rt_context contract. `observer`, when present,
  * must be callable with `userdata` and obey the no-re-entry rule above.
+ * The callback and its userdata remain valid until removal, replacement, or subscript_rt_context drop.
  */
 void subscript_rt_ctx_set_print_observer(subscript_rt_context* ctx, subscript_rt_print_observer observer, void* userdata);
 void subscript_rt_ctx_set_regex_budget(subscript_rt_context* ctx, uint64_t budget);

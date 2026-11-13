@@ -869,7 +869,11 @@ pub(crate) unsafe fn group_by(
     // Runtime-owned results are not yet visible in a generated local.
     // Root both the input and output across callback-triggered Context.collect().
     let mut roots = [items as usize, out as usize];
-    unsafe { (*ctx).shadow_push(roots.as_mut_ptr() as usize, roots.len()) };
+
+    unsafe {
+        // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
+        (*ctx).shadow_push(roots.as_mut_ptr() as usize, roots.len())
+    };
 
     let elem_size = unsafe { (*ctx).array_elem_size(items) };
     let initial_len = unsafe { (*ctx).array_len(items) }.max(0) as usize;
@@ -1925,7 +1929,10 @@ mod tests {
         assert_eq!(ctx.live_count(), 5);
 
         let mut root = map as usize;
-        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        unsafe {
+            // SAFETY: the root storage stays valid through the last collection in this scope (section 263).
+            ctx.root_add((&mut root as *mut usize) as usize, 1)
+        };
         ctx.collect();
         assert!(ctx.is_live(map as usize));
         assert!(ctx.is_live(key as usize));

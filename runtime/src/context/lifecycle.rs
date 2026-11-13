@@ -378,17 +378,23 @@ impl Context {
     /// Points the indirection table at `table`, an array of code
     /// addresses indexed by the lowering's function slot numbers.
     ///
-    /// Storing the pointer is safe; generated code dereferences it, so
-    /// the array must stay alive and correctly sized for as long as
-    /// script code compiled in reload mode can run.
-    pub fn set_fn_table(&mut self, table: *const *const u8) {
+    /// Generated code reads the table during reload-mode script calls.
+    ///
+    /// # Safety
+    /// The table and its code addresses remain valid until replacement or Context drop.
+    /// See compiler.md section 263.
+    pub unsafe fn set_fn_table(&mut self, table: *const *const u8) {
         self.fn_table = table;
     }
 
     /// Points module-global storage at `base`, a block laid out by the
     /// lowering. It must stay alive for the rest of the session: the
     /// collector's registered root ranges point into it.
-    pub fn set_globals(&mut self, base: *mut u8) {
+    ///
+    /// # Safety
+    /// The global block remains valid until replacement or Context drop. Registered root ranges must also remain valid.
+    /// See compiler.md section 263.
+    pub unsafe fn set_globals(&mut self, base: *mut u8) {
         self.globals = base;
     }
 
@@ -585,7 +591,15 @@ impl Context {
 
     /// Installs a host observer for the first trap in each uncleared
     /// run. Passing `None` clears the observer and its userdata.
-    pub fn set_trap_observer(&mut self, observer: Option<TrapObserver>, userdata: *mut c_void) {
+    ///
+    /// # Safety
+    /// The callback and its userdata remain valid until removal, replacement, or Context drop.
+    /// See compiler.md section 263.
+    pub unsafe fn set_trap_observer(
+        &mut self,
+        observer: Option<TrapObserver>,
+        userdata: *mut c_void,
+    ) {
         set_observer(
             &mut self.trap_observer,
             &mut self.trap_observer_userdata,
@@ -725,7 +739,15 @@ impl Context {
 
     /// Installs a host observer for printed lines. Passing `None` clears
     /// the observer and its userdata.
-    pub fn set_print_observer(&mut self, observer: Option<PrintObserver>, userdata: *mut c_void) {
+    ///
+    /// # Safety
+    /// The callback and its userdata remain valid until removal, replacement, or Context drop.
+    /// See compiler.md section 263.
+    pub unsafe fn set_print_observer(
+        &mut self,
+        observer: Option<PrintObserver>,
+        userdata: *mut c_void,
+    ) {
         set_observer(
             &mut self.print_observer,
             &mut self.print_observer_userdata,
@@ -736,7 +758,11 @@ impl Context {
 
     /// Installs the host observer for optional runtime diagnostics
     /// advisories. Passing `None` clears the observer and its userdata.
-    pub fn set_diagnostics_observer(
+    ///
+    /// # Safety
+    /// The callback and its userdata remain valid until removal, replacement, or Context drop.
+    /// See compiler.md section 263.
+    pub unsafe fn set_diagnostics_observer(
         &mut self,
         observer: Option<DiagnosticsObserver>,
         userdata: *mut c_void,

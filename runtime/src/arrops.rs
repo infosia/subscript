@@ -1119,10 +1119,9 @@ unsafe fn map_source(
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    // The result is runtime-owned until this call returns to generated
-    // code. Keep it live across every callback-triggered collection.
+    // Keep the runtime-owned result live across callback collection until this call returns.
     let mut root = out as usize;
-    // SAFETY: `root` stays live until the matching pop below.
+    // SAFETY: `root` stays live until the matching pop below (section 263).
     unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, pos_id) };
@@ -1220,10 +1219,9 @@ unsafe fn filter_source(
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    // The result is runtime-owned until this call returns to generated
-    // code. Keep it live across every callback-triggered collection.
+    // Keep the runtime-owned result live across callback collection until this call returns.
     let mut root = out as usize;
-    // SAFETY: `root` stays live until the matching pop below.
+    // SAFETY: `root` stays live until the matching pop below (section 263).
     unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, pos_id) };
@@ -1803,7 +1801,8 @@ mod tests {
         let x = ctx.alloc(16, 1, 0);
         let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
         let mut root = h as usize;
-        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        // SAFETY: root lives through collection; Context drop does not scan roots (section 263).
+        unsafe { ctx.root_add((&mut root as *mut usize) as usize, 1) };
         let value = x as usize;
         // SAFETY: `h` is a live word array, and `value` is readable.
         unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
@@ -1820,7 +1819,8 @@ mod tests {
         let x = ctx.alloc(16, 1, 0);
         let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
         let mut root = h as usize;
-        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        // SAFETY: root lives through collection; Context drop does not scan roots (section 263).
+        unsafe { ctx.root_add((&mut root as *mut usize) as usize, 1) };
         let value = x as usize;
         // SAFETY: `h` is a live word array, and `value` is readable.
         unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
