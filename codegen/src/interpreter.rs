@@ -340,7 +340,7 @@ struct Frame {
     /// The exception of an exception completion, which the `AwaitRaise`
     /// of the resume successor raises (`compiler.md` §116.2 rule 3).
     delivered: Option<(usize, String, Pos)>,
-    generator_owners: Vec<(Type, Value)>,
+    generator_owners: Vec<(l::ValueType, Value)>,
     closing: bool,
 }
 
@@ -1320,13 +1320,7 @@ impl<'m> Interpreter<'m> {
                                 .owners
                                 .iter()
                                 .map(|id| {
-                                    let l::ValueType::Data(ty) = &function.values[id.0 as usize].ty
-                                    else {
-                                        return Err(self.invalid(
-                                            Some(pos.clone()),
-                                            "generator cleanup has no data type",
-                                        ));
-                                    };
+                                    let ty = &function.values[id.0 as usize].ty;
                                     Ok((ty.clone(), self.get_value(&*frame, *id, pos)?))
                                 })
                                 .collect::<Result<Vec<_>, InterpretError>>()?;

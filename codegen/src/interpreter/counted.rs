@@ -81,7 +81,7 @@ impl Interpreter<'_> {
                     let owners = std::mem::take(&mut frame.borrow_mut().generator_owners);
                     let mut first = None;
                     for (ty, value) in owners {
-                        if let Err(error) = self.counted_owner(&ty, &value, true, pos) {
+                        if let Err(error) = self.saved_owner(&ty, &value, pos) {
                             if first.is_none() {
                                 first = Some(error);
                             }
@@ -288,6 +288,28 @@ impl Interpreter<'_> {
         Ok(())
     }
 
+    fn saved_owner(
+        &mut self,
+        ty: &l::ValueType,
+        value: &Value,
+        pos: &Pos,
+    ) -> Result<(), InterpretError> {
+        match ty {
+            l::ValueType::Data(ty) => self.counted_owner(ty, value, true, pos),
+            l::ValueType::Iterator(_) => {
+                let cursor = value.as_iterator()?;
+                unsafe {
+                    ffi::subscript_rt_assoc_iter_end(
+                        &mut *self.context,
+                        cursor.subject.as_handle()?,
+                    )
+                };
+                Ok(())
+            }
+            _ => Err(self.invalid(Some(pos.clone()), "invalid saved owner")),
+        }
+    }
+
     pub(super) fn counted_owner(
         &mut self,
         ty: &Type,
@@ -456,7 +478,7 @@ impl Interpreter<'_> {
 pub(super) fn start_generator_owners(
     function: &l::Function,
     values: &[Option<Value>],
-) -> Vec<(Type, Value)> {
+) -> Vec<(l::ValueType, Value)> {
     if function.is_generator {
         function
             .liveness
@@ -472,9 +494,7 @@ pub(super) fn start_generator_owners(
                             &function.values[id.0 as usize].ty,
                             values[id.0 as usize].as_ref(),
                         ) {
-                            (l::ValueType::Data(ty), Some(value)) => {
-                                Some((ty.clone(), value.clone()))
-                            }
+                            (ty, Some(value)) => Some((ty.clone(), value.clone())),
                             _ => None,
                         }
                     })
@@ -507,6 +527,16 @@ impl Interpreter<'_> {
         };
         let owners = std::mem::take(&mut frame.borrow_mut().generator_owners);
         for (ty, value) in owners {
+            if let Value::Iterator(cursor) = &value {
+                unsafe {
+                    ffi::subscript_rt_assoc_iter_end(
+                        &mut *self.context,
+                        cursor.subject.as_handle()?,
+                    )
+                };
+                continue;
+            }
+            let l::ValueType::Data(ty) = ty else { continue };
             let bytes = self.pack(&ty, &value)?;
             let description = crate::counted::description(&self.layouts, &ty)
                 .map_err(|message| self.invalid(Some(pos.clone()), message))?;

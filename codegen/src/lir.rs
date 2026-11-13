@@ -764,7 +764,7 @@ struct Binding {
 }
 
 fn is_async_owner_type(ty: &l::ValueType) -> bool {
-    matches!(ty, l::ValueType::Data(ty) if ty.counted_type().is_some())
+    l::CountAction::for_value_type(ty) != l::CountAction::Uncounted
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

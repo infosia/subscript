@@ -187,3 +187,49 @@ fn collect_requires_a_call_trap() {
         }
     }
 }
+
+#[test]
+fn cursor_retain_is_rejected_and_release_passes() {
+    for traversal in [
+        l::ForOfKind::MapKeys,
+        l::ForOfKind::MapValues,
+        l::ForOfKind::SetValues,
+    ] {
+        for kind in [
+            l::InstructionKind::AsyncHandleRetain,
+            l::InstructionKind::AsyncHandleArrayRetain,
+            l::InstructionKind::AsyncHandleArrayRelease,
+        ] {
+            let retaining = !matches!(kind, l::InstructionKind::AsyncHandleArrayRelease);
+            let ty = l::ValueType::Iterator(l::IteratorType {
+                kind: traversal,
+                element: Type::I32,
+            });
+            let mut module = super::verifier_tests::hand_built_call_module_with_count(
+                l::CallTargetKind::Indirect,
+                Vec::new(),
+                None,
+                vec![ty.clone()],
+                None,
+                Some(l::CountAction::for_value_type(&ty)),
+                if retaining {
+                    Vec::new()
+                } else {
+                    vec![l::Trap {
+                        kind: l::TrapKind::Call,
+                        pos: Pos::new("cursor.ts", 1, 1),
+                    }]
+                },
+            );
+            module.functions[0].blocks[0].instructions[0].kind = kind;
+            if retaining {
+                let errors = verify_module(&module).expect_err("cursor retain must fail");
+                assert!(errors
+                    .iter()
+                    .any(|error| error.message.contains("Map/Set cursor cannot be retained")));
+            } else {
+                verify_module(&module).expect("cursor release control");
+            }
+        }
+    }
+}

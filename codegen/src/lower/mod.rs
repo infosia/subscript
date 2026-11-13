@@ -182,6 +182,8 @@ pub(crate) struct RtFns {
     pub str_data: FuncId,
     pub array_data: FuncId,
     pub assoc_iter_begin: FuncId,
+    pub assoc_iter_bound: FuncId,
+    pub assoc_iter_end: FuncId,
     pub assoc_iter_copy: FuncId,
     pub str_iter_code_point: FuncId,
     pub array_spread_array: FuncId,
@@ -1080,6 +1082,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         )?,
         str_data: mk("subscript_rt_str_data", &[I64, I64], Some(I64))?,
         array_data: mk("subscript_rt_array_data", &[I64, I64], Some(I64))?,
+        assoc_iter_end: mk("subscript_rt_assoc_iter_end", &[I64, I64], None)?,
+        assoc_iter_bound: mk("subscript_rt_assoc_iter_bound", &[I64, I64, I32], Some(I64))?,
         assoc_iter_begin: mk("subscript_rt_assoc_iter_begin", &[I64, I64, I32], Some(I64))?,
         assoc_iter_copy: mk(
             "subscript_rt_assoc_iter_copy",

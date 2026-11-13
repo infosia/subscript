@@ -1,12 +1,12 @@
 //! Static native cleanup descriptions from the LIR generator states.
 
 use crate::{layout::Layouts, lower::internal};
-use subscript_compiler::{lir as l, Type};
+use subscript_compiler::lir as l;
 
 pub(crate) fn fields(
     function: &l::Function,
     state: Option<l::BlockId>,
-) -> Result<Vec<(l::ValueId, &Type)>, String> {
+) -> Result<Vec<(l::ValueId, &l::ValueType)>, String> {
     let cleanup = function
         .liveness
         .generator_cleanup
@@ -18,7 +18,7 @@ pub(crate) fn fields(
         .iter()
         .map(
             |value| match function.values.get(value.0 as usize).map(|value| &value.ty) {
-                Some(l::ValueType::Data(ty)) => Ok((*value, ty)),
+                Some(ty @ (l::ValueType::Data(_) | l::ValueType::Iterator(_))) => Ok((*value, ty)),
                 _ => Err(internal("generator cleanup owner has no data type")),
             },
         )
@@ -43,10 +43,25 @@ pub(crate) fn description(
                     value.0
                 ))
             })?;
-        let child = crate::counted::description(layouts, ty)?;
+        let child = description_for_value(layouts, ty)?;
         bytes.extend_from_slice(&u64::from(offset).to_ne_bytes());
         bytes.extend_from_slice(&(child.len() as u64).to_ne_bytes());
         bytes.extend_from_slice(&child);
     }
     Ok(bytes)
+}
+
+// compiler.md §271 rule 7: a saved cursor keeps the same iteration owner.
+pub(crate) fn description_for_value(
+    layouts: &Layouts,
+    ty: &l::ValueType,
+) -> Result<Vec<u8>, String> {
+    match ty {
+        l::ValueType::Data(ty) => crate::counted::description(layouts, ty),
+        l::ValueType::Iterator(_) => Ok([6u64, 0, 0]
+            .into_iter()
+            .flat_map(u64::to_ne_bytes)
+            .collect()),
+        _ => Err(internal("cleanup owner has no count action")),
+    }
 }

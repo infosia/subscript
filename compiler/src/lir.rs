@@ -613,11 +613,30 @@ pub struct Instruction {
 pub enum CountAction {
     /// The operation has no counted elements or result.
     Uncounted,
+    /// End the Map or Set visit, then release its container count, if any (§271 rule 2).
+    // Map and Set storage is Context-owned; neither type holds a recursive count.
+    AssocIterator,
     /// The operation acquires or releases values with this recursive shape.
     Counted(crate::types::CountedType),
 }
 
 impl CountAction {
+    /// Derives the action from the complete owner type (§271 rule 7).
+    pub fn for_value_type(ty: &ValueType) -> Self {
+        match ty {
+            ValueType::Data(ty) => Self::for_type(ty),
+            ValueType::Iterator(cursor)
+                if matches!(
+                    cursor.kind,
+                    ForOfKind::MapKeys | ForOfKind::MapValues | ForOfKind::SetValues
+                ) =>
+            {
+                Self::AssocIterator
+            }
+            _ => Self::Uncounted,
+        }
+    }
+
     /// Derives the action for an element or completion result type.
     pub fn for_type(ty: &Type) -> Self {
         ty.counted_type().map_or(Self::Uncounted, Self::Counted)
@@ -637,7 +656,7 @@ impl CountAction {
             }
         }
         match self {
-            Self::Uncounted => None,
+            Self::Uncounted | Self::AssocIterator => None,
             Self::Counted(shape) => Some(storage(shape)),
         }
     }
@@ -837,7 +856,8 @@ impl InstructionKind {
     pub fn produces_fresh_async_owner(&self) -> bool {
         matches!(
             self,
-            Self::ArrayLiteral
+            Self::IteratorCreate { .. }
+                | Self::ArrayLiteral
                 | Self::ArrayWithCapacity
                 | Self::ArraySpreadLiteral(_)
                 | Self::Call(_)
@@ -1616,6 +1636,27 @@ mod tests {
             parameter_types: Vec::new(),
             return_type: None,
         }
+    }
+
+    #[test]
+    fn assoc_cursor_count_action_uses_the_value_type() {
+        for kind in [
+            ForOfKind::MapKeys,
+            ForOfKind::MapValues,
+            ForOfKind::SetValues,
+        ] {
+            let ty = ValueType::Iterator(IteratorType {
+                kind,
+                element: Type::I32,
+            });
+            assert_eq!(CountAction::for_value_type(&ty), CountAction::AssocIterator);
+        }
+        let array = ValueType::Iterator(IteratorType {
+            kind: ForOfKind::ArrayValues,
+            element: Type::I32,
+        });
+        assert_eq!(CountAction::for_value_type(&array), CountAction::Uncounted);
+        assert!(!InstructionKind::IteratorAdvance.produces_fresh_async_owner());
     }
 
     #[test]

@@ -27,6 +27,25 @@ pub unsafe extern "C" fn subscript_rt_assoc_iter_begin(
     unsafe { crate::assocops::iteration_begin(handle) as u64 }
 }
 
+/// Reads the current insertion-order bound without a new iteration owner.
+///
+/// # Safety
+///
+/// `handle` is a live Map or Set payload.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_assoc_iter_bound(
+    ctx: *mut Context,
+    handle: *mut u8,
+    pos_id: u32,
+) -> u64 {
+    // SAFETY: shared contract.
+    if !assoc_receiver_is_live(unsafe { &mut *ctx }, handle, pos_id) {
+        return 0;
+    }
+    // SAFETY: receiver was validated above.
+    unsafe { crate::assocops::iteration_bound(handle) as u64 }
+}
+
 /// Copies one still-active ordered key/value during a fused traversal.
 /// `value != 0` selects a Map value; zero selects a Map/Set key.
 ///

@@ -1189,9 +1189,10 @@ pub(crate) unsafe fn set_is_disjoint_from(
 }
 
 /// Begins the traversal shared by `forEach`, fused `for…of`, and
-/// array-literal spread. The returned insertion-order bound is fixed at
-/// entry: later appends do not extend the visit, while an inactive or
-/// removed slot is skipped when reached.
+/// array-literal spread. The returned bound records the insertion order at entry.
+/// `forEach` and array-literal spread use this fixed bound. Fused `for…of`
+/// reads the live bound, so later appends extend its visit.
+/// Each form skips an inactive or removed slot when reached.
 ///
 /// # Safety
 ///
@@ -1204,6 +1205,14 @@ pub(crate) unsafe fn iteration_begin(handle: *mut u8) -> usize {
     let h = unsafe { &mut *handle.cast::<AssocHeader>() };
     h.iteration_depth = h.iteration_depth.saturating_add(1);
     h.order_len as usize
+}
+
+// compiler.md §271 rule 7: a bound read does not acquire another owner.
+pub(crate) unsafe fn iteration_bound(handle: *mut u8) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    unsafe { (*handle.cast::<AssocHeader>()).order_len as usize }
 }
 
 /// Returns the active ordered entry at `index`, if it still exists.
@@ -1976,3 +1985,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "assocops/iteration_tests.rs"]
+mod iteration_tests;

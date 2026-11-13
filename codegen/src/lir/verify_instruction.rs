@@ -37,6 +37,21 @@ pub(super) fn verify_instruction_contract(
             ),
         ));
     };
+    // compiler.md §271 rule 7: a cursor has one owner, including saved copies.
+    if matches!(
+        instruction.kind,
+        l::InstructionKind::AsyncHandleRetain | l::InstructionKind::AsyncHandleArrayRetain
+    ) && operand_types.iter().any(|ty| {
+        matches!(
+            ty,
+            l::ValueType::Iterator(l::IteratorType {
+                kind: l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues,
+                ..
+            })
+        )
+    }) {
+        bad("Map/Set cursor cannot be retained", errors);
+    }
     let requires_done_guard = match (&instruction.kind, operand_types.as_slice()) {
         (
             l::InstructionKind::LoadField(l::FieldRef::IterValue)
@@ -664,7 +679,7 @@ pub(super) fn verify_instruction_contract(
         l::InstructionKind::AsyncHandleArrayRetain
         | l::InstructionKind::AsyncHandleArrayRelease => {
             if operand_types.len() != 1
-                || !matches!(operand_types.first(), Some(l::ValueType::Data(ty)) if ty.counted_type().is_some())
+                || !operand_types.first().is_some_and(is_async_owner_type)
                 || (instruction.result.is_some()
                     && (!matches!(
                         instruction.kind,
@@ -673,6 +688,15 @@ pub(super) fn verify_instruction_contract(
                     ) || result_type.as_ref() != operand_types.first()))
             {
                 bad("async handle array release signature is invalid", errors);
+            }
+            if matches!(operand_types.first(), Some(l::ValueType::Iterator(_)))
+                && instruction.count_action.as_ref()
+                    != operand_types
+                        .first()
+                        .map(l::CountAction::for_value_type)
+                        .as_ref()
+            {
+                bad("count action disagrees with the owner type", errors);
             }
             if !release_checks_the_word(instruction) {
                 bad("async handle release does not carry one Call trap", errors);

@@ -27,7 +27,7 @@ impl Origins {
                 _ => None,
             })
             .collect::<BTreeMap<_, _>>();
-        Self(
+        let mut origins = Self(
             function
                 .values
                 .iter()
@@ -47,7 +47,34 @@ impl Origins {
                     )
                 })
                 .collect(),
-        )
+        );
+        // compiler.md §271 rule 7: an advance preserves the cursor owner.
+        loop {
+            let mut changed = false;
+            for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+                if instruction.kind != l::InstructionKind::IteratorAdvance {
+                    continue;
+                }
+                if let (Some(result), Some(l::Operand::Value(source))) =
+                    (instruction.result, instruction.operands.first())
+                {
+                    let from = origins.key(result);
+                    let to = origins.key(*source);
+                    if from != to {
+                        for key in origins.0.values_mut() {
+                            if *key == from {
+                                *key = to;
+                            }
+                        }
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        origins
     }
 
     fn key(&self, value: l::ValueId) -> Key {

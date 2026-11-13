@@ -20,7 +20,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             i64::from(bound_kind == l::IteratorBoundKind::Fixed),
         );
         self.builder.ins().store(flags(), fixed, cursor, 24);
-        let captured = self.iterator_current_bound(cursor, iterator_ty, pos)?;
+        let captured = self.iterator_current_bound(cursor, iterator_ty, pos, true)?;
         self.builder.ins().store(flags(), captured, cursor, 16);
         if matches!(
             kind,
@@ -48,6 +48,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         cursor: Value,
         iterator_ty: &l::IteratorType,
         pos: &Pos,
+        begin: bool,
     ) -> Result<Value, String> {
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let bound = match iterator_ty.kind {
@@ -63,7 +64,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
                 self.call_runtime(
-                    self.ml.rt.assoc_iter_begin,
+                    if begin {
+                        self.ml.rt.assoc_iter_begin
+                    } else {
+                        self.ml.rt.assoc_iter_bound
+                    },
                     &[self.ctx, subject, position],
                     true,
                 )?
@@ -87,7 +92,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
-        let current = self.iterator_current_bound(cursor, iterator_ty, pos)?;
+        let current = self.iterator_current_bound(cursor, iterator_ty, pos, false)?;
         let captured = self.builder.ins().load(types::I64, flags(), cursor, 16);
         let fixed = self.builder.ins().load(types::I64, flags(), cursor, 24);
         let fixed = self.builder.ins().icmp_imm(IntCC::NotEqual, fixed, 0);
@@ -107,7 +112,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         } else {
             self.builder.ins().uextend(types::I64, captured)
         };
-        let current = self.iterator_current_bound(cursor, iterator_ty, pos)?;
+        let current = self.iterator_current_bound(cursor, iterator_ty, pos, false)?;
         let fixed_limit = self.builder.ins().umin(captured, current);
         let fixed = self.builder.ins().load(types::I64, flags(), cursor, 24);
         let fixed = self.builder.ins().icmp_imm(IntCC::NotEqual, fixed, 0);

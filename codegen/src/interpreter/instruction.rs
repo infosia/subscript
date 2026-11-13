@@ -614,28 +614,41 @@ impl Interpreter<'_> {
             }
             l::InstructionKind::AsyncHandleArrayRetain
             | l::InstructionKind::AsyncHandleArrayRelease => {
-                let ty = match operand_types.first() {
-                    Some(l::ValueType::Data(ty)) => ty,
-                    _ => {
-                        return Err(self.invalid(
-                            Some(instruction.pos.clone()),
-                            "counted owner has no data type",
-                        ))
+                if matches!(operand_types.first(), Some(l::ValueType::Iterator(_))) {
+                    let cursor = operands[0].as_iterator()?;
+                    if instruction.kind == l::InstructionKind::AsyncHandleArrayRelease {
+                        unsafe {
+                            ffi::subscript_rt_assoc_iter_end(
+                                &mut *self.context,
+                                cursor.subject.as_handle()?,
+                            )
+                        };
                     }
-                };
-                let value = operands
-                    .first()
-                    .ok_or_else(|| self.missing_operand(instruction, 0))?;
-                self.counted_owner(
-                    ty,
-                    value,
-                    matches!(
-                        instruction.kind,
-                        l::InstructionKind::AsyncHandleArrayRelease
-                    ),
-                    &instruction.pos,
-                )?;
-                instruction.result.map(|_| value.clone())
+                    instruction.result.map(|_| operands[0].clone())
+                } else {
+                    let ty = match operand_types.first() {
+                        Some(l::ValueType::Data(ty)) => ty,
+                        _ => {
+                            return Err(self.invalid(
+                                Some(instruction.pos.clone()),
+                                "counted owner has no data type",
+                            ))
+                        }
+                    };
+                    let value = operands
+                        .first()
+                        .ok_or_else(|| self.missing_operand(instruction, 0))?;
+                    self.counted_owner(
+                        ty,
+                        value,
+                        matches!(
+                            instruction.kind,
+                            l::InstructionKind::AsyncHandleArrayRelease
+                        ),
+                        &instruction.pos,
+                    )?;
+                    instruction.result.map(|_| value.clone())
+                }
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let subject_ty = self

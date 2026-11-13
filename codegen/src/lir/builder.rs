@@ -422,6 +422,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             storage: None,
             value: Some(value),
         });
+        if matches!(&self.bindings[id.0].ty, l::ValueType::Iterator(_))
+            && is_async_owner_type(&self.bindings[id.0].ty)
+        {
+            self.scopes
+                .last_mut()
+                .expect("hidden binding scope")
+                .insert(source_name.to_string(), id);
+        }
         id
     }
 
@@ -559,7 +567,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             _ => None,
         };
-        let count_action = action_type.as_ref().map(l::CountAction::for_type);
+        let count_action = if matches!(
+            kind,
+            l::InstructionKind::AsyncHandleArrayRetain
+                | l::InstructionKind::AsyncHandleArrayRelease
+        ) {
+            operands
+                .first()
+                .map(|operand| self.operand_type(operand, &pos))
+                .transpose()?
+                .as_ref()
+                .filter(|ty| matches!(ty, l::ValueType::Iterator(_)))
+                .map(l::CountAction::for_value_type)
+        } else {
+            action_type.as_ref().map(l::CountAction::for_type)
+        };
         if count_action
             .as_ref()
             .is_some_and(|action| action.release_type().is_some())
@@ -776,9 +798,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let kind = match ty {
             l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRetain,
-            l::ValueType::Data(ty) if ty.counted_type().is_some() => {
-                l::InstructionKind::AsyncHandleArrayRetain
-            }
+            ty if is_async_owner_type(ty) => l::InstructionKind::AsyncHandleArrayRetain,
             _ => return Ok(()),
         };
         self.emit(
@@ -800,9 +820,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     ) -> Result<(), LowerError> {
         let kind = match ty {
             l::ValueType::Data(Type::AsyncHandle(_)) => l::InstructionKind::AsyncHandleRelease,
-            l::ValueType::Data(ty) if ty.counted_type().is_some() => {
-                l::InstructionKind::AsyncHandleArrayRelease
-            }
+            ty if is_async_owner_type(ty) => l::InstructionKind::AsyncHandleArrayRelease,
             _ => return Ok(()),
         };
         // compiler.md §116.1 rule 4: a release that frees a frame holding an

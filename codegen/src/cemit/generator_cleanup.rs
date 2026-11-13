@@ -22,7 +22,7 @@ impl Emitter<'_> {
                         value.0
                     ))
                 })?;
-            let bytes = crate::counted::description(&self.layouts, ty)?;
+            let bytes = crate::generator_cleanup::description_for_value(&self.layouts, ty)?;
             words.push(format!("offsetof(SubFrame{}, {field})", function.id.0));
             words.push(format!("{}ULL", bytes.len()));
             for word in bytes.chunks_exact(8) {

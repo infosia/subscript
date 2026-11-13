@@ -760,83 +760,95 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             l::InstructionKind::AsyncHandleArrayRetain
             | l::InstructionKind::AsyncHandleArrayRelease => {
-                let ty = operand_types
-                    .first()
-                    .and_then(|ty| match ty {
-                        l::ValueType::Data(ty) => Some(ty),
-                        _ => None,
-                    })
-                    .ok_or_else(|| internal("counted owner has no data type"))?;
-                let release = matches!(
-                    instruction.kind,
-                    l::InstructionKind::AsyncHandleArrayRelease
-                );
-                // An array acquire needs no element description. The handle-array
-                // release wrapper supplies its static leaf description.
-                let array_wrapper = matches!(ty, Type::Array(_)) && !release
-                    || matches!(ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)));
-                if array_wrapper {
-                    let array = self.expect_scalar(
-                        *operands
-                            .first()
-                            .ok_or_else(|| internal("counted owner has no operand"))?,
-                    )?;
-                    if release {
-                        let pos = self.position_id(&instruction.pos);
-                        let pos = self.iconst(types::I32, pos);
-                        self.call_runtime(
-                            self.ml.rt.async_release_array,
-                            &[self.ctx, array, pos],
-                            false,
-                        )?;
+                if matches!(operand_types.first(), Some(l::ValueType::Iterator(_))) {
+                    if instruction.kind == l::InstructionKind::AsyncHandleArrayRelease {
+                        let cursor = self.expect_aggregate(operands[0])?;
+                        let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
+                        self.call_runtime(self.ml.rt.assoc_iter_end, &[self.ctx, subject], false)?;
                         for trap in &instruction.traps {
                             self.emit_trap(trap, TrapOperand::Pending)?;
                         }
-                    } else {
-                        self.call_runtime(
-                            self.ml.rt.async_retain_array,
-                            &[self.ctx, array],
-                            false,
+                    }
+                    instruction.result.map(|_| operands[0])
+                } else {
+                    let ty = operand_types
+                        .first()
+                        .and_then(|ty| match ty {
+                            l::ValueType::Data(ty) => Some(ty),
+                            _ => None,
+                        })
+                        .ok_or_else(|| internal("counted owner has no data type"))?;
+                    let release = matches!(
+                        instruction.kind,
+                        l::InstructionKind::AsyncHandleArrayRelease
+                    );
+                    // An array acquire needs no element description. The handle-array
+                    // release wrapper supplies its static leaf description.
+                    let array_wrapper = matches!(ty, Type::Array(_)) && !release
+                        || matches!(ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)));
+                    if array_wrapper {
+                        let array = self.expect_scalar(
+                            *operands
+                                .first()
+                                .ok_or_else(|| internal("counted owner has no operand"))?,
                         )?;
+                        if release {
+                            let pos = self.position_id(&instruction.pos);
+                            let pos = self.iconst(types::I32, pos);
+                            self.call_runtime(
+                                self.ml.rt.async_release_array,
+                                &[self.ctx, array, pos],
+                                false,
+                            )?;
+                            for trap in &instruction.traps {
+                                self.emit_trap(trap, TrapOperand::Pending)?;
+                            }
+                        } else {
+                            self.call_runtime(
+                                self.ml.rt.async_retain_array,
+                                &[self.ctx, array],
+                                false,
+                            )?;
+                        }
+                        if let Some(result) = instruction.result {
+                            self.set_value(result, RV::Scalar(array))?;
+                        }
+                        return Ok(());
                     }
-                    if let Some(result) = instruction.result {
-                        self.set_value(result, RV::Scalar(array))?;
+                    let description = crate::counted::description(&self.ml.layouts, ty)?;
+                    let data = self.ml.literal_data(&description)?;
+                    let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+                    let description = self.builder.ins().symbol_value(types::I64, global);
+                    let value = match operands
+                        .first()
+                        .copied()
+                        .ok_or_else(|| internal("counted owner has no operand"))?
+                    {
+                        RV::Aggregate(address) => address,
+                        RV::Scalar(value) => {
+                            let address = self.stack_slot(8, 8);
+                            self.builder
+                                .ins()
+                                .store(MemFlags::trusted(), value, address, 0);
+                            address
+                        }
+                        _ => return Err(internal("counted owner has no representation")),
+                    };
+                    let operation = self.iconst(types::I32, i64::from(release));
+                    let pos = self.position_id(&instruction.pos);
+                    let pos = self.iconst(types::I32, pos);
+                    self.call_runtime(
+                        self.ml.rt.counted_value,
+                        &[self.ctx, value, description, operation, pos],
+                        false,
+                    )?;
+                    if release {
+                        for trap in &instruction.traps {
+                            self.emit_trap(trap, TrapOperand::Pending)?;
+                        }
                     }
-                    return Ok(());
+                    instruction.result.and_then(|_| operands.first().copied())
                 }
-                let description = crate::counted::description(&self.ml.layouts, ty)?;
-                let data = self.ml.literal_data(&description)?;
-                let global = self.ml.module.declare_data_in_func(data, self.builder.func);
-                let description = self.builder.ins().symbol_value(types::I64, global);
-                let value = match operands
-                    .first()
-                    .copied()
-                    .ok_or_else(|| internal("counted owner has no operand"))?
-                {
-                    RV::Aggregate(address) => address,
-                    RV::Scalar(value) => {
-                        let address = self.stack_slot(8, 8);
-                        self.builder
-                            .ins()
-                            .store(MemFlags::trusted(), value, address, 0);
-                        address
-                    }
-                    _ => return Err(internal("counted owner has no representation")),
-                };
-                let operation = self.iconst(types::I32, i64::from(release));
-                let pos = self.position_id(&instruction.pos);
-                let pos = self.iconst(types::I32, pos);
-                self.call_runtime(
-                    self.ml.rt.counted_value,
-                    &[self.ctx, value, description, operation, pos],
-                    false,
-                )?;
-                if release {
-                    for trap in &instruction.traps {
-                        self.emit_trap(trap, TrapOperand::Pending)?;
-                    }
-                }
-                instruction.result.and_then(|_| operands.first().copied())
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let iterator_ty = match result_ty.as_ref() {
@@ -905,6 +917,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     Some(l::ValueType::Iterator(ty)) => ty,
                     _ => return Err(internal("IteratorBound has no iterator type")),
                 };
+                if matches!(
+                    iterator_ty.kind,
+                    l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
+                ) {
+                    self.consumed_traps.extend(
+                        instruction
+                            .traps
+                            .iter()
+                            .filter(|trap| trap.kind == l::TrapKind::Call)
+                            .cloned(),
+                    );
+                    self.trap_check();
+                }
                 Some(
                     self.iterator_bound(
                         *operands

@@ -811,7 +811,7 @@ impl Interpreter<'_> {
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let bound = unsafe {
-                    ffi::subscript_rt_assoc_iter_begin(
+                    ffi::subscript_rt_assoc_iter_bound(
                         &mut *self.context,
                         cursor.subject.as_handle()?,
                         0,

@@ -118,7 +118,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let pos = self.emitter.pos_id(&instruction.pos);
                 self.emitter.runtime_call(
                     "uint64_t",
-                    "subscript_rt_assoc_iter_begin",
+                    if matches!(instruction.kind, l::InstructionKind::IteratorCreate { .. }) {
+                        "subscript_rt_assoc_iter_begin"
+                    } else {
+                        "subscript_rt_assoc_iter_bound"
+                    },
                     &["void*".into(), "void*".into(), "uint32_t".into()],
                     &[
                         "ctx".into(),

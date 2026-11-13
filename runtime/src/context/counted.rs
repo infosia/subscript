@@ -155,6 +155,13 @@ impl Context {
         let count = word(16) as usize;
         let child = unsafe { description.add(24) };
         match kind {
+            6 => {
+                if release {
+                    let handle = unsafe { value.cast::<*mut u8>().read_unaligned() };
+                    // compiler.md §271 rule 2: the cursor ends its visit.
+                    unsafe { crate::assocops::iteration_end(self, handle) };
+                }
+            }
             1 | 5 => {
                 let handle = unsafe { value.cast::<*mut u8>().read_unaligned() };
                 if release {
@@ -270,7 +277,7 @@ impl Context {
                 let mut kind = [0; 8];
                 kind.copy_from_slice(&node[..8]);
                 match (u64::from_ne_bytes(kind), index + 1 == nodes.len() / 24) {
-                    (1 | 5, true) | (2..=4, false) => {}
+                    (1 | 5 | 6, true) | (2..=4, false) => {}
                     _ => return Err("malformed object description size"),
                 }
             }
@@ -314,6 +321,10 @@ impl Context {
             |offset| unsafe { description.add(offset).cast::<u64>().read_unaligned() as usize };
         let child = unsafe { description.add(24) };
         match word(0) {
+            6 => {
+                let handle = unsafe { value.cast::<*mut u8>().read_unaligned() };
+                unsafe { crate::assocops::iteration_end(self, handle) };
+            }
             1 | 5 => handles.push(unsafe { value.cast::<usize>().read_unaligned() }),
             2 => {
                 let array = unsafe { value.cast::<*mut u8>().read_unaligned() };

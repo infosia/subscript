@@ -707,6 +707,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::AsyncHandleArrayRetain
             | l::InstructionKind::AsyncHandleArrayRelease => {
+                if matches!(operand_types[0], l::ValueType::Iterator(_)) {
+                    if instruction.kind == l::InstructionKind::AsyncHandleArrayRelease {
+                        let call = self.emitter.runtime_call(
+                            "void",
+                            "subscript_rt_assoc_iter_end",
+                            &["void*".into(), "void*".into()],
+                            &["ctx".into(), format!("({}).subject", operands[0])],
+                        );
+                        let _ = writeln!(out, "    {call};");
+                        self.consume_runtime_traps(out, &instruction.traps, true, false)?;
+                    }
+                    return self.assign(out, result, &operands[0]);
+                }
                 let ty = match &operand_types[0] {
                     l::ValueType::Data(ty) => ty,
                     _ => return Err(internal("counted owner has no data type")),

@@ -56,6 +56,18 @@ pub(super) fn verify(module: &l::Module, function: &l::Function, errors: &mut Ve
     loop {
         let before = consumed.len();
         for block in &function.blocks {
+            // compiler.md §271 rule 7: an advance transfers the same cursor owner.
+            for instruction in &block.instructions {
+                if instruction.kind == l::InstructionKind::IteratorAdvance
+                    && instruction
+                        .result
+                        .is_some_and(|value| consumed.contains(&origin(value)))
+                {
+                    if let Some(l::Operand::Value(value)) = instruction.operands.first() {
+                        consumed.insert(origin(*value));
+                    }
+                }
+            }
             let offset = usize::from(matches!(
                 block.terminator,
                 l::Terminator::Suspend {
@@ -278,6 +290,20 @@ pub(super) fn verify(module: &l::Module, function: &l::Function, errors: &mut Ve
                 let expected = l::CountAction::for_type(&ty);
                 if instruction.count_action.as_ref() != Some(&expected) {
                     errors.push(finding(function, format!("block {} instruction {index} has a missing or wrong count action: expected {expected:?}, got {:?}", block.id.0, instruction.count_action)));
+                }
+            } else if matches!(
+                instruction.kind,
+                l::InstructionKind::AsyncHandleArrayRetain
+                    | l::InstructionKind::AsyncHandleArrayRelease
+            ) && matches!(
+                instruction
+                    .operands
+                    .first()
+                    .and_then(|op| operand_type(function, op)),
+                Some(l::ValueType::Iterator(_))
+            ) {
+                if instruction.count_action != Some(l::CountAction::AssocIterator) {
+                    errors.push(finding(function, "cursor count action is missing"));
                 }
             } else if instruction.count_action.is_some() {
                 errors.push(finding(

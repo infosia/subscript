@@ -361,6 +361,15 @@ impl<'a> Walk<'a> {
             }
             _ => return false,
         }
+        // compiler.md §271 rule 7: each Map or Set cursor owns its open visit.
+        // Map.forEach reads keys and values through two cursors.
+        if let hir::ExprKind::Call { callee, .. } = &expr.kind {
+            self.owners += match callee {
+                hir::Callee::Map(hir::MapFn::ForEach) => 2,
+                hir::Callee::Set(hir::SetFn::ForEach) => 1,
+                _ => 0,
+            };
+        }
         self.trap_sites(expr);
         self.owners = owners;
         true
@@ -565,6 +574,16 @@ impl<'a> Walk<'a> {
             } => {
                 self.expression(init);
                 self.owners += usize::from(owned(ty));
+                // compiler.md §271 rule 6: derive the cursor owner from the HIR loop kind.
+                self.owners += usize::from(matches!(
+                    stmt,
+                    S::ForOf {
+                        kind: hir::ForOfKind::MapKeys
+                            | hir::ForOfKind::MapValues
+                            | hir::ForOfKind::SetValues,
+                        ..
+                    }
+                ));
                 self.declare(name, !*mutable);
             }
             S::Expr(expr) => self.expression(expr),
@@ -675,6 +694,16 @@ impl<'a> Walk<'a> {
                 self.expression(subject);
                 let owners = self.owners;
                 self.owners += usize::from(owned(ty));
+                // compiler.md §271 rule 6: derive the cursor owner from the HIR loop kind.
+                self.owners += usize::from(matches!(
+                    stmt,
+                    S::ForOf {
+                        kind: hir::ForOfKind::MapKeys
+                            | hir::ForOfKind::MapValues
+                            | hir::ForOfKind::SetValues,
+                        ..
+                    }
+                ));
                 if matches!(
                     stmt,
                     S::GeneratorForOf {
@@ -1056,6 +1085,59 @@ fn a_default_is_a_body_of_its_own() {
         findings
             .iter()
             .any(|f| f.contains("2 exception edges; lexical scopes require 3")),
+        "{findings:?}"
+    );
+}
+
+// Cost: one checker call, one lowering, and two model comparisons; no native build.
+#[test]
+fn map_cursor_exception_edge_releases_its_owner() {
+    let hir = subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+        "cursor.ts",
+        r#"function fail(): void { throw new Error("stop"); }
+export function main(): void {
+    const map: Map<i32, i32> = new Map<i32, i32>();
+    map.set(1, 2);
+    try { for (const value of map.values()) { fail(); } } catch (e) { print("caught"); }
+}"#,
+    )])
+    .expect("checks");
+    let mut lir = subscript_codegen::lir::lower_module(&hir).expect("lowers");
+    let mut findings = Vec::new();
+    compare(&hir, &lir, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    let function = lir
+        .functions
+        .iter_mut()
+        .find(|f| f.source_name == "main")
+        .expect("main");
+    let landing = function
+        .blocks
+        .iter_mut()
+        .find(|b| {
+            matches!(
+                b.instructions.first().map(|i| &i.kind),
+                Some(l::InstructionKind::ExceptionPark)
+            ) && b
+                .instructions
+                .iter()
+                .any(|i| i.count_action == Some(l::CountAction::AssocIterator))
+        })
+        .expect("cursor release landing");
+    let index = landing
+        .instructions
+        .iter()
+        .position(|i| {
+            i.kind == l::InstructionKind::AsyncHandleArrayRelease
+                && i.count_action == Some(l::CountAction::AssocIterator)
+        })
+        .expect("release");
+    landing.instructions.remove(index);
+    compare(&hir, &lir, &mut findings);
+    assert!(
+        findings.iter().any(
+            |f| f.contains("exception edge releases 0 owned handles; lexical scopes require 1")
+        ),
         "{findings:?}"
     );
 }
