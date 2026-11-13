@@ -1124,6 +1124,12 @@ impl ReloadSession {
         self.ctx.live_count()
     }
 
+    /// Returns the live boundary scratch allocation count of this Context (compiler.md section 264).
+    #[must_use]
+    pub fn live_boundary_scratch_allocations(&self) -> usize {
+        self.ctx.boundary_scratch_mark()
+    }
+
     /// Returns the number of ready jobs plus parked registrations (§94.2).
     /// The count includes a trapping job that the Context still holds trapped.
     /// It excludes blocked continuations, stopped frames, and completed frames
@@ -1564,6 +1570,16 @@ mod tests {
         let before = session.live_allocations();
         session.call_main().expect("main");
         assert!(session.live_allocations() > before);
+    }
+
+    #[test]
+    fn live_boundary_scratch_allocations_reads_the_context_count() {
+        let mut s = ReloadSession::new(&src("export function main(): void {}")).expect("s");
+        assert_eq!(s.live_boundary_scratch_allocations(), 0);
+        assert!(!s.ctx.boundary_scratch_alloc(16, 0).is_null());
+        assert_eq!(s.live_boundary_scratch_allocations(), 1);
+        s.ctx.boundary_scratch_release(0);
+        assert_eq!(s.live_boundary_scratch_allocations(), 0);
     }
 
     #[test]

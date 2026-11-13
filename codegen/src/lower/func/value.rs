@@ -495,13 +495,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
     }
 
+    /// compiler.md §264 rule 2: read one pending state for trap checks and foreign write-back.
+    pub(super) fn pending_trap_state(&mut self) -> Value {
+        self.builder.ins().load(types::I32, flags(), self.ctx, 0)
+    }
+
     /// Loads the word and leaves on a nonzero state. At a raise site with
     /// a handler, the cold path takes the handler edge for a pending
     /// exception; the success path is the same one load and compare
     /// (compiler.md §115.6 rule 4).
     pub(super) fn trap_check(&mut self) {
         self.pending_checks += 1;
-        let trap = self.builder.ins().load(types::I32, flags(), self.ctx, 0);
+        let trap = self.pending_trap_state();
         let clear = self.builder.ins().icmp_imm(IntCC::Equal, trap, 0);
         let next = self.builder.create_block();
         let unwind = self.unwind_block();

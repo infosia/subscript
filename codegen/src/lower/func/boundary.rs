@@ -269,25 +269,38 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .declare_func_in_func(function, self.builder.func);
         let call = self.builder.ins().call(reference, &arguments);
         let results = self.builder.inst_results(call).to_vec();
-        for trap in traps {
-            if trap.kind == l::TrapKind::Call {
-                self.emit_trap(trap, TrapOperand::Pending)?;
-            }
-        }
         let targets = self
             .boundary_targets
             .take()
             .ok_or_else(|| internal("a foreign call lost its targets"))?;
-        for writeback in writebacks {
-            self.write_back_boundary_pointer(writeback, pos)?;
+        // compiler.md §264 rule 2: release scratch before the Call trap check.
+        if !writebacks.is_empty() || !targets.slots.is_empty() {
+            let pending = self.pending_trap_state();
+            let clear = self.builder.ins().icmp_imm(IntCC::Equal, pending, 0);
+            let write_back = self.builder.create_block();
+            let release = self.builder.create_block();
+            self.builder
+                .ins()
+                .brif(clear, write_back, &[], release, &[]);
+            self.builder.switch_to_block(write_back);
+            for writeback in writebacks {
+                self.write_back_boundary_pointer(writeback, pos)?;
+            }
+            self.write_back_boundary_targets(&targets, pos)?;
+            self.builder.ins().jump(release, &[]);
+            self.builder.switch_to_block(release);
         }
-        self.write_back_boundary_targets(&targets, pos)?;
         if let Some(mark) = scratch_mark {
             self.call_runtime(
                 self.ml.rt.boundary_scratch_release,
                 &[self.ctx, mark],
                 false,
             )?;
+        }
+        for trap in traps {
+            if trap.kind == l::TrapKind::Call {
+                self.emit_trap(trap, TrapOperand::Pending)?;
+            }
         }
         Ok(match return_repr {
             Repr::None => RV::None,
@@ -1568,7 +1581,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.builder
                         .ins()
                         .store(flags(), handle, writeback.source, language_offset);
-                    self.trap_check();
                 }
                 WriteBack::EmbeddedBytes(inner) => {
                     let layout = self.ml.layouts.class(inner.0)?.clone();

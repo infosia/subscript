@@ -101,3 +101,7 @@ harness = false
 [[test]]
 name = "shared_narrowing"
 harness = false
+
+[[test]]
+name = "foreign_trap_scratch"
+harness = false
