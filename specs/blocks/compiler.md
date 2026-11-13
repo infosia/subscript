@@ -310,3 +310,4 @@ Every section, with its status:
 | §266 | A failed load watches each file it tried | active | [`s266-a-failed-load-watches-each-file-it-tried.md`](compiler/s266-a-failed-load-watches-each-file-it-tried.md) |
 | §267 | Two modules cannot share a stem | active | [`s267-two-modules-cannot-share-a-stem.md`](compiler/s267-two-modules-cannot-share-a-stem.md) |
 | §268 | A retained-output write error fails the run | active | [`s268-a-retained-output-write-error-fails-the-run.md`](compiler/s268-a-retained-output-write-error-fails-the-run.md) |
+| §269 | A boundary graph walk visits each struct once | active | [`s269-a-boundary-graph-walk-visits-each-struct-once.md`](compiler/s269-a-boundary-graph-walk-visits-each-struct-once.md) |
