@@ -237,8 +237,16 @@ void subDeviceRetain(SubDevice device) {
     }
 }
 
+static void subRequestReleaseSlot(SubDevice device, SubRequestOneShot *slot);
+static void subRequestRelease(SubDevice device, void **slot, SubLogCallback *callback);
+
 void subDeviceRelease(SubDevice device) {
     if (device != NULL && --device->refs == 0) {
+        /* compiler.md §270 rules 1–2: the helpers end and clear each slot. */
+        for (int index = 0; index < SUB_REQUEST_ONE_SHOT_CAPACITY; index++) {
+            subRequestReleaseSlot(device, &device->one_shots[index]);
+        }
+        subRequestRelease(device, &device->sub_registration, &device->sub_cb);
         free(device);
     }
 }
@@ -1554,7 +1562,13 @@ int32_t subRequestStart(
     if (immediate != 0) {
         /* The start completes before it returns. The release path is the
          * one the pump uses (§111.2 one-shot). */
+        /* compiler.md §270 rule 4: dispatch keeps the device live. */
+        int32_t result;
+        subDeviceRetain(device);
         subRequestFireOneShot(device, ticket);
+        result = device->next_request_number;
+        subDeviceRelease(device);
+        return result;
     }
     return device->next_request_number;
 }
@@ -1608,6 +1622,8 @@ void subRequestPump(SubDevice device) {
     if (device == NULL) {
         return;
     }
+    /* compiler.md §270 rule 4: callbacks can release the caller reference. */
+    subDeviceRetain(device);
     /* The one-shots that are pending when this drain starts, in slot
      * order. One that a callback starts during the drain fires at the
      * next pump. */
@@ -1639,6 +1655,7 @@ void subRequestPump(SubDevice device) {
         device->sub_removal_requested = 0;
         subRequestRelease(device, &device->sub_registration, &device->sub_cb);
     }
+    subDeviceRelease(device);
 }
 
 void subRequestReleaseActive(SubDevice device) {
