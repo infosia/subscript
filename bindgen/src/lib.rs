@@ -118,6 +118,8 @@ pub use read_lowering::StructPasses;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BindOptions {
+    /// Source file path for quoted includes (compiler.md §265 rules 1–3).
+    pub source_path: Option<std::path::PathBuf>,
     /// Aggregates that take the explicit callback lifetime, in selection
     /// order (`specs/blocks/compiler.md` §111 rule 1).
     pub explicit_callback_lifetimes: Vec<String>,
@@ -130,6 +132,13 @@ impl BindOptions {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the source file path (compiler.md §265 rules 1–3).
+    #[must_use]
+    pub fn with_source_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.source_path = Some(path.into());
+        self
     }
 
     /// Adds one completion function and its C result spelling (§178 rules 4–6).
@@ -214,7 +223,7 @@ pub fn generate_with_options(
             "header include spelling `{include_spelling}` must be a nonempty basename"
         )));
     }
-    let parsed = clangfe::parse(header)?;
+    let parsed = clangfe::parse_at(header, options.source_path.as_deref())?;
     emit::emit_for_header(
         &parsed,
         include_spelling,
@@ -235,4 +244,53 @@ pub fn generate_with_options(
 pub fn boundary_passes(header: &str) -> Result<Vec<StructPasses>, ParseError> {
     let parsed = clangfe::parse(header)?;
     read_lowering::boundary_passes(&parsed)
+}
+
+#[cfg(test)]
+mod source_path_tests {
+    use super::{generate_with_options, BindOptions};
+    use std::path::PathBuf;
+
+    struct TestDir(PathBuf);
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    // compiler.md §265 rules 1–4 and acceptance 5: text input uses the supplied source directory.
+    #[test]
+    fn source_path_resolves_sibling_include() {
+        let unique = format!(
+            "subscript-s265-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let directory = TestDir(std::env::temp_dir().join(&unique));
+        std::fs::create_dir(&directory.0).unwrap();
+        let sibling = format!("{unique}.h");
+        assert!(!std::env::current_dir().unwrap().join(&sibling).exists());
+        std::fs::write(
+            directory.0.join(&sibling),
+            "typedef int SiblingInt;\nvoid sibling_only(void);\n",
+        )
+        .unwrap();
+        let header = format!(
+            "#include \"{sibling}\"\n/* @subscript-external SiblingInt */\nSiblingInt api(SiblingInt value);\n"
+        );
+        let options = BindOptions::new().with_source_path(directory.0.join("api.h"));
+        let mirror = generate_with_options(&header, "api.h", &options).unwrap();
+        assert!(mirror.contains("api"), "{mirror}");
+        assert!(!mirror.contains("sibling_only"), "{mirror}");
+        assert!(!mirror.contains("type SiblingInt"), "{mirror}");
+        let error = generate_with_options(&header, "api.h", &BindOptions::new()).unwrap_err();
+        assert!(
+            error.0.contains(&format!("'{sibling}' file not found")),
+            "{error}"
+        );
+    }
 }

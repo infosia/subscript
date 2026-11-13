@@ -292,7 +292,7 @@ fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failu
     // cli.md §10.1: a rejected selection is a program-input failure, and
     // the generator runs before any output path is opened, so a failed run
     // leaves no mirror behind.
-    let mut options = subscript_bindgen::BindOptions::new();
+    let mut options = subscript_bindgen::BindOptions::new().with_source_path(&header);
     for aggregate in parsed.explicit_callback_lifetimes {
         options = options.with_explicit_callback_lifetime(aggregate);
     }

@@ -167,6 +167,11 @@ pub struct CEnumMapping {
 /// translation unit fails to parse, or when a declaration uses a construct
 /// the frontend does not model.
 pub fn parse(source: &str) -> Result<Parsed, ParseError> {
+    parse_at(source, None)
+}
+
+/// Parses with the source file path (compiler.md §265 rules 1–4).
+pub(crate) fn parse_at(source: &str, path: Option<&Path>) -> Result<Parsed, ParseError> {
     ensure_libclang()?;
     let externals = external_directives(source)?;
     let cenums = cenum_directives(source)?;
@@ -180,12 +185,15 @@ pub fn parse(source: &str) -> Result<Parsed, ParseError> {
         // the external spelling at each use site. The synthetic declarations
         // are removed below and therefore can never reach mirror emission.
         let (mut parsed, injected) = if externals.is_empty() {
-            (parse_with_completion(source)?, false)
+            (parse_with_completion(source, path)?, false)
         } else {
-            match parse_with_completion(source) {
+            match parse_with_completion(source, path) {
                 Ok(parsed) => (parsed, false),
                 Err(_) => (
-                    parse_with_completion(&source_with_external_preamble(source, &externals))?,
+                    parse_with_completion(
+                        &source_with_external_preamble(source, &externals),
+                        path,
+                    )?,
                     true,
                 ),
             }
@@ -473,7 +481,7 @@ fn validate_cenum_mappings(
         let supported_uses = parsed
             .decls
             .iter()
-            .map(|decl| match decl {
+            .filter_map(|decl| match decl {
                 Decl::Func { ret, params, .. } => Some(
                     usize::from(cenum_direct_field(ret, typedef_name))
                         + params
@@ -492,7 +500,6 @@ fn validate_cenum_mappings(
                 ),
                 _ => None,
             })
-            .flatten()
             .sum::<usize>();
         if supported_uses == 0 {
             return Err(ParseError(format!(
@@ -776,16 +783,19 @@ fn dir_has_libclang(dir: &str) -> bool {
 }
 
 /// Resolves an undeclared runtime endpoint without accepting other unknown types.
-unsafe fn parse_with_completion(source: &str) -> Result<Parsed, ParseError> {
-    match parse_inner(source) {
+unsafe fn parse_with_completion(source: &str, path: Option<&Path>) -> Result<Parsed, ParseError> {
+    match parse_inner(source, path) {
         Err(error)
             if error
                 .0
                 .contains("unknown type name 'subscript_rt_completion'") =>
         {
-            let mut parsed = parse_inner(&format!(
-                "typedef struct __subscript_completion subscript_rt_completion;\n{source}"
-            ))?;
+            let mut parsed = parse_inner(
+                &format!(
+                    "typedef struct __subscript_completion subscript_rt_completion;\n{source}"
+                ),
+                path,
+            )?;
             parsed
                 .decls
                 .retain(|decl| decl_type_name(decl) != Some(crate::completion::ENDPOINT));
@@ -800,17 +810,21 @@ unsafe fn parse_with_completion(source: &str) -> Result<Parsed, ParseError> {
 
 /// The unsafe core: builds a translation unit and walks it. Callers must
 /// have loaded libclang.
-unsafe fn parse_inner(source: &str) -> Result<Parsed, ParseError> {
+unsafe fn parse_inner(source: &str, path: Option<&Path>) -> Result<Parsed, ParseError> {
     let index = clang_createIndex(0, 0);
     if index.is_null() {
         return Err(ParseError("libclang: could not create an index".into()));
     }
     let _index = IndexGuard(index);
 
-    // Present the source as an unsaved file named `header.h`; that name
-    // becomes the translation unit's main file, so `isFromMainFile`
-    // separates our declarations from included system headers.
-    let filename = CString::new("header.h").expect("no NUL in literal");
+    // compiler.md §265 rules 1–4: the main file path supplies the quoted-include directory.
+    // isFromMainFile separates header declarations from included-file declarations.
+    let filename = CString::new(
+        path.unwrap_or_else(|| Path::new("header.h"))
+            .as_os_str()
+            .as_encoded_bytes(),
+    )
+    .map_err(|_| ParseError("header path contains a NUL byte".into()))?;
     let contents =
         CString::new(source).map_err(|_| ParseError("header source contains a NUL byte".into()))?;
     let mut unsaved = CXUnsavedFile {
