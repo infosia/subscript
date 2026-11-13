@@ -2,6 +2,19 @@
 use super::{Expr, ForeignTypeProvenance};
 use crate::{diag::Pos, types::Type};
 
+/// Parameter escape destination (compiler.md §274 rule 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[non_exhaustive]
+pub enum EscapeKind {
+    /// The value stays in the call.
+    #[default]
+    None,
+    /// Managed storage retains the value.
+    Managed,
+    /// A C callback boundary receives the value.
+    CCallback,
+}
+
 /// One function parameter.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -16,8 +29,8 @@ pub struct Param {
     pub default_can_raise: bool,
     /// C spelling absorbed at this foreign boundary parameter.
     pub foreign_provenance: Option<ForeignTypeProvenance>,
-    /// Whether this parameter reaches an escape boundary (compiler.md §118).
-    pub escapes: bool,
+    /// Escape destination of this parameter (compiler.md §274 rule 6).
+    pub escape_kind: EscapeKind,
     /// Position of the parameter.
     pub pos: Pos,
 }
@@ -33,7 +46,7 @@ impl Param {
             default: None,
             default_can_raise: false,
             foreign_provenance: None,
-            escapes: false,
+            escape_kind: EscapeKind::None,
         }
     }
 }

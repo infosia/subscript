@@ -92,11 +92,10 @@ fn ownership(source: &str) -> Vec<(bool, bool)> {
         .collect()
 }
 
-/// §186 rule 4: only a direct synchronous callback owns its captures. The
-/// same lambda held in a local first stays borrowed, and §118 rejects it.
+/// compiler.md §274: direct and held reaction captures own their environments.
 // Cost: two checker calls; no native build.
 #[test]
-fn a_direct_callback_owns_its_captures_and_a_held_lambda_does_not() {
+fn direct_and_held_callbacks_own_their_captures() {
     let prefix = "async function value(n: i32): Promise<i32> { return n; }\n";
     let direct = format!(
         "{prefix}export async function main(): Promise<void> {{
@@ -118,13 +117,7 @@ fn a_direct_callback_owns_its_captures_and_a_held_lambda_does_not() {
             print(`${{await value(1).then(f)}}`);
         }}"
     );
-    let diagnostics =
-        check_program(&[SourceFile::new("held.ts", held)]).expect_err("a held capture escapes");
-    assert_eq!(diagnostics[0].code, RuleCode::S009);
-    assert_eq!(
-        diagnostics[0].message,
-        "value `f` may capture at held async argument"
-    );
+    assert_eq!(ownership(&held), [(true, true)]);
 }
 
 /// The names of the compiler-supplied helpers of a program.
@@ -233,16 +226,6 @@ fn a_rejected_capture_reports_one_diagnostic_with_its_accepted_form() {
             const add = (x: i32): i32 => x + k;
             print(`${await f().then((v: i32): i32 => add(v))}`);
         }";
-    let diagnostics = check_program(&[SourceFile::new("borrowed.ts", borrowed)])
-        .expect_err("a borrowed capture is rejected");
-    assert_eq!(
-        diagnostics
-            .iter()
-            .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
-            .collect::<Vec<_>>(),
-        [(
-            RuleCode::S009,
-            "lambda capturing `add` may capture at owned callback environment"
-        )]
-    );
+    check_program(&[SourceFile::new("borrowed.ts", borrowed)])
+        .expect("compiler.md §274 owns a transitive reaction capture");
 }

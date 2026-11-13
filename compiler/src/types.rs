@@ -634,7 +634,11 @@ impl Type {
         if ret == Self::Error || params.contains(&Self::Error) {
             return Self::Error;
         }
-        Self::Func(Box::new(FuncType { params, ret }))
+        Self::Func(Box::new(FuncType {
+            callback_typedef: None,
+            params,
+            ret,
+        }))
     }
 }
 
@@ -653,12 +657,29 @@ pub enum IterKind {
 }
 
 /// Parameter and return types of a function type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct FuncType {
+    /// Mirror C callback identity (compiler.md §274 rule 7).
+    pub callback_typedef: Option<String>,
     /// Parameter types, in order.
     pub params: Vec<Type>,
     /// Return type.
     pub ret: Type,
+}
+
+// Keep plain function text stable for LIR snapshots and reload declaration hashes.
+// Callback identity remains part of both text forms (compiler.md §274 rule 7).
+impl std::fmt::Debug for FuncType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut value = f.debug_struct("FuncType");
+        if let Some(name) = &self.callback_typedef {
+            value.field("callback_typedef", name);
+        }
+        value
+            .field("params", &self.params)
+            .field("ret", &self.ret)
+            .finish()
+    }
 }
 
 /// Returns the shared fundamental C boundary kind of a semantic type.
@@ -1130,6 +1151,9 @@ pub fn display_type(
             display_type(message, class_name, enum_name, string_alias_name)
         ),
         Type::Func(f) => {
+            if let Some(name) = &f.callback_typedef {
+                return name.clone();
+            }
             let params: Vec<String> = f
                 .params
                 .iter()
@@ -1228,6 +1252,7 @@ mod tests {
             Type::Map(Box::new(Type::I32), Box::new(Type::I32)),
             Type::Set(Box::new(Type::I32)),
             Type::Func(Box::new(FuncType {
+                callback_typedef: None,
                 params: vec![],
                 ret: Type::I32,
             })),
@@ -1300,6 +1325,7 @@ mod tests {
             (
                 Type::func(vec![i()], i()),
                 Type::Func(Box::new(FuncType {
+                    callback_typedef: None,
                     params: vec![i()],
                     ret: i(),
                 })),
@@ -1333,6 +1359,7 @@ mod tests {
             assert_eq!(ty.contained_types(), vec![&Type::I32, &Type::Str]);
         }
         let function = Type::Func(Box::new(FuncType {
+            callback_typedef: None,
             params: vec![Type::I32, Type::Str],
             ret: Type::Bool,
         }));
@@ -1483,6 +1510,7 @@ mod tests {
     fn every_type_variant_has_the_recorded_handle_kind() {
         let function = || {
             Type::Func(Box::new(FuncType {
+                callback_typedef: None,
                 params: vec![Type::I32],
                 ret: Type::Bool,
             }))
@@ -1590,6 +1618,7 @@ mod tests {
     fn every_type_variant_keeps_the_recorded_acceptance_filters() {
         let function = || {
             Type::Func(Box::new(FuncType {
+                callback_typedef: None,
                 params: vec![Type::I32],
                 ret: Type::Bool,
             }))
@@ -1683,6 +1712,7 @@ mod tests {
         let array = Type::Array(Box::new(Type::I32));
         let nullable = Type::Nullable(Box::new(array.clone()), Absence::Null);
         let callback = Type::Func(Box::new(FuncType {
+            callback_typedef: None,
             params: vec![nullable.clone()],
             ret: Type::Void,
         }));
@@ -1767,6 +1797,7 @@ mod tests {
             ),
             (
                 Type::Func(Box::new(FuncType {
+                    callback_typedef: None,
                     params: vec![Type::Class(ClassId(0))],
                     ret: Type::I32,
                 })),
@@ -1811,6 +1842,7 @@ mod tests {
         assert_eq!(
             display_type(
                 &Type::Func(Box::new(FuncType {
+                    callback_typedef: None,
                     params: vec![Type::I32],
                     ret: Type::I32
                 })),

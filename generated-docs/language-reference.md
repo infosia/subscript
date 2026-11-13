@@ -179,7 +179,7 @@ export function main(): void {
 
 ### S009
 
-A capturing lambda stays in its defining function and each captured counted binding block; a task group requires one lexical owner.
+A borrowed capture stays in its defining function and each captured counted binding block; a task group requires one lexical owner.
 
 Pinned corpus: [`corpus/reject/r396-counted-capture-direct.ts`](../corpus/reject/r396-counted-capture-direct.ts), line 11.
 
@@ -364,22 +364,19 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r399-file-module-disabled.ts`](../corpus/reject/r399-file-module-disabled.ts), line 8.
+Pinned corpus: [`corpus/reject/r507-c-callback-through-method.ts`](../corpus/reject/r507-c-callback-through-method.ts), line 8.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// js-comparable: no C25: The host must enable the module at build time.
-// expected-error: S100, --enable-module node:fs/promises
+// expected-error: S100 at line 8
 ```
 
 ```ts
-// js-comparable: no C25: The host must enable the module at build time.
-// expected-error: S100, --enable-module node:fs/promises
-import { readFile } from "node:fs/promises";
-export async function main(): Promise<void> {
-  print(await readFile("text.txt", "utf8"));
+// expected-error: S100 at line 8
+class Holder { constructor(public cb:SubLogCallback) {} install():void { new SubCallbackInfo(this.cb,null,null); } }
+export function main():void { const k:i32=7; new Holder((m,u1,u2):void=>{print(`${k}`);}).install(); }
 ```
 
 ## Listed diagnostic examples (§182)

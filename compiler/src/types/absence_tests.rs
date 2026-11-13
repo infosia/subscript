@@ -49,6 +49,7 @@ fn absence_reads_the_top_level_spelling_only() {
 fn holds_undefined_finds_the_spelling_at_each_depth() {
     let nested = Type::Array(Box::new(undefined(class())));
     let in_result = Type::Func(Box::new(FuncType {
+        callback_typedef: None,
         params: vec![Type::I32],
         ret: undefined(class()),
     }));
@@ -80,6 +81,7 @@ fn erase_undefined_maps_every_spelling_to_null() {
     let mut ty = Type::Map(
         Box::new(Type::I32),
         Box::new(Type::Func(Box::new(FuncType {
+            callback_typedef: None,
             params: vec![undefined(class())],
             ret: Type::Array(Box::new(undefined(class()))),
         }))),
@@ -87,6 +89,7 @@ fn erase_undefined_maps_every_spelling_to_null() {
     let expected = Type::Map(
         Box::new(Type::I32),
         Box::new(Type::Func(Box::new(FuncType {
+            callback_typedef: None,
             params: vec![Type::nullable(class())],
             ret: Type::Array(Box::new(Type::nullable(class()))),
         }))),

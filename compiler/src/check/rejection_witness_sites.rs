@@ -471,6 +471,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::EnumToInteger,
     RejectionSite::ArrayToFixedArray,
     RejectionSite::FunctionParameterIdentity,
+    RejectionSite::CCallbackRequiresNoEnvironment,
     RejectionSite::AssignmentTypeMismatch,
     RejectionSite::CaptureOutlivesBlock,
     RejectionSite::CaptureEffectEscapes,

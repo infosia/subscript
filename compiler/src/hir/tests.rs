@@ -427,7 +427,7 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
         is_generator: false,
         is_async: false,
         params: vec![Param {
-            escapes: false,
+            escape_kind: crate::hir::EscapeKind::None,
             default_can_raise: false,
             name: "mode".to_string(),
             ty: Type::StringAlias(crate::types::StringAliasId(0)),
@@ -818,6 +818,7 @@ fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
     // Excluded: value classes, function values, FixedArray, void.
     assert_eq!(of(&Type::Class(ClassId(0))), None);
     let ft = Type::Func(Box::new(FuncType {
+        callback_typedef: None,
         params: vec![Type::I32],
         ret: Type::I32,
     }));

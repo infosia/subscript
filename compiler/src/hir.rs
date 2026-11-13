@@ -34,7 +34,7 @@ use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, I
 
 mod function;
 mod parameter;
-pub use parameter::Param;
+pub use parameter::{EscapeKind, Param};
 
 mod statement;
 pub use statement::{ForOfKind, Stmt, SwitchCase};
@@ -1702,6 +1702,7 @@ pub enum ExprKind {
         /// owns the captures (`compiler.md` §181 rule 2). The checker sets
         /// it for every async arrow and for a synchronous lambda that is a
         /// direct callback of `then`, `catch`, or `finally` (§186 rule 4).
+        /// It also sets it when a synchronous capture escapes (§274 rule 1).
         /// A lambda with no captures allocates nothing.
         owns_environment: bool,
         /// Fulfilled body result; the expression type carries the callable result.

@@ -503,6 +503,7 @@ pub(crate) enum RejectionSite {
     EnumToInteger,
     ArrayToFixedArray,
     FunctionParameterIdentity,
+    CCallbackRequiresNoEnvironment,
     AssignmentTypeMismatch,
     CaptureOutlivesBlock,
     CaptureEffectEscapes,

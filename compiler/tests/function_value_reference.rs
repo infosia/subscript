@@ -136,14 +136,8 @@ fn field_call_is_an_indirect_capture_boundary() {
         )]
     };
     check_program(&source("named")).expect("clean argument");
-    let diagnostics = check_program(&source("(): i32 => offset")).expect_err("capture escapes");
-    assert!(
-        diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == RuleCode::S009
-                && diagnostic.message.contains("indirect call argument")
-        }),
-        "{diagnostics:?}"
-    );
+    check_program(&source("(): i32 => offset"))
+        .expect("compiler.md §274 owns an indirect argument capture");
 }
 
 #[test]

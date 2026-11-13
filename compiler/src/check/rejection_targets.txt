@@ -351,8 +351,8 @@ DistinctNominalContainerAssignment	c-nominal-null-rejected	S005	nominal types ar
 ImplicitNumericAssignment	c-mixed-width	S007	implicit numeric conversion from `i32` to `i64`; spell it `as i64`
 NullableValueClassAssignment	c-nullable-function-class	S011	value class `C` cannot be nullable
 NullableValueClassAssignment	c-nullable-function-class-reject	S011	value class `C` cannot be nullable
-CaptureEffectEscapes	c-corpus-r245-yield-returns-capture	S009	lambda capturing `value` may capture at yield
-CaptureEffectArgument	c-corpus-r241-parameter-returned	S009	call `forward` parameter `cb` requires a clean argument; lambda capturing `value` may capture
+CaptureEffectEscapes	c-corpus-r245-yield-returns-capture	S009	lambda capturing `this` may capture at return
+CaptureEffectArgument	c-corpus-r241-parameter-returned	S009	call `forward` parameter `cb` requires a clean argument; lambda capturing `this` may capture
 UnaryNumericCoercion	a-s204	S100	unary `-` requires a numeric operand, got `string`
 LogicalNotNonBoolean	a-s205	S100	`!` requires a boolean operand, got `i32`
 BitwiseIntegerOperand	a-s206	S100	`~` requires an integer operand, got `f64`
@@ -1545,3 +1545,9 @@ ConversionAcrossSpellings	s195-cross-conversion	S012	`T | undefined` and `T | nu
 UndefinedResultHostEntry	s195-host-entry	S012	a function that crosses the C boundary has no `T | undefined`; entry export `pick` returns `Box | undefined`
 UndefinedResultFunctionValue	s195-function-value	S100	a function whose result is `T | undefined` may only be called
 AliasArrayToStringArray	alias-array-to-string-array	S100	type mismatch: the initializer expects `string[]`, got `Mode[]`
+CCallbackRequiresNoEnvironment	c-corpus-r502-a-capturing-lambda-is-not-a-c-callback	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+CCallbackRequiresNoEnvironment	c-corpus-r503-c-callback-through-field	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+CCallbackRequiresNoEnvironment	c-corpus-r504-c-callback-through-return	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+CCallbackRequiresNoEnvironment	c-corpus-r505-c-callback-through-indirect	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+CCallbackRequiresNoEnvironment	c-corpus-r506-c-callback-through-array	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+CCallbackRequiresNoEnvironment	c-corpus-r507-c-callback-through-method	S100	a capturing lambda cannot take the C callback type `SubLogCallback`

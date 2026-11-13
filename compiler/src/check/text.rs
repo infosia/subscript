@@ -147,7 +147,7 @@ impl Checker<'_> {
             vec![hir::Param {
                 name: "value".into(),
                 ty: parameter_type,
-                escapes: false,
+                escape_kind: crate::hir::EscapeKind::None,
                 default_can_raise: false,
                 default: None,
                 foreign_provenance: None,

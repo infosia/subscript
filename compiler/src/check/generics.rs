@@ -168,6 +168,7 @@ impl<'p> Checker<'p> {
             Type::Inbox(message) => Type::Inbox(normal(message)),
             Type::Outbox(message) => Type::Outbox(normal(message)),
             Type::Func(signature) => Type::Func(Box::new(crate::types::FuncType {
+                callback_typedef: signature.callback_typedef.clone(),
                 params: signature
                     .params
                     .iter()

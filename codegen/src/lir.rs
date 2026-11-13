@@ -1863,6 +1863,7 @@ mod verifier_tests {
     #[test]
     fn indirect_call_is_checked_against_the_callee_function_type() {
         let function_type = Type::Func(Box::new(subscript_compiler::types::FuncType {
+            callback_typedef: None,
             params: vec![Type::I32],
             ret: Type::I32,
         }));

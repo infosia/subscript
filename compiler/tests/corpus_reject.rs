@@ -66,6 +66,16 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r507-c-callback-through-method.ts", RuleCode::S100, 8),
+    ("r506-c-callback-through-array.ts", RuleCode::S100, 8),
+    ("r505-c-callback-through-indirect.ts", RuleCode::S100, 8),
+    ("r504-c-callback-through-return.ts", RuleCode::S100, 7),
+    ("r503-c-callback-through-field.ts", RuleCode::S100, 8),
+    (
+        "r502-a-capturing-lambda-is-not-a-c-callback.ts",
+        RuleCode::S100,
+        10,
+    ),
     ("r399-file-module-disabled.ts", RuleCode::S100, 8),
     ("r400-file-module-options-object.ts", RuleCode::S100, 11),
     ("r401-file-module-other-member.ts", RuleCode::S100, 9),
@@ -334,7 +344,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r07-value-class-extends.ts", RuleCode::S006, 13),
     ("r08-bare-number.ts", RuleCode::S007, 7),
     ("r09-int-literal-overflow.ts", RuleCode::S008, 7),
-    ("r10-escaping-capture.ts", RuleCode::S009, 9),
     ("r11-throw.ts", RuleCode::S010, 8),
     ("r12-general-union.ts", RuleCode::S011, 8),
     ("r13-undefined.ts", RuleCode::S012, 7),
@@ -604,19 +613,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r75-for-of-entries.ts", RuleCode::S014, 9),
     ("r78-call-spread-variadic.ts", RuleCode::S014, 13),
     ("r79-assign-entries.ts", RuleCode::S014, 9),
-    ("r240-parameter-stored-in-field.ts", RuleCode::S009, 16),
-    ("r241-parameter-returned.ts", RuleCode::S009, 12),
-    (
-        "r242-expression-body-returns-parameter.ts",
-        RuleCode::S009,
-        10,
-    ),
-    ("r243-capture-passed-to-generator.ts", RuleCode::S009, 13),
-    ("r244-capture-passed-to-async.ts", RuleCode::S009, 13),
-    ("r245-yield-returns-capture.ts", RuleCode::S009, 9),
-    ("r246-capture-through-loop-back-edge.ts", RuleCode::S009, 12),
-    ("r247-generator-parameter-stored.ts", RuleCode::S009, 14),
-    ("r248-capture-through-indirect-call.ts", RuleCode::S009, 11),
     ("r250-map-generator-get.ts", RuleCode::S014, 9),
     ("r251-map-boundary-struct-get.ts", RuleCode::S014, 8),
     ("r252-narrowing-across-call.ts", RuleCode::S011, 13),
@@ -1754,64 +1750,6 @@ fn r31_explicit_symbol_dispose_call_uses_s016() {
     )])
     .expect_err("an explicit Symbol.dispose call must fail");
     assert_eq!(diagnostics[0].code, RuleCode::S016);
-}
-
-#[test]
-fn capture_diagnostics_pin_the_boundary_operand() {
-    for (name, line, column, boundary) in [
-        (
-            "r240-parameter-stored-in-field.ts",
-            16,
-            17,
-            "call `store` parameter `cb`",
-        ),
-        (
-            "r241-parameter-returned.ts",
-            12,
-            28,
-            "call `forward` parameter `cb`",
-        ),
-        (
-            "r242-expression-body-returns-parameter.ts",
-            10,
-            28,
-            "indirect call argument",
-        ),
-        ("r243-capture-passed-to-generator.ts", 13, 10, "return"),
-        (
-            "r244-capture-passed-to-async.ts",
-            13,
-            22,
-            "held async argument",
-        ),
-        ("r245-yield-returns-capture.ts", 9, 9, "yield"),
-        ("r246-capture-through-loop-back-edge.ts", 12, 27, "return"),
-        (
-            "r247-generator-parameter-stored.ts",
-            14,
-            17,
-            "call `store` parameter `value`",
-        ),
-        (
-            "r248-capture-through-indirect-call.ts",
-            11,
-            21,
-            "indirect call argument",
-        ),
-    ] {
-        let source = fs::read_to_string(corpus_dir().join("reject").join(name)).unwrap();
-        let diagnostics =
-            check_program(&[SourceFile::new(name, source)]).expect_err("a capture cannot escape");
-        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-        let diagnostic = &diagnostics[0];
-        assert_eq!(diagnostic.code, RuleCode::S009);
-        assert_eq!(
-            (diagnostic.pos.line, diagnostic.pos.col),
-            (line, column),
-            "{name}"
-        );
-        assert!(diagnostic.message.contains(boundary), "{diagnostic:?}");
-    }
 }
 
 #[test]

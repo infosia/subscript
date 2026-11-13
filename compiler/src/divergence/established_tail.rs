@@ -374,12 +374,11 @@ pub(super) const WIREENUMVALUES: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const ESCAPINGCAPTURE: DivergenceEntry = DivergenceEntry {
-                ts: "function makeAdder(k: i32): (v: i32) => i32 { const captured: i32 = k; return (v: i32): i32 => v + captured; }",
-                subscript: "function add(k: i32, v: i32): i32 { return k + v; }",
-                why: "A capturing lambda holds its environment on the stack, so it cannot \
-                      outlive the function that made it.",
-                collision: "C5",
-            };
+    ts: "class C { n:i32=1; read():()=>i32 { return ():i32=>this.n; } }",
+    subscript: "class C { n:i32=1; read():()=>i32 { const n=this.n; return ():i32=>n; } }",
+    why: "A direct receiver capture keeps a stack environment. Copy the needed field into a const before the lambda escapes.",
+    collision: "C5",
+};
 
 pub(super) const EXCEPTIONS: DivergenceEntry = DivergenceEntry {
     ts: "function fail(): void {\n\
@@ -1138,3 +1137,10 @@ class Holder { inner: Inner; constructor() { this.inner = new Inner(); this.show
                       definite-assignment analysis of `tsc` does not follow a call.",
                 collision: "compiler.md §108",
             };
+
+pub(super) const C_CALLBACK_REQUIRES_NO_ENVIRONMENT: DivergenceEntry = DivergenceEntry {
+    ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const value:i32=7; const cb:Callback=():void=>{print(`${value}`);}; }",
+    subscript: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const cb:Callback=():void=>{}; }",
+    why: "A C callback type takes only a value with no environment (compiler.md §274 rule 7).",
+    collision: "C5",
+};

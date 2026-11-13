@@ -8,19 +8,46 @@ use subscript_compiler::{check_program, hir, RuleCode, SourceFile};
 fn check(source: &str) -> Result<hir::Module, Vec<subscript_compiler::Diagnostic>> {
     check_program(&[SourceFile::new("capture.ts", source)])
 }
-fn rejects(source: &str, boundary: &str) {
-    let diagnostics = check(source).expect_err("the capture must reach the boundary");
-    assert!(
-        diagnostics
-            .iter()
-            .any(|d| d.code == RuleCode::S009 && d.message.contains(boundary)),
-        "{diagnostics:?}"
-    );
+fn flags(child: hir::HirChild<'_>, result: &mut Vec<bool>) {
+    match child {
+        hir::HirChild::Expr(e) => {
+            if let hir::ExprKind::Lambda {
+                captures,
+                owns_environment,
+                ..
+            } = &e.kind
+            {
+                if !captures.is_empty() {
+                    result.push(*owns_environment);
+                }
+            }
+            for child in e.children() {
+                flags(child, result);
+            }
+        }
+        hir::HirChild::Stmt(s) => {
+            for child in s.children() {
+                flags(child, result);
+            }
+        }
+    }
 }
-fn store(body: &str, boundary: &str) {
-    rejects(
-        &format!(
-            r#"
+fn accepts_owned(source: &str) {
+    let module = check(source).expect("compiler.md §274 rule 1 accepts an owned capture");
+    let mut result = Vec::new();
+    for owner in module.expression_owners() {
+        if let hir::ExpressionOwner::Body { statements, .. } = owner {
+            for s in statements {
+                flags(hir::HirChild::Stmt(s), &mut result);
+            }
+        }
+    }
+    assert!(result.contains(&true), "{source}: {result:?}");
+}
+
+fn store(body: &str, _boundary: &str) {
+    accepts_owned(&format!(
+        r#"
 function named(): i32 {{ return 0; }}
 class Holder {{ cb: () => i32 = named; }}
 let global: () => i32 = named;
@@ -32,9 +59,7 @@ export function main(): void {{
     {body}
 }}
 "#
-        ),
-        boundary,
-    );
+    ));
 }
 #[test]
 fn field_store() {
@@ -67,7 +92,7 @@ fn map_store() {
 }
 #[test]
 fn set_store() {
-    rejects("function named(): i32 { return 0; } class Holder { cb: () => i32 = named; constructor(cb: () => i32) { cb(); } } export function main(): void { const value: i32 = 5; const holder = new Holder((): i32 => value); const set = new Set<Holder>(); set.add(holder); }", "Set store");
+    accepts_owned("function named(): i32 { return 0; } class Holder { cb: () => i32 = named; constructor(cb: () => i32) { cb(); } } export function main(): void { const value: i32 = 5; const holder = new Holder((): i32 => value); const set = new Set<Holder>(); set.add(holder); }");
 }
 #[test]
 fn array_mutators() {
@@ -81,7 +106,7 @@ fn array_mutators() {
 }
 #[test]
 fn return_boundary() {
-    rejects("function make(): () => i32 { const value: i32 = 5; return (): i32 => value; } export function main(): void {}", "return");
+    accepts_owned("function make(): () => i32 { const value: i32 = 5; return (): i32 => value; } export function main(): void {}");
 }
 #[test]
 fn expression_body_return() {
@@ -89,15 +114,15 @@ fn expression_body_return() {
 }
 #[test]
 fn yield_boundary() {
-    rejects("function* gen(): Generator<() => i32> { const value: i32 = 5; yield (): i32 => value; } export function main(): void {}", "yield");
+    accepts_owned("function* gen(): Generator<() => i32> { const value: i32 = 5; yield (): i32 => value; } export function main(): void {}");
 }
 #[test]
 fn escaping_lambda_capture() {
-    rejects("function make(): () => i32 { const value: i32 = 5; const cb = (): i32 => value; return (): i32 => cb(); } export function main(): void {}", "return");
+    accepts_owned("function make(): () => i32 { const value: i32 = 5; const cb = (): i32 => value; return (): i32 => cb(); } export function main(): void {}");
 }
 #[test]
 fn held_async_argument() {
-    rejects("async function run(cb: () => i32): Promise<i32> { return cb(); } export async function main(): Promise<void> { const value: i32 = 5; const cb = (): i32 => value; const h = run(cb); await h; }", "held async argument");
+    accepts_owned("async function run(cb: () => i32): Promise<i32> { return cb(); } export async function main(): Promise<void> { const value: i32 = 5; const cb = (): i32 => value; const h = run(cb); await h; }");
 }
 #[test]
 fn c_callback_slot() {
@@ -110,7 +135,7 @@ fn c_callback_slot() {
     assert!(
         diagnostics
             .iter()
-            .any(|d| d.code == RuleCode::S009 && d.message.contains("aggregate constructor")),
+            .any(|d| d.code == RuleCode::S100 && d.message.contains("SubLogCallback")),
         "{diagnostics:?}"
     );
 }
@@ -120,7 +145,7 @@ fn local_facts_ignore_source_order_and_loop_order() {
         "let alias: () => i32 = named; if (true) { return alias; } alias = (): i32 => value; return named;",
         "let alias: () => i32 = named; let second: () => i32 = named; for (let i: i32 = 0; i < 2; i++) { if (i === 1) { return alias; } alias = second; second = (): i32 => value; } return named;",
     ] {
-        rejects(&format!("function named(): i32 {{ return 0; }} function make(): () => i32 {{ const value: i32 = 5; {body} }} export function main(): void {{}}"), "return");
+        accepts_owned(&format!("function named(): i32 {{ return 0; }} function make(): () => i32 {{ const value: i32 = 5; {body} }} export function main(): void {{}}"));
     }
 }
 #[test]
@@ -144,41 +169,36 @@ fn container_reads_infer_escape() {
                 .find(|f| f.name == "read")
                 .unwrap()
                 .params[0]
-                .escapes
+                .escape_kind
+                != hir::EscapeKind::None
         );
     }
-    rejects(
-        include_str!("../../corpus/reject/r247-generator-parameter-stored.ts"),
-        "parameter `value`",
-    );
+    accepts_owned(
+        "function* gen(cb: () => i32): Generator<i32> { yield cb(); }\nfunction store(values: Generator<i32>[], value: Generator<i32>): void {\n  values.push(value);\n}\nexport function main(): void {\n  const value: i32 = 5;\n  const values: Generator<i32>[] = [];\n  store(values, gen((): i32 => value));\n}");
 }
 #[test]
 fn escape_inference_crosses_two_calls() {
     let source = "function last(cb: () => i32): () => i32 { return cb; } function middle(cb: () => i32): () => i32 { return last(cb); } function first(cb: () => i32): () => i32 { return middle(cb); } export function main(): void { const value: i32 = 5; first((): i32 => value); }";
-    rejects(source, "call `first` parameter `cb`");
+    accepts_owned(source);
     check(&source.replace("(): i32 => value", "(): i32 => 5"))
         .expect("clean arguments pass the inferred contract");
 }
 #[test]
 fn constructor_and_method_inference() {
     let source = "function named(): i32 { return 0; } class Holder { cb: () => i32 = named; constructor(cb: () => i32) { this.set(cb); } set(cb: () => i32): void { this.cb = cb; } } export function main(): void { const value: i32 = 5; new Holder((): i32 => value); }";
-    rejects(source, "parameter `cb`");
+    accepts_owned(source);
     check(&source.replace("(): i32 => value", "named"))
         .expect("a clean constructor argument can reach a field");
 }
 #[test]
-fn caller_argument_is_the_error() {
-    rejects(
-        include_str!("../../corpus/reject/r240-parameter-stored-in-field.ts"),
-        "call `store` parameter `cb`",
-    );
+fn escaping_caller_argument_owns_environment() {
+    accepts_owned(
+        "class Holder {\n  callback: (() => i32) | null = null;\n}\nfunction store(holder: Holder, cb: () => i32): void {\n  holder.callback = cb;\n}\nexport function main(): void {\n  const holder = new Holder();\n  const value: i32 = 5;\n  store(holder, (): i32 => value);\n}");
 }
 #[test]
-fn indirect_calls_require_clean_arguments() {
-    rejects(
-        include_str!("../../corpus/reject/r248-capture-through-indirect-call.ts"),
-        "indirect call argument",
-    );
+fn indirect_calls_accept_owned_arguments() {
+    accepts_owned(
+        "function call(cb: () => i32): i32 { return cb(); }\nexport function main(): void {\n  const value: i32 = 5;\n  const indirect: (cb: () => i32) => i32 = call;\n  print(`${indirect((): i32 => value)}`);\n}");
     check("function named(): i32 { return 5; } function call(cb: () => i32): i32 { return cb(); } export function main(): void { const indirect = call; indirect(named); }").expect("a clean indirect argument passes");
 }
 #[test]
@@ -187,27 +207,20 @@ fn call_and_downward_pass() {
         "../../corpus/accept/a262-parameter-called-and-passed-down.ts"
     ))
     .expect("downward calls keep captures alive");
-    rejects(
-        include_str!("../../corpus/reject/r241-parameter-returned.ts"),
-        "parameter `cb`",
-    );
+    accepts_owned(
+        "function forward(cb: () => i32): () => i32 {\n  return cb;\n}\nexport function main(): void {\n  const value: i32 = 5;\n  const callback = forward((): i32 => value);\n  print(`${callback()}`);\n}");
 }
 #[test]
 fn direct_await_keeps_a_capture_alive() {
     let source = "async function run(cb: () => i32): Promise<i32> { await Context.suspend(); return cb(); } export async function main(): Promise<void> { const value: i32 = 5; const cb = (): i32 => value; await run(cb); }";
     check(source).expect("direct await keeps the caller alive");
-    rejects(
-        &source.replace("await run(cb);", "const h = run(cb); await h;"),
-        "held async argument",
-    );
+    accepts_owned(&source.replace("await run(cb);", "const h = run(cb); await h;"));
 }
 #[test]
 fn local_generator_keeps_a_capture_alive() {
     check("function* gen(cb: () => i32): Generator<i32> { yield cb(); } export function main(): void { const value: i32 = 5; const local = gen((): i32 => value); print(`${local.next().value}`); }").expect("the generator stays local");
-    rejects(
-        include_str!("../../corpus/reject/r243-capture-passed-to-generator.ts"),
-        "return",
-    );
+    accepts_owned(
+        "function* gen(cb: () => i32): Generator<i32> {\n  yield cb();\n  yield cb();\n}\nfunction make(): Generator<i32> {\n  const value: i32 = 5;\n  return gen((): i32 => value);\n}\nexport function main(): void {\n  for (const value of make()) { print(`${value}`); }\n}");
 }
 #[test]
 fn clean_generator_in_a_field() {
@@ -215,38 +228,31 @@ fn clean_generator_in_a_field() {
         "../../corpus/accept/a217-generator-in-a-class-field.ts"
     ))
     .expect("a clean generator can enter storage");
-    rejects(
-        include_str!("../../corpus/reject/r247-generator-parameter-stored.ts"),
-        "parameter `value`",
-    );
+    accepts_owned(
+        "function* gen(cb: () => i32): Generator<i32> { yield cb(); }\nfunction store(values: Generator<i32>[], value: Generator<i32>): void {\n  values.push(value);\n}\nexport function main(): void {\n  const value: i32 = 5;\n  const values: Generator<i32>[] = [];\n  store(values, gen((): i32 => value));\n}");
 }
 #[test]
 fn builtin_callbacks_stay_downward() {
     check("export function main(): void { const value: i32 = 5; const values: i32[] = [1, 2]; values.forEach((n): void => { print(`${n + value}`); }); const mapped = values.map((n): i32 => n + value); const filtered = values.filter((n): boolean => n < value); const total = values.reduce((sum, n): i32 => sum + n + value, 0); values.sort((a, b): i32 => a - b + value); }").expect("built-in callbacks do not escape");
-    rejects(
-        include_str!("../../corpus/reject/r248-capture-through-indirect-call.ts"),
-        "indirect call argument",
-    );
+    accepts_owned(
+        "function call(cb: () => i32): i32 { return cb(); }\nexport function main(): void {\n  const value: i32 = 5;\n  const indirect: (cb: () => i32) => i32 = call;\n  print(`${indirect((): i32 => value)}`);\n}");
 }
 
 #[test]
 fn nullable_parameter_inference() {
     let source = "function forward(cb: (() => i32) | null): (() => i32) | null { return cb; } export function main(): void { const value: i32 = 5; forward((): i32 => value); }";
-    rejects(source, "call `forward` parameter `cb`");
+    accepts_owned(source);
     check(&source.replace("(): i32 => value", "null")).expect("null is clean");
 }
 
 #[test]
-fn this_is_clean_but_a_captured_this_is_not() {
+fn this_and_a_const_receiver_copy_are_clean() {
     let source = "function named(): i32 { return 1; } class B { cb: () => i32 = named; self(): B { return this; } keep(out: B[]): void { out.push(this); } } export function main(): void { const b = new B(); b.self(); b.keep([]); }";
     check(source).expect("this has clean fields");
-    rejects(
-        &source.replace(
-            "self(): B { return this; }",
-            "self(): () => B { const owner = this; return (): B => owner; }",
-        ),
-        "return",
-    );
+    accepts_owned(&source.replace(
+        "self(): B { return this; }",
+        "self(): () => B { const owner = this; return (): B => owner; }",
+    ));
 }
 
 #[test]
@@ -258,10 +264,7 @@ fn held_await_result_is_clean() {
         "saved = await make();",
     ))
     .expect("direct await returns a clean value");
-    rejects(
-        &source.replace("return named;", "const n: i32 = 5; return (): i32 => n;"),
-        "return",
-    );
+    accepts_owned(&source.replace("return named;", "const n: i32 = 5; return (): i32 => n;"));
 }
 
 #[test]
@@ -269,19 +272,7 @@ fn defaults_join_parameter_facts() {
     let source = "function named(): i32 { return 1; } let saved: () => i32 = named; function f(a: () => i32, b: () => i32 = a): i32 { return a() + b(); } export function main(): void { const n: i32 = 5; f((): i32 => n); }";
     check(source).expect("a default passes a capture downward");
     let storing = source.replace("return a() + b();", "saved = b; return 0;");
-    let diagnostics = check(&storing).expect_err("the default reaches storage");
-    assert!(
-        diagnostics
-            .iter()
-            .any(|d| d.code == RuleCode::S009 && d.message.contains("call `f` parameter `a`")),
-        "{diagnostics:?}"
-    );
-    assert!(
-        diagnostics
-            .iter()
-            .all(|d| !d.message.contains("initializer")),
-        "{diagnostics:?}"
-    );
+    check(&storing).expect("the stored capture owns its environment");
     check(&storing.replace("(): i32 => n", "named")).expect("a clean caller passes");
 }
 
@@ -303,23 +294,21 @@ fn builtin_carrier_results_follow_the_receiver() {
                 .find(|f| f.name == "take")
                 .unwrap()
                 .params[0]
-                .escapes,
+                .escape_kind
+                != hir::EscapeKind::None,
             escapes
         );
     }
 }
 
 #[test]
-fn diagnostics_qualify_constructors_and_methods() {
+fn constructors_and_methods_accept_owned_arguments() {
     let source = "function named(): i32 { return 0; } class K { cb: () => i32 = named; constructor(cb: () => i32) { this.cb = cb; } set(cb: () => i32): void { this.cb = cb; } } export function main(): void { const n: i32 = 5; const k = new K(named); CALL; }";
-    for (call, name) in [
+    for (call, _name) in [
         ("new K((): i32 => n)", "K constructor"),
         ("k.set((): i32 => n)", "K.set"),
     ] {
-        rejects(
-            &source.replace("CALL", call),
-            &format!("call `{name}` parameter `cb`"),
-        );
+        accepts_owned(&source.replace("CALL", call));
         check(&source.replace("CALL", &call.replace("(): i32 => n", "named")))
             .expect("a clean argument passes");
     }
@@ -343,5 +332,18 @@ fn carrier_type_predicate_checks_nested_and_plain_types() {
         !module.carries_capture(&subscript_compiler::Type::Array(Box::new(
             subscript_compiler::Type::I32
         )))
+    );
+}
+
+#[test]
+fn owned_capture_c_callback_parameter() {
+    let source = "function install(cb: SubLogCallback): void { new SubCallbackInfo(cb, null, null); } export function main(): void { const value:i32=7; install((message, userdata, userparam):void=>{print(`${value}`);}); }";
+    let result = check_program(&[
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+        SourceFile::new("capture.ts", source),
+    ]);
+    assert!(
+        result.is_err(),
+        "a C callback parameter cannot receive a capture"
     );
 }

@@ -26,6 +26,7 @@ impl InterfaceMember {
             self.ret.clone()
         } else {
             Type::Func(Box::new(crate::types::FuncType {
+                callback_typedef: None,
                 params: self.params.clone(),
                 ret: self.ret.clone(),
             }))
@@ -511,6 +512,7 @@ impl<'p> Checker<'p> {
             return Some(Type::Error);
         }
         Some(Type::Func(Box::new(crate::types::FuncType {
+            callback_typedef: None,
             params: method
                 .params
                 .iter()

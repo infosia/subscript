@@ -185,18 +185,42 @@ impl<'a> Analysis<'a> {
 
     // Follow value flow backward, including aliases and captured carriers.
     fn boundary_values(&self) -> HashSet<usize> {
-        let mut work: Vec<_> = self
+        let work: Vec<_> = self
             .escapes
             .iter()
             .map(|(_, e)| *e)
             .chain(
                 self.calls
                     .iter()
-                    .filter(|(_, p, _)| self.escaping.contains(&(*p as *const hir::Param as usize)))
+                    .filter(|(_, p, _)| {
+                        self.escaping
+                            .contains_key(&(*p as *const hir::Param as usize))
+                    })
                     .map(|(_, _, e)| *e),
             )
             .filter(|e| self.fact(e))
             .collect();
+        self.trace_values(work, true)
+    }
+    pub(super) fn owned_values(&self) -> HashSet<usize> {
+        let work: Vec<_> = self
+            .escapes
+            .iter()
+            .filter(|(kind, _)| super::destination(kind) == hir::EscapeKind::Managed)
+            .map(|(_, e)| *e)
+            .chain(
+                self.calls
+                    .iter()
+                    .filter(|(_, p, _)| {
+                        self.escaping.get(&(*p as *const hir::Param as usize))
+                            == Some(&hir::EscapeKind::Managed)
+                    })
+                    .map(|(_, _, e)| *e),
+            )
+            .collect();
+        self.trace_values(work, false)
+    }
+    fn trace_values(&self, mut work: Vec<&'a Expr>, require_fact: bool) -> HashSet<usize> {
         let mut expressions = HashSet::new();
         if work.is_empty() {
             return expressions;
@@ -207,7 +231,7 @@ impl<'a> Analysis<'a> {
         }
         let mut locals = HashSet::new();
         while let Some(e) = work.pop() {
-            if !self.fact(e) || !expressions.insert(e as *const Expr as usize) {
+            if (require_fact && !self.fact(e)) || !expressions.insert(e as *const Expr as usize) {
                 continue;
             }
             let ids = match &e.kind {

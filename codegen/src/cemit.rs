@@ -1161,6 +1161,7 @@ mod tests {
         let reference = Type::Class(module.classes[2].id);
         let function = || {
             Type::Func(Box::new(subscript_compiler::FuncType {
+                callback_typedef: None,
                 params: vec![Type::I32],
                 ret: Type::Bool,
             }))

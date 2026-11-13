@@ -68,7 +68,7 @@ fn transfer(value: hir::Expr, transfers: bool) -> hir::Expr {
 
 fn parameter(name: &str, ty: Type, pos: &Pos) -> hir::Param {
     hir::Param {
-        escapes: false,
+        escape_kind: crate::hir::EscapeKind::None,
         default_can_raise: false,
         name: name.to_string(),
         ty,

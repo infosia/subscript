@@ -354,7 +354,7 @@ impl<'p> Checker<'p> {
                 fx,
             );
             hir_params.push(hir::Param {
-                escapes: false,
+                escape_kind: crate::hir::EscapeKind::None,
                 default_can_raise: false,
                 name: p.name.clone(),
                 ty: p.ty().clone(),

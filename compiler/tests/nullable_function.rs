@@ -6,6 +6,7 @@ use subscript_compiler::{check_program, RuleCode, SourceFile, Type};
 #[test]
 fn function_signature_and_layout_cover_both_forms() {
     let signature = FuncType {
+        callback_typedef: None,
         params: vec![Type::I32],
         ret: Type::I32,
     };
@@ -92,16 +93,13 @@ fn nullable_capture_follows_the_storage_boundary() {
         )]
     };
     check_program(&source("named")).expect("named function can be stored");
-    let diagnostics =
-        check_program(&source("(): i32 => offset")).expect_err("capture must not escape");
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == RuleCode::S009));
+    check_program(&source("(): i32 => offset")).expect("compiler.md §274 owns a nullable capture");
 }
 
 #[test]
 fn nullable_function_display_groups_the_function() {
     let function = Type::Func(Box::new(FuncType {
+        callback_typedef: None,
         params: vec![Type::I32],
         ret: Type::I32,
     }));
@@ -123,16 +121,9 @@ fn nullable_function_display_groups_the_function() {
 }
 
 #[test]
-fn nullable_function_capture_diagnostic_groups_the_function() {
-    let diagnostics = check_program(&[SourceFile::new(
+fn nullable_function_capture_can_escape() {
+    check_program(&[SourceFile::new(
         "test.ts",
         "function escape(f: ((x: i32) => i32) | null, choose: boolean): ((x: i32) => i32) | null { return choose ? f : null; } export function main(): void { const offset: i32 = 1; const f: ((x: i32) => i32) | null = (x: i32): i32 => x + offset; escape(offset > 0 ? f : null, true); }",
-    )]).expect_err("capture must not escape");
-    assert!(
-        diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == RuleCode::S009
-                && diagnostic.message.contains("((i32) => i32) | null")
-        }),
-        "{diagnostics:?}"
-    );
+    )]).expect("compiler.md §274 owns a nullable argument capture");
 }

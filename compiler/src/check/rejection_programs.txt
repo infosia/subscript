@@ -3597,37 +3597,15 @@ END FILE
 END PROGRAM
 PROGRAM	c-corpus-r241-parameter-returned			0
 FILE	E	target/s154/forms/c-corpus-r241-parameter-returned/corpus-r241-parameter-returned.ts
-// corpus: reject/r241-parameter-returned
-// purpose: Reject a function parameter escape (compiler.md §118).
-// exercises: function-parameter, escape
-// questions: Q10
-// tsc: accepts
-// expected-error: S009 at caller argument
-function forward(cb: () => i32): () => i32 {
-  return cb;
-}
-export function main(): void {
-  const value: i32 = 5;
-  const callback = forward((): i32 => value);
-  print(`${callback()}`);
-}
+function forward(cb: () => i32): () => i32 { return cb; }
+class C { n:i32=5; read():()=>i32 { return forward(():i32=>this.n); } }
+export function main():void {}
 END FILE
 END PROGRAM
 PROGRAM	c-corpus-r245-yield-returns-capture			0
 FILE	E	target/s154/forms/c-corpus-r245-yield-returns-capture/corpus-r245-yield-returns-capture.ts
-// corpus: reject/r245-yield-returns-capture
-// purpose: Reject a coroutine capture escape (compiler.md §118).
-// exercises: coroutine, escape
-// questions: Q10
-// tsc: accepts
-// expected-error: S009 at escape boundary
-function* gen(): Generator<() => i32> {
-  const value: i32 = 5;
-  yield (): i32 => value;
-}
-export function main(): void {
-  for (const callback of gen()) { print(`${callback()}`); }
-}
+class C { n:i32=5; read():()=>i32 { return ():i32=>this.n; } }
+export function main():void {}
 END FILE
 END PROGRAM
 PROGRAM	c-corpus-r249-unnarrowed-nullable-field-call	TS2721		0
@@ -9831,5 +9809,164 @@ END PROGRAM
 PROGRAM	alias-array-to-string-array			0
 FILE	E	main.ts
 type Mode = "a" | "b"; function f(ms: Mode[]): void { const xs: string[] = ms; }
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r502-a-capturing-lambda-is-not-a-c-callback			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r502-a-capturing-lambda-is-not-a-c-callback
+// purpose: A C callback cannot retain a capture.
+// exercises: lambda, C-callback
+// questions: compiler.md §274 rule 5, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 10
+
+export function main(): void {
+    const value: i32 = 7;
+    new SubCallbackInfo((message, userdata, userparam): void => { print(`${value}`); }, null, null);
+}
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r503-c-callback-through-field			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r503-c-callback-through-field
+// purpose: C callback storage cannot hold a capture.
+// exercises: C-callback, field
+// questions: compiler.md §274 rules 5 and 7, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 8
+class Holder { constructor(public cb: SubLogCallback) {} }
+export function main():void { const k:i32=7; const h = new Holder((m,u1,u2):void=>{print(`${k}`);}); new SubCallbackInfo(h.cb,null,null); }
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r504-c-callback-through-return			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r504-c-callback-through-return
+// purpose: C callback storage cannot hold a capture.
+// exercises: C-callback, return
+// questions: compiler.md §274 rules 5 and 7, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 7
+function make():SubLogCallback { const k:i32=7; return (m,u1,u2):void=>{print(`${k}`);}; }
+export function main():void { new SubCallbackInfo(make(),null,null); }
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r505-c-callback-through-indirect			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r505-c-callback-through-indirect
+// purpose: C callback storage cannot hold a capture.
+// exercises: C-callback, indirect
+// questions: compiler.md §274 rules 5 and 7, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 8
+function install(cb:SubLogCallback):void { new SubCallbackInfo(cb,null,null); }
+export function main():void { const k:i32=7; const g:(cb:SubLogCallback)=>void=install; g((m,u1,u2):void=>{print(`${k}`);}); }
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r506-c-callback-through-array			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r506-c-callback-through-array
+// purpose: C callback storage cannot hold a capture.
+// exercises: C-callback, array
+// questions: compiler.md §274 rules 5 and 7, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 8
+
+export function main():void { const k:i32=7; const arr:SubLogCallback[]=[]; arr.push((m,u1,u2):void=>{print(`${k}`);}); new SubCallbackInfo(arr[0],null,null); }
+END FILE
+END PROGRAM
+PROGRAM	c-corpus-r507-c-callback-through-method			0
+FILE	A	interop.generated.d.ts
+// @subscript-c-header include="interop.h"
+// @subscript-c-callback typedef="SubLogCallback"
+type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
+
+declare class SubCallbackInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+
+END FILE
+FILE	E	main.ts
+// corpus: reject/r507-c-callback-through-method
+// purpose: C callback storage cannot hold a capture.
+// exercises: C-callback, method
+// questions: compiler.md §274 rules 5 and 7, collisions.md C5
+// tsc: accepts
+// expected-error: S100 at line 8
+class Holder { constructor(public cb:SubLogCallback) {} install():void { new SubCallbackInfo(this.cb,null,null); } }
+export function main():void { const k:i32=7; new Holder((m,u1,u2):void=>{print(`${k}`);}).install(); }
 END FILE
 END PROGRAM

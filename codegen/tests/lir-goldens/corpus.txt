@@ -406,7 +406,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -424,7 +424,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -739,7 +739,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -1274,7 +1274,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -1292,7 +1292,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -1607,7 +1607,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -4632,7 +4632,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -4650,7 +4650,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -4965,7 +4965,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -36812,7 +36812,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -36830,7 +36830,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -37145,7 +37145,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -37701,8 +37701,8 @@ fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   value %0: Data(Nullable(Class(ClassId(1)))) name=None
   value %1: Data(Class(ClassId(7))) name=None
   value %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) name=None
-  value %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) name=None
-  value %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) name=None
+  value %3: Data(Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) name=None
+  value %4: Address(AddressType { pointee: Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) name=None
   value %5: Data(Nullable(Object)) name=None
   value %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) name=None
   value %7: Data(Nullable(Object)) name=None
@@ -37805,8 +37805,8 @@ fn f3 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %0: Data(Nullable(Class(ClassId(1)))) = Coerce(Null:Null) @ interop.generated.d.ts:157:34
     %1: Data(Class(ClassId(7))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(Class(ClassId(7)))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a347-host-operation-completes.ts", line: 16, col: 18 } }] @ a347-host-operation-completes.ts:16:18
     %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) = AllocateClass(ClassId(91))() @ a347-host-operation-completes.ts:17:33
-    %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) = MakeClosure(FunctionId(4))() @ a347-host-operation-completes.ts:17:52
-    %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(257)))(%2) @ a347-host-operation-completes.ts:17:52
+    %3: Data(Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) = MakeClosure(FunctionId(4))() @ a347-host-operation-completes.ts:17:52
+    %4: Address(AddressType { pointee: Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(257)))(%2) @ a347-host-operation-completes.ts:17:52
     StoreAddress(%4, %3) @ a347-host-operation-completes.ts:17:52
     %5: Data(Nullable(Object)) = Coerce(Null:Null) @ a347-host-operation-completes.ts:17:75
     %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) = AddressOfField(Class(FieldId(258)))(%2) @ a347-host-operation-completes.ts:17:75
@@ -41271,7 +41271,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -41289,7 +41289,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -41604,7 +41604,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -42078,8 +42078,8 @@ fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   value %0: Data(Nullable(Class(ClassId(1)))) name=None
   value %1: Data(Class(ClassId(7))) name=None
   value %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) name=None
-  value %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) name=None
-  value %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) name=None
+  value %3: Data(Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) name=None
+  value %4: Address(AddressType { pointee: Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) name=None
   value %5: Data(Nullable(Object)) name=None
   value %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) name=None
   value %7: Data(Nullable(Object)) name=None
@@ -42151,8 +42151,8 @@ fn f1 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
     %0: Data(Nullable(Class(ClassId(1)))) = Coerce(Null:Null) @ interop.generated.d.ts:157:34
     %1: Data(Class(ClassId(7))) = Call(CallTarget { kind: Foreign(ForeignFunctionId(1)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(Class(ClassId(7)))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a354-completion-string-bytes.ts", line: 10, col: 18 } }] @ a354-completion-string-bytes.ts:10:18
     %2: Address(AddressType { pointee: Class(ClassId(91)), array_base: None }) = AllocateClass(ClassId(91))() @ a354-completion-string-bytes.ts:11:33
-    %3: Data(Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) = MakeClosure(FunctionId(2))() @ a354-completion-string-bytes.ts:11:52
-    %4: Address(AddressType { pointee: Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(257)))(%2) @ a354-completion-string-bytes.ts:11:52
+    %3: Data(Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void })) = MakeClosure(FunctionId(2))() @ a354-completion-string-bytes.ts:11:52
+    %4: Address(AddressType { pointee: Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }), array_base: None }) = AddressOfField(Class(FieldId(257)))(%2) @ a354-completion-string-bytes.ts:11:52
     StoreAddress(%4, %3) @ a354-completion-string-bytes.ts:11:52
     %5: Data(Nullable(Object)) = Coerce(Null:Null) @ a354-completion-string-bytes.ts:11:75
     %6: Address(AddressType { pointee: Nullable(Object), array_base: None }) = AddressOfField(Class(FieldId(258)))(%2) @ a354-completion-string-bytes.ts:11:75
@@ -68631,6 +68631,802 @@ fn f2 "main" kind=Free exported=true generator=false async=true -> Void entry=b0
   b67(%187: Data(Generator(I32)), %188: Data(I32), %189: Data(I32)) Some("async.resume"):
     %175: Data(I32) = Binary(Add)(%188, Integer(1):I32) @ a445-the-suspension-live-in-analysis-reaches-a-fixed-point.ts:39:57
     -> Branch(BlockTarget { block: BlockId(62), arguments: [Value(ValueId(175)), Value(ValueId(189)), Value(ValueId(187))], ownership: [false, false, false] })
+===== a447-retired-capture-escape-shapes =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "w1_Holder" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:15:7
+  field d3 "callback": Nullable(Func(FuncType { params: [], ret: I32 })) defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:16:3
+class c2 "<callback environment 24>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:8:10
+  field d4 "local": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:8:10
+class c3 "<callback environment 25>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:24:20
+  field d5 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:24:20
+class c4 "<callback environment 26>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:31:31
+  field d6 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:31:31
+class c5 "<callback environment 28>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:37:28
+  field d7 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:37:28
+class c6 "<callback environment 29>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:46:17
+  field d8 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:46:17
+class c7 "<callback environment 30>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:57:25
+  field d9 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:57:25
+class c8 "<callback environment 31>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:63:9
+  field d10 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:63:9
+class c9 "<callback environment 32>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:74:16
+  field d11 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:74:16
+class c10 "<callback environment 33>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:86:27
+  field d12 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:86:27
+class c11 "<callback environment 34>" value=false descriptor=false boundary=false align=None @ a447-retired-capture-escape-shapes.ts:92:21
+  field d13 "value": I32 defaulted=false absence=false foreign=None @ a447-retired-capture-escape-shapes.ts:92:21
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "w0_makeAdder" kind=Free exported=false generator=false async=false -> Func(FuncType { params: [I32], ret: I32 }) entry=b0 @ a447-retired-capture-escape-shapes.ts:6:10
+  param %0 "offset": Data(I32) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:6:23
+  value %0: Data(I32) name=Some("offset")
+  value %1: Data(Class(ClassId(2))) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  b0 Some("entry"):
+    %1: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 8, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:8:10
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%1) @ a447-retired-capture-escape-shapes.ts:8:10
+    StoreAddress(%2, %0) @ a447-retired-capture-escape-shapes.ts:8:10
+    %3: Data(Func(FuncType { params: [I32], ret: I32 })) = MakeClosure(FunctionId(24))(%1) @ a447-retired-capture-escape-shapes.ts:8:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 8, col: 3 } }
+fn f2 "w0_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:11:10
+  can-raise
+  value %0: Data(Func(FuncType { params: [I32], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [I32], ret: I32 })) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32)], return_type: Some(Data(Func(FuncType { params: [I32], ret: I32 }))) })(Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 12, col: 40 } }] @ a447-retired-capture-escape-shapes.ts:12:40
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%0, Integer(6):I32) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 13, col: 12 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 13, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:13:12
+    %2: Data(Str) = Template([Operand { index: 0, format: I32 }])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 13, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:13:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a447-retired-capture-escape-shapes.ts:13:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 11, col: 10 } }
+fn f3 "w1_store" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:18:10
+  param %0 "holder": Data(Class(ClassId(1))) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:18:19
+  param %1 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:18:38
+  value %0: Data(Class(ClassId(1))) name=Some("holder")
+  value %1: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  value %2: Data(Nullable(Func(FuncType { params: [], ret: I32 }))) name=None
+  value %3: Address(AddressType { pointee: Nullable(Func(FuncType { params: [], ret: I32 })), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Data(Nullable(Func(FuncType { params: [], ret: I32 }))) = Coerce(%1) @ a447-retired-capture-escape-shapes.ts:19:10
+    %3: Address(AddressType { pointee: Nullable(Func(FuncType { params: [], ret: I32 })), array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 19, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:19:10
+    StoreAddress(%3, %2) @ a447-retired-capture-escape-shapes.ts:19:10
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 18, col: 10 } }
+fn f4 "w1_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:21:10
+  value %0: Data(Class(ClassId(1))) name=None
+  value %1: Address(AddressType { pointee: Nullable(Func(FuncType { params: [], ret: I32 })), array_base: None }) name=None
+  value %2: Data(Class(ClassId(3))) name=None
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %4: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 22, col: 18 } }] @ a447-retired-capture-escape-shapes.ts:22:18
+    %1: Address(AddressType { pointee: Nullable(Func(FuncType { params: [], ret: I32 })), array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) @ a447-retired-capture-escape-shapes.ts:16:3
+    StoreAddress(%1, Null:Nullable(Func(FuncType { params: [], ret: I32 }))) @ a447-retired-capture-escape-shapes.ts:16:3
+    %2: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 24, col: 20 } }] @ a447-retired-capture-escape-shapes.ts:24:20
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(5)))(%2) @ a447-retired-capture-escape-shapes.ts:24:20
+    StoreAddress(%3, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:24:20
+    %4: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(25))(%2) @ a447-retired-capture-escape-shapes.ts:24:20
+    Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(Class(ClassId(1))), Data(Func(FuncType { params: [], ret: I32 }))], return_type: None })(%0, %4) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 24, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:24:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 21, col: 10 } }
+fn f5 "w2_forward" kind=Free exported=false generator=false async=false -> Func(FuncType { params: [], ret: I32 }) entry=b0 @ a447-retired-capture-escape-shapes.ts:26:10
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:26:21
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 27, col: 3 } }
+fn f6 "w2_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:29:10
+  can-raise
+  value %0: Data(Class(ClassId(4))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(4))) = AllocateClass(ClassId(4))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 31, col: 31 } }] @ a447-retired-capture-escape-shapes.ts:31:31
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%0) @ a447-retired-capture-escape-shapes.ts:31:31
+    StoreAddress(%1, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:31:31
+    %2: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(26))(%0) @ a447-retired-capture-escape-shapes.ts:31:31
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(Func(FuncType { params: [], ret: I32 }))) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 31, col: 20 } }] @ a447-retired-capture-escape-shapes.ts:31:20
+    %4: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 32, col: 12 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 32, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:32:12
+    %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 32, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:32:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a447-retired-capture-escape-shapes.ts:32:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 29, col: 10 } }
+fn f7 "w3_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:34:10
+  can-raise
+  value %0: Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: Func(FuncType { params: [], ret: I32 }) })) name=None
+  value %1: Data(Class(ClassId(5))) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: Func(FuncType { params: [], ret: I32 }) })) = MakeClosure(FunctionId(27))() @ a447-retired-capture-escape-shapes.ts:35:19
+    %1: Data(Class(ClassId(5))) = AllocateClass(ClassId(5))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 37, col: 28 } }] @ a447-retired-capture-escape-shapes.ts:37:28
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(7)))(%1) @ a447-retired-capture-escape-shapes.ts:37:28
+    StoreAddress(%2, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:37:28
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(28))(%1) @ a447-retired-capture-escape-shapes.ts:37:28
+    %4: Data(Func(FuncType { params: [], ret: I32 })) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: Func(FuncType { params: [], ret: I32 }) })), Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(Func(FuncType { params: [], ret: I32 }))) })(%0, %3) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 37, col: 20 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 37, col: 20 } }] @ a447-retired-capture-escape-shapes.ts:37:20
+    %5: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 38, col: 12 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 38, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:38:12
+    %6: Data(Str) = Template([Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 38, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:38:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a447-retired-capture-escape-shapes.ts:38:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 34, col: 10 } }
+fn f8 "w4_gen" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a447-retired-capture-escape-shapes.ts:40:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 40, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(0)): []
+  cleanup Some(BlockId(3)): []
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:40:18
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  value %1: Data(I32) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %10: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 41, col: 9 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 41, col: 9 } }] @ a447-retired-capture-escape-shapes.ts:41:9
+    -> Suspend { kind: Yield(Some(ValueId(1))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 41, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [] }
+  b1(%2: Data(Func(FuncType { params: [], ret: I32 }))) Some("yield.resume"):
+    %3: Data(Bool) = GeneratorIsClosing() @ a447-retired-capture-escape-shapes.ts:41:3
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(2), arguments: [Value(ValueId(2))], ownership: [false] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(2))], ownership: [false] } }
+  b2(%4: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 41, col: 3 } }
+  b3(%5: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.next"):
+    %6: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%5) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 42, col: 9 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 42, col: 9 } }] @ a447-retired-capture-escape-shapes.ts:42:9
+    -> Suspend { kind: Yield(Some(ValueId(6))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 42, col: 3 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(5))], ownership: [false], invalidates: [], traps: [] }
+  b4(%7: Data(Func(FuncType { params: [], ret: I32 }))) Some("yield.resume"):
+    %8: Data(Bool) = GeneratorIsClosing() @ a447-retired-capture-escape-shapes.ts:42:3
+    -> ConditionalBranch { condition: Value(ValueId(8)), then_target: BlockTarget { block: BlockId(5), arguments: [Value(ValueId(7))], ownership: [false] }, else_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(7))], ownership: [false] } }
+  b5(%9: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 42, col: 3 } }
+  b6(%10: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.next"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 40, col: 11 } }
+fn f9 "w4_make" kind=Free exported=false generator=false async=false -> Generator(I32) entry=b0 @ a447-retired-capture-escape-shapes.ts:44:10
+  value %0: Data(Class(ClassId(6))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(Generator(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(6))) = AllocateClass(ClassId(6))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 46, col: 17 } }] @ a447-retired-capture-escape-shapes.ts:46:17
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a447-retired-capture-escape-shapes.ts:46:17
+    StoreAddress(%1, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:46:17
+    %2: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(29))(%0) @ a447-retired-capture-escape-shapes.ts:46:17
+    %3: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(Generator(I32))) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 46, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:46:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 46, col: 3 } }
+fn f10 "w4_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:48:10
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [], return_type: Some(Data(Generator(I32))) })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 23 } }] @ a447-retired-capture-escape-shapes.ts:49:23
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [], ownership: [] })
+  b1 Some("generator-for-of.next"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 23 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:49:3
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a447-retired-capture-escape-shapes.ts:49:3
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b2 Some("generator-for-of.body"):
+    %3: Data(I32) = LoadField(IterValue)(%1) @ a447-retired-capture-escape-shapes.ts:49:3
+    %4: Data(Str) = Template([Operand { index: 0, format: I32 }])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 45 } }] @ a447-retired-capture-escape-shapes.ts:49:42
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a447-retired-capture-escape-shapes.ts:49:36
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [], ownership: [] })
+  b3 Some("generator-for-of.exhausted"):
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [], ownership: [] })
+  b4 Some("generator-for-of.consumer-exit"):
+    -> Unreachable { pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 48, col: 10 } }
+  b5 Some("generator-for-of.exit"):
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 49, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:49:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 48, col: 10 } }
+fn f11 "w5_run" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:51:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 51, col: 16 } }]
+  can-raise
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:51:23
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  value %1: Data(I32) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  b0 Some("entry"):
+    -> Suspend { kind: Async, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 52, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [] }
+  b1(%2: Data(Func(FuncType { params: [], ret: I32 }))) Some("async.resume"):
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 53, col: 10 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 53, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:53:10
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 53, col: 3 } }
+fn f12 "w5_main" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:55:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 55, col: 16 } }]
+  can-raise
+  value %0: Data(Class(ClassId(7))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(7))) = AllocateClass(ClassId(7))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 57, col: 25 } }] @ a447-retired-capture-escape-shapes.ts:57:25
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(9)))(%0) @ a447-retired-capture-escape-shapes.ts:57:25
+    StoreAddress(%1, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:57:25
+    %2: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(30))(%0) @ a447-retired-capture-escape-shapes.ts:57:25
+    %3: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 57, col: 18 } }] @ a447-retired-capture-escape-shapes.ts:57:18
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: false }, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 }, successor: BlockId(1), resume_value: Some(ValueId(4)), arguments: [Value(ValueId(3))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }] }
+  b1(%4: Data(I32), %6: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }] @ a447-retired-capture-escape-shapes.ts:58:23
+    %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 59, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:59:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a447-retired-capture-escape-shapes.ts:59:3
+    AsyncHandleRelease(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 55, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 55, col: 16 } }] @ a447-retired-capture-escape-shapes.ts:55:16
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 55, col: 16 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a447-retired-capture-escape-shapes.ts:58:23
+    AsyncHandleRelease(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }] @ a447-retired-capture-escape-shapes.ts:58:23
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }] @ a447-retired-capture-escape-shapes.ts:58:23
+    -> Unreachable { pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 58, col: 23 } }
+fn f13 "w6_gen" kind=Free exported=false generator=true async=false -> Generator(Func(FuncType { params: [], ret: I32 })) entry=b0 @ a447-retired-capture-escape-shapes.ts:61:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 61, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(0)): []
+  value %0: Data(Class(ClassId(8))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(8))) = AllocateClass(ClassId(8))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 63, col: 9 } }] @ a447-retired-capture-escape-shapes.ts:63:9
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(10)))(%0) @ a447-retired-capture-escape-shapes.ts:63:9
+    StoreAddress(%1, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:63:9
+    %2: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(31))(%0) @ a447-retired-capture-escape-shapes.ts:63:9
+    -> Suspend { kind: Yield(Some(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 63, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    %3: Data(Bool) = GeneratorIsClosing() @ a447-retired-capture-escape-shapes.ts:63:3
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b2 Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 63, col: 3 } }
+  b3 Some("generator.next"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 61, col: 11 } }
+fn f14 "w6_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:65:10
+  can-raise
+  local l0 "[[finally.exception.0]]": Data(Class(ClassId(0))) mutable=false @ a447-retired-capture-escape-shapes.ts:66:3
+  local l1 "[[finally.exception.1]]": Data(Str) mutable=false @ a447-retired-capture-escape-shapes.ts:66:3
+  local l2 "[[finally.exception.2]]": Data(U32) mutable=false @ a447-retired-capture-escape-shapes.ts:66:3
+  value %0: Data(Generator(Func(FuncType { params: [], ret: I32 }))) name=None
+  value %1: Data(IterResult(Func(FuncType { params: [], ret: I32 }))) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(Class(ClassId(0))) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(U32) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(U32) name=None
+  value %11: Data(Class(ClassId(0))) name=None
+  value %12: Data(Class(ClassId(0))) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(U32) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(Func(FuncType { params: [], ret: I32 }))) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [], return_type: Some(Data(Generator(Func(FuncType { params: [], ret: I32 })))) })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 26 } }] @ a447-retired-capture-escape-shapes.ts:66:26
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [], ownership: [] })
+  b1 Some("generator-for-of.next"):
+    %1: Data(IterResult(Func(FuncType { params: [], ret: I32 }))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(Func(FuncType { params: [], ret: I32 })))], return_type: Some(Data(IterResult(Func(FuncType { params: [], ret: I32 })))) })(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 26 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a447-retired-capture-escape-shapes.ts:66:3
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b2 Some("generator-for-of.body"):
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = LoadField(IterValue)(%1) traps=[Trap { kind: GeneratorDoneValue, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    %4: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 47 } }, Trap { kind: Raise(Handler(BlockId(6))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 47 } }] @ a447-retired-capture-escape-shapes.ts:66:47
+    %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 47 } }] @ a447-retired-capture-escape-shapes.ts:66:44
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a447-retired-capture-escape-shapes.ts:66:38
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [], ownership: [] })
+  b3 Some("generator-for-of.exhausted"):
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [], ownership: [] })
+  b4 Some("generator-for-of.consumer-exit"):
+    -> Unreachable { pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 65, col: 10 } }
+  b5 Some("generator-for-of.exit"):
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 65, col: 10 } }
+  b6 Some("catch.landing"):
+    %9: Data(Str) = ExceptionMessage() @ a447-retired-capture-escape-shapes.ts:66:3
+    %10: Data(U32) = ExceptionPosition() @ a447-retired-capture-escape-shapes.ts:66:3
+    %11: Data(Class(ClassId(0))) = CatchEntry() @ a447-retired-capture-escape-shapes.ts:66:3
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(11)), Value(ValueId(9)), Value(ValueId(10))], ownership: [false, false, false] })
+  b7(%6: Data(Class(ClassId(0))), %7: Data(Str), %8: Data(U32)) Some("finally.exception"):
+    StoreLocal(LocalId(0))(%6) @ a447-retired-capture-escape-shapes.ts:66:3
+    StoreLocal(LocalId(1))(%7) @ a447-retired-capture-escape-shapes.ts:66:3
+    StoreLocal(LocalId(2))(%8) @ a447-retired-capture-escape-shapes.ts:66:3
+    GeneratorClose(%0) @ a447-retired-capture-escape-shapes.ts:66:3
+    %12: Data(Class(ClassId(0))) = LoadLocal(LocalId(0))() @ a447-retired-capture-escape-shapes.ts:66:3
+    %13: Data(Str) = LoadLocal(LocalId(1))() @ a447-retired-capture-escape-shapes.ts:66:3
+    %14: Data(U32) = LoadLocal(LocalId(2))() @ a447-retired-capture-escape-shapes.ts:66:3
+    ExceptionRestore(%12, %13, %14) traps=[Trap { kind: Raise(Handler(BlockId(8))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    -> Unreachable { pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }
+  b8 Some("release.landing"):
+    ExceptionPark() @ a447-retired-capture-escape-shapes.ts:66:3
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:66:3
+    -> Unreachable { pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 66, col: 3 } }
+fn f15 "w7_named" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:68:10
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(0) })), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 68, col: 28 } }
+fn f16 "w7_make" kind=Free exported=false generator=false async=false -> Func(FuncType { params: [], ret: I32 }) entry=b0 @ a447-retired-capture-escape-shapes.ts:69:10
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Bool) name=None
+  value %8: Data(Bool) name=None
+  value %9: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Class(ClassId(9))) name=None
+  value %12: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %13: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = FunctionRef(FunctionId(15))() @ a447-retired-capture-escape-shapes.ts:71:29
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Constant(Constant { ty: I32, kind: Integer(0) })], ownership: [false, false] })
+  b1(%1: Data(Func(FuncType { params: [], ret: I32 })), %2: Data(I32)) Some("for.cond"):
+    %7: Data(Bool) = Binary(Lt)(%2, Integer(2):I32) @ a447-retired-capture-escape-shapes.ts:72:24
+    -> ConditionalBranch { condition: Value(ValueId(7)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false] } }
+  b2 Some("for.body"):
+    %8: Data(Bool) = Binary(Eq)(%2, Integer(1):I32) @ a447-retired-capture-escape-shapes.ts:73:9
+    -> ConditionalBranch { condition: Value(ValueId(8)), then_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] } }
+  b3(%3: Data(Func(FuncType { params: [], ret: I32 })), %4: Data(I32)) Some("for.step"):
+    %14: Data(I32) = Binary(Add)(%4, Integer(1):I32) @ a447-retired-capture-escape-shapes.ts:72:31
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(3)), Value(ValueId(14))], ownership: [false, false] })
+  b4(%5: Data(Func(FuncType { params: [], ret: I32 })), %6: Data(I32)) Some("for.exit"):
+    %15: Data(Func(FuncType { params: [], ret: I32 })) = FunctionRef(FunctionId(15))() @ a447-retired-capture-escape-shapes.ts:76:10
+    -> Return { value: Some(Value(ValueId(15))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 76, col: 3 } }
+  b5 Some("if.then"):
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 73, col: 20 } }
+  b6 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(1)), Value(ValueId(2))], ownership: [false, false] })
+  b7(%9: Data(Func(FuncType { params: [], ret: I32 })), %10: Data(I32)) Some("if.join"):
+    %11: Data(Class(ClassId(9))) = AllocateClass(ClassId(9))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 74, col: 16 } }] @ a447-retired-capture-escape-shapes.ts:74:16
+    %12: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(11)))(%11) @ a447-retired-capture-escape-shapes.ts:74:16
+    StoreAddress(%12, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:74:16
+    %13: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(32))(%11) @ a447-retired-capture-escape-shapes.ts:74:16
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(10))], ownership: [false, false] })
+fn f17 "w7_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:78:10
+  can-raise
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %1: Data(I32) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [], ret: I32 })) = Call(CallTarget { kind: Function(FunctionId(16)), parameter_types: [], return_type: Some(Data(Func(FuncType { params: [], ret: I32 }))) })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 78, col: 37 } }] @ a447-retired-capture-escape-shapes.ts:78:37
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 78, col: 37 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 78, col: 37 } }] @ a447-retired-capture-escape-shapes.ts:78:37
+    %2: Data(Str) = Template([Operand { index: 0, format: I32 }])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 78, col: 37 } }] @ a447-retired-capture-escape-shapes.ts:78:34
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a447-retired-capture-escape-shapes.ts:78:28
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 78, col: 10 } }
+fn f18 "w8_gen" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a447-retired-capture-escape-shapes.ts:79:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(0)): []
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:79:18
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  value %1: Data(I32) name=None
+  value %2: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %5: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 57 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 57 } }] @ a447-retired-capture-escape-shapes.ts:79:57
+    -> Suspend { kind: Yield(Some(ValueId(1))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 51 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [] }
+  b1(%2: Data(Func(FuncType { params: [], ret: I32 }))) Some("yield.resume"):
+    %3: Data(Bool) = GeneratorIsClosing() @ a447-retired-capture-escape-shapes.ts:79:51
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(2), arguments: [Value(ValueId(2))], ownership: [false] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(2))], ownership: [false] } }
+  b2(%4: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 51 } }
+  b3(%5: Data(Func(FuncType { params: [], ret: I32 }))) Some("generator.next"):
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 79, col: 11 } }
+fn f19 "w8_store" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:80:10
+  param %0 "values": Data(Array(Generator(I32))) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:80:19
+  param %1 "value": Data(Generator(I32)) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:80:45
+  value %0: Data(Array(Generator(I32))) name=Some("values")
+  value %1: Data(Generator(I32)) name=Some("value")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    AsyncHandleArrayRetain(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 81, col: 15 } }] @ a447-retired-capture-escape-shapes.ts:81:15
+    %2: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Generator(I32))), Data(Generator(I32))], return_type: Some(Data(I32)) })(%0, %1) invalidates=[ValueId(0)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 81, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 81, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:81:3
+    AsyncHandleArrayRelease(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 80, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 80, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:80:10
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 80, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 80, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:80:10
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 80, col: 10 } }
+fn f20 "w8_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:83:10
+  value %0: Data(Array(Generator(I32))) name=None
+  value %1: Data(Class(ClassId(10))) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(Generator(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Array(Generator(I32))) = ArrayLiteral() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 85, col: 36 } }] @ a447-retired-capture-escape-shapes.ts:85:36
+    %1: Data(Class(ClassId(10))) = AllocateClass(ClassId(10))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 86, col: 27 } }] @ a447-retired-capture-escape-shapes.ts:86:27
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(12)))(%1) @ a447-retired-capture-escape-shapes.ts:86:27
+    StoreAddress(%2, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:86:27
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(33))(%1) @ a447-retired-capture-escape-shapes.ts:86:27
+    %4: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(18)), parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(Generator(I32))) })(%3) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 86, col: 20 } }] @ a447-retired-capture-escape-shapes.ts:86:20
+    AsyncHandleArrayRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 86, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:86:12
+    Call(CallTarget { kind: Function(FunctionId(19)), parameter_types: [Data(Array(Generator(I32))), Data(Generator(I32))], return_type: None })(%0, %4) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 86, col: 3 } }] @ a447-retired-capture-escape-shapes.ts:86:3
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 83, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 83, col: 10 } }] @ a447-retired-capture-escape-shapes.ts:83:10
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 83, col: 10 } }
+fn f21 "w9_call" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:88:10
+  can-raise
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:88:18
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 88, col: 47 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 88, col: 47 } }] @ a447-retired-capture-escape-shapes.ts:88:47
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 88, col: 40 } }
+fn f22 "w9_main" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:89:10
+  can-raise
+  value %0: Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: I32 })) name=None
+  value %1: Data(Class(ClassId(11))) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %3: Data(Func(FuncType { params: [], ret: I32 })) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: I32 })) = FunctionRef(FunctionId(21))() @ a447-retired-capture-escape-shapes.ts:91:44
+    %1: Data(Class(ClassId(11))) = AllocateClass(ClassId(11))() traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 92, col: 21 } }] @ a447-retired-capture-escape-shapes.ts:92:21
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(13)))(%1) @ a447-retired-capture-escape-shapes.ts:92:21
+    StoreAddress(%2, Integer(5):I32) @ a447-retired-capture-escape-shapes.ts:92:21
+    %3: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(34))(%1) @ a447-retired-capture-escape-shapes.ts:92:21
+    %4: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Func(FuncType { params: [], ret: I32 })], ret: I32 })), Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0, %3) traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 92, col: 12 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 92, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:92:12
+    %5: Data(Str) = Template([Operand { index: 0, format: I32 }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 92, col: 12 } }] @ a447-retired-capture-escape-shapes.ts:92:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a447-retired-capture-escape-shapes.ts:92:3
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 89, col: 10 } }
+fn f23 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a447-retired-capture-escape-shapes.ts:94:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 94, col: 23 } }]
+  can-raise
+  b0 Some("entry"):
+    Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 95, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 95, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:95:1
+    Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 96, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:96:1
+    Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 97, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 97, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:97:1
+    Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 98, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 98, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:98:1
+    Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 99, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:99:1
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(12)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 100, col: 1 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 100, col: 1 } }] }
+  b1 Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 100, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:100:1
+    Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 101, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 101, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:101:1
+    Call(CallTarget { kind: Function(FunctionId(17)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 102, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 102, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:102:1
+    Call(CallTarget { kind: Function(FunctionId(20)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 103, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:103:1
+    Call(CallTarget { kind: Function(FunctionId(22)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 104, col: 1 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 104, col: 1 } }] @ a447-retired-capture-escape-shapes.ts:104:1
+    -> Return { value: None, pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 94, col: 23 } }
+fn f24 "<lambda a447-retired-capture-escape-shapes.ts:8:10>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:8:10
+  param %0 "<owned environment>": Data(Class(ClassId(2))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:8:10
+  param %3 "value": Data(I32) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:8:10
+  value %0: Data(Class(ClassId(2))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=Some("value")
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(4)))(%0) @ a447-retired-capture-escape-shapes.ts:8:10
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:8:10
+    %4: Data(I32) = Binary(Add)(%3, %2) @ a447-retired-capture-escape-shapes.ts:8:31
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 8, col: 31 } }
+fn f25 "<lambda a447-retired-capture-escape-shapes.ts:24:20>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:24:20
+  param %0 "<owned environment>": Data(Class(ClassId(3))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:24:20
+  value %0: Data(Class(ClassId(3))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(5)))(%0) @ a447-retired-capture-escape-shapes.ts:24:20
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:24:20
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 24, col: 31 } }
+fn f26 "<lambda a447-retired-capture-escape-shapes.ts:31:31>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:31:31
+  param %0 "<owned environment>": Data(Class(ClassId(4))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:31:31
+  value %0: Data(Class(ClassId(4))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(6)))(%0) @ a447-retired-capture-escape-shapes.ts:31:31
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:31:31
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 31, col: 42 } }
+fn f27 "<lambda a447-retired-capture-escape-shapes.ts:35:19>" kind=Lambda exported=false generator=false async=false -> Func(FuncType { params: [], ret: I32 }) entry=b0 @ a447-retired-capture-escape-shapes.ts:35:19
+  param %0 "cb": Data(Func(FuncType { params: [], ret: I32 })) kind=Explicit storage=None @ a447-retired-capture-escape-shapes.ts:35:19
+  value %0: Data(Func(FuncType { params: [], ret: I32 })) name=Some("cb")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 35, col: 51 } }
+fn f28 "<lambda a447-retired-capture-escape-shapes.ts:37:28>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:37:28
+  param %0 "<owned environment>": Data(Class(ClassId(5))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:37:28
+  value %0: Data(Class(ClassId(5))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(7)))(%0) @ a447-retired-capture-escape-shapes.ts:37:28
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:37:28
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 37, col: 39 } }
+fn f29 "<lambda a447-retired-capture-escape-shapes.ts:46:17>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:46:17
+  param %0 "<owned environment>": Data(Class(ClassId(6))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:46:17
+  value %0: Data(Class(ClassId(6))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a447-retired-capture-escape-shapes.ts:46:17
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:46:17
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 46, col: 28 } }
+fn f30 "<lambda a447-retired-capture-escape-shapes.ts:57:25>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:57:25
+  param %0 "<owned environment>": Data(Class(ClassId(7))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:57:25
+  value %0: Data(Class(ClassId(7))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(9)))(%0) @ a447-retired-capture-escape-shapes.ts:57:25
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:57:25
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 57, col: 36 } }
+fn f31 "<lambda a447-retired-capture-escape-shapes.ts:63:9>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:63:9
+  param %0 "<owned environment>": Data(Class(ClassId(8))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:63:9
+  value %0: Data(Class(ClassId(8))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(10)))(%0) @ a447-retired-capture-escape-shapes.ts:63:9
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:63:9
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 63, col: 20 } }
+fn f32 "<lambda a447-retired-capture-escape-shapes.ts:74:16>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:74:16
+  param %0 "<owned environment>": Data(Class(ClassId(9))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:74:16
+  value %0: Data(Class(ClassId(9))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(11)))(%0) @ a447-retired-capture-escape-shapes.ts:74:16
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:74:16
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 74, col: 27 } }
+fn f33 "<lambda a447-retired-capture-escape-shapes.ts:86:27>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:86:27
+  param %0 "<owned environment>": Data(Class(ClassId(10))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:86:27
+  value %0: Data(Class(ClassId(10))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(12)))(%0) @ a447-retired-capture-escape-shapes.ts:86:27
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:86:27
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 86, col: 38 } }
+fn f34 "<lambda a447-retired-capture-escape-shapes.ts:92:21>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a447-retired-capture-escape-shapes.ts:92:21
+  param %0 "<owned environment>": Data(Class(ClassId(11))) kind=OwnedEnvironment storage=None @ a447-retired-capture-escape-shapes.ts:92:21
+  value %0: Data(Class(ClassId(11))) name=Some("<owned environment>")
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(13)))(%0) @ a447-retired-capture-escape-shapes.ts:92:21
+    %2: Data(I32) = LoadAddress(%1) @ a447-retired-capture-escape-shapes.ts:92:21
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a447-retired-capture-escape-shapes.ts", line: 92, col: 32 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
@@ -69567,7 +70363,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -69585,7 +70381,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -69900,7 +70696,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"

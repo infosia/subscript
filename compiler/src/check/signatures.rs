@@ -19,10 +19,14 @@ impl<'p> Checker<'p> {
                 {
                     continue;
                 }
-                let ty = self.resolve_type(&t.type_ann);
+                let mut ty = self.resolve_type(&t.type_ann);
                 let name = t.id.sym.to_string();
                 let pos = self.pos(t.id.span);
                 self.reject_mirror_nullable_view(file, &name, &ty, pos);
+                if let Type::Func(function) = &mut ty {
+                    function.callback_typedef = Some(name.clone());
+                }
+
                 self.type_aliases.insert(name, ty);
             }
         }
@@ -105,7 +109,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         params.push(hir::Param {
-                            escapes: false,
+                            escape_kind: crate::hir::EscapeKind::None,
                             default_can_raise: false,
                             name: parameter.name.clone(),
                             ty: parameter.ty().clone(),

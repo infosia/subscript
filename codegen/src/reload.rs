@@ -141,7 +141,7 @@ fn signature_text(f: &hir::Function) -> String {
     let params: Vec<String> = f
         .params
         .iter()
-        .map(|p| format!("{:?}:escapes={}", p.ty, p.escapes))
+        .map(|p| format!("{:?}:escape_kind={:?}", p.ty, p.escape_kind))
         .collect();
     format!(
         "{}({}) -> {:?}{}{}{}",
@@ -311,7 +311,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
                         facts.push(
                             params
                                 .iter()
-                                .map(|p| p.escapes.to_string())
+                                .map(|p| format!("{:?}", p.escape_kind))
                                 .collect::<Vec<_>>()
                                 .join(","),
                         );

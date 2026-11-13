@@ -135,19 +135,15 @@ fn uncounted_bindings_keep_the_same_outer_assignment() {
 }
 
 #[test]
-fn a_rejected_escape_boundary_owns_the_diagnostic() {
+fn an_owned_escape_retains_the_counted_capture() {
     let source = format!("{PRELUDE} function escape(): () => Promise<i32> {{ let f: () => Promise<i32> = work; {{ const h = work(); return (f = () => h); }} }}");
-    let errors = check_program(&[SourceFile::new("escape.ts", source)]).unwrap_err();
-    assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(errors[0].divergence, Some(Divergence::EscapingCapture));
+    accepted(&source);
     accepted(&format!("{PRELUDE} function escape(): () => Promise<i32> {{ let f: () => Promise<i32> = work; {{ return (f = work); }} }}"));
 
     for value in ["f", "alias", "() => alias()"] {
         let alias = if value == "f" { "" } else { "const alias = f;" };
         let source = format!("{PRELUDE} function escape(): () => Promise<i32> {{ let f: () => Promise<i32> = work; {{ const h = work(); const g = () => h; f = g; }} {alias} return {value}; }}");
-        let errors = check_program(&[SourceFile::new("alias.ts", source)]).unwrap_err();
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        assert_eq!(errors[0].divergence, Some(Divergence::EscapingCapture));
+        accepted(&source);
         accepted(&format!("{PRELUDE} function escape(): () => Promise<i32> {{ let f: () => Promise<i32> = work; {{ const g = work; f = g; }} return f; }}"));
     }
 }

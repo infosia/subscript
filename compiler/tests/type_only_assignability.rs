@@ -111,8 +111,8 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     (
         "type_rules.rs",
         "place_value",
-        1,
-        "This is the check that takes the value: it reads the type after the conversion.",
+        2,
+        "One call compares the signature before the C callback identity conversion (section 274 rule 7). The other reads the value type after conversion.",
     ),
     (
         "type_rules.rs",

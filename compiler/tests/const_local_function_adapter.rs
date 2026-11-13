@@ -121,8 +121,7 @@ fn a_module_const_takes_an_adapter_with_no_capture() {
     );
 }
 
-/// Rule 3: each escape that S009 rejects for the lambda written in the
-/// source is rejected for the adapter, with the same diagnostic.
+/// compiler.md §274: an adapter and a written lambda can own their captures.
 #[test]
 fn the_adapter_escapes_as_a_written_lambda_does() {
     for (adapter, written) in [
@@ -135,13 +134,8 @@ fn the_adapter_escapes_as_a_written_lambda_does() {
             format!("function f(h: H): void {{ {FV} h.f = (x: i32, y: i32): void => fv(x); }}"),
         ),
     ] {
-        let adapter_diagnostic = rejects(&adapter);
-        let written_diagnostic = rejects(&written);
-        assert_eq!(adapter_diagnostic.code, RuleCode::S009, "{adapter}");
-        assert_eq!(
-            adapter_diagnostic.message, written_diagnostic.message,
-            "{adapter}"
-        );
+        accepts(&adapter);
+        accepts(&written);
     }
     for (adapter, written) in [
         (
@@ -153,22 +147,8 @@ fn the_adapter_escapes_as_a_written_lambda_does() {
             format!("function f(): H {{ {FV} return new H((x: i32, y: i32): void => fv(x), G); }}"),
         ),
     ] {
-        let adapter_errors = check(&adapter).expect_err(&adapter);
-        let written_errors = check(&written).expect_err(&written);
-        let messages = |errors: &[Diagnostic]| -> Vec<String> {
-            errors.iter().map(|error| error.message.clone()).collect()
-        };
-        assert!(
-            adapter_errors
-                .iter()
-                .all(|error| error.code == RuleCode::S009),
-            "{adapter}: {adapter_errors:?}"
-        );
-        assert_eq!(
-            messages(&adapter_errors),
-            messages(&written_errors),
-            "{adapter}"
-        );
+        accepts(&adapter);
+        accepts(&written);
     }
 }
 

@@ -900,6 +900,8 @@ pub enum Divergence {
     IntegerLiteralRange,
     /// A `CEnum` wire value that is fractional, repeated, or too wide.
     WireEnumValues,
+    /// A C callback type takes only a value with no environment (§274 rule 7).
+    CCallbackRequiresNoEnvironment,
     /// A capturing lambda that escapes, and the container callback parameter.
     EscapingCapture,
     /// A local outside a counted binding block cannot receive its capture.
@@ -1502,6 +1504,7 @@ impl Divergence {
         Divergence::StorageOnlyHalfFloat,
         Divergence::IntegerLiteralRange,
         Divergence::WireEnumValues,
+        Divergence::CCallbackRequiresNoEnvironment,
         Divergence::EscapingCapture,
         Divergence::CaptureOutlivesBlock,
         Divergence::Exceptions,

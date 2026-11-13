@@ -13,6 +13,7 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::CCallbackRequiresNoEnvironment => (RuleCode::S100, Diverges(Divergence::CCallbackRequiresNoEnvironment)),
     Self::AliasArrayToStringArray => (RuleCode::S100, Diverges(Divergence::AliasArrayToStringArray)),
     Self::FileModuleDisabled => (RuleCode::S100, Diverges(Divergence::FileModuleDisabled)),
     Self::FileModuleEncoding => (RuleCode::S100, Diverges(Divergence::FileModuleEncoding)),

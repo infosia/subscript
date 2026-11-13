@@ -953,13 +953,8 @@ fn literal_and_nonliteral_shift_counts_are_accepted() {
 }
 
 #[test]
-fn returning_a_local_holding_a_capturing_lambda_is_s009() {
-    let err = check_one(
-        "function make(): (x: i32) => i32 {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  return f;\n}\nexport function main(): void {\n  print(`${make()(1)}`);\n}\n",
-    )
-    .unwrap_err();
-    assert_eq!(err[0].code, RuleCode::S009);
-    assert_eq!(err[0].pos.line, 4);
+fn returning_a_local_holding_a_capturing_lambda_owns_environment() {
+    check_one("function make(): (x: i32) => i32 {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  return f;\n}\nexport function main(): void {\n  print(`${make()(1)}`);\n}\n").expect("compiler.md §274 accepts the owned environment");
 }
 
 #[test]
@@ -1044,53 +1039,24 @@ fn m1_enum_implicit_value_overflow_is_s008_not_a_panic() {
 }
 
 #[test]
-fn m2a_push_of_a_capturing_lambda_is_s009() {
-    let err = check_one(
-        "export function main(): void {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  const xs: ((x: i32) => i32)[] = [];\n  xs.push(f);\n}\n",
-    )
-    .unwrap_err();
-    assert_eq!(err[0].code, RuleCode::S009);
-    assert_eq!(err[0].pos.line, 5);
+fn m2a_push_of_a_capturing_lambda_owns_environment() {
+    check_one("export function main(): void {\n  const k: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + k;\n  const xs: ((x: i32) => i32)[] = [];\n  xs.push(f);\n}\n").expect("compiler.md §274 accepts the owned environment");
 }
 
 #[test]
-fn m2b_array_literals_reject_capturing_lambdas_in_every_context() {
-    // Inferred element type.
-    let err = check_one(
-        "export function main(): void {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n",
-    )
-    .unwrap_err();
-    assert_eq!(err[0].code, RuleCode::S009);
-
-    // FixedArray context.
-    let err = check_one(
-        "export function main(): void {\n  const k: i32 = 1;\n  const fs: FixedArray<(x: i32) => i32, 1> = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n",
-    )
-    .unwrap_err();
-    assert_eq!(err[0].code, RuleCode::S009);
+fn m2b_array_literals_accept_capturing_lambdas_in_every_context() {
+    check_one("export function main(): void {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n").expect("compiler.md §274 accepts the owned environment");
+    check_one("export function main(): void {\n  const k: i32 = 1;\n  const fs: FixedArray<(x: i32) => i32, 1> = [(x: i32): i32 => x + k];\n  print(`${fs[0](1)}`);\n}\n").expect("compiler.md §274 accepts the owned environment");
 }
 
 #[test]
-fn m2b_returning_a_local_bound_to_a_capturing_array_literal_is_s009() {
-    let diags = check_one(
-        "function make(): ((x: i32) => i32)[] {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  return fs;\n}\nexport function main(): void {\n  print(`${make()[0](1)}`);\n}\n",
-    )
-    .unwrap_err();
-    assert!(
-        diags.iter().any(|d| d.code == RuleCode::S009),
-        "expected an S009 among: {:?}",
-        diags.iter().map(|d| d.code).collect::<Vec<_>>()
-    );
+fn m2b_returning_a_local_bound_to_a_capturing_array_literal_owns_environment() {
+    check_one("function make(): ((x: i32) => i32)[] {\n  const k: i32 = 1;\n  const fs = [(x: i32): i32 => x + k];\n  return fs;\n}\nexport function main(): void {\n  print(`${make()[0](1)}`);\n}\n").expect("compiler.md §274 accepts the owned environment");
 }
 
 #[test]
-fn m2c_returning_a_conditional_over_capturing_lambdas_is_s009() {
-    let err = check_one(
-        "function pick(flag: boolean): (x: i32) => i32 {\n  const a: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + a;\n  const g: (x: i32) => i32 = (x: i32): i32 => x - a;\n  return flag ? f : g;\n}\nexport function main(): void {\n  print(`${pick(true)(1)}`);\n}\n",
-    )
-    .unwrap_err();
-    assert_eq!(err[0].code, RuleCode::S009);
-    assert_eq!(err[0].pos.line, 5);
+fn m2c_returning_a_conditional_over_capturing_lambdas_owns_environment() {
+    check_one("function pick(flag: boolean): (x: i32) => i32 {\n  const a: i32 = 1;\n  const f: (x: i32) => i32 = (x: i32): i32 => x + a;\n  const g: (x: i32) => i32 = (x: i32): i32 => x - a;\n  return flag ? f : g;\n}\nexport function main(): void {\n  print(`${pick(true)(1)}`);\n}\n").expect("compiler.md §274 accepts the owned environment");
 }
 
 #[test]

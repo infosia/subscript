@@ -1914,3 +1914,25 @@ fn collected_tasks_trap_in_task_id_order() {
     assert_eq!((pos.line, pos.col), (23, 3));
     assert_eq!(message, "Error: first");
 }
+
+#[test]
+fn owning_generic_lambda_fact_key_keeps_function_instances() {
+    let accept = corpus::corpus_accept();
+    let sources = corpus::entry_sources(
+        &accept,
+        "a446-a-capturing-lambda-that-escapes-owns-its-environment",
+    );
+    let hir = check_program(&sources).expect("a446 checks");
+    let lir = lower_module(&hir).expect("a446 lowers");
+    let mut position_only = Vec::new();
+    lir_facts::async_environments::compare_with_key(&hir, &lir, &mut position_only, false);
+    assert!(
+        position_only
+            .iter()
+            .any(|finding| finding.contains(":13:18: an owning lambda")),
+        "{position_only:?}"
+    );
+    let mut instance = Vec::new();
+    lir_facts::async_environments::compare_with_key(&hir, &lir, &mut instance, true);
+    assert!(instance.is_empty(), "{instance:?}");
+}

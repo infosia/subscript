@@ -639,7 +639,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "mirror-declarations", reason: "C mirror declarations have concrete boundary types and cannot declare type parameters.", sites: &[
         ("mirror_provenance.rs", "foreign_parameter_provenance", 0xdb604f5c10d571),
-        ("signatures.rs", "resolve_mirror_signatures", 0x7c623947688f146e),
+        ("signatures.rs", "resolve_mirror_signatures", 0x0d3c480cc3c6d265),
     ] },
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),

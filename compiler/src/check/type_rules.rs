@@ -180,7 +180,8 @@ impl<'p> Checker<'p> {
                         && self.assignable_through_constraints(b, d, seen)
                 }
                 (Type::Func(a), Type::Func(b)) => {
-                    a.params.len() == b.params.len()
+                    a.callback_typedef == b.callback_typedef
+                        && a.params.len() == b.params.len()
                         && a.params
                             .iter()
                             .zip(&b.params)
@@ -290,7 +291,8 @@ impl<'p> Checker<'p> {
         f: &crate::types::FuncType,
         g: &crate::types::FuncType,
     ) -> bool {
-        f.params.len() == g.params.len()
+        f.callback_typedef == g.callback_typedef
+            && f.params.len() == g.params.len()
             && self.type_fits(&f.ret, &g.ret)
             && g.params
                 .iter()
@@ -528,6 +530,7 @@ impl<'p> Checker<'p> {
             return false;
         };
         let discarding = crate::types::FuncType {
+            callback_typedef: None,
             params: own.params.clone(),
             ret: Type::Void,
         };
@@ -929,12 +932,54 @@ impl<'p> Checker<'p> {
         };
     }
 
+    /// Detects callback identity in a cast type (compiler.md §274 rule 7).
+    pub(crate) fn contains_callback_identity(&self, ty: &Type) -> bool {
+        let ty = self.apparent_type(ty);
+        if let Type::Func(function) = &ty {
+            if function.callback_typedef.is_some() {
+                return true;
+            }
+        }
+        if let Type::Class(id) = &ty {
+            if let Some((_, args)) = self.instance_arguments.get(id) {
+                return args.iter().any(|arg| self.contains_callback_identity(arg));
+            }
+        }
+        ty.contained_types()
+            .iter()
+            .any(|inner| self.contains_callback_identity(inner))
+    }
+
     /// The check of a value against a place, with no diagnostic (compiler.md
     /// §240 rule 2a): the value takes the conversion of its place
     /// ([`Self::place_function_value`]), then its type is checked. Returns
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
     pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+        if let Some(own) = self.function_of(&value.ty) {
+            if own.callback_typedef.is_some()
+                && self
+                    .function_of(to)
+                    .is_some_and(|target| target.callback_typedef != own.callback_typedef)
+            {
+                return false;
+            }
+        }
+        // compiler.md §274 rule 7: only clean literals and named functions convert.
+        if let Some(mut target) = self.function_of(to) {
+            if target.callback_typedef.is_some() {
+                let clean = match &value.kind {
+                    hir::ExprKind::Lambda { captures, .. } => captures.is_empty(),
+                    hir::ExprKind::FuncRef(_) => true,
+                    _ => false,
+                };
+                let identity = target.callback_typedef.take();
+                if clean && self.assignable(&value.ty, &Type::Func(Box::new(target.clone()))) {
+                    target.callback_typedef = identity;
+                    value.ty = Type::Func(Box::new(target));
+                }
+            }
+        }
         // Section 259: only a value place converts an alias to string.
         let target = self.apparent_type(to);
         if matches!(self.apparent_type(&value.ty), Type::StringAlias(_))
@@ -1120,6 +1165,26 @@ impl<'p> Checker<'p> {
                         what,
                         self.type_name(to),
                         self.type_name(&from.ty)
+                    ),
+                    from.pos.clone(),
+                );
+                return;
+            }
+            if self
+                .function_of(to)
+                .is_some_and(|target| target.callback_typedef.is_some())
+            {
+                let cause = if matches!(&from.kind, hir::ExprKind::Lambda { captures, .. } if !captures.is_empty())
+                {
+                    "a capturing lambda"
+                } else {
+                    "a value that is not a named function or a capture-free lambda"
+                };
+                self.reject_subset(
+                    RejectionSite::CCallbackRequiresNoEnvironment,
+                    format!(
+                        "{cause} cannot take the C callback type `{}`",
+                        self.type_name(to)
                     ),
                     from.pos.clone(),
                 );
@@ -1364,7 +1429,7 @@ impl CallbackLeaves {
 /// A parameter of a lambda that the checker makes, with no default.
 fn synthetic_param(name: String, ty: &Type, pos: &Pos) -> hir::Param {
     hir::Param {
-        escapes: false,
+        escape_kind: crate::hir::EscapeKind::None,
         default_can_raise: false,
         name,
         ty: ty.clone(),

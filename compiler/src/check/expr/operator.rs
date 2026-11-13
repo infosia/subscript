@@ -1731,7 +1731,9 @@ impl<'p> Checker<'p> {
                 crate::check::opaque::InstanceRestriction::CastKind,
                 &target,
             ))
-            && self.generic_overlap(&src, &target);
+            && self.generic_overlap(&src, &target)
+            && !self.contains_callback_identity(&src)
+            && !self.contains_callback_identity(&target);
         let concrete_cast =
             !self.involves_type_parameter(&src) && !self.involves_type_parameter(&target);
         let ok = generic_cast

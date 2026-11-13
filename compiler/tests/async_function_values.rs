@@ -159,21 +159,16 @@ fn nested_receiver_capture_rejects_with_synchronous_controls() {
 
 // Cost: four checker calls; no native build.
 #[test]
-fn owned_async_captures_keep_borrowed_transitive_and_map_restrictions() {
+fn owned_async_captures_accept_transitive_environments_and_keep_map_restrictions() {
     let accepted = "async function value(): Promise<i32> { return 7; }
         function make(): () => Promise<i32> { const h = value(); return async (): Promise<i32> => { return await h; }; }";
     check_program(&[SourceFile::new("owned.ts", accepted)]).expect("owned counted capture escapes");
     let borrowed = "function make(): () => Promise<i32> { const n: i32 = 7; const g = (): i32 => n; return async (): Promise<i32> => { await Context.suspend(); return g(); }; }";
-    let errors = check_program(&[SourceFile::new("borrowed.ts", borrowed)])
-        .expect_err("transitive borrowed capture rejects");
-    assert!(errors.iter().any(|error| error.code == RuleCode::S009));
+    check_program(&[SourceFile::new("borrowed.ts", borrowed)])
+        .expect("compiler.md §274 owns a transitive capture");
     let started = "function start(): Promise<i32> { const n: i32 = 7; const g = (): i32 => n; const f = async (): Promise<i32> => { await Context.suspend(); return g(); }; return f(); }";
-    let errors = check_program(&[SourceFile::new("started.ts", started)])
-        .expect_err("started frame cannot retain a borrowed environment");
-    assert!(errors
-        .iter()
-        .any(|error| error.code == RuleCode::S009
-            && error.message.contains("owned async environment")));
+    check_program(&[SourceFile::new("started.ts", started)])
+        .expect("compiler.md §274 owns a capture in a returned frame");
     let map = "export function main(): void { const base: i32 = 7; const ids: i32[] = [1, 2]; const jobs = ids.map(async (id: i32): Promise<i32> => id + base); }";
     let errors =
         check_program(&[SourceFile::new("map.ts", map)]).expect_err("counted callback rejects");

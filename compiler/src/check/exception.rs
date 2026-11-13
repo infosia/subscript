@@ -137,7 +137,7 @@ impl Checker<'_> {
             field("message", Type::Str),
         ];
         let parameter = |name: &str, ty: Type| hir::Param {
-            escapes: false,
+            escape_kind: crate::hir::EscapeKind::None,
             default_can_raise: false,
             name: name.to_string(),
             ty,

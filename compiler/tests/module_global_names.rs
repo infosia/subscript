@@ -311,7 +311,7 @@ fn each_mirror_scope_kind_yields_to_the_module_scope() {
 fn symbol_bearing_error_paths_render_source_names() {
     for (source, spelling) in [
         ("function f(x: i32): void {} f();", "f"),
-        ("class C { f<T>(cb: () => T): void { const stored: (() => T)[] = [cb]; } } export function main(): void { const x: i32 = 7; new C().f<i32>((): i32 => x); }", "C.f<i32>"),
+        ("class C { f<T>(cb: () => T): void {} } export function main(): void { new C().f<i32>(); }", "f<i32>"),
         ("class C { static readonly x: i32 = 1; } C.x = 2;", "C.x"),
         ("class C { static readonly x: i32 = 1; } C.x++;", "C.x"),
         ("function f<T>(x: T): T { return x; } f<i32, i32>(1);", "f"),

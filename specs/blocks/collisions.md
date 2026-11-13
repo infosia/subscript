@@ -107,15 +107,18 @@ context-free fractional literals default to `f64`.
 Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
 3000000000`; `tsc`-clean).
 
-### C5. Closures (Q10) — non-escaping capture only
+### C5. Closures (Q10) — const capture; no capture into C
 
 - Function values that capture nothing are function pointers; freely
-  passable, storable, and usable as C callbacks.
-- A lambda may capture only immutable (`const`) locals, by value, and only
-  if the lambda does not escape its defining function: it may be called
-  locally and passed downward as an argument, but not returned, not stored
-  in a field or array, and not passed where a C callback is expected.
-  Its environment lives on the stack; no allocation.
+  passable and storable. A C callback type of a mirror takes only a
+  named function or a lambda with no captures (`compiler.md` §274
+  rule 7).
+- A lambda may capture only immutable (`const`) locals, by value. A
+  lambda that stays in its defining function (called locally, or passed
+  down to a parameter that does not keep it) keeps its environment on
+  the stack, with no allocation. A lambda that leaves it into managed
+  storage owns its environment (`compiler.md` §274). No capturing lambda
+  reaches a C callback.
 - C callbacks (plan §4 pattern 4) therefore take the manual form: a
   non-capturing function plus explicit `userdata`.
 - *(Added 2026-09-27, `compiler.md` §118.)* The checker enforces
@@ -127,10 +130,28 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   binding: a local declared outside the block cannot receive it. The
   exit of the block releases the binding, and the lambda borrows it.
   `tsc` accepts the assignment, and `node` keeps the value alive.
+- *(Revised 2026-11-13, `compiler.md` §274.)* A capturing lambda
+  whose value can leave its function into managed storage (a
+  `return`, a field, an array, a `Map`, or a parameter that stores it)
+  owns its environment, as an async lambda does (§181): one allocation
+  for each evaluation, and the environment retains each counted
+  capture. A lambda that cannot leave keeps the stack environment. A
+  capture that reaches a C callback stays rejected: the escape fact of
+  a parameter states whether it reaches managed storage or a C
+  callback, and a C callback type of a mirror is a type of its own that
+  a capturing lambda, or a plain function value, never takes.
 
-Accept: `a13`, `a14`, `a262`, `a345-counted-capture-block`. Reject:
-`r10-escaping-capture` (returns a capturing lambda; `tsc`-clean),
-`r240`–`r248` (§118; `tsc`-clean), `r353`, `r354`, `r357`, `r358` (a
+Accept: `a13`, `a14`, `a262`, `a345-counted-capture-block`, `a446`,
+`a447-retired-capture-escape-shapes` (§274). Reject:
+`r502-a-capturing-lambda-is-not-a-c-callback`, `r503-c-callback-through-field`, `r504-c-callback-through-return`, `r505-c-callback-through-indirect`, `r506-c-callback-through-array`, `r507-c-callback-through-method` (§274),
+retired:r10-escaping-capture, retired:r240-parameter-stored-in-field,
+retired:r241-parameter-returned,
+retired:r242-expression-body-returns-parameter,
+retired:r243-capture-passed-to-generator,
+retired:r244-capture-passed-to-async, retired:r245-yield-returns-capture,
+retired:r246-capture-through-loop-back-edge,
+retired:r247-generator-parameter-stored,
+retired:r248-capture-through-indirect-call (§274), `r353`, `r354`, `r357`, `r358` (a
 lambda that captures `this`, §157; `tsc`-clean),
 `r396-counted-capture-direct`, `r396-counted-capture-copy`,
 `r396-counted-capture-transitive`, `r396-counted-capture-loop` (§175;

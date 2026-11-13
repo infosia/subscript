@@ -2,6 +2,15 @@
 use subscript_compiler::{hir, lir as l, Type};
 
 pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) -> usize {
+    compare_with_key(hir, lir, findings, true)
+}
+
+pub(crate) fn compare_with_key(
+    hir: &hir::Module,
+    lir: &l::Module,
+    findings: &mut Vec<String>,
+    instance_key: bool,
+) -> usize {
     let mut environments = Vec::new();
     super::walk_module_expressions(hir, &mut |expr| {
         if let hir::ExprKind::Lambda {
@@ -11,18 +20,22 @@ pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<Str
         } = &expr.kind
         {
             if !captures.is_empty() {
-                environments.push(expr);
+                environments.push((expr, owner_instance(hir, expr)));
             }
         }
     });
-    for expr in &environments {
+    for (expr, owner) in &environments {
         let hir::ExprKind::Lambda { captures, .. } = &expr.kind else {
             continue;
         };
         let actual = lir
             .functions
             .iter()
-            .find(|function| function.kind == l::FunctionKind::Lambda && function.pos == expr.pos)
+            .find(|function| {
+                function.kind == l::FunctionKind::Lambda
+                    && function.pos == expr.pos
+                    && (!instance_key || belongs_to(lir, *owner, function.id))
+            })
             .and_then(|function| {
                 function
                     .parameters
@@ -50,4 +63,45 @@ pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<Str
         }
     }
     environments.len()
+}
+
+// Declaration order independently identifies each instantiated function in both forms.
+fn owner_instance(hir: &hir::Module, target: &hir::Expr) -> Option<l::FunctionId> {
+    let functions = hir
+        .classes
+        .iter()
+        .flat_map(|class| class.ctor.iter().chain(class.methods.iter()))
+        .chain(hir.functions.iter());
+    for (index, function) in functions.enumerate() {
+        let mut found = false;
+        super::walk_statement_expression_roots(hir, &function.body, &mut |root| {
+            super::walk_expr(hir, root, &mut |expr| {
+                found |= std::ptr::eq(expr, target);
+            });
+        });
+        if found {
+            return Some(l::FunctionId(index as u32));
+        }
+    }
+    None
+}
+
+fn belongs_to(lir: &l::Module, owner: Option<l::FunctionId>, target: l::FunctionId) -> bool {
+    let Some(owner) = owner.or(lir.initializer) else {
+        return false;
+    };
+    let mut pending = vec![owner];
+    while let Some(id) = pending.pop() {
+        for block in &lir.functions[id.0 as usize].blocks {
+            for instruction in &block.instructions {
+                if let l::InstructionKind::MakeClosure(child) = instruction.kind {
+                    if child == target {
+                        return true;
+                    }
+                    pending.push(child);
+                }
+            }
+        }
+    }
+    false
 }

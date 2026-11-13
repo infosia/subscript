@@ -75,7 +75,7 @@ fn capture_escape_has_clean_controls() {
         .expect_err("C callback capture");
     assert!(diagnostics
         .iter()
-        .any(|error| error.message.contains("aggregate constructor")));
+        .any(|error| error.message.contains("SubLogCallback")));
     check_program(&[
         mirror,
         SourceFile::entry("main.ts", source.replace("${this.n}", "clean")),

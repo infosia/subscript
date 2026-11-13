@@ -1616,7 +1616,7 @@ fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, RejectionFailure>
 
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
     hir::Param {
-        escapes: false,
+        escape_kind: crate::hir::EscapeKind::None,
         default_can_raise: false,
         name: name.to_string(),
         ty,

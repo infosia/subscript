@@ -81,7 +81,7 @@ export function main(): void {
 }
 
 #[test]
-fn flat_map_cannot_return_a_capture_from_its_callback() {
+fn flat_map_can_return_an_owned_capture_from_its_callback() {
     let files = [SourceFile::new(
         "test.ts",
         r#"
@@ -92,13 +92,7 @@ export function main(): void {
 }
 "#,
     )];
-    let diagnostics = check_program(&files).unwrap_err();
-    assert!(
-        diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == RuleCode::S009),
-        "{diagnostics:?}"
-    );
+    check_program(&files).expect("compiler.md §274 owns a returned callback capture");
     check_program(&[SourceFile::new(
         "test.ts",
         r#"

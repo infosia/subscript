@@ -1016,6 +1016,7 @@ mod tests {
         assert_eq!(repr(&Type::Str), Repr::Scalar(types::I64));
         assert!(matches!(
             repr(&Type::Func(Box::new(subscript_compiler::FuncType {
+                callback_typedef: None,
                 params: vec![Type::I32],
                 ret: Type::I32
             }))),
@@ -1034,6 +1035,7 @@ mod tests {
     fn managed_interior_and_word_counts() {
         let layouts = layouts_of("export function main(): void {}\n");
         let function = Type::Func(Box::new(subscript_compiler::FuncType {
+            callback_typedef: None,
             params: Vec::new(),
             ret: Type::I32,
         }));

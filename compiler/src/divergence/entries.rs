@@ -641,6 +641,7 @@ impl Divergence {
             Divergence::StringEnumMemberValue => super::type_flow::STRINGENUMMEMBERVALUE,
             Divergence::IntegerLiteralRange => established_tail::INTEGERLITERALRANGE,
             Divergence::WireEnumValues => established_tail::WIREENUMVALUES,
+            Divergence::CCallbackRequiresNoEnvironment => established_tail::C_CALLBACK_REQUIRES_NO_ENVIRONMENT,
             Divergence::EscapingCapture => established_tail::ESCAPINGCAPTURE,
             Divergence::Exceptions => established_tail::EXCEPTIONS,
             Divergence::InstanceofNonError => established_tail::INSTANCEOFNONERROR,

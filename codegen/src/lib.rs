@@ -397,6 +397,7 @@ export function main(): void {}
         }
         // Control: a function value has no element kind.
         let function = Type::Func(Box::new(subscript_compiler::types::FuncType {
+            callback_typedef: None,
             params: Vec::new(),
             ret: Type::Void,
         }));

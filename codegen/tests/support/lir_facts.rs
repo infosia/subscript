@@ -7,7 +7,7 @@ use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
 #[path = "lir_facts/async_environments.rs"]
-mod async_environments;
+pub(crate) mod async_environments;
 #[path = "lir_facts/boundary.rs"]
 mod boundary;
 #[path = "lir_facts/iteration.rs"]

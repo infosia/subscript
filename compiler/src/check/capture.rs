@@ -15,10 +15,11 @@ struct Analysis<'a> {
     escapes: Vec<(String, &'a Expr)>,
     parameters: Vec<(usize, &'a hir::Param)>,
     calls: Vec<(String, &'a hir::Param, &'a Expr)>,
-    escaping: HashSet<usize>,
+    escaping: HashMap<usize, hir::EscapeKind>,
     capture_bindings: HashMap<usize, Vec<usize>>,
     async_receivers: Vec<&'a crate::Pos>,
     infer: bool,
+    c_boundary: bool,
     block: usize,
     block_parents: Vec<Option<usize>>,
     locals: Vec<blocks::Local<'a>>,
@@ -428,18 +429,30 @@ impl<'a> Analysis<'a> {
             for index in 0..self.parameters.len() {
                 let (id, p) = self.parameters[index];
                 let key = p as *const hir::Param as usize;
-                if self.escaping.contains(&key) || !self.carries(&p.ty) {
+                if !self.carries(&p.ty) {
                     continue;
                 }
                 self.facts.fill(false);
                 self.facts[id] = true;
                 self.solve();
-                if self.escapes.iter().any(|(_, e)| self.fact(e))
-                    || self.calls.iter().any(|(_, p, e)| {
-                        self.escaping.contains(&(*p as *const hir::Param as usize)) && self.fact(e)
-                    })
-                {
-                    self.escaping.insert(key);
+                let mut kind = hir::EscapeKind::None;
+                for (boundary, e) in &self.escapes {
+                    if self.fact(e) {
+                        kind = kind.max(destination(boundary));
+                    }
+                }
+                for (_, p, e) in &self.calls {
+                    if self.fact(e) {
+                        kind = kind.max(
+                            self.escaping
+                                .get(&(*p as *const hir::Param as usize))
+                                .copied()
+                                .unwrap_or_default(),
+                        );
+                    }
+                }
+                if kind > self.escaping.get(&key).copied().unwrap_or_default() {
+                    self.escaping.insert(key, kind);
                     changed = true;
                 }
             }
@@ -450,8 +463,10 @@ impl<'a> Analysis<'a> {
         self.infer = false;
         self.facts.fill(false);
         for (id, p) in &self.parameters {
-            self.facts[*id] =
-                self.carries(&p.ty) && !self.escaping.contains(&(*p as *const hir::Param as usize));
+            self.facts[*id] = self.carries(&p.ty)
+                && !self
+                    .escaping
+                    .contains_key(&(*p as *const hir::Param as usize));
         }
     }
     fn generator(&self, callee: &Callee) -> bool {
@@ -471,7 +486,7 @@ impl<'a> Analysis<'a> {
                 owns_environment,
                 ..
             } => {
-                if self.infer || *owns_environment {
+                if self.infer || (*owns_environment && !self.c_boundary) {
                     self.capture_bindings
                         .get(&(e as *const Expr as usize))
                         .is_some_and(|ids| ids.iter().any(|id| self.facts[*id]))
@@ -484,14 +499,33 @@ impl<'a> Analysis<'a> {
                 .unwrap_or(!self.infer),
         }
     }
-    fn finish(mut self) -> (Vec<Diagnostic>, HashSet<usize>) {
+    fn finish(mut self) -> (Vec<Diagnostic>, HashMap<usize, hir::EscapeKind>) {
         self.infer_parameters();
         self.solve();
         let mut diagnostics = Vec::new();
         for pos in &self.async_receivers {
             diagnostics.push(super::rejection::async_receiver_diagnostic((*pos).clone()));
         }
+        self.c_boundary = true;
+        self.solve();
+        let c_facts = self.facts.clone();
+        self.c_boundary = false;
+        self.facts.fill(false);
+        for (id, p) in &self.parameters {
+            self.facts[*id] = self.carries(&p.ty)
+                && !self
+                    .escaping
+                    .contains_key(&(*p as *const hir::Param as usize));
+        }
+        self.solve();
+        let managed_facts = self.facts.clone();
         for (kind, e) in &self.escapes {
+            self.c_boundary = destination(kind) == hir::EscapeKind::CCallback;
+            self.facts.clone_from(if self.c_boundary {
+                &c_facts
+            } else {
+                &managed_facts
+            });
             if self.fact(e) {
                 let d = diagnostic(
                     RejectionSite::CaptureEffectEscapes,
@@ -502,7 +536,18 @@ impl<'a> Analysis<'a> {
             }
         }
         for (callee, p, e) in &self.calls {
-            if self.escaping.contains(&(*p as *const hir::Param as usize)) && self.fact(e) {
+            self.c_boundary = self.escaping.get(&(*p as *const hir::Param as usize))
+                == Some(&hir::EscapeKind::CCallback);
+            self.facts.clone_from(if self.c_boundary {
+                &c_facts
+            } else {
+                &managed_facts
+            });
+            if self
+                .escaping
+                .contains_key(&(*p as *const hir::Param as usize))
+                && self.fact(e)
+            {
                 let d = diagnostic(
                     RejectionSite::CaptureEffectArgument,
                     format!(
@@ -515,6 +560,8 @@ impl<'a> Analysis<'a> {
                 diagnostics.push(d);
             }
         }
+        self.c_boundary = false;
+        self.facts = managed_facts;
         if !self.block_equations.is_empty() {
             let values = self.solve_blocks();
             self.check_blocks(&values, &mut diagnostics);
@@ -523,6 +570,9 @@ impl<'a> Analysis<'a> {
     }
 }
 pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
+    analyze(module, true)
+}
+fn analyze(module: &mut hir::Module, select_ownership: bool) -> Result<(), Vec<Diagnostic>> {
     let mut a = Analysis {
         module,
         facts: vec![],
@@ -531,10 +581,11 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
         escapes: vec![],
         parameters: vec![],
         calls: vec![],
-        escaping: HashSet::new(),
+        escaping: HashMap::new(),
         capture_bindings: HashMap::new(),
         async_receivers: Vec::new(),
         infer: false,
+        c_boundary: false,
         block: 0,
         block_parents: vec![None],
         locals: vec![],
@@ -573,6 +624,22 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
                 a.collect_block_equations(start);
             }
         }
+    }
+    if select_ownership {
+        a.infer_parameters();
+        let owned = a.owned_values();
+        drop(a);
+        for owner in module.expression_owners_mut() {
+            match owner {
+                hir::ExpressionOwnerMut::Expr(e) => own_child(hir::HirChildMut::Expr(e), &owned),
+                hir::ExpressionOwnerMut::Body(body) => {
+                    for stmt in body {
+                        own_child(hir::HirChildMut::Stmt(stmt), &owned);
+                    }
+                }
+            }
+        }
+        return analyze(module, false);
     }
     let (diagnostics, escaping) = a.finish();
     if !diagnostics.is_empty() {
@@ -629,12 +696,15 @@ pub(super) fn type_name(m: &hir::Module, t: &Type) -> String {
 }
 
 // Parameter addresses identify declarations while the completed module stays in place.
-fn record_parameters(params: &mut [hir::Param], escaping: &HashSet<usize>) {
+fn record_parameters(params: &mut [hir::Param], escaping: &HashMap<usize, hir::EscapeKind>) {
     for param in params {
-        param.escapes = escaping.contains(&(param as *const hir::Param as usize));
+        param.escape_kind = escaping
+            .get(&(param as *const hir::Param as usize))
+            .copied()
+            .unwrap_or_default();
     }
 }
-fn record_child(child: hir::HirChildMut<'_>, escaping: &HashSet<usize>) {
+fn record_child(child: hir::HirChildMut<'_>, escaping: &HashMap<usize, hir::EscapeKind>) {
     match child {
         hir::HirChildMut::Expr(expr) => {
             if let E::Lambda { params, .. } = &mut expr.kind {
@@ -680,6 +750,41 @@ fn value_name(module: &hir::Module, expr: &Expr) -> String {
     }
 }
 
+fn destination(boundary: &str) -> hir::EscapeKind {
+    if matches!(boundary, "C callback" | "aggregate constructor") {
+        hir::EscapeKind::CCallback
+    } else {
+        hir::EscapeKind::Managed
+    }
+}
+
+// compiler.md §274 rules 1 and 2: only managed escapes select ownership.
+fn own_child(child: hir::HirChildMut<'_>, owned: &HashSet<usize>) {
+    match child {
+        hir::HirChildMut::Expr(e) => {
+            let selected = owned.contains(&(e as *const Expr as usize));
+            if let E::Lambda {
+                captures,
+                owns_environment,
+                ..
+            } = &mut e.kind
+            {
+                if selected && !captures.is_empty() && !captures.iter().any(|c| c.name == "this") {
+                    *owns_environment = true;
+                }
+            }
+            for child in e.children_mut() {
+                own_child(child, owned);
+            }
+        }
+        hir::HirChildMut::Stmt(s) => {
+            for child in s.children_mut() {
+                own_child(child, owned);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -705,6 +810,7 @@ mod tests {
             ),
             (
                 Type::Func(Box::new(crate::types::FuncType {
+                    callback_typedef: None,
                     params: vec![Type::I32],
                     ret: Type::I32,
                 })),
