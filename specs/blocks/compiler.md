@@ -314,3 +314,4 @@ Every section, with its status:
 | §270 | The interop device ends its registrations when it is freed | active | [`s270-the-interop-device-ends-its-registrations-when-it-is-freed.md`](compiler/s270-the-interop-device-ends-its-registrations-when-it-is-freed.md) |
 | §271 | A Map or Set iteration ends with its owner | active | [`s271-a-map-or-set-iteration-ends-with-its-owner.md`](compiler/s271-a-map-or-set-iteration-ends-with-its-owner.md) |
 | §272 | A session with a failed initializer runs no entry | active | [`s272-a-session-with-a-failed-initializer-runs-no-entry.md`](compiler/s272-a-session-with-a-failed-initializer-runs-no-entry.md) |
+| §273 | The suspension live-in analysis reaches a fixed point | active | [`s273-the-suspension-live-in-analysis-reaches-a-fixed-point.md`](compiler/s273-the-suspension-live-in-analysis-reaches-a-fixed-point.md) |
