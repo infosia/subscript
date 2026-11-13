@@ -96,6 +96,8 @@ pub enum TrapKind {
     /// A host entry was called while a host entry of the same Context ran
     /// (compiler.md §223).
     HostEntryReentry = 34,
+    /// A Worker Context attempted to spawn a Worker (compiler.md section 275).
+    WorkerSpawnInWorker = 35,
 }
 
 impl TrapKind {
@@ -133,6 +135,7 @@ impl TrapKind {
             32 => TrapKind::GeneratorDoneValue,
             33 => TrapKind::TaskGroup,
             34 => TrapKind::HostEntryReentry,
+            35 => TrapKind::WorkerSpawnInWorker,
             _ => return None,
         })
     }
@@ -170,6 +173,7 @@ impl TrapKind {
             TrapKind::GeneratorDoneValue => "generator-done-value",
             TrapKind::TaskGroup => "task-group",
             TrapKind::HostEntryReentry => "host-entry-reentry",
+            TrapKind::WorkerSpawnInWorker => "worker-spawn-in-worker",
         }
     }
 
@@ -252,13 +256,13 @@ mod tests {
     fn kind_round_trips_through_u32() {
         for v in (1..=17u32)
             .chain(19..=24)
-            .chain([28, 29, 30, 31, 32, 33, 34])
+            .chain([28, 29, 30, 31, 32, 33, 34, 35])
         {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(35), None);
+        assert_eq!(TrapKind::from_u32(36), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 
@@ -315,6 +319,16 @@ mod tests {
         assert_eq!(TrapKind::WorkerTrapped as u32, 22);
         assert_eq!(TrapKind::from_u32(22), Some(TrapKind::WorkerTrapped));
         assert_eq!(TrapKind::WorkerTrapped.rule(), "worker-trapped");
+    }
+
+    #[test]
+    fn worker_spawn_in_worker_kind_has_stable_number_and_rule() {
+        assert_eq!(TrapKind::WorkerSpawnInWorker as u32, 35);
+        assert_eq!(TrapKind::from_u32(35), Some(TrapKind::WorkerSpawnInWorker));
+        assert_eq!(
+            TrapKind::WorkerSpawnInWorker.rule(),
+            "worker-spawn-in-worker"
+        );
     }
 
     #[test]

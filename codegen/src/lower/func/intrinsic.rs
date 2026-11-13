@@ -228,7 +228,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.context_bytes_intrinsic(intrinsic, &name, operands, checked, pos)?
             }
             l::IntrinsicFamily::Worker => {
-                self.worker_intrinsic(intrinsic, &name, operands, checked)?
+                self.worker_intrinsic(intrinsic, &name, operands, pos, checked)?
             }
         };
         if checked {
@@ -1063,6 +1063,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         intrinsic: &l::Intrinsic,
         name: &str,
         operands: &[RV],
+        pos: &Pos,
         checked: bool,
     ) -> Result<RV, String> {
         if name == "Spawn" {
@@ -1111,6 +1112,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .builder
                 .ins()
                 .symbol_value(types::I64, output_descriptor);
+            let position = self.position_id(pos);
+            let position = self.iconst(types::I32, position);
             return self
                 .call_runtime(
                     self.ml.rt.worker_spawn,
@@ -1120,6 +1123,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         worker,
                         input_descriptor,
                         output_descriptor,
+                        position,
                     ],
                     checked,
                 )?

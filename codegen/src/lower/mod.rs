@@ -1189,7 +1189,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         set_ops,
         worker_spawn: mk(
             "subscript_rt_worker_spawn",
-            &[I64, I64, I64, I64, I64],
+            &[I64, I64, I64, I64, I64, I32],
             Some(I64),
         )?,
         worker_post: mk("subscript_rt_worker_post", &[I64, I64, I64], Some(I32))?,

@@ -151,6 +151,10 @@ pub fn render() -> Result<String, String> {
         "/* Host entry reentry trap (compiler.md §223). */\n#define SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY {}u\n\n",
         crate::TrapKind::HostEntryReentry as u32
     ));
+    out.push_str(&format!(
+        "/* Worker Context spawn trap (compiler.md section 275). */\n#define SUBSCRIPT_RT_TRAP_WORKER_SPAWN_IN_WORKER {}u\n\n",
+        crate::TrapKind::WorkerSpawnInWorker as u32
+    ));
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -689,6 +693,7 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         let header = render().expect("render host header");
         assert!(header.contains("#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE 32u"));
         assert!(header.contains("#define SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY 34u"));
+        assert!(header.contains("#define SUBSCRIPT_RT_TRAP_WORKER_SPAWN_IN_WORKER 35u"));
     }
 
     #[test]

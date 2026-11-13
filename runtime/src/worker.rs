@@ -681,8 +681,8 @@ mod tests {
         _inbox: *mut WorkerInbox,
         _outbox: *mut WorkerOutbox,
     ) {
-        // SAFETY: the current worker Context is itself a valid spawn parent;
-        // both callbacks stay linked through the nested join.
+        // SAFETY: the Context and descriptors are live. The runtime rejects
+        // this spawn before it starts a thread.
         let child = unsafe {
             subscript_rt_worker_spawn(
                 ctx,
@@ -690,6 +690,7 @@ mod tests {
                 Some(clean_entry),
                 &EMPTY_DESCRIPTOR,
                 &EMPTY_DESCRIPTOR,
+                0,
             )
         };
         if child.is_null() {
@@ -968,6 +969,7 @@ mod tests {
                 Some(clean_entry),
                 descriptor,
                 &EMPTY_DESCRIPTOR,
+                0,
             )
         };
         assert!(worker.is_null());
@@ -1095,6 +1097,7 @@ mod tests {
                 Some(echo_entry),
                 &descriptor,
                 &descriptor,
+                0,
             )
         };
         assert!(!worker.is_null());
@@ -1134,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_join_supports_workers_spawning_workers() {
+    fn nested_spawn_traps_the_parent_at_join() {
         let parent = subscript_rt_ctx_new();
         // SAFETY: fresh parent Context and linked callbacks.
         let worker = unsafe {
@@ -1144,14 +1147,51 @@ mod tests {
                 Some(nested_worker_entry),
                 &EMPTY_DESCRIPTOR,
                 &EMPTY_DESCRIPTOR,
+                0,
             )
         };
         assert!(!worker.is_null());
-        // SAFETY: both outer and nested workers terminate cleanly.
-        assert_eq!(unsafe { subscript_rt_worker_join(parent, worker) }, 1);
+        // SAFETY: the outer worker ends after the rejected spawn.
+        assert_eq!(unsafe { subscript_rt_worker_join(parent, worker) }, 0);
         // SAFETY: shared trap query followed by one release.
-        assert_eq!(unsafe { subscript_rt_ctx_trap_kind(parent) }, 0);
+        assert_eq!(unsafe { subscript_rt_ctx_trap_kind(parent) }, 22);
+        // SAFETY: the parent remains live until the release below.
+        let trap = unsafe { &*parent }.trap_record().expect("Worker trap");
+        assert_eq!(
+            trap.message,
+            "worker trapped with worker-spawn-in-worker: a Worker cannot spawn a Worker"
+        );
         unsafe { subscript_rt_ctx_release(parent) };
+    }
+
+    #[test]
+    fn worker_context_rejects_spawn_and_main_context_allows_spawn() {
+        for releasing in [false, true] {
+            let descriptor = || QueueDescriptor {
+                payload_size: 0,
+                string_slot_offsets: Box::new([]),
+            };
+            let mut worker = Context::new_worker(releasing);
+            let child =
+                worker.worker_spawn(no_op_init, clean_entry, descriptor(), descriptor(), 73);
+            assert!(child.is_null());
+            assert!(!worker.has_live_workers());
+            let trap = worker.trap_record().expect("Worker spawn trap");
+            assert_eq!(trap.kind, TrapKind::WorkerSpawnInWorker);
+            assert_eq!(trap.pos_id, 73);
+            assert_eq!(trap.message, "a Worker cannot spawn a Worker");
+
+            let mut main = if releasing {
+                Context::new_releasing()
+            } else {
+                Context::new()
+            };
+            let child = main.worker_spawn(no_op_init, clean_entry, descriptor(), descriptor(), 91);
+            assert!(!child.is_null());
+            assert!(main.trap_record().is_none());
+            assert!(main.worker_join(child));
+            assert!(main.trap_record().is_none());
+        }
     }
 
     #[test]
@@ -1165,6 +1205,7 @@ mod tests {
                 Some(trap_entry),
                 &EMPTY_DESCRIPTOR,
                 &EMPTY_DESCRIPTOR,
+                0,
             )
         };
         assert!(!worker.is_null());
@@ -1200,6 +1241,7 @@ mod tests {
                 Some(raise_entry),
                 &EMPTY_DESCRIPTOR,
                 &EMPTY_DESCRIPTOR,
+                0,
             )
         };
         assert!(!worker.is_null());
@@ -1234,6 +1276,7 @@ mod tests {
                 Some(poll_entry),
                 &descriptor,
                 &descriptor,
+                0,
             )
         };
         assert!(!worker.is_null());
@@ -1279,6 +1322,7 @@ mod tests {
                 Some(echo_entry),
                 &descriptor,
                 &descriptor,
+                0,
             )
         };
         let second = unsafe {
@@ -1288,6 +1332,7 @@ mod tests {
                 Some(echo_entry),
                 &descriptor,
                 &descriptor,
+                0,
             )
         };
         assert!(!first.is_null() && !second.is_null());
@@ -1354,6 +1399,7 @@ mod tests {
                 Some(release_probe_entry),
                 &descriptor,
                 &descriptor,
+                0,
             )
         };
         assert!(!worker.is_null());

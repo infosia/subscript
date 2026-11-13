@@ -138,6 +138,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         if name == "Spawn" {
+            let pos = self.emitter.pos_id(&instruction.pos);
             let index = intrinsic
                 .worker_entry
                 .ok_or_else(|| internal("Worker.Spawn has no worker entry"))?
@@ -157,6 +158,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "subscript_rt_worker_entry".into(),
                     "const subscript_rt_worker_message_descriptor*".into(),
                     "const subscript_rt_worker_message_descriptor*".into(),
+                    "uint32_t".into(),
                 ],
                 &[
                     "ctx".into(),
@@ -164,6 +166,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("subscript_worker_entry{index}"),
                     format!("&sub_worker_message_descriptor_{}", entry.input.0),
                     format!("&sub_worker_message_descriptor_{}", entry.output.0),
+                    format!("{pos}u"),
                 ],
             );
             self.assign(out, result, &call)?;

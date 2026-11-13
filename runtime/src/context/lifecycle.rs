@@ -36,6 +36,7 @@ impl Context {
             host_entry_active: 0,
             module_globals: None,
             workers: WorkerSet::default(),
+            is_worker: false,
             script_depth: 0,
             async_ready: VecDeque::new(),
             async_parked: VecDeque::new(),
@@ -107,7 +108,9 @@ impl Context {
     /// Called only inside the new worker thread so the Context is created,
     /// driven, and released without crossing a thread boundary.
     pub(crate) fn new_worker(releasing: bool) -> Box<Context> {
-        Self::with_tier(releasing)
+        let mut context = Self::with_tier(releasing);
+        context.is_worker = true;
+        context
     }
 
     pub(crate) fn worker_spawn(
@@ -116,8 +119,17 @@ impl Context {
         entry: WorkerEntry,
         input_descriptor: QueueDescriptor,
         output_descriptor: QueueDescriptor,
+        pos_id: u32,
     ) -> *mut Worker {
         if self.trapped() {
+            return std::ptr::null_mut();
+        }
+        if self.is_worker {
+            self.trap(
+                TrapKind::WorkerSpawnInWorker,
+                "a Worker cannot spawn a Worker",
+                pos_id,
+            );
             return std::ptr::null_mut();
         }
         // SAFETY: the raw reload indirection-table pointer cannot implement

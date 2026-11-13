@@ -254,6 +254,9 @@ pub unsafe extern "C" fn subscript_rt_cb_registration_context(
 /// handle is owned by `parent` and remains valid until that Context is
 /// released. Null is returned after a parent trap when a callback or
 /// descriptor is invalid, or thread creation fails.
+/// If `parent` is a Worker Context, no thread starts. The Context records
+/// trap kind 35 (`worker-spawn-in-worker`), and this call returns null.
+/// The trap records `pos_id`, the position of the spawn call.
 ///
 /// # Safety
 ///
@@ -269,6 +272,7 @@ pub unsafe extern "C" fn subscript_rt_worker_spawn(
     entry: Option<WorkerEntry>,
     input_descriptor: *const crate::worker::WorkerMessageDescriptor,
     output_descriptor: *const crate::worker::WorkerMessageDescriptor,
+    pos_id: u32,
 ) -> *mut Worker {
     // SAFETY: shared exclusive Context contract.
     let parent = unsafe { &mut *parent };
@@ -302,7 +306,7 @@ pub unsafe extern "C" fn subscript_rt_worker_spawn(
                 return std::ptr::null_mut();
             }
         };
-    parent.worker_spawn(init, entry, input_descriptor, output_descriptor)
+    parent.worker_spawn(init, entry, input_descriptor, output_descriptor, pos_id)
 }
 
 /// Copies one fixed-size payload into a worker's parent-to-worker queue.

@@ -44,6 +44,9 @@ typedef struct subscript_rt_worker_message_descriptor {
 /* Host entry reentry trap (compiler.md §223). */
 #define SUBSCRIPT_RT_TRAP_HOST_ENTRY_REENTRY 34u
 
+/* Worker Context spawn trap (compiler.md section 275). */
+#define SUBSCRIPT_RT_TRAP_WORKER_SPAWN_IN_WORKER 35u
+
 /**
  * Host callback invoked when a subscript_rt_context records its first trap.
  *
@@ -645,6 +648,9 @@ int32_t subscript_rt_worker_post(subscript_rt_context* parent, subscript_rt_work
  * handle is owned by `parent` and remains valid until that subscript_rt_context is
  * released. Null is returned after a parent trap when a callback or
  * descriptor is invalid, or thread creation fails.
+ * If `parent` is a Worker subscript_rt_context, no thread starts. The subscript_rt_context records
+ * trap kind 35 (`worker-spawn-in-worker`), and this call returns null.
+ * The trap records `pos_id`, the position of the spawn call.
  *
  * # Safety
  *
@@ -653,7 +659,7 @@ int32_t subscript_rt_worker_post(subscript_rt_context* parent, subscript_rt_work
  * remain callable until the worker is joined. Both descriptors and their
  * offset arrays must be readable for this call.
  */
-subscript_rt_worker* subscript_rt_worker_spawn(subscript_rt_context* parent, subscript_rt_worker_init init, subscript_rt_worker_entry entry, const subscript_rt_worker_message_descriptor* input_descriptor, const subscript_rt_worker_message_descriptor* output_descriptor);
+subscript_rt_worker* subscript_rt_worker_spawn(subscript_rt_context* parent, subscript_rt_worker_init init, subscript_rt_worker_entry entry, const subscript_rt_worker_message_descriptor* input_descriptor, const subscript_rt_worker_message_descriptor* output_descriptor, uint32_t pos_id);
 
 #ifdef __cplusplus
 } /* extern "C" */

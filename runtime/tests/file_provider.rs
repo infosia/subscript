@@ -350,6 +350,7 @@ fn a_file_call_in_a_worker_completes_with_the_missing_provider_error() {
             Some(worker_read),
             &descriptor,
             &descriptor,
+            0,
         )
     };
     assert!(!worker.is_null());

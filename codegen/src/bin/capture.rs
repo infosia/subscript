@@ -1,4 +1,4 @@
-//! Capture helper (compiler.md §2): runs one accept-corpus entry
+//! Capture helper (compiler.md §2): runs one accept- or trap-corpus entry
 //! under the dev JIT and writes the raw stdout bytes of the run to
 //! this process's stdout. Exit status: 0 on normal completion, 1 on
 //! trap or rejection, 2 on usage/IO errors.
@@ -468,9 +468,17 @@ fn main() -> ExitCode {
         eprintln!("usage: capture <entry-id>   (e.g. capture a22-matrix-propagation)");
         return ExitCode::from(2);
     };
-    let accept = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/accept");
+    let (directory, trap) = match id.chars().next() {
+        Some('a') => ("../corpus/accept", false),
+        Some('t') => ("../corpus/trap", true),
+        _ => {
+            eprintln!("capture: entry id must start with `a` or `t`");
+            return ExitCode::from(2);
+        }
+    };
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(directory);
 
-    let dir = accept.join(&id);
+    let dir = corpus.join(&id);
     let mut sources: Vec<SourceFile> = if dir.is_dir() {
         let entry = "main.ts".to_owned();
         let text = match fs::read_to_string(dir.join(&entry)) {
@@ -499,7 +507,7 @@ fn main() -> ExitCode {
             }
         }
     } else {
-        let path = accept.join(format!("{id}.ts"));
+        let path = corpus.join(format!("{id}.ts"));
         match fs::read_to_string(&path) {
             Ok(text) => vec![SourceFile::new(format!("{id}.ts"), text)],
             Err(e) => {
@@ -548,6 +556,13 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
             ExitCode::SUCCESS
+        }
+        Err(RunError::Trap(report)) if trap => {
+            if std::io::stdout().write_all(&report.stdout).is_err() {
+                return ExitCode::from(2);
+            }
+            eprintln!("capture: {id}: {report}");
+            ExitCode::FAILURE
         }
         Err(e) => {
             eprintln!("capture: {id}: {e}");

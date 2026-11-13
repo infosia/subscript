@@ -80,7 +80,26 @@ closes both forms with one rule.
 
 ### 275.3 Phase Review
 
-Pending.
+One fresh review of the implementation. No CRITICAL finding. One MAJOR
+finding, fixed.
+
+1. MAJOR, realistic, fixed: §39.1 and `stdlib.md` §16.1 still stated
+   "Workers may spawn workers". Both now state the §275 rule (rule 7).
+2. MINOR, realistic, fixed: `codegen/tests/worker_spawn.rs` checked the
+   same facts as the trap-corpus harness of `codegen/tests/cemit.rs`.
+   The file is deleted.
+3. MINOR, realistic, fixed: the tree had no passing full gate. The
+   gate passed at `0c4857b2` (`specs/tracking/workers.md`).
+4. MINOR, realistic, fixed: no test pinned the initializer form. Rule 8
+   and the trap entry `t115` pin it.
+5. MINOR, contrived, fixed: `nested_spawn_traps_the_parent_at_join`
+   read only the parent kind. It now reads the Worker trap kind in the
+   parent message.
+6. MINOR, realistic, fixed: the tracking note told the attempts as a
+   story. The note now records the final state.
+7. MINOR, contrived, fixed: `capture` chose the corpus directory by an
+   implicit prefix rule. It now matches `a` and `t`, and rejects any
+   other prefix with exit 2.
 
 ### 275.4 Open
 

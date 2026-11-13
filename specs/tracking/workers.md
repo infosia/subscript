@@ -198,3 +198,62 @@ Post-fix state: gate 48 harnesses, 828 passed, 0 failed, exit 0
 (reviewer-run, direct); `tsc` exit 0; differential gate 114
 entries, 0 skipped; zero-warning sweep green; no pre-existing
 golden moved. No open findings; the arc is closed.
+
+## §275 — A Worker Context spawns no Worker
+
+Red at `8638c8d0`: both tiers completed t114 without a trap and printed `joining\nafter\n`.
+The combined process wall time was 1.254 seconds; the test body took 0.52 seconds.
+The first form recorded position 0; the contract changed at 1864ba99.
+
+`Context::new_worker` marks the Context before the module initializer runs.
+`Context::worker_spawn` rejects a Worker Context before thread creation with `WorkerSpawnInWorker = 35`.
+The spawn ABI receives the call position from both tiers.
+The parent preserves that position in its `worker-trapped` report.
+The generated host header exports the new trap kind and spawn signature.
+The cemit corpus harness checks t114 and t115 without a duplicate integration test.
+
+A source check before execution established a one-Worker bound for t115.
+Its main Context starts exactly one Worker.
+The Worker's initializer traps at its spawn before it can start another thread or execute the entry.
+
+Each single test used its built binary, its exact filter, and a 30-second hard limit.
+All passed. No test reached the limit.
+
+| Single test | Wall seconds |
+|---|---:|
+| `worker::tests::worker_context_rejects_spawn_and_main_context_allows_spawn` | 0.428 |
+| `worker::tests::nested_spawn_traps_the_parent_at_join` | 0.021 |
+| `trap::tests::worker_spawn_in_worker_kind_has_stable_number_and_rule` | 0.017 |
+| `trap::tests::kind_round_trips_through_u32` | 0.017 |
+| `reload::tests::failed_initializer_with_worker_reload_succeeds` | 0.659 |
+| `language_reference::tests::generated_ai_references_are_byte_identical` | 0.163 |
+| `trap_corpus_entries_match_dev_stdout_on_both_tiers` | 9.750 |
+
+Both tiers returned these results:
+
+| Entry | Stdout | Trap site |
+|---|---|---|
+| t114 | `joining\n` | `t114-worker-spawn-in-worker.ts:13:35` |
+| t115 | `joining initializer\n` | `t115-worker-spawn-in-initializer.ts:13:36` |
+
+Both reports have kind `worker-trapped` and this exact message:
+
+```text
+worker trapped with worker-spawn-in-worker: a Worker cannot spawn a Worker
+```
+
+The capture tool generated both goldens.
+The t115 capture took 0.678 wall seconds and returned exit 1 for the trap.
+An unsupported capture id prefix returned usage exit 2.
+The API reference generator regenerated the corpus index.
+No existing corpus entry or golden changed.
+
+`cargo fmt --check` passed in 2.834 wall seconds.
+The workspace all-targets build passed without warnings in 46.407 wall seconds.
+The Phase Review findings and their fixes are in compiler.md §275.3.
+The full gate passed in 1085.315 wall seconds, including the hygiene check.
+The gate ran once. No session task remains active. No commit was made.
+
+```text
+gate full 0c4857b286cc99909c0ccf3e8508219fdc4cbc14 dirty:19 debug 3337/0/5 release 3334/0/5 skips 2/0 clippy 3/10/13 goldens-moved 0 exit 0
+```

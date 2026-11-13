@@ -627,6 +627,7 @@ pub struct Context {
     // Parent-owned worker handles. Queue synchronization lives entirely in
     // the worker module; the Context itself remains thread-affine.
     workers: WorkerSet,
+    is_worker: bool,
     script_depth: u32,
     // Active frames are tracked separately while a callback is on the stack
     // so explicit collection keeps the running frame alive.
