@@ -26,7 +26,8 @@ through two runtime-owned queues per worker (parent→worker,
 worker→parent); the receiving side materializes each message as a
 fresh allocation in the receiving Context (invariant 1 makes the
 byte copy tier-portable). Queues are unbounded; posting never
-blocks. Workers may spawn workers.
+blocks. A Worker cannot spawn a Worker (§275 replaces the earlier
+rule that workers may spawn workers).
 
 ### 39.2 C API
 

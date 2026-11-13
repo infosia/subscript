@@ -2244,7 +2244,9 @@ side never blocks: `post` enqueues, `poll` returns `null` when
 nothing is available, and the blocking receive (`Inbox.wait`)
 exists only on the worker side, on the worker's own thread. `close`
 then `join` is the orderly shutdown; releasing a Context closes,
-joins, and frees its live workers. Workers may spawn workers.
+joins, and frees its live workers. A Worker cannot spawn a Worker:
+`Worker.spawn` in a Worker Context traps `worker-spawn-in-worker`
+(compiler.md §275).
 
 ### 16.2 Messages
 

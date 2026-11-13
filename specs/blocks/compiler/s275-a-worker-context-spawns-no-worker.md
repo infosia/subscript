@@ -47,6 +47,10 @@ closes both forms with one rule.
    observes `worker-trapped` with the site of the `Worker.spawn` call in
    the Worker, by §152 rule 1.
 6. A main Context keeps the present behaviour of `Worker.spawn`.
+7. This section replaces the rule "Workers may spawn workers" of §39.1
+   and of `specs/blocks/stdlib.md` §16.1.
+8. A consequence of rules 2 and 5: if a module initializer calls
+   `Worker.spawn`, each Worker of that program traps in its initializer.
 
 ### 275.2 Acceptance
 
@@ -64,7 +68,13 @@ closes both forms with one rule.
    ends. Its wall time on Windows is under 2 seconds, measured.
 5. The `TrapKind` value tests in `runtime/src/trap.rs` cover the new
    kind: the value, `from_u32`, and the rule name.
-6. No other corpus entry or golden changes.
+6. No other corpus entry or golden changes, except the trap entry
+   `t115` of item 8.
+8. A trap entry `t115` pins rule 8. A module global initializer calls
+   a function that spawns a Worker, joins it, and returns. The Worker
+   runs the same initializer, and its spawn traps. In both tiers the
+   main initializer then traps `worker-trapped` at the join, with the
+   site of the `Worker.spawn` call in that function.
 7. The full gate ends on Windows. The tracking note records the
    verdict line.
 
