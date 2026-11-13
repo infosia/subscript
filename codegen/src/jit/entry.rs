@@ -5,6 +5,7 @@ use std::ffi::c_void;
 use std::fs::File;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use cranelift_jit::JITModule;
@@ -21,7 +22,6 @@ use super::protocol::{parse_outcome, write_outcome};
 #[cfg(unix)]
 use super::AbnormalTermination;
 use super::{JitMemoryAccounting, RunError, TrapReport};
-#[cfg(unix)]
 use crate::lower::internal;
 use crate::lower::Lowered;
 
@@ -80,7 +80,7 @@ pub(super) fn execute_entry(
     module: &JITModule,
     lowered: &Lowered,
     options: EntryOptions,
-    write_through: Option<File>,
+    write_through: Option<(File, PathBuf)>,
 ) -> Result<CompletedRun, RunError> {
     let EntryOptions {
         file_provider,
@@ -103,6 +103,7 @@ pub(super) fn execute_entry(
     let mut stdout = Box::new(CapturedStdout {
         bytes: Vec::new(),
         write_through,
+        write_error: None,
     });
     unsafe {
         // SAFETY: capture_stdout_line is static; the stdout Box stays live until observer removal (section 263).
@@ -174,6 +175,14 @@ pub(super) fn execute_entry(
         ctx.set_print_observer(None, std::ptr::null_mut())
     };
     drop(aborting_stdout);
+    // compiler.md §268 rules 2 and 3: report the file error and any trap.
+    if let (Some(error), Some((_, path))) = (stdout.write_error, &stdout.write_through) {
+        let mut message = format!("write retained JIT output file {}: {error}", path.display());
+        if let Some((rule, trap_message, pos)) = trap {
+            message.push_str(&format!("; {pos}: trap [{rule}]: {trap_message}"));
+        }
+        return Err(RunError::Internal(internal(message)));
+    }
     let stdout = stdout.bytes;
     match trap {
         Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
@@ -340,5 +349,82 @@ pub(super) fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
             live_bytes: ffi::subscript_rt_ctx_live_bytes(p),
             reserved_bytes: ffi::subscript_rt_ctx_reserved_bytes(p),
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod retained_output_tests {
+    use super::super::compile::compile_jit;
+    use super::*;
+    use subscript_compiler::SourceFile;
+
+    // compiler.md §268 rules 2 and 4: one small module and two entry calls.
+    #[test]
+    fn retained_output_write_error_fails_run() {
+        let files = [SourceFile::new(
+            "output.ts",
+            "export function main(): void { print(`123`); print(`456`); }",
+        )];
+        let (module, lowered) = compile_jit(&files, &[]).unwrap();
+        let mut output = RetainedOutput::new().unwrap();
+        let readonly = File::open(output.path()).unwrap();
+        let result = execute_entry(
+            &module,
+            &lowered,
+            EntryOptions::default(),
+            Some((readonly, output.path().to_path_buf())),
+        );
+        let expected_error =
+            std::io::Write::write_all(&mut File::open(output.path()).unwrap(), b"x")
+                .unwrap_err()
+                .to_string();
+        let error = result
+            .err()
+            .expect("retained write error must fail the run");
+        assert!(matches!(error, RunError::Internal(_)));
+        assert!(error.to_string().contains(&expected_error));
+        assert!(error
+            .to_string()
+            .contains(&output.path().display().to_string()));
+        let run = execute_entry(
+            &module,
+            &lowered,
+            EntryOptions::default(),
+            Some(output.writer().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(run.stdout, b"123\n456\n");
+        assert_eq!(output.bytes().unwrap(), b"123\n456\n");
+        drop(run);
+        // SAFETY: no entry or Context refers to the finalized code.
+        unsafe { module.free_memory() };
+    }
+
+    // compiler.md §268 rule 3: one small module also raises a script exception.
+    #[test]
+    fn retained_output_error_reports_trap() {
+        let files = [SourceFile::new(
+            "output.ts",
+            "export function main(): void { print(`123`); throw new Error(`script failure`); }",
+        )];
+        let (module, lowered) = compile_jit(&files, &[]).unwrap();
+        let output = RetainedOutput::new().unwrap();
+        let result = execute_entry(
+            &module,
+            &lowered,
+            EntryOptions::default(),
+            Some((
+                File::open(output.path()).unwrap(),
+                output.path().to_path_buf(),
+            )),
+        );
+        let error = result.err().expect("file error and trap");
+        assert!(matches!(error, RunError::Internal(_)));
+        let message = error.to_string();
+        assert!(message.contains(&output.path().display().to_string()));
+        assert!(message.contains("script failure"), "{message}");
+        assert!(message.contains("trap ["), "{message}");
+        // SAFETY: no entry or Context refers to the finalized code.
+        unsafe { module.free_memory() };
     }
 }

@@ -16,7 +16,8 @@ use crate::lower::internal;
 
 pub(super) struct CapturedStdout {
     pub(super) bytes: Vec<u8>,
-    pub(super) write_through: Option<File>,
+    pub(super) write_through: Option<(File, PathBuf)>,
+    pub(super) write_error: Option<std::io::Error>,
 }
 
 pub(super) struct TemporaryFile {
@@ -98,7 +99,6 @@ pub(super) struct RetainedOutput {
     #[cfg(unix)]
     start: u64,
     /// The path of `file`. A runner opens it by this path.
-    #[cfg(unix)]
     path: PathBuf,
     owned_path: Option<PathBuf>,
 }
@@ -131,7 +131,6 @@ impl RetainedOutput {
                 file,
                 #[cfg(unix)]
                 start,
-                #[cfg(unix)]
                 path: path.to_path_buf(),
                 owned_path: None,
             });
@@ -142,16 +141,18 @@ impl RetainedOutput {
             file,
             #[cfg(unix)]
             start: 0,
-            #[cfg(unix)]
             path: path.clone(),
             owned_path: Some(path),
         })
     }
 
-    pub(super) fn writer(&self) -> Result<File, RunError> {
-        self.file.try_clone().map_err(|error| {
-            RunError::Internal(internal(format!("clone JIT output file: {error}")))
-        })
+    pub(super) fn writer(&self) -> Result<(File, PathBuf), RunError> {
+        self.file
+            .try_clone()
+            .map(|file| (file, self.path.clone()))
+            .map_err(|error| {
+                RunError::Internal(internal(format!("clone JIT output file: {error}")))
+            })
     }
 
     /// The path of the retained output file.
@@ -251,9 +252,54 @@ pub(super) unsafe extern "C" fn capture_stdout_line(
     let line = unsafe { std::slice::from_raw_parts(line, line_len as usize) };
     stdout.bytes.extend_from_slice(line);
     stdout.bytes.push(b'\n');
-    if let Some(file) = &mut stdout.write_through {
-        let _ = file.write_all(line);
-        let _ = file.write_all(b"\n");
-        let _ = file.flush();
+    // compiler.md §268 rule 1: keep the first error and stop file writes.
+    if stdout.write_error.is_none() {
+        if let Some((file, _)) = &mut stdout.write_through {
+            stdout.write_error = file
+                .write_all(line)
+                .and_then(|()| file.write_all(b"\n"))
+                .and_then(|()| file.flush())
+                .err();
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    // compiler.md §268 rule 1: two callbacks need one temporary file and no JIT compile.
+    #[test]
+    fn retained_error_stops_writes_and_keeps_memory_output() {
+        let mut output = RetainedOutput::new().unwrap();
+        let mut stdout = CapturedStdout {
+            bytes: Vec::new(),
+            write_through: Some((
+                File::open(output.path()).unwrap(),
+                output.path().to_path_buf(),
+            )),
+            write_error: None,
+        };
+        // SAFETY: the capture and byte slices stay live through each callback.
+        unsafe {
+            capture_stdout_line(
+                (&mut stdout as *mut CapturedStdout).cast(),
+                b"first".as_ptr(),
+                5,
+            )
+        };
+        let first = stdout.write_error.as_ref().unwrap().to_string();
+        stdout.write_through = Some(output.writer().unwrap());
+        // SAFETY: the capture and byte slices stay live through each callback.
+        unsafe {
+            capture_stdout_line(
+                (&mut stdout as *mut CapturedStdout).cast(),
+                b"second".as_ptr(),
+                6,
+            )
+        };
+        assert_eq!(stdout.bytes, b"first\nsecond\n");
+        assert_eq!(stdout.write_error.as_ref().unwrap().to_string(), first);
+        assert!(output.bytes().unwrap().is_empty());
     }
 }

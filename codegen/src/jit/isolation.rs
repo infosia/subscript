@@ -464,7 +464,13 @@ mod runner {
             fail_alloc_after: request.fail_alloc_after,
             freed_handle_diagnostics: request.freed_handle_diagnostics,
         };
-        execute_entry(&module, &lowered, options, Some(writer)).map(|_| ())
+        execute_entry(
+            &module,
+            &lowered,
+            options,
+            Some((writer, std::path::PathBuf::from(output))),
+        )
+        .map(|_| ())
     }
 
     #[cfg(test)]
