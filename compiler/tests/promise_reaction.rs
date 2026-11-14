@@ -45,6 +45,81 @@ fn reject_entries_report_their_rule_messages() {
     }
 }
 
+/// §289 rules 1a, 3, and 4: only a direct await statement discards a non-void catch result.
+// Cost: 20 checker calls; no native build.
+#[test]
+fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
+    let place_message = "a `void` `catch` callback on `Promise<i32>` gives `Promise<i32 | void>`; use it only as `await h.catch(r);`";
+    for (body, message) in [
+        (
+            "const r = await wi().catch(() => v()); if (r !== undefined) print(`${r + 1}`);",
+            place_message,
+        ),
+        ("return wi().catch(v);", place_message),
+        ("const h = wi().catch(v);", place_message),
+        ("const h = wi().catch(v); await h;", place_message),
+        ("const h: Promise<void> = wi().catch(v); await h;", place_message),
+        ("const ps: Promise<void>[] = [wi().catch(v), av()]; await Promise.all(ps);", place_message),
+        ("await Promise.all([wi().catch(v), av()]);", place_message),
+        ("await consume(wi().catch(v));", place_message),
+        ("await wi().catch(v).then(v);", place_message),
+        ("await wi().catch(v).catch(v);", place_message),
+        ("await wi().catch(v).finally(v);", place_message),
+        ("wi().catch(v);", place_message),
+        ("true ? await wi().catch(v) : v();", place_message),
+        ("for (; false; await wi().catch(v)) {}", place_message),
+        ("const f = async () => { return await wi().catch(v); }; await f();", place_message),
+        (
+            "await wi().catch(async (e: Error) => { print(e.message); });",
+            "a `catch` callback must return `i32`, the value type of the handle; it returns `Promise<void>`",
+        ),
+        (
+            "await wi().catch((e: Error): string => e.message);",
+            "a `catch` callback must return `i32`, the value type of the handle; it returns `string`",
+        ),
+        (
+            "await wi().then((n: i32): i32 => n, () => v());",
+            "a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `void`",
+        ),
+    ] {
+        let source = format!(
+            "async function wi(): Promise<i32> {{ return 1; }}
+            async function av(): Promise<void> {{}}
+            async function consume(h: Promise<void>): Promise<void> {{ await h; }}
+            function v(): void {{}}
+            export async function main(): Promise<void> {{ {body} }}"
+        );
+        let diagnostics = check_program(&[SourceFile::new("void-catch.ts", source.clone())])
+            .expect_err("the form is rejected");
+        assert_eq!(diagnostics.len(), 1, "{body}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S013, "{body}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].message, message, "{body}");
+        if message == place_message {
+            let pos = &diagnostics[0].pos;
+            let line = source.lines().nth(pos.line as usize - 1).expect("source line");
+            assert!(line[pos.col as usize - 1..].starts_with("wi().catch("), "{body}: {pos:?}");
+        }
+        assert_eq!(
+            diagnostics[0].divergence,
+            Some(subscript_compiler::divergence::Divergence::PromiseReactionResult),
+            "{body}: a divergence block"
+        );
+    }
+    for body in [
+        "(await ((wi().catch(v)))); await (av().catch(v));",
+        "const h = av().catch(v); await h; await wi().catch(() => { v(); });",
+    ] {
+        let source = format!(
+            "async function wi(): Promise<i32> {{ return 1; }}
+            async function av(): Promise<void> {{}}
+            function v(): void {{}}
+            export async function main(): Promise<void> {{ {body} }}"
+        );
+        check_program(&[SourceFile::new("void-catch.ts", source)])
+            .expect("the accepted form checks");
+    }
+}
+
 fn lambdas<'a>(expr: &'a hir::Expr, out: &mut Vec<&'a hir::Expr>) {
     if matches!(expr.kind, ExprKind::Lambda { .. }) {
         out.push(expr);
@@ -135,7 +210,7 @@ fn helpers(source: &str) -> Vec<String> {
 
 /// §186 rule 2: one helper serves each form, callback shape, and type
 /// pair; a different shape or type gets its own helper.
-// Cost: two checker calls; no native build.
+// Cost: three checker calls; no native build.
 #[test]
 fn calls_with_one_shape_and_type_share_one_helper() {
     let prefix = "async function value(n: i32): Promise<i32> { return n; }
@@ -147,6 +222,24 @@ fn calls_with_one_shape_and_type_share_one_helper() {
         }}"
     );
     assert_eq!(helpers(&same), ["[[Promise.then (v) => value]]<i32, i32>"]);
+    let void_catches = format!(
+        "{prefix}export async function main(): Promise<void> {{
+            await value(1).catch((): void => {{}});
+            await value(2).catch((): void => {{}});
+            await text().catch((): void => {{}});
+            await value(1).catch((e: Error): void => {{}});
+            print(`${{await value(1).catch((): i32 => 0)}}`);
+        }}"
+    );
+    assert_eq!(
+        helpers(&void_catches),
+        [
+            "[[Promise.catch () => value]]<i32, i32>",
+            "[[Promise.catch () => void]]<i32, void>",
+            "[[Promise.catch () => void]]<string, void>",
+            "[[Promise.catch (e) => void]]<i32, void>",
+        ]
+    );
     let different = format!(
         "{prefix}export async function main(): Promise<void> {{
             print(`${{await value(1).then((v: i32): i32 => v + 1)}}`);

@@ -1506,7 +1506,8 @@ PromiseReactionArguments	s186-then-two-parameters	S013	a `.then(...)` callback t
 PromiseReactionArguments	s186-finally-parameter	S013	a `.finally(...)` callback takes no parameter
 PromiseReactionArguments	s186-catch-two-parameters	S013	a rejection callback of `.catch(...)` takes at most one parameter, of type `Error`
 PromiseReactionResult	s186-catch-string	S013	a `catch` callback must return `i32`, the value type of the handle; it returns `string`
-PromiseReactionResult	s186-catch-void	S013	a `catch` callback must return `i32`; a `void` callback is accepted only on `Promise<void>`
+PromiseReactionResult	s289-catch-void-place	S013	a `void` `catch` callback on `Promise<i32>` gives `Promise<i32 | void>`; use it only as `await h.catch(r);`
+PromiseReactionResult	s289-then-rejection-void	S013	a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `void`
 PromiseReactionResult	s186-then-rejection-type	S013	a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `string`
 PromiseReactionResult	s186-finally-value	S013	a `finally` callback must be `() => void`; it is `() => Promise<void>`
 PromiseReactionSpread	s186-then-spread	S013	spread arguments require variadic parameters, which the language does not have

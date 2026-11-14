@@ -250,6 +250,7 @@ fn run_with_effects(
         lambda_called_at_once: false,
         callback_leaf_place: None,
         void_leaf_place: None,
+        void_catch_statement: None,
         declaration_starts: HashMap::new(),
         initializer_call: None,
         active_call: None,

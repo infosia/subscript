@@ -143,7 +143,20 @@ impl<'p> Checker<'p> {
                     false
                 }
                 ast::Stmt::Expr(e) => {
+                    // §289 rule 1a: only this call can discard a non-void catch result.
+                    let statement_call = match super::expr::unparen_expr(&e.expr) {
+                        ast::Expr::Await(awaited) => {
+                            match super::expr::unparen_expr(&awaited.arg) {
+                                ast::Expr::Call(call) => Some(call.span),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    let previous =
+                        std::mem::replace(&mut self.void_catch_statement, statement_call);
                     out.extend(self.check_expr_stmt(&e.expr, fx));
+                    self.void_catch_statement = previous;
                     false
                 }
                 ast::Stmt::Return(r) => {

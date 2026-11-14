@@ -5,7 +5,7 @@ use super::DivergenceEntry;
 pub(super) const PROMISEREACTIONRESULT: DivergenceEntry = DivergenceEntry {
     ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const r = await leaf().catch((e: Error): string => e.message); print(`${r}`); }",
     subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const r: i32 = await leaf().catch((e: Error): i32 => e.message.length); print(`${r}`); }",
-    why: "A rejection callback returns the value type of its handle, and a finally callback returns void. The language has no union result.",
+    why: "Rejection results match the fulfillment type. A void catch on a non-void handle requires an await statement; finally requires void.",
     collision: "C8",
 };
 

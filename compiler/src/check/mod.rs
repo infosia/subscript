@@ -1364,6 +1364,8 @@ pub(crate) struct Checker<'p> {
     /// The place of the leaves of the next conditional, `&&`, or `||`
     /// (compiler.md §258 rules 2 and 3).
     void_leaf_place: Option<expr::VoidLeafPlace>,
+    /// The direct call operand of an `await` expression statement (§289 rule 1a).
+    void_catch_statement: Option<swc_common::Span>,
     /// The position of the name of each class, generic class, and enum
     /// declared in a program file, by file and name (compiler.md §241
     /// rule 1).

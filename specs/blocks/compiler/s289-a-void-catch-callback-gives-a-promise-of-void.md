@@ -75,7 +75,24 @@ no union with `void`, so §186 rejects the form.
 
 ### 289.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL finding. Ownership of the dropped value
+(a string, an array, a class, a value type, and a failing receiver, 50
+iterations each), the release of `h` on each path of the helper, and
+the callback order of eleven shapes agreed on the development tier,
+the ship tier, and `node`.
+
+1. MAJOR, realistic, fixed: the call had the type `Promise<void>`, so
+   `return wi().catch(v);` in a `Promise<void>` function, a parameter,
+   and an element of a `Promise<void>[]` were accepted. `tsc` rejects
+   each of them, because it types the call `Promise<T | void>`. Rule
+   1a.
+2. MINOR, realistic, fixed: an async `void` `catch` callback kept its
+   S013, and the message said that the callback returns `void`. The
+   message names `Promise<void>`. The form is §289.4 item 3.
+3. MINOR, realistic, fixed: §186 rule 6 and `collisions.md` C8 still
+   stated the former `catch` rule.
+4. MINOR, contrived, fixed: a memory test had no firing control.
+5. MINOR, contrived, fixed: a doc comment cited the wrong rule.
 
 ### 289.4 Open
 

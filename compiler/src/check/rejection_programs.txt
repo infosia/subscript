@@ -9462,11 +9462,18 @@ async function g(): Promise<void> {}
 export async function main(): Promise<void> { const r = await f().catch((e: Error): string => e.message); }
 END FILE
 END PROGRAM
-PROGRAM	s186-catch-void			0
-FILE	E	target/s154/forms/s186-catch-void/main.ts
+PROGRAM	s289-catch-void-place			0
+FILE	E	target/s154/forms/s289-catch-void-place/main.ts
+async function f(): Promise<i32> { return 1; }
+function v(): void {}
+export async function main(): Promise<void> { const h = f().catch(v); await h; }
+END FILE
+END PROGRAM
+PROGRAM	s289-then-rejection-void			0
+FILE	E	target/s154/forms/s289-then-rejection-void/main.ts
 async function f(): Promise<i32> { return 1; }
 async function g(): Promise<void> {}
-export async function main(): Promise<void> { await f().catch((e: Error): void => { print(e.message); }); }
+export async function main(): Promise<void> { await f().then((v: i32): i32 => v, (e: Error): void => { print(e.message); }); }
 END FILE
 END PROGRAM
 PROGRAM	s186-then-rejection-type			0

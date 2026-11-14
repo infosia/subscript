@@ -15,6 +15,7 @@
 //! | `then(f)`, `f: () => …` | `await h;` and then the same call with no argument |
 //! | `then(f, r)` | `let v: T; try { v = await h; } catch (e) { return r(e); } return f(v);` |
 //! | `catch(r)` | `try { return await h; } catch (e) { return r(e); }` |
+//! | `catch(r)`, `r: (e: Error) => void` | `try { await h; } catch (e) { r(e); }` (§289 rule 1) |
 //! | `finally(f)` | `try { return await h; } finally { f(); await turn(); await turn(); }` |
 //!
 //! Each callback call delivers its result as the `then(f)` rows show. The
@@ -186,9 +187,9 @@ impl Body<'_> {
         }
     }
 
-    /// The await of the receiver as the last statement of a value path.
+    /// Awaits the receiver and discards its value for a `void` result (§289 rule 1).
     fn await_or_return(&self) -> hir::Stmt {
-        if self.value_void {
+        if self.result_void {
             hir::Stmt::Expr(self.awaited())
         } else {
             Self::ret(Some(self.awaited()), self.pos)

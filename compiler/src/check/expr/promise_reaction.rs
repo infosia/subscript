@@ -92,8 +92,21 @@ impl<'p> Checker<'p> {
         else {
             return self.err_expr(pos);
         };
+        if matches!(&reaction, Reaction::Catch(r) if r.delivery == Delivery::Void)
+            && self.apparent_type(&value) != Type::Void
+            && self.void_catch_statement != Some(call.span)
+        {
+            let value = self.type_name(&value);
+            self.reject_subset(
+                RejectionSite::PromiseReactionResult,
+                format!("a `void` `catch` callback on `Promise<{value}>` gives `Promise<{value} | void>`; use it only as `await h.catch(r);`"),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         let result = match &reaction {
             Reaction::Then(f) | Reaction::ThenBoth(f, _) => f.value.clone(),
+            Reaction::Catch(r) if r.delivery == Delivery::Void => Type::Void,
             Reaction::Catch(_) | Reaction::Finally(_) => value.clone(),
         };
         let symbol = self.promise_helper(&reaction, &value, &result, &recv.pos, &method_pos, &pos);
@@ -217,14 +230,18 @@ impl<'p> Checker<'p> {
                     method,
                     fx,
                 )?;
-                if self.apparent_type(&r.value) != self.apparent_type(value) {
+                if r.delivery != Delivery::Void
+                    && self.apparent_type(&r.value) != self.apparent_type(value)
+                {
                     let expected = self.type_name(value);
-                    let message = if r.delivery == Delivery::Void {
-                        format!("a `catch` callback must return `{expected}`; a `void` callback is accepted only on `Promise<void>`")
+                    let actual = if r.delivery == Delivery::Adopt
+                        && self.apparent_type(&r.value) == Type::Void
+                    {
+                        self.type_name(&r.result)
                     } else {
-                        let actual = self.type_name(&r.value);
-                        format!("a `catch` callback must return `{expected}`, the value type of the handle; it returns `{actual}`")
+                        self.type_name(&r.value)
                     };
+                    let message = format!("a `catch` callback must return `{expected}`, the value type of the handle; it returns `{actual}`");
                     self.reject_subset(
                         RejectionSite::PromiseReactionResult,
                         message,

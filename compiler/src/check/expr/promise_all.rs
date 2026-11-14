@@ -33,6 +33,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let jobs = self.check_expr(&argument.expr, None, fx);
+        // The call consumes the jobs even when an element has a diagnostic.
+        let origins = self.expr_async_origins(&jobs, fx);
+        fx.handle_async_origins(&origins);
         let Type::Array(element) = self.apparent_type(&jobs.ty) else {
             if self.apparent_type(&jobs.ty) != Type::Error {
                 self.reject_subset(
@@ -61,8 +64,6 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let origins = self.expr_async_origins(&jobs, fx);
-        fx.handle_async_origins(&origins);
         let origin = fx.register_async_origin(pos.clone());
         hir::Expr {
             pending_work: None,

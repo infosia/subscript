@@ -11,6 +11,68 @@ use subscript_codegen::{
 use subscript_compiler::{check_program, lir as l, SourceFile};
 use subscript_runtime::TrapKind;
 
+/// §289 rule 1: discarded results release frames and permit explicit payload collection.
+// Cost: eight JIT sessions, at most 20 iterations each; retained payloads must increase live bytes.
+#[test]
+fn void_catch_discards_string_and_class_results_without_retained_frames() {
+    for result in ["string", "Box"] {
+        let mut live = Vec::new();
+        for (catch, count, retain) in [
+            (false, 1, false),
+            (false, 20, false),
+            (true, 20, false),
+            (true, 20, true),
+        ] {
+            let value = if result == "string" {
+                "`owned ${n}`"
+            } else {
+                "new Box(n)"
+            };
+            let reaction = if catch { ".catch((): void => {})" } else { "" };
+            let store = if retain { "retained.push(result);" } else { "" };
+            let source = format!(
+                "class Box {{ value: string; constructor(n: i32) {{ this.value = `owned ${{n}}`; }} }}
+                const retained: {result}[] = [];
+                async function work(n: i32): Promise<{result}> {{
+                    await Context.suspend(); const result = {value}; {store} return result;
+                }}
+                async function exercise(): Promise<void> {{
+                    for (let i: i32 = 0; i < {count}; i++) {{ await work(i){reaction}; }}
+                }}
+                export async function main(): Promise<void> {{ await exercise(); Context.collect(); }}"
+            );
+            let (output, memory) =
+                subscript_codegen::run_jit_with_memory_accounting(&files(&source), false)
+                    .expect("the ownership loop runs");
+            assert!(output.is_empty());
+            live.push(memory.live_bytes);
+        }
+        assert_eq!(live[0], live[1], "direct result={result}: {live:?}");
+        assert_eq!(live[1], live[2], "catch result={result}: {live:?}");
+        assert!(live[3] > live[2], "retained result={result}: {live:?}");
+    }
+}
+
+/// §186 rule 8: new catch keys and their order enter the declaration hash.
+// Cost: four checker calls; no native build.
+#[test]
+fn void_catch_helper_keys_enter_the_declaration_hash() {
+    let hash = |body: &str| {
+        let source = format!(
+            "async function work(): Promise<i32> {{ return 1; }}
+            export async function main(): Promise<void> {{ {body} }}"
+        );
+        subscript_codegen::declaration_hash(&check_program(&files(&source)).expect("checks"))
+    };
+    let value = "await work().catch((): i32 => 0);";
+    let void = "await work().catch((): void => {});";
+    assert_ne!(hash(value), hash(&format!("{value} {void}")));
+    assert_ne!(
+        hash(&format!("{value} {void}")),
+        hash(&format!("{void} {value}"))
+    );
+}
+
 fn files(source: &str) -> [SourceFile; 1] {
     [SourceFile::new("promise-reaction.ts", source)]
 }
