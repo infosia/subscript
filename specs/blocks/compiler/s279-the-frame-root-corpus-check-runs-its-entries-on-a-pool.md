@@ -52,7 +52,19 @@ library test binary took 45.56 s in debug in the full gate record of
 
 ### 279.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It compared each
+assertion of the old test with its replacement, and found each shared
+state that a work item reads named in the test. Four MINOR findings,
+each realistic and fixed:
+
+1. A panic outside the finding path did not name its entry, and the
+   worker skipped its other entries. The pool now catches the panic
+   and records it as a finding of that entry.
+2. The control started at the report assertion. It now runs through
+   the pool runner, once with a finding and once with a panic.
+3. The equality check dropped the two values. The finding now holds
+   both.
+4. A sentence of the tracking note had no article.
 
 ### 279.4 Open
 

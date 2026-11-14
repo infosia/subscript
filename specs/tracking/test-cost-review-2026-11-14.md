@@ -263,3 +263,80 @@ compare with the earlier gate.
 
 ## §279 — the frame-root corpus check
 
+The contract pin is `35f009b0`.
+The test uses a bounded worker pool. Each item returns its findings and counts.
+The test thread reports findings in corpus order. The control injects one finding and checks the failure text.
+The test module contains all new helpers. No production module changes.
+The test thread loads the sources before the pool starts. Each worker owns its compiler state and JIT module.
+The test comments state the shared tables and thread-local captures.
+
+Build both profiles before each measurement. Measure wall time around the Cargo command. Exclude the build command.
+
+Before the change:
+
+- Debug wall time: 36.68 s.
+  `frame parity: 598 coroutines, 1015 suspension points, both native tiers`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 35.79s`
+- Release wall time: 4.29 s.
+  `frame parity: 598 coroutines, 1015 suspension points, both native tiers`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 3.78s`
+
+After the change:
+
+- Debug wall time: 13.39 s.
+  `frame parity: 598 coroutines, 1015 suspension points, both native tiers`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 353 filtered out; finished in 12.66s`
+- Release wall time: 1.85 s.
+  `frame parity: 598 coroutines, 1015 suspension points, both native tiers`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 353 filtered out; finished in 1.37s`
+
+Both profiles retain 598 coroutines and 1,015 suspension points. The control adds one library test.
+These measurements use single runs.
+
+The full debug library suite passes. Wall time: 23.92 s.
+`test result: ok. 354 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.82s`
+`test lower::func::frame_root_tests::entry_finding_fails_with_its_id ... ok`
+
+`cargo fmt --check` passes. Wall time: 2.03 s.
+
+`cargo clippy -p subscript-codegen --all-targets` passes. Wall time: 3.35 s.
+`Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.25s`
+Clippy reports warnings in unchanged code. It reports none in the changed test.
+
+`git diff --check` passes. No golden changes. The requested checks exclude the full gate.
+
+Review corrections:
+
+The shared pool runner catches each entry panic and returns its payload text with the entry ID.
+The worker continues with its other entries. The runner returns all reports in corpus order.
+Both controls use this runner with 17 entries. One check returns an error. The other check panics.
+Each control checks all report IDs and the failure text. Equality findings print both values with Debug.
+
+Build the debug test binary before the corpus measurement. Exclude the build from the measurement.
+
+- Debug corpus wall time: 13.300 s.
+  `frame parity: 598 coroutines, 1015 suspension points, both native tiers`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 354 filtered out; finished in 12.59s`
+- The broad `entry_` control filter wall time: 0.115 s.
+  `test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 340 filtered out; finished in 0.02s`
+- The two frame-root controls wall time: 0.179 s.
+  `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 353 filtered out; finished in 0.00s`
+  The failures name `control-1: injected finding` and `control-1: panic: injected panic`.
+- The full debug library suite wall time: 24.612 s.
+  `test result: ok. 355 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.51s`
+- `cargo fmt --check` passes. Wall time: 2.032 s. Exit code: 0.
+- `cargo clippy -p subscript-codegen --all-targets` passes. Wall time: 3.631 s.
+  `Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.53s`
+  Clippy reports warnings in unchanged code. It reports none in the changed test.
+
+The counts remain 598 coroutines and 1,015 suspension points. The panic control adds one library test.
+`git diff --check` passes. The source file contains 1,101 lines. Only the two permitted files change.
+No golden changes. These checks exclude the full gate. No commit is made.
+
+Full gate on the §279 tree:
+
+```text
+gate full 35f009b0ddffa3c8ff48ead9f74641563372a963 dirty:3 debug 3390/0/5 release 3371/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts move by +2 in each profile: the two pool controls.
