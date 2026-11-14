@@ -60,7 +60,16 @@ ship tier, and `perf-gate` keep the full-size workload.
 
 ### 277.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that the
+witness keeps each semantic of `a22` that the interpreter observes:
+the matrix product, parent propagation, the state across iterations,
+the f32 checksum, the LCG, and each of the 17 phases. Three MINOR
+findings, each realistic and fixed:
+
+1. §88 rule 5 still gave a debug skip count of 2. It now states 1.
+2. The `a22` reason ended with a period, so the index showed `.;`.
+   The period is gone, and the generator rewrote the index.
+3. The tracking note did not hold the full gate verdict. It now does.
 
 ### 277.4 Open
 
