@@ -147,3 +147,116 @@ So only the suite times above are comparable, not the step sums.
 
 ## §278 — the golden sweep
 
+Pin: `02aac875d69dcbaa221b76fbb2e4be135738ea2c`.
+
+The coding agent read all 33 focused test bodies. Rule 1 removes each
+test below.
+Each test asserts only tier equality or equality with a golden.
+The output prints give diagnostics. They add no assertion.
+Each named entry has a golden. The reference host skips none.
+Rule 3 keeps no focused test.
+
+| Removed test | Entries |
+| --- | --- |
+| `r27_field_initializer_entries_match_across_tiers` | `a133-field-init-no-ctor`, `a134-field-init-order` |
+| `r28_binary32_bit_access_matches_the_golden_across_tiers` | `a135-f32-bits` |
+| `r29_class_index_signature_matches_the_golden_across_tiers` | `a136-index-signature` |
+| `r30_handle_entry_parameters_match_the_golden_across_tiers` | `a137-handle-entry-param` |
+| `r32_wire_entry_parameters_match_the_golden_across_tiers` | `a140-wire-entry-param` |
+| `r31_using_disposal_matches_the_goldens_across_tiers` | `a138-using-dispose`, `a139-using-async` |
+| `unicode_string_entry_matches_across_tiers_before_golden_comparison` | `a60-string-unicode` |
+| `string_literal_union_entry_matches_across_tiers_and_golden` | `a91-string-literal-union` |
+| `descriptor_literal_entry_matches_across_tiers_and_golden` | `a92-descriptor-literals` |
+| `q34_async_entries_match_across_tiers_and_golden` | `a93-async-chain`, `a94-async-two-roots`, `a95-interop-async-await` |
+| `r13_async_method_entries_match_across_tiers_and_golden` | `a110-async-method-receiver`, `a111-interop-async-method-poll` |
+| `capturing_lambda_environment_survives_recursive_reentry` | `a114-lambda-env-recursion` |
+| `scalar_parameter_pair_entry_matches_across_tiers_and_golden` | `a96-interop-byte-pairs` |
+| `embedded_chain_header_box_keeps_the_complete_extension` | `a89-interop-chain-payload` |
+| `managed_boundary_box_survives_the_building_function` | `a169-managed-boundary-box` |
+| `string_field_pointer_write_direction_matches_both_tiers_and_golden` | `a97-interop-string-field-write` |
+| `string_field_pointer_read_direction_matches_both_tiers_and_golden` | `a98-interop-string-field-read` |
+| `texture_descriptor_write_direction_matches_both_tiers_and_golden` | `a99-interop-texture-descriptor-write` |
+| `texture_descriptor_read_direction_matches_both_tiers_and_golden` | `a100-interop-texture-descriptor-read` |
+| `recursive_boundary_pipeline_entries_match_both_tiers_and_goldens` | `a103-interop-recursive-compute-pipeline`, `a104-interop-recursive-render-pipeline`, `a105-interop-recursive-string-pair-elements` |
+| `struct_pointer_recursive_boundary_pipeline_matches_both_tiers_and_golden` | `a106-interop-recursive-struct-pointer-members` |
+| `handle_beside_arrays_through_nullable_member_matches_both_tiers_and_golden` | `a119-interop-handle-beside-arrays` |
+| `nested_structs_behind_array_element_pointer_match_both_tiers_and_golden` | `a120-interop-nested-behind-element-pointer` |
+| `unmarked_struct_pointer_in_array_element_matches_both_tiers_and_golden` | `a121-interop-unmarked-reach-through` |
+| `two_reach_through_pointer_members_match_both_tiers_and_golden` | `a122-interop-two-pointer-members` |
+| `wide_descriptor_breadth_and_depth_match_both_tiers_and_golden` | `a123-interop-wide-descriptor` |
+| `contextual_conditionals_match_both_tiers_and_golden` | `a124-contextual-conditional` |
+| `conditional_arm_narrowing_matches_both_tiers_and_golden` | `a125-conditional-arm-narrowing` |
+| `suspension_state_matches_both_tiers_and_golden` | `a149-suspension-state` |
+| `by_value_packing_matches_both_tiers_and_golden` | `a126-interop-by-value-packing` |
+| `handle_parameter_pair_matches_both_tiers_and_golden` | `a107-interop-handle-parameter-pair` |
+| `nullable_handle_parameter_matches_both_tiers_and_golden` | `a108-interop-nullable-handle-parameter` |
+| `narrow_corpus_entries_match_across_tiers_before_golden_comparison` | `a46-narrow-numerics`, `a47-narrow-layout`, `a48-interop-narrow-slices`, `a49-f16-conversions`, `a50-narrow-callbacks-shifts` |
+
+Keep `every_corpus_entry_with_a_golden_ends_in_a_newline` under rule 6.
+It checks the last byte of each non-empty golden. It starts no run.
+Keep the complete sweep. It compares both tiers with each golden.
+No focused test has another observation under rule 2.
+The phase list names no removed test. The dead-code check stays.
+No support file changes. No helper becomes unused.
+
+Add `abnormal_termination_failure_retains_stdout` to the parallel phase.
+It checks the failure formatter with abnormal-termination text and stdout
+`x\n`. The failure line must contain `output before termination:\nx\n`.
+The dev error branch passes the retained stdout to this formatter.
+Keep the host hooks, file provider, entry arguments, and exclusions.
+
+Build both test binaries before each timed suite run.
+Measure wall time around the Cargo command. Exclude the build command.
+The harness hides successful phase-2 output. Run the sweep again in its
+phase-2 child mode to read its counts. Keep these times separate.
+
+Before the change:
+
+- Debug wall time: 44.076 s.
+  `test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 43.24s`
+- Release wall time: 28.319 s.
+  `test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.21s`
+- Direct debug sweep wall time: 34.615 s.
+  `golden sweep: compared 436 entries, skipped 0 entries`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 34.61s`
+- Direct release sweep wall time: 22.726 s.
+  `golden sweep: compared 436 entries, skipped 0 entries`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 22.72s`
+
+After the change:
+
+- Debug wall time: 36.225 s.
+  `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.46s`
+- Direct debug sweep wall time: 35.156 s.
+  `golden sweep: compared 436 entries, skipped 0 entries`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 35.15s`
+- Release wall time: 19.509 s.
+  `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.01s`
+- Direct release sweep wall time: 18.826 s.
+  `golden sweep: compared 436 entries, skipped 0 entries`
+  `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 18.82s`
+
+Both profiles compare the same 436 entries and skip 0 entries.
+The suite removes 33 tests and adds one control. It now has 3 tests.
+Debug wall time falls by 7.851 s. Release wall time falls by 8.810 s.
+These are single runs. The direct sweep times are separate measurements.
+
+`cargo fmt --check` passes.
+`cargo clippy -p subscript-codegen --all-targets` passes.
+Clippy reports warnings in unchanged code. It reports none in the changed test.
+`git diff --check` passes. No golden changes.
+The control of rule 4 builds the failure line from a stdout value. It
+does not reach the extraction in `dev_sweep_run`, because a test
+outside the crate cannot build an `AbnormalTermination`. The full gate
+result is below.
+
+Full gate on the §278 tree:
+
+```text
+gate full 02aac875d69dcbaa221b76fbb2e4be135738ea2c dirty:3 debug 3388/0/5 release 3369/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts move by −32 in each profile: 33 removed tests and one new
+control. The debug step took 457 s and the release step 258 s. Both
+steps rebuilt the changed test binary, so these step times do not
+compare with the earlier gate.

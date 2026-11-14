@@ -55,7 +55,20 @@ each of these entries. In the full gate record of 2026-11-13 at
 
 ### 278.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that each
+removed test asserted only the facts of rule 1, and reached the same
+run path as the sweep. The direct run calls of 27 removed tests equal
+the sweep calls for an entry with no hook and no file provider. Four
+MINOR findings:
+
+1. Realistic, recorded: the control of rule 4 does not reach the
+   stdout extraction of `dev_sweep_run`. A test outside the crate
+   cannot build an `AbnormalTermination` (`#[non_exhaustive]`). The
+   tracking note states the limit.
+2. Realistic, fixed: the tracking note had sentences in the command
+   form. They now state facts.
+3. Cosmetic, fixed: a double blank line in the tracking note.
+4. Process, fixed: the full gate verdict is in the tracking note.
 
 ### 278.4 Open
 
