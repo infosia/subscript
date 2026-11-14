@@ -156,7 +156,7 @@ fn signature_text(f: &hir::Function) -> String {
 
 /// Computes the declaration fingerprint of a checked module (§8.2).
 ///
-/// Covered: classes (kind, field names, types, and order), enum member
+/// Covered: classes (kind, field names, types, order, and field absence), enum member
 /// values, Q32 string-alias member spellings and order, module-level
 /// variable names and types, and every user function signature — free
 /// functions, constructors, and methods, including parameter escape facts.
@@ -195,7 +195,12 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
             .fields
             .iter()
             .enumerate()
-            .map(|(i, f)| format!("{i}:{}:{:?}", f.name, f.ty))
+            // Section 294: these facts constrain stored values.
+            // Excluded: is_defaulted controls construction only; init runs at construction;
+            // written_non_null guides checking; foreign_provenance guides foreign checks;
+            // pos locates diagnostics. None constrains an existing object's values.
+            // The compiler test reload_declaration_hash_field_coverage checks this list.
+            .map(|(i, f)| format!("{i}:{}:{:?}:{}", f.name, f.ty, f.is_absence_capable))
             .collect();
         push(
             label("class", &c.name, &c.pos, ambiguous),

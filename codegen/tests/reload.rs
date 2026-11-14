@@ -1370,3 +1370,26 @@ export function main(): void {}
     }
     assert!(session.take_output().is_empty());
 }
+
+// Section 294: measured focused test cost: 0.03 s (one JIT session and one rejected check).
+#[test]
+fn field_absence_reload_is_refused() {
+    let before = r#"type CompareFunction = "never" | "less" | "equal";
+@Descriptor class SamplerDescriptor { compare?: CompareFunction; }
+let saved: SamplerDescriptor = {};
+export function main(): void {
+    if (saved.compare === undefined) { print("old:absent"); }
+    else { print(`old:${saved.compare}`); }
+}"#;
+    let after = before.replace("compare?: CompareFunction;", "compare?: CompareFunction = \"never\";")
+        .replace("if (saved.compare === undefined) { print(\"old:absent\"); }\n    else { print(`old:${saved.compare}`); }", "print(`new:${saved.compare}`);");
+    let mut session = ReloadSession::new(&files(before)).expect("session");
+    session.call_main().expect("before");
+    assert_eq!(output(&mut session), "old:absent\n");
+    assert!(matches!(
+        session.reload(&files(&after)),
+        Err(ReloadError::DeclarationChanged { declaration }) if declaration == "class SamplerDescriptor"
+    ));
+    session.call_main().expect("old code remains callable");
+    assert_eq!(output(&mut session), "old:absent\n");
+}

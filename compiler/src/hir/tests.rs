@@ -1034,3 +1034,31 @@ fn the_fixed_array_callback_family_is_the_callback_methods_that_the_prelude_decl
         ]
     );
 }
+
+// Section 294 rules 1 and 4: the reload declaration hash holds name, ty, and is_absence_capable.
+// It excludes written_non_null (checks), is_defaulted and init (construction),
+// foreign_provenance (foreign checks), and pos (diagnostics).
+// A new Field member requires a hash coverage decision here.
+#[test]
+fn reload_declaration_hash_field_coverage() {
+    let field = Field {
+        written_non_null: false,
+        name: "value".into(),
+        ty: Type::I32,
+        is_defaulted: false,
+        is_absence_capable: false,
+        init: None,
+        foreign_provenance: None,
+        pos: Pos::new("field.ts", 1, 1),
+    };
+    let Field {
+        written_non_null: _,
+        name: _,
+        ty: _,
+        is_defaulted: _,
+        is_absence_capable: _,
+        init: _,
+        foreign_provenance: _,
+        pos: _,
+    } = field;
+}

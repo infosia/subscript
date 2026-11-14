@@ -635,3 +635,34 @@ fn failed_initializer_with_worker_reload_succeeds() {
     session.call_main().unwrap();
     assert_eq!(session.take_output(), b"fixed\n");
 }
+
+// Section 294: measured focused test cost: 0.01 s (two checks and hashes).
+#[test]
+fn declaration_hash_changes_for_field_absence() {
+    let before = r#"type CompareFunction = "never" | "less" | "equal";
+@Descriptor class SamplerDescriptor { compare?: CompareFunction; }"#;
+    let after = before.replace(
+        "compare?: CompareFunction;",
+        "compare?: CompareFunction = \"never\";",
+    );
+    let a = hash_of(before);
+    let b = hash_of(&after);
+    assert_ne!(a, b);
+    assert_eq!(
+        a.first_difference(&b).as_deref(),
+        Some("class SamplerDescriptor")
+    );
+}
+
+// Section 294: measured focused test cost: 0.01 s (two checks and hashes).
+#[test]
+fn declaration_hash_ignores_field_default() {
+    let before = r#"type A = "a" | "b";
+@Descriptor class D { name?: A = "a"; }"#;
+    let after = before.replace("name?: A = \"a\";", "name!: A;");
+    assert_ne!(before, after);
+    let a = hash_of(before);
+    let b = hash_of(&after);
+    assert_eq!(a, b);
+    assert_eq!(a.first_difference(&b), None);
+}
