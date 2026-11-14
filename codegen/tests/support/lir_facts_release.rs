@@ -437,6 +437,12 @@ impl<'a> Walk<'a> {
                 self.owners += 1;
             }
         }
+        let caught = self.caught;
+        if matches!(expr.kind, K::AsyncCall { .. })
+            && params.iter().skip(args.len()).any(|p| p.default_can_raise)
+        {
+            self.caught = self.owners;
+        }
         // Site 3 and rule 4: each default that the call evaluates. A
         // default that can raise is one edge at the call, with the owners
         // of the caller; its own edges belong to its body.
@@ -456,6 +462,7 @@ impl<'a> Walk<'a> {
                 self.owners += 1;
             }
         }
+        self.caught = caught;
     }
 
     fn trap_sites(&mut self, expr: &hir::Expr) {

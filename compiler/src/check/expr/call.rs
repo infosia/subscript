@@ -689,9 +689,6 @@ impl<'p> Checker<'p> {
                     let defaults = (c.args.len() < ft.params.len() && named_call)
                         .then(|| checker.named_lambda_defaults(&callee, fx))
                         .flatten();
-                    if let Some(defaults) = &defaults {
-                        checker.check_omitted_lambda_defaults(defaults, c.args.len());
-                    }
                     let params: Vec<ParamSig> = defaults
                         .as_ref()
                         .map(Self::lambda_default_signature)

@@ -184,6 +184,9 @@ impl<'a> Lowering<'a> {
             functions: vec![None; next_function as usize],
             next_function,
             default_functions: HashMap::new(),
+            async_lambdas: async_defaults::async_lambdas(module),
+            failed_default_functions: HashMap::new(),
+            lambda_environments: HashMap::new(),
             classes: Vec::new(),
             foreign: Vec::new(),
         };
@@ -659,7 +662,11 @@ impl<'a> Lowering<'a> {
         id
     }
 
-    fn set_function(&mut self, id: l::FunctionId, function: l::Function) -> Result<(), LowerError> {
+    pub(super) fn set_function(
+        &mut self,
+        id: l::FunctionId,
+        function: l::Function,
+    ) -> Result<(), LowerError> {
         let slot = self
             .functions
             .get_mut(id.0 as usize)

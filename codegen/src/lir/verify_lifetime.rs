@@ -234,6 +234,7 @@ fn call_reads(
             | l::BuiltinMethod::GeneratorNext,
         ) => vec![0],
         l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush) => vec![0],
+        l::CallTargetKind::ClosureDefault { .. } => (0..count).collect(),
         l::CallTargetKind::LambdaSelf(_)
         | l::CallTargetKind::StaticClosure(_)
         | l::CallTargetKind::Foreign(_)

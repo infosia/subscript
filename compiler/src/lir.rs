@@ -963,6 +963,13 @@ pub enum CallTargetKind {
     LambdaSelf(FunctionId),
     /// Direct lambda body with its callable environment as operand zero.
     StaticClosure(FunctionId),
+    /// A default helper using the called lambda environment (§291 rule 1).
+    ClosureDefault {
+        /// Helper body.
+        helper: FunctionId,
+        /// Lambda whose environment layout the helper uses.
+        lambda: FunctionId,
+    },
     /// Direct class method or constructor.
     Method(MethodId),
     /// Foreign C-ABI function.
@@ -1094,6 +1101,7 @@ impl Module {
             CallTargetKind::LambdaSelf(_)
             | CallTargetKind::Function(_)
             | CallTargetKind::StaticClosure(_)
+            | CallTargetKind::ClosureDefault { .. }
             | CallTargetKind::Method(_)
             | CallTargetKind::Foreign(_)
             | CallTargetKind::Indirect => None,

@@ -72,6 +72,36 @@ impl Interpreter<'_> {
 }
 
 impl Interpreter<'_> {
+    pub(super) fn invoke_closure_default(
+        &mut self,
+        helper: l::FunctionId,
+        lambda: l::FunctionId,
+        mut operands: Vec<Value>,
+        pos: Option<&Pos>,
+    ) -> Result<Value, InterpretError> {
+        let callable = operands
+            .first()
+            .cloned()
+            .ok_or_else(|| self.invalid(pos.cloned(), "default call has no callable"))?;
+        let Value::Callable(callable) = callable else {
+            return Err(type_error("callable", &callable));
+        };
+        if callable.function != lambda {
+            return Err(self.invalid(
+                pos.cloned(),
+                "default callable and environment target disagree",
+            ));
+        }
+        operands.remove(0);
+        let mut arguments = callable.captures.clone();
+        arguments.extend(operands);
+        self.active_roots
+            .push(roots::Snapshot::call(&callable, &arguments));
+        let result = self.invoke_lambda_function(helper, arguments, pos);
+        self.active_roots.pop();
+        result
+    }
+
     pub(super) fn invoke_callable(
         &mut self,
         callable: &Rc<Callable>,

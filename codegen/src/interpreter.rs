@@ -1424,6 +1424,9 @@ impl<'m> Interpreter<'m> {
                 }
                 self.invoke_callable(&callable, operands, pos)
             }
+            l::CallTargetKind::ClosureDefault { helper, lambda } => {
+                self.invoke_closure_default(*helper, *lambda, operands, pos)
+            }
             l::CallTargetKind::Method(method) => {
                 let function = self
                     .module

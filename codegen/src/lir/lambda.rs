@@ -2,6 +2,13 @@
 
 use super::*;
 
+type ResolvedAsyncTarget = (
+    l::CallTarget,
+    Vec<l::Operand>,
+    Vec<StoredOperand>,
+    Option<exception::HandlerFrame>,
+);
+
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
     pub(super) fn lower_lambda(
         &mut self,
@@ -141,6 +148,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             environment_capture.ty = Type::Class(class);
             lowered_captures.insert(0, environment_capture);
         }
+        self.lowering.lambda_environments.insert(
+            *lambda_id,
+            (id, owned_environment, lowered_captures.clone()),
+        );
         self.lowering.lower_function_input(
             id,
             function,
@@ -167,7 +178,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         return_type: Option<l::ValueType>,
         pos: &Pos,
-    ) -> Result<(l::CallTarget, Vec<l::Operand>, Vec<StoredOperand>), LowerError> {
+        guard_defaults: bool,
+    ) -> Result<ResolvedAsyncTarget, LowerError> {
         let (kind, mut operands, params) = match callee {
             hir::AsyncCallee::Function(name) => {
                 let record = self
@@ -236,13 +248,24 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         );
         let explicit_offset = operands.len();
         let receiver = operands.first().cloned().map(PreparedBase::Value);
-        operands.extend(self.lower_call_arguments(
+        let mut pending = self.lower_explicit_arguments(&params, args, false)?;
+        let guarded = guard_defaults && self.needs_async_defaults(&params, args.len());
+        if guarded {
+            self.begin_async_defaults(pos)?;
+        }
+        self.lower_argument_defaults(
             defaults::DefaultOwner::from_target(&kind),
             &params,
             args,
-            receiver.as_ref(),
+            defaults::DefaultEnvironment {
+                receiver: receiver.as_ref(),
+                closure: None,
+            },
             false,
-        )?);
+            &mut pending,
+        )?;
+        operands.extend(self.finish_call_arguments(pending)?);
+        let boundary = if guarded { self.handlers.pop() } else { None };
         let target = l::CallTarget {
             kind,
             parameter_types,
@@ -260,7 +283,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
             })
             .collect();
-        Ok((target, operands, stored))
+        Ok((target, operands, stored, boundary))
     }
 
     pub(super) fn lower_async_call(
@@ -270,9 +293,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expr: &hir::Expr,
     ) -> Result<Option<l::Operand>, LowerError> {
         let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
-        let (target, operands, stored) =
-            self.resolve_async_target(callee, args, return_type.clone(), &expr.pos)?;
+        let (target, operands, stored, boundary) =
+            self.resolve_async_target(callee, args, return_type.clone(), &expr.pos, true)?;
         self.acquire_stored_operands(&operands, stored)?;
+        if boundary.is_some() {
+            self.finish_input_holds(None, &Type::Void, &expr.pos, true)?;
+        }
+
         let typed_operands = operands
             .into_iter()
             .map(|operand| self.terminator_value(operand, &expr.pos))
@@ -284,9 +311,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let resume_value = return_type
             .as_ref()
             .map(|_| self.blocks[successor.0 as usize].parameters[0]);
-        let (raise, traps) = split_await_raise(convert_traps(
+        let (mut raise, traps) = split_await_raise(convert_traps(
             &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
         ));
+        if boundary.is_some() && raise.is_empty() {
+            raise.push(l::Trap {
+                kind: l::TrapKind::Raise(l::RaiseEdge::Propagate),
+                pos: expr.pos.clone(),
+            });
+        }
         let edge = self.block_target(successor, Vec::new())?;
         self.terminate(
             l::Terminator::Suspend {
@@ -304,6 +337,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             },
             &expr.pos,
         )?;
+        self.finish_direct_async_defaults(boundary, successor, resume_value, expr)?;
         self.current = Some(successor);
         self.emit_await_raise(raise, &expr.ty, &expr.pos)?;
         if let Some(value) = resume_value {
@@ -320,21 +354,26 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         expr: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
+        self.scopes.push(HashMap::new());
         let Type::AsyncHandle(value) = &expr.ty else {
             return Err(self.error(&expr.pos, "async handle creation has a non-handle type"));
         };
         let return_type = (**value != Type::Void).then(|| l::ValueType::Data((**value).clone()));
-        let (target, operands, stored) =
-            self.resolve_async_target(callee, args, return_type, &expr.pos)?;
-        self.emit_store_instruction(
-            l::InstructionKind::AsyncHandleCreate(target),
-            operands,
-            stored,
-            (Some(l::ValueType::Data(expr.ty.clone())), true),
-            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
-            expr.pos.clone(),
-        )?
-        .ok_or_else(|| self.error(&expr.pos, "async handle creation produced no value"))
+        let (target, operands, stored, boundary) =
+            self.resolve_async_target(callee, args, return_type, &expr.pos, true)?;
+        let value = self
+            .emit_store_instruction(
+                l::InstructionKind::AsyncHandleCreate(target),
+                operands,
+                stored,
+                (Some(l::ValueType::Data(expr.ty.clone())), true),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
+                expr.pos.clone(),
+            )?
+            .ok_or_else(|| self.error(&expr.pos, "async handle creation produced no value"))?;
+        let value = self.finish_async_defaults(boundary, value, expr)?;
+        self.finish_input_holds(Some(value), &expr.ty, &expr.pos, true)?
+            .ok_or_else(|| self.error(&expr.pos, "async handle creation lost its value"))
     }
 
     pub(super) fn lower_async_handle_await(

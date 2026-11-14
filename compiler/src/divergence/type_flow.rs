@@ -74,11 +74,3 @@ pub(super) const ALIAS_ARRAY_TO_STRING_ARRAY: DivergenceEntry = DivergenceEntry 
     why: "Alias arrays hold i32 discriminants. String arrays hold string handles. A conversion requires a new array and costs depend on its length.",
     collision: "collisions.md Q32",
 };
-
-/// compiler.md §288 rule 3: omitted defaults cannot read closure locals.
-pub(super) const LAMBDA_DEFAULT_CAPTURE: DivergenceEntry = DivergenceEntry {
-    ts: "function f(): void { const captured: i32 = 5; const h = (n: i32 = captured): i32 => n; h(); }",
-    subscript: "function f(): void { const captured: i32 = 5; const h = (n: i32 = captured): i32 => n; h(captured); }",
-    why: "The caller evaluates the default outside the lambda environment, so the captured local is not in scope there.",
-    collision: "compiler.md §288 rule 3",
-};

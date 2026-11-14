@@ -692,7 +692,6 @@ pub(crate) enum RejectionSite {
     ScalarToStringArgumentCount,
     FunctionValueArgumentCount,
     FunctionValueOptionalArgumentCount,
-    LambdaDefaultCapture,
     AmbientFunctionArgumentCount,
     ContextMethodArgumentCount,
     ForeignFunctionArgumentCount,

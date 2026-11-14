@@ -12,6 +12,7 @@ use crate::lir_types::boundary_box_class;
 
 mod address_taken;
 mod array_ownership;
+mod async_defaults;
 mod builder;
 mod call;
 mod completion;
@@ -394,7 +395,10 @@ struct Lowering<'a> {
     fields: HashMap<(usize, String), l::FieldId>,
     functions: Vec<Option<l::Function>>,
     next_function: u32,
-    default_functions: HashMap<(defaults::DefaultOwner, usize), l::FunctionId>,
+    lambda_environments: HashMap<hir::LambdaId, (l::FunctionId, bool, Vec<hir::Capture>)>,
+    async_lambdas: HashSet<hir::LambdaId>,
+    failed_default_functions: HashMap<Type, l::FunctionId>,
+    default_functions: HashMap<(defaults::DefaultOwner, usize, bool), l::FunctionId>,
     classes: Vec<l::Class>,
     foreign: Vec<l::ForeignFunction>,
 }
@@ -1500,6 +1504,7 @@ mod verifier_tests {
             l::CallTargetKind::LambdaSelf(_)
             | l::CallTargetKind::Function(_)
             | l::CallTargetKind::StaticClosure(_)
+            | l::CallTargetKind::ClosureDefault { .. }
             | l::CallTargetKind::Method(_)
             | l::CallTargetKind::Foreign(_)
             | l::CallTargetKind::Indirect => None,

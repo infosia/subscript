@@ -66,8 +66,6 @@ pub enum Divergence {
     PromiseVoidReactionParameter,
     /// An inferred function value has optional parameters only in TypeScript.
     FunctionValueOptionalArguments,
-    /// A named lambda call cannot omit a default that reads a captured local.
-    LambdaDefaultCapture,
     /// A null check of an element changes no type (§163).
     IndexedReadNullCheck,
     /// The language has no variadic parameters.
@@ -1093,7 +1091,6 @@ impl Divergence {
         Divergence::NestedNominalClass,
         Divergence::ErrorMemberOutsideSurface,
         Divergence::FunctionValueOptionalArguments,
-        Divergence::LambdaDefaultCapture,
         Divergence::IndexedReadNullCheck,
         Divergence::RestParameter,
         Divergence::ErasedAssignableEquality,

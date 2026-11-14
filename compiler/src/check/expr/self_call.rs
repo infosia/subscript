@@ -29,9 +29,6 @@ impl Checker<'_> {
             .flatten()?;
         self.mark_user_call(call, false);
         let defaults = defaults.filter(|_| call.args.len() < signature.params.len());
-        if let Some(defaults) = &defaults {
-            self.check_omitted_lambda_defaults(defaults, call.args.len());
-        }
         let params = defaults
             .as_ref()
             .map(Self::lambda_default_signature)

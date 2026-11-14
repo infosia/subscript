@@ -592,11 +592,19 @@ pub(super) fn verify_instruction_contract(
                 }
                 l::CallTargetKind::Function(id) => declared_function(module, *id)
                     .is_some_and(|function| function.kind != l::FunctionKind::Lambda),
+                l::CallTargetKind::ClosureDefault { helper, lambda } => {
+                    declared_function(module, *helper).is_some()
+                        && declared_function(module, *lambda)
+                            .is_some_and(|function| function.kind == l::FunctionKind::Lambda)
+                        && instruction.operands.first().is_some_and(|operand| {
+                            static_closure_operand_matches(module, function, operand, *lambda)
+                        })
+                }
                 l::CallTargetKind::StaticClosure(id) => {
                     declared_function(module, *id)
                         .is_some_and(|function| function.kind == l::FunctionKind::Lambda)
                         && instruction.operands.first().is_some_and(|operand| {
-                            static_closure_operand_matches(function, operand, *id)
+                            static_closure_operand_matches(module, function, operand, *id)
                         })
                 }
                 l::CallTargetKind::Method(id) => declared_method_function(module, *id).is_some(),
@@ -1248,21 +1256,29 @@ pub(super) fn declared_parameters_match(
 }
 
 fn static_closure_operand_matches(
+    module: &l::Module,
     function: &l::Function,
     operand: &l::Operand,
     target: l::FunctionId,
 ) -> bool {
     fn collect(
+        module: &l::Module,
         function: &l::Function,
         operand: &l::Operand,
         target: l::FunctionId,
-        visiting: &mut BTreeSet<l::ValueId>,
+        visiting: &mut BTreeSet<(l::FunctionId, l::ValueId)>,
         saw_closure: &mut bool,
     ) -> bool {
         let l::Operand::Value(value) = operand else {
             return false;
         };
-        if !visiting.insert(*value) {
+        let value = function
+            .liveness
+            .value_origins
+            .get(value.0 as usize)
+            .unwrap_or(value);
+        let key = (function.id, *value);
+        if !visiting.insert(key) {
             return true;
         }
         if let Some(instruction) = function
@@ -1277,20 +1293,38 @@ fn static_closure_operand_matches(
                     *function == target
                 }
                 l::InstructionKind::Copy => instruction.operands.first().is_some_and(|operand| {
-                    collect(function, operand, target, visiting, saw_closure)
+                    collect(module, function, operand, target, visiting, saw_closure)
                 }),
                 _ => false,
             };
-            visiting.remove(value);
+            visiting.remove(&key);
             return valid;
         }
-        if function
+        if let Some(index) = function
             .parameters
             .iter()
-            .any(|parameter| parameter.value == *value)
+            .filter(|p| {
+                matches!(
+                    p.kind,
+                    l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+                )
+            })
+            .position(|p| p.value == *value)
         {
-            visiting.remove(value);
-            return false;
+            let mut found = false;
+            let mut valid = true;
+            for caller in &module.functions {
+                for instruction in caller.blocks.iter().flat_map(|b| &b.instructions) {
+                    if instruction.kind == l::InstructionKind::MakeClosure(function.id) {
+                        found = true;
+                        valid &= instruction.operands.get(index).is_some_and(|operand| {
+                            collect(module, caller, operand, target, visiting, saw_closure)
+                        });
+                    }
+                }
+            }
+            visiting.remove(&key);
+            return found && valid;
         }
         let Some((destination, index)) = function.blocks.iter().find_map(|block| {
             block
@@ -1299,7 +1333,7 @@ fn static_closure_operand_matches(
                 .position(|parameter| parameter == value)
                 .map(|index| (block.id, index))
         }) else {
-            visiting.remove(value);
+            visiting.remove(&key);
             return false;
         };
         let mut found = false;
@@ -1309,10 +1343,9 @@ fn static_closure_operand_matches(
                 return;
             }
             found = true;
-            valid &= edge
-                .arguments
-                .get(index)
-                .is_some_and(|operand| collect(function, operand, target, visiting, saw_closure));
+            valid &= edge.arguments.get(index).is_some_and(|operand| {
+                collect(module, function, operand, target, visiting, saw_closure)
+            });
         };
         for block in &function.blocks {
             if matches!(block.terminator, l::Terminator::Suspend { .. }) {
@@ -1322,12 +1355,13 @@ fn static_closure_operand_matches(
                 inspect(&edge);
             }
         }
-        visiting.remove(value);
+        visiting.remove(&key);
         found && valid
     }
 
     let mut saw_closure = false;
     let valid = collect(
+        module,
         function,
         operand,
         target,
@@ -1372,6 +1406,7 @@ fn operation_name(module: &l::Module, kind: &l::CallTargetKind) -> String {
         l::CallTargetKind::LambdaSelf(_)
         | l::CallTargetKind::Function(_)
         | l::CallTargetKind::StaticClosure(_)
+        | l::CallTargetKind::ClosureDefault { .. }
         | l::CallTargetKind::Method(_)
         | l::CallTargetKind::Foreign(_)
         | l::CallTargetKind::Indirect => "<declared call>".to_string(),
@@ -1398,7 +1433,8 @@ pub(super) fn declared_call_signature(
                 },
             )
         }),
-        l::CallTargetKind::StaticClosure(id) => {
+        l::CallTargetKind::StaticClosure(id)
+        | l::CallTargetKind::ClosureDefault { helper: id, .. } => {
             let function = declared_function(module, *id)?;
             let callable = operand_types.first()?.clone();
             if !matches!(callable, l::ValueType::Data(Type::Func(_))) {

@@ -158,45 +158,6 @@ impl Checker<'_> {
         }
     }
 
-    pub(in crate::check) fn check_omitted_lambda_defaults(
-        &mut self,
-        defaults: &hir::LambdaDefaults,
-        supplied: usize,
-    ) {
-        fn captured(value: &hir::Expr, earlier: &[hir::Param]) -> Option<String> {
-            if let ExprKind::Local(name, ..) = &value.kind {
-                if !earlier.iter().any(|parameter| parameter.name == *name) {
-                    return Some(name.clone());
-                }
-            }
-            if let ExprKind::Lambda { captures, .. } = &value.kind {
-                return captures
-                    .iter()
-                    .find(|capture| !earlier.iter().any(|p| p.name == capture.name))
-                    .map(|capture| capture.name.clone());
-            }
-            value.children().into_iter().find_map(|child| match child {
-                hir::HirChild::Expr(child) => captured(child, earlier),
-                hir::HirChild::Stmt(_) => None,
-            })
-        }
-        for (index, parameter) in defaults.params.iter().enumerate().skip(supplied) {
-            let Some(default) = &parameter.default else {
-                continue;
-            };
-            if let Some(name) = captured(default, &defaults.params[..index]) {
-                let key = (default.pos.file.clone(), default.pos.line, default.pos.col);
-                if self.reported_lambda_defaults.insert(key) {
-                    self.reject_subset(
-                        super::rejection::RejectionSite::LambdaDefaultCapture,
-                        format!("a named lambda default cannot read captured local `{name}`"),
-                        default.pos.clone(),
-                    );
-                }
-            }
-        }
-    }
-
     pub(in crate::check) fn lambda_default_signature(
         defaults: &hir::LambdaDefaults,
     ) -> Vec<super::ParamSig> {

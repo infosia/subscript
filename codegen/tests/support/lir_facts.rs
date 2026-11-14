@@ -10,6 +10,8 @@ use subscript_compiler::{ClassId, Pos, Type};
 pub(crate) mod async_environments;
 #[path = "lir_facts/boundary.rs"]
 mod boundary;
+#[path = "lir_facts/defaults.rs"]
+mod defaults;
 #[path = "lir_facts/iteration.rs"]
 mod iteration;
 #[path = "lir_facts/traps.rs"]
@@ -302,7 +304,8 @@ fn compare_function_entities(hir: &hir::Module, lir: &l::Module, findings: &mut 
         check_function_local_ids(function, findings);
     }
 
-    let hir_lambdas = collect_lambdas(hir);
+    let mut hir_lambdas = collect_lambdas(hir);
+    hir_lambdas.extend(defaults::captured_helpers(hir));
     let lir_lambdas = lir
         .functions
         .iter()

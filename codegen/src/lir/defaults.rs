@@ -18,6 +18,12 @@ impl DefaultOwner {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct DefaultEnvironment<'a> {
+    pub(super) receiver: Option<&'a PreparedBase>,
+    pub(super) closure: Option<&'a l::Operand>,
+}
+
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
     pub(super) fn lower_default_function(
         &mut self,
@@ -25,10 +31,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         params: &[CallParam],
         index: usize,
         default: &hir::Expr,
-        receiver: Option<&PreparedBase>,
+        environment: DefaultEnvironment<'_>,
         pending: &PendingArguments,
     ) -> Result<l::Operand, LowerError> {
-        let mut operands = Vec::new();
+        let DefaultEnvironment { receiver, closure } = environment;
+        let environment = if let (DefaultOwner::Lambda(id), Some(_)) = (owner, closure) {
+            Some(
+                self.lowering
+                    .lambda_environments
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(&default.pos, "lambda default environment is missing")
+                    })?,
+            )
+        } else {
+            None
+        };
+        let environment_function = environment.as_ref().map(|(id, _, _)| *id);
+        let mut operands: Vec<_> = closure.cloned().into_iter().collect();
         let receiver = if let Some(receiver) = receiver {
             let value = match receiver {
                 PreparedBase::Value(value) => value.clone(),
@@ -56,7 +77,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .collect();
         operands.extend(pending.values.iter().cloned());
         let mut free = Vec::new();
-        default_locals(default, &mut free);
+        if closure.is_none() {
+            default_locals(default, &mut free);
+        }
         for (name, ty) in free {
             if parameters.iter().any(|(parameter, _)| *parameter == name) {
                 continue;
@@ -65,7 +88,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             operands.push(self.read_binding(binding, &default.pos)?);
             parameters.push((name, ty));
         }
-        let key = (owner, index);
+        let key = (owner, index, closure.is_some());
         let id = if let Some(id) = self.lowering.default_functions.get(&key) {
             *id
         } else {
@@ -74,7 +97,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.lowering.default_functions.insert(key, id);
             let input = FunctionInput {
                 lambda_id: None,
-                owned_environment: false,
+                owned_environment: environment.as_ref().is_some_and(|(_, owned, _)| *owned),
                 name: format!(
                     "<default {}:{}:{}>",
                     default.pos.file, default.pos.line, default.pos.col
@@ -101,9 +124,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.lowering.lower_function_input(
                 id,
                 input,
-                l::FunctionKind::SynthesizedHelper,
+                if closure.is_some() {
+                    l::FunctionKind::Lambda
+                } else {
+                    l::FunctionKind::SynthesizedHelper
+                },
                 receiver,
-                Vec::new(),
+                environment.map_or_else(Vec::new, |(_, _, captures)| captures),
             )?;
             id
         };
@@ -120,7 +147,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         // acquires its count as an argument does.
         let mut stored = Vec::new();
         for (index, ty) in parameter_types.iter().enumerate() {
-            if !matches!(ty, l::ValueType::Data(_)) {
+            if (index == 0 && closure.is_some()) || !matches!(ty, l::ValueType::Data(_)) {
                 continue;
             }
             let single_owner = matches!(&operands[index], l::Operand::Value(value)
@@ -174,7 +201,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         self.emit_store_instruction(
             l::InstructionKind::Call(l::CallTarget {
-                kind: l::CallTargetKind::Function(id),
+                kind: if let Some(lambda) = environment_function {
+                    l::CallTargetKind::ClosureDefault { helper: id, lambda }
+                } else {
+                    l::CallTargetKind::Function(id)
+                },
                 parameter_types,
                 return_type: Some(l::ValueType::Data(params[index].ty.clone())),
             }),

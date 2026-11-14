@@ -268,6 +268,7 @@ fn counted_operand_start(function: &l::Function, kind: &l::CallTargetKind) -> Op
         ),
         l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
         l::CallTargetKind::StaticClosure(_)
+        | l::CallTargetKind::ClosureDefault { .. }
         | l::CallTargetKind::Method(_)
         | l::CallTargetKind::Indirect
         | l::CallTargetKind::BuiltinMethod(_) => Some(1),

@@ -61,9 +61,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             return Ok(false);
         };
         let function = match &target.kind {
-            l::CallTargetKind::Function(function) | l::CallTargetKind::StaticClosure(function) => {
-                *function
-            }
+            l::CallTargetKind::Function(function)
+            | l::CallTargetKind::StaticClosure(function)
+            | l::CallTargetKind::ClosureDefault {
+                helper: function, ..
+            } => *function,
             l::CallTargetKind::Method(method) => self.emitter.method_function(*method)?,
             _ => return Ok(false),
         };

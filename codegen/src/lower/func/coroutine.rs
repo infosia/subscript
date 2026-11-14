@@ -305,7 +305,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         for (value, ty) in operands.iter().zip(&target.parameter_types) {
             self.push_argument(&mut arguments, *value, ty)?;
         }
-        let results = self.call_script(&FnKey::LirFunction(function), &arguments, false)?;
+        let results = if target_function.kind == l::FunctionKind::SynthesizedHelper {
+            self.call_script_direct(&FnKey::LirFunction(function), &arguments, false)?
+        } else {
+            self.call_script(&FnKey::LirFunction(function), &arguments, false)?
+        };
         for trap in traps {
             if trap.kind == l::TrapKind::Call {
                 self.emit_trap(trap, TrapOperand::Pending)?;

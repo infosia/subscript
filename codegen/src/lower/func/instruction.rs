@@ -87,7 +87,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 target.return_type.as_ref(),
                 pos,
             )?,
-            l::CallTargetKind::StaticClosure(function) => self.static_closure_call(
+            l::CallTargetKind::StaticClosure(function)
+            | l::CallTargetKind::ClosureDefault {
+                helper: function, ..
+            } => self.static_closure_call(
                 *function,
                 operands,
                 parameter_types,
@@ -134,6 +137,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::CallTargetKind::Function(_)
                 | l::CallTargetKind::LambdaSelf(_)
                 | l::CallTargetKind::StaticClosure(_)
+                | l::CallTargetKind::ClosureDefault { .. }
                 | l::CallTargetKind::Method(_)
                 | l::CallTargetKind::Indirect
         ) {

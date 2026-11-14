@@ -14,7 +14,7 @@ use super::*;
 /// lowers.
 pub(super) struct HandlerFrame {
     /// The type of the catch binding, when the clause names one.
-    binding_type: Option<l::ValueType>,
+    pub(super) binding_type: Option<l::ValueType>,
     /// The scopes outside this handler remain live at its landing.
     pub(super) scope_depth: usize,
     /// Each raise site's landing block and the binding values at the site.

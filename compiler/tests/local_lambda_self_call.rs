@@ -1,4 +1,4 @@
-//! Named lambda defaults and self-calls (compiler.md §288).
+//! Named lambda defaults and self-calls (compiler.md §291, §288).
 //! Cost: small checker programs; no code generation or external processes.
 
 use subscript_compiler::{check_program, hir, Diagnostic, RuleCode, SourceFile};
@@ -8,24 +8,31 @@ fn check(source: &str) -> Result<hir::Module, Vec<Diagnostic>> {
 }
 
 #[test]
-fn an_omitted_captured_default_reports_once_at_the_default() {
+fn omitted_defaults_capture_locals_for_calls_and_self_calls() {
     for (body, calls) in [
         ("return n;", "rec(); rec();"),
         ("if (n > 0) return rec(); return n;", "rec(1);"),
     ] {
         let source = format!(
-            "export function main(): void {{\n const captured: i32 = 5;\n const rec = (n: i32 = captured): i32 => {{ {body} }};\n {calls}\n}}"
+            "export function main(): void {{ const captured: i32 = 5; const rec = (n: i32 = captured): i32 => {{ {body} }}; {calls} }}"
         );
-        let errors = check(&source).expect_err("omitted captured default");
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        assert_eq!(errors[0].code, RuleCode::S100);
-        assert_eq!(
-            errors[0].message,
-            "a named lambda default cannot read captured local `captured`"
-        );
-        assert_eq!(errors[0].pos.line, 3);
-        assert_eq!(errors[0].pos.col, 24);
+        let module = check(&source).expect("defaults capture locals");
+        let hir::Stmt::Let { init, .. } = &module.functions[0].body[1] else {
+            panic!("lambda binding")
+        };
+        let hir::ExprKind::Lambda { captures, .. } = &init.kind else {
+            panic!("lambda")
+        };
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].name, "captured");
     }
+}
+
+#[test]
+fn a_default_capture_of_a_let_reports_one_s009() {
+    let errors = check("export function main(): void { let captured: i32 = 5; const rec = (n: i32 = captured): i32 => n; rec(); rec(); }").expect_err("mutable capture");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S009);
 }
 
 #[test]

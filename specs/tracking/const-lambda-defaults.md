@@ -52,3 +52,45 @@ One fresh review: one MAJOR and six MINOR findings; see §288.3.
 - `gate full 0de7979b dirty:45 debug 3419/0/5 release 3400/0/5 skips 1/0 clippy 4/10/13 goldens-moved 1 exit 0`.
   The moved golden is the LIR text snapshot, which grows by the `a453`
   section only.
+
+## §291: a default reads a captured local, and an async default fails the handle
+
+Contract: `specs/blocks/compiler/s291-a-default-reads-a-captured-local-and-an-async-default-fails-the-handle.md`.
+
+### Red
+
+At the contract commit, `subscript check` of `a455` gave three S100 "a
+named lambda default cannot read captured local", for `k` (14:25),
+`text` (18:28), and `box` (21:25).
+
+### Form
+
+- The checker records the captures that the defaults of a lambda read
+  as captures of the lambda. A named lambda call that omits an argument
+  evaluates the default with the environment of the called value. The
+  §288 rule 3 S100, its divergence block, its rejection target, and its
+  witness are removed.
+- `codegen/src/lir/async_defaults.rs`: for an async callee, the caller
+  evaluates the omitted defaults in a region that catches an exception.
+  If no default throws, the call is the direct call of the pin. If a
+  default throws, the call result is the handle of a synthesized async
+  function that throws the caught exception at its first instruction.
+- `a455` output, by hand, on the three tiers, and under `node`:
+  `6 8 captured 9 7 6 1:5 0:5 first fail after function call caught failed first fail after lambda call caught failed`.
+- The program of finding 2 printed the order of `node` and the pin on
+  the three tiers after the fix.
+- `codegen/tests/lambda_default_environment.rs` measured 0.70 s.
+
+### Phase Review
+
+One fresh review, then one review of the form that fixed findings 1 and
+2. See §291.3.
+
+### Gate
+
+- The first full gate failed on the codegen clippy baseline: 16
+  warnings, the baseline is 13. Two functions had eight arguments and
+  one type was too complex. A struct and a type alias replace them.
+- `gate full 9171d9fd dirty:45 debug 3438/0/5 release 3419/0/5 skips 1/0 clippy 4/10/13 goldens-moved 1 exit 0`.
+  The moved golden is the LIR text snapshot, which grows by the `a455`
+  section only.

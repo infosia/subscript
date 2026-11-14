@@ -214,9 +214,9 @@ fn target_can_raise(module: &l::Module, target: &l::CallTarget) -> bool {
             .is_some_and(|callee| callee.can_raise)
     };
     match &target.kind {
-        l::CallTargetKind::Function(id) | l::CallTargetKind::StaticClosure(id) => {
-            function_can_raise(*id)
-        }
+        l::CallTargetKind::Function(id)
+        | l::CallTargetKind::StaticClosure(id)
+        | l::CallTargetKind::ClosureDefault { helper: id, .. } => function_can_raise(*id),
         l::CallTargetKind::LambdaSelf(id) => module
             .functions
             .get(id.0 as usize)

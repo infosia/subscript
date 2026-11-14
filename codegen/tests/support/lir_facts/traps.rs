@@ -54,6 +54,12 @@ pub(super) fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut V
     }
 
     let mut expected = BTreeMap::<TrapKey, usize>::new();
+    for result in defaults::failed_results(hir) {
+        let pos = Pos::new(format!("<failed async default {result:?}>"), 1, 1);
+        for (kind, count) in [("Allocation", 1), ("DevOnlyLifetime", 2)] {
+            *expected.entry(trap_key(&pos, kind.into())).or_default() += count;
+        }
+    }
     let mut seen_defaults = std::collections::BTreeSet::new();
     walk_execution_root_expressions(hir, &mut |expr| {
         collect_trap_expression(expr, hir, &mut expected, findings, &mut seen_defaults);
@@ -137,6 +143,19 @@ pub(super) fn collect_trap_expression(
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
     for node in nodes {
+        if defaults::async_inputs(hir, node).is_some() {
+            if matches!(node.kind, hir::ExprKind::AsyncCall { .. }) {
+                *expected
+                    .entry(trap_key(&node.pos, "DevReloadOnlyStaleCoroutine".into()))
+                    .or_default() += 1;
+            }
+            // §291 rule 3: the failure edge passes its caught Error to an async helper.
+            for (kind, count) in [("Call", 1), ("DevOnlyLifetime", 1)] {
+                *expected
+                    .entry(trap_key(&node.pos, kind.into()))
+                    .or_default() += count;
+            }
+        }
         // An async lambda's callable allocates its frame at invocation (§167
         // rule 13), and an owning lambda allocates its environment (§181 rule 2).
         if let hir::ExprKind::Lambda {

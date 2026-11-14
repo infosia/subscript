@@ -1418,7 +1418,6 @@ pub(crate) struct Checker<'p> {
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
     pub global_sigs: HashMap<String, GlobalSig>,
-    pub reported_lambda_defaults: HashSet<(String, u32, u32)>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,

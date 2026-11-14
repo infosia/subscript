@@ -382,6 +382,11 @@ pub(super) fn compare_terminator_positions(
         if expression_owns_terminator_position(expr) {
             expected.push(expr.pos.clone());
         }
+        if matches!(expr.kind, hir::ExprKind::AsyncCall { .. })
+            && defaults::async_inputs(hir, expr).is_some()
+        {
+            expected.push(expr.pos.clone());
+        }
         if let hir::ExprKind::Lambda { ret, body, .. } = &expr.kind {
             if matches!(ret, subscript_compiler::Type::Class(class)
                 if hir_boundary_class_contains_pointer(hir, *class, &mut Vec::new()))

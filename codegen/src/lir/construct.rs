@@ -70,7 +70,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 owner,
                 &params,
                 args,
-                Some(&receiver),
+                defaults::DefaultEnvironment {
+                    receiver: Some(&receiver),
+                    closure: None,
+                },
                 false,
                 &mut pending,
             )?;

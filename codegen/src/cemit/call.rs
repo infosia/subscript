@@ -72,7 +72,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let check_pending = script_call_requires_pending_check(&target_function);
                 self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
             }
-            l::CallTargetKind::StaticClosure(function) => {
+            l::CallTargetKind::StaticClosure(function)
+            | l::CallTargetKind::ClosureDefault {
+                helper: function, ..
+            } => {
                 let callable = operands
                     .first()
                     .ok_or_else(|| internal("static closure call has no callable"))?;

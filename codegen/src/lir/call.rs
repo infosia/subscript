@@ -152,16 +152,51 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }
             }
         }
-        let explicit = self.lower_call_arguments(
+        let default_closure = if callee.lambda_defaults().is_some_and(|d| {
+            self.lowering
+                .lambda_environments
+                .get(&d.id)
+                .is_some_and(|(_, _, captures)| !captures.is_empty())
+        }) {
+            match callee {
+                hir::Callee::NamedLambda { .. } => operands.first().cloned(),
+                hir::Callee::LambdaSelf { signature, .. } => self.emit(
+                    l::InstructionKind::MakeClosure(self.id),
+                    operands.clone(),
+                    Some(l::ValueType::Data(Type::Func(Box::new(signature.clone())))),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?,
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let mut pending = self.lower_explicit_arguments(&params, args, foreign)?;
+        let guarded = callee
+            .lambda_defaults()
+            .is_some_and(|d| self.lowering.async_lambdas.contains(&d.id))
+            && self.needs_async_defaults(&params, args.len());
+        if guarded {
+            self.begin_async_defaults(&expr.pos)?;
+        }
+        self.lower_argument_defaults(
             callee
                 .lambda_defaults()
                 .map(|defaults| defaults::DefaultOwner::Lambda(defaults.id))
                 .or_else(|| defaults::DefaultOwner::from_target(&kind)),
             &params,
             args,
-            receiver_for_defaults.as_ref(),
+            defaults::DefaultEnvironment {
+                receiver: receiver_for_defaults.as_ref(),
+                closure: default_closure.as_ref(),
+            },
             foreign,
+            &mut pending,
         )?;
+        let explicit = self.finish_call_arguments(pending)?;
+        let boundary = if guarded { self.handlers.pop() } else { None };
         operands.extend(explicit);
         if matches!(kind, l::CallTargetKind::Method(_)) {
             if let Some(PreparedBase::Place(place)) = receiver_for_defaults {
@@ -294,6 +329,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         for (value, ty) in temporaries {
             self.discard_owner(hir::AsyncCopySite::DiscardedResult, value, &ty, &expr.pos)?;
+        }
+        if let Some(value) = result {
+            result = Some(self.finish_async_defaults(boundary, value, expr)?);
         }
         Ok(result)
     }
@@ -789,19 +827,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         ))
     }
 
-    pub(super) fn lower_call_arguments(
-        &mut self,
-        owner: Option<defaults::DefaultOwner>,
-        params: &[CallParam],
-        args: &[hir::Expr],
-        receiver: Option<&PreparedBase>,
-        foreign: bool,
-    ) -> Result<Vec<l::Operand>, LowerError> {
-        let mut pending = self.lower_explicit_arguments(params, args, foreign)?;
-        self.lower_argument_defaults(owner, params, args, receiver, foreign, &mut pending)?;
-        self.finish_call_arguments(pending)
-    }
-
     /// Lowers the explicit arguments left to right (compiler.md §57.1
     /// step 1). Every absent argument is trailing, so the parameters
     /// this step leaves out are the ones a default supplies.
@@ -867,7 +892,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         owner: Option<defaults::DefaultOwner>,
         params: &[CallParam],
         args: &[hir::Expr],
-        receiver: Option<&PreparedBase>,
+        environment: defaults::DefaultEnvironment<'_>,
         foreign: bool,
         pending: &mut PendingArguments,
     ) -> Result<(), LowerError> {
@@ -882,7 +907,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.error(&default.pos, "parameter default has no function identity")
             })?;
             let value =
-                self.lower_default_function(owner, params, index, default, receiver, pending)?;
+                self.lower_default_function(owner, params, index, default, environment, pending)?;
             if params[index + 1..]
                 .iter()
                 .filter_map(|parameter| parameter.default.as_ref())
