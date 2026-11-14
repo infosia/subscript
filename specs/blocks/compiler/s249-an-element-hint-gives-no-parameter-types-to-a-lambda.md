@@ -127,6 +127,9 @@ that reads a context at the pin.
 2. `((x) => …) as CB` gives the S100 of rule 1 alone. `tsc` accepts it,
    because `as` gives a context to its operand there. `as` gives no
    context here.
+   *(Measured 2026-11-14 at `cdfd63bd`: `one as CB` gives the S100 of
+   C24 `IdentityAssertion`. A context for the operand changes only the
+   diagnostic, so no program becomes accepted.)*
 3. A nullable function type gives a lambda no parameter types.
    `const f: CB | null = (x) => …` gives the S100 of rule 1, and `tsc`
    accepts it. So `three(one, maybe(), (x) => …)` with

@@ -99,6 +99,7 @@ CRITICAL or MAJOR finding.
    *(Closed 2026-11-07 by §239.)*
 2. `() => { return v(); }` stays rejected, because rule 1 counts each
    `return` with an operand. `tsc` accepts it.
+   *(Closed 2026-11-14 by §286.)*
 3. An async lambda in a place of a function type with the result `void`
    is rejected: `each(xs, async (x: i32) => { … })` gives
    "expects `(i32) => void`, got `(i32) => Promise<void>`". `tsc`

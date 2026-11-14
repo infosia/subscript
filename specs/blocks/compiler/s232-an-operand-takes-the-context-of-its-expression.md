@@ -113,4 +113,7 @@ change of meaning, and the dev and ship tiers agree.
 
 1. `(c ? "a" : null) ?? "b"` with a `Mode` result gives S100 got
    `string`. `tsc` accepts it. A literal takes no context from rule 1.
+   *(Measured 2026-11-14 at `cdfd63bd`: the left operand needs the type
+   `Mode | null`, and S011 rejects that type. The form stays rejected
+   while S011 holds.)*
 2. §212.4 item 3: `empty() as Buf<P>` (rule 2).
