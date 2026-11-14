@@ -260,3 +260,6 @@ The counts move by −32 in each profile: 33 removed tests and one new
 control. The debug step took 457 s and the release step 258 s. Both
 steps rebuilt the changed test binary, so these step times do not
 compare with the earlier gate.
+
+## §279 — the frame-root corpus check
+
