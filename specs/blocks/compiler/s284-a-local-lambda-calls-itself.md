@@ -102,4 +102,5 @@ rule 1 keeps its rejection. Three MINOR findings, recorded:
    item 1).
 4. A result decided by the annotation of the `const` does not count
    for rule 2 (§284.3 item 2).
+   *(Closed 2026-11-14 by §285.)*
 5. A warning renders a self-call callee as `…` (§284.3 item 3).
