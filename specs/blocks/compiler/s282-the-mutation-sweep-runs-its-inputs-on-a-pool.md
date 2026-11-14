@@ -53,7 +53,21 @@ necessary, and it runs on one thread.
 
 ### 282.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that the
+input set and the companion order are the same, that each panic takes
+the label of its own input, and that one lock keeps the control and the
+sweep from sharing the process panic hook. Three MINOR findings, each
+fixed:
+
+1. Contrived: the control passed by chance against a shared label
+   slot, and tested nothing with one worker. It now runs at least two
+   workers, and the chosen input waits until each other worker has set
+   its label.
+2. Realistic: a failing control poisoned the hook lock, and the sweep
+   then failed with a second message. The lock now recovers the value.
+3. Realistic: each input of the corpus was built before the pool
+   started. A work item is now one source, so a worker holds the
+   inputs of one source.
 
 ### 282.4 Open
 

@@ -461,3 +461,83 @@ The counts do not move.
 
 ## §282 — the mutation sweep
 
+The contract pin is `4f572ed78a5aac94010da6eb0306ac631bb069d3`.
+Both profiles were built before each measurement.
+Each measurement runs Cargo with `--nocapture`.
+The debug run and release run run in sequence.
+These measurements use single runs. Wall times exclude the build.
+
+| Check | Result line | Wall seconds |
+| --- | --- | ---: |
+| Debug before | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.48s` | 29.58 |
+| Release before | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.38s` | 3.47 |
+| Debug after | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.15s` | 6.63 |
+| Release after | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s` | 1.24 |
+| Format check | Exit 0 | 2.03 |
+| Clippy, compiler and all targets | `Finished dev profile [unoptimized + debuginfo] target(s) in 0.19s`; exit 0 | 0.26 |
+
+The sweep prints these counts in both profiles, before and after the change:
+`robustness: 1095 sources, 38563 inputs, 0 panics`.
+The printed sweep times are 29.484740333 s and 3.380899584 s before the change.
+They are 6.145554542 s and 0.826040333 s after the change.
+
+The sweep builds all inputs before it starts the pool.
+The directory index keeps the companion files in their source order.
+Each source, mutation kind, position, and companion file set stays the same.
+The pool uses at most the available parallelism.
+Each worker sets its own input label. The panic hook reads that label.
+The harness restores the previous hook before it checks the result.
+The sweep still fails on a checker panic or an unexpected hook record.
+
+The new control runs nine inputs on three workers in this run.
+A barrier keeps the first call on each worker active until all workers arrive.
+The stub panics for one chosen label. The control checks one caught panic,
+one hook record, the exact chosen label, and the panic message.
+It also checks that all inputs ran.
+Both tests hold the same mutex from test entry through their assertions.
+This lock keeps the control and sweep from running at the same time.
+
+Clippy reports warnings in unchanged code. It reports none in the changed test.
+The format check and `git diff --check` pass.
+No golden changed. The full gate was not run under this task's scope.
+
+Round 2 review fixes:
+
+The workers now take source indices. Each worker builds the inputs for one source
+at a time. The input set and labels stay the same. The directory index stays
+outside the pool. The sweep uses at most the available parallelism.
+
+The control uses two workers on all core counts. The chosen input sets its label
+first. A barrier then waits for the other worker to set its label. The other
+worker holds that label until the panic hook returns. A shared label slot would
+record the wrong label. Both tests recover the hook lock after poison.
+
+Both profiles were built before these measurements. Each test run uses
+`--nocapture`. The runs are sequential. Wall times exclude the build.
+
+| Check | Result line | Wall seconds |
+| --- | --- | ---: |
+| Debug round 2 | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.17s` | 13.708 |
+| Release round 2 | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s` | 2.005 |
+| Format round 2 | `Exit 0` | 3.877 |
+| Clippy round 2 | `Finished dev profile [unoptimized + debuginfo] target(s) in 0.28s` | 0.439 |
+
+Both profiles print `robustness: 1095 sources, 38563 inputs, 0 panics`.
+The printed sweep times are 13.168206375 s in debug and 1.587868125 s in release.
+These single runs take more time than the first pool measurements.
+Clippy exits with code 0. It reports warnings in unchanged code and none in
+the changed test. The format check and `git diff --check` pass.
+No golden changed. The full gate was not run under this task scope.
+
+Two more debug runs of the same command after round 2, with the
+binary built and no other build running: 7.18 s and 7.34 s inside the
+test harness, 7.43 s wall. The 13.17 s run above ran beside other
+checks.
+
+Full gate on the §282 tree:
+
+```text
+gate full 4f572ed78a5aac94010da6eb0306ac631bb069d3 dirty:3 debug 3393/0/5 release 3374/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts move by +1 in each profile: the harness control.
