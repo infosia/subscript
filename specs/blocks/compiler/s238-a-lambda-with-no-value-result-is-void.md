@@ -109,3 +109,4 @@ CRITICAL or MAJOR finding.
    rejected.)*
 4. A `void` callback of `catch` on a `Promise<i32>` gives S013, by the
    rule of §186. `tsc` accepts `wi().catch(() => v())`.
+   *(Closed 2026-11-14 by §289.)*

@@ -330,3 +330,4 @@ Every section, with its status:
 | §286 | A `return` of a `void` operand keeps a lambda `void` | active | [`s286-a-return-of-a-void-operand-keeps-a-lambda-void.md`](compiler/s286-a-return-of-a-void-operand-keeps-a-lambda-void.md) |
 | §287 | An async `void` lambda returns a `Promise<void>` | active | [`s287-an-async-void-lambda-returns-a-promise-of-void.md`](compiler/s287-an-async-void-lambda-returns-a-promise-of-void.md) |
 | §288 | A call of a `const` lambda by its name takes its defaults | active | [`s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md`](compiler/s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md) |
+| §289 | A `void` `catch` callback gives a `Promise<void>` | active | [`s289-a-void-catch-callback-gives-a-promise-of-void.md`](compiler/s289-a-void-catch-callback-gives-a-promise-of-void.md) |

@@ -31,6 +31,8 @@ method by its name.
    - `h.catch(r)`: `r: (e: Error) => T` (or `Promise<T>`) gives
      `Promise<T>`. A `void` callback is accepted only when `T` is
      `void`.
+     *(Amended 2026-11-14 by §289: a `void` callback gives
+     `Promise<void>` on each `Promise<T>`.)*
    - `h.finally(f)`: `f: () => void` gives `Promise<T>`.
 
    A callback on a `void` value (`Promise<void>`) has no parameter.
@@ -66,8 +68,9 @@ method by its name.
 6. **Rejected with a divergence.** These forms are rejected with a
    divergence block that shows the accepted form, because `tsc`
    accepts them:
-   - a `catch` callback whose result is not `T`, and a `void` callback
-     on a non-`void` handle (`tsc` gives `Promise<T | U>`);
+   - a `catch` callback whose result is not `T` (`tsc` gives
+     `Promise<T | U>`); a `void` callback on a non-`void` handle takes
+     §289;
    - a callback parameter on a `Promise<void>` value;
    - a callback parameter whose type is not the delivered type (`T`,
      or `Error` for a rejection callback) but that `tsc` accepts, for

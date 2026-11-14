@@ -334,7 +334,9 @@ receiver whose apparent type is `Promise<T>` are accepted. Each call
 has the meaning of a call of a compiler-supplied async function, with
 `node`'s turn order, and S013 applies to its handle. A `catch`
 callback returns `T`; `tsc` gives `Promise<T | U>`, so another result
-type is rejected with a divergence. Other combinators and the
+type is rejected with a divergence. A `void` `catch` callback gives
+`Promise<void>` as the operand of an `await` statement only
+(`compiler.md` §289). Other combinators and the
 adoption of a thenable stay rejected; a class's own `then` method is
 an ordinary method. Accept adds `a357`–`a361`; reject adds
 `r402`–`r404`; `r97` is rewritten to `then(null, r)`.
