@@ -959,6 +959,8 @@ pub struct CallTarget {
 pub enum CallTargetKind {
     /// Direct script function.
     Function(FunctionId),
+    /// The running lambda, with its environment parameters before explicit arguments (§284).
+    LambdaSelf(FunctionId),
     /// Direct lambda body with its callable environment as operand zero.
     StaticClosure(FunctionId),
     /// Direct class method or constructor.
@@ -1089,7 +1091,8 @@ impl Module {
             CallTargetKind::BuiltinMethod(method) => {
                 Some(CallSignatureTarget::BuiltinMethod(*method))
             }
-            CallTargetKind::Function(_)
+            CallTargetKind::LambdaSelf(_)
+            | CallTargetKind::Function(_)
             | CallTargetKind::StaticClosure(_)
             | CallTargetKind::Method(_)
             | CallTargetKind::Foreign(_)

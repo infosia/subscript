@@ -8,6 +8,7 @@ mod blocks;
 
 type Env = super::Shared<HashMap<String, usize>>;
 struct Analysis<'a> {
+    lambda_parameters: Option<(hir::LambdaId, &'a [hir::Param])>,
     module: &'a hir::Module,
     facts: Vec<bool>,
     bindings: HashMap<usize, usize>,
@@ -202,6 +203,7 @@ impl<'a> Analysis<'a> {
                 }
             }
             E::Lambda {
+                id,
                 params,
                 body,
                 captures,
@@ -238,8 +240,10 @@ impl<'a> Analysis<'a> {
                 );
                 let mut scope = env.clone();
                 let parent = self.enter_block();
+                let saved = self.lambda_parameters.replace((*id, params));
                 self.params(params, &mut scope);
                 self.sequence(body, &mut scope);
+                self.lambda_parameters = saved;
                 self.block = parent;
                 return;
             }
@@ -338,6 +342,12 @@ impl<'a> Analysis<'a> {
                         &f.params,
                         args,
                     );
+                } else if let Callee::LambdaSelf { id, .. } = callee {
+                    if let Some((lambda, params)) = self.lambda_parameters {
+                        if lambda == *id {
+                            self.call("self-call", params, args);
+                        }
+                    }
                 } else if let Callee::Value(value) = callee {
                     for (index, arg) in args.iter().enumerate() {
                         self.escapes.push((
@@ -574,6 +584,7 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
 }
 fn analyze(module: &mut hir::Module, select_ownership: bool) -> Result<(), Vec<Diagnostic>> {
     let mut a = Analysis {
+        lambda_parameters: None,
         module,
         facts: vec![],
         bindings: HashMap::new(),

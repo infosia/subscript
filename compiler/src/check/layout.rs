@@ -618,7 +618,9 @@ impl<'a> Validator<'a> {
                 .is_some_and(|class| class.is_value),
             hir::ExprKind::ArrayLit(_) => matches!(expr.ty, Type::FixedArray(..)),
             hir::ExprKind::Call { callee, .. } => match callee {
-                hir::Callee::Func(_) | hir::Callee::Value(_) => true,
+                hir::Callee::Func(_) | hir::Callee::Value(_) | hir::Callee::LambdaSelf { .. } => {
+                    true
+                }
                 hir::Callee::Method { recv, name } => {
                     name.full_text() != "next" && matches!(recv.ty, Type::Class(_))
                 }

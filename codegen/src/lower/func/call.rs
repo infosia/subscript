@@ -117,7 +117,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.call_result(return_type, &results, sret)
     }
 
-    pub(super) fn static_closure_call(
+    /// Converts the LIR environment operands to the lambda ABI (§284).
+    pub(super) fn lambda_self_call(
         &mut self,
         function: l::FunctionId,
         operands: &[RV],
@@ -130,12 +131,61 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .lir
             .functions
             .get(function.0 as usize)
-            .filter(|target| target.id == function)
-            .ok_or_else(|| internal(format!("function {} is missing", function.0)))?;
+            .ok_or_else(|| internal("self-call lambda is missing"))?;
+        let environment_count = capture_parameters(target).count();
+        let (environment, explicit) = operands
+            .split_at_checked(environment_count)
+            .ok_or_else(|| internal("self-call lacks environment operands"))?;
+        let explicit_types = parameter_types
+            .get(environment_count..)
+            .ok_or_else(|| internal("self-call lacks explicit parameter types"))?;
+        let callable = self.make_closure(function, environment)?;
+        let (_, environment) = self.expect_pair(callable)?;
+        self.call_lambda_abi(
+            (function, environment),
+            explicit,
+            explicit_types,
+            return_type,
+            pos,
+        )
+    }
+
+    pub(super) fn static_closure_call(
+        &mut self,
+        function: l::FunctionId,
+        operands: &[RV],
+        parameter_types: &[l::ValueType],
+        return_type: Option<&l::ValueType>,
+        pos: &Pos,
+    ) -> Result<RV, String> {
         let callable = *operands
             .first()
             .ok_or_else(|| internal("static closure call has no callable"))?;
         let (_, environment) = self.expect_pair(callable)?;
+        self.call_lambda_abi(
+            (function, environment),
+            &operands[1..],
+            &parameter_types[1..],
+            return_type,
+            pos,
+        )
+    }
+
+    fn call_lambda_abi(
+        &mut self,
+        (function, environment): (l::FunctionId, Value),
+        operands: &[RV],
+        parameter_types: &[l::ValueType],
+        return_type: Option<&l::ValueType>,
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let target = self
+            .ml
+            .lir
+            .functions
+            .get(function.0 as usize)
+            .filter(|target| target.id == function)
+            .ok_or_else(|| internal(format!("function {} is missing", function.0)))?;
         let mut arguments = vec![self.ctx, environment];
         let sret = if let Some(l::ValueType::Data(ty)) = return_type {
             match self.ml.layouts.repr(ty)? {
@@ -149,12 +199,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         } else {
             None
         };
-        for (value, ty) in operands
-            .iter()
-            .copied()
-            .skip(1)
-            .zip(parameter_types.iter().skip(1))
-        {
+        for (value, ty) in operands.iter().copied().zip(parameter_types.iter()) {
             self.push_argument(&mut arguments, value, ty)?;
         }
         if matches!(return_type, Some(l::ValueType::Data(Type::AsyncHandle(_)))) {
@@ -162,9 +207,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let id = self.iconst(types::I32, id);
             arguments.push(id);
         }
-        // Lambda bodies belong to the current reload generation and have no
-        // stable cross-generation slot. The callable operand supplies that
-        // generation's environment, so call its declared body directly.
+        // The declared lambda and its environment use the current reload generation (§284).
         let key = if target.is_async {
             FnKey::LirWrapper(function)
         } else {

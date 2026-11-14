@@ -302,6 +302,8 @@ impl<'a> Graph<'a> {
                     self.call(unit, self.function(symbol));
                 }
             }
+            // A self-call reaches this same body, so it adds no graph edge (§284).
+            Callee::LambdaSelf { .. } => {}
             Callee::Value(value) => {
                 let target = self.target(&value.ty);
                 self.call(unit, Some(target));

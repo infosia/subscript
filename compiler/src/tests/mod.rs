@@ -10,6 +10,7 @@ mod implements_clause;
 mod interface_constraint;
 mod language;
 mod local_functions;
+mod local_lambda_self_call;
 mod method_assignment;
 mod nullable_array;
 mod nullable_string;

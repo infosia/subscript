@@ -524,6 +524,7 @@ fn declared_callee_parameters<'a>(
         | hir::Callee::Map(_)
         | hir::Callee::Set(_)
         | hir::Callee::Worker(_)
+        | hir::Callee::LambdaSelf { .. }
         | hir::Callee::Value(_) => None,
     })
 }
@@ -971,6 +972,30 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
                     return Ok(None);
                 };
                 Some(declared_method(hir, *class, name, pos)?.params.len() + 1)
+            }
+            hir::Callee::LambdaSelf { id, .. } => {
+                let mut count = None;
+                walk_module_expressions(hir, &mut |expression| {
+                    if let hir::ExprKind::Lambda {
+                        id: lambda,
+                        captures,
+                        owns_environment,
+                        ..
+                    } = &expression.kind
+                    {
+                        if lambda == id {
+                            count = Some(if *owns_environment {
+                                usize::from(!captures.is_empty())
+                            } else {
+                                captures.len()
+                            });
+                        }
+                    }
+                });
+                Some(
+                    args.len()
+                        + count.ok_or_else(|| format!("{pos}: self-call lambda is absent"))?,
+                )
             }
             hir::Callee::Value(_) => Some(args.len() + 1),
             hir::Callee::Ambient(_)

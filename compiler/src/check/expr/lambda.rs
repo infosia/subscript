@@ -262,6 +262,18 @@ impl<'p> Checker<'p> {
                 _ => Type::Error,
             });
         }
+        let self_call = fx.lambda_initializer.as_ref().and_then(|(span, name)| {
+            let syntax_result = a.return_type.is_some()
+                || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts));
+            (*span == a.span && syntax_result && ret.is_some()).then(|| {
+                let result = ret.clone().unwrap_or(Type::Error);
+                (name.clone(), crate::types::FuncType {
+                    params: params.iter().map(|p| p.ty().clone()).collect(),
+                    ret: if a.is_async { Type::async_handle(result) } else { result },
+                    callback_typedef: None,
+                })
+            })
+        });
         let origin_start = fx.async_origins.len();
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
@@ -370,6 +382,11 @@ impl<'p> Checker<'p> {
             .zip(a.params.iter().cloned())
             .collect::<Vec<_>>();
         let entry = self.bind_parameter_patterns(parameter_patterns, fx);
+        if let Some((name, signature)) = self_call {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.self_call = Some((name, id, signature, a.is_async));
+            }
+        }
         let body_pos = self.pos(a.body.span());
         let (body, prefix) = fx.with_synthetic_owner(
             crate::check::SyntheticOwnerKind::ArrowBody(body_pos),

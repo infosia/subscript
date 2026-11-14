@@ -1405,6 +1405,9 @@ impl<'m> Interpreter<'m> {
     ) -> Result<Value, InterpretError> {
         match &target.kind {
             l::CallTargetKind::Function(function) => self.call_function(*function, operands),
+            l::CallTargetKind::LambdaSelf(function) => {
+                self.invoke_lambda_function(*function, operands, pos)
+            }
             l::CallTargetKind::StaticClosure(function) => {
                 let callable = operands.first().cloned().ok_or_else(|| {
                     self.invalid(pos.cloned(), "static closure call has no callable")

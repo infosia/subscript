@@ -73,7 +73,24 @@ nothing, so §239 accepts it.
 
 ### 284.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It ran probe programs
+on the three tiers and compared them byte for byte: shadowing by a
+parameter, an inner block, a nested function, a `catch` and a `for`
+binding; captures of a string, a class reference, `this`, and a
+fixed array; a generic function; `try`/`finally` with a throw; nested
+self-calls; an escaping `async` lambda dropped while its self-call
+frames wait; self-call promises stored, fanned out, and passed to
+`TaskGroup.add` and `Promise.all`. Each agreed. Each form outside
+rule 1 keeps its rejection. Three MINOR findings, recorded:
+
+1. Realistic: a self-call cannot omit a defaulted argument. It gets
+   S100 "a call through a function value passes every parameter".
+2. Realistic: rule 2 does not count a result that the annotation of
+   the `const` decides. `type F = (k: i32) => i32; const fact: F =
+   (k) => { ... fact(k - 1) ... };` gets the S100 of the table. `tsc`
+   accepts it.
+3. Contrived: a warning that names a self-call result renders the
+   callee as `…`.
 
 ### 284.4 Open
 
@@ -81,3 +98,8 @@ Pending.
    (rule 6). Its acceptance needs an escape rule for the running
    closure value.
 2. Two local lambdas that call each other stay rejected (rule 6).
+3. A self-call that omits a defaulted argument is rejected (§284.3
+   item 1).
+4. A result decided by the annotation of the `const` does not count
+   for rule 2 (§284.3 item 2).
+5. A warning renders a self-call callee as `…` (§284.3 item 3).

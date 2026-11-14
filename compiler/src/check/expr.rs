@@ -20,6 +20,7 @@ mod method;
 mod multi_argument;
 mod namespace;
 mod operator;
+mod self_call;
 
 use swc_ecma_ast as ast;
 

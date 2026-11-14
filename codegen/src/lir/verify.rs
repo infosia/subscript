@@ -194,7 +194,7 @@ pub(super) fn counted_instruction_stores<'i>(
                     None
                 }
             } else {
-                counted_operand_start(&target.kind)
+                counted_operand_start(function, &target.kind)
             }
         }
         l::InstructionKind::AsyncHandleCreate(target) => match target.kind {
@@ -243,7 +243,7 @@ pub(super) fn counted_terminator_stores(
             kind: l::SuspendKind::AsyncCall { target, operands },
             ..
         } => {
-            let start = counted_operand_start(&target.kind);
+            let start = counted_operand_start(function, &target.kind);
             start
                 .into_iter()
                 .flat_map(|start| operands.iter().copied().enumerate().skip(start))
@@ -257,8 +257,15 @@ pub(super) fn counted_terminator_stores(
 
 // These indices describe stores. Borrowed receivers are not stores.
 // The consumption check visits every fresh owner, including operand zero.
-fn counted_operand_start(kind: &l::CallTargetKind) -> Option<usize> {
+fn counted_operand_start(function: &l::Function, kind: &l::CallTargetKind) -> Option<usize> {
     match kind {
+        l::CallTargetKind::LambdaSelf(_) => Some(
+            function
+                .parameters
+                .iter()
+                .take_while(|parameter| parameter.kind != l::ParameterKind::Explicit)
+                .count(),
+        ),
         l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
         l::CallTargetKind::StaticClosure(_)
         | l::CallTargetKind::Method(_)

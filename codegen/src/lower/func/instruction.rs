@@ -80,6 +80,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 target.return_type.as_ref(),
                 false,
             )?,
+            l::CallTargetKind::LambdaSelf(function) => self.lambda_self_call(
+                *function,
+                operands,
+                parameter_types,
+                target.return_type.as_ref(),
+                pos,
+            )?,
             l::CallTargetKind::StaticClosure(function) => self.static_closure_call(
                 *function,
                 operands,
@@ -125,6 +132,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         if matches!(
             target.kind,
             l::CallTargetKind::Function(_)
+                | l::CallTargetKind::LambdaSelf(_)
                 | l::CallTargetKind::StaticClosure(_)
                 | l::CallTargetKind::Method(_)
                 | l::CallTargetKind::Indirect

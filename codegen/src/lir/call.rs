@@ -425,6 +425,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     })?;
                 Ok((foreign_params(&function.params), data_result(&function.ret)))
             }
+            hir::Callee::LambdaSelf { signature, .. } => {
+                let mut parameters = self
+                    .parameters
+                    .iter()
+                    .filter(|parameter| parameter.kind != l::ParameterKind::Explicit)
+                    .map(|parameter| self.values[parameter.value.0 as usize].ty.clone())
+                    .collect::<Vec<_>>();
+                parameters.extend(signature.params.iter().cloned().map(l::ValueType::Data));
+                Ok((parameters, data_result(&signature.ret)))
+            }
             hir::Callee::Value(value) => {
                 let Type::Func(signature) = &value.ty else {
                     return Err(self.error(&value.pos, "indirect callee is not function-typed"));
@@ -535,6 +545,28 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         self.error(&expr.pos, format!("missing foreign declaration `{name}`"))
                     })?;
                 Ok((l::CallTargetKind::Foreign(id), Vec::new(), params, None))
+            }
+            hir::Callee::LambdaSelf { id, .. } => {
+                if self.kind != l::FunctionKind::Lambda || self.function.lambda_id != Some(*id) {
+                    return Err(self.error(&expr.pos, "self-call does not name the running lambda"));
+                }
+                let environment = self
+                    .parameters
+                    .iter()
+                    .filter(|parameter| {
+                        matches!(
+                            parameter.kind,
+                            l::ParameterKind::Capture | l::ParameterKind::OwnedEnvironment
+                        )
+                    })
+                    .map(|parameter| l::Operand::Value(parameter.value))
+                    .collect();
+                Ok((
+                    l::CallTargetKind::LambdaSelf(self.id),
+                    environment,
+                    self.function.params.iter().map(CallParam::from).collect(),
+                    None,
+                ))
             }
             hir::Callee::Value(value) => {
                 let callee_value = self.require_expr(value)?;

@@ -33,6 +33,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         // A lambda body is its own function; the check derives its fact
         // (compiler.md §115.6 rule 3).
         let hir::ExprKind::Lambda {
+            id: lambda_id,
             can_raise,
             is_async,
             owns_environment,
@@ -47,6 +48,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let owned_environment = *owns_environment && !captures.is_empty();
         let id = self.lowering.allocate_function_id();
         let function = FunctionInput {
+            lambda_id: Some(*lambda_id),
             owned_environment,
             name: format!(
                 "<lambda {}:{}:{}>",

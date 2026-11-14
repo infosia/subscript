@@ -90,15 +90,24 @@ impl Interpreter<'_> {
         arguments: Vec<Value>,
         pos: Option<&Pos>,
     ) -> Result<Value, InterpretError> {
-        #[cfg(not(test))]
-        let _ = pos;
         let mut operands = callable.captures.clone();
         operands.extend(arguments);
-        let value = self.call_function(callable.function, operands)?;
+        self.invoke_lambda_function(callable.function, operands, pos)
+    }
+
+    pub(super) fn invoke_lambda_function(
+        &mut self,
+        function: l::FunctionId,
+        operands: Vec<Value>,
+        pos: Option<&Pos>,
+    ) -> Result<Value, InterpretError> {
+        #[cfg(not(test))]
+        let _ = pos;
+        let value = self.call_function(function, operands)?;
         if self
             .module
             .functions
-            .get(callable.function.0 as usize)
+            .get(function.0 as usize)
             .is_some_and(|function| function.is_async)
         {
             let Value::Coroutine(handle) = &value else {

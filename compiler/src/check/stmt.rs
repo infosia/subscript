@@ -362,6 +362,14 @@ impl<'p> Checker<'p> {
                 self.task_group_local = saved_group_local;
                 continue;
             }
+            let saved_lambda_initializer = fx.lambda_initializer.take();
+            if !mutable && !name.is_empty() {
+                if let Some(ast::Expr::Arrow(arrow)) =
+                    d.init.as_deref().map(super::expr::unparen_expr)
+                {
+                    fx.lambda_initializer = Some((arrow.span, name.clone()));
+                }
+            }
             let mut init = if let Some(init_ast) = &d.init {
                 if declarations.len() > 1 {
                     let (init, prefix) = fx.with_synthetic_owner(
@@ -387,9 +395,11 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                fx.lambda_initializer = saved_lambda_initializer;
                 self.task_group_local = saved_group_local;
                 continue;
             };
+            fx.lambda_initializer = saved_lambda_initializer;
             self.task_group_local = saved_group_local;
             let annotated =
                 pattern_type_ann(&d.name).is_some_and(|ann| self.written_type(&ann.type_ann));

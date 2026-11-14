@@ -5,6 +5,8 @@
 mod corpus;
 #[path = "support/lir_facts.rs"]
 mod lir_facts;
+#[path = "lir/local_lambda_self_call.rs"]
+mod local_lambda_self_call;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]

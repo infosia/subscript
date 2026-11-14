@@ -1411,6 +1411,15 @@ pub enum Callee {
     Set(SetFn),
     /// A Q35 worker or channel-endpoint intrinsic.
     Worker(WorkerFn),
+    /// A call of the running local lambda with its current environment (§284).
+    LambdaSelf {
+        /// The checker identity of the enclosing lambda.
+        id: LambdaId,
+        /// The signature decided before the body check.
+        signature: crate::types::FuncType,
+        /// Whether the running lambda creates an async frame.
+        is_async: bool,
+    },
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
     /// A method on a receiver: class methods, and the built-in members
@@ -1434,6 +1443,7 @@ impl Callee {
             Callee::Standard(_)
             | Callee::Func(_)
             | Callee::Value(_)
+            | Callee::LambdaSelf { .. }
             | Callee::Method { .. }
             | Callee::Foreign(_) => true,
             Callee::Ambient(f) => f.can_trap(),
@@ -1516,9 +1526,11 @@ pub fn operation_signature_target(
                 Some(&recv.ty),
             ));
         }
-        Callee::Standard(_) | Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => {
-            return None
-        }
+        Callee::Standard(_)
+        | Callee::Func(_)
+        | Callee::Foreign(_)
+        | Callee::Value(_)
+        | Callee::LambdaSelf { .. } => return None,
     };
     Some((target, None))
 }

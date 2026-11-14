@@ -265,6 +265,7 @@ impl Expr {
                                 .map(|parameter| parameter.ty.clone())
                                 .collect::<Vec<_>>()
                         }),
+                    Callee::LambdaSelf { signature, .. } => Some(signature.params.clone()),
                     Callee::Value(value) => match &value.ty {
                         Type::Func(signature) => Some(signature.params.clone()),
                         _ => None,

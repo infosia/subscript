@@ -576,7 +576,22 @@ pub(super) fn verify_instruction_contract(
                 }
             }
             let target_exists = match &target.kind {
-                l::CallTargetKind::Function(id) => declared_function(module, *id).is_some(),
+                l::CallTargetKind::LambdaSelf(id) => {
+                    *id == function.id
+                        && function.kind == l::FunctionKind::Lambda
+                        && function
+                            .parameters
+                            .iter()
+                            .filter(|parameter| parameter.kind != l::ParameterKind::Explicit)
+                            .zip(&instruction.operands)
+                            .all(|(parameter, operand)| {
+                                matches!(operand, l::Operand::Value(value)
+                                if *value == parameter.value || function.liveness.value_origins
+                                    .get(value.0 as usize) == Some(&parameter.value))
+                            })
+                }
+                l::CallTargetKind::Function(id) => declared_function(module, *id)
+                    .is_some_and(|function| function.kind != l::FunctionKind::Lambda),
                 l::CallTargetKind::StaticClosure(id) => {
                     declared_function(module, *id)
                         .is_some_and(|function| function.kind == l::FunctionKind::Lambda)
@@ -1354,7 +1369,8 @@ fn operation_name(module: &l::Module, kind: &l::CallTargetKind) -> String {
             format!("{:?}.{name}", intrinsic.family)
         }
         l::CallTargetKind::BuiltinMethod(method) => format!("BuiltinMethod.{method:?}"),
-        l::CallTargetKind::Function(_)
+        l::CallTargetKind::LambdaSelf(_)
+        | l::CallTargetKind::Function(_)
         | l::CallTargetKind::StaticClosure(_)
         | l::CallTargetKind::Method(_)
         | l::CallTargetKind::Foreign(_)
@@ -1369,6 +1385,19 @@ pub(super) fn declared_call_signature(
 ) -> Option<(Vec<l::ValueType>, Option<l::ValueType>)> {
     match kind {
         l::CallTargetKind::Function(id) => declared_function(module, *id).map(function_signature),
+        l::CallTargetKind::LambdaSelf(id) => declared_function(module, *id).map(|function| {
+            let (parameters, result) = function_signature(function);
+            (
+                parameters,
+                if function.is_async {
+                    Some(l::ValueType::Data(Type::async_handle(
+                        function.return_type.clone(),
+                    )))
+                } else {
+                    result
+                },
+            )
+        }),
         l::CallTargetKind::StaticClosure(id) => {
             let function = declared_function(module, *id)?;
             let callable = operand_types.first()?.clone();

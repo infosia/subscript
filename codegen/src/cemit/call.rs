@@ -20,6 +20,58 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     script_call_requires_pending_check(self.emitter.function(*function)?);
                 self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
             }
+            l::CallTargetKind::LambdaSelf(function) => {
+                let target_function = self.emitter.function(*function)?.clone();
+                let captures = target_function
+                    .parameters
+                    .iter()
+                    .take_while(|parameter| parameter.kind != l::ParameterKind::Explicit)
+                    .collect::<Vec<_>>();
+                let environment_count = captures.len();
+                let environment = if captures
+                    .first()
+                    .is_some_and(|parameter| parameter.kind == l::ParameterKind::OwnedEnvironment)
+                {
+                    operands
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| internal("self-call lacks its owned environment"))?
+                } else if captures.is_empty() {
+                    "NULL".to_string()
+                } else {
+                    let fields = captures
+                        .iter()
+                        .zip(operands)
+                        .map(|(parameter, operand)| format!(".c{} = {operand}", parameter.value.0))
+                        .collect::<Vec<_>>();
+                    format!("&(SubEnv{}){{ {} }}", function.0, fields.join(", "))
+                };
+                let mut arguments = vec![environment];
+                arguments.extend_from_slice(
+                    operands
+                        .get(environment_count..)
+                        .ok_or_else(|| internal("self-call lacks its environment operands"))?,
+                );
+                if matches!(
+                    target.return_type,
+                    Some(l::ValueType::Data(Type::AsyncHandle(_)))
+                ) {
+                    arguments.push(format!("{}u", self.emitter.pos_id(&instruction.pos)));
+                }
+                let expression = format!(
+                    "sub_{}{}(ctx, {})",
+                    if target_function.is_async { "w" } else { "f" },
+                    function.0,
+                    arguments.join(", ")
+                );
+                if let Some(result) = result {
+                    let _ = writeln!(out, "    {result} = {expression};");
+                } else {
+                    let _ = writeln!(out, "    {expression};");
+                }
+                let check_pending = script_call_requires_pending_check(&target_function);
+                self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
+            }
             l::CallTargetKind::StaticClosure(function) => {
                 let callable = operands
                     .first()

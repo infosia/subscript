@@ -296,7 +296,9 @@ impl<'a> ModuleEffectScanner<'a> {
                     name.full_text().to_owned(),
                 );
             }
-            C::Standard(_) | C::Foreign(_) | C::Value(_) => self.record_indirect_call(),
+            C::Standard(_) | C::Foreign(_) | C::Value(_) | C::LambdaSelf { .. } => {
+                self.record_indirect_call()
+            }
             C::Method { recv, name } => {
                 if let Some((hir::OperationSignatureTarget::BuiltinMethod(method), _)) =
                     hir::operation_signature_target(callee)

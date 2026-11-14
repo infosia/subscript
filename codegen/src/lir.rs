@@ -300,6 +300,7 @@ struct FunctionRecord {
 
 #[derive(Clone)]
 struct FunctionInput {
+    lambda_id: Option<hir::LambdaId>,
     /// The first capture is the environment object that owns the others
     /// (`compiler.md` §181 rule 2, §186 rule 4).
     owned_environment: bool,
@@ -320,6 +321,7 @@ impl From<hir::Function> for FunctionInput {
     fn from(function: hir::Function) -> Self {
         let creation_traps = function.trap_sites();
         Self {
+            lambda_id: None,
             owned_environment: false,
             name: function.name,
             exported: function.exported,
@@ -1495,7 +1497,8 @@ mod verifier_tests {
             l::CallTargetKind::BuiltinMethod(method) => {
                 Some(l::CallSignatureTarget::BuiltinMethod(*method))
             }
-            l::CallTargetKind::Function(_)
+            l::CallTargetKind::LambdaSelf(_)
+            | l::CallTargetKind::Function(_)
             | l::CallTargetKind::StaticClosure(_)
             | l::CallTargetKind::Method(_)
             | l::CallTargetKind::Foreign(_)

@@ -106,6 +106,9 @@ impl<'p> Checker<'p> {
         self.with_expression_work(|checker| {
             let name = id.sym.to_string();
             let ident_pos = checker.pos(id.span);
+            if let Some(call) = checker.check_lambda_self_call(id, c, fx, &pos) {
+                return call;
+            }
             if fx.owns_local_name(&name) {
                 let callee = checker.check_ident(id, None, fx);
                 return checker.check_indirect_call(callee, c, fx, pos);

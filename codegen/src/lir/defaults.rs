@@ -72,6 +72,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             // Publish the identity before the body requests recursive defaults.
             self.lowering.default_functions.insert(key, id);
             let input = FunctionInput {
+                lambda_id: None,
                 owned_environment: false,
                 name: format!(
                     "<default {}:{}:{}>",

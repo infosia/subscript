@@ -533,6 +533,8 @@ pub(crate) struct Local {
 /// lookups that cross it are captures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
+    /// The running lambda binding and its decided signature (§284).
+    pub self_call: Option<(String, hir::LambdaId, crate::types::FuncType, bool)>,
     pub vars: Shared<HashMap<String, Local>>,
     /// Source declaration identities for const index keys (§163).
     pub const_keys: Shared<HashMap<String, String>>,
@@ -873,6 +875,8 @@ type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
 /// path keys known non-null or present (C7, §43).
 #[derive(Debug, Clone)]
 pub(crate) struct FnCtx {
+    /// A whole local const initializer that can name its running lambda (§284).
+    pub lambda_initializer: Option<(swc_common::Span, String)>,
     pub frames: Shared<Vec<Frame>>,
     pub lexical_class: Option<ClassId>,
     /// The generic class template whose body encloses a moved local
@@ -1091,6 +1095,7 @@ impl FnCtx {
         diagnostics: DiagnosticSink,
     ) -> Self {
         FnCtx {
+            lambda_initializer: None,
             lexical_class: None,
             lexical_template: None,
             parameter_decisions: HashSet::new().into(),

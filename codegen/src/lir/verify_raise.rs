@@ -217,6 +217,10 @@ fn target_can_raise(module: &l::Module, target: &l::CallTarget) -> bool {
         l::CallTargetKind::Function(id) | l::CallTargetKind::StaticClosure(id) => {
             function_can_raise(*id)
         }
+        l::CallTargetKind::LambdaSelf(id) => module
+            .functions
+            .get(id.0 as usize)
+            .is_some_and(|function| function.can_raise && !function.is_async),
         l::CallTargetKind::Method(method) => module
             .classes
             .iter()

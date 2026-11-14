@@ -541,7 +541,10 @@ impl Callee {
     fn runs_script(&self, helpers: &HashSet<Symbol>) -> bool {
         match self {
             Callee::Func(name) => !helpers.contains(name),
-            Callee::Standard(_) | Callee::Foreign(_) | Callee::Value(_) => true,
+            Callee::Standard(_)
+            | Callee::Foreign(_)
+            | Callee::Value(_)
+            | Callee::LambdaSelf { .. } => true,
             Callee::Method { recv, name } => {
                 matches!(recv.ty, Type::Class(_) | Type::Interface(_))
                     || (matches!(recv.ty, Type::Generator(_)) && name.full_text() == "next")
