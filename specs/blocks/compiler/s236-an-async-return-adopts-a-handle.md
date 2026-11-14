@@ -157,6 +157,9 @@ rules 2 to 4.
 2. An adopted handle that a later completion abandons, and that then
    rejects, traps (`collisions.md` C8, §116.1 rule 4b). `node` reports
    an unhandled rejection and continues.
+   *(Decided 2026-11-15 by the owner: the trap stays. Each handle that
+   holds an unobserved exception traps when its last count goes, by one
+   rule (C8).)*
 3. The epilogue of an adopting function is lowered at each exit, as a
    `finally` is. A function with four value returns and one adopting
    return has 739 lines of C `resume` against 168 for the form with

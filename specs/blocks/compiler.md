@@ -336,3 +336,4 @@ Every section, with its status:
 | §292 | An async `void` `catch` callback gives a `Promise<void>` | active | [`s292-an-async-void-catch-callback-gives-a-promise-of-void.md`](compiler/s292-an-async-void-catch-callback-gives-a-promise-of-void.md) |
 | §293 | Local lambdas in a group share one environment | active | [`s293-local-lambdas-in-a-group-share-one-environment.md`](compiler/s293-local-lambdas-in-a-group-share-one-environment.md) |
 | §294 | The reload fingerprint holds the absence of a field | active | [`s294-the-reload-fingerprint-holds-the-absence-of-a-field.md`](compiler/s294-the-reload-fingerprint-holds-the-absence-of-a-field.md) |
+| §295 | An operand that can raise holds the operands before it | active | [`s295-an-operand-that-can-raise-holds-the-operands-before-it.md`](compiler/s295-an-operand-that-can-raise-holds-the-operands-before-it.md) |

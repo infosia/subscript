@@ -113,3 +113,4 @@ its control with explicit arguments.
    descriptor literal, and the check of a raise site does. The same
    gap applies to each default call under hot reload, which gives each
    default call a raise edge. This is not measured.
+   *(Selected 2026-11-15 for §295.)*
