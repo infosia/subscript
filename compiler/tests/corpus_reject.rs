@@ -74,6 +74,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         8,
     ),
+    ("r511-mutually-recursive-void-lambdas.ts", RuleCode::S100, 8),
     ("r506-c-callback-through-array.ts", RuleCode::S100, 8),
     ("r505-c-callback-through-indirect.ts", RuleCode::S100, 8),
     ("r504-c-callback-through-return.ts", RuleCode::S100, 7),

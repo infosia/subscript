@@ -154,3 +154,38 @@ One fresh review. Three MINOR findings, each fixed; see §287.3.
 - `gate full d41d74fc dirty:8 debug 3407/0/5 release 3388/0/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 0`.
   The moved golden is the LIR text snapshot, which grows by the `a452`
   section only.
+
+## §290: a `void` result inference rejects a cycle
+
+Contract: `specs/blocks/compiler/s290-a-void-result-inference-rejects-a-cycle.md`.
+
+### Red
+
+At the contract commit, `subscript check` of
+`r511-mutually-recursive-void-lambdas` gave "no errors". `tsc` gives
+TS7023 at lines 8 and 9.
+
+### Form
+
+- `compiler/src/check/initializer.rs`: a stack of unannotated lambda
+  results in progress (`LambdaResultInference`). A read of a result in
+  progress from a `return` operand reports the cycle at each lambda of
+  the path (`provisional_void_signature`).
+- `compiler/src/check/expr/lambda.rs` and `entry.rs`: the flag
+  `inferring_result_operand` holds only for the callee of a call in a
+  `return` operand. A value position clears it.
+- A lambda with a rejected result has the type `Error` (rule 3).
+- r511 now gives two S100 "initializer type depends on its own
+  undecided type", at 8:11 and 9:11.
+
+### Phase Review
+
+One fresh review. One MAJOR and two MINOR findings; see §290.3.
+
+### Gate
+
+- The first full gate failed in `apparent_type_shapes`
+  (`every_value_shape_test_uses_the_apparent_type`): the rule 3 site
+  compared the raw type with `Type::Error`. It reads the apparent type
+  now.
+- `gate full d4026e5b dirty:11 debug 3423/0/5 release 3404/0/5 skips 1/0 clippy 4/10/13 goldens-moved 0 exit 0`.

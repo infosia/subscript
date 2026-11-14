@@ -19,10 +19,13 @@ impl<'p> Checker<'p> {
         expression: &ast::Expr,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        match super::unparen_expr(expression) {
+        let saved_operand = std::mem::replace(&mut self.inferring_result_operand, false);
+        let checked = match super::unparen_expr(expression) {
             ast::Expr::Member(member) => self.check_member_read_inner(member, fx, false, true),
             expression => self.check_expr(expression, None, fx),
-        }
+        };
+        self.inferring_result_operand = saved_operand;
+        checked
     }
 
     pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
@@ -194,7 +197,7 @@ impl<'p> Checker<'p> {
         kind: ContextKind,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        self.check_expr_with_policy(e, (ctx, kind), fx, false, false)
+        self.check_expr_with_policy(e, (ctx, kind), fx, false, false, false)
     }
 
     pub(super) fn check_expr_with_header_receiver(
@@ -210,7 +213,18 @@ impl<'p> Checker<'p> {
             fx,
             allow_embedded_header_receiver,
             false,
+            false,
         )
+    }
+
+    /// compiler.md §290 rule 1: an initializer inherits the dependency of
+    /// its callee read, and an awaited call still reads its callee's result.
+    pub(in crate::check) fn check_expr_with_result_dependency(
+        &mut self,
+        e: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        self.check_expr_with_policy(e, (None, ContextKind::Contextual), fx, false, false, true)
     }
 
     /// Checks the expression body of a lambda with no result type: a body
@@ -237,7 +251,11 @@ impl<'p> Checker<'p> {
         kind: ContextKind,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        self.check_expr_with_policy(e, (ctx, kind), fx, false, true)
+        let result_operand = matches!(
+            super::unparen_expr(e),
+            ast::Expr::Call(_) | ast::Expr::Await(_) | ast::Expr::Cond(_)
+        );
+        self.check_expr_with_policy(e, (ctx, kind), fx, false, true, result_operand)
     }
 
     /// Rejects a `void` value at `pos`. The site names a destination of a
@@ -261,6 +279,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
         keep_void: bool,
+        preserve_result_operand: bool,
     ) -> hir::Expr {
         let previous_numeric = fx.descriptor_numeric_operand;
         if fx.descriptor_default.is_some() {
@@ -282,8 +301,13 @@ impl<'p> Checker<'p> {
             ContextKind::Hint if !reads_hint(e) => None,
             _ => ctx,
         };
+        // compiler.md §290 rule 1: arguments and other value positions do
+        // not read a lambda's result, even inside a return operand.
+        let saved_operand = self.inferring_result_operand;
+        self.inferring_result_operand &= preserve_result_operand;
         let checked =
             self.check_expr_inner(e, (expected, kind), fx, allow_embedded_header_receiver);
+        self.inferring_result_operand = saved_operand;
         fx.descriptor_numeric_operand = previous_numeric;
         if self.apparent_type(&checked.ty) == Type::TaskGroup
             && fx.frames.iter().any(|frame| frame.is_generator)
@@ -336,7 +360,8 @@ impl<'p> Checker<'p> {
         e: &ast::Expr,
         fx: &mut FnCtx,
     ) -> (Vec<hir::Stmt>, Type) {
-        if let ast::Expr::OptChain(chain) = super::unparen_expr(e) {
+        let e = super::unparen_expr(e);
+        if let ast::Expr::OptChain(chain) = e {
             return self.check_optional_chain_operand(chain, fx);
         }
         let checked = self.check_expr_inner(e, (None, ContextKind::Contextual), fx, false);
@@ -375,6 +400,7 @@ impl<'p> Checker<'p> {
                 fx,
                 allow_embedded_header_receiver,
                 false,
+                true,
             ),
             ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
@@ -801,7 +827,7 @@ impl<'p> Checker<'p> {
                 || (self.ambient_namespace(&member.obj, fx) == Some("Promise")
                     && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all"))
             {
-                let handle = self.check_expr(operand, None, fx);
+                let handle = self.check_expr_with_result_dependency(operand, fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {
                     return self.err_expr(pos);
                 };
@@ -857,7 +883,7 @@ impl<'p> Checker<'p> {
             && self.foreign_defs.iter().any(|f| f.name == id.sym.as_ref() && f.completion_result.is_some()));
         let standard = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.peek_scope_item(id.sym.as_ref()), Some(ScopeItem::StandardFile(_))));
         if indirect || completion || standard {
-            let handle = self.check_expr(operand, None, fx);
+            let handle = self.check_expr_with_result_dependency(operand, fx);
             if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
                 let origins = self.expr_async_origins(&handle, fx);
                 fx.handle_async_origins(&origins);

@@ -27,7 +27,13 @@ impl<'p> Checker<'p> {
             self.split_return(arg, fx, out);
             return;
         }
+        let result_operand = matches!(
+            super::unparen_expr(arg),
+            ast::Expr::Call(_) | ast::Expr::Await(_)
+        );
+        let saved_operand = std::mem::replace(&mut self.inferring_result_operand, result_operand);
         let (mut statements, ty) = self.check_void_operand(arg, fx);
+        self.inferring_result_operand = saved_operand;
         // compiler.md §287 rule 1: reuse annotated async return adoption.
         if fx.frames.last().is_some_and(|frame| frame.is_async)
             && matches!(self.apparent_type(&ty), Type::AsyncHandle(inner) if self.apparent_type(&inner) == Type::Void)
@@ -223,7 +229,7 @@ impl<'p> Checker<'p> {
             // including when the body would otherwise be deferred.
             if void_block {
                 if let ast::BlockStmtOrExpr::BlockStmt(block) = &*a.body {
-                    if returns_nonvoid_syntax(&block.stmts) {
+                    if returns_matching(&block.stmts, nonvoid_return_syntax) {
                         checker.reject_subset(
                             RejectionSite::BlockLambdaReturnAnnotationMissing,
                             "a lambda with a block body requires a return type annotation",
@@ -234,9 +240,13 @@ impl<'p> Checker<'p> {
                     }
                 }
             }
-            // compiler.md §239 rule 1: an annotation and a `void` block each
-            // decide the result from the syntax, before the body is checked.
-            let decided_from_syntax = a.return_type.is_some() || void_block;
+            // compiler.md §239 rule 1, §290 rule 1: a block with no return
+            // operand has a decided result; §286 operands still need inference.
+            let needs_void_inference = void_block
+                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block)
+                    if returns_matching(&block.stmts, |_| true));
+            let decided_from_syntax =
+                a.return_type.is_some() || (void_block && !needs_void_inference);
             if void_block {
                 ret = Some(if a.is_async {
                     Type::async_handle(Type::Void)
@@ -301,14 +311,20 @@ impl<'p> Checker<'p> {
             } else {
                 ContextKind::Contextual
             };
-            checker.check_lambda_body(
+            let deciding = checker.deciding_type;
+            if needs_void_inference {
+                checker.deciding_type = false;
+            }
+            let value = checker.check_lambda_body(
                 a,
                 params,
                 (ret, result_kind, void_block),
                 result_hint.as_ref(),
                 fx,
                 pos,
-            )
+            );
+            checker.deciding_type = deciding;
+            value
         });
         self.generic_callback_context = generic_context;
         value
@@ -384,6 +400,20 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let saved_operand = std::mem::replace(&mut self.inferring_result_operand, false);
+        let inferring_result = inferred_void || ret.is_none();
+        if inferring_result {
+            self.lambda_result_inference
+                .push(crate::check::initializer::LambdaResultInference {
+                    span: a.span,
+                    pos: pos.clone(),
+                    signature: ret.clone().map(|ret| {
+                        Type::func(params.iter().map(|p| p.ty().clone()).collect(), ret)
+                    }),
+                    depends_on_parent: saved_operand,
+                    rejected: false,
+                });
+        }
         if a.is_async {
             ret = ret.map(|ty| match self.apparent_type(&ty) {
                 Type::AsyncHandle(value) => *value,
@@ -526,7 +556,13 @@ impl<'p> Checker<'p> {
                     let diagnostics = self.diags.len();
                     let mut checked = match &ret {
                         Some(ret) => self.check_expr_as(e, Some(ret), result_kind, fx),
-                        None => self.check_expr_keeping_void(e, result_hint, fx),
+                        None => {
+                            let saved_operand =
+                                std::mem::replace(&mut self.inferring_result_operand, true);
+                            let checked = self.check_expr_keeping_void(e, result_hint, fx);
+                            self.inferring_result_operand = saved_operand;
+                            checked
+                        }
                     };
                     // compiler.md §238 rule 1: a body of type `void` gives
                     // the result `void`.
@@ -633,6 +669,15 @@ impl<'p> Checker<'p> {
         }) {
             ret = Some(Type::Error);
         }
+        if inferring_result
+            && self
+                .lambda_result_inference
+                .pop()
+                .is_some_and(|result| result.rejected)
+        {
+            ret = Some(Type::Error);
+        }
+        self.inferring_result_operand = saved_operand;
         let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
         self.report_unhandled_async_origins(fx, origin_start);
         fx.async_origins.truncate(origin_start);
@@ -643,7 +688,12 @@ impl<'p> Checker<'p> {
         } else {
             ret.clone()
         };
-        let ty = Type::func(params.iter().map(|p| p.ty().clone()).collect(), result);
+        // compiler.md §290 rule 3: a rejected result gives the lambda type Error.
+        let ty = if self.apparent_type(&ret) == Type::Error {
+            Type::Error
+        } else {
+            Type::func(params.iter().map(|p| p.ty().clone()).collect(), result)
+        };
         hir::Expr {
             pending_work: None,
             kind: ExprKind::Lambda {
@@ -672,35 +722,35 @@ fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
     }
 }
 
-/// compiler.md §286 rule 3a: inspect this block's returns only.
-fn returns_nonvoid_syntax(statements: &[ast::Stmt]) -> bool {
+/// compiler.md §286 rules 1 and 3a: inspect this block's returns only.
+fn returns_matching(statements: &[ast::Stmt], operand: fn(&ast::Expr) -> bool) -> bool {
     statements.iter().any(|statement| match statement {
-        ast::Stmt::Return(r) => r.arg.as_deref().is_some_and(nonvoid_return_syntax),
-        ast::Stmt::Block(block) => returns_nonvoid_syntax(&block.stmts),
+        ast::Stmt::Return(r) => r.arg.as_deref().is_some_and(operand),
+        ast::Stmt::Block(block) => returns_matching(&block.stmts, operand),
         ast::Stmt::If(i) => {
-            returns_nonvoid_syntax(std::slice::from_ref(&i.cons))
+            returns_matching(std::slice::from_ref(&i.cons), operand)
                 || i.alt
                     .as_deref()
-                    .is_some_and(|alt| returns_nonvoid_syntax(std::slice::from_ref(alt)))
+                    .is_some_and(|alt| returns_matching(std::slice::from_ref(alt), operand))
         }
-        ast::Stmt::While(w) => returns_nonvoid_syntax(std::slice::from_ref(&w.body)),
-        ast::Stmt::DoWhile(d) => returns_nonvoid_syntax(std::slice::from_ref(&d.body)),
-        ast::Stmt::For(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
-        ast::Stmt::ForIn(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
-        ast::Stmt::ForOf(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
-        ast::Stmt::Labeled(l) => returns_nonvoid_syntax(std::slice::from_ref(&l.body)),
+        ast::Stmt::While(w) => returns_matching(std::slice::from_ref(&w.body), operand),
+        ast::Stmt::DoWhile(d) => returns_matching(std::slice::from_ref(&d.body), operand),
+        ast::Stmt::For(f) => returns_matching(std::slice::from_ref(&f.body), operand),
+        ast::Stmt::ForIn(f) => returns_matching(std::slice::from_ref(&f.body), operand),
+        ast::Stmt::ForOf(f) => returns_matching(std::slice::from_ref(&f.body), operand),
+        ast::Stmt::Labeled(l) => returns_matching(std::slice::from_ref(&l.body), operand),
         ast::Stmt::Switch(s) => s
             .cases
             .iter()
-            .any(|case| returns_nonvoid_syntax(&case.cons)),
+            .any(|case| returns_matching(&case.cons, operand)),
         ast::Stmt::Try(t) => {
-            returns_nonvoid_syntax(&t.block.stmts)
+            returns_matching(&t.block.stmts, operand)
                 || t.handler
                     .as_ref()
-                    .is_some_and(|handler| returns_nonvoid_syntax(&handler.body.stmts))
+                    .is_some_and(|handler| returns_matching(&handler.body.stmts, operand))
                 || t.finalizer
                     .as_ref()
-                    .is_some_and(|finalizer| returns_nonvoid_syntax(&finalizer.stmts))
+                    .is_some_and(|finalizer| returns_matching(&finalizer.stmts, operand))
         }
         _ => false,
     })

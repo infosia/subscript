@@ -299,3 +299,82 @@ fn an_optional_chain_return_preserves_its_statement() {
     assert_eq!(errors[0].code, RuleCode::S100);
     assert_eq!(errors[0].message, BLOCK_ANNOTATION);
 }
+
+/// compiler.md §290 rules 1 to 3: pending results reject cycles, and a
+/// rejected lambda never publishes its provisional void type to callers.
+#[test]
+fn inferred_void_results_reject_cycles_without_follow_on_diagnostics() {
+    const CYCLE: &str = "initializer type depends on its own undecided type";
+    for (body, count) in [
+        ("const a = () => { return b(); };\nconst b = () => { return a(); };\nconst x = a();", 2),
+        ("const a = () => { return b(); };\nconst b = () => { return c(); };\nconst c = () => { return a(); };\nconst x = a();", 3),
+        ("const a = async () => { return b(); };\nconst b = async () => { return a(); };\nconst x = a();", 2),
+        ("const a = async () => { return await b(); };\nconst b = async () => { return await a(); };\nconst x = a();", 2),
+        ("const a = () => { return b(); };\nconst b = () => a();\nconst x = a();", 2),
+        ("const a = () => b();\nconst b = () => { return a(); };\nconst x = a();", 2),
+        ("const a = () => { return flag ? (b()) : v(); };\nconst b = () => { return (a()); };\nconst x = a();", 2),
+        ("const a = () => flag ? b() : v();\nconst b = () => { return a(); };\nconst x = a();", 2),
+    ] {
+        let errors = check(body).expect_err(body);
+        assert_eq!(errors.len(), count, "{body}: {errors:?}");
+        let first_line = DECLARATIONS.lines().count() as u32 + 1;
+        for (index, error) in errors.iter().enumerate() {
+            assert_eq!(error.code, RuleCode::S100);
+            assert_eq!(error.message, CYCLE);
+            assert_eq!(error.pos.line, first_line + index as u32);
+            assert_eq!(error.pos.col, 11);
+        }
+    }
+    for body in [
+        "const a = () => { return a(); };",
+        "const a = async () => { return a(); };",
+        "const a = () => { return b(); }; const b = () => { return v(); };",
+        "const a = () => { return v(); b(); }; const b = () => { return a(); };",
+        "const a = () => { b(); return v(); }; const b = () => { return a(); };",
+    ] {
+        let module = accepts(body);
+        assert_eq!(lambda_result(&module), subscript_compiler::Type::Void);
+    }
+    // compiler.md §290 rule 1: callback values do not read their results.
+    for body in [
+        "const a = () => { return each(ys, b); };
+        const b = (x: i32) => { return a(); };",
+        "function after(f: () => void): void { f(); }
+        const a = () => { return flag ? (after((b))) : v(); };
+        const b = () => { return a(); };",
+        "function after(fs: (() => void)[]): void {}
+        const a = () => { return after([b]); };
+        const b = () => { return a(); };",
+        "@Descriptor class Callback { f!: () => void; }
+        function after(callback: Callback): void { callback.f(); }
+        const a = () => { return after({ f: b }); };
+        const b = () => { return a(); };",
+        "function condition(f: () => void): boolean { return true; }
+        const a = () => { return condition(b) ? v() : v(); };
+        const b = () => { return a(); };",
+        "async function after(f: () => Promise<void>): Promise<void> { await f(); }
+        const a = async () => { return await after(b); };
+        const b = async () => { return a(); };",
+    ] {
+        accepts(body);
+    }
+    let source = r#"function after(f: () => void): void { f(); }
+let k: i32 = 0;
+const ping = () => { if (k > 3) { return; } k++; return after(pong); };
+const pong = () => { if (k > 3) { return; } k++; return after(ping); };
+export function main(): void { ping(); print(`${k}`); }
+"#;
+    check_program(&[SourceFile::new("test.ts", source)])
+        .expect("callback value reads do not form a result cycle");
+    for body in [
+        "function g(): i32 { return 1; }\nconst a = () => { return g(); };\nconst x = a();",
+        "function g(): i32 { return 1; }\nconst c: boolean = true;\nconst a = () => { return c ? g() : v(); };\nconst x = a();",
+    ] {
+        let diagnostic = rejects(body);
+        assert_eq!(diagnostic.code, RuleCode::S100);
+        assert_eq!(diagnostic.message, BLOCK_ANNOTATION);
+        let lambda_line = body.lines().position(|line| line.starts_with("const a")).unwrap();
+        assert_eq!(diagnostic.pos.line, DECLARATIONS.lines().count() as u32 + lambda_line as u32 + 1);
+        assert_eq!(diagnostic.pos.col, 11);
+    }
+}

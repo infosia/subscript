@@ -9,6 +9,16 @@ pub(crate) enum TypeState {
     Rejected,
 }
 
+/// An unannotated lambda result in progress. A §286 block has a provisional
+/// signature; an expression body still needs its type (§290 rules 1 and 2).
+pub(super) struct LambdaResultInference {
+    pub span: swc_common::Span,
+    pub pos: Pos,
+    pub signature: Option<Type>,
+    pub depends_on_parent: bool,
+    pub rejected: bool,
+}
+
 impl TypeState {
     pub(crate) fn decided(ty: Type) -> Self {
         if ty == Type::Error {
@@ -76,6 +86,44 @@ enum ParameterOwner {
 }
 
 impl<'p> Checker<'p> {
+    /// compiler.md §290 rule 1: value reads can use the signature, but a
+    /// result read cannot depend on another result still in progress.
+    fn provisional_void_signature(&mut self, source: &Initializer) -> Option<Type> {
+        let span = expr::unparen_expr(&source.expression).span();
+        let index = self
+            .lambda_result_inference
+            .iter()
+            .position(|result| result.span == span)?;
+        if self.inferring_result_operand
+            && index + 1 < self.lambda_result_inference.len()
+            && self.lambda_result_inference[index + 1..]
+                .iter()
+                .all(|result| result.depends_on_parent)
+            && self.lambda_result_inference[index..]
+                .iter()
+                .any(|result| result.signature.is_some())
+        {
+            let mut sites = Vec::new();
+            for result in &mut self.lambda_result_inference[index..] {
+                if !result.rejected {
+                    result.rejected = true;
+                    sites.push(result.pos.clone());
+                }
+            }
+            for pos in sites {
+                self.cycle(pos);
+            }
+            Some(Type::Error)
+        } else {
+            let result = &self.lambda_result_inference[index];
+            Some(if result.rejected {
+                Type::Error
+            } else {
+                result.signature.clone()?
+            })
+        }
+    }
+
     pub(crate) fn initializer(
         &self,
         expression: &ast::Expr,
@@ -149,7 +197,7 @@ impl<'p> Checker<'p> {
         let value = fx
             .with_synthetic_owner(
                 SyntheticOwnerKind::Initializer(self.pos(source.expression.span())),
-                |fx| self.check_expr(&source.expression, None, fx),
+                |fx| self.check_expr_with_result_dependency(&source.expression, fx),
             )
             .0;
         let ty = self.inferred_initializer_type(&value, self.pos(source.expression.span()));
@@ -181,7 +229,13 @@ impl<'p> Checker<'p> {
         match sig.state {
             TypeState::Decided(ty) => return ty,
             TypeState::Rejected => return Type::Error,
-            TypeState::InProgress => return self.cycle(pos),
+            TypeState::InProgress => {
+                return sig
+                    .initializer
+                    .as_ref()
+                    .and_then(|source| self.provisional_void_signature(source))
+                    .unwrap_or_else(|| self.cycle(pos));
+            }
             TypeState::Undecided => {}
         }
         if let Some(sig) = self.global_sigs.get_mut(name) {
@@ -238,7 +292,13 @@ impl<'p> Checker<'p> {
         match &sig.state {
             TypeState::Decided(ty) => return ty.clone(),
             TypeState::Rejected => return Type::Error,
-            TypeState::InProgress => return self.cycle(pos),
+            TypeState::InProgress => {
+                let source = sig.initializer.clone();
+                return source
+                    .as_ref()
+                    .and_then(|source| self.provisional_void_signature(source))
+                    .unwrap_or_else(|| self.cycle(pos));
+            }
             TypeState::Undecided => {}
         }
         let mut source = sig.initializer.clone();
