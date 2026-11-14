@@ -114,6 +114,7 @@ One fresh review of the implementation. No CRITICAL finding.
    syntax, and a call can have any type.
 3. `async () => { return w1(); }` with `w1(): Promise<void>` stays
    rejected. `tsc` accepts it with the result `Promise<void>`.
+   *(Closed 2026-11-14 by §287.)*
 4. A conditional operand with a branch that is a call of a non-`void`
    function takes the diagnostics of §237 rule 2, not the diagnostic
    of rule 3. The program is rejected in both.
