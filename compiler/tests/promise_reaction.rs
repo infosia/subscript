@@ -45,11 +45,11 @@ fn reject_entries_report_their_rule_messages() {
     }
 }
 
-/// §289 rules 1a, 3, and 4: only a direct await statement discards a non-void catch result.
-// Cost: 20 checker calls; no native build.
+/// §289 rules 1a, 3, and 4 and §292 rule 1: only a direct await statement discards a non-void catch result.
+// Cost: 24 checker calls; no native build.
 #[test]
 fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
-    let place_message = "a `void` `catch` callback on `Promise<i32>` gives `Promise<i32 | void>`; use it only as `await h.catch(r);`";
+    let place_message = "a `catch` callback that gives no value on `Promise<i32>` gives `Promise<i32 | void>`; use it only as `await h.catch(r);`";
     for (body, message) in [
         (
             "const r = await wi().catch(() => v()); if (r !== undefined) print(`${r + 1}`);",
@@ -70,9 +70,11 @@ fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
         ("for (; false; await wi().catch(v)) {}", place_message),
         ("const f = async () => { return await wi().catch(v); }; await f();", place_message),
         (
-            "await wi().catch(async (e: Error) => { print(e.message); });",
-            "a `catch` callback must return `i32`, the value type of the handle; it returns `Promise<void>`",
+            "return bad().catch(async (e: Error) => {});",
+            place_message,
         ),
+        ("const h = wi().catch(async () => {}); await h;", place_message),
+        ("await consume(wi().catch(() => av()));", place_message),
         (
             "await wi().catch((e: Error): string => e.message);",
             "a `catch` callback must return `i32`, the value type of the handle; it returns `string`",
@@ -84,6 +86,7 @@ fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
     ] {
         let source = format!(
             "async function wi(): Promise<i32> {{ return 1; }}
+            async function bad(): Promise<i32> {{ throw new Error(\"bad\"); }}
             async function av(): Promise<void> {{}}
             async function consume(h: Promise<void>): Promise<void> {{ await h; }}
             function v(): void {{}}
@@ -97,7 +100,8 @@ fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
         if message == place_message {
             let pos = &diagnostics[0].pos;
             let line = source.lines().nth(pos.line as usize - 1).expect("source line");
-            assert!(line[pos.col as usize - 1..].starts_with("wi().catch("), "{body}: {pos:?}");
+            let call = &line[pos.col as usize - 1..];
+            assert!(call.starts_with("wi().catch(") || call.starts_with("bad().catch("), "{body}: {pos:?}");
         }
         assert_eq!(
             diagnostics[0].divergence,
@@ -108,6 +112,8 @@ fn void_catch_result_reads_and_other_callback_mismatches_are_rejected() {
     for body in [
         "(await ((wi().catch(v)))); await (av().catch(v));",
         "const h = av().catch(v); await h; await wi().catch(() => { v(); });",
+        "await wi().catch(async (e: Error) => { print(e.message); }); await wi().catch(() => av());",
+        "const h = av().catch(async () => {}); await h;",
     ] {
         let source = format!(
             "async function wi(): Promise<i32> {{ return 1; }}
@@ -228,16 +234,24 @@ fn calls_with_one_shape_and_type_share_one_helper() {
             await value(2).catch((): void => {{}});
             await text().catch((): void => {{}});
             await value(1).catch((e: Error): void => {{}});
+            await value(1).catch(async (): Promise<void> => {{}});
+            await value(2).catch(async (): Promise<void> => {{}});
+            await text().catch(async (): Promise<void> => {{}});
+            await value(1).catch(async (e: Error): Promise<void> => {{}});
             print(`${{await value(1).catch((): i32 => 0)}}`);
         }}"
     );
     assert_eq!(
         helpers(&void_catches),
         [
+            "[[Promise.catch () => handle]]<i32, void>",
+            "[[Promise.catch () => handle]]<string, void>",
             "[[Promise.catch () => value]]<i32, i32>",
             "[[Promise.catch () => void]]<i32, void>",
             "[[Promise.catch () => void]]<string, void>",
+            "[[Promise.catch (e) => handle]]<i32, void>",
             "[[Promise.catch (e) => void]]<i32, void>",
+            "[[Promise.turn]]",
         ]
     );
     let different = format!(

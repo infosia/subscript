@@ -53,8 +53,8 @@ fn void_catch_discards_string_and_class_results_without_retained_frames() {
     }
 }
 
-/// §186 rule 8: new catch keys and their order enter the declaration hash.
-// Cost: four checker calls; no native build.
+/// §186 rule 8 and §292 rule 3: new catch keys and their order enter the declaration hash.
+// Cost: six checker calls; no native build.
 #[test]
 fn void_catch_helper_keys_enter_the_declaration_hash() {
     let hash = |body: &str| {
@@ -66,11 +66,13 @@ fn void_catch_helper_keys_enter_the_declaration_hash() {
     };
     let value = "await work().catch((): i32 => 0);";
     let void = "await work().catch((): void => {});";
-    assert_ne!(hash(value), hash(&format!("{value} {void}")));
-    assert_ne!(
-        hash(&format!("{value} {void}")),
-        hash(&format!("{void} {value}"))
-    );
+    let value_void = hash(&format!("{value} {void}"));
+    assert_ne!(hash(value), value_void);
+    assert_ne!(value_void, hash(&format!("{void} {value}")));
+    let adopted_void = "await work().catch(async (): Promise<void> => {});";
+    let void_adopted_void = hash(&format!("{void} {adopted_void}"));
+    assert_ne!(hash(void), void_adopted_void);
+    assert_ne!(void_adopted_void, hash(&format!("{adopted_void} {void}")));
 }
 
 fn files(source: &str) -> [SourceFile; 1] {

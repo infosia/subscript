@@ -16,6 +16,7 @@
 //! | `then(f, r)` | `let v: T; try { v = await h; } catch (e) { return r(e); } return f(v);` |
 //! | `catch(r)` | `try { return await h; } catch (e) { return r(e); }` |
 //! | `catch(r)`, `r: (e: Error) => void` | `try { await h; } catch (e) { r(e); }` (§289 rule 1) |
+//! | `catch(r)`, `r: (e: Error) => Promise<void>` | `try { await h; } catch (e) { const p = r(e); await turn(); await p; }` (§292 rule 1) |
 //! | `finally(f)` | `try { return await h; } finally { f(); await turn(); await turn(); }` |
 //!
 //! Each callback call delivers its result as the `then(f)` rows show. The

@@ -53,3 +53,34 @@ and 8:32; `await (wi().catch(v));` is accepted.
 - `gate full ff191065 dirty:18 debug 3422/0/5 release 3403/0/5 skips 1/0 clippy 4/10/13 goldens-moved 1 exit 0`.
   The moved golden is the LIR text snapshot, which grows by the `a454`
   section only.
+
+## §292: an async `void` `catch` callback gives a `Promise<void>`
+
+Contract: `specs/blocks/compiler/s292-an-async-void-catch-callback-gives-a-promise-of-void.md`.
+
+### Red
+
+At the contract commit `3b6c0853`, `subscript check` of `a456` gave six
+S013 "a `catch` callback must return `i32`, the value type of the
+handle; it returns `Promise<void>`", at lines 12, 13, 14, 16, 26, and 38.
+
+### Form
+
+- `compiler/src/check/expr/promise_reaction.rs`: a `catch` callback
+  whose adopted result is `void` takes the §289 path, with the §186
+  adoption helper.
+- `a456` output, by hand and under `node`, 19 lines, from `bad` to
+  `second done`.
+
+### Phase Review
+
+One fresh review. Four MINOR findings, each fixed; see §292.3.
+
+### Gate
+
+- The first full gate failed in `apparent_type_shapes`: two guards in
+  `check_promise_reaction` compared a type in a variant guard. One
+  helper `callback_gives_void` now reads the apparent type for both.
+- `gate full 636fcf97 dirty:10 debug 3438/0/5 release 3419/0/5 skips 1/0 clippy 4/10/13 goldens-moved 1 exit 0`.
+  The moved golden is the LIR text snapshot, which grows by the `a456`
+  section only.

@@ -66,6 +66,11 @@ pub(super) enum Reaction {
 }
 
 impl<'p> Checker<'p> {
+    /// Whether the callback delivers no value, including through adoption.
+    fn callback_gives_void(&self, callback: &Callback) -> bool {
+        self.apparent_type(&callback.value) == Type::Void
+    }
+
     /// Checks `recv.method(...)` where `recv` is a `Promise<T>` and
     /// `method` is `then`, `catch`, or `finally` (§186 rule 5).
     pub(in crate::check) fn check_promise_reaction(
@@ -92,21 +97,22 @@ impl<'p> Checker<'p> {
         else {
             return self.err_expr(pos);
         };
-        if matches!(&reaction, Reaction::Catch(r) if r.delivery == Delivery::Void)
+        // §292 rule 1: an adopted void result takes the §289 statement restriction.
+        if matches!(&reaction, Reaction::Catch(r) if self.callback_gives_void(r))
             && self.apparent_type(&value) != Type::Void
             && self.void_catch_statement != Some(call.span)
         {
             let value = self.type_name(&value);
             self.reject_subset(
                 RejectionSite::PromiseReactionResult,
-                format!("a `void` `catch` callback on `Promise<{value}>` gives `Promise<{value} | void>`; use it only as `await h.catch(r);`"),
+                format!("a `catch` callback that gives no value on `Promise<{value}>` gives `Promise<{value} | void>`; use it only as `await h.catch(r);`"),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
         let result = match &reaction {
             Reaction::Then(f) | Reaction::ThenBoth(f, _) => f.value.clone(),
-            Reaction::Catch(r) if r.delivery == Delivery::Void => Type::Void,
+            Reaction::Catch(r) if self.callback_gives_void(r) => Type::Void,
             Reaction::Catch(_) | Reaction::Finally(_) => value.clone(),
         };
         let symbol = self.promise_helper(&reaction, &value, &result, &recv.pos, &method_pos, &pos);
@@ -230,17 +236,11 @@ impl<'p> Checker<'p> {
                     method,
                     fx,
                 )?;
-                if r.delivery != Delivery::Void
+                if self.apparent_type(&r.value) != Type::Void
                     && self.apparent_type(&r.value) != self.apparent_type(value)
                 {
                     let expected = self.type_name(value);
-                    let actual = if r.delivery == Delivery::Adopt
-                        && self.apparent_type(&r.value) == Type::Void
-                    {
-                        self.type_name(&r.result)
-                    } else {
-                        self.type_name(&r.value)
-                    };
+                    let actual = self.type_name(&r.value);
                     let message = format!("a `catch` callback must return `{expected}`, the value type of the handle; it returns `{actual}`");
                     self.reject_subset(
                         RejectionSite::PromiseReactionResult,
