@@ -42,7 +42,9 @@ nothing, so §239 accepts it.
    environment. A self-call does not make the lambda escape.
 5. A self-call in a lambda nested inside the body of the lambda stays
    rejected. The nested lambda would capture the name.
-6. These forms stay rejected with the present site and diagnostic:
+6. *(Amended 2026-11-14 by §293: a read of the name as a value and
+   two lambdas that call each other are accepted in a lambda group.)*
+   These forms stay rejected with the present site and diagnostic:
    a read of the name that is not the callee of a call (for example
    `arr.push(loc)` or `const g = loc;`), and two local lambdas that
    call each other.
@@ -97,7 +99,9 @@ rule 1 keeps its rejection. Three MINOR findings, recorded:
 1. A read of a local lambda's own name as a value stays rejected
    (rule 6). Its acceptance needs an escape rule for the running
    closure value.
+   *(Selected 2026-11-14 for §293.)*
 2. Two local lambdas that call each other stay rejected (rule 6).
+   *(Selected 2026-11-14 for §293.)*
 3. A self-call that omits a defaulted argument is rejected (§284.3
    item 1).
    *(Selected 2026-11-14 for §288.)*

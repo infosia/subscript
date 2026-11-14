@@ -334,3 +334,4 @@ Every section, with its status:
 | §290 | A `void` result inference rejects a cycle | active | [`s290-a-void-result-inference-rejects-a-cycle.md`](compiler/s290-a-void-result-inference-rejects-a-cycle.md) |
 | §291 | A default reads a captured local, and an async default fails the handle | active | [`s291-a-default-reads-a-captured-local-and-an-async-default-fails-the-handle.md`](compiler/s291-a-default-reads-a-captured-local-and-an-async-default-fails-the-handle.md) |
 | §292 | An async `void` `catch` callback gives a `Promise<void>` | active | [`s292-an-async-void-catch-callback-gives-a-promise-of-void.md`](compiler/s292-an-async-void-catch-callback-gives-a-promise-of-void.md) |
+| §293 | Local lambdas in a group share one environment | active | [`s293-local-lambdas-in-a-group-share-one-environment.md`](compiler/s293-local-lambdas-in-a-group-share-one-environment.md) |
