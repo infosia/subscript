@@ -206,7 +206,6 @@ fn return_operands_must_each_be_void() {
         "const f = () => { return 1; };",
         "const f = () => { return \"s\"; };",
         "const f = (c: boolean) => { if (c) return 1; return \"s\"; };",
-        "const f = async () => { return w1(); };",
     ] {
         let diagnostic = rejects(body);
         assert_eq!(diagnostic.code, RuleCode::S100);
@@ -255,4 +254,48 @@ fn conditional_void_calls_are_accepted() {
     let module =
         accepts("const c1 = (c: boolean) => { return c ? v() : v(); }; c1(true); c1(false);");
     assert_eq!(lambda_result(&module), subscript_compiler::Type::Void);
+}
+
+/// compiler.md §287 rules 1 to 3: only async void handles are adopted.
+#[test]
+fn an_async_void_lambda_returns_a_promise_of_void() {
+    for body in [
+        "const f = () => { return w1(); };",
+        "const f = async () => { return wi(); };",
+    ] {
+        let diagnostic = rejects(body);
+        assert_eq!(diagnostic.code, RuleCode::S100);
+        assert_eq!(diagnostic.message, BLOCK_ANNOTATION);
+    }
+    let module = accepts("const f = async () => { return w1(); };");
+    let f = module
+        .globals
+        .iter()
+        .find(|global| global.name == "f")
+        .unwrap();
+    assert_eq!(
+        f.init.ty,
+        subscript_compiler::Type::func(
+            vec![],
+            subscript_compiler::Type::async_handle(subscript_compiler::Type::Void)
+        )
+    );
+}
+
+/// compiler.md §286 rule 3: an optional-chain return gives one diagnostic.
+#[test]
+fn an_optional_chain_return_preserves_its_statement() {
+    let source = format!(
+        "{DECLARATIONS}\nclass O {{ m(): Promise<void> {{ return w1(); }} }}
+        export async function main(): Promise<void> {{
+            const o: O | null = new O();
+            const oc = async () => {{ return o?.m(); }};
+            await oc();
+        }}"
+    );
+    let errors = check_program(&[SourceFile::new("test.ts", source.as_str())])
+        .expect_err("optional-chain return requires an annotation");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100);
+    assert_eq!(errors[0].message, BLOCK_ANNOTATION);
 }

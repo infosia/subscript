@@ -14,6 +14,7 @@ use crate::types::Type;
 
 impl<'p> Checker<'p> {
     /// compiler.md §286 rule 3: each operand has type void, without context.
+    /// §287 rule 1: an async lambda also accepts a Promise<void> operand.
     pub(in crate::check) fn check_inferred_void_return(
         &mut self,
         arg: &ast::Expr,
@@ -26,7 +27,18 @@ impl<'p> Checker<'p> {
             self.split_return(arg, fx, out);
             return;
         }
-        let (statements, ty) = self.check_void_operand(arg, fx);
+        let (mut statements, ty) = self.check_void_operand(arg, fx);
+        // compiler.md §287 rule 1: reuse annotated async return adoption.
+        if fx.frames.last().is_some_and(|frame| frame.is_async)
+            && matches!(self.apparent_type(&ty), Type::AsyncHandle(inner) if self.apparent_type(&inner) == Type::Void)
+            && matches!(statements.last(), Some(hir::Stmt::Expr(_)))
+        {
+            if let Some(hir::Stmt::Expr(checked)) = statements.pop() {
+                out.extend(statements);
+                let _ = self.adopt_returned_handle(checked, &Type::Void, fx, pos, out);
+                return;
+            }
+        }
         if !matches!(self.apparent_type(&ty), Type::Void | Type::Error) {
             let diagnostic_pos = fx.frames.last_mut().and_then(|frame| {
                 let (pos, reported) = frame.inferred_void.as_mut()?;

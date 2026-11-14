@@ -51,7 +51,18 @@ annotated.
 
 ### 287.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. Each probe gave the
+same output under subscript and `node`, and `tsc` accepted it: a
+`try`/`finally`, a stored handle, a conditional of two calls, a nested
+async lambda, a §284 self-call, and the deferred module-scope path.
+
+1. MINOR, realistic, fixed: for an optional-chain operand such as
+   `return o?.m();`, the branch dropped the statement that the operand
+   check gave, and a second diagnostic (S013) followed. The program now
+   gives one diagnostic.
+2. MINOR, contrived, fixed: an arm that could not run pushed a value
+   `return` into a `void` frame. It is removed.
+3. MINOR, fixed: a doc comment did not cite rule 1.
 
 ### 287.4 Open
 

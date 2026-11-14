@@ -123,3 +123,34 @@ recorded; see §286.3. Hygiene: exit 0.
 - `gate full 8502bf32 dirty:12 debug 3405/0/5 release 3386/0/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 0`.
   The moved golden is the LIR text snapshot, which grows by the `a451`
   section only.
+
+## §287: an async `void` lambda returns a `Promise<void>`
+
+Contract: `specs/blocks/compiler/s287-an-async-void-lambda-returns-a-promise-of-void.md`.
+
+### Red
+
+At the contract commit `d41d74fc`, `subscript check` of
+`a452-an-async-void-lambda-returns-a-promise-of-void` gave three S100:
+"a lambda with a block body requires a return type annotation" at
+lines 10 and 11, and "the initializer expects `Promise<void>`, got
+`Promise<<error>>`" at line 13.
+
+### Form
+
+- `compiler/src/check/expr/lambda.rs` `check_inferred_void_return`. In
+  an async frame, an operand of type `Promise<void>` takes
+  `adopt_returned_handle`, the path of a `return` in an async lambda
+  annotated `Promise<void>`.
+- `a452` output, checked by hand: `w1 g w1 w1`.
+- `generated-docs/corpus-index.md` gains the `a452` row.
+
+### Phase Review
+
+One fresh review. Three MINOR findings, each fixed; see §287.3.
+
+### Gate
+
+- `gate full d41d74fc dirty:8 debug 3407/0/5 release 3388/0/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 0`.
+  The moved golden is the LIR text snapshot, which grows by the `a452`
+  section only.
