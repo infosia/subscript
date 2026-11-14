@@ -261,7 +261,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         );
         let explicit_offset = operands.len();
         let receiver = operands.first().cloned().map(PreparedBase::Value);
-        let mut pending = self.lower_explicit_arguments(&params, args, false)?;
+        let mut pending = self.lower_explicit_arguments(&params, args, false, None)?;
         let guarded = guard_defaults && self.needs_async_defaults(&params, args.len());
         if guarded {
             self.begin_async_defaults(pos)?;

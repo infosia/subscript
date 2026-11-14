@@ -346,7 +346,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         if self.input_needs_hold(element)
                             && elements[index + 1..]
                                 .iter()
-                                .any(array_ownership::runs_user_code)
+                                .any(|later| self.can_change_or_raise(later, false))
                         {
                             self.hold_input(&value, &expr.pos)?;
                         }
@@ -392,7 +392,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         if self.input_needs_hold(&element.expr)
                             && elements[index + 1..]
                                 .iter()
-                                .any(|later| array_ownership::runs_user_code(&later.expr))
+                                .any(|later| self.can_change_or_raise(&later.expr, false))
                         {
                             self.hold_input(&value, &expr.pos)?;
                         }
@@ -867,7 +867,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             };
         }
         let mut place = self.prepare_place(target_expr)?;
-        if array_ownership::runs_user_code(value_expr) {
+        if self.can_change_or_raise(value_expr, false) {
             if let PreparedPlaceKind::Index {
                 base: PreparedBase::Value(value),
                 ..

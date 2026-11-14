@@ -4,9 +4,23 @@ use super::{all_declared_functions, sequence_exits, stops_statement_sequence, tr
 use std::collections::BTreeMap;
 use subscript_compiler::{hir, lir as l, Pos, Type};
 
+#[cfg(test)]
+#[path = "lir_facts_release_raise.rs"]
+mod raising_operands;
+
 pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
+    compare_for_reload(hir, lir, false, findings);
+}
+
+pub(super) fn compare_for_reload(
+    hir: &hir::Module,
+    lir: &l::Module,
+    reload: bool,
+    findings: &mut Vec<String>,
+) {
     let mut walk = Walk {
         hir,
+        reload,
         owners: 0,
         caught: 0,
         sites: Vec::new(),
@@ -198,6 +212,7 @@ struct Hooks {
 
 struct Walk<'a> {
     hir: &'a hir::Module,
+    reload: bool,
     owners: usize,
     caught: usize,
     sites: Vec<(Pos, usize)>,
@@ -206,28 +221,6 @@ struct Walk<'a> {
     /// The locals in scope, innermost last, each with whether it is
     /// immutable (compiler.md §255 rule 1).
     names: Vec<Vec<(String, bool)>>,
-}
-
-/// Whether `expr` runs user code: it contains a call, an async call, the
-/// creation of an async handle by a call of an async function, an
-/// `await`, a `new`, or a `yield`, outside the body of a lambda.
-/// `Promise.all` does not run user code (compiler.md §255 rule 2).
-fn runs_user_code(expr: &hir::Expr) -> bool {
-    use hir::ExprKind as K;
-    match &expr.kind {
-        K::Lambda { .. } => false,
-        K::Call { .. }
-        | K::AsyncCall { .. }
-        | K::AsyncHandleCreate { .. }
-        | K::AsyncHandleAwait(_)
-        | K::AsyncSuspend
-        | K::New { .. }
-        | K::Yield(_) => true,
-        _ => expr.children().into_iter().any(|child| match child {
-            hir::HirChild::Expr(child) => runs_user_code(child),
-            hir::HirChild::Stmt(_) => false,
-        }),
-    }
 }
 
 /// Whether `expr` is a `FixedArray` place: a `FixedArray` local, global,
@@ -241,7 +234,54 @@ fn fixed_array_place(expr: &hir::Expr) -> bool {
         )
 }
 
+/// The evaluation order of compiler.md §295 rule 1a, derived from HIR.
+fn call_operand_order<'e>(
+    params: &'e [hir::Param],
+    args: &'e [hir::Expr],
+    class: Option<&'e hir::ClassDef>,
+) -> impl Iterator<Item = (&'e hir::Expr, bool)> {
+    let arguments = args.iter().map(|arg| (arg, false));
+    let initializers = class
+        .into_iter()
+        .flat_map(|class| &class.fields)
+        .filter_map(|field| field.init.as_ref())
+        .map(|init| (init, false));
+    let defaults = params
+        .iter()
+        .skip(args.len())
+        .filter_map(|param| param.default.as_ref())
+        .map(|default| (default, true));
+    arguments.chain(initializers).chain(defaults)
+}
+
 impl<'a> Walk<'a> {
+    /// Derives compiler.md §295 rule 1 from HIR, for this build and call site.
+    fn can_change_or_raise(&self, expr: &hir::Expr, default_call: bool) -> bool {
+        use hir::ExprKind as K;
+        if default_call && self.reload {
+            return true;
+        }
+        if matches!(expr.kind, K::Lambda { .. }) {
+            return false;
+        }
+        if self.hir.expression_can_raise(expr) {
+            return true;
+        }
+        match &expr.kind {
+            K::Call { .. }
+            | K::AsyncCall { .. }
+            | K::AsyncHandleCreate { .. }
+            | K::AsyncHandleAwait(_)
+            | K::AsyncSuspend
+            | K::New { .. }
+            | K::Yield(_) => true,
+            _ => expr.children().into_iter().any(|child| match child {
+                hir::HirChild::Expr(child) => self.can_change_or_raise(child, false),
+                hir::HirChild::Stmt(_) => false,
+            }),
+        }
+    }
+
     /// Whether `expr` reads an immutable local.
     fn immutable_local(&self, expr: &hir::Expr) -> bool {
         let hir::ExprKind::Local(name, ..) = &expr.kind else {
@@ -265,10 +305,28 @@ impl<'a> Walk<'a> {
     }
 
     /// The parameters of the target of a call, for its defaults.
-    fn target_params(&self, expr: &hir::Expr) -> Option<&'a [hir::Param]> {
+    fn target_params<'e>(&self, expr: &'e hir::Expr) -> Option<&'e [hir::Param]>
+    where
+        'a: 'e,
+    {
         let module: &'a hir::Module = self.hir;
         use hir::ExprKind as K;
         let symbol = match &expr.kind {
+            K::Call { callee, .. } if callee.lambda_defaults().is_some() => {
+                return callee
+                    .lambda_defaults()
+                    .map(|defaults| defaults.params.as_slice());
+            }
+            K::Call {
+                callee: hir::Callee::Foreign(name),
+                ..
+            } => {
+                return module
+                    .foreign_fns
+                    .iter()
+                    .find(|function| function.name == *name)
+                    .map(|function| function.params.as_slice());
+            }
             K::Call {
                 callee: hir::Callee::Func(symbol) | hir::Callee::Method { name: symbol, .. },
                 ..
@@ -319,13 +377,13 @@ impl<'a> Walk<'a> {
                 };
                 let place = !fixed_array_place(obj);
                 self.expression(obj);
-                // Site 5: the index runs user code.
-                if place && self.holds(obj, runs_user_code(index)) {
+                // Site 5: the index can change or raise (§295 rule 2).
+                if place && self.holds(obj, self.can_change_or_raise(index, false)) {
                     self.owners += 1;
                 }
                 self.expression(index);
-                // Site 6: the value runs user code.
-                if place && self.holds(obj, runs_user_code(value)) {
+                // Site 6: the value can change or raise (§295 rule 2).
+                if place && self.holds(obj, self.can_change_or_raise(value, false)) {
                     self.owners += 1;
                 }
                 self.trap_sites(target);
@@ -334,7 +392,9 @@ impl<'a> Walk<'a> {
             K::Index { obj, index, .. } => {
                 self.expression(obj);
                 // Site 5, a read.
-                if !fixed_array_place(obj) && self.holds(obj, runs_user_code(index)) {
+                if !fixed_array_place(obj)
+                    && self.holds(obj, self.can_change_or_raise(index, false))
+                {
                     self.owners += 1;
                 }
                 self.expression(index);
@@ -350,7 +410,9 @@ impl<'a> Walk<'a> {
                     self.expression(element);
                     if self.holds(
                         element,
-                        elements[position + 1..].iter().any(|e| runs_user_code(e)),
+                        elements[position + 1..]
+                            .iter()
+                            .any(|e| self.can_change_or_raise(e, false)),
                     ) {
                         self.owners += 1;
                     }
@@ -386,7 +448,9 @@ impl<'a> Walk<'a> {
                     args,
                 } => (Some(&**recv), Some(name), args),
                 K::Call { callee, args } => {
-                    if let hir::Callee::Value(value) = callee {
+                    if let hir::Callee::Value(value) | hir::Callee::NamedLambda { value, .. } =
+                        callee
+                    {
                         self.expression(value);
                     }
                     (None, None, args)
@@ -408,23 +472,19 @@ impl<'a> Walk<'a> {
         let params = self.target_params(expr).unwrap_or(&[]);
         let omitted: Vec<(usize, &hir::Param)> =
             params.iter().enumerate().skip(args.len()).collect();
-        let defaults: Vec<&hir::Expr> = omitted
-            .iter()
-            .filter_map(|(_, param)| param.default.as_ref())
-            .collect();
-        let defaults_run = defaults.iter().any(|default| runs_user_code(default));
+        let class = match &expr.kind {
+            K::New { class, .. } => self.hir.classes.get(class.0),
+            _ => None,
+        };
         if let Some(receiver) = receiver {
             self.expression(receiver);
-            // Site 1: an argument or a parameter default runs user code, or
+            // Site 1: an argument or a parameter default can change or raise, or
             // the method is `next` of a generator.
             let next = matches!(receiver.ty, Type::Generator(_))
                 && method.is_some_and(|name| hir::source_name(name.full_text()) == "next");
             let runs = next
-                || args.iter().any(runs_user_code)
-                || params
-                    .iter()
-                    .filter_map(|param| param.default.as_ref())
-                    .any(runs_user_code);
+                || call_operand_order(params, args, class)
+                    .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call));
             if self.holds(receiver, runs) {
                 self.owners += 1;
             }
@@ -432,9 +492,20 @@ impl<'a> Walk<'a> {
         // Site 2.
         for (position, argument) in args.iter().enumerate() {
             self.expression(argument);
-            let later = args[position + 1..].iter().any(runs_user_code) || defaults_run;
+            let later = call_operand_order(params, args, class)
+                .skip(position + 1)
+                .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call));
             if self.holds(argument, later) {
                 self.owners += 1;
+            }
+        }
+        if let K::New { class, .. } = &expr.kind {
+            if let Some(class) = self.hir.classes.get(class.0) {
+                for field in &class.fields {
+                    if let Some(initializer) = &field.init {
+                        self.expression(initializer);
+                    }
+                }
             }
         }
         let caught = self.caught;
@@ -446,18 +517,15 @@ impl<'a> Walk<'a> {
         // Site 3 and rule 4: each default that the call evaluates. A
         // default that can raise is one edge at the call, with the owners
         // of the caller; its own edges belong to its body.
-        for (position, (_, param)) in omitted
-            .iter()
-            .filter(|(_, param)| param.default.is_some())
-            .enumerate()
-        {
+        for (index, param) in omitted.iter().filter(|(_, param)| param.default.is_some()) {
             let Some(default) = &param.default else {
                 continue;
             };
-            if param.default_can_raise {
+            if param.default_can_raise || self.reload {
                 self.site(&default.pos);
             }
-            let later = defaults[position + 1..].iter().any(|d| runs_user_code(d));
+            let later = call_operand_order(&params[index + 1..], &[], None)
+                .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call));
             if later && owned(&default.ty) {
                 self.owners += 1;
             }
@@ -466,7 +534,7 @@ impl<'a> Walk<'a> {
     }
 
     fn trap_sites(&mut self, expr: &hir::Expr) {
-        for trap in expr.trap_sites(self.hir) {
+        for trap in expr.trap_sites_for_reload(self.hir, self.reload) {
             if let hir::TrapSite::Raise { pos } = trap {
                 self.site(&pos);
             }
@@ -508,6 +576,20 @@ impl<'a> Walk<'a> {
                     .collect()],
             );
             self.sequence(body);
+            // compiler.md §255 rule 4: lambda defaults have their own bodies.
+            for (index, param) in params.iter().enumerate() {
+                let Some(default) = &param.default else {
+                    continue;
+                };
+                self.owners = params[..index].iter().filter(|p| owned(&p.ty)).count();
+                self.caught = 0;
+                self.names = vec![params[..index]
+                    .iter()
+                    .map(|p| (p.name.clone(), false))
+                    .chain(captures.iter().map(|c| (c.name.clone(), true)))
+                    .collect()];
+                self.expression(default);
+            }
             self.names = names;
             (self.owners, self.caught) = state;
             self.hooks = hooks;
@@ -515,6 +597,21 @@ impl<'a> Walk<'a> {
             return;
         }
         if self.hold_sequence(expr) {
+            return;
+        }
+        if let hir::ExprKind::DescriptorLit { class, fields } = &expr.kind {
+            if let Some(class) = self.hir.classes.get(class.0) {
+                for (slot, field) in fields.iter().zip(&class.fields) {
+                    if let Some(value) = slot.as_ref().or_else(|| {
+                        (!field.is_absence_capable)
+                            .then_some(field.init.as_ref())
+                            .flatten()
+                    }) {
+                        self.expression(value);
+                    }
+                }
+            }
+            self.trap_sites(expr);
             return;
         }
         for child in expr.children() {
@@ -663,7 +760,8 @@ impl<'a> Walk<'a> {
                 // end of the loop.
                 let held_base = match &subject.kind {
                     hir::ExprKind::Index { obj, index, .. } => {
-                        !fixed_array_place(obj) && self.holds(obj, runs_user_code(index))
+                        !fixed_array_place(obj)
+                            && self.holds(obj, self.can_change_or_raise(index, false))
                     }
                     _ => false,
                 };

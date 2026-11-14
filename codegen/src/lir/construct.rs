@@ -45,7 +45,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .collect::<Vec<_>>()
         });
         if let Some(params) = &params {
-            pending = Some(self.lower_explicit_arguments(params, args, false)?);
+            pending = Some(self.lower_explicit_arguments(params, args, false, Some(&class))?);
         }
         for (index, field) in class.fields.iter().enumerate() {
             if let Some(initializer) = &field.init {

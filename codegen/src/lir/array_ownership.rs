@@ -233,27 +233,34 @@ impl FunctionBuilder<'_, '_> {
     }
 }
 
-/// A script call or a suspension can change a previously read counted input.
-pub(super) fn runs_user_code(expr: &hir::Expr) -> bool {
-    if matches!(expr.kind, hir::ExprKind::Lambda { .. }) {
-        return false;
-    }
-    matches!(
-        expr.kind,
-        hir::ExprKind::Call { .. }
-            | hir::ExprKind::AsyncCall { .. }
-            | hir::ExprKind::AsyncHandleCreate { .. }
-            | hir::ExprKind::AsyncHandleAwait(_)
-            | hir::ExprKind::AsyncSuspend
-            | hir::ExprKind::New { .. }
-            | hir::ExprKind::Yield(_)
-    ) || expr.children().into_iter().any(|child| match child {
-        hir::HirChild::Expr(child) => runs_user_code(child),
-        hir::HirChild::Stmt(_) => false,
-    })
-}
-
 impl FunctionBuilder<'_, '_> {
+    /// An operand can change or raise under compiler.md §295 rules 1 and 4.
+    /// A default call has a raise edge in each hot reload build.
+    pub(super) fn can_change_or_raise(&self, expr: &hir::Expr, default_call: bool) -> bool {
+        if matches!(expr.kind, hir::ExprKind::Lambda { .. }) {
+            return default_call && self.lowering.reload;
+        }
+        if (default_call && self.lowering.reload)
+            || self.lowering.hir.expression_can_raise(expr)
+            || matches!(
+                expr.kind,
+                hir::ExprKind::Call { .. }
+                    | hir::ExprKind::AsyncCall { .. }
+                    | hir::ExprKind::AsyncHandleCreate { .. }
+                    | hir::ExprKind::AsyncHandleAwait(_)
+                    | hir::ExprKind::AsyncSuspend
+                    | hir::ExprKind::New { .. }
+                    | hir::ExprKind::Yield(_)
+            )
+        {
+            return true;
+        }
+        expr.children().into_iter().any(|child| match child {
+            hir::HirChild::Expr(child) => self.can_change_or_raise(child, false),
+            hir::HirChild::Stmt(_) => false,
+        })
+    }
+
     pub(super) fn input_needs_hold(&self, expr: &hir::Expr) -> bool {
         if let hir::ExprKind::Local(name, _, _) = &expr.kind {
             if let Ok(binding) = self.lookup_binding(name, &expr.pos) {
@@ -296,5 +303,59 @@ impl FunctionBuilder<'_, '_> {
         }
         self.scopes.pop();
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Cost: one check and two lowerings; 0.01 s on the development host.
+    #[test]
+    fn an_integer_termination_trap_adds_no_operand_hold() {
+        let hir = subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+            "termination-trap.ts",
+            r#"
+function* gen(): Generator<i32> { yield 1; }
+function take(g: Generator<i32>, n: i32): i32 { return n; }
+function f(n: i32): i32 { return n; }
+export function main(): void { let n: i32 = 2; take(gen(), 10 / n); }
+export function firing(): void { let n: i32 = 2; take(gen(), f(n)); }
+"#,
+        )])
+        .expect("termination control checks");
+        for reload in [false, true] {
+            let lir = lower_module_for_reload(&hir, reload).expect("termination control lowers");
+            let main = lir
+                .functions
+                .iter()
+                .find(|f| f.source_name == "main")
+                .unwrap();
+            let instructions: Vec<_> = main.blocks.iter().flat_map(|b| &b.instructions).collect();
+            assert!(instructions.iter().any(|i| i
+                .traps
+                .iter()
+                .any(|t| t.kind == l::TrapKind::DivisionByZero)));
+            for (name, expected) in [("main", 0), ("firing", 1)] {
+                let function = lir
+                    .functions
+                    .iter()
+                    .find(|f| f.source_name == name)
+                    .unwrap();
+                let retains = function
+                    .blocks
+                    .iter()
+                    .flat_map(|b| &b.instructions)
+                    .filter(|i| {
+                        matches!(
+                            i.kind,
+                            l::InstructionKind::AsyncHandleRetain
+                                | l::InstructionKind::AsyncHandleArrayRetain
+                        )
+                    })
+                    .count();
+                assert_eq!(retains, expected, "reload={reload}, function={name}");
+            }
+        }
     }
 }

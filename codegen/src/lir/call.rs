@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// The evaluation order of compiler.md §295 rule 1a and §57.1.
+fn call_operand_order<'e>(
+    params: &'e [CallParam],
+    args: &'e [hir::Expr],
+    class: Option<&'e hir::ClassDef>,
+) -> impl Iterator<Item = (&'e hir::Expr, bool)> {
+    args.iter()
+        .map(|arg| (arg, false))
+        .chain(class.into_iter().flat_map(|class| {
+            class
+                .fields
+                .iter()
+                .filter_map(|field| field.init.as_ref())
+                .map(|init| (init, false))
+        }))
+        .chain(
+            params
+                .iter()
+                .skip(args.len())
+                .filter_map(|param| param.default.as_ref().map(|default| (default, true))),
+        )
+}
+
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
     pub(super) fn lower_call(
         &mut self,
@@ -138,11 +161,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if matches!(
             kind,
             l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::GeneratorNext)
-        ) || args.iter().any(array_ownership::runs_user_code)
-            || params
-                .iter()
-                .filter_map(|parameter| parameter.default.as_ref())
-                .any(array_ownership::runs_user_code)
+        ) || call_operand_order(&params, args, None)
+            .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call))
         {
             let stable_receiver =
                 matches!(callee, hir::Callee::Method { recv, .. } if !self.input_needs_hold(recv));
@@ -173,7 +193,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             None
         };
-        let mut pending = self.lower_explicit_arguments(&params, args, foreign)?;
+        let mut pending = self.lower_explicit_arguments(&params, args, foreign, None)?;
         let guarded = callee
             .lambda_defaults()
             .is_some_and(|d| self.lowering.async_lambdas.contains(&d.id))
@@ -844,6 +864,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         params: &[CallParam],
         args: &[hir::Expr],
         foreign: bool,
+        class: Option<&hir::ClassDef>,
     ) -> Result<PendingArguments, LowerError> {
         let mut pending = PendingArguments {
             values: Vec::with_capacity(params.len()),
@@ -859,15 +880,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 self.lower_argument_value(&parameter.ty, argument)?
             };
-            let later_user_code = args[index + 1..]
-                .iter()
-                .any(array_ownership::runs_user_code)
-                || params
-                    .iter()
-                    .skip(args.len())
-                    .filter_map(|parameter| parameter.default.as_ref())
-                    .any(array_ownership::runs_user_code);
-            if later_user_code && self.input_needs_hold(argument) {
+            let later_can_change_or_raise = call_operand_order(params, args, class)
+                .skip(index + 1)
+                .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call));
+            if later_can_change_or_raise && self.input_needs_hold(argument) {
                 self.hold_input(&value, &argument.pos)?;
             }
             self.record_argument(
@@ -917,10 +933,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             })?;
             let value =
                 self.lower_default_function(owner, params, index, default, environment, pending)?;
-            if params[index + 1..]
-                .iter()
-                .filter_map(|parameter| parameter.default.as_ref())
-                .any(array_ownership::runs_user_code)
+            if call_operand_order(&params[index + 1..], &[], None)
+                .any(|(operand, default_call)| self.can_change_or_raise(operand, default_call))
             {
                 self.hold_input(&value, &parameter.pos)?;
             }
