@@ -39,6 +39,7 @@ hold for that call.
    The caller evaluates the default outside the lambda environment, so
    the captured local is not in scope there. *(`tsc` accepts this
    form. It is recorded in 288.4.)*
+   *(Replaced 2026-11-14 by §291 rule 1.)*
 3a. A default that a named lambda call evaluates is part of the call
    for each check that reads the evaluation order of the module, as a
    default of a function declaration is (the module initialization
@@ -105,6 +106,7 @@ three tiers and compared it with a binary built from the contract pin.
 
 1. Rule 3: a default of a lambda that reads a captured local is
    rejected when a named lambda call omits it. `tsc` accepts it.
+   *(Selected 2026-11-14 for §291.)*
 2. A default of an async callee that throws throws at the call. Under
    `node` the throw rejects the promise, so a statement between the
    call and its `await` runs first. A default of an `async function`
@@ -112,5 +114,7 @@ three tiers and compared it with a binary built from the contract pin.
    (core principle 12): all three tiers print `default`, then
    `caught failed`, and `node` prints `default`, `after lambda call`,
    `caught failed`.
+   *(Selected 2026-11-14 for §291.)*
 3. The S100 of rule 3 points at the default, not at the call that
    omits the argument.
+   *(Selected 2026-11-14 for §291.)*

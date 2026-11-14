@@ -332,3 +332,4 @@ Every section, with its status:
 | §288 | A call of a `const` lambda by its name takes its defaults | active | [`s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md`](compiler/s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md) |
 | §289 | A `void` `catch` callback gives a `Promise<void>` | active | [`s289-a-void-catch-callback-gives-a-promise-of-void.md`](compiler/s289-a-void-catch-callback-gives-a-promise-of-void.md) |
 | §290 | A `void` result inference rejects a cycle | active | [`s290-a-void-result-inference-rejects-a-cycle.md`](compiler/s290-a-void-result-inference-rejects-a-cycle.md) |
+| §291 | A default reads a captured local, and an async default fails the handle | active | [`s291-a-default-reads-a-captured-local-and-an-async-default-fails-the-handle.md`](compiler/s291-a-default-reads-a-captured-local-and-an-async-default-fails-the-handle.md) |
