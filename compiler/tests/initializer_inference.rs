@@ -745,13 +745,9 @@ fn nested_initializer_cycles_do_not_inherit_the_function_value_decision() {
 
 #[test]
 fn a_rejected_block_result_still_checks_non_result_statements() {
-    for source in [
-        "function f(): void { let counter = 0; const noret = () => { counter += 10; return 1; }; }",
-        "function f(): void { let counter = 0; const noret = () => { counter += 10; return missing; }; }",
-    ] {
     let diagnostics = check_program(&[SourceFile::entry(
         "main.ts",
-        source,
+        "function f(): void { let counter = 0; const noret = () => { counter += 10; return 1; }; }",
     )])
     .unwrap_err();
     assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
@@ -763,7 +759,23 @@ fn a_rejected_block_result_still_checks_non_result_statements() {
         .iter()
         .any(|d| d.code == subscript_compiler::RuleCode::S009));
     assert!(diagnostics.iter().all(|d| !d.message.contains("missing")));
-    }
+
+    let diagnostics = check_program(&[SourceFile::entry(
+        "main.ts",
+        "function f(): void { let counter = 0; const noret = () => { counter += 10; return missing; }; }",
+    )])
+    .unwrap_err();
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == subscript_compiler::RuleCode::S009));
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == subscript_compiler::RuleCode::S016 && d.message.contains("missing")));
+    assert!(diagnostics.iter().all(|d| d.divergence
+        != Some(
+            subscript_compiler::divergence::Divergence::BlockLambdaReturnAnnotationMissingForm
+        )));
 }
 
 #[test]

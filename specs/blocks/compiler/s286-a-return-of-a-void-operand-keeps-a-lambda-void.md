@@ -88,8 +88,32 @@ such a lambda is `void` when each `return` operand has type `void`.
 
 ### 286.3 Phase Review
 
-Pending.
+One fresh review of the implementation. No CRITICAL finding.
+
+1. MAJOR, realistic, fixed: a module-scope lambda takes its type before
+   its body is checked (§239). A lambda with `return 1` published the
+   type `() => void`, so a caller such as `const n: i32 = f();` and a
+   self-call each gave a second S100 "a `void` expression is only
+   allowed as an expression statement". Rule 3a rejects a lambda with
+   an operand that never has type `void` before the type is taken.
+2. MINOR, realistic, fixed: `return c ? v() : v();` gave two S100, and
+   a function with the result `void` accepts it. Rule 3b.
+3. MINOR, realistic, fixed: `return undefined;` gave S012, which names
+   a result `void` as legal. It now gives the diagnostic of rule 3, by
+   rule 3a.
+4. MINOR, contrived, recorded: §286.4 item 1.
+5. MINOR, fixed: a branch that could no longer run is removed.
 
 ### 286.4 Open
 
-None.
+1. `const a = () => { return b(); }; const b = () => { return a(); };`
+   is accepted with the type `() => void` for each. `tsc` rejects it
+   with TS7023. The pin rejected it with S100.
+2. In a module-scope lambda, `return g();` where `g` returns a value
+   still gives a second diagnostic at a caller. Rule 3a reads only the
+   syntax, and a call can have any type.
+3. `async () => { return w1(); }` with `w1(): Promise<void>` stays
+   rejected. `tsc` accepts it with the result `Promise<void>`.
+4. A conditional operand with a branch that is a call of a non-`void`
+   function takes the diagnostics of §237 rule 2, not the diagnostic
+   of rule 3. The program is rejected in both.

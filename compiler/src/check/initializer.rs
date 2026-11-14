@@ -53,6 +53,7 @@ pub(crate) struct DeferredExpression {
 pub(crate) enum DeferredWork {
     Lambda {
         source: ast::ArrowExpr,
+        inferred_void: bool,
         params: Vec<ParamSig>,
         result: Type,
         /// The lambda is the callee of a call (compiler.md §241 rule 2).
@@ -761,12 +762,17 @@ impl<'p> Checker<'p> {
                     params,
                     result,
                     called_at_once,
+                    inferred_void,
                 } => {
                     self.lambda_called_at_once = called_at_once;
                     *value = self.check_lambda_body(
                         &source,
                         params,
-                        (Some(result), crate::check::expr::ContextKind::Contextual),
+                        (
+                            Some(result),
+                            crate::check::expr::ContextKind::Contextual,
+                            inferred_void,
+                        ),
                         None,
                         &mut deferred.frame,
                         value.pos.clone(),

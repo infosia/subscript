@@ -841,6 +841,8 @@ pub(crate) struct Frame {
     pub is_lambda: bool,
     /// A lambda obtains void from its contextual signature, without an annotation.
     pub contextual_void: bool,
+    /// compiler.md §286 rule 3: lambda position and diagnostic status.
+    pub inferred_void: Option<(Pos, bool)>,
     /// A constructor or a setter: `return e` keeps its S100, and `e` is not
     /// a `void` operand of compiler.md §237 rule 2 (§237 rule 1).
     pub rejects_return_operand: bool,
@@ -1114,6 +1116,7 @@ impl FnCtx {
                 yield_annotated: false,
                 is_lambda: false,
                 contextual_void: false,
+                inferred_void: None,
                 rejects_return_operand: false,
                 void_split: None,
                 deferred: evaluation == Evaluation::Deferred,

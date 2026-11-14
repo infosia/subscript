@@ -196,3 +196,63 @@ fn a_generic_void_callback_takes_the_void_context() {
     let control = rejects("function f(): void { const g = (x: i32) => { return x; }; }");
     assert_eq!(control.message, BLOCK_ANNOTATION);
 }
+
+/// compiler.md §286 rules 1 to 4: void operands decide a block result;
+/// value operands give one annotation diagnostic per lambda.
+#[test]
+fn return_operands_must_each_be_void() {
+    for body in [
+        "const f = (c: boolean) => { if (c) return v(); return 1; };",
+        "const f = () => { return 1; };",
+        "const f = () => { return \"s\"; };",
+        "const f = (c: boolean) => { if (c) return 1; return \"s\"; };",
+        "const f = async () => { return w1(); };",
+    ] {
+        let diagnostic = rejects(body);
+        assert_eq!(diagnostic.code, RuleCode::S100);
+        assert_eq!(diagnostic.message, BLOCK_ANNOTATION);
+    }
+    for body in [
+        "const f = (c: boolean) => { if (c) return v(); return v(); };",
+        "const f = (c: boolean) => { if (c) return v(); };",
+    ] {
+        let module = accepts(body);
+        let f = module
+            .globals
+            .iter()
+            .find(|global| global.name == "f")
+            .unwrap();
+        assert_eq!(
+            f.init.ty,
+            subscript_compiler::Type::func(
+                vec![subscript_compiler::Type::Bool],
+                subscript_compiler::Type::Void
+            )
+        );
+    }
+    accepts("const f = async () => { return await w1(); };");
+    accepts("const f: () => void = () => { return 1; };");
+}
+
+/// compiler.md §286 rule 3a: a rejected result never reaches callers.
+#[test]
+fn syntactic_value_returns_give_one_annotation_diagnostic() {
+    for body in [
+        "const f = () => { return 1; }; const n: i32 = f();",
+        "const fact = (n: i32) => { if (n <= 1) return 1; return n * fact(n - 1); };",
+        "function outer(): void { const fact = (n: i32) => { if (n <= 1) return 1; return n * fact(n - 1); }; }",
+        "const f = () => { return undefined; };",
+    ] {
+        let diagnostic = rejects(body);
+        assert_eq!(diagnostic.code, RuleCode::S100);
+        assert_eq!(diagnostic.message, BLOCK_ANNOTATION);
+    }
+}
+
+/// compiler.md §286 rule 3b: both calls use a void conditional return.
+#[test]
+fn conditional_void_calls_are_accepted() {
+    let module =
+        accepts("const c1 = (c: boolean) => { return c ? v() : v(); }; c1(true); c1(false);");
+    assert_eq!(lambda_result(&module), subscript_compiler::Type::Void);
+}

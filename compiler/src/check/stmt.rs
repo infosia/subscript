@@ -549,6 +549,16 @@ impl<'p> Checker<'p> {
             .unwrap_or((Type::Error, false));
         let poisoned_result = self.apparent_type(&ret) == Type::Error
             && fx.frames.last().is_some_and(|frame| frame.is_lambda);
+        if let Some(arg) = &r.arg {
+            if fx
+                .frames
+                .last()
+                .is_some_and(|frame| frame.inferred_void.is_some())
+            {
+                self.check_inferred_void_return(arg, fx, &pos, out);
+                return;
+            }
+        }
         let value = match &r.arg {
             Some(arg) if poisoned_result => Some(self.err_expr(self.pos(arg.span()))),
             Some(arg) if !is_generator && ret != Type::Void && self.is_undefined_token(arg, fx) => {
@@ -741,7 +751,11 @@ impl<'p> Checker<'p> {
 
     /// Reads the handles of the expressions of `statements`, and of the
     /// branches of each `if`.
-    fn read_statement_handles(&mut self, statements: &[hir::Stmt], fx: &mut FnCtx) {
+    pub(in crate::check) fn read_statement_handles(
+        &mut self,
+        statements: &[hir::Stmt],
+        fx: &mut FnCtx,
+    ) {
         for statement in statements {
             match statement {
                 hir::Stmt::Expr(checked) => {

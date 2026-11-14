@@ -13,6 +13,45 @@ use crate::hir::{self, ExprKind};
 use crate::types::Type;
 
 impl<'p> Checker<'p> {
+    /// compiler.md §286 rule 3: each operand has type void, without context.
+    pub(in crate::check) fn check_inferred_void_return(
+        &mut self,
+        arg: &ast::Expr,
+        fx: &mut FnCtx,
+        pos: &Pos,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        // compiler.md §286 rule 3b: reuse §237's return leaf split.
+        if matches!(super::unparen_expr(arg), ast::Expr::Cond(_)) {
+            self.split_return(arg, fx, out);
+            return;
+        }
+        let (statements, ty) = self.check_void_operand(arg, fx);
+        if !matches!(self.apparent_type(&ty), Type::Void | Type::Error) {
+            let diagnostic_pos = fx.frames.last_mut().and_then(|frame| {
+                let (pos, reported) = frame.inferred_void.as_mut()?;
+                if *reported {
+                    return None;
+                }
+                *reported = true;
+                Some(pos.clone())
+            });
+            if let Some(pos) = diagnostic_pos {
+                self.reject_subset(
+                    RejectionSite::BlockLambdaReturnAnnotationMissing,
+                    "a lambda with a block body requires a return type annotation",
+                    pos,
+                );
+            }
+            self.read_statement_handles(&statements, fx);
+        }
+        out.extend(statements);
+        out.push(hir::Stmt::Return {
+            value: None,
+            pos: pos.clone(),
+        });
+    }
+
     pub(super) fn check_lambda(
         &mut self,
         a: &ast::ArrowExpr,
@@ -164,10 +203,25 @@ impl<'p> Checker<'p> {
                 );
                 return checker.err_expr(pos);
             }
-            // compiler.md §238 rule 1: a block with no `return` operand has
-            // the result `void`.
-            let void_block = ret.is_none()
-                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts));
+            // compiler.md §286 rules 1 to 3: decide a block result before
+            // checking its operands without context.
+            let mut void_block =
+                ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
+            // compiler.md §286 rule 3a: reject before publishing a result,
+            // including when the body would otherwise be deferred.
+            if void_block {
+                if let ast::BlockStmtOrExpr::BlockStmt(block) = &*a.body {
+                    if returns_nonvoid_syntax(&block.stmts) {
+                        checker.reject_subset(
+                            RejectionSite::BlockLambdaReturnAnnotationMissing,
+                            "a lambda with a block body requires a return type annotation",
+                            pos.clone(),
+                        );
+                        ret = Some(Type::Error);
+                        void_block = false;
+                    }
+                }
+            }
             // compiler.md §239 rule 1: an annotation and a `void` block each
             // decide the result from the syntax, before the body is checked.
             let decided_from_syntax = a.return_type.is_some() || void_block;
@@ -177,14 +231,6 @@ impl<'p> Checker<'p> {
                 } else {
                     Type::Void
                 });
-            }
-            if ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_)) {
-                checker.reject_subset(
-                    RejectionSite::BlockLambdaReturnAnnotationMissing,
-                    "a lambda with a block body requires a return type annotation",
-                    pos.clone(),
-                );
-                ret = Some(Type::Error);
             }
             checker.generic_callback_context = false;
             checker.decide_lambda_parameters(&mut params, evaluation_of(called_at_once), fx);
@@ -200,6 +246,7 @@ impl<'p> Checker<'p> {
                 checker.defer_work(
                     crate::check::initializer::DeferredWork::Lambda {
                         source: a.clone(),
+                        inferred_void: void_block,
                         params,
                         result: result.clone(),
                         called_at_once,
@@ -236,12 +283,20 @@ impl<'p> Checker<'p> {
             checker.lambda_called_at_once = called_at_once;
             // The result takes the kind of its context; an annotation or a
             // rule of the body gives a contextual type.
-            let result_kind = if a.return_type.is_none() && ret.is_some() && ret.as_ref() == ret_ctx {
+            let result_kind = if a.return_type.is_none() && ret.is_some() && ret.as_ref() == ret_ctx
+            {
                 ret_kind
             } else {
                 ContextKind::Contextual
             };
-            checker.check_lambda_body(a, params, (ret, result_kind), result_hint.as_ref(), fx, pos)
+            checker.check_lambda_body(
+                a,
+                params,
+                (ret, result_kind, void_block),
+                result_hint.as_ref(),
+                fx,
+                pos,
+            )
         });
         self.generic_callback_context = generic_context;
         value
@@ -251,7 +306,7 @@ impl<'p> Checker<'p> {
         &mut self,
         a: &ast::ArrowExpr,
         params: Vec<ParamSig>,
-        (mut ret, result_kind): (Option<Type>, ContextKind),
+        (mut ret, result_kind, inferred_void): (Option<Type>, ContextKind, bool),
         result_hint: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
@@ -263,18 +318,25 @@ impl<'p> Checker<'p> {
             });
         }
         let self_call = fx.lambda_initializer.as_ref().and_then(|(span, name)| {
-            let syntax_result = a.return_type.is_some()
-                || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts));
+            let syntax_result =
+                a.return_type.is_some() || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
             // compiler.md §285 rule 1: the const annotation also decides
             // the result before the body. A result hint does not.
             let decided_result = syntax_result || result_kind == ContextKind::Contextual;
             (*span == a.span && decided_result && ret.is_some()).then(|| {
                 let result = ret.clone().unwrap_or(Type::Error);
-                (name.clone(), crate::types::FuncType {
-                    params: params.iter().map(|p| p.ty().clone()).collect(),
-                    ret: if a.is_async { Type::async_handle(result) } else { result },
-                    callback_typedef: None,
-                })
+                (
+                    name.clone(),
+                    crate::types::FuncType {
+                        params: params.iter().map(|p| p.ty().clone()).collect(),
+                        ret: if a.is_async {
+                            Type::async_handle(result)
+                        } else {
+                            result
+                        },
+                        callback_typedef: None,
+                    },
+                )
             })
         });
         let origin_start = fx.async_origins.len();
@@ -289,6 +351,7 @@ impl<'p> Checker<'p> {
             yield_annotated: false,
             is_lambda: true,
             contextual_void: !a.is_async && a.return_type.is_none() && ret == Some(Type::Void),
+            inferred_void: inferred_void.then(|| (pos.clone(), false)),
             rejects_return_operand: false,
             void_split: None,
             deferred: evaluation_of(std::mem::take(&mut self.lambda_called_at_once))
@@ -525,6 +588,14 @@ impl<'p> Checker<'p> {
         fx.scopes.pop();
         fx.shadowed_narrowing_scopes.remove(&fx.scopes.len());
         let frame = fx.frames.pop();
+        if frame.as_ref().is_some_and(|frame| {
+            frame
+                .inferred_void
+                .as_ref()
+                .is_some_and(|(_, reported)| *reported)
+        }) {
+            ret = Some(Type::Error);
+        }
         let captures = frame.map(|f| f.captures.into_inner()).unwrap_or_default();
         self.report_unhandled_async_origins(fx, origin_start);
         fx.async_origins.truncate(origin_start);
@@ -554,39 +625,6 @@ impl<'p> Checker<'p> {
     }
 }
 
-/// Whether a `return` of `statements` has an operand (compiler.md §238
-/// rule 1). A `return` in a nested function, lambda, or class is not a
-/// `return` of the block.
-fn returns_a_value(statements: &[ast::Stmt]) -> bool {
-    statements.iter().any(|statement| match statement {
-        ast::Stmt::Return(r) => r.arg.is_some(),
-        ast::Stmt::Block(block) => returns_a_value(&block.stmts),
-        ast::Stmt::If(i) => {
-            returns_a_value(std::slice::from_ref(&i.cons))
-                || i.alt
-                    .as_deref()
-                    .is_some_and(|alt| returns_a_value(std::slice::from_ref(alt)))
-        }
-        ast::Stmt::While(w) => returns_a_value(std::slice::from_ref(&w.body)),
-        ast::Stmt::DoWhile(d) => returns_a_value(std::slice::from_ref(&d.body)),
-        ast::Stmt::For(f) => returns_a_value(std::slice::from_ref(&f.body)),
-        ast::Stmt::ForIn(f) => returns_a_value(std::slice::from_ref(&f.body)),
-        ast::Stmt::ForOf(f) => returns_a_value(std::slice::from_ref(&f.body)),
-        ast::Stmt::Labeled(l) => returns_a_value(std::slice::from_ref(&l.body)),
-        ast::Stmt::Switch(s) => s.cases.iter().any(|case| returns_a_value(&case.cons)),
-        ast::Stmt::Try(t) => {
-            returns_a_value(&t.block.stmts)
-                || t.handler
-                    .as_ref()
-                    .is_some_and(|handler| returns_a_value(&handler.body.stmts))
-                || t.finalizer
-                    .as_ref()
-                    .is_some_and(|finalizer| returns_a_value(&finalizer.stmts))
-        }
-        _ => false,
-    })
-}
-
 /// The evaluation of a lambda body: at once when the lambda is the callee
 /// of a call (compiler.md §241 rule 2).
 fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
@@ -594,5 +632,59 @@ fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
         crate::check::Evaluation::AtOnce
     } else {
         crate::check::Evaluation::Deferred
+    }
+}
+
+/// compiler.md §286 rule 3a: inspect this block's returns only.
+fn returns_nonvoid_syntax(statements: &[ast::Stmt]) -> bool {
+    statements.iter().any(|statement| match statement {
+        ast::Stmt::Return(r) => r.arg.as_deref().is_some_and(nonvoid_return_syntax),
+        ast::Stmt::Block(block) => returns_nonvoid_syntax(&block.stmts),
+        ast::Stmt::If(i) => {
+            returns_nonvoid_syntax(std::slice::from_ref(&i.cons))
+                || i.alt
+                    .as_deref()
+                    .is_some_and(|alt| returns_nonvoid_syntax(std::slice::from_ref(alt)))
+        }
+        ast::Stmt::While(w) => returns_nonvoid_syntax(std::slice::from_ref(&w.body)),
+        ast::Stmt::DoWhile(d) => returns_nonvoid_syntax(std::slice::from_ref(&d.body)),
+        ast::Stmt::For(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
+        ast::Stmt::ForIn(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
+        ast::Stmt::ForOf(f) => returns_nonvoid_syntax(std::slice::from_ref(&f.body)),
+        ast::Stmt::Labeled(l) => returns_nonvoid_syntax(std::slice::from_ref(&l.body)),
+        ast::Stmt::Switch(s) => s
+            .cases
+            .iter()
+            .any(|case| returns_nonvoid_syntax(&case.cons)),
+        ast::Stmt::Try(t) => {
+            returns_nonvoid_syntax(&t.block.stmts)
+                || t.handler
+                    .as_ref()
+                    .is_some_and(|handler| returns_nonvoid_syntax(&handler.body.stmts))
+                || t.finalizer
+                    .as_ref()
+                    .is_some_and(|finalizer| returns_nonvoid_syntax(&finalizer.stmts))
+        }
+        _ => false,
+    })
+}
+
+/// compiler.md §286 rule 3a: parentheses and conditionals expose leaves.
+fn nonvoid_return_syntax(expr: &ast::Expr) -> bool {
+    match super::unparen_expr(expr) {
+        ast::Expr::Cond(c) => nonvoid_return_syntax(&c.cons) || nonvoid_return_syntax(&c.alt),
+        ast::Expr::Ident(id) => id.sym == "undefined",
+        ast::Expr::Lit(_)
+        | ast::Expr::Tpl(_)
+        | ast::Expr::Array(_)
+        | ast::Expr::Object(_)
+        | ast::Expr::Unary(_)
+        | ast::Expr::Bin(_)
+        | ast::Expr::Update(_)
+        | ast::Expr::New(_)
+        | ast::Expr::This(_)
+        | ast::Expr::Arrow(_)
+        | ast::Expr::Fn(_) => true,
+        _ => false,
     }
 }

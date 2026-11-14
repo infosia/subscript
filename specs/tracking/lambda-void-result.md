@@ -70,3 +70,56 @@ block only.
 No CRITICAL or MAJOR finding. One MINOR finding was fixed, and the
 others were recorded, in §238.3. Open items are in §238.4. Hygiene:
 clean.
+
+## §286: a `return` of a `void` operand
+
+Contract: `specs/blocks/compiler/s286-a-return-of-a-void-operand-keeps-a-lambda-void.md`.
+
+### Red
+
+At the contract commit `f131811d`, `subscript check` of
+`a451-a-return-of-a-void-operand-keeps-a-lambda-void` gave five S100
+"a lambda with a block body requires a return type annotation", one at
+each lambda of lines 11 to 15 (`h`, `a`, `z`, `rec`, `nested`).
+
+### Form
+
+- `compiler/src/check/expr/lambda.rs`. A block lambda with no result
+  annotation and no context result takes the result `void` (or
+  `Promise<void>`) before its body is checked. Its frame carries
+  `inferred_void`: the lambda position and whether the diagnostic was
+  given.
+- `compiler/src/check/stmt.rs`. A `return` with an operand in such a
+  frame calls `check_inferred_void_return`. The operand is checked as a
+  `void` operand with no context. If its apparent type is not `void` or
+  `Error`, the lambda gets `BlockLambdaReturnAnnotationMissing` once at
+  its position, and the lambda result becomes `Error`.
+- Rule 3a: before the result is taken, `returns_nonvoid_syntax` reads
+  each `return` operand. An operand that never has type `void` gives
+  the diagnostic at once, and the lambda has the type `Error`.
+- Rule 3b: a conditional operand takes `split_return`, the §237 rule 2
+  path of a function with the result `void`.
+- The syntax scan `returns_a_value` is removed. `DeferredWork::Lambda`
+  carries `inferred_void`, so a deferred body (§239) applies the same
+  rule.
+- `a451` output, checked by hand: `v h w1 a v r2 r1 v inner=7 v`.
+- `generated-docs/corpus-index.md` gains the `a451` row.
+
+### Phase Review
+
+One fresh review. One MAJOR and three MINOR findings fixed, one
+recorded; see §286.3. Hygiene: exit 0.
+
+### Gate
+
+- `gate full 02049170 dirty:11 debug 3404/1/5 release 3385/1/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 1`.
+  The failure: `initializer_inference.rs`
+  `a_rejected_block_result_still_checks_non_result_statements`. The
+  rule 3a branch returned before the body was checked, so the S009 of
+  a capture was lost. Rule 3a now takes the result `Error` and checks
+  the body. The second input of the test, `return missing;`, now gives
+  S009 and S016 "unknown name `missing`", by the last sentence of rule
+  3a; the test asserts each.
+- `gate full 8502bf32 dirty:12 debug 3405/0/5 release 3386/0/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 0`.
+  The moved golden is the LIR text snapshot, which grows by the `a451`
+  section only.
