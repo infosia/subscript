@@ -367,7 +367,15 @@ impl<'p> Checker<'p> {
                 if let Some(ast::Expr::Arrow(arrow)) =
                     d.init.as_deref().map(super::expr::unparen_expr)
                 {
-                    fx.lambda_initializer = Some((arrow.span, name.clone()));
+                    // compiler.md §285 rule 4: every self-call requires an
+                    // absent annotation or a bare function with the same arity.
+                    let admits_self_call = ann.as_ref().is_none_or(|ty| {
+                        matches!(self.apparent_type(ty), Type::Func(function)
+                            if function.params.len() == arrow.params.len())
+                    });
+                    if admits_self_call {
+                        fx.lambda_initializer = Some((arrow.span, name.clone()));
+                    }
                 }
             }
             let mut init = if let Some(init_ast) = &d.init {

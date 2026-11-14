@@ -265,7 +265,10 @@ impl<'p> Checker<'p> {
         let self_call = fx.lambda_initializer.as_ref().and_then(|(span, name)| {
             let syntax_result = a.return_type.is_some()
                 || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block) if !returns_a_value(&block.stmts));
-            (*span == a.span && syntax_result && ret.is_some()).then(|| {
+            // compiler.md §285 rule 1: the const annotation also decides
+            // the result before the body. A result hint does not.
+            let decided_result = syntax_result || result_kind == ContextKind::Contextual;
+            (*span == a.span && decided_result && ret.is_some()).then(|| {
                 let result = ret.clone().unwrap_or(Type::Error);
                 (name.clone(), crate::types::FuncType {
                     params: params.iter().map(|p| p.ty().clone()).collect(),

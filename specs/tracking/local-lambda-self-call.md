@@ -207,3 +207,281 @@ gate full 78984dbc5bdc0d86c54e061755ca12401901a2e7 dirty:46 debug 3396/0/5 relea
 
 The moved golden is the LIR text snapshot. It grows by the functions of
 `a449` only; no other entry of the snapshot changes.
+
+
+## Section 285: self-call type from the const annotation
+
+Contract: compiler.md §285, with the unchanged self-call rules of §284.
+Pin: `4a1db273885b4068b33f59c0e5c672d05f049b78`.
+The initial work tree was clean.
+The pin CLI build preceded every compiler source change.
+A separate copy of that binary measured the Red entry and the invalid-result controls.
+
+### Red evidence
+
+The a450 check exits 1 with these diagnostics:
+
+```text
+error[S100]: `fact` is read before its declaration in this block
+  a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:11:16
+error[S100]: `expression` is read before its declaration in this block
+  a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:13:63
+error[S100]: `asynchronous` is read before its declaration in this block
+  a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:16:22
+error[S100]: `text` is read before its declaration in this block
+  a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:18:68
+error: 4 error(s)
+```
+
+TypeScript 5.9.2 accepts a450. Node v24.22.1 gives this output:
+
+```text
+120
+120
+120
+step:step:step:end
+```
+
+The three factorial results are each `5 * 4 * 3 * 2 * 1`.
+The string result adds three `step:` prefixes to `end`.
+The capture tool writes the golden from the development tier.
+Node output equals the golden; Node does not supply the golden.
+
+### Implementation and checks
+
+The existing lambda result decision takes the contextual annotation before the body check.
+The self-call admission now counts that decided contextual result.
+A result hint alone does not admit a self-call.
+The signature uses the existing parameter types and result type.
+The span check still limits the binding to the whole local const initializer.
+The existing lookup still rejects a nested-lambda capture, a value read, and mutual recursion.
+The reject corpus keeps its diagnostics, including r508, r509, and r510.
+
+The unit test compares each invalid result with its control without a self-call.
+It covers a block body, an expression body with a type alias, and an async block body.
+Each program gives one S100, as the pin controls do.
+The block and async bodies keep this message:
+
+```text
+type mismatch: the return value expects `i32`, got `string`
+```
+
+The expression body keeps this message:
+
+```text
+type mismatch: the lambda body expects `i32`, got `string`
+```
+
+The checker emits the existing `Callee::LambdaSelf` form.
+Lowering and the execution tiers require no change.
+The development tier, ship tier, and LIR interpreter equal the a450 golden.
+Node equals that golden too.
+
+The document generator rewrites the three generated documents.
+Only `generated-docs/corpus-index.md` changes, with one a450 row.
+The LIR snapshot tool adds 369 lines for a450.
+A block comparison finds no change to any existing snapshot entry.
+Moved entries: a450 is new; no existing entry moves.
+The only new output golden is a450; no existing output golden changes.
+
+### Measurements
+
+All Cargo commands use offline dependencies and the pinned debug toolchain.
+Command wall times include build time and concurrent artifact-lock waits.
+
+| Command or case | Result | Wall time |
+|---|---|---:|
+| `cargo build --offline -p subscript-cli` at the pin | PASS; unchanged compiler sources | 0.180 s |
+| Pin CLI, `check a450` | RED; exit 1; four S100 diagnostics | 0.613 s |
+| `node_modules/.bin/tsc -p tsconfig.json` | PASS; includes a450 | 0.677 s |
+| Node corpus runner, a450 | PASS; exit 0; four output lines | 0.136 s |
+| Pin CLI, invalid block-result control | S100; expected exit 1 | 0.005 s |
+| `cargo test --offline -p subscript-compiler --lib local_lambda_self_call` | PASS; 2 tests | 4.164 s |
+| `cargo build --offline -p subscript-cli --bin subscript -p subscript-codegen --bin capture` | PASS | 3.952 s |
+| Capture tool, a450 | PASS; writes the new four-line golden | 0.752 s |
+| Debug CLI, a450 dev run | PASS; equals golden | 0.784 s |
+| Debug CLI, a450 ship build | PASS | 0.225 s |
+| `SUBSCRIPT_CAPTURE_LIR_GOLDENS=1 cargo test --offline -p subscript-codegen --test lir coroutine_and_measurement_lir_text_matches_goldens` | PASS; 1 test | 5.904 s |
+| `cargo run --offline -p subscript-compiler --bin generate-api-reference` | PASS; writes all three generated documents | 3.391 s |
+| LIR snapshot block comparison and copy | PASS; only a450 adds an entry; 369 lines | 0.169 s |
+| a450 ship executable | PASS; equals golden | 0.244 s |
+| `cargo test --offline -p subscript-compiler --lib` | PASS; 614 tests | 4.359 s |
+| `cargo test --offline -p subscript-compiler --test corpus_accept` | PASS; 13 tests | 10.378 s |
+| `cargo test --offline -p subscript-compiler --test corpus_reject` | PASS; 49 tests | 3.231 s |
+| `cargo test --offline -p subscript-compiler --test js_corpus` | PASS; 11 tests | 3.271 s |
+| `cargo fmt --check` | PASS | 5.921 s |
+| `cargo test --offline -p subscript-compiler --lib check::rejection_total` | PASS; 19 tests | 4.834 s |
+| `cargo clippy --offline -p subscript-compiler --all-targets` | PASS; warnings outside the changed files | 11.298 s |
+| `cargo test --offline -p subscript-codegen --test lir_completion --test undefined_result_lir --test local_lambda_self_call` | PASS; 11, 1, and 1 tests | 4.539 s |
+| `cargo test --offline -p subscript-codegen --test golden` | PASS; 3 tests | 55.483 s |
+| Pin CLI, invalid expression-result control | S100; expected exit 1 | 0.046 s |
+| Pin CLI, invalid async-result control | S100; expected exit 1 | 0.009 s |
+| `cargo test --offline -p subscript-codegen --test cemit` | PASS; 106 tests | 27.190 s |
+| Scope, source size, old snapshot blocks, and `git diff --check` | PASS | 0.422 s |
+| `cargo test --offline -p subscript-codegen --test lir` | PASS; 69 tests | 21.251 s |
+| `tools/hygiene.sh` | PASS | 3.950 s |
+
+The clippy warnings refer to unchanged files. Neither changed Rust file has a clippy warning.
+No lint suppression was added.
+
+| Final test result line | Test runner wall time |
+|---|---:|
+| unit: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 612 filtered out | 0.02s |
+| lir-capture: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 68 filtered out | 4.46s |
+| compiler-lib: ok. 614 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 2.50s |
+| accept: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 9.60s |
+| reject: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 2.12s |
+| js-corpus: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 2.00s |
+| rejection-total: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 595 filtered out | 4.68s |
+| golden: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 52.62s |
+| cemit: ok. 106 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 25.96s |
+| lir: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 19.70s |
+| lir-related: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 0.38s |
+| lir-related: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 0.54s |
+| lir-related: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 0.05s |
+
+### Changed files and result
+
+- `compiler/src/check/expr/lambda.rs`
+- `compiler/src/tests/local_lambda_self_call.rs`
+- `corpus/accept/a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts`
+- `corpus/accept/a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.expected`
+- `codegen/tests/lir-goldens/corpus.txt`
+- `generated-docs/corpus-index.md`
+- `specs/tracking/local-lambda-self-call.md`
+
+The changed Rust files contain 598 and 88 lines.
+The requested tests, formatting check, and clippy command pass.
+No contract block changes. No commit was made. `tools/gate.sh` was not run.
+All background test commands from this round completed; none remains without a reader.
+
+## Section 285, round 2: declared type and parameter count
+
+Contract: compiler.md §285 rule 4 and acceptance item 4, including the self-call forms of §284.
+Pin: `fed5720af17eba42c9a74ae140eab2df5dfb7440`.
+The initial work tree contains the changes from round 1.
+This round keeps those changes.
+
+The local const initializer registers a self-call candidate only when its annotation permits the call.
+An absent annotation permits the candidate.
+A function annotation permits the candidate only when its parameter count equals the lambda parameter count.
+A nullable annotation or another declared type does not permit the candidate.
+This test precedes every self-call admission, including an explicit lambda result and a syntax-decided void block.
+The existing pending-name lookup gives the required S100 when no candidate exists.
+Lowering and the execution tiers require no change.
+
+Four new unit tests cover the two expression-body defects and the two void-block variants.
+Each test covers an inline annotation, a type alias, and the presence or absence of a lambda result annotation.
+Each of the 16 recursive programs gives one S100 with this message:
+
+```text
+`rec` is read before its declaration in this block
+```
+
+The checker accepts all 16 controls without the self-call.
+Before the source fix, each new test fails because the checker accepts its recursive program.
+The focused tests pass after the source fix.
+
+### Measurements
+
+All Cargo commands use offline dependencies and the pinned debug toolchain.
+The full checks run concurrently; command wall times include shared Cargo lock waits.
+
+| Command or case | Result | Wall time |
+|---|---|---:|
+| `cargo test --offline -p subscript-compiler --lib local_lambda_self_call`, before the fix | RED; 2 passed; 4 failed; exit 101 | 3.46 s |
+| `cargo test --offline -p subscript-compiler --lib local_lambda_self_call`, after the fix | PASS; 6 tests | 2.83 s |
+| `cargo test --offline -p subscript-compiler --lib` | PASS; 618 tests | 9.554 s |
+| `cargo test --offline -p subscript-compiler --test corpus_accept` | PASS; 13 tests | 7.921 s |
+| `cargo test --offline -p subscript-compiler --test corpus_reject` | PASS; 49 tests | 8.509 s |
+| `cargo test --offline -p subscript-compiler --test js_corpus` | PASS; 11 tests | 4.615 s |
+| `cargo test --offline -p subscript-codegen --test lir` | PASS; 69 tests | 30.756 s |
+| `cargo fmt --check` | PASS | 2.456 s |
+| `cargo clippy --offline -p subscript-compiler --all-targets` | PASS; warnings outside the changed files | 20.595 s |
+| `tools/hygiene.sh` | PASS | 5.703 s |
+| `git diff --check` | PASS | 0.077 s |
+
+The clippy warnings refer to unchanged files. No lint suppression was added.
+
+| Test result line | Test runner wall time |
+|---|---:|
+| unit, before the fix: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 612 filtered out | 0.02 s |
+| unit, after the fix: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 612 filtered out | 0.02 s |
+| compiler-lib: ok. 618 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 3.07 s |
+| accept: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 4.23 s |
+| reject: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 1.73 s |
+| js-corpus: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 0.78 s |
+| lir: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out | 18.99 s |
+
+### Changed files and result
+
+This round changes these files:
+
+- `compiler/src/check/stmt.rs`
+- `compiler/src/tests/local_lambda_self_call.rs`
+- `specs/tracking/local-lambda-self-call.md`
+
+The changed Rust files contain 1,973 and 159 lines.
+The inherited `lambda.rs` change remains at 598 lines.
+The requested tests, formatting check, and clippy command pass.
+No contract block or output golden changes in this round.
+No commit was made. `tools/gate.sh` was not run.
+All test commands from this round completed; none remains without a reader.
+
+
+## Section 285, round 3: apparent function shape
+
+The rule 4 check now reads the annotation through `Checker::apparent_type`.
+It admits a bare function only when its parameter count equals the lambda parameter count.
+A nullable or union shape still fails that test.
+The shape scan exempts identity and assignability checks under §143 rule 1b.
+This site selects a value operation, so it requires the apparent type. No allowlist entry was added.
+
+A new unit test uses `type G = ((k: i32) => i32) | null;`.
+With and without a lambda result annotation, its self-call gives one S100:
+`rec` is read before its declaration in this block.
+Both controls without a self-call pass.
+The test module now makes 45 checker calls.
+
+All commands use the pinned toolchain. Cargo tests and clippy use offline dependencies.
+Commands ran in sequence. Wall times cover each full command.
+
+| Command | Result | Wall time |
+|---|---|---:|
+| `cargo test --offline -p subscript-compiler --test apparent_type_shapes` | PASS; ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s | 3.898 s |
+| `cargo test --offline -p subscript-compiler --lib` | PASS; ok. 619 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.19s | 5.844 s |
+| `cargo test --offline -p subscript-compiler --test corpus_accept` | PASS; ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.08s | 3.878 s |
+| `cargo test --offline -p subscript-compiler --test corpus_reject` | PASS; ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s | 1.895 s |
+| `cargo test --offline -p subscript-compiler --test js_corpus` | PASS; ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s | 1.206 s |
+| `cargo fmt --check` | PASS; exit 0 | 2.052 s |
+| `cargo clippy --offline -p subscript-compiler --all-targets` | PASS; exit 0 | 3.663 s |
+
+This round changes these files:
+
+- `compiler/src/check/stmt.rs`
+- `compiler/src/tests/local_lambda_self_call.rs`
+- `specs/tracking/local-lambda-self-call.md`
+
+The Rust files contain 1,973 and 180 lines.
+Inherited changes remain in the work tree.
+No contract block, golden, or lowering change was made in this round.
+No commit was made. `tools/gate.sh` was not run.
+All test commands from this round completed.
+
+Clippy exits 0 with warnings outside the two changed Rust files.
+`git diff --check` passes; exit 0; wall time 0.046 s.
+
+## §285 full gate
+
+The first full gate on the §285 tree failed one test in each profile:
+`every_value_shape_test_uses_the_apparent_type` (§143 rule 1a). The
+rule 4 check read the shape of the declared type, not of the apparent
+type. The check now reads the apparent type, and a unit test pins that
+an alias of the nullable form stays rejected. The second run passed:
+
+```text
+gate full fed5720af17eba42c9a74ae140eab2df5dfb7440 dirty:9 debug 3402/0/5 release 3383/0/5 skips 1/0 clippy 3/10/13 goldens-moved 1 exit 0
+```
+
+The moved golden is the LIR text snapshot. It grows by the functions of
+`a450` only.

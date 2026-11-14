@@ -62,8 +62,21 @@ checked, but rule 2 does not count it.
 
 ### 285.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that a
+function type annotation, inline or through a non-generic alias, gives
+the self-call the type that the lambda gets, and that a result hint
+never admits one. Two MINOR findings, each realistic and fixed by
+rule 4; §284 rule 1 reached each of them as well:
 
+1. A lambda with fewer parameters than its annotation passed `check`,
+   and `run` stopped with an internal lowering error (a missing
+   argument of a padded parameter).
+2. A `const` typed `F | null` took an unguarded self-call that `tsc`
+   rejects (TS2721).
+
+3. After the review, the first full gate found that the rule 4 check
+   read the declared type, not the apparent type (§143 rule 1a). It
+   now reads the apparent type.
 ### 285.4 Open
 
 None.
