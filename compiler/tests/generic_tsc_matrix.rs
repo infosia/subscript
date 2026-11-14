@@ -14,7 +14,7 @@
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -1004,7 +1004,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
     Some((kind.argument_type, kind.argument))
 }
 
-fn cells() -> Vec<Cell> {
+fn cells(controls: &mut Controls) -> Vec<Cell> {
     let mut cells = Vec::new();
     for kind in KINDS {
         for form in FORMS {
@@ -1237,10 +1237,10 @@ fn cells() -> Vec<Cell> {
             }));
         }
     }
-    cells.extend(product::cells());
+    cells.extend(controls.generate(product::cells));
     cells.extend(findings::cells());
-    cells.extend(destinations::cells());
-    cells.extend(api::cells());
+    cells.extend(controls.generate(destinations::cells));
+    cells.extend(controls.generate(api::cells));
     cells
 }
 
@@ -1453,14 +1453,96 @@ impl Drop for Project {
     }
 }
 
-fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Result<(), String>) {
-    let record_result = kinds::records(cell)
-        .into_iter()
-        .try_for_each(|record| check_record(root, record));
+// The cache fixes the file-name part of its key to control.ts for every reader.
+// No comparison observes the file name.
+#[derive(Default)]
+struct Controls {
+    results: HashMap<String, Vec<Diagnostic>>,
+    pending: HashSet<String>,
+}
+
+impl Controls {
+    fn candidate(&mut self, source: &str, collect: bool) -> Option<&Vec<Diagnostic>> {
+        if collect {
+            if !self.results.contains_key(source) {
+                self.pending.insert(source.to_owned());
+            }
+            None
+        } else {
+            Some(&self.results[source])
+        }
+    }
+
+    fn resolve(&mut self) {
+        let sources: Vec<_> = self.pending.drain().collect();
+        if sources.is_empty() {
+            return;
+        }
+        let workers = std::thread::available_parallelism().unwrap().get();
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = sources
+                .chunks(sources.len().div_ceil(workers))
+                .map(|chunk| {
+                    scope.spawn(move || {
+                        chunk
+                            .iter()
+                            .map(|source| {
+                                let errors =
+                                    check_program(&[SourceFile::new("control.ts", source)])
+                                        .err()
+                                        .unwrap_or_default();
+                                (source.clone(), errors)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+        self.results.extend(results);
+    }
+
+    // Collect every candidate before checking; replay selection in its original order.
+    fn generate(&mut self, generator: fn(&mut Controls, bool) -> Vec<Cell>) -> Vec<Cell> {
+        generator(self, true);
+        self.resolve();
+        generator(self, false)
+    }
+}
+
+struct Records(HashMap<(&'static str, &'static str), Result<(), String>>);
+
+impl Records {
+    fn new(root: &Path, cells: &[Cell]) -> Self {
+        let mut results = HashMap::new();
+        for cell in cells {
+            for record in kinds::records(cell) {
+                results
+                    .entry((record.record, record.token))
+                    .or_insert_with(|| check_record(root, record));
+            }
+        }
+        Self(results)
+    }
+
+    fn check(&self, cell: &Cell) -> Result<(), String> {
+        kinds::records(cell)
+            .into_iter()
+            .try_for_each(|record| self.0[&(record.record, record.token)].clone())
+    }
+}
+
+fn check_cell(
+    cell: &Cell,
+    records: &Records,
+    controls: &Controls,
+) -> (Vec<Diagnostic>, Option<String>, Result<(), String>) {
+    let record_result = records.check(cell);
     let control_failure = cell.concrete_source.as_ref().and_then(|source| {
-        let errors = check_program(&[SourceFile::new("concrete.ts", source.clone())])
-            .err()
-            .unwrap_or_default();
+        let errors = &controls.results[source];
         if !errors.is_empty()
             && !errors.iter().all(|error| {
                 kinds::records(cell)
@@ -1496,7 +1578,9 @@ fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Res
 #[test]
 fn generic_forms_follow_tsc() {
     let start = Instant::now();
-    run_matrix(cells(), start);
+    let mut controls = Controls::default();
+    let cells = cells(&mut controls);
+    run_matrix(cells, start, controls);
 }
 
 #[test]
@@ -1504,14 +1588,21 @@ fn every_compound_operator_follows_tsc() {
     let start = Instant::now();
     let cells = product::compound_cells();
     assert_eq!(cells.len(), kinds::all().len() * 11);
-    run_matrix(cells, start);
+    run_matrix(cells, start, Controls::default());
 }
 
-fn run_matrix(cells: Vec<Cell>, start: Instant) {
+fn run_matrix(cells: Vec<Cell>, start: Instant, mut controls: Controls) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .to_path_buf();
+    let records = Records::new(&root, &cells);
+    for cell in &cells {
+        if let Some(source) = &cell.concrete_source {
+            controls.candidate(source, true);
+        }
+    }
+    controls.resolve();
     let project = Project(std::env::temp_dir().join(format!(
             "subscript-generic-matrix-{}-{}",
             std::process::id(),
@@ -1560,11 +1651,12 @@ fn run_matrix(cells: Vec<Cell>, start: Instant) {
         let handles: Vec<_> = cells
             .chunks(chunk_size)
             .map(|chunk| {
-                let root = &root;
+                let records = &records;
+                let controls = &controls;
                 scope.spawn(move || {
                     chunk
                         .iter()
-                        .map(|cell| check_cell(cell, root))
+                        .map(|cell| check_cell(cell, records, controls))
                         .collect::<Vec<_>>()
                 })
             })
@@ -1696,7 +1788,8 @@ fn a_record_that_does_not_state_the_restriction_fails_the_cell() {
         concrete_source: None,
         divergence: Some(record),
     });
-    let failure = disagreement(&cell, true, &errors, check_record(root, record)).unwrap();
+    let records = Records::new(root, std::slice::from_ref(&cell));
+    let failure = disagreement(&cell, true, &errors, records.check(&cell)).unwrap();
     assert!(failure.contains("§143 rule 4b"), "{failure}");
     assert!(failure.contains("does not state restriction"), "{failure}");
 }

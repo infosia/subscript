@@ -85,7 +85,7 @@ fn unlisted_omissions(text: &str) -> Vec<&str> {
 }
 
 /// Derives each ambient callable position from the prelude (§143 rule 4).
-pub(super) fn cells() -> Vec<Cell> {
+pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let output = Command::new("node")
         .arg(root.join("compiler/tests/generic_tsc_matrix/api.cjs"))
@@ -135,7 +135,6 @@ pub(super) fn cells() -> Vec<Cell> {
         .sum();
     let mut cells = Vec::new();
     let mut omissions = Vec::new();
-    let mut controls = std::collections::HashMap::new();
     for api in &apis {
         let defaults: Vec<_> = api
             .outer
@@ -404,11 +403,9 @@ pub(super) fn cells() -> Vec<Cell> {
                                 .replace(&format!("g<{argument_type}>"), "g"),
                             &replacement,
                         );
-                        let errors = controls.entry(concrete.clone()).or_insert_with(|| {
-                            check_program(&[SourceFile::new("control.ts", concrete.clone())])
-                                .err()
-                                .unwrap_or_default()
-                        });
+                        let Some(errors) = controls.candidate(&concrete, collect) else {
+                            continue;
+                        };
                         if let Some(directory) = std::env::var_os("SUBSCRIPT_API_CONTROLS") {
                             let directory = PathBuf::from(directory);
                             fs::create_dir_all(&directory).unwrap();
@@ -468,6 +465,9 @@ pub(super) fn cells() -> Vec<Cell> {
                 }
             }
         }
+    }
+    if collect {
+        return Vec::new();
     }
     if let Some(path) = std::env::var_os("SUBSCRIPT_API_OMISSIONS") {
         fs::write(path, omissions.join("\n")).unwrap();

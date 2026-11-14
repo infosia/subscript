@@ -68,7 +68,19 @@ matrix has 40,250 cells and took 35.1 s and 35.4 s in two runs:
 
 ### 281.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that the
+cache keys cover each input of the result, that the replay of a
+generator selects the same first admitted candidate, that a cached
+record failure fails the cell with the same text, and that no cache
+lives beyond one run. Three MINOR findings:
+
+1. Realistic, fixed: the tracking note said that no observation reads
+   the control file name. The text of a control failure prints it. The
+   note now says that no comparison reads it.
+2. Realistic, recorded: the API generator runs twice in each run of
+   the main matrix. The measured after times include this cost.
+3. Realistic, fixed: the tracking note held instructions in place of
+   facts, and did not explain the two record timers.
 
 ### 281.4 Open
 

@@ -1,7 +1,6 @@
 //! The value-role and consumer-site product of §143 rule 4.
 
 use super::*;
-use std::collections::HashMap;
 
 /// Function constraints for the role/site product (§143 rule 4).
 pub(super) const FUNCTION_KINDS: &[Kind] = &[
@@ -291,11 +290,10 @@ fn field_value(source: &str) -> String {
     result
 }
 
-pub(super) fn cells() -> Vec<Cell> {
+pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     let mut cells = Vec::new();
     let sites = sites();
     let mut omitted = Vec::new();
-    let mut controls = HashMap::new();
     for kind in &kinds::all() {
         for role in ROLES {
             let current = KINDS
@@ -462,11 +460,9 @@ pub(super) fn cells() -> Vec<Cell> {
                         main.replace(&format!("g<{ty}, {ty}>"), "g")
                             .replace(&format!("Field<{ty}, {ty}>"), "Field"),
                     );
-                    let errors = controls.entry(concrete_source.clone()).or_insert_with(|| {
-                        check_program(&[SourceFile::new("control.ts", &concrete_source)])
-                            .err()
-                            .unwrap_or_default()
-                    });
+                    let Some(errors) = controls.candidate(&concrete_source, collect) else {
+                        continue;
+                    };
                     // A callable constraint cannot admit a boolean condition (§143 rule 4).
                     if errors.is_empty()
                         || (!errors.iter().any(|error| {
@@ -520,6 +516,9 @@ pub(super) fn cells() -> Vec<Cell> {
                 }
             }
         }
+    }
+    if collect {
+        return Vec::new();
     }
     // C21 excludes void controls; C24 row 1 records truth controls.
     // The split rejection classes omit concrete forms outside their recorded restrictions.

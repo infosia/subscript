@@ -60,7 +60,7 @@ fn uncovered(source: &str) -> Vec<&str> {
 }
 
 /// Builds each constraint and constructor at all three assignment sites.
-pub(super) fn cells() -> Vec<Cell> {
+pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     assert!(uncovered(include_str!("../../src/types.rs")).is_empty());
     let mut cells = Vec::new();
     let mut omitted = 0;
@@ -111,7 +111,9 @@ pub(super) fn cells() -> Vec<Cell> {
                     let concrete = replace_parameter_names(&concrete, &format!("({argument})"));
                     for instance in [false, true] {
                         if instance
-                            && check_program(&[SourceFile::new("control.ts", &concrete)]).is_err()
+                            && controls
+                                .candidate(&concrete, collect)
+                                .is_none_or(|errors| !errors.is_empty())
                         {
                             omitted += 1;
                             continue;
@@ -139,6 +141,9 @@ pub(super) fn cells() -> Vec<Cell> {
                 }
             }
         }
+    }
+    if collect {
+        return Vec::new();
     }
     // C21 excludes concrete destinations that use void outside a result type.
     // S013 excludes those with a parameter that holds a handle and is not

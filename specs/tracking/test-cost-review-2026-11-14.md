@@ -388,3 +388,73 @@ test, which the debug step built before.
 
 ## §281 — the generic matrix
 
+The contract pin is `dd65df57dc95914122adf8eb38f5c2f2182ecb90`.
+The dump includes each name, source, divergence record, and control source in cell order.
+SHA-256 gives these values before and after the change.
+
+| Matrix | Cells before | Cells after | Hash before | Hash after |
+| --- | ---: | ---: | --- | --- |
+| Main | 40,250 | 40,250 | `98877d3445c48fa110a7a0ea18d9115ebc1fd12966ece836bf5e7a47c675a0da` | `98877d3445c48fa110a7a0ea18d9115ebc1fd12966ece836bf5e7a47c675a0da` |
+| Compound | 407 | 407 | `bb3ec3d57ac508d19fc667b205ed022c9d6380e1abc5740429cef9e5b136fc1d` | `bb3ec3d57ac508d19fc667b205ed022c9d6380e1abc5740429cef9e5b136fc1d` |
+
+Build both profiles before each measurement. Exclude the build from the wall time.
+Use the same temporary dump and timers for both measurements.
+Run each full test binary through Cargo with `--nocapture`.
+These measurements use single runs.
+
+| Check | Result line | Wall seconds |
+| --- | --- | ---: |
+| Debug before | `test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.83s` | 36.46 |
+| Release before | `test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.98s` | 17.42 |
+| Debug after | `test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.37s` | 24.88 |
+| Release after | `test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.43s` | 15.88 |
+| Format check | Exit 0 | 2.09 |
+| Clippy, compiler and all targets | `Finished dev profile [unoptimized + debuginfo] target(s) in 9.99s`; exit 0 | 10.07 |
+
+The main debug matrix gives these parts.
+The writing interval includes the remaining cache setup after generation.
+The record timer adds the active elapsed time of each call across threads.
+It can overlap other worker time. The parts do not add to the suite wall time.
+
+| Part | Seconds before | Seconds after |
+| --- | ---: | ---: |
+| Cell generation | 16.036 | 5.083 |
+| File writing and remaining setup | 3.295 | 4.357 |
+| TypeScript | 12.549 | 11.322 |
+| Rust workers | 12.826 | 10.212 |
+| Record checks, active sum | 12.510 | 0.003410 |
+| Project deletion | 3.291 | 3.222 |
+
+The matrix resolves each distinct record and token pair once.
+Each cell reads the stored result in its original record order.
+The direct record tests stay unchanged.
+The wrong-record control reads the cache and still reports rule 4b.
+The control cache uses the source text with the fixed file name `control.ts`.
+No comparison reads this file name. The text of a control failure
+prints the diagnostics, so it now names `control.ts` where it named
+`concrete.ts`.
+Each generator collects its candidates before the bounded pool checks them.
+The pool uses at most the available parallelism.
+The generator then selects cells in its original order.
+The workers read the same control cache.
+The comparisons and failure kinds stay unchanged.
+
+Clippy reports no warning in the changed tests. The clippy counts of
+the full gate below stay at the baseline.
+The temporary dump and timer code are not in the diff.
+The API generator now runs twice in each run of the main matrix, once
+to collect the controls and once to select the cells. The after
+times include this cost.
+The record sum before (12.510 s) is the sum of the worker times. The
+contract table gives the active wall time (8.1–8.2 s), the union of
+the worker intervals.
+`git diff --check` passes. No golden changed. The full gate result is
+below.
+
+Full gate on the §281 tree:
+
+```text
+gate full dd65df57dc95914122adf8eb38f5c2f2182ecb90 dirty:6 debug 3392/0/5 release 3373/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts do not move.
