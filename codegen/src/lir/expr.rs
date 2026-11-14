@@ -501,6 +501,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     expr.pos.clone(),
                 )?
             }
+            K::LambdaMember(id) => Some(self.lower_group_value(*id, expr)?),
             K::Lambda {
                 params,
                 ret,

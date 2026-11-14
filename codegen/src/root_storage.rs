@@ -953,6 +953,7 @@ mod tests {
 
     fn function(values: Vec<l::Value>, blocks: Vec<l::BasicBlock>) -> l::Function {
         l::Function {
+            lambda_group: None,
             id: l::FunctionId(0),
             source_name: "rootStorage".into(),
             kind: l::FunctionKind::Free,

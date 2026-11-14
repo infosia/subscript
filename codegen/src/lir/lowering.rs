@@ -187,6 +187,8 @@ impl<'a> Lowering<'a> {
             async_lambdas: async_defaults::async_lambdas(module),
             failed_default_functions: HashMap::new(),
             lambda_environments: HashMap::new(),
+            group_members: lambda_group::members(module),
+            group_functions: HashMap::new(),
             classes: Vec::new(),
             foreign: Vec::new(),
         };

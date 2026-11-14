@@ -347,7 +347,11 @@ impl<'p> Checker<'p> {
             body
         };
         let adoptions = std::mem::take(&mut fx.adoptions);
-        let body = self.adoption_epilogue(body, adoptions, &pos);
+        let mut body = self.adoption_epilogue(body, adoptions, &pos);
+        self.diags.extend(super::lambda_group::normalize_body(
+            &mut body,
+            &self.earlier_member_reads,
+        ));
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
             let ret = Type::generator(yield_ty);
@@ -774,6 +778,10 @@ impl<'p> Checker<'p> {
                     if has_dispose_binding(&body) {
                         body = using_scope::structure(body, &mut self.next_using_switch_id);
                     }
+                    self.diags.extend(super::lambda_group::normalize_body(
+                        &mut body,
+                        &self.earlier_member_reads,
+                    ));
                     self.classes[id.0].ctor = Some(hir::Function {
                         synthesized_helper: false,
                         can_raise: false,

@@ -12,14 +12,19 @@ pub(crate) fn compare_with_key(
     instance_key: bool,
 ) -> usize {
     let mut environments = Vec::new();
+    let mut identities = std::collections::HashSet::new();
     super::walk_module_expressions(hir, &mut |expr| {
         if let hir::ExprKind::Lambda {
+            id,
+            group,
             owns_environment: true,
             captures,
             ..
         } = &expr.kind
         {
             if !captures.is_empty() {
+                // §293 rule 4: HIR group identities determine the number of owned environments.
+                identities.insert((owner_instance(hir, expr), group.unwrap_or(*id)));
                 environments.push((expr, owner_instance(hir, expr)));
             }
         }
@@ -62,7 +67,7 @@ pub(crate) fn compare_with_key(
             ));
         }
     }
-    environments.len()
+    identities.len()
 }
 
 // Declaration order independently identifies each instantiated function in both forms.

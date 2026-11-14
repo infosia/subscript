@@ -445,8 +445,10 @@ impl<'p> Checker<'p> {
             return self.leaves_fit(then, to, fx) && self.leaves_fit(els, to, fx);
         }
         let next_lambda_id = self.next_lambda_id;
+        let next_lambda_ordinal = self.next_lambda_ordinal;
         let fits = self.place_value(&mut value.clone(), to, fx);
         self.next_lambda_id = next_lambda_id;
+        self.next_lambda_ordinal = next_lambda_ordinal;
         fits
     }
 
@@ -881,7 +883,7 @@ impl<'p> Checker<'p> {
         let call_ret = target.ret;
         let pos = value.pos.clone();
         let names: Vec<String> = (0..params.len())
-            .map(|index| format!("[[discard#{}.{index}]]", self.next_lambda_id))
+            .map(|index| format!("[[discard#{}.{index}]]", self.next_lambda_ordinal))
             .collect();
         let call = hir::Expr {
             pending_work: None,
@@ -911,9 +913,11 @@ impl<'p> Checker<'p> {
         };
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
+        self.next_lambda_ordinal += 1;
         *value = hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Lambda {
+                group: None,
                 id,
                 params: names
                     .iter()

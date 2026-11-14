@@ -23,6 +23,7 @@ mod expr;
 mod fixed_traversal;
 mod generator_close;
 mod lambda;
+mod lambda_group;
 mod liveness;
 mod lowering;
 mod place;
@@ -395,6 +396,8 @@ struct Lowering<'a> {
     fields: HashMap<(usize, String), l::FieldId>,
     functions: Vec<Option<l::Function>>,
     next_function: u32,
+    group_members: HashMap<hir::LambdaId, Vec<hir::Expr>>,
+    group_functions: HashMap<l::FunctionId, l::FunctionId>,
     lambda_environments: HashMap<hir::LambdaId, (l::FunctionId, bool, Vec<hir::Capture>)>,
     async_lambdas: HashSet<hir::LambdaId>,
     failed_default_functions: HashMap<Type, l::FunctionId>,
@@ -956,6 +959,7 @@ struct FunctionBuilder<'a, 'm> {
     bindings: Vec<Binding>,
     address_taken: HashSet<BindingSite>,
     substitutions: Vec<HashMap<String, l::Operand>>,
+    group_environments: HashMap<hir::LambdaId, Vec<l::Operand>>,
     this_value: Option<l::Operand>,
     controls: Vec<Control>,
     array_values: Vec<l::ValueId>,
@@ -1223,6 +1227,7 @@ mod verifier_tests {
             array_base: Some(l::ValueId(0)),
         });
         let function = l::Function {
+            lambda_group: None,
             id: l::FunctionId(0),
             source_name: "verify".to_string(),
             kind: l::FunctionKind::Free,
@@ -1334,6 +1339,7 @@ mod verifier_tests {
 
     fn wrong_declared_call_module(kind: l::CallTargetKind) -> l::Module {
         let callee = l::Function {
+            lambda_group: None,
             id: l::FunctionId(0),
             source_name: "declared".to_string(),
             kind: l::FunctionKind::Free,
@@ -1373,6 +1379,7 @@ mod verifier_tests {
             pos: pos(),
         };
         let caller = l::Function {
+            lambda_group: None,
             id: l::FunctionId(1),
             source_name: "caller".to_string(),
             kind: l::FunctionKind::Free,
@@ -1550,6 +1557,7 @@ mod verifier_tests {
             .map(|parameter| l::Operand::Value(parameter.value))
             .collect();
         let function = l::Function {
+            lambda_group: None,
             id: l::FunctionId(0),
             source_name: "hand-built-caller".to_string(),
             kind: l::FunctionKind::Free,

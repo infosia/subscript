@@ -487,6 +487,9 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let name = id.sym.to_string();
         let pos = self.pos(id.span);
+        if let Some(value) = self.check_group_value(&name, fx, &pos) {
+            return value;
+        }
         // compiler.md §253 rule 1: a binding named `undefined` is read as
         // a binding.
         if name == "undefined" && !self.binds_name(&name, fx) {

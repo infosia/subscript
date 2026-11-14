@@ -288,6 +288,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
         globals: Vec::new(),
         foreign_functions: Vec::new(),
         functions: vec![lir::Function {
+            lambda_group: None,
             id: lir::FunctionId(0),
             source_name: "violating_store".to_string(),
             kind: lir::FunctionKind::Free,

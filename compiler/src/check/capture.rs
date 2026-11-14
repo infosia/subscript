@@ -10,6 +10,7 @@ type Env = super::Shared<HashMap<String, usize>>;
 struct Analysis<'a> {
     lambda_parameters: Option<(hir::LambdaId, &'a [hir::Param])>,
     module: &'a hir::Module,
+    members: HashMap<hir::LambdaId, &'a Expr>,
     facts: Vec<bool>,
     bindings: HashMap<usize, usize>,
     equations: Vec<(usize, &'a Expr)>,
@@ -343,7 +344,9 @@ impl<'a> Analysis<'a> {
                         args,
                     );
                 } else if let Callee::LambdaSelf { id, .. } = callee {
-                    if let Some((lambda, params)) = self.lambda_parameters {
+                    if let Some(E::Lambda { params, .. }) = self.members.get(id).map(|e| &e.kind) {
+                        self.call("group call", params, args);
+                    } else if let Some((lambda, params)) = self.lambda_parameters {
                         if lambda == *id {
                             self.call("self-call", params, args);
                         }
@@ -487,6 +490,7 @@ impl<'a> Analysis<'a> {
             return false;
         }
         match &e.kind {
+            E::LambdaMember(id) => self.members.get(id).is_some_and(|member| self.fact(member)),
             E::Local(..) => self
                 .bindings
                 .get(&(e as *const Expr as usize))
@@ -580,12 +584,14 @@ impl<'a> Analysis<'a> {
     }
 }
 pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
+    super::lambda_group::normalize(module);
     analyze(module, true)
 }
 fn analyze(module: &mut hir::Module, select_ownership: bool) -> Result<(), Vec<Diagnostic>> {
     let mut a = Analysis {
         lambda_parameters: None,
         module,
+        members: super::lambda_group::members(module),
         facts: vec![],
         bindings: HashMap::new(),
         equations: vec![],
@@ -650,6 +656,7 @@ fn analyze(module: &mut hir::Module, select_ownership: bool) -> Result<(), Vec<D
                 }
             }
         }
+        super::lambda_group::normalize(module);
         return analyze(module, false);
     }
     let (diagnostics, escaping) = a.finish();

@@ -23,6 +23,7 @@ impl Expr {
             | K::Str(_)
             | K::Null
             | K::FuncRef(_)
+            | K::LambdaMember(_)
             | K::EnumMember { .. }
             | K::Unary { .. }
             | K::Binary { .. }
@@ -70,6 +71,7 @@ impl Expr {
             | K::Str(_)
             | K::Null
             | K::FuncRef(_)
+            | K::LambdaMember(_)
             | K::EnumMember { .. }
             | K::Unary { .. }
             | K::Binary { .. }

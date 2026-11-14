@@ -3,7 +3,7 @@ use crate::check::rejection::{diagnostic, RejectionSite};
 
 impl<'p> Checker<'p> {
     /// Reserves the names that declarations own in one statement list.
-    pub(crate) fn reserve_block_declarations(&self, statements: &[ast::Stmt], fx: &mut FnCtx) {
+    pub(crate) fn reserve_block_declarations(&mut self, statements: &[ast::Stmt], fx: &mut FnCtx) {
         let Some(scope) = fx.scopes.last_mut() else {
             return;
         };
@@ -60,6 +60,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+        self.form_lambda_groups(statements, fx);
     }
 
     /// Declares one local and reports a duplicate in the current scope.

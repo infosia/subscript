@@ -298,6 +298,8 @@ pub struct Function {
     pub source_name: String,
     /// Declaration/creation role.
     pub kind: FunctionKind,
+    /// Shared local lambda environment identity (compiler.md §293).
+    pub lambda_group: Option<FunctionId>,
     /// Whether this free function is host-exported.
     pub exported: bool,
     /// Whether this is a generator resume graph.

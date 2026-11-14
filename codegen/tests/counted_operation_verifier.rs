@@ -110,6 +110,7 @@ fn module(element: Type, removal: bool, acquire: bool, release: bool) -> l::Modu
         })
         .collect();
     let function = l::Function {
+        lambda_group: None,
         id: l::FunctionId(0),
         source_name: "violating_counted_operation".into(),
         kind: l::FunctionKind::Free,

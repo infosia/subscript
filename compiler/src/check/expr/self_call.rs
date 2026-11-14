@@ -1,4 +1,4 @@
-//! Calls of the running local lambda (compiler.md §284).
+//! Direct group calls, including the running local lambda (compiler.md §293, §284).
 
 use super::*;
 use crate::check::{rejection::RejectionSite, FnCtx, ParamSig};
@@ -11,6 +11,9 @@ impl Checker<'_> {
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Option<hir::Expr> {
+        if let Some(value) = self.check_group_call(name, call, fx, pos) {
+            return Some(value);
+        }
         let (id, signature, is_async, defaults) = fx
             .scopes
             .iter()

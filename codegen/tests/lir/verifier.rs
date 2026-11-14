@@ -21,6 +21,7 @@ fn verifier_module(function: lir::Function) -> Module {
 fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
     let pos = subscript_compiler::Pos::new("suspend-boundary.ts", 1, 1);
     let module = verifier_module(lir::Function {
+        lambda_group: None,
         id: lir::FunctionId(0),
         source_name: "cross_suspend".to_string(),
         kind: lir::FunctionKind::Free,
@@ -121,6 +122,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
         ),
     ] {
         let mut module = verifier_module(lir::Function {
+            lambda_group: None,
             id: lir::FunctionId(0),
             source_name: "bad_activation_local".to_string(),
             kind: lir::FunctionKind::Free,
@@ -233,6 +235,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
 fn address_type_rejects_an_undeclared_array_base() {
     let pos = subscript_compiler::Pos::new("array-base.ts", 1, 1);
     let module = verifier_module(lir::Function {
+        lambda_group: None,
         id: lir::FunctionId(0),
         source_name: "bad_array_base".to_string(),
         kind: lir::FunctionKind::Free,
@@ -292,6 +295,7 @@ fn intrinsic_call_is_checked_against_the_module_signature_table() {
     );
     let pos = subscript_compiler::Pos::new("wrong-math.ts", 1, 1);
     let mut module = verifier_module(lir::Function {
+        lambda_group: None,
         id: lir::FunctionId(0),
         source_name: "wrong_math_abs".to_string(),
         kind: lir::FunctionKind::Free,

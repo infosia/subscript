@@ -185,6 +185,7 @@ impl Expr {
             | K::Local(..)
             | K::Global(_)
             | K::FuncRef(_)
+            | K::LambdaMember(_)
             | K::EnumMember { .. }
             | K::Zero
             | K::Unassigned
@@ -287,6 +288,7 @@ impl Expr {
             | K::Local(..)
             | K::Global(_)
             | K::FuncRef(_)
+            | K::LambdaMember(_)
             | K::EnumMember { .. }
             | K::Zero
             | K::Unassigned

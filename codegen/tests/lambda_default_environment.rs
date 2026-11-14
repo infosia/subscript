@@ -1,5 +1,6 @@
 //! Runtime capture and exception behavior for compiler.md §291.
-//! Measured debug test time: 0.94 s for 12 tests, excluding the build.
+//! Cost: 12 tests; owned-default regressions share an existing three-tier compile.
+//! Measured debug test time: 0.92 s, excluding the build.
 //! The collection test compiles each loop count once in the JIT.
 use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
 use subscript_compiler::{check_program, SourceFile};
@@ -32,10 +33,25 @@ fn synchronous_default_throw_leaves_the_call() {
 }
 
 #[test]
-fn a_self_default_reads_the_environment_before_a_body_shadow() {
+fn self_and_owned_defaults_read_the_callee_environment() {
     compare(
         r#"
+        function f(): () => i32 {
+            const d: i32 = 3;
+            const a = (n: i32 = d): i32 => 2;
+            const only = (): i32 => a();
+            return only;
+        }
+        function group(): () => i32 {
+            const d: i32 = 3;
+            const a = (n: i32 = d): i32 => b(n);
+            const b = (n: i32): i32 => n + 1;
+            const only = (): i32 => a();
+            return only;
+        }
         export function main(): void {
+            print(`${f()()}`);
+            print(`${group()()}`);
             const k: i32 = 5;
             const rec = (n: i32, x: i32 = k): void => {
                 print(`${n}:${x}`);
@@ -44,7 +60,7 @@ fn a_self_default_reads_the_environment_before_a_body_shadow() {
             rec(1);
         }
     "#,
-        b"1:5\n0:5\n",
+        b"2\n4\n1:5\n0:5\n",
     );
 }
 
@@ -303,43 +319,59 @@ fn a_closure_default_target_must_exist() {
 
 #[test]
 fn a_closure_default_operand_must_match_its_lambda() {
-    use subscript_compiler::lir::{CallTargetKind, InstructionKind, Operand};
-    let hir = check_program(&[SourceFile::new("target.ts",
-        "export function main(): void { const k: i32 = 1; const f = (x: i32 = k): void => {}; const g = (x: i32 = k): void => {}; f(); g(); }"
-    )]).expect("checks");
-    let mut module = lower_module(&hir).expect("lowers");
-    let function = module
-        .functions
-        .iter_mut()
-        .find(|f| {
-            f.blocks.iter().any(|b| {
-                b.instructions.iter().any(|i| {
-                    matches!(&i.kind, InstructionKind::Call(t)
-            if matches!(t.kind, CallTargetKind::ClosureDefault { .. }))
-                })
+    use subscript_compiler::lir::{CallTargetKind, InstructionKind};
+    let hir = check_program(&[SourceFile::new(
+        "target.ts",
+        r#"
+        function make(): () => void {
+            const k: i32 = 1;
+            const f = (x: i32 = k): void => {};
+            const g = (x: i32 = k): void => {};
+            const only = (): void => { f(); g(); };
+            return only;
+        }
+        export function main(): void {
+            const k: i32 = 1;
+            const f = (x: i32 = k): void => {};
+            const g = (x: i32 = k): void => {};
+            f(); g(); make()();
+        }
+    "#,
+    )])
+    .expect("checks");
+    let module = lower_module(&hir).expect("lowers");
+    let mut probes = 0;
+    for (index, function) in module.functions.iter().enumerate() {
+        let operands: Vec<_> = function
+            .blocks
+            .iter()
+            .flat_map(|b| &b.instructions)
+            .filter_map(|i| match &i.kind {
+                InstructionKind::Call(t)
+                    if matches!(t.kind, CallTargetKind::ClosureDefault { .. }) =>
+                {
+                    Some(i.operands[0].clone())
+                }
+                _ => None,
             })
-        })
-        .expect("caller");
-    let other = function
-        .blocks
-        .iter()
-        .flat_map(|b| &b.instructions)
-        .filter_map(|i| match i.kind {
-            InstructionKind::MakeClosure(_) => i.result,
-            _ => None,
-        })
-        .nth(1)
-        .expect("other closure");
-    let call = function
-        .blocks
-        .iter_mut()
-        .flat_map(|b| &mut b.instructions)
-        .find(|i| {
-            matches!(&i.kind, InstructionKind::Call(t)
-            if matches!(t.kind, CallTargetKind::ClosureDefault { .. }))
-        })
-        .expect("closure default call");
-    call.operands[0] = Operand::Value(other);
-    let errors = subscript_codegen::lir::verify_module(&module).expect_err("wrong closure");
-    assert!(format!("{errors:?}").contains("call target identity/signature is invalid"));
+            .collect();
+        if operands.len() != 2 {
+            continue;
+        }
+        let mut corrupted = module.clone();
+        let call = corrupted.functions[index]
+            .blocks
+            .iter_mut()
+            .flat_map(|b| &mut b.instructions)
+            .find(|i| {
+                matches!(&i.kind, InstructionKind::Call(t)
+                if matches!(t.kind, CallTargetKind::ClosureDefault { .. }))
+            })
+            .expect("closure default call");
+        call.operands[0] = operands[1].clone();
+        let errors = subscript_codegen::lir::verify_module(&corrupted).expect_err("wrong closure");
+        assert!(format!("{errors:?}").contains("call target identity/signature is invalid"));
+        probes += 1;
+    }
+    assert_eq!(probes, 2, "direct and owned-environment operands");
 }

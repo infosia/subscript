@@ -68,7 +68,7 @@ fn former_value_decorator_is_an_unknown_decorator() {
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r507-c-callback-through-method.ts", RuleCode::S100, 8),
     ("r508-nested-lambda-calls-outer-name.ts", RuleCode::S100, 8),
-    ("r509-local-lambda-self-value.ts", RuleCode::S100, 8),
+    ("r509-group-call-in-a-nested-lambda.ts", RuleCode::S100, 8),
     (
         "r510-mutually-recursive-local-lambdas.ts",
         RuleCode::S100,

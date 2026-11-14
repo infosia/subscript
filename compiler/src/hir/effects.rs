@@ -125,6 +125,7 @@ impl Expr {
             | ExprKind::Local(..)
             | ExprKind::Global(_)
             | ExprKind::FuncRef(_)
+            | ExprKind::LambdaMember(_)
             | ExprKind::EnumMember { .. }
             | ExprKind::Unary { .. }
             | ExprKind::Binary { .. }

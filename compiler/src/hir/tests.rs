@@ -231,6 +231,7 @@ fn expr_children_yield_every_child() {
         ),
         (
             ExprKind::Lambda {
+                group: None,
                 is_async: false,
                 owns_environment: false,
                 id: LambdaId(0),

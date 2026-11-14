@@ -144,6 +144,7 @@ impl<'p> Checker<'p> {
             let saved_group_parameters = checker.task_group_parameters;
             checker.task_group_parameters =
                 !a.is_async && !a.is_generator && !fx.frames.iter().any(|frame| frame.is_generator);
+            let prepared_member = checker.prepare_lambda_group(a.span, fx);
             let mut params = Vec::new();
             for (i, pat) in a.params.iter().enumerate() {
                 // An un-annotated lambda parameter takes its type from the
@@ -156,41 +157,50 @@ impl<'p> Checker<'p> {
                     ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
                     _ => None,
                 };
-                let sig = if let (0, Some(resolved), ast::Pat::Ident(binding)) =
-                    (i, resolved_first, pat)
-                {
-                    ParamSig {
-                        annotated: binding
-                            .type_ann
-                            .as_ref()
-                            .is_some_and(|ann| checker.written_type(&ann.type_ann)),
-                        name: binding.id.sym.to_string(),
-                        state: crate::check::initializer::TypeState::decided(resolved.clone()),
-                        initializer: None,
-                        has_default: false,
-                    }
-                } else if let Some(b) = unannotated_ident {
-                    if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
+                let sig =
+                    if let Some(param) = prepared_member.as_ref().and_then(|m| m.params.get(i)) {
+                        param.clone()
+                    } else if let (0, Some(resolved), ast::Pat::Ident(binding)) =
+                        (i, resolved_first, pat)
+                    {
                         ParamSig {
-                            annotated: false,
-                            name: b.id.sym.to_string(),
-                            state: crate::check::initializer::TypeState::decided(t.clone()),
+                            annotated: binding
+                                .type_ann
+                                .as_ref()
+                                .is_some_and(|ann| checker.written_type(&ann.type_ann)),
+                            name: binding.id.sym.to_string(),
+                            state: crate::check::initializer::TypeState::decided(resolved.clone()),
                             initializer: None,
                             has_default: false,
                         }
+                    } else if let Some(b) = unannotated_ident {
+                        if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
+                            ParamSig {
+                                annotated: false,
+                                name: b.id.sym.to_string(),
+                                state: crate::check::initializer::TypeState::decided(t.clone()),
+                                initializer: None,
+                                has_default: false,
+                            }
+                        } else {
+                            checker.resolve_param_pat(pat)
+                        }
                     } else {
                         checker.resolve_param_pat(pat)
-                    }
-                } else {
-                    checker.resolve_param_pat(pat)
-                };
+                    };
                 params.push(sig);
             }
             checker.task_group_parameters = saved_group_parameters;
             let mut ret = a
                 .return_type
                 .as_ref()
-                .map(|ann| checker.resolve_result_type(&ann.type_ann))
+                .map(|ann| {
+                    prepared_member
+                        .as_ref()
+                        .and_then(|m| m.signature.as_ref())
+                        .map(|s| s.ret.clone())
+                        .unwrap_or_else(|| checker.resolve_result_type(&ann.type_ann))
+                })
                 .or_else(|| {
                     ret_ctx
                         .filter(|ty| {
@@ -277,9 +287,11 @@ impl<'p> Checker<'p> {
                 );
                 let id = hir::LambdaId(checker.next_lambda_id);
                 checker.next_lambda_id += 1;
+                checker.next_lambda_ordinal += 1;
                 return hir::Expr {
                     pending_work: None,
                     kind: ExprKind::Lambda {
+                        group: None,
                         id,
                         params: Vec::new(),
                         is_async: a.is_async,
@@ -447,8 +459,15 @@ impl<'p> Checker<'p> {
                 })
             });
         let origin_start = fx.async_origins.len();
-        let id = hir::LambdaId(self.next_lambda_id);
-        self.next_lambda_id += 1;
+        self.next_lambda_ordinal += 1;
+        let member = self.lambda_group_member(a.span, fx);
+        let id = if let Some(member) = &member {
+            member.id
+        } else {
+            let id = hir::LambdaId(self.next_lambda_id);
+            self.next_lambda_id += 1;
+            id
+        };
         let frame = Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             result_kind,
@@ -499,6 +518,18 @@ impl<'p> Checker<'p> {
         let saved_switch_depth = std::mem::replace(&mut fx.switch_depth, 0);
         let saved_reachable = std::mem::replace(&mut fx.flow_reachable, true);
         let hir_params = self.check_lambda_parameter_defaults(&params, &a.params, &pos, fx);
+        // §293 rule 7: parameter defaults are outside the member body.
+        if let Some(member) = &member {
+            let members = fx
+                .scopes
+                .iter()
+                .rev()
+                .find_map(|s| s.lambda_groups.get(&member.span))
+                .cloned()
+                .unwrap_or_default();
+            fx.scopes.last_mut().unwrap().group_members =
+                members.into_iter().map(|m| (m.name.clone(), m)).collect();
+        }
         self.cache_global_lambda_defaults(a.span, id, &hir_params);
         let parameter_patterns = params
             .iter()
@@ -697,6 +728,7 @@ impl<'p> Checker<'p> {
         hir::Expr {
             pending_work: None,
             kind: ExprKind::Lambda {
+                group: member.map(|member| member.group),
                 id,
                 params: hir_params,
                 is_async: a.is_async,
@@ -723,7 +755,10 @@ fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
 }
 
 /// compiler.md §286 rules 1 and 3a: inspect this block's returns only.
-fn returns_matching(statements: &[ast::Stmt], operand: fn(&ast::Expr) -> bool) -> bool {
+pub(in crate::check) fn returns_matching(
+    statements: &[ast::Stmt],
+    operand: fn(&ast::Expr) -> bool,
+) -> bool {
     statements.iter().any(|statement| match statement {
         ast::Stmt::Return(r) => r.arg.as_deref().is_some_and(operand),
         ast::Stmt::Block(block) => returns_matching(&block.stmts, operand),

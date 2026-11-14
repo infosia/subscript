@@ -30,6 +30,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         captures: &[hir::Capture],
         expr: &hir::Expr,
     ) -> Result<(l::FunctionId, l::Operand), LowerError> {
+        if let hir::ExprKind::Lambda {
+            group: Some(group), ..
+        } = &expr.kind
+        {
+            if self
+                .lowering
+                .group_members
+                .get(group)
+                .is_some_and(|members| members.len() > 1)
+            {
+                return self.lower_group_lambda(*group, expr);
+            }
+        }
         let mut capture_values = captures
             .iter()
             .map(|capture| {

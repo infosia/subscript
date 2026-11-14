@@ -1420,13 +1420,13 @@ pub enum Callee {
     Set(SetFn),
     /// A Q35 worker or channel-endpoint intrinsic.
     Worker(WorkerFn),
-    /// A call of the running local lambda with its current environment (§284).
+    /// A direct member call with the current group environment (§293, §284).
     LambdaSelf {
-        /// The checker identity of the enclosing lambda.
+        /// The checker identity of the target member.
         id: LambdaId,
         /// The signature decided before the body check.
         signature: crate::types::FuncType,
-        /// Whether the running lambda creates an async frame.
+        /// Whether the target member creates an async frame.
         is_async: bool,
         /// Defaults selected by the checker for omitted arguments (§288).
         defaults: Option<LambdaDefaults>,
@@ -1732,11 +1732,13 @@ pub enum ExprKind {
     ArraySpreadLit(Vec<ArrayLitElem>),
     /// Template literal (Q14 formatting at runtime).
     Template(Vec<TplPart>),
-    /// Lambda expression. A non-capturing lambda is a free function
-    /// value. A capturing lambda borrows a stack environment and stays in
-    /// its defining function (C5), or it owns its environment.
+    /// A member value uses its group's current environment (§293 rule 3).
+    LambdaMember(LambdaId),
+    /// A lambda with a null, stack, or owned environment (§293, C5, §274).
     Lambda {
-        /// The checker-assigned unit identity. Only the initializer scan reads it.
+        /// The first member identifies the shared environment (§293).
+        group: Option<LambdaId>,
+        /// The checker-assigned code identity (§293).
         id: LambdaId,
         /// Parameters.
         params: Vec<Param>,

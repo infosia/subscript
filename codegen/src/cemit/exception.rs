@@ -62,6 +62,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         let function = match &target.kind {
             l::CallTargetKind::Function(function)
+            | l::CallTargetKind::LambdaSelf(function)
             | l::CallTargetKind::StaticClosure(function)
             | l::CallTargetKind::ClosureDefault {
                 helper: function, ..

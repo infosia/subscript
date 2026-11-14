@@ -33,6 +33,7 @@ fn empty_module(mut functions: Vec<l::Function>) -> l::Module {
 fn an_await_resume_without_a_completion_reports_the_internal_defect() {
     let pos = Pos::new("invalid-protocol.ts", 4, 11);
     let function = l::Function {
+        lambda_group: None,
         id: l::FunctionId(0),
         source_name: "waiting".to_string(),
         kind: l::FunctionKind::Free,
@@ -743,6 +744,7 @@ fn invalidation_poisons_an_address_of_its_own_frame_only() {
 fn suspend_restores_resume_value_then_remaining_live_ins() {
     let pos = Pos::new("suspend.ts", 1, 1);
     let child = l::Function {
+        lambda_group: None,
         id: l::FunctionId(1),
         source_name: "child".to_string(),
         kind: l::FunctionKind::Free,
@@ -776,6 +778,7 @@ fn suspend_restores_resume_value_then_remaining_live_ins() {
         pos: pos.clone(),
     };
     let main = l::Function {
+        lambda_group: None,
         id: l::FunctionId(0),
         source_name: "main".to_string(),
         kind: l::FunctionKind::Free,

@@ -61,6 +61,27 @@ fn synchronous_methods_borrow_groups_and_layout_has_no_count() {
 }
 
 #[test]
+fn synchronous_group_members_borrow_task_groups() {
+    let source = "export async function main(): Promise<void> { const group = new TaskGroup(); const first = (g: TaskGroup): void => { second(g); }; const second = (g: TaskGroup): void => {}; first(group); await group.join(); }";
+    let module = check_program(&[SourceFile::new("group.ts", source)])
+        .expect("synchronous group member borrow");
+    let groups: Vec<_> = module.functions[0]
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            subscript_compiler::hir::Stmt::Let { init, .. } => match &init.kind {
+                subscript_compiler::hir::ExprKind::Lambda { group, .. } => Some(*group),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(groups.len(), 2);
+    assert!(groups[0].is_some());
+    assert_eq!(groups[0], groups[1]);
+}
+
+#[test]
 fn generator_groups_reject_with_an_async_body_control() {
     let source = include_str!("../../corpus/reject/r386-task-group-generator-body.ts");
     let control = source

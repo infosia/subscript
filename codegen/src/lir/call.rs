@@ -160,8 +160,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }) {
             match callee {
                 hir::Callee::NamedLambda { .. } => operands.first().cloned(),
-                hir::Callee::LambdaSelf { signature, .. } => self.emit(
-                    l::InstructionKind::MakeClosure(self.id),
+                hir::Callee::LambdaSelf { id, signature, .. } => self.emit(
+                    l::InstructionKind::MakeClosure(self.lowering.lambda_environments[id].0),
                     operands.clone(),
                     Some(l::ValueType::Data(Type::Func(Box::new(signature.clone())))),
                     false,
@@ -588,9 +588,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Ok((l::CallTargetKind::Foreign(id), Vec::new(), params, None))
             }
             hir::Callee::LambdaSelf { id, .. } => {
-                if self.kind != l::FunctionKind::Lambda || self.function.lambda_id != Some(*id) {
-                    return Err(self.error(&expr.pos, "self-call does not name the running lambda"));
+                if self.kind != l::FunctionKind::Lambda
+                    || (self.function.lambda_id != Some(*id)
+                        && !self.lowering.group_functions.contains_key(&self.id))
+                {
+                    return Err(self.error(&expr.pos, "group call is outside a member"));
                 }
+                let target = self
+                    .lowering
+                    .lambda_environments
+                    .get(id)
+                    .map(|(id, _, _)| *id)
+                    .ok_or_else(|| self.error(&expr.pos, "group member code is missing"))?;
                 let environment = self
                     .parameters
                     .iter()
@@ -603,7 +612,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .map(|parameter| l::Operand::Value(parameter.value))
                     .collect();
                 Ok((
-                    l::CallTargetKind::LambdaSelf(self.id),
+                    l::CallTargetKind::LambdaSelf(target),
                     environment,
                     callee
                         .lambda_defaults()

@@ -577,7 +577,11 @@ pub(super) fn verify_instruction_contract(
             }
             let target_exists = match &target.kind {
                 l::CallTargetKind::LambdaSelf(id) => {
-                    *id == function.id
+                    (*id == function.id
+                        || (function.lambda_group.is_some()
+                            && declared_function(module, *id).is_some_and(|target| {
+                                target.lambda_group == function.lambda_group
+                            })))
                         && function.kind == l::FunctionKind::Lambda
                         && function
                             .parameters
@@ -1261,6 +1265,28 @@ fn static_closure_operand_matches(
     operand: &l::Operand,
     target: l::FunctionId,
 ) -> bool {
+    fn field_address<'a>(
+        function: &'a l::Function,
+        operand: &l::Operand,
+    ) -> Option<(l::FieldId, &'a l::Operand)> {
+        let l::Operand::Value(value) = operand else {
+            return None;
+        };
+        let value = function.liveness.value_origins.get(value.0 as usize)?;
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .find_map(|instruction| match instruction.kind {
+                l::InstructionKind::AddressOfField(l::FieldRef::Class(field))
+                    if instruction.result == Some(*value) =>
+                {
+                    Some((field, instruction.operands.first()?))
+                }
+                _ => None,
+            })
+    }
+
     fn collect(
         module: &l::Module,
         function: &l::Function,
@@ -1295,6 +1321,48 @@ fn static_closure_operand_matches(
                 l::InstructionKind::Copy => instruction.operands.first().is_some_and(|operand| {
                     collect(module, function, operand, target, visiting, saw_closure)
                 }),
+                // §274, §291: an owned environment stores a captured closure in a field.
+                // Its default helper must receive the closure established by every store.
+                l::InstructionKind::LoadAddress => instruction
+                    .operands
+                    .first()
+                    .and_then(|address| field_address(function, address))
+                    .is_some_and(|(field, object)| {
+                        let owned = function.parameters.iter().any(|parameter| {
+                            parameter.kind == l::ParameterKind::OwnedEnvironment
+                                && matches!(object, l::Operand::Value(value)
+                                    if function.liveness.value_origins.get(value.0 as usize)
+                                        == Some(&parameter.value))
+                        });
+                        if !owned {
+                            return false;
+                        }
+                        let mut found = false;
+                        let mut valid = true;
+                        for caller in &module.functions {
+                            for store in caller.blocks.iter().flat_map(|b| &b.instructions) {
+                                if store.kind == l::InstructionKind::StoreAddress
+                                    && store.operands.first().is_some_and(|address| {
+                                        field_address(caller, address)
+                                            .is_some_and(|(stored, _)| stored == field)
+                                    })
+                                {
+                                    found = true;
+                                    valid &= store.operands.get(1).is_some_and(|operand| {
+                                        collect(
+                                            module,
+                                            caller,
+                                            operand,
+                                            target,
+                                            visiting,
+                                            saw_closure,
+                                        )
+                                    });
+                                }
+                            }
+                        }
+                        found && valid
+                    }),
                 _ => false,
             };
             visiting.remove(&key);

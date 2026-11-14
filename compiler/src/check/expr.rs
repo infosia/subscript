@@ -12,7 +12,7 @@ mod conditional;
 mod container_new;
 mod entry;
 pub(crate) use entry::ContextKind;
-mod lambda;
+pub(super) mod lambda;
 pub(super) mod literal;
 mod logical_assign;
 mod member;

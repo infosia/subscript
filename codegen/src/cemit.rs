@@ -817,6 +817,7 @@ mod tests {
             })
         };
         l::Function {
+            lambda_group: None,
             id: l::FunctionId(0),
             source_name: "index".into(),
             kind: l::FunctionKind::Free,
@@ -1122,6 +1123,7 @@ mod tests {
             pos: pos.clone(),
         };
         let function = l::Function {
+            lambda_group: None,
             id: l::FunctionId(7),
             source_name: "probe".into(),
             kind: l::FunctionKind::Free,

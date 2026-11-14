@@ -1049,6 +1049,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::Local(..)
         | hir::ExprKind::Global(_)
         | hir::ExprKind::FuncRef(_)
+        | hir::ExprKind::LambdaMember(_)
         | hir::ExprKind::EnumMember { .. }
         | hir::ExprKind::Unary { .. }
         | hir::ExprKind::Binary { .. }

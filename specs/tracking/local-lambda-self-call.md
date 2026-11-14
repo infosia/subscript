@@ -485,3 +485,48 @@ gate full fed5720af17eba42c9a74ae140eab2df5dfb7440 dirty:9 debug 3402/0/5 releas
 
 The moved golden is the LIR text snapshot. It grows by the functions of
 `a450` only.
+
+## §293: local lambdas in a group share one environment
+
+Contract: `specs/blocks/compiler/s293-local-lambdas-in-a-group-share-one-environment.md`.
+
+### Red
+
+At the contract commit, `subscript check` of `a457` gave S100 "`x` is
+read before its declaration in this block" for each forward read and
+each self value read: `isOdd` (11:94), `second` (16:67, 25:48, 32:57,
+38:70), `local` (19:83), `third` (39:35), and more.
+
+### Form
+
+- Round 1 made a group of each run of lambda `const` declarations. The
+  LIR of `a149`, `a342`, `a432`, and `a449` changed, and an async
+  lambda made the environment of a lambda next to it owned. Rule 1
+  changed to links.
+- Round 2 counted a read of an earlier lambda as a link. The LIR of
+  `a149` and `a342` changed. Rule 1 changed to forward reads and self
+  value reads only.
+- The LIR has no operand for a running stack environment, so a group
+  value of a stack group copies the capture values (rule 3).
+- `compiler/src/check/lambda_group.rs` forms the groups;
+  `codegen/src/lir/lambda_group.rs` lowers group calls and group values.
+- `a457` output, by hand, on the three tiers, and under `node`:
+  `parity parity true:true f1 f0 l1 l0 12:13:14 kept:7 20 async2 async1 async0 31`.
+- `r509` and `r510` hold the forms of rule 7.
+- The LIR text snapshot adds the `a457` section only.
+
+### Phase Review
+
+One fresh review. Two MAJOR and two MINOR findings, each fixed; see
+§293.3.
+
+### Gate
+
+- The first full gate failed in `task_group`
+  (`synchronous_methods_borrow_groups_and_layout_has_no_count`): the
+  checker resolved the parameter types of a lambda of a run before its
+  body and did not set the synchronous `TaskGroup` borrow there. The
+  condition of an ordinary lambda applies now.
+- `gate full ab52bb9c dirty:54 debug 3448/0/5 release 3429/0/5 skips 1/0 clippy 4/10/13 goldens-moved 1 exit 0`.
+  The moved golden is the LIR text snapshot, which grows by the `a457`
+  section only.

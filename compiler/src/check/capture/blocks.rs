@@ -64,8 +64,12 @@ impl<'a> Analysis<'a> {
         &self,
         e: &'b Expr,
         mut visit: impl FnMut(&'b Expr) -> bool,
-    ) -> Option<bool> {
+    ) -> Option<bool>
+    where
+        'a: 'b,
+    {
         Some(match &e.kind {
+            E::LambdaMember(id) => self.members.get(id).is_some_and(|member| visit(member)),
             E::Null
             | E::Zero
             | E::FuncRef(_)
@@ -108,7 +112,10 @@ impl<'a> Analysis<'a> {
         })
     }
 
-    fn visit_flow<'b>(&self, e: &'b Expr, mut visit: impl FnMut(&'b Expr)) {
+    fn visit_flow<'b>(&self, e: &'b Expr, mut visit: impl FnMut(&'b Expr))
+    where
+        'a: 'b,
+    {
         if self
             .flow_inputs(e, |input| {
                 visit(input);

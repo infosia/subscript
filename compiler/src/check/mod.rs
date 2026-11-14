@@ -57,6 +57,7 @@ mod inference;
 mod initializer;
 mod initializer_finish;
 mod interface;
+mod lambda_group;
 mod receiver_capture;
 #[cfg(test)]
 mod receiver_capture_tests;
@@ -543,6 +544,8 @@ pub(crate) struct Scope {
         bool,
         Option<hir::LambdaDefaults>,
     )>,
+    pub lambda_groups: HashMap<swc_common::Span, Vec<lambda_group::Member>>,
+    pub group_members: HashMap<String, lambda_group::Member>,
     pub named_lambdas: Shared<HashMap<String, hir::LambdaDefaults>>,
     pub vars: Shared<HashMap<String, Local>>,
     /// Source declaration identities for const index keys (§163).
@@ -1519,8 +1522,12 @@ pub(crate) struct Checker<'p> {
     /// Monotonic id for checker-generated storage that stabilizes a
     /// `for…of` subject across the fused loop.
     pub next_for_of_id: usize,
+    /// Earlier const reads reconsidered after forward group links are known (§293).
+    pub earlier_member_reads: HashMap<hir::LambdaId, Vec<lambda_group::EarlierRead>>,
     /// Monotonic lambda unit identity (compiler.md §137 rule 5b).
     pub next_lambda_id: usize,
+    /// Check order keeps synthetic parameter names independent of forward identities (§293 rule 1).
+    pub next_lambda_ordinal: usize,
     /// Checker-generated module globals for regex-literal source sites.
     ///
     /// Each initializer compiles and allocates one rooted handle; every

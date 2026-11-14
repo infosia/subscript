@@ -330,7 +330,9 @@ fn run_with_effects(
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
         next_for_of_id: 0,
+        earlier_member_reads: HashMap::new(),
         next_lambda_id: 0,
+        next_lambda_ordinal: 0,
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
         next_using_switch_id: 0,
@@ -493,6 +495,7 @@ fn run_with_effects(
             .globals
             .retain(|index| !regex_indices.contains(index));
     }
+    ck.finish_group_defaults();
     let initializer_diags = module_initializer_diagnostics(&ck, initializer_files, &file_segments);
     ck.diags.extend(initializer_diags);
     ck.validate_layouts();
@@ -566,6 +569,13 @@ fn run_with_effects(
             let host_diagnostics = host_entries::populate(&mut module, host_exports);
             if !host_diagnostics.is_empty() {
                 return Err(host_diagnostics);
+            }
+        }
+        if ck.diags.is_empty() {
+            let group_diagnostics =
+                lambda_group::resolve_earlier_reads(&mut module, &ck.earlier_member_reads);
+            if !group_diagnostics.is_empty() {
+                return Err(group_diagnostics);
             }
         }
         if provisional {

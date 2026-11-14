@@ -664,6 +664,7 @@ impl<'a> ModuleEffectScanner<'a> {
         use hir::ExprKind as K;
 
         match &expression.kind {
+            K::LambdaMember(_) => {}
             K::Lambda { id, body, .. } => {
                 let unit = ModuleFunction::Lambda(*id);
                 let mut scanner = self.nested();

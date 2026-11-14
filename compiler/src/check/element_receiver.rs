@@ -221,6 +221,7 @@ impl<'a> Graph<'a> {
     fn expr(&mut self, unit: usize, expression: &'a Expr) {
         let mut body = unit;
         match &expression.kind {
+            ExprKind::LambdaMember(_) => {}
             ExprKind::Call { callee, args } => self.callee(unit, expression, callee, args),
             ExprKind::New { class, args } => {
                 self.call(unit, self.constructors.get(class.0).copied());

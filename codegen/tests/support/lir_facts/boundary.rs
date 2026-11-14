@@ -274,6 +274,7 @@ pub(super) fn compare_boundary_boxes(
             | hir::ExprKind::Local(..)
             | hir::ExprKind::Global(_)
             | hir::ExprKind::FuncRef(_)
+            | hir::ExprKind::LambdaMember(_)
             | hir::ExprKind::EnumMember { .. }
             | hir::ExprKind::Unary { .. }
             | hir::ExprKind::Binary { .. }
@@ -458,6 +459,7 @@ fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
         | K::Local(..)
         | K::Global(_)
         | K::FuncRef(_)
+        | K::LambdaMember(_)
         | K::EnumMember { .. }
         | K::Unary { .. }
         | K::Binary { .. }

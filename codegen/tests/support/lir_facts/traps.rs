@@ -159,14 +159,20 @@ pub(super) fn collect_trap_expression(
         // An async lambda's callable allocates its frame at invocation (§167
         // rule 13), and an owning lambda allocates its environment (§181 rule 2).
         if let hir::ExprKind::Lambda {
+            id,
+            group,
             is_async,
             owns_environment,
             captures,
             ..
         } = &node.kind
         {
-            let allocations =
-                usize::from(*is_async) + usize::from(*owns_environment && !captures.is_empty());
+            let allocations = usize::from(*is_async)
+                + usize::from(
+                    *owns_environment
+                        && !captures.is_empty()
+                        && group.is_none_or(|group| group == *id),
+                );
             if allocations > 0 {
                 *expected
                     .entry(trap_key(&node.pos, "Allocation".into()))
@@ -288,6 +294,7 @@ pub(super) fn collect_trap_expression(
             | hir::ExprKind::Local(..)
             | hir::ExprKind::Global(_)
             | hir::ExprKind::FuncRef(_)
+            | hir::ExprKind::LambdaMember(_)
             | hir::ExprKind::EnumMember { .. }
             | hir::ExprKind::Unary { .. }
             | hir::ExprKind::Binary { .. }
