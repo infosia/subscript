@@ -144,3 +144,6 @@ debug skip count falls from 2 to 1 (§277). No golden moved.
 The build state differs between the two gates. The earlier gate built
 the release tests in its release step, and this gate found them built.
 So only the suite times above are comparable, not the step sums.
+
+## §278 — the golden sweep
+

@@ -319,3 +319,4 @@ Every section, with its status:
 | §275 | A Worker Context spawns no Worker | active | [`s275-a-worker-context-spawns-no-worker.md`](compiler/s275-a-worker-context-spawns-no-worker.md) |
 | §276 | The gate script tests run once, with a hygiene stub | active | [`s276-the-gate-script-tests-run-once-with-a-hygiene-stub.md`](compiler/s276-the-gate-script-tests-run-once-with-a-hygiene-stub.md) |
 | §277 | The interpreter runs a small matrix witness, not the a22 benchmark | active | [`s277-the-interpreter-runs-a-small-matrix-witness.md`](compiler/s277-the-interpreter-runs-a-small-matrix-witness.md) |
+| §278 | The golden sweep runs each entry once | active | [`s278-the-golden-sweep-runs-each-entry-once.md`](compiler/s278-the-golden-sweep-runs-each-entry-once.md) |
