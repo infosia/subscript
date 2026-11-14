@@ -196,7 +196,6 @@ fn assert_record(output: &std::process::Output, shape: &str, expected: &str) -> 
     assert!(path.starts_with("target/gate/"), "| {path}");
     assert!(path.ends_with(&format!("-{shape}.md")), "| {path}");
     let stamp = &path["target/gate/".len()..][..16];
-    assert_eq!(stamp.len(), 16);
     assert_eq!(&stamp[8..9], "T");
     assert_eq!(&stamp[15..], "Z");
     assert!(stamp[..8].bytes().all(|b| b.is_ascii_digit()));

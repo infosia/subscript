@@ -118,9 +118,8 @@ fn load_program(path: &Path, id: String) -> Result<Program, String> {
     })
 }
 
-fn discover_examples() -> Result<Vec<Program>, String> {
-    let root = examples_root();
-    let entries = fs::read_dir(&root)
+fn discover_examples(root: &Path) -> Result<Vec<Program>, String> {
+    let entries = fs::read_dir(root)
         .map_err(|error| format!("read examples directory {}: {error}", root.display()))?;
     let mut examples = Vec::new();
     for entry in entries {
@@ -493,7 +492,8 @@ fn assert_programs_match(programs: &[Program], set_name: &str) {
 }
 
 fn every_example_matches_dev_jit_ship_c_aot_and_golden() {
-    let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));
+    let examples = discover_examples(&examples_root())
+        .unwrap_or_else(|error| panic!("discover examples: {error}"));
     assert_programs_match(&examples, "example");
 }
 
@@ -527,25 +527,49 @@ fn typescript_rejected_script_matches_rendered_diagnostic() {
     );
 }
 
+struct ExampleFixture(PathBuf);
+
+impl ExampleFixture {
+    fn new() -> Self {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "subscript-example-discovery-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        Self(root)
+    }
+}
+
+impl Drop for ExampleFixture {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.0).expect("remove discovery fixture");
+    }
+}
+
 fn derived_example_set_excludes_phase_gate_programs() {
-    let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));
-    let gate_programs =
-        discover_gate_programs().unwrap_or_else(|error| panic!("discover gate programs: {error}"));
+    let fixture = ExampleFixture::new();
+    for name in ["e01-fixture.ts", "helper.ts", "e02-not-typescript.txt"] {
+        fs::write(fixture.0.join(name), "").unwrap();
+        fs::write(fixture.0.join(name).with_extension("expected"), "").unwrap();
+    }
+    fs::create_dir(fixture.0.join("gate")).unwrap();
+    fs::write(fixture.0.join("gate/e03-gate.ts"), "").unwrap();
+    fs::write(fixture.0.join("gate/e03-gate.expected"), "").unwrap();
+    let examples = discover_examples(&fixture.0).expect("discover fixture examples");
     let example_ids = examples
         .iter()
         .map(|program| program.id.as_str())
         .collect::<Vec<_>>();
-    println!("derived example set: {}", example_ids.join(", "));
-    assert!(
-        example_ids.iter().all(|id| is_example_stem(id)),
-        "the derived example set contains an unnumbered program: {example_ids:?}"
-    );
-    assert!(
-        gate_programs
-            .iter()
-            .all(|program| program.id.starts_with("gate/")
-                && !example_ids.contains(&program.id.as_str())),
-        "a phase-gate program entered the derived example set"
+    assert_eq!(example_ids, ["e01-fixture"]);
+
+    let empty_fixture = ExampleFixture::new();
+    assert_eq!(
+        discover_examples(&empty_fixture.0).unwrap_err(),
+        "no e<nn>-<slug>.ts examples found"
     );
 }
 

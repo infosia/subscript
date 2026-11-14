@@ -49,8 +49,21 @@ Problem, read in the code:
 
 ### 283.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that the
+fixture test fails for a discovery that recurses, that takes a
+non-`.ts` file or an unnumbered name, or that ignores its root. Four
+MINOR findings:
+
+1. Contrived, open: the fixture `Drop` panics if the removal fails.
+2. Contrived, open: the fixture name has no counter. A collision
+   fails at `create_dir`, so it cannot pass silently.
+3. Realistic, open: the empty fixture holds no file, so it does not
+   show that the filter runs before the empty check.
+4. Realistic, fixed: the tracking note held a task statement in place
+   of the gate verdict.
 
 ### 283.4 Open
 
-None.
+1. The fixture `Drop` panics if the removal fails (§283.3 item 1).
+2. The fixture name has no counter (§283.3 item 2).
+3. The empty fixture holds no unnumbered file (§283.3 item 3).

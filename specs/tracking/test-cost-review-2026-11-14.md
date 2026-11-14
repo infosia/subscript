@@ -544,3 +544,60 @@ The counts move by +1 in each profile: the harness control.
 
 ## §283 — three assertions that cannot fail
 
+The contract pin is `e201219b`.
+The Red test used one wrong expected id. It produced this output:
+
+```text
+assertion `left == right` failed
+  left: ["e01-fixture"]
+ right: ["e99-wrong"]
+test derived_example_set_excludes_phase_gate_programs ... FAILED
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+```
+
+The final test expects `e01-fixture`.
+The fixtures use unique system temporary directories. The test removes both directories.
+The second fixture checks the error for an empty example set.
+The phase list and the dead-code check stay intact.
+
+| Check | Result line | Wall seconds |
+| --- | --- | ---: |
+| Red fixture | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s` | 3.35 |
+| Examples gate | `test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.47s` | 7.61 |
+| CLI gate | `test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.70s` | 23.62 |
+| Warning corpus | `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.28s` | 4.21 |
+| First format check | Exit 1; one line requires a line break | 2.14 |
+| Final format check | Exit 0 | 3.26 |
+| Clippy, three packages and all targets | `Finished dev profile [unoptimized + debuginfo] target(s) in 2.45s`; exit 0 | 2.54 |
+
+The final format check follows the line break fix.
+Clippy reports warnings in unchanged code. It reports none in the changed tests.
+The diff check passes. No golden changed.
+The full gate result is below.
+
+Full gate on the §283 tree:
+
+```text
+gate full e201219b92fb0ad51f218058f9c20ca16fa49a21 dirty:5 debug 3393/0/5 release 3374/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts do not move. The debug step took 431 s and the release step
+154 s, with the build warm from the §282 gate.
+
+## Status after §276 to §283
+
+| Step | 2026-11-13, s | After §283, s |
+|---|---:|---:|
+| debug tests | 589 | 431 |
+| release tests | 589 | 154 |
+| full gate sum | 1,260 | 595 |
+
+The build state differs, so the step sums do not compare exactly. The
+suite times of each section above do compare.
+
+Items of the review that change what a gate observes are not taken
+here: the stress policy for the debug mutation, long-string, and
+breadth runs, and the consolidation of test binaries. On 2026-11-14 the owner kept the
+present coverage: the heavy debug runs stay in the gate, and the test
+binaries are not consolidated or scheduled in parallel.
