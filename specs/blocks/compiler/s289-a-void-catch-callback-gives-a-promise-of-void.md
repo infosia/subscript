@@ -102,5 +102,8 @@ the ship tier, and `node`.
    and then awaited, an element of `Promise.all`, and a receiver of a
    further `then`, `catch`, or `finally` stay rejected. `tsc` accepts
    them.
+   *(Decided 2026-11-14 by the owner: items 1 and 2 stay rejected.
+   Each needs a nullable scalar type, which C7 does not have.)*
 3. An async `void` `catch` callback on `Promise<T>` with `T` other than
    `void` stays rejected. `tsc` accepts it.
+   *(Selected 2026-11-14 for §292.)*
