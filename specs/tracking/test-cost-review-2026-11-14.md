@@ -343,3 +343,45 @@ The counts move by +2 in each profile: the two pool controls.
 
 ## §280 — the example host tests
 
+The contract pin is `3b1b68eef92ded3c082a0cf6c047b1f6ac3cd55c`.
+Touch a compiler source file before each first debug measurement.
+Run each warm measurement with nothing touched.
+Use `/usr/bin/time -p` for each wall time. Include build time.
+
+| Check | Result line | Wall seconds |
+|---|---|---:|
+| Examples before, compiler touched | `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.69s` | 31.65 |
+| Examples before, warm | `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.13s` | 3.24 |
+| CLI hosts debug, compiler touched | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s` | 3.65 |
+| CLI hosts debug, warm | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s` | 1.01 |
+| CLI hosts release | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s` | 26.84 |
+| Examples after, debug | `test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s` | 4.17 |
+| Format check | Exit 0 | 2.03 |
+| Clippy, both packages and all targets | `Finished dev profile [unoptimized + debuginfo] target(s) in 3.80s`; exit 0 | 3.86 |
+
+The two host tests now use the CLI that Cargo builds for the test profile.
+Both scripts build the release CLI only when SUBSCRIPT is unset.
+The text check finds one Cargo command in each unset branch.
+The stub control checks both scripts, their output, and the first arguments `build --source`.
+Both host tests retain exit-status and exact golden-byte checks.
+The examples phase list removes both host names and keeps its dead-code check.
+No dependency changed. The CLI keeps its runtime archive rules.
+Clippy reports warnings in unchanged code.
+The shell syntax check and `git diff --check` pass.
+No golden changed.
+
+Result: with a compiler source touched, the debug host tests took
+3.65 s, against 31.65 s for the examples suite before. The release
+CLI build now occurs only in the release step. Both profiles link the
+same release runtime archive (`cli/src/runtime_paths.rs`), so the
+debug CLI makes the same observation as the release CLI did.
+
+Full gate on the §280 tree:
+
+```text
+gate full 3b1b68eef92ded3c082a0cf6c047b1f6ac3cd55c dirty:7 debug 3392/0/5 release 3373/0/5 skips 1/0 clippy 3/10/13 goldens-moved 0 exit 0
+```
+
+The counts move by +2 in each profile: four new tests and two removed.
+The release step took 334 s. It now builds the release CLI for the new
+test, which the debug step built before.

@@ -85,6 +85,8 @@ sh examples/host/build.sh
 sh examples/context-per-scene/build.sh
 ```
 
+Set `SUBSCRIPT` to the CLI executable to run either host script without its Cargo build step.
+
 Each script is a thin wrapper over the developer CLI
 ([`specs/blocks/cli.md`](../specs/blocks/cli.md)): `subscript build --run`
 owns the emit → compile → link pipeline, `subscript run <file.ts>` runs a

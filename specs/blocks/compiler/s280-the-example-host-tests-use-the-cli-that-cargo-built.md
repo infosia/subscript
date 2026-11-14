@@ -51,8 +51,26 @@ is held twice.
 
 ### 280.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL or MAJOR finding. It found that both
+profiles link the same release runtime archive, that the two host runs
+write to separate directories, and that the text check and the stub
+control can fail. Five MINOR findings:
+
+1. Realistic, open: a golden mismatch prints bytes, not text, and no
+   longer names the `expected.txt` path.
+2. Contrived, open: if an assertion of the stub control fails, its
+   scratch directory stays.
+3. Open: no Windows run of the new tests is recorded.
+4. Realistic, fixed: the tracking note had a second verb for the check
+   concept, a fragment, and no result line.
+5. No change: the tracking table has no after row with a touched
+   compiler for the examples package. Acceptance item 3 does not ask
+   for one.
 
 ### 280.4 Open
 
-None.
+1. The host test failure prints the stdout as bytes and does not name
+   the golden path (§280.3 item 1).
+2. The stub control leaves its scratch directory if an assertion fails
+   (§280.3 item 2).
+3. The new tests have no recorded Windows run (§280.3 item 3).

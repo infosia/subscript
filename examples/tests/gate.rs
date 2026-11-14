@@ -20,12 +20,10 @@ extern crate subscript_interop_fixture;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use subscript_bindgen::{generate_with_options, BindOptions};
 use subscript_codegen::{
-    run_c_aot_with_native_libraries, run_jit_with_native_libraries, tool_output_report,
-    NativeLibrary,
+    run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary,
 };
 // Used only by the interop-only two-header emission test, which is excluded
 // on windows-msvc; split out so the import is not unused there.
@@ -529,39 +527,6 @@ fn typescript_rejected_script_matches_rendered_diagnostic() {
     );
 }
 
-fn assert_host_program_matches_golden(directory: &str, label: &str) {
-    let host = examples_root().join(directory);
-    let script = host.join("build.sh");
-    let expected_path = host.join("expected.txt");
-    let expected = fs::read(&expected_path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", expected_path.display()));
-    let output = Command::new("sh")
-        .arg(&script)
-        .output()
-        .unwrap_or_else(|error| panic!("run {}: {error}", script.display()));
-    assert!(
-        output.status.success(),
-        "{label} build/run failed with {}:\n{}",
-        output.status,
-        tool_output_report(&output)
-    );
-    assert_eq!(
-        output.stdout,
-        expected,
-        "{label} stdout differs from {}:\nactual:\n{}",
-        expected_path.display(),
-        String::from_utf8_lossy(&output.stdout)
-    );
-}
-
-fn capstone_host_builds_runs_and_matches_golden() {
-    assert_host_program_matches_golden("host", "capstone");
-}
-
-fn context_per_scene_host_builds_runs_and_matches_golden() {
-    assert_host_program_matches_golden("context-per-scene", "Context-per-scene host");
-}
-
 fn derived_example_set_excludes_phase_gate_programs() {
     let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));
     let gate_programs =
@@ -666,8 +631,6 @@ fn two_header_gate_emits_both_provenance_vocabularies() {
 fn main() -> std::process::ExitCode {
     main_thread::run(&main_thread_tests![
         parallel: [
-            capstone_host_builds_runs_and_matches_golden,
-            context_per_scene_host_builds_runs_and_matches_golden,
             derived_example_set_excludes_phase_gate_programs,
             engine_mirror_regenerates_byte_identically,
             typescript_rejected_script_matches_rendered_diagnostic,
