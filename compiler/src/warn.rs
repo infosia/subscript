@@ -354,12 +354,8 @@ impl WarningChecker<'_> {
             }
             ExprKind::Call { callee, args } => {
                 match callee {
-                    Callee::Value(value) => self.scan_w001_expr(
-                        value,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    ),
+                    Callee::Value(value) | Callee::NamedLambda { value, .. } => self
+                        .scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape),
                     Callee::Method { recv, .. } => {
                         self.scan_w001_expr(recv, loop_depth, collect_mutes, AllocationSink::Escape)
                     }
@@ -1399,7 +1395,9 @@ fn render_call_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<St
     let callee = match callee {
         Callee::Func(name) => name.source_name(),
         Callee::Foreign(name) => name.clone(),
-        Callee::Value(value) => render_place_expr(value, origins)?,
+        Callee::Value(value) | Callee::NamedLambda { value, .. } => {
+            render_place_expr(value, origins)?
+        }
         Callee::Method { recv, name } => {
             format!(
                 "{}.{}",

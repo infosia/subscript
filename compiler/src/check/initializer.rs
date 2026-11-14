@@ -893,3 +893,58 @@ impl<'p> Checker<'p> {
         prefixes
     }
 }
+
+impl Checker<'_> {
+    // compiler.md §288 rule 2: a global body can call itself before its initializer is complete.
+    pub(super) fn cache_global_lambda_defaults(
+        &mut self,
+        span: swc_common::Span,
+        id: hir::LambdaId,
+        params: &[hir::Param],
+    ) {
+        for signature in self.global_sigs.values_mut() {
+            if signature.named_lambda
+                && signature.initializer.as_ref().is_some_and(|source| {
+                    super::expr::unparen_expr(&source.expression).span() == span
+                })
+            {
+                signature.lambda_defaults = Some(hir::LambdaDefaults {
+                    id,
+                    params: params.to_vec(),
+                });
+                break;
+            }
+        }
+    }
+
+    /// compiler.md §288 rule 1: reuse the checked global initializer's parameters.
+    pub(super) fn named_global_lambda_defaults(
+        &mut self,
+        symbol: &hir::Symbol,
+    ) -> Option<hir::LambdaDefaults> {
+        let signature = self.global_sigs.get(symbol.full_text())?.clone();
+        if !signature.named_lambda {
+            return None;
+        }
+        if let Some(defaults) = signature.lambda_defaults {
+            return Some(defaults);
+        }
+        let mut source = signature.initializer;
+        let saved_deciding = std::mem::replace(&mut self.deciding_type, false);
+        let value = self.finish_initializer(&mut source);
+        self.deciding_type = saved_deciding;
+        let value = value?;
+        let hir::ExprKind::Lambda { id, params, .. } = &value.kind else {
+            return None;
+        };
+        let defaults = hir::LambdaDefaults {
+            id: *id,
+            params: params.clone(),
+        };
+        source.as_mut()?.checked = Some(value);
+        let signature = self.global_sigs.get_mut(symbol.full_text())?;
+        signature.initializer = source;
+        signature.lambda_defaults = Some(defaults.clone());
+        Some(defaults)
+    }
+}

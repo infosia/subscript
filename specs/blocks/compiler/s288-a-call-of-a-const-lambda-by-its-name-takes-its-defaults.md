@@ -80,9 +80,37 @@ hold for that call.
 
 ### 288.3 Phase Review
 
-Pending.
+One fresh review. No CRITICAL finding. The review ran each probe on the
+three tiers and compared it with a binary built from the contract pin.
+
+1. MAJOR, realistic, fixed: the module initialization-order check did
+   not read a default that a named lambda call or a self-call
+   evaluates. `const banner = show(1);` before `const DEFAULT` with
+   `c: Cfg = DEFAULT` was accepted, and the development tier stopped
+   with signal 11. Rule 3a: a lambda default takes the path of a
+   declaration default, and each pass that walks a call was audited.
+2. MINOR, realistic, fixed: a default of a module-scope lambda was
+   checked twice, so each of its diagnostics was reported twice.
+3. MINOR, contrived, fixed: an `expect` in library code.
+4. MINOR, fixed: rule 4 named a call through a parameter as the
+   divergence example, and the example is a call through a `let`. The
+   new divergence entry cited a collision row that does not exist and
+   gave no reason.
+5. MINOR, realistic, recorded: §288.4 item 2.
+6. MINOR, fixed: a long `matches!` chain that rustfmt cannot format,
+   and a test header that stated the cost of one test for two.
+7. MINOR, recorded: §288.4 item 3.
 
 ### 288.4 Open
 
 1. Rule 3: a default of a lambda that reads a captured local is
    rejected when a named lambda call omits it. `tsc` accepts it.
+2. A default of an async callee that throws throws at the call. Under
+   `node` the throw rejects the promise, so a statement between the
+   call and its `await` runs first. A default of an `async function`
+   declaration (§57) gives the same result, so both tiers share it
+   (core principle 12): all three tiers print `default`, then
+   `caught failed`, and `node` prints `default`, `after lambda call`,
+   `caught failed`.
+3. The S100 of rule 3 points at the default, not at the call that
+   omits the argument.

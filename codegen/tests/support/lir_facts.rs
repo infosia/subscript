@@ -510,6 +510,11 @@ fn declared_callee_parameters<'a>(
             };
             Some(declared_method(hir, *class, name, pos)?.params.as_slice())
         }
+        hir::Callee::NamedLambda { defaults, .. }
+        | hir::Callee::LambdaSelf {
+            defaults: Some(defaults),
+            ..
+        } => Some(&defaults.params),
         hir::Callee::Standard(_)
         | hir::Callee::Ambient(_)
         | hir::Callee::ContextBytes { .. }
@@ -543,11 +548,11 @@ fn declared_async_callee_parameters<'a>(
 
 fn collect_missing_parameter_defaults(
     parameters: &[hir::Param],
-    call: (usize, Option<Type>),
+    call: (usize, Option<Type>, Option<hir::LambdaId>),
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
-    seen_defaults: &mut std::collections::BTreeSet<usize>,
+    seen_defaults: &mut std::collections::BTreeSet<(Option<hir::LambdaId>, usize)>,
 ) {
     let classes: Vec<_> = hir
         .classes
@@ -579,7 +584,12 @@ fn collect_missing_parameter_defaults(
                 }
             }
             // A default body is lowered once; its calls do not expand callee defaults.
-            if seen_defaults.insert(default as *const hir::Expr as usize) {
+            let identity = call
+                .2
+                .map_or((None, default as *const hir::Expr as usize), |id| {
+                    (Some(id), index)
+                });
+            if seen_defaults.insert(identity) {
                 collect_trap_expression(default, hir, expected, findings, seen_defaults);
             }
         }
@@ -973,7 +983,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
                 };
                 Some(declared_method(hir, *class, name, pos)?.params.len() + 1)
             }
-            hir::Callee::LambdaSelf { id, .. } => {
+            hir::Callee::LambdaSelf { id, signature, .. } => {
                 let mut count = None;
                 walk_module_expressions(hir, &mut |expression| {
                     if let hir::ExprKind::Lambda {
@@ -993,10 +1003,11 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
                     }
                 });
                 Some(
-                    args.len()
+                    signature.params.len()
                         + count.ok_or_else(|| format!("{pos}: self-call lambda is absent"))?,
                 )
             }
+            hir::Callee::NamedLambda { defaults, .. } => Some(defaults.params.len() + 1),
             hir::Callee::Value(_) => Some(args.len() + 1),
             hir::Callee::Ambient(_)
             | hir::Callee::ContextBytes { .. }
@@ -1724,11 +1735,8 @@ fn walk_expr<'a>(hir: &hir::Module, expr: &'a hir::Expr, visit: &mut impl FnMut(
             return;
         }
         K::Lambda { body, .. } => {
-            for child in expr.children() {
-                if let hir::HirChild::Expr(expression) = child {
-                    walk_expr(hir, expression, visit);
-                }
-            }
+            // compiler.md §288 rule 2: a default body is reached through
+            // an omitted-argument call, once per lambda identity.
             // `using::hook_facts` places each finalizer of a lambda body, as it
             // places each finalizer of a declared function.
             walk_placed_statement_expression_roots(hir, body, &mut |expression| {

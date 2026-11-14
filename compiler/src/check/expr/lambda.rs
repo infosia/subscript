@@ -314,6 +314,67 @@ impl<'p> Checker<'p> {
         value
     }
 
+    pub(in crate::check) fn check_lambda_parameter_defaults(
+        &mut self,
+        params: &[ParamSig],
+        patterns: &[ast::Pat],
+        pos: &Pos,
+        fx: &mut FnCtx,
+    ) -> Vec<hir::Param> {
+        let saved_default = std::mem::replace(&mut fx.parameter_default, true);
+        let mut hir_params = Vec::new();
+        for (p, pattern) in params.iter().zip(patterns) {
+            if let Some(frame) = fx.frames.last_mut() {
+                for capture in Self::initializer_captures(&p.initializer) {
+                    if !frame.captures.iter().any(|c| c.name == capture.name) {
+                        frame.captures.push(capture.clone());
+                    }
+                }
+            }
+            let mut initializer = p.initializer.clone();
+            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
+                Some(value)
+            } else if let ast::Pat::Assign(assign) = pattern {
+                let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
+                self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
+                self.discharge_parameter_default(&value, p.ty(), fx);
+                Some(value)
+            } else {
+                None
+            };
+            let param_pos = self.pos(pattern.span());
+            let async_origins = if self.apparent_type(p.ty()).holds_async_handle() {
+                HashSet::from([fx.register_async_origin(param_pos.clone())])
+            } else {
+                HashSet::new()
+            };
+            self.declare_local(
+                &p.name,
+                Local {
+                    annotated: p.annotated,
+                    ty: p.ty().clone(),
+                    mutable: true,
+                    async_origins,
+                    caught: false,
+                    function_value_required: None,
+                },
+                param_pos,
+                fx,
+            );
+            hir_params.push(hir::Param {
+                escape_kind: crate::hir::EscapeKind::None,
+                default_can_raise: false,
+                name: p.name.clone(),
+                ty: p.ty().clone(),
+                default,
+                foreign_provenance: None,
+                pos: pos.clone(),
+            });
+        }
+        fx.parameter_default = saved_default;
+        hir_params
+    }
+
     pub(in crate::check) fn check_lambda_body(
         &mut self,
         a: &ast::ArrowExpr,
@@ -329,28 +390,32 @@ impl<'p> Checker<'p> {
                 _ => Type::Error,
             });
         }
-        let self_call = fx.lambda_initializer.as_ref().and_then(|(span, name)| {
-            let syntax_result =
-                a.return_type.is_some() || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
-            // compiler.md §285 rule 1: the const annotation also decides
-            // the result before the body. A result hint does not.
-            let decided_result = syntax_result || result_kind == ContextKind::Contextual;
-            (*span == a.span && decided_result && ret.is_some()).then(|| {
-                let result = ret.clone().unwrap_or(Type::Error);
-                (
-                    name.clone(),
-                    crate::types::FuncType {
-                        params: params.iter().map(|p| p.ty().clone()).collect(),
-                        ret: if a.is_async {
-                            Type::async_handle(result)
-                        } else {
-                            result
+        let self_call = fx
+            .lambda_initializer
+            .as_ref()
+            .and_then(|(span, name, named)| {
+                let syntax_result = a.return_type.is_some()
+                    || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
+                // compiler.md §285 rule 1: the const annotation also decides
+                // the result before the body. A result hint does not.
+                let decided_result = syntax_result || result_kind == ContextKind::Contextual;
+                (*span == a.span && decided_result && ret.is_some()).then(|| {
+                    let result = ret.clone().unwrap_or(Type::Error);
+                    (
+                        name.clone(),
+                        *named,
+                        crate::types::FuncType {
+                            params: params.iter().map(|p| p.ty().clone()).collect(),
+                            ret: if a.is_async {
+                                Type::async_handle(result)
+                            } else {
+                                result
+                            },
+                            callback_typedef: None,
                         },
-                        callback_typedef: None,
-                    },
-                )
-            })
-        });
+                    )
+                })
+            });
         let origin_start = fx.async_origins.len();
         let id = hir::LambdaId(self.next_lambda_id);
         self.next_lambda_id += 1;
@@ -403,66 +468,26 @@ impl<'p> Checker<'p> {
         let saved_adoptions = std::mem::take(&mut fx.adoptions);
         let saved_switch_depth = std::mem::replace(&mut fx.switch_depth, 0);
         let saved_reachable = std::mem::replace(&mut fx.flow_reachable, true);
-        let saved_default = std::mem::replace(&mut fx.parameter_default, true);
-        let mut hir_params = Vec::new();
-        for (p, pattern) in params.iter().zip(&a.params) {
-            if let Some(frame) = fx.frames.last_mut() {
-                for capture in Self::initializer_captures(&p.initializer) {
-                    if !frame.captures.iter().any(|c| c.name == capture.name) {
-                        frame.captures.push(capture.clone());
-                    }
-                }
-            }
-            let mut initializer = p.initializer.clone();
-            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
-                Some(value)
-            } else if let ast::Pat::Assign(assign) = pattern {
-                let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
-                self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
-                self.discharge_parameter_default(&value, p.ty(), fx);
-                Some(value)
-            } else {
-                None
-            };
-            let param_pos = self.pos(pattern.span());
-            let async_origins = if self.apparent_type(p.ty()).holds_async_handle() {
-                HashSet::from([fx.register_async_origin(param_pos.clone())])
-            } else {
-                HashSet::new()
-            };
-            self.declare_local(
-                &p.name,
-                Local {
-                    annotated: p.annotated,
-                    ty: p.ty().clone(),
-                    mutable: true,
-                    async_origins,
-                    caught: false,
-                    function_value_required: None,
-                },
-                param_pos,
-                fx,
-            );
-            hir_params.push(hir::Param {
-                escape_kind: crate::hir::EscapeKind::None,
-                default_can_raise: false,
-                name: p.name.clone(),
-                ty: p.ty().clone(),
-                default,
-                foreign_provenance: None,
-                pos: pos.clone(),
-            });
-        }
-        fx.parameter_default = saved_default;
+        let hir_params = self.check_lambda_parameter_defaults(&params, &a.params, &pos, fx);
+        self.cache_global_lambda_defaults(a.span, id, &hir_params);
         let parameter_patterns = params
             .iter()
             .cloned()
             .zip(a.params.iter().cloned())
             .collect::<Vec<_>>();
         let entry = self.bind_parameter_patterns(parameter_patterns, fx);
-        if let Some((name, signature)) = self_call {
+        if let Some((name, named, signature)) = self_call {
             if let Some(scope) = fx.scopes.last_mut() {
-                scope.self_call = Some((name, id, signature, a.is_async));
+                scope.self_call = Some((
+                    name,
+                    id,
+                    signature,
+                    a.is_async,
+                    named.then(|| hir::LambdaDefaults {
+                        id,
+                        params: hir_params.clone(),
+                    }),
+                ));
             }
         }
         let body_pos = self.pos(a.body.span());

@@ -153,7 +153,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
         }
         let explicit = self.lower_call_arguments(
-            defaults::DefaultOwner::from_target(&kind),
+            callee
+                .lambda_defaults()
+                .map(|defaults| defaults::DefaultOwner::Lambda(defaults.id))
+                .or_else(|| defaults::DefaultOwner::from_target(&kind)),
             &params,
             args,
             receiver_for_defaults.as_ref(),
@@ -435,7 +438,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 parameters.extend(signature.params.iter().cloned().map(l::ValueType::Data));
                 Ok((parameters, data_result(&signature.ret)))
             }
-            hir::Callee::Value(value) => {
+            hir::Callee::Value(value) | hir::Callee::NamedLambda { value, .. } => {
                 let Type::Func(signature) = &value.ty else {
                     return Err(self.error(&value.pos, "indirect callee is not function-typed"));
                 };
@@ -564,27 +567,36 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Ok((
                     l::CallTargetKind::LambdaSelf(self.id),
                     environment,
-                    self.function.params.iter().map(CallParam::from).collect(),
+                    callee
+                        .lambda_defaults()
+                        .map_or(&self.function.params, |defaults| &defaults.params)
+                        .iter()
+                        .map(CallParam::from)
+                        .collect(),
                     None,
                 ))
             }
-            hir::Callee::Value(value) => {
+            hir::Callee::Value(value) | hir::Callee::NamedLambda { value, .. } => {
                 let callee_value = self.require_expr(value)?;
                 let Type::Func(signature) = &value.ty else {
                     return Err(self.error(&value.pos, "indirect callee is not function-typed"));
                 };
-                let params = signature
-                    .params
-                    .iter()
-                    .enumerate()
-                    .map(|(index, ty)| CallParam {
-                        name: format!("arg{index}"),
-                        ty: ty.clone(),
-                        default: None,
-                        default_can_raise: false,
-                        pos: value.pos.clone(),
-                    })
-                    .collect();
+                let params = if let Some(defaults) = callee.lambda_defaults() {
+                    defaults.params.iter().map(CallParam::from).collect()
+                } else {
+                    signature
+                        .params
+                        .iter()
+                        .enumerate()
+                        .map(|(index, ty)| CallParam {
+                            name: format!("arg{index}"),
+                            ty: ty.clone(),
+                            default: None,
+                            default_can_raise: false,
+                            pos: value.pos.clone(),
+                        })
+                        .collect()
+                };
                 Ok((
                     l::CallTargetKind::Indirect,
                     vec![callee_value],

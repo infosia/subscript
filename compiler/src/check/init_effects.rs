@@ -27,6 +27,7 @@ struct ModuleEffectScanner<'a> {
     defaults: Option<&'a HashMap<ModuleFunction, Vec<(usize, String)>>>,
     ambiguous_class_names: Option<&'a HashSet<&'a str>>,
     effects: ModuleEffects,
+    lambda_name: String,
 }
 
 impl<'a> ModuleEffectScanner<'a> {
@@ -37,6 +38,50 @@ impl<'a> ModuleEffectScanner<'a> {
             defaults: None,
             ambiguous_class_names: None,
             effects: ModuleEffects::default(),
+            lambda_name: "[lambda]".to_string(),
+        }
+    }
+
+    fn with_lambda_name(mut self, name: &str) -> Self {
+        self.lambda_name = name.to_string();
+        self
+    }
+
+    fn nested(&self) -> Self {
+        let mut scanner = Self::new(self.classes);
+        scanner.generators = self.generators;
+        scanner.defaults = self.defaults;
+        scanner.ambiguous_class_names = self.ambiguous_class_names;
+        scanner.lambda_name = self.lambda_name.clone();
+        scanner
+    }
+
+    // compiler.md §288 rule 3a: each evaluated lambda default has a declaration-style route.
+    fn lambda_defaults(&mut self, callee: &hir::Callee, supplied: usize) {
+        let Some(defaults) = callee.lambda_defaults() else {
+            return;
+        };
+        let owner = match callee {
+            hir::Callee::NamedLambda { value, .. } => match &value.kind {
+                hir::ExprKind::Global(name) => source_name(name.full_text()),
+                hir::ExprKind::Local(name, ..) => name.clone(),
+                _ => self.lambda_name.clone(),
+            },
+            _ => self.lambda_name.clone(),
+        };
+        for (index, parameter) in defaults.params.iter().enumerate().skip(supplied) {
+            let Some(default) = &parameter.default else {
+                continue;
+            };
+            let unit =
+                ModuleFunction::Default(Box::new(ModuleFunction::Lambda(defaults.id)), index);
+            let mut scanner = self.nested();
+            scanner.expr(default);
+            self.effects
+                .lambdas
+                .extend(std::mem::take(&mut scanner.effects.lambdas));
+            self.effects.lambdas.insert(unit.clone(), scanner.effects);
+            self.record_call(unit, format!("{owner} (default of {})", parameter.name));
         }
     }
 
@@ -188,6 +233,12 @@ impl<'a> ModuleEffectScanner<'a> {
 
     fn stmt(&mut self, statement: &hir::Stmt) {
         use hir::Stmt as S;
+        if let S::Let { name, init, .. } = statement {
+            let name = std::mem::replace(&mut self.lambda_name, name.clone());
+            self.expr(init);
+            self.lambda_name = name;
+            return;
+        }
         // compiler.md §137 rule 5b: every statement participates in the scan.
         match statement {
             S::Let { .. }
@@ -296,9 +347,11 @@ impl<'a> ModuleEffectScanner<'a> {
                     name.full_text().to_owned(),
                 );
             }
-            C::Standard(_) | C::Foreign(_) | C::Value(_) | C::LambdaSelf { .. } => {
-                self.record_indirect_call()
-            }
+            C::Standard(_)
+            | C::Foreign(_)
+            | C::Value(_)
+            | C::NamedLambda { .. }
+            | C::LambdaSelf { .. } => self.record_indirect_call(),
             C::Method { recv, name } => {
                 if let Some((hir::OperationSignatureTarget::BuiltinMethod(method), _)) =
                     hir::operation_signature_target(callee)
@@ -613,10 +666,7 @@ impl<'a> ModuleEffectScanner<'a> {
         match &expression.kind {
             K::Lambda { id, body, .. } => {
                 let unit = ModuleFunction::Lambda(*id);
-                let mut scanner = Self::new(self.classes);
-                scanner.generators = self.generators;
-                scanner.defaults = self.defaults;
-                scanner.ambiguous_class_names = self.ambiguous_class_names;
+                let mut scanner = self.nested();
                 scanner.stmts(body);
                 self.effects
                     .lambdas
@@ -648,6 +698,7 @@ impl<'a> ModuleEffectScanner<'a> {
             K::Global(name) => self.record_access(name.full_text()),
             K::FuncRef(name) => self.effects.made.push(ModuleFunction::Free(name.clone())),
             K::Call { callee, args } => {
+                self.lambda_defaults(callee, args.len());
                 let unit = match callee {
                     hir::Callee::Func(name) => Some(ModuleFunction::Free(name.clone())),
                     hir::Callee::Method { recv, name } => {
@@ -1188,6 +1239,7 @@ pub(super) fn module_initializer_diagnostics(
                         .with_generators(&generators)
                         .with_defaults(&defaults)
                         .with_class_labels(&ambiguous_class_names);
+                    scanner = scanner.with_lambda_name(&global.name);
                     scanner.expr(init);
                     check_effect(
                         scanner,
@@ -1223,6 +1275,78 @@ pub(super) fn module_initializer_diagnostics(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn named_lambda_defaults_follow_module_initialization_routes() {
+        for (source, expected) in [
+            (
+                r#"class Cfg { name: string = "cfg"; }
+const show = (k: i32, c: Cfg = DEFAULT): string => `${c.name}${k}`;
+const banner: string = show(1);
+const DEFAULT: Cfg = new Cfg();
+export function main(): void { print(banner); }"#,
+                "`DEFAULT` is accessed before its declaration, through `show (default of c)`",
+            ),
+            (
+                r#"const top = (k: i32, s: string = LATER): string => `${s}${k}`;
+const banner: string = top(1);
+const LATER: string = "later";
+export function main(): void { print(banner); }"#,
+                "`LATER` is accessed before its declaration, through `top (default of s)`",
+            ),
+            (
+                r#"const top = (k: i32, s: string = LATER): string => `${s}${k}`;
+function show(s: string = top(1)): string { return s; }
+const banner: string = show();
+const LATER: string = "later";
+export function main(): void { print(banner); }"#,
+                "`LATER` is accessed before its declaration, through `show (default of s)` -> `top (default of s)`",
+            ),
+            (
+                r#"const r = (n: i32, s: string = LATER): string => {
+    if (n > 0) return r(n - 1);
+    return s;
+};
+const banner: string = r(1, "x");
+const LATER: string = "later";
+export function main(): void { print(banner); }"#,
+                "`LATER` is accessed before its declaration, through an indirect call -> `r (default of s)`",
+            ),
+            (
+                r#"function start(): string {
+    const r = (n: i32, s: string = LATER): string => {
+        if (n > 0) return r(n - 1);
+        return s;
+    };
+    return r(1, "x");
+}
+const banner: string = start();
+const LATER: string = "later";
+export function main(): void { print(banner); }"#,
+                "`LATER` is accessed before its declaration, through `start` -> an indirect call -> `r (default of s)`",
+            ),
+        ] {
+            let errors = crate::check_program(&[crate::SourceFile::new("defaults.ts", source)])
+                .expect_err("the default reads a later global");
+            assert_eq!(errors.len(), 1, "{source}: {errors:?}");
+            assert_eq!(errors[0].code, crate::RuleCode::S100);
+            assert_eq!(errors[0].message, expected);
+        }
+    }
+
+    #[test]
+    fn passed_lambda_defaults_do_not_read_later_globals() {
+        crate::check_program(&[crate::SourceFile::new(
+            "defaults.ts",
+            r#"
+const top = (k: i32, s: string = LATER): string => s;
+const banner: string = top(1, "passed");
+const LATER: string = "later";
+export function main(): void { print(banner); }
+"#,
+        )])
+        .expect("the call does not evaluate the default");
+    }
 
     #[test]
     fn duplicate_bindings_keep_the_first_declaration_order() {

@@ -282,6 +282,7 @@ fn run_with_effects(
         functions: Vec::new(),
         worker_entries: Vec::new(),
         global_sigs: HashMap::new(),
+        reported_lambda_defaults: HashSet::new(),
         globals: Vec::new(),
         generic_fns: HashMap::new(),
         generic_classes: HashMap::new(),

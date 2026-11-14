@@ -132,7 +132,7 @@ pub(super) fn collect_trap_expression(
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
-    seen_defaults: &mut std::collections::BTreeSet<usize>,
+    seen_defaults: &mut std::collections::BTreeSet<(Option<hir::LambdaId>, usize)>,
 ) {
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
@@ -209,7 +209,7 @@ pub(super) fn collect_trap_expression(
                     if let Some(constructor) = &definition.ctor {
                         collect_missing_parameter_defaults(
                             &constructor.params,
-                            (args.len(), Some(Type::Class(*class))),
+                            (args.len(), Some(Type::Class(*class)), None),
                             hir,
                             expected,
                             findings,
@@ -228,6 +228,7 @@ pub(super) fn collect_trap_expression(
                                 hir::Callee::Method { recv, .. } => Some(recv.ty.clone()),
                                 _ => None,
                             },
+                            callee.lambda_defaults().map(|defaults| defaults.id),
                         ),
                         hir,
                         expected,
@@ -249,6 +250,7 @@ pub(super) fn collect_trap_expression(
                                 hir::AsyncCallee::Method { class, .. } => Some(Type::Class(*class)),
                                 _ => None,
                             },
+                            None,
                         ),
                         hir,
                         expected,

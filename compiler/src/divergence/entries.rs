@@ -111,6 +111,7 @@ impl Divergence {
                 super::promise_reaction::PROMISEVOIDREACTIONPARAMETER
             }
 
+            Divergence::LambdaDefaultCapture => super::type_flow::LAMBDA_DEFAULT_CAPTURE,
             Divergence::FunctionValueOptionalArguments => {
                 super::type_flow::FUNCTION_VALUE_OPTIONAL_ARGUMENTS
             }

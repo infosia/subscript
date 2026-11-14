@@ -89,7 +89,9 @@ impl<'a> Analysis<'a> {
             E::Call { callee, args } if self.generator(callee) => {
                 args.iter().any(&mut visit)
                     || match callee {
-                        Callee::Value(v) | Callee::Method { recv: v, .. } => visit(v),
+                        Callee::Value(v)
+                        | Callee::NamedLambda { value: v, .. }
+                        | Callee::Method { recv: v, .. } => visit(v),
                         _ => false,
                     }
             }

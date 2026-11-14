@@ -11,7 +11,7 @@ impl Checker<'_> {
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Option<hir::Expr> {
-        let (id, signature, is_async) = fx
+        let (id, signature, is_async, defaults) = fx
             .scopes
             .iter()
             .rev()
@@ -19,23 +19,36 @@ impl Checker<'_> {
                 if scope.owns(name.sym.as_ref()) {
                     return Some(None);
                 }
-                if let Some((binding, id, signature, is_async)) = &scope.self_call {
+                if let Some((binding, id, signature, is_async, defaults)) = &scope.self_call {
                     if binding == name.sym.as_ref() {
-                        return Some(Some((*id, signature.clone(), *is_async)));
+                        return Some(Some((*id, signature.clone(), *is_async, defaults.clone())));
                     }
                 }
                 scope.fn_boundary.then_some(None)
             })
             .flatten()?;
         self.mark_user_call(call, false);
-        let params = signature
-            .params
-            .iter()
-            .cloned()
-            .map(ParamSig::positional)
-            .collect::<Vec<_>>();
+        let defaults = defaults.filter(|_| call.args.len() < signature.params.len());
+        if let Some(defaults) = &defaults {
+            self.check_omitted_lambda_defaults(defaults, call.args.len());
+        }
+        let params = defaults
+            .as_ref()
+            .map(Self::lambda_default_signature)
+            .unwrap_or_else(|| {
+                signature
+                    .params
+                    .iter()
+                    .cloned()
+                    .map(ParamSig::positional)
+                    .collect::<Vec<_>>()
+            });
         let args = self.check_args_with_arguments(
-            RejectionSite::FunctionValueArgumentCount,
+            if defaults.is_some() {
+                RejectionSite::SourceFunctionArgumentCount
+            } else {
+                RejectionSite::FunctionValueArgumentCount
+            },
             &params,
             &call.args,
             fx,
@@ -52,6 +65,7 @@ impl Checker<'_> {
                     id,
                     signature,
                     is_async,
+                    defaults,
                 },
                 args,
             },

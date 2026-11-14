@@ -1,5 +1,6 @@
 //! Runtime and environment checks for local self-calls (compiler.md §284).
-//! Cost: three checker calls, three lowerings, and one native run per tier.
+//! Cost: both tests total six checker calls, six lowerings, and two native runs per tier.
+//! Measured: both tests complete in 0.60 seconds (debug, Apple Silicon).
 
 use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
 use subscript_compiler::{check_program, SourceFile};
@@ -47,6 +48,51 @@ export async function main(): Promise<void> {
     let expected = b"borrowed:7\nborrowed:7\n3:4\nowned\nowned\n8\n7\n9\n";
     let hir = check_program(&files).expect("self-call source checks");
     let lir = lower_module(&hir).expect("self-call source lowers");
+    assert_eq!(interpret(&lir).expect("interpreter"), expected);
+    assert_eq!(run_jit(&files).expect("development tier"), expected);
+    assert_eq!(run_c_aot(&files).expect("ship tier"), expected);
+}
+
+/// compiler.md §288 rules 2, 5, and 6: defaults share declaration-call
+/// ordering, exceptions, and ownership, including an owned self-call.
+#[test]
+fn named_defaults_preserve_raises_handle_counts_and_owned_self_environments() {
+    let source = r#"
+function before(): i32 { return top(); }
+const seed = (n: i32 = 5): i32 => n;
+const top = (n: i32 = seed()): i32 => n;
+const callable = (f: () => i32 = (): i32 => 7): i32 => f();
+const initial = callable();
+function fail(): i32 { print("default"); throw new Error("failed"); }
+async function leaf(): Promise<i32> { return 3; }
+function make(): (n: i32, s: string) => i32 {
+    const base = 4;
+    const rec = (n: i32, s: string = "own"): i32 => {
+        print(`${s}${n}:${base}`);
+        if (n > 0) return rec(n - 1);
+        return base;
+    };
+    return rec;
+}
+export async function main(): Promise<void> {
+    print(`${before()}:${initial}`);
+    const owned = make(); print(`${owned(2, "arg")}`);
+    const job = async (n: i32 = fail()): Promise<i32> => n;
+    try { print(`${await job()}`); } catch (e) { if (e instanceof Error) print(e.message); }
+    print(`${await job(8)}`);
+    const use = async (first: Promise<i32>, second: Promise<i32> = first): Promise<i32> => {
+        return (await first) + (await second);
+    };
+    print(`${await use(leaf())}`);
+    const callback = (n: i32, f: () => i32 = (): i32 => 9): i32 => f();
+    print(`${callback(9)}`);
+}
+"#;
+    let files = [SourceFile::new("named-defaults.ts", source)];
+    let expected = b"5:7\narg2:4\nown1:4\nown0:4\n4\ndefault\nfailed\n8\n6\n9\n";
+    let hir = check_program(&files).expect("named defaults check");
+    let lir = lower_module(&hir).expect("named defaults lower");
+    subscript_codegen::lir::verify_module(&lir).expect("named defaults verify");
     assert_eq!(interpret(&lir).expect("interpreter"), expected);
     assert_eq!(run_jit(&files).expect("development tier"), expected);
     assert_eq!(run_c_aot(&files).expect("ship tier"), expected);

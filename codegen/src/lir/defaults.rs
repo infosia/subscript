@@ -5,6 +5,7 @@ use super::*;
 pub(super) enum DefaultOwner {
     Function(l::FunctionId),
     Method(l::MethodId),
+    Lambda(hir::LambdaId),
 }
 
 impl DefaultOwner {

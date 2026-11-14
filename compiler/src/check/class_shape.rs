@@ -614,6 +614,8 @@ impl<'p> Checker<'p> {
                             );
                         }
                         let signature = GlobalSig {
+                            named_lambda: false,
+                            lambda_defaults: None,
                             function_value_required: None,
                             state,
                             initializer: prop.value.as_ref().map(|e| self.initializer(e, Some(id))),
@@ -804,6 +806,8 @@ impl<'p> Checker<'p> {
                         self.class_sigs[id.0].fields.insert(
                             name.clone(),
                             GlobalSig {
+                                named_lambda: false,
+                                lambda_defaults: None,
                                 function_value_required: None,
                                 state: if prop.value.is_some() {
                                     TypeState::Undecided

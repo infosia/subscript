@@ -684,17 +684,31 @@ impl<'p> Checker<'p> {
             let callee = checker.apparent_expr(callee);
             match checker.apparent_type(&callee.ty.clone()) {
                 Type::Func(ft) => {
-                    let params: Vec<ParamSig> = ft
-                        .params
-                        .iter()
-                        .map(|t| ParamSig::positional(t.clone()))
-                        .collect();
+                    let named_call = matches!(&c.callee, ast::Callee::Expr(expr)
+                        if matches!(super::unparen_expr(expr), ast::Expr::Ident(_)));
+                    let defaults = (c.args.len() < ft.params.len() && named_call)
+                        .then(|| checker.named_lambda_defaults(&callee, fx))
+                        .flatten();
+                    if let Some(defaults) = &defaults {
+                        checker.check_omitted_lambda_defaults(defaults, c.args.len());
+                    }
+                    let params: Vec<ParamSig> = defaults
+                        .as_ref()
+                        .map(Self::lambda_default_signature)
+                        .unwrap_or_else(|| {
+                            ft.params
+                                .iter()
+                                .map(|t| ParamSig::positional(t.clone()))
+                                .collect()
+                        });
                     let name = match &callee.kind {
                         ExprKind::Local(name, ..) => name.clone(),
                         ExprKind::Global(symbol) => symbol.source_name(),
                         _ => "the function value".to_string(),
                     };
-                    let count_site = if c.args.len() < params.len()
+                    let count_site = if defaults.is_some() {
+                        RejectionSite::SourceFunctionArgumentCount
+                    } else if c.args.len() < params.len()
                         && checker
                             .function_value_required(&callee, fx)
                             .is_some_and(|required| c.args.len() >= required)
@@ -716,7 +730,14 @@ impl<'p> Checker<'p> {
                     let value = hir::Expr {
                         pending_work: None,
                         kind: ExprKind::Call {
-                            callee: Callee::Value(Box::new(callee)),
+                            callee: if let Some(defaults) = defaults {
+                                Callee::NamedLambda {
+                                    value: Box::new(callee),
+                                    defaults,
+                                }
+                            } else {
+                                Callee::Value(Box::new(callee))
+                            },
                             args,
                         },
                         ty: ft.ret.clone(),

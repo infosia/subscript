@@ -405,6 +405,8 @@ fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
 /// A module-level variable's declared shape.
 #[derive(Debug, Clone)]
 pub(crate) struct GlobalSig {
+    pub named_lambda: bool,
+    pub lambda_defaults: Option<hir::LambdaDefaults>,
     pub function_value_required: Option<usize>,
     pub state: TypeState,
     pub initializer: Option<Initializer>,
@@ -534,7 +536,14 @@ pub(crate) struct Local {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
     /// The running lambda binding and its decided signature (§284).
-    pub self_call: Option<(String, hir::LambdaId, crate::types::FuncType, bool)>,
+    pub self_call: Option<(
+        String,
+        hir::LambdaId,
+        crate::types::FuncType,
+        bool,
+        Option<hir::LambdaDefaults>,
+    )>,
+    pub named_lambdas: Shared<HashMap<String, hir::LambdaDefaults>>,
     pub vars: Shared<HashMap<String, Local>>,
     /// Source declaration identities for const index keys (§163).
     pub const_keys: Shared<HashMap<String, String>>,
@@ -878,7 +887,7 @@ type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
 #[derive(Debug, Clone)]
 pub(crate) struct FnCtx {
     /// A whole local const initializer that can name its running lambda (§284).
-    pub lambda_initializer: Option<(swc_common::Span, String)>,
+    pub lambda_initializer: Option<(swc_common::Span, String, bool)>,
     pub frames: Shared<Vec<Frame>>,
     pub lexical_class: Option<ClassId>,
     /// The generic class template whose body encloses a moved local
@@ -1404,6 +1413,7 @@ pub(crate) struct Checker<'p> {
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
     pub global_sigs: HashMap<String, GlobalSig>,
+    pub reported_lambda_defaults: HashSet<(String, u32, u32)>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,

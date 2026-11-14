@@ -191,7 +191,9 @@ impl AddressTaken<'_> {
             }
             K::Call { callee, args } => {
                 match callee {
-                    hir::Callee::Value(value) => self.expr(value),
+                    hir::Callee::Value(value) | hir::Callee::NamedLambda { value, .. } => {
+                        self.expr(value)
+                    }
                     hir::Callee::Method { recv, .. } if is_value_class(self.module, &recv.ty) => {
                         self.place(recv);
                     }
@@ -224,10 +226,12 @@ impl AddressTaken<'_> {
                                 .collect::<Vec<_>>()
                         }),
                     hir::Callee::LambdaSelf { signature, .. } => Some(signature.params.clone()),
-                    hir::Callee::Value(value) => match &value.ty {
-                        Type::Func(signature) => Some(signature.params.clone()),
-                        _ => None,
-                    },
+                    hir::Callee::Value(value) | hir::Callee::NamedLambda { value, .. } => {
+                        match &value.ty {
+                            Type::Func(signature) => Some(signature.params.clone()),
+                            _ => None,
+                        }
+                    }
                     hir::Callee::Method { recv, name } => match recv.ty {
                         Type::Class(class) => self
                             .module

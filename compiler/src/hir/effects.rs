@@ -544,6 +544,7 @@ impl Callee {
             Callee::Standard(_)
             | Callee::Foreign(_)
             | Callee::Value(_)
+            | Callee::NamedLambda { .. }
             | Callee::LambdaSelf { .. } => true,
             Callee::Method { recv, name } => {
                 matches!(recv.ty, Type::Class(_) | Type::Interface(_))

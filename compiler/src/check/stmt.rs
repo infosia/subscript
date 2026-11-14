@@ -363,21 +363,7 @@ impl<'p> Checker<'p> {
                 continue;
             }
             let saved_lambda_initializer = fx.lambda_initializer.take();
-            if !mutable && !name.is_empty() {
-                if let Some(ast::Expr::Arrow(arrow)) =
-                    d.init.as_deref().map(super::expr::unparen_expr)
-                {
-                    // compiler.md §285 rule 4: every self-call requires an
-                    // absent annotation or a bare function with the same arity.
-                    let admits_self_call = ann.as_ref().is_none_or(|ty| {
-                        matches!(self.apparent_type(ty), Type::Func(function)
-                            if function.params.len() == arrow.params.len())
-                    });
-                    if admits_self_call {
-                        fx.lambda_initializer = Some((arrow.span, name.clone()));
-                    }
-                }
-            }
+            self.prepare_named_lambda(d, mutable, &name, ann.as_ref(), fx);
             let mut init = if let Some(init_ast) = &d.init {
                 if declarations.len() > 1 {
                     let (init, prefix) = fx.with_synthetic_owner(
@@ -506,6 +492,7 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
+            self.remember_named_lambda(&name, d, mutable, &init, fx);
             if let Some(identity) = integer_key {
                 if let Some(scope) = fx.scopes.last_mut() {
                     scope.const_keys.insert(name.clone(), identity);

@@ -66,6 +66,8 @@ pub enum Divergence {
     PromiseVoidReactionParameter,
     /// An inferred function value has optional parameters only in TypeScript.
     FunctionValueOptionalArguments,
+    /// A named lambda call cannot omit a default that reads a captured local.
+    LambdaDefaultCapture,
     /// A null check of an element changes no type (§163).
     IndexedReadNullCheck,
     /// The language has no variadic parameters.
@@ -1091,6 +1093,7 @@ impl Divergence {
         Divergence::NestedNominalClass,
         Divergence::ErrorMemberOutsideSurface,
         Divergence::FunctionValueOptionalArguments,
+        Divergence::LambdaDefaultCapture,
         Divergence::IndexedReadNullCheck,
         Divergence::RestParameter,
         Divergence::ErasedAssignableEquality,
@@ -1673,6 +1676,14 @@ mod tests {
     /// A collision id that is not a `C<n>` heading names the section that
     /// decided the rule. These are the accepted spellings.
     fn is_section_id(id: &str) -> bool {
+        let id = if let Some((section, rule)) = id.split_once(" rule ") {
+            if rule.is_empty() || !rule.chars().all(|c| c.is_ascii_digit()) {
+                return false;
+            }
+            section
+        } else {
+            id
+        };
         for file in ["compiler.md §", "stdlib.md §", "collisions.md §"] {
             if let Some(rest) = id.strip_prefix(file) {
                 return !rest.is_empty()
@@ -1684,6 +1695,13 @@ mod tests {
             return !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit());
         }
         false
+    }
+
+    #[test]
+    fn section_ids_accept_a_numbered_rule() {
+        assert!(is_section_id("compiler.md §288 rule 3"));
+        assert!(!is_section_id("compiler.md §288 rule "));
+        assert!(!is_section_id("compiler.md §288 rule missing"));
     }
 
     #[test]

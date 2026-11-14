@@ -348,7 +348,7 @@ impl<'a> Analysis<'a> {
                             self.call("self-call", params, args);
                         }
                     }
-                } else if let Callee::Value(value) = callee {
+                } else if let Callee::Value(value) | Callee::NamedLambda { value, .. } = callee {
                     for (index, arg) in args.iter().enumerate() {
                         self.escapes.push((
                             format!(

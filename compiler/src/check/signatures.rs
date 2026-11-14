@@ -179,6 +179,8 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             symbol,
                             GlobalSig {
+                                named_lambda: false,
+                                lambda_defaults: None,
                                 function_value_required: None,
                                 state: crate::check::initializer::TypeState::decided(Type::U64),
 
@@ -539,6 +541,13 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             self.declaration_symbol(file, &name),
                             GlobalSig {
+                                named_lambda: v.kind == ast::VarDeclKind::Const
+                                    && binding.type_ann.is_none()
+                                    && matches!(
+                                        d.init.as_deref().map(super::expr::unparen_expr),
+                                        Some(ast::Expr::Arrow(_))
+                                    ),
+                                lambda_defaults: None,
                                 function_value_required: None,
                                 state,
                                 initializer: d.init.as_ref().map(|e| self.initializer(e, None)),

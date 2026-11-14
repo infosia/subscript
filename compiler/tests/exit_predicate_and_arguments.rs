@@ -124,7 +124,7 @@ fn inferred_binding_facts_split_the_function_value_site() {
     for global in [false, true] {
         for initializer in ["(a:i32,b:i32=5):i32=>a+b", "f", "g"] {
             for (args, diverges) in [("1", true), ("", false)] {
-                let declarations = format!("const g = f; const h = {initializer};");
+                let declarations = format!("const g = f; let h = {initializer};");
                 let (outside, inside) = if global {
                     (declarations.as_str(), "")
                 } else {

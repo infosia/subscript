@@ -1360,6 +1360,15 @@ pub enum ArrFmtKind {
     Str,
 }
 
+/// The declaration facts of a named lambda call (compiler.md §288 rule 2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LambdaDefaults {
+    /// Identity used to share lowered default functions.
+    pub id: LambdaId,
+    /// Checked parameter names, types, and default expressions.
+    pub params: Vec<Param>,
+}
+
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callee {
@@ -1419,6 +1428,15 @@ pub enum Callee {
         signature: crate::types::FuncType,
         /// Whether the running lambda creates an async frame.
         is_async: bool,
+        /// Defaults selected by the checker for omitted arguments (§288).
+        defaults: Option<LambdaDefaults>,
+    },
+    /// A named const lambda call with omitted arguments (compiler.md §288).
+    NamedLambda {
+        /// The closure value evaluated before the arguments.
+        value: Box<Expr>,
+        /// Declaration defaults selected for this call.
+        defaults: LambdaDefaults,
     },
     /// A function-typed value (function pointer or local lambda).
     Value(Box<Expr>),
@@ -1434,6 +1452,18 @@ pub enum Callee {
 }
 
 impl Callee {
+    /// Checked defaults selected at a named lambda call (compiler.md §288).
+    pub fn lambda_defaults(&self) -> Option<&LambdaDefaults> {
+        match self {
+            Self::NamedLambda { defaults, .. }
+            | Self::LambdaSelf {
+                defaults: Some(defaults),
+                ..
+            } => Some(defaults),
+            _ => None,
+        }
+    }
+
     /// Whether this callee contributes a `TrapSite::Call`.
     ///
     /// Kept private so `Expr::trap_sites` is the only backend-visible
@@ -1443,6 +1473,7 @@ impl Callee {
             Callee::Standard(_)
             | Callee::Func(_)
             | Callee::Value(_)
+            | Callee::NamedLambda { .. }
             | Callee::LambdaSelf { .. }
             | Callee::Method { .. }
             | Callee::Foreign(_) => true,
@@ -1530,6 +1561,7 @@ pub fn operation_signature_target(
         | Callee::Func(_)
         | Callee::Foreign(_)
         | Callee::Value(_)
+        | Callee::NamedLambda { .. }
         | Callee::LambdaSelf { .. } => return None,
     };
     Some((target, None))

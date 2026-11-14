@@ -146,6 +146,26 @@ fn lambda_facts(module: &Module, expression: &Expr, facts: &mut Vec<(bool, Vec<b
                 .collect(),
         ));
     }
+    if let ExprKind::Call { callee, .. } = &expression.kind {
+        if let Some(defaults) = callee.lambda_defaults() {
+            facts.push((
+                false,
+                defaults
+                    .params
+                    .iter()
+                    .map(|parameter| {
+                        parameter
+                            .default
+                            .as_ref()
+                            .is_some_and(|default| module.expression_can_raise(default))
+                    })
+                    .collect(),
+            ));
+            for default in defaults.params.iter().filter_map(|p| p.default.as_ref()) {
+                lambda_facts(module, default, facts);
+            }
+        }
+    }
     for child in expression.children() {
         match child {
             HirChild::Expr(child) => lambda_facts(module, child, facts),
@@ -177,6 +197,27 @@ fn set_lambda_facts(expression: &mut Expr, facts: &mut impl Iterator<Item = (boo
         *can_raise = body;
         for (parameter, default) in params.iter_mut().zip(defaults) {
             parameter.default_can_raise = default;
+        }
+    }
+    if let ExprKind::Call { callee, .. } = &mut expression.kind {
+        let defaults = match callee {
+            Callee::NamedLambda { defaults, .. }
+            | Callee::LambdaSelf {
+                defaults: Some(defaults),
+                ..
+            } => Some(defaults),
+            _ => None,
+        };
+        if let Some(defaults) = defaults {
+            let (_, raises) = facts
+                .next()
+                .unwrap_or((true, vec![true; defaults.params.len()]));
+            for (parameter, raises) in defaults.params.iter_mut().zip(raises) {
+                parameter.default_can_raise = raises;
+                if let Some(default) = &mut parameter.default {
+                    set_lambda_facts(default, facts);
+                }
+            }
         }
     }
     for child in expression.children_mut() {
@@ -376,6 +417,14 @@ impl Module {
 
     /// The caller evaluates the defaults of the absent arguments.
     fn call_defaults_can_raise(&self, callee: &Callee, supplied: usize) -> bool {
+        if let Some(defaults) = callee.lambda_defaults() {
+            return defaults
+                .params
+                .iter()
+                .skip(supplied)
+                .filter_map(|p| p.default.as_ref())
+                .any(|default| self.expression_can_raise(default));
+        }
         let function = match callee {
             Callee::Func(name) => self
                 .functions
@@ -455,7 +504,7 @@ pub(crate) fn call_can_raise(module: &Module, callee: &Callee, _args: &[Expr]) -
         Callee::Method { recv, name } => module
             .method(&recv.ty, name)
             .is_some_and(|method| method.can_raise && !method.is_async),
-        Callee::Value(_) => true,
+        Callee::Value(_) | Callee::NamedLambda { .. } => true,
         Callee::LambdaSelf { is_async, .. } => !is_async,
         Callee::Standard(_)
         | Callee::Text(_)
@@ -498,6 +547,50 @@ mod tests {
             .iter()
             .find(|function| function.name == name)
             .expect("function")
+    }
+
+    #[test]
+    fn missing_named_and_self_default_facts_use_conservative_raise_facts() {
+        let checked = module(
+            r#"
+export function main(): void {
+    const rec = (n: i32, s: string = "default"): string => {
+        if (n > 0) return rec(n - 1);
+        return s;
+    };
+    rec(1);
+}
+"#,
+        );
+        let main = function(&checked, "main");
+        let crate::hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("lambda")
+        };
+        let crate::hir::ExprKind::Lambda { body, .. } = &init.kind else {
+            panic!("lambda")
+        };
+        let crate::hir::Stmt::If { then, .. } = &body[0] else {
+            panic!("self-call branch")
+        };
+        let crate::hir::Stmt::Return {
+            value: Some(self_call),
+            ..
+        } = &then[0]
+        else {
+            panic!("self-call")
+        };
+        let crate::hir::Stmt::Expr(named_call) = &main.body[1] else {
+            panic!("named call")
+        };
+        for call in [self_call, named_call] {
+            let mut call = call.clone();
+            super::set_lambda_facts(&mut call, &mut std::iter::empty());
+            let crate::hir::ExprKind::Call { callee, .. } = &call.kind else {
+                panic!("call")
+            };
+            let defaults = callee.lambda_defaults().expect("omitted defaults");
+            assert!(defaults.params.iter().all(|param| param.default_can_raise));
+        }
     }
 
     #[test]

@@ -8931,7 +8931,7 @@ END PROGRAM
 PROGRAM	s164-function-value-default			0
 FILE	E	target/s154/forms/s164-function-value-default/main.ts
 export {};
-const h = (a: i32, b: i32 = 5): i32 => a + b;
+let h = (a: i32, b: i32 = 5): i32 => a + b;
 h(1);
 END FILE
 END PROGRAM
@@ -9968,5 +9968,11 @@ FILE	E	main.ts
 // expected-error: S100 at line 8
 class Holder { constructor(public cb:SubLogCallback) {} install():void { new SubCallbackInfo(this.cb,null,null); } }
 export function main():void { const k:i32=7; new Holder((m,u1,u2):void=>{print(`${k}`);}).install(); }
+END FILE
+END PROGRAM
+PROGRAM	s288-lambda-default-capture			0
+FILE	E	main.ts
+export {};
+function f(): void { const captured: i32 = 5; const h = (n: i32 = captured): i32 => n; h(); }
 END FILE
 END PROGRAM

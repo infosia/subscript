@@ -115,7 +115,9 @@ impl Expr {
             K::Call { callee, args } => {
                 let mut children = Vec::with_capacity(args.len() + 1);
                 match callee {
-                    Callee::Value(value) => children.push(HirChild::Expr(value)),
+                    Callee::Value(value) | Callee::NamedLambda { value, .. } => {
+                        children.push(HirChild::Expr(value))
+                    }
                     Callee::Method { recv, .. } => children.push(HirChild::Expr(recv)),
                     _ => {}
                 }
@@ -215,7 +217,9 @@ impl Expr {
             K::Call { callee, args } => {
                 let mut children = Vec::with_capacity(args.len() + 1);
                 match callee {
-                    Callee::Value(value) => children.push(HirChildMut::Expr(value)),
+                    Callee::Value(value) | Callee::NamedLambda { value, .. } => {
+                        children.push(HirChildMut::Expr(value))
+                    }
                     Callee::Method { recv, .. } => children.push(HirChildMut::Expr(recv)),
                     _ => {}
                 }
