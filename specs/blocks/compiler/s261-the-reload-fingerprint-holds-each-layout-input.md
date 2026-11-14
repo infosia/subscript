@@ -77,3 +77,4 @@ Each fixture now has a directory of its own.
    `name?: A` to `name: A` in a descriptor keeps the hash. An object
    that the old code made can hold the absence value of §43, which the
    new code does not expect. This is not measured.
+   *(Selected 2026-11-15 for §294.)*
