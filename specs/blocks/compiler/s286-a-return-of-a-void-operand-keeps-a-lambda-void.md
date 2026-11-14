@@ -109,12 +109,15 @@ One fresh review of the implementation. No CRITICAL finding.
 1. `const a = () => { return b(); }; const b = () => { return a(); };`
    is accepted with the type `() => void` for each. `tsc` rejects it
    with TS7023. The pin rejected it with S100.
+   *(Selected 2026-11-14 for §290.)*
 2. In a module-scope lambda, `return g();` where `g` returns a value
    still gives a second diagnostic at a caller. Rule 3a reads only the
    syntax, and a call can have any type.
+   *(Selected 2026-11-14 for §290.)*
 3. `async () => { return w1(); }` with `w1(): Promise<void>` stays
    rejected. `tsc` accepts it with the result `Promise<void>`.
    *(Closed 2026-11-14 by §287.)*
 4. A conditional operand with a branch that is a call of a non-`void`
    function takes the diagnostics of §237 rule 2, not the diagnostic
    of rule 3. The program is rejected in both.
+   *(Selected 2026-11-14 for §290.)*
