@@ -329,3 +329,4 @@ Every section, with its status:
 | §285 | A local lambda takes its self-call type from the `const` annotation | active | [`s285-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.md`](compiler/s285-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.md) |
 | §286 | A `return` of a `void` operand keeps a lambda `void` | active | [`s286-a-return-of-a-void-operand-keeps-a-lambda-void.md`](compiler/s286-a-return-of-a-void-operand-keeps-a-lambda-void.md) |
 | §287 | An async `void` lambda returns a `Promise<void>` | active | [`s287-an-async-void-lambda-returns-a-promise-of-void.md`](compiler/s287-an-async-void-lambda-returns-a-promise-of-void.md) |
+| §288 | A call of a `const` lambda by its name takes its defaults | active | [`s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md`](compiler/s288-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.md) |

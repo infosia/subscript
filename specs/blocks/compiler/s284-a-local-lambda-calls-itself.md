@@ -100,6 +100,7 @@ rule 1 keeps its rejection. Three MINOR findings, recorded:
 2. Two local lambdas that call each other stay rejected (rule 6).
 3. A self-call that omits a defaulted argument is rejected (§284.3
    item 1).
+   *(Selected 2026-11-14 for §288.)*
 4. A result decided by the annotation of the `const` does not count
    for rule 2 (§284.3 item 2).
    *(Closed 2026-11-14 by §285.)*
