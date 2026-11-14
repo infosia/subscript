@@ -340,3 +340,6 @@ gate full 35f009b0ddffa3c8ff48ead9f74641563372a963 dirty:3 debug 3390/0/5 releas
 ```
 
 The counts move by +2 in each profile: the two pool controls.
+
+## §280 — the example host tests
+
