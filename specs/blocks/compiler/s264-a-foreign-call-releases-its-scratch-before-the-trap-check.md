@@ -85,3 +85,4 @@ corrected the problem text and acceptance items 1 and 2.
 1. If the allocation of a scratch argument fails, the two tiers leave
    the call after the mark with no release. The scratch that the call
    allocated before stays until the Context drops.
+   *(Selected 2026-11-15 for §296.)*
