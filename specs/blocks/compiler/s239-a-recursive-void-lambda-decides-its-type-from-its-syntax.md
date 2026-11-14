@@ -74,3 +74,4 @@ of the pin and a binary of the change differs only at `a426`.
    read before its declaration in this block":
    `const loc = (k: i32) => { if (k > 0) loc(k - 1); };` in a function
    body. `tsc` accepts it. Its rule is not a rule of this section.
+   *(Closed 2026-11-14 by §284 for a self-call.)*

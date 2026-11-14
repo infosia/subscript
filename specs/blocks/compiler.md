@@ -325,3 +325,4 @@ Every section, with its status:
 | §281 | The generic matrix checks each control and each record once | active | [`s281-the-generic-matrix-checks-each-control-and-record-once.md`](compiler/s281-the-generic-matrix-checks-each-control-and-record-once.md) |
 | §282 | The mutation sweep runs its inputs on a pool | active | [`s282-the-mutation-sweep-runs-its-inputs-on-a-pool.md`](compiler/s282-the-mutation-sweep-runs-its-inputs-on-a-pool.md) |
 | §283 | Three test assertions that cannot fail are replaced | active | [`s283-three-test-assertions-that-cannot-fail-are-replaced.md`](compiler/s283-three-test-assertions-that-cannot-fail-are-replaced.md) |
+| §284 | A local lambda calls itself | active | [`s284-a-local-lambda-calls-itself.md`](compiler/s284-a-local-lambda-calls-itself.md) |
