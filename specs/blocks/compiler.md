@@ -322,3 +322,4 @@ Every section, with its status:
 | §278 | The golden sweep runs each entry once | active | [`s278-the-golden-sweep-runs-each-entry-once.md`](compiler/s278-the-golden-sweep-runs-each-entry-once.md) |
 | §279 | The frame-root corpus check runs its entries on a pool | active | [`s279-the-frame-root-corpus-check-runs-its-entries-on-a-pool.md`](compiler/s279-the-frame-root-corpus-check-runs-its-entries-on-a-pool.md) |
 | §280 | The example host tests use the CLI that cargo built for the test | active | [`s280-the-example-host-tests-use-the-cli-that-cargo-built.md`](compiler/s280-the-example-host-tests-use-the-cli-that-cargo-built.md) |
+| §281 | The generic matrix checks each control and each record once | active | [`s281-the-generic-matrix-checks-each-control-and-record-once.md`](compiler/s281-the-generic-matrix-checks-each-control-and-record-once.md) |

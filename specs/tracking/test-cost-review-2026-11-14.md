@@ -385,3 +385,6 @@ gate full 3b1b68eef92ded3c082a0cf6c047b1f6ac3cd55c dirty:7 debug 3392/0/5 releas
 The counts move by +2 in each profile: four new tests and two removed.
 The release step took 334 s. It now builds the release CLI for the new
 test, which the debug step built before.
+
+## §281 — the generic matrix
+
