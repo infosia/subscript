@@ -541,3 +541,6 @@ gate full 4f572ed78a5aac94010da6eb0306ac631bb069d3 dirty:3 debug 3393/0/5 releas
 ```
 
 The counts move by +1 in each profile: the harness control.
+
+## §283 — three assertions that cannot fail
+
