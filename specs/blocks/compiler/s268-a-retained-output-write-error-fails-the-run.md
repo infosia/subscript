@@ -64,5 +64,6 @@ file.
 1. The tests make the retained file through `RetainedOutput::new`, which
    reads `SUBSCRIPT_CODEGEN_JIT_OUTPUT_FILE`. If the test environment
    sets it, the tests use that file.
+   *(Selected 2026-11-15 for §302.)*
 2. No test sends the error through the fork and the outcome protocol.
    The protocol path is older than this section.

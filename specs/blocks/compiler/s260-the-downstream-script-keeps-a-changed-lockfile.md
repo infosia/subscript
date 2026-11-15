@@ -75,3 +75,4 @@ One fresh review of the implementation. No CRITICAL finding.
 
 1. If the gate stages `Cargo.lock`, the cleanup restores the file from
    the index, so the staged change stays.
+   *(Selected 2026-11-15 for §302.)*

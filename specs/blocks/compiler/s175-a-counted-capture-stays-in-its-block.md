@@ -118,5 +118,6 @@ The Phase Review found these. None is CRITICAL or MAJOR.
    *(Closed by §182.)*
 4. `uncounted_bindings_keep_the_same_outer_assignment` has no rejected
    control in the shape of its four accepted programs.
+   *(Selected 2026-11-15 for §302.)*
 5. The four reject entries share the id `r396`. No test needs a unique
    id; C5 cites the full names.

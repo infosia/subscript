@@ -74,8 +74,11 @@ function body.
 1. The ship test does not delete its count file before each run. If
    the post-run hook did not run, the test would read the count of the
    run before. The hook runs on each exit today.
+   *(Selected 2026-11-15 for §302.)*
 2. The test directory stays in the temporary directory if the test
    fails.
+   *(Selected 2026-11-15 for §302.)*
 3. The new `scratch_mark` fields of the two `BoundaryTargets` structs
    have no doc comment, and one emitted C check has the indent of the
    outer block.
+   *(Selected 2026-11-15 for §302.)*

@@ -65,5 +65,8 @@ MINOR findings:
 ### 283.4 Open
 
 1. The fixture `Drop` panics if the removal fails (§283.3 item 1).
+   *(Selected 2026-11-15 for §302.)*
 2. The fixture name has no counter (§283.3 item 2).
+   *(Selected 2026-11-15 for §302.)*
 3. The empty fixture holds no unnumbered file (§283.3 item 3).
+   *(Selected 2026-11-15 for §302.)*

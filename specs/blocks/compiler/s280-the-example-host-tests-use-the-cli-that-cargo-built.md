@@ -71,6 +71,8 @@ control can fail. Five MINOR findings:
 
 1. The host test failure prints the stdout as bytes and does not name
    the golden path (§280.3 item 1).
+   *(Selected 2026-11-15 for §302.)*
 2. The stub control leaves its scratch directory if an assertion fails
    (§280.3 item 2).
+   *(Selected 2026-11-15 for §302.)*
 3. The new tests have no recorded Windows run (§280.3 item 3).
