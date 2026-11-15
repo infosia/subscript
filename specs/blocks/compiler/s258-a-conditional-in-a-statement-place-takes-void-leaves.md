@@ -100,6 +100,7 @@ evaluation, the short circuit, an `await` leaf, and a `yield` leaf.
    accepts each form. `b ? 1 : "s";` gives S100 "conditional branches
    have no common type". `b && 5;`, `b && k();`, and `b && (n = 3);`
    give S100 "logical operators require booleans, got `i32`".
+   *(Selected 2026-11-15 for §300.)*
 2. These forms keep their rejection, and `tsc` accepts each:
    `(b && g(1)) || g(2);` (the left operand is not a statement place),
    `b ? c?.m() : g(1);` (S012), `gr((n) => n > 0 && g(n))` with a
