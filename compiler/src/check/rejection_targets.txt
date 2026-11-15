@@ -831,7 +831,7 @@ DescriptorRequiredMemberMissing	a-s003	S100	descriptor literal for `D` is missin
 DescriptorRequiredMemberMissing	a-s005	S100	descriptor literal for `D` is missing required member `x`
 LocalAggregateFrameLimit	c-corpus-r69-closure-environment-layout-too-large	S100	local aggregate storage makes the accumulated Cranelift stack frame exceed the supported frame limit of 2147483632 bytes
 InterfaceMemberForm	source-interface-declaration	S100	interface `A` has a member form outside the decided surface
-InterfaceMemberForm	c-nullable-function-class	S100	interface `C` has a member form outside the decided surface
+InterfaceCallSignature	c-nullable-function-class	S100	interface `C` has a member form outside the decided surface
 InterfaceMemberForm	InterfaceMemberForm	S100	interface `I` has a member form outside the decided surface
 InterfaceResultAnnotationMissing	interface-result-annotation-missing	S100	interface members require a result type annotation
 InterfaceValueType	interface-value-type	S100	interface `I` is a constraint only; write a type parameter `T extends I`
@@ -929,7 +929,7 @@ DefaultExportDeclaration	c-namespace-default-export	S100	the module surface requ
 ThisAnnotation	ThisAnnotation	S100	type annotation form outside the decided surface
 StatementNonBooleanCondition	a-s236	S100	condition must be boolean, got `((i32) => i32) | null`
 EnumMember	EnumMember	S100	`E` has no member `toString`
-ReferenceClassInheritance	a-s168	S100	class inheritance is not in the decided surface
+ArrayClassInheritance	a-s168	S100	class inheritance is not in the decided surface
 WriteAccessorWithoutRead	a-s032	S100	static write accessor `x` requires a read accessor with the same name
 WriteAccessorWithoutRead	a-s138	S100	write accessor `x` requires a read accessor with the same name
 WriteAccessorWithoutRead	a-s180	S100	static write accessor `x` requires a read accessor with the same name
@@ -1492,7 +1492,7 @@ FileModuleStringAlias	s185-alias-data	S100	accepted forms: readFile(path: string
 FileModuleImportForm	s185-reexport	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleFunctionValue	s185-function-value	S100	`readFile` from node:fs/promises can only be called; accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 PromiseCombinatorCall	s186-then-no-callback	S013	`.then(...)` requires a callback
-PromiseCombinatorCall	s186-catch-no-callback	S013	`.catch(...)` requires a callback
+PromiseCatchCall	s186-catch-no-callback	S013	`.catch(...)` requires a callback
 PromiseCombinatorCall	s186-then-type-arguments	S013	`.then(...)` takes no type arguments; the callback result gives the value type
 PromiseCombinatorCall	s186-then-null	S013	`.then(...)` takes no `null` callback; `.catch(r)` takes a rejection callback alone
 PromiseVoidReactionParameter	s186-void-then-parameter	S100	a `.then(...)` callback on `Promise<void>` takes no parameter; the language has no `void` parameter type
@@ -1519,7 +1519,7 @@ PromiseReactionParameter	s186-finally-optional-parameter	S100	a `.finally(...)` 
 PromiseReactionArguments	s186-void-then-annotated	S013	a `.then(...)` callback on `Promise<void>` takes no parameter
 PromiseReactionArguments	s186-void-then-named	S013	a `.then(...)` callback on `Promise<void>` takes no parameter
 PromiseReactionArguments	s186-then-nullable-value	S013	a `.then(...)` callback parameter must be `Foo | null`, the value type of the handle; it is `Foo`
-AsyncArrowCapture	s186-then-this	S009	a `.then(...)` callback cannot capture `this`; copy the needed field into a `const` first
+ReactionReceiverCapture	s186-then-this	S009	a `.then(...)` callback cannot capture `this`; copy the needed field into a `const` first
 ForeignResultRead	foreign-result-read	S100	foreign function `f_result_read` result reads `L.items`, a count-first pair field with no read lowering; a struct that C writes and the script reads must not hold one (compiler.md §187)
 ForeignStructCycle	foreign-struct-cycle	S100	foreign function `f_cycle` parameter `n` passes `N.next`, a member through which a struct reaches itself; a call cannot build a struct cycle as scratch copies (compiler.md §187)
 ProvenanceEmptyMember	new-prov-member-empty	S100	mirror `target/s154/forms/new-prov-member-empty/mirror.d.ts` has malformed provenance record `// @subscript-c-member aggregate="" member="m" const=true`: member aggregate and member fields must be non-empty

@@ -55,17 +55,17 @@ macro_rules! rejection_classes {
                     }
                     Self::InitializerSegmentRange => (RuleCode::S100, TscRejects),
                     Self::GlobalInitializerOwnerRange => (RuleCode::S100, TscRejects),
-                    Self::JsonSerializerTypeKind => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
-                    Self::JsonValidatorTypeKind => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
-                    Self::JsonConstructorTypeKind => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
+                    Self::JsonSerializerTypeKind => (RuleCode::S014, TscRejects),
+                    Self::JsonValidatorTypeKind => (RuleCode::S014, TscRejects),
+                    Self::JsonConstructorTypeKind => (RuleCode::S014, TscRejects),
                     Self::JsonArrayConstructorTypeKind => {
-                        (RuleCode::S014, Diverges(Divergence::JsonTypeDomain))
+                        (RuleCode::S014, TscRejects)
                     }
-                    Self::JsonArrayStoreTypeKind => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
+                    Self::JsonArrayStoreTypeKind => (RuleCode::S014, TscRejects),
                     Self::RegexPattern => (RuleCode::S100, TscRejects),
-                    Self::JsonMissingSyntaxError => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
-                    Self::JsonMissingTypeError => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
-                    Self::JsonMissingGraphType => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
+                    Self::JsonMissingSyntaxError => (RuleCode::S014, TscRejects),
+                    Self::JsonMissingTypeError => (RuleCode::S014, TscRejects),
+                    Self::JsonMissingGraphType => (RuleCode::S014, TscRejects),
                     Self::InitializerMissingSummary => (RuleCode::S100, TscRejects),
                     Self::InitializerMissingGlobal => (RuleCode::S100, TscRejects),
                     Self::ProvenanceInvalidUnicodeEncoding => (RuleCode::S100, TscRejects),

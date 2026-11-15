@@ -6,7 +6,7 @@
 //! TypeScript form, the subscript form for the same intent, the reason,
 //! and the record id.
 //!
-//! One `match` holds the content. No other place holds a fragment.
+//! The variant table holds the shared content. Site entries specialize both fragments (§311).
 //!
 //! The `collision` id is a `collisions.md` heading id (`C1`..`C15`)
 //! where the record has one. Where it has none, the id names the

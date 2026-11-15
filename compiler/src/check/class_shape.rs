@@ -515,7 +515,13 @@ impl<'p> Checker<'p> {
                 );
             } else {
                 self.reject_subset(
-                    RejectionSite::ReferenceClassInheritance,
+                    if matches!(&**sup, ast::Expr::Ident(id) if id.sym.as_ref() == "Array") {
+                        RejectionSite::ArrayClassInheritance
+                    } else if matches!(&**sup, ast::Expr::Ident(id) if id.sym.as_ref() == "Set") {
+                        RejectionSite::SetClassInheritance
+                    } else {
+                        RejectionSite::ReferenceClassInheritance
+                    },
                     "class inheritance is not in the decided surface",
                     pos,
                 );

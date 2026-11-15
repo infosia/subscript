@@ -387,14 +387,12 @@ TypeScript:
 
 ```typescript
 function* values(): Generator<i32> { new TaskGroup(); yield 1; }
-export function main(): void {}
 ```
 
 subscript:
 
 ```typescript
 async function values(): Promise<void> { const g = new TaskGroup(); await g.join(); }
-export function main(): void {}
 ```
 
 A dropped generator does not execute a lexical scope exit. Put the group in an async function and await its join. (collisions.md C24)
@@ -436,15 +434,13 @@ map does not support a function result. Use a typed array and push each function
 TypeScript:
 
 ```typescript
-async function probe(): Promise<void> { const hs = [1].map(async (v: i32): Promise<i32> => v); await Promise.all(hs); }
-export function main(): void {}
+async function f(): Promise<void> { const jobs = [1].map(async (x: i32): Promise<i32> => x); await Promise.all(jobs); }
 ```
 
 subscript:
 
 ```typescript
-class Job { n: i32; constructor(n: i32) { this.n = n; } async run(): Promise<i32> { return this.n; } } async function probe(): Promise<void> { const hs: Promise<i32>[] = []; for (const v of [1]) { const job = new Job(v); hs.push(job.run()); } await Promise.all(hs); }
-export function main(): void {}
+async function work(x: i32): Promise<i32> { return x; } async function f(): Promise<void> { const jobs: Promise<i32>[] = []; for (const x of [1]) { jobs.push(work(x)); } await Promise.all(jobs); }
 ```
 
 map cannot transfer a counted callback result. Use a for-of loop, push each handle, and await the handle array. (compiler.md §171)
@@ -509,14 +505,12 @@ TypeScript:
 
 ```typescript
 class C { n: i32 = 1; f(): void { const job = async (): Promise<i32> => this.n; } }
-export function main(): void {}
 ```
 
 subscript:
 
 ```typescript
 class C { n: i32 = 1; f(): void { const self = this; const job = async (): Promise<i32> => self.n; } }
-export function main(): void {}
 ```
 
 The receiver must appear as an explicit const capture or a class field. (collisions.md C24)

@@ -64,8 +64,8 @@ fn s303_rule3() {
         "spread arguments require variadic parameters, which the language does not have"
     );
     assert_eq!(*ds[0].example.unwrap(), DivergenceEntry {
-        ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const callbacks: ((x: i32) => i32)[] = [(x: i32): i32 => x]; await leaf().then(...callbacks); }",
-        subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { await leaf().then((x: i32): i32 => x); }",
+        ts: "async function leaf(): Promise<i32> { return 1; } async function f(): Promise<void> { await leaf().then(...[(x: i32): i32 => x]); }",
+        subscript: "async function leaf(): Promise<i32> { return 1; } async function f(): Promise<void> { await leaf().then((x: i32): i32 => x); }",
         why: "A reaction takes explicit callbacks; spread arguments require variadic parameters, which the language does not have.",
         collision: "collisions.md C8; compiler.md §186 rule 3",
     });
@@ -91,12 +91,15 @@ fn s303_rule5_set_repeated_value() {
     let ds = diagnostics("export function main(): void { new Set<i32>().forEach((v: i32, again: i32): void => {}); }");
     assert_eq!(ds[0].message, "`Set.forEach` callbacks take exactly 1 parameter(s); extra lib callback parameters are not accepted (Q24)");
     assert_eq!(ds[0].divergence, Some(Divergence::CallbackParameterShape));
-    assert_eq!(*ds[0].example.unwrap(), DivergenceEntry {
-        ts: "new Set<i32>().forEach((v: i32, again: i32): void => {});",
-        subscript: "new Set<i32>().forEach((v: i32): void => {});",
-        why: "Set.forEach passes the value twice in JavaScript; this callback place passes it once.",
-        collision: "stdlib.md §10.4; Q27",
-    });
+    assert_eq!(
+        *ds[0].example.unwrap(),
+        DivergenceEntry {
+            ts: "new Set<i32>().forEach((v: i32, again: i32): void => {});",
+            subscript: "new Set<i32>().forEach((v: i32): void => {});",
+            why: "Set.forEach passes the value twice in JavaScript; this callback place passes it once.",
+            collision: "stdlib.md §10.4; Q27",
+        }
+    );
 }
 
 #[test]

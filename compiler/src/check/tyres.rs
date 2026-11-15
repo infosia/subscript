@@ -138,6 +138,7 @@ impl<'p> Checker<'p> {
                         ast::TsType::TsRestType(_) => RejectionSite::RestAnnotation,
                         ast::TsType::TsConditionalType(_) => RejectionSite::ConditionalAnnotation,
                         ast::TsType::TsInferType(_) => RejectionSite::InferAnnotation,
+                        ast::TsType::TsTypeOperator(op) if op.op == ast::TsTypeOperatorOp::KeyOf => RejectionSite::KeyofAnnotation,
                         ast::TsType::TsTypeOperator(_) => RejectionSite::OperatorAnnotation,
                         ast::TsType::TsIndexedAccessType(_) => RejectionSite::IndexedAnnotation,
                         ast::TsType::TsMappedType(_) => RejectionSite::MappedAnnotation,
@@ -152,7 +153,7 @@ impl<'p> Checker<'p> {
                         },
                         _ => RejectionSite::UnsupportedAnnotationKind,
                     },
-                    "type annotation form outside the decided surface",
+                    if matches!(other, ast::TsType::TsTypeOperator(op) if op.op == ast::TsTypeOperatorOp::KeyOf) { "`keyof` annotations are not supported; name each accepted key explicitly" } else { "type annotation form outside the decided surface" },
                     pos,
                 );
                 Type::Error

@@ -24,6 +24,7 @@ mod member_modifiers;
 #[cfg(test)]
 mod member_modifiers_tests;
 pub(crate) mod rejection;
+mod rejection_examples;
 #[cfg(test)]
 mod rejection_fact_tests;
 mod rejection_facts;

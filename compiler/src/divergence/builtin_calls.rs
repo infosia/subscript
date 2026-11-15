@@ -221,7 +221,7 @@ pub(super) const UNINFERRED_CONTAINER_CONSTRUCTION: DivergenceEntry = Divergence
 };
 
 pub(super) const WORKER_SPAWN_SPREAD: DivergenceEntry = DivergenceEntry {
-    ts: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {}\nexport function main(): void { const entries: [(i: Inbox<M>, o: Outbox<M>) => void] = [entry]; Worker.spawn(...entries); }",
+    ts: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {} function f(): void { Worker.spawn(...[entry] as const); }",
     subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {}\nexport function main(): void { Worker.spawn(entry); }",
     why: "Worker.spawn takes one directly named entry function; a spread argument does not supply that direct source form.",
     collision: "compiler.md §40.1",
@@ -333,7 +333,7 @@ pub(super) const SET_CALLBACK_THIS_ARGUMENT: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const MAP_GROUP_BY_ARRAY_SOURCE: DivergenceEntry = DivergenceEntry {
-    ts: "class C extends Array<i32> {}\nexport function main(): void { Map.groupBy(new C(),(x: i32): i32 => x); }",
+    ts: "class C extends Array<i32> {} function f(): void { Map.groupBy(new C(), (x: i32): i32 => x); }",
     subscript: "export function main(): void { const xs: i32[] = []; Map.groupBy(xs, (x: i32): i32 => x); }",
     why: "Map.groupBy takes a dynamic array; a source class that inherits Array has a different nominal identity.",
     collision: "stdlib.md §10.4",

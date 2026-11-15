@@ -297,7 +297,7 @@ pub(super) const COMMAEXPRESSION: DivergenceEntry = DivergenceEntry {
     collision: "C24", // row 18,
 };
 pub(super) const TAGGEDTEMPLATEEXPRESSION: DivergenceEntry = DivergenceEntry {
-    ts: "function tag(s: TemplateStringsArray): void {} function f(): void { tag`hello`; }",
+    ts: "class Parts {} function tag(s: Parts): void {} function f(): void { tag`hello`; }",
     subscript: "function tag(s: string): void {} function f(): void { tag(\"hello\"); }",
     why: "A tagged template has no lowering; an ordinary call accepts an explicit string.",
     collision: "C24", // row 18,

@@ -5,9 +5,9 @@ use super::{Divergence, DivergenceEntry};
 impl Divergence {
     /// The four facts for this topic.
     ///
-    /// This `match` is the whole table (§79 rule 1).
+    /// Site entries replace the two fragments when their form differs (§311).
     #[must_use]
-    pub fn entry(self) -> DivergenceEntry {
+    pub const fn entry(self) -> DivergenceEntry {
         match self {
             Divergence::FileModuleDisabled => DivergenceEntry {
                 ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",

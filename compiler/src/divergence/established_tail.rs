@@ -233,14 +233,14 @@ pub(super) const LOCALENUMBERFORMATTING: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const USERITERATIONPROTOCOL: DivergenceEntry = DivergenceEntry {
-                ts: "class Bag { items: i32[] = [1, 2]; [Symbol.iterator](): Iterator<i32> { return this.items[Symbol.iterator](); } } for (const value of new Bag()) {}",
+                ts: "// file: bag.d.ts\ndeclare class IterableBag { items: i32[]; [Symbol.iterator](): Iterator<i32>; }\n// file: main.ts\nfor (const v of new IterableBag()) {}",
                 subscript: "const items: i32[] = [1, 2]; for (const value of items) {}",
                 why: "User iteration protocols require Symbol.iterator; the runtime traverses only its declared container types.",
                 collision: "stdlib.md §14.2",
             };
 
 pub(super) const SETALGEBRADOMAIN: DivergenceEntry = DivergenceEntry {
-                ts: "class Values extends Set<i32> {} export function main(): void { const values: Set<i32> = new Set<i32>(); values.union(new Values()); }",
+                ts: "class Values extends Set<i32> { constructor() { super(); } } function f(): void { new Set<i32>().union(new Values()); }",
                 subscript: "const values: Set<i32> = new Set<i32>(); values.union(new Set<i32>());",
                 why: "Set algebra requires a native Set argument; a Set subclass has no runtime container representation.",
                 collision: "stdlib.md §14",
@@ -292,8 +292,7 @@ pub(super) const NOMINALCLASSIDENTITY: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const OBJECTLITERALCONSTRUCTION: DivergenceEntry = DivergenceEntry {
-    ts: "class Shape { value!: i32; }\n\
-                     const s: Shape = { value: 1 };",
+    ts: "class Shape { value: i32 = 0; } function f(): void { const x: Shape = {value: 1}; }",
     subscript: "@Descriptor class Shape { value!: i32; }\n\
                             const s: Shape = { value: 1 };",
     why: "An object literal has no nominal identity, so only a `@Descriptor` \
@@ -981,10 +980,7 @@ const [head, ...rest] = xs;
 };
 
 pub(super) const OBJECTRESTPATTERN: DivergenceEntry = DivergenceEntry {
-    ts: "function probe(): void {
-class Point { x: i32 = 1; y: i32 = 2; }
-const { x, ...rest } = new Point();
-}",
+    ts: "class Point { x: i32 = 1; y: i32 = 2; } function f(): void { const {x, ...rest} = new Point(); }",
     subscript: "class Point { x: i32 = 1; y: i32 = 2; }\n\
                             function read(): i32 {\n\
                             \x20 const point: Point = new Point();\n\
@@ -1013,11 +1009,7 @@ const [[first, second]] = xss;
 };
 
 pub(super) const PATTERNFIELDNAME: DivergenceEntry = DivergenceEntry {
-    ts: "function probe(): void {
-class Point { x: i32 = 1; }
-const key = \"x\" as const;
-const { [key]: value } = new Point();
-}",
+    ts: "class Point { x: i32 = 1; } function f(): void { const key = \"x\"; const {[key]: value} = new Point(); }",
     subscript: "class Point { x: i32 = 1; }\n\
                             function read(): i32 {\n\
                             \x20 const { x: value } = new Point();\n\

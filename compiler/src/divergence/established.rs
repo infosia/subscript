@@ -23,14 +23,14 @@ pub(super) const MIRROREXPORTLIST: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const TOPLEVELNAMECLASH: DivergenceEntry = DivergenceEntry {
-                ts: "function f(x:i32):void; function f(x:i32):void {}\nexport function main(): void {  }",
+                ts: "function f(x: i32): void; function f(x: i32): void {}",
                 subscript: "function f(x: i32): void {}",
                 why: "One declaration owns each top-level name in a module; a second declaration cannot add an overload or a merged declaration.",
                 collision: "compiler.md §125.1",
             };
 
 pub(super) const UNSUPPORTEDMODULEDECLARATION: DivergenceEntry = DivergenceEntry {
-                ts: "namespace N {export class A {}} import A=N.A;\nexport function main(): void {  }",
+                ts: "// file: main.ts\nimport * as N from \"./other\"; import A = N.A;\n// file: other.ts\nexport class A {}",
                 subscript: "// file: main.ts\nimport { A } from \"./other\";\n// file: other.ts\nexport class A {}",
                 why: "The module surface uses export declarations, named export lists, named imports, and namespace imports only.",
                 collision: "C18",
@@ -44,8 +44,8 @@ pub(super) const POISONEDDEFAULTIMPORT: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const DEFAULTIMPORT: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nimport def from \"./other\";\nexport function main(): void {  }\n// file: other.ts\nexport default 1;",
-                subscript: "// file: main.ts\nimport { def } from \"./other\";\n// file: other.ts\nexport const def: i32 = 1;",
+                ts: "// file: main.ts\nimport def, * as ns from \"./other\"; ns.default();\n// file: other.ts\nexport default function f(): void {}",
+                subscript: "// file: main.ts\nimport {f} from \"./other\"; f();\n// file: other.ts\nexport function f(): void {}",
                 why: "A default import stays outside the named module surface.",
                 collision: "C18",
             };
@@ -351,7 +351,7 @@ pub(super) const ACCESSORTYPEMISMATCH: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const CLASSINDEXSETSIGNATURE: DivergenceEntry = DivergenceEntry {
-                ts: "class A { [a:i32]:i32; }\nexport function main(): void {  }",
+                ts: "class A { [a: i32]: i32; get(a: i32): i32 { return 0; } }",
                 subscript: "class A { [a: i32]: i32; get(a: i32): i32 { return 0; } set(a: i32, value: i32): void {} }",
                 why: "A mutable class index signature needs a synchronous set method with exactly matching index and element types.",
                 collision: "compiler.md §58.1",
@@ -365,18 +365,18 @@ pub(super) const MODULEUSING: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const DESCRIPTOROPTIONS: DivergenceEntry = DivergenceEntry {
-                ts: "function Descriptor(options:object):(target:object,context:ClassDecoratorContext)=>void {return (target:object,context:ClassDecoratorContext):void=>{};}\n@Descriptor({}) class A {}\nexport function main(): void {  }",
+                ts: "class Target {} function Descriptor(options: Target): (target: Target) => void { return (target: Target): void => {}; } @Descriptor({}) class A {}",
                 subscript: "@Descriptor class A {}",
                 why: "The Descriptor decorator accepts no options.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const UNSUPPORTEDCLASSDECORATOR: DivergenceEntry = DivergenceEntry {
-                ts: "function other(value:object,context:ClassDecoratorContext):void {}\n@other\nclass A {}\nexport function main(): void {  }",
-                subscript: "class A {}",
-                why: "Only the ambient ValueType and Descriptor decorators define a class representation.",
-                collision: "compiler.md §130.1",
-            };
+    ts: "class Target {} function other(target: Target): void {} @other class A {}",
+    subscript: "class A {}",
+    why: "Only the ambient ValueType and Descriptor decorators define a class representation.",
+    collision: "compiler.md §130.1",
+};
 
 pub(super) const DESCRIPTORVALUETYPE: DivergenceEntry = DivergenceEntry {
     ts: "@ValueType\n@Descriptor\nclass A {}\nexport function main(): void {  }",
@@ -422,35 +422,35 @@ pub(super) const MIRRORVARIABLEFORM: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const WIREALIASNESTEDFOREIGNPARAMETER: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ntype W_signatures_47=CEnum<{a:1}>;declare function f_signatures_47(x:FixedArray<W_signatures_47,2>):void;",
+                ts: "// file: main.ts\nexport {};\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ntype W = CEnum<{a: 1}>; declare function f(x: FixedArray<W, 2>): void;",
                 subscript: "// file: main.ts\nexport function main(): void {}\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ntype W_signatures_47 = CEnum<{ a: 1 }>; declare function f_signatures_47(x: W_signatures_47): void;",
                 why: "A wire alias is a direct foreign parameter or an array-pair element; another nested position has no declared wire representation.",
                 collision: "compiler.md §52.2",
             };
 
 pub(super) const WIREALIASNESTEDFOREIGNRETURN: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ntype W_signatures_60=CEnum<{a:1}>;declare function f_signatures_60():W_signatures_60[];",
+                ts: "// file: main.ts\nexport {};\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ntype W = CEnum<{a: 1}>; declare function f(): W[];",
                 subscript: "// file: main.ts\nexport function main(): void {}\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ntype W_signatures_60 = CEnum<{ a: 1 }>; declare function f_signatures_60(): W_signatures_60;",
                 why: "A wire alias has a direct foreign return representation only; an array return has no declared wire representation.",
                 collision: "compiler.md §50.2",
             };
 
 pub(super) const FOREIGNDIRECTCALLBACK: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ndeclare function f_signatures_79(cb:(x:i32)=>void):void;",
+                ts: "// file: main.ts\nexport {};\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ndeclare function f(cb: (x: i32) => void): void;",
                 subscript: "no equivalent: A direct foreign callback parameter has no C provenance position; its C API needs a mirrored callback struct.",
                 why: "A callback occupies a mirrored boundary-struct field; a direct foreign callback parameter has no declared provenance position.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const FOREIGNRETURNPROVENANCE: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\ndeclare function f_signatures_106():string;",
+                ts: "// file: main.ts\nexport {};\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ndeclare function f(): string;",
                 subscript: "no equivalent: A foreign string return has no C return provenance; its C API needs a mirrored output struct.",
                 why: "A foreign string-view, descriptor, or callback return has no return provenance in the boundary vocabulary.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const FOREIGNRESULTREAD: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nexport function main(): void {  }\n// file: mirror.d.ts\n// @subscript-c-header include=\"result-read.h\"\ndeclare class L { tag: i32; items: u32[]; constructor(tag: i32, items: u32[]); }\ndeclare class P { x: i32; constructor(x: i32); }\ndeclare class H { k: i32; p: P | null; constructor(k: i32, p: P | null); }\ndeclare class U { name: string; ud: object | null; constructor(name: string, ud: object | null); }\ndeclare class S { name: string; l: L; constructor(name: string, l: L); }\ntype OnL = (l: L) => void;\ndeclare class C { cb: OnL; ud: object | null; constructor(cb: OnL, ud: object | null); }\ndeclare function f_result_read(): L;\ndeclare function f_fill_pointer(out: H | null): void;\ndeclare function f_fill_userdata(out: U | null): void;\ndeclare function f_fill_nested(out: S | null): void;\ndeclare function f_fill_elements(items: L[]): void;\ndeclare function f_register(c: C): void;",
+                ts: "// file: main.ts\nexport {};\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ndeclare class L { tag: i32; items: u32[]; constructor(tag: i32, items: u32[]); } declare function f(): L;",
                 subscript: "// file: main.ts\nexport function main(): void { const p: P = f_result_plain(); print(`${p.tag}`); }\n// file: mirror.d.ts\n// @subscript-c-header include=\"result-read.h\"\ndeclare class P { tag: i32; count: u32; constructor(tag: i32, count: u32); }\ndeclare function f_result_plain(): P;",
                 why: "C writes a struct the script reads; no read lowering exists for its pair, view, callback, descriptor, userdata, or validated-pair member (§187).",
                 collision: "compiler.md §187",
@@ -506,56 +506,56 @@ pub(super) const ERRORCALLWITHOUTNEW: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const VALUETYPEARGUMENTCOUNT: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType() class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType() class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "The ValueType decorator requires exactly one object-literal argument without a spread.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEOPTIONSNONLITERAL: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType(1) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType(1) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "The ValueType decorator requires an object-literal options argument.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEOPTIONCOUNT: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType options literal must contain exactly the align property.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEOPTIONSPREAD: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({...{align:2}}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({...{align: 2}}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType options literal declares align directly and does not spread properties.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEOPTIONPROPERTYFORM: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({align(){}}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({align() {}}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType options literal declares align as a key-value property.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEOPTIONKEY: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({other:2}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({other: 2}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType options literal accepts only the align key.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEALIGNMENTNONLITERAL: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({align:\"2\"}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({align: \"2\"}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType alignment must be a numeric integer literal.",
                 collision: "compiler.md §62.1",
             };
 
 pub(super) const VALUETYPEALIGNMENTOUTSIDESET: DivergenceEntry = DivergenceEntry {
-                ts: "function ValueType(...args:unknown[]):(target:object, context:ClassDecoratorContext)=>void{return (target:object,context:ClassDecoratorContext):void=>{};}\n@ValueType({align:3}) class A{}\nexport function main():void{}",
+                ts: "class Target {} function ValueType(options: Target = new Target()): (target: Target) => void { return (target: Target): void => {}; } @ValueType({align: 3}) class A {}",
                 subscript: "@ValueType({ align: 16 }) class A {}",
                 why: "A ValueType alignment must be one of 2, 4, 8, or 16.",
                 collision: "compiler.md §62.1",
@@ -618,8 +618,8 @@ pub(super) const GENERICCONSTRAINTIDENTITY: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const NAMESPACEUNEXPORTEDMEMBER: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nimport * as ns from \"./namespace-default-export-lib\"; export function main():void {ns.default();}\n// file: namespace-default-export-lib.ts\nexport default function f():void {}",
-                subscript: "// file: main.ts\nimport * as ns from \"./namespace-default-export-lib\"; export function main(): void { ns.f(); }\n// file: namespace-default-export-lib.ts\nexport function f(): void {}",
+                ts: "// file: main.ts\nimport def, * as ns from \"./other\"; ns.default();\n// file: other.ts\nexport default function f(): void {}",
+                subscript: "// file: main.ts\nimport {f} from \"./other\"; f();\n// file: other.ts\nexport function f(): void {}",
                 why: "A namespace qualifier exposes only the declared named exports; a default export stays outside the module surface.",
                 collision: "C18",
             };
@@ -646,7 +646,7 @@ pub(super) const AGGREGATEARGUMENTFRAMELIMIT: DivergenceEntry = DivergenceEntry 
             };
 
 pub(super) const NAMESPACEASVALUE: DivergenceEntry = DivergenceEntry {
-                ts: "// file: main.ts\nimport * as ns from \"./namespace-local-function-lib\"; export function main(): void { const typed: object = ns; } export function probe(): void { function ns(): void {} ns(); }\n// file: namespace-local-function-lib.ts\nexport function f(): void {}",
+                ts: "// file: main.ts\nimport * as ns from \"./other\"; class C {} const typed: C = ns; export function probe(): void { function ns(): void {} ns(); }\n// file: other.ts\nexport function f(): void {}",
                 subscript: "no equivalent: A namespace import has no runtime object value.",
                 why: "A namespace import is a static qualifier and has no runtime value.",
                 collision: "C18",
@@ -723,7 +723,7 @@ pub(super) const NULLABLENONREFERENCE: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const NULLABLEVALUECLASSASSIGNMENT: DivergenceEntry = DivergenceEntry {
-                ts: "@ValueType class C {} interface C {():i32;} function f(c:C):void {const fn:(()=>i32)|null=c;}\nexport function main(): void {}",
+                ts: "@ValueType class C {} interface C {(): i32;} function f(c: C): void { const fn: (() => i32) | null = c; }",
                 subscript: "no equivalent: A value class has no callable identity or nullable function representation.",
                 why: "A value class stores its fields inline and has no nullable pointer representation.",
                 collision: "C7",

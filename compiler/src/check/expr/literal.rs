@@ -769,12 +769,19 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 } else {
                     self.reject_subset(
-                        if crate::ambient::lib_value_name(&name) {
+                        if name == "Object" {
+                            RejectionSite::ObjectReflectionValue
+                        } else if crate::ambient::lib_value_name(&name) {
                             RejectionSite::UnknownAmbientValueName
                         } else {
                             RejectionSite::UnboundValueName
                         },
-                        format!("unknown name `{}`", name),
+                        if name == "Object" {
+                            "`Object` reflection is not supported; read known fields explicitly"
+                                .to_owned()
+                        } else {
+                            format!("unknown name `{}`", name)
+                        },
                         pos.clone(),
                     );
                     self.err_expr(pos)

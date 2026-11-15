@@ -1586,8 +1586,8 @@ impl<'p> Checker<'p> {
                         let prop_pos = self.pos(prop.span);
                         if name == "entries" {
                             self.reject_subset(
-                                RejectionSite::ForOfEntries,
-                                "`entries()` yields a pair, but the language has no tuple type",
+                                if matches!(self.apparent_type(&recv.ty), Type::Array(_)) { RejectionSite::ForOfArrayEntries } else { RejectionSite::ForOfEntries },
+                                if matches!(self.apparent_type(&recv.ty), Type::Array(_)) { "array `entries()` yields an index/value pair; use an index loop" } else { "`entries()` yields a pair, but the language has no tuple type" },
                                 prop_pos,
                             );
                             return (recv, None, Type::Error, false);

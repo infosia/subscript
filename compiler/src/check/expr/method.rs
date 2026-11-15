@@ -999,8 +999,12 @@ impl<'p> Checker<'p> {
                             && self.arr_elem_kind(&u).is_none()
                         {
                             let u_n = self.type_name(&u);
-                            let mut diagnostic = crate::check::rejection::diagnostic(
-                                RejectionSite::ArrayMapResult,
+                            let diagnostic = crate::check::rejection::diagnostic(
+                                if matches!(self.apparent_type(&u), Type::Func(_)) {
+                                    RejectionSite::ArrayMapFunctionResult
+                                } else {
+                                    RejectionSite::ArrayMapResult
+                                },
                                 format!(
                                     "`map` produces a `{}`; `{}` is outside the \
                                      supported element kinds (Q22)",
@@ -1009,10 +1013,6 @@ impl<'p> Checker<'p> {
                                 ),
                                 cb.pos.clone(),
                             );
-                            if matches!(self.apparent_type(&u), Type::Func(_)) {
-                                diagnostic.example =
-                                    Some(&crate::check::diagnostic_text::FUNCTION_MAP);
-                            }
                             self.diags.push(diagnostic);
                             return self.err_expr(pos);
                         }

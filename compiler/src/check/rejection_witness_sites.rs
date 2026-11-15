@@ -3,6 +3,8 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::ReactionReceiverCapture,
+    RejectionSite::PromiseCatchCall,
     RejectionSite::NullableMemberLoopHead,
     RejectionSite::NullableCallLoopHead,
     RejectionSite::NullableNominalAssignmentLoopHead,

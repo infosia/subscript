@@ -39,17 +39,7 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
     let (code, class) = site.class();
     let mut diagnostic = Diagnostic::new(code, message, pos);
     diagnostic.divergence = class.divergence();
-    if diagnostic
-        .message
-        .contains("a generator is a counted type (§176)")
-    {
-        diagnostic.example = Some(&crate::divergence::DivergenceEntry {
-            ts: "values.forEach(value => value.next());",
-            subscript: "for (const value of values) { value.next(); }",
-            why: "A generator is a counted type; callback positions do not carry its owner counts.",
-            collision: "compiler.md §176",
-        });
-    }
+    diagnostic.example = site.example();
     if matches!(
         site,
         RejectionSite::FunctionValueArgumentCount
@@ -78,11 +68,8 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
         RejectionSite::ImmediateShadowedNameRead => diagnostic.note = Some("A later local declaration hides the outer name. Give the local another name."),
         RejectionSite::ClassReadBeforeDeclaration => diagnostic.note = Some("Move the declaration before the code that uses it."),
         RejectionSite::TaskGroupGeneratorBody => {
-            diagnostic.example = Some(&crate::check::diagnostic_text::GROUP);
             diagnostic.rule = Some("A generator body cannot use a TaskGroup because a dropped iterator has no scope exit.");
         }
-        RejectionSite::PromiseReactionSpread => diagnostic.example = Some(&crate::check::diagnostic_text::REACTION_SPREAD),
-        RejectionSite::DateMethodValue => diagnostic.example = Some(&crate::check::diagnostic_text::DATE),
         RejectionSite::AsyncArrowCapture => diagnostic.rule = Some("An async arrow can own const captures. Copy a mutable value into a const or use a class field."),
         RejectionSite::AwaitIndirectCall => diagnostic.note = Some("Call the synchronous function without await, or await a function that returns an async handle."),
         _ => {}
@@ -92,11 +79,10 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
 
 pub(crate) fn async_receiver_diagnostic(pos: Pos) -> Diagnostic {
     let mut diagnostic = diagnostic(
-        RejectionSite::AsyncArrowCapture,
+        RejectionSite::AsyncArrowReceiverCapture,
         crate::check::diagnostic_text::RECEIVER_MESSAGE,
         pos,
     );
-    diagnostic.example = Some(&crate::check::diagnostic_text::RECEIVER);
     diagnostic.rule = Some(crate::check::diagnostic_text::RECEIVER_RULE);
     diagnostic
 }
@@ -104,11 +90,10 @@ pub(crate) fn async_receiver_diagnostic(pos: Pos) -> Diagnostic {
 /// A synchronous reaction callback that captures `this` (§186 rule 4).
 pub(crate) fn reaction_receiver_diagnostic(method: &str, pos: Pos) -> Diagnostic {
     let mut diagnostic = diagnostic(
-        RejectionSite::AsyncArrowCapture,
+        RejectionSite::ReactionReceiverCapture,
         format!("a `.{method}(...)` callback cannot capture `this`; copy the needed field into a `const` first"),
         pos,
     );
-    diagnostic.example = Some(&crate::check::diagnostic_text::REACTION_RECEIVER);
     diagnostic.rule = Some(crate::check::diagnostic_text::REACTION_RECEIVER_RULE);
     diagnostic
 }

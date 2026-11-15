@@ -1575,3 +1575,59 @@ s309-JsonParseSpread.ts	§309/JsonParseSpread		S014
 spread arguments require variadic parameters, which the language does not have
 export {}; JSON.parse("1", ...[]);
 ===
+s311-ArrayMapFunctionResult.ts	ArrayMapFunctionResult		S014		§311
+`map` produces a `((i32) => i32)[]`; `(i32) => i32` is outside the supported element kinds (Q22)
+function id(x: i32): i32 { return x; } export function main(): void { [1].map((x: i32): ((x: i32) => i32) => id); }
+===
+s311-ArrayMapAsyncResult.ts	ArrayMapAsyncResult		S014		§311
+`map` cannot carry a counted callback result (§171)
+async function probe(): Promise<void> { const hs = [1].map(async (v: i32): Promise<i32> => v); await Promise.all(hs); }
+export function main(): void {}
+===
+s311-PromiseFinallyCall.ts	PromiseFinallyCall		S013		§311
+`.finally(...)` requires a callback
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const v: i32 = await leaf().finally(); }
+===
+s311-AsyncArrowReceiverCapture.ts	AsyncArrowReceiverCapture		S009		§311
+an async arrow cannot capture `this` directly; copy the receiver into a const or use a class field with an async method
+class C { n: i32 = 1; f(): void { const job = async (): Promise<i32> => this.n; } }
+export function main(): void {}
+===
+s311-PromiseThenNullRejection.ts	PromiseThenNullRejection		S013		§311
+`.then(...)` takes no `null` rejection callback; use `.then(f)`
+async function leaf(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { await leaf().then((x: i32): i32 => x, null); }
+===
+s311-CallbackSetRepeatedValue.ts	CallbackSetRepeatedValue		S014		§311
+`Set.forEach` callbacks take exactly 1 parameter(s); extra lib callback parameters are not accepted (Q24)
+new Set<i32>().forEach((v: i32, again: i32): void => {});
+===
+s311-KeyofAnnotation.ts	KeyofAnnotation		S100		§311 rule 7
+`keyof` annotations are not supported; name each accepted key explicitly
+export {}; class P { x: i32 = 1; } function get(p: P, k: keyof P): i32 { return p[k]; }
+===
+s311-ObjectReflectionValue.ts	ObjectReflectionValue		S016		§311 rule 7
+`Object` reflection is not supported; read known fields explicitly
+export {}; class P { x: i32 = 1; } Object.keys(new P());
+===
+s311-ForOfArrayEntries.ts	ForOfArrayEntries		S014		§311 rule 7
+array `entries()` yields an index/value pair; use an index loop
+const arr: i32[] = [1]; for (const [i, v] of arr.entries()) {}
+===
+s311-StringPatternSpreadArity.ts	StringPatternSpreadArity		S100		§311 rule 8
+`split` expects 1 or 2 argument(s), got 1
+export {}; "x".split(...["x"]);
+===
+s311-ArrayClassInheritance.ts	ArrayClassInheritance		S100		§311 rule 8
+class inheritance is not in the decided surface
+export {}; class C extends Array<i32> {}
+===
+s311-SetClassInheritance.ts	SetClassInheritance		S100		§311 rule 8
+class inheritance is not in the decided surface
+export {}; class Values extends Set<i32> {}
+===
+s311-InterfaceCallSignature.ts	InterfaceCallSignature		S100		§311 rule 8
+interface `C` has a member form outside the decided surface
+export {}; @ValueType class C {} interface C {(): i32;}
+===

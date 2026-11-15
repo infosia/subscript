@@ -126,7 +126,9 @@ impl<'p> Checker<'p> {
         }
         for span in &outside {
             self.reject_subset(
-                RejectionSite::InterfaceMemberForm,
+                if declaration.body.body.iter().any(|element| {
+                    matches!(element, ast::TsTypeElement::TsCallSignatureDecl(call) if call.span == *span)
+                }) { RejectionSite::InterfaceCallSignature } else { RejectionSite::InterfaceMemberForm },
                 format!("interface `{name}` {MEMBER_FORM}"),
                 self.pos(*span),
             );

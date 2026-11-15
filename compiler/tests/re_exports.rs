@@ -403,7 +403,7 @@ fn resolution_diagnostic(
 
 #[test]
 fn rejected_declarations_keep_names_through_every_export_edge() {
-    use subscript_compiler::{Diagnostic, Pos};
+    use subscript_compiler::Pos;
     // Eight rejected programs and eight controls check export edges without code generation.
     let start = std::time::Instant::now();
     for (declaration, names, message, col, divergence) in [
@@ -420,9 +420,18 @@ fn rejected_declarations_keep_names_through_every_export_edge() {
                 SourceFile::new("surface.ts", format!("export {{ {names} }} from './lib';")),
                 SourceFile::new("lib.ts", source),
             ];
-            let mut expected = Diagnostic::new(RuleCode::S100, message, Pos::new("lib.ts", 1, col + if local { 0 } else { 7 }));
-            expected.divergence = divergence;
-            assert_eq!(check_program(&files).unwrap_err(), vec![expected], "{declaration}, local={local}");
+            let diagnostics = check_program(&files).unwrap_err();
+            assert_eq!(diagnostics.len(), 1, "{declaration}, local={local}: {diagnostics:?}");
+            let diagnostic = &diagnostics[0];
+            assert_eq!(
+                (diagnostic.code, diagnostic.message.as_str(), &diagnostic.pos, diagnostic.divergence,
+                 diagnostic.rule, diagnostic.note, diagnostic.resolution),
+                (RuleCode::S100, message, &Pos::new("lib.ts", 1, col + if local { 0 } else { 7 }),
+                 divergence, None, None, false),
+                "{declaration}, local={local}",
+            );
+            assert_eq!(diagnostic.example.is_some(), matches!(divergence,
+                Some(Divergence::GenericSourceAliasForm)));
             files[3].source = names.split(", ").map(|name| format!("export const {name}: i32 = 1;")).collect::<Vec<_>>().join("\n");
             check_program(&files).expect("supported declaration control");
         }
@@ -432,7 +441,7 @@ fn rejected_declarations_keep_names_through_every_export_edge() {
 
 #[test]
 fn rejected_export_forms_do_not_resolve_missing_sources() {
-    use subscript_compiler::{Diagnostic, Pos};
+    use subscript_compiler::Pos;
     // Five checker calls cover the rejected forms without loading or code generation.
     let start = std::time::Instant::now();
     for (source, message, col) in [
@@ -462,11 +471,28 @@ fn rejected_export_forms_do_not_resolve_missing_sources() {
             8,
         ),
     ] {
-        let mut expected = Diagnostic::new(RuleCode::S100, message, Pos::new("main.ts", 1, col));
-        expected.divergence = Some(Divergence::NamedModuleSurface);
+        let diagnostics = check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err();
+        assert_eq!(diagnostics.len(), 1, "{source}: {diagnostics:?}");
+        let diagnostic = &diagnostics[0];
         assert_eq!(
-            check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err(),
-            vec![expected],
+            (
+                diagnostic.code,
+                diagnostic.message.as_str(),
+                &diagnostic.pos,
+                diagnostic.divergence,
+                diagnostic.rule,
+                diagnostic.note,
+                diagnostic.resolution,
+            ),
+            (
+                RuleCode::S100,
+                message,
+                &Pos::new("main.ts", 1, col),
+                Some(Divergence::NamedModuleSurface),
+                None,
+                None,
+                false,
+            ),
             "{source}"
         );
     }

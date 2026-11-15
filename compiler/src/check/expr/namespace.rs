@@ -1032,7 +1032,11 @@ impl<'p> Checker<'p> {
             || c.args.iter().any(|arg| arg.spread.is_some())
         {
             self.reject_subset(
-                RejectionSite::StringStaticMethodArgumentCount,
+                if c.args.iter().any(|arg| arg.spread.is_some()) {
+                    RejectionSite::StringPatternSpreadArity
+                } else {
+                    RejectionSite::StringStaticMethodArgumentCount
+                },
                 format!(
                     "`{name}` expects {} argument(s), got {}",
                     if name == "split" {

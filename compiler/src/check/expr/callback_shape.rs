@@ -74,8 +74,12 @@ impl Checker<'_> {
             );
             return None;
         }
-        let mut diagnostic = crate::check::rejection::diagnostic(
-            RejectionSite::CallbackParameterCount,
+        let diagnostic = crate::check::rejection::diagnostic(
+            if method == "Set.forEach" && actual == 2 {
+                RejectionSite::CallbackSetRepeatedValue
+            } else {
+                RejectionSite::CallbackParameterCount
+            },
             if allow_index {
                 format!(
                     "`{method}` callbacks take {} parameter(s), or {} with a trailing \
@@ -97,9 +101,6 @@ impl Checker<'_> {
             },
             pos,
         );
-        if method == "Set.forEach" && actual == 2 {
-            diagnostic.example = Some(&super::super::diagnostic_text::SET_REPEATED_VALUE);
-        }
         self.diags.push(diagnostic);
         None
     }
@@ -215,19 +216,20 @@ impl Checker<'_> {
                     &function.ret,
                 ) && self.apparent_type(&function.ret).counted_type().is_some()
                 {
-                    let mut diagnostic = crate::check::rejection::diagnostic(
-                        RejectionSite::ArrayMapResult,
+                    let diagnostic = crate::check::rejection::diagnostic(
+                        if method == "map"
+                            && matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_))
+                        {
+                            RejectionSite::ArrayMapAsyncResult
+                        } else {
+                            RejectionSite::ArrayMapResult
+                        },
                         counted_method_message(
                             &self.apparent_type(&function.ret),
                             format!("`{method}` cannot carry a counted callback result (§171)"),
                         ),
                         checked.pos.clone(),
                     );
-                    if method == "map"
-                        && matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_))
-                    {
-                        diagnostic.example = Some(&crate::check::diagnostic_text::ASYNC_MAP);
-                    }
                     self.diags.push(diagnostic);
                     return self.err_expr(checked.pos);
                 }

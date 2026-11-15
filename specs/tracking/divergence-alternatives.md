@@ -234,3 +234,411 @@ The Phase Review found that the four sites kept as `Diverges` still showed "Type
 note, and the block of each diagnostic, as the CLI does. The ship tier
 and `emit_c` keep the checker `Diagnostic`. Work unit 2 (an example for
 each site) is next.
+
+## §311 Red at `7f7e92ab`
+
+The total check of §311 rule 4 failed at 185 sites. Each row names the
+site, its variant, and the sites that the variant fragment reached
+instead.
+
+Count: 185 failing sites.
+
+Site | Variant | Reached sites instead
+--- | --- | ---
+Api(StringToLocaleLowerCase, LocaleSensitiveString) | LocaleSensitiveString | Api(StringToLocaleUpperCase, LocaleSensitiveString), Api(StringLocaleCompare, LocaleSensitiveString)
+Api(RegexStringMatchAll, RegExpSubset) | RegExpSubset | RegexExec, RegexMember
+Api(ArrayFind, ArrayMethodDefaults) | ArrayMethodDefaults | Api(FormSort, ArrayMethodDefaults)
+Api(ArrayFindLast, ArrayMethodDefaults) | ArrayMethodDefaults | Api(FormSort, ArrayMethodDefaults)
+Api(ArrayFlatMap, MethodTypeDomain) | MethodTypeDomain | Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)
+Api(ArrayEntries, NoTupleType) | NoTupleType | Api(FormNewMapIterable, NoTupleType), ForOfEntries
+Api(ArrayKeys, IteratorTemporary) | IteratorTemporary | Api(MapKeys, IteratorTemporary)
+Api(ArrayValues, IteratorTemporary) | IteratorTemporary | Api(MapKeys, IteratorTemporary)
+Api(DateLocalGetMonth, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetDate, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetDay, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetHours, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetMinutes, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetSeconds, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetMilliseconds, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateLocalGetTimezoneOffset, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToDateString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToTimeString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToLocaleString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToLocaleDateString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(DateStringToLocaleTimeString, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(MapValues, IteratorTemporary) | IteratorTemporary | Api(MapKeys, IteratorTemporary)
+Api(MapEntries, NoTupleType) | NoTupleType | Api(FormNewMapIterable, NoTupleType), ForOfEntries
+Api(SetKeys, IteratorTemporary) | IteratorTemporary | Api(MapKeys, IteratorTemporary)
+Api(SetValues, IteratorTemporary) | IteratorTemporary | Api(MapKeys, IteratorTemporary)
+Api(SetEntries, NoTupleType) | NoTupleType | Api(FormNewMapIterable, NoTupleType), ForOfEntries
+Api(JsonStringifySetK, JsonSubset) | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+Api(JsonStringifyObject, JsonSubset) | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+Api(JsonStringifyFunction, JsonSubset) | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+Api(JsonStringifyF16, JsonSubset) | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+Api(JsonParseDateText, JsonSubset) | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+Api(FormParseIntValue, NumberCoercionAndArguments) | NumberCoercionAndArguments | Api(FormNumberValue, NumberCoercionAndArguments), Api(FormToPrecision, NumberCoercionAndArguments)
+Api(FormNewNumberValue, NumberCoercionAndArguments) | NumberCoercionAndArguments | Api(FormNumberValue, NumberCoercionAndArguments), Api(FormToPrecision, NumberCoercionAndArguments)
+Api(FormToString, NumberCoercionAndArguments) | NumberCoercionAndArguments | Api(FormNumberValue, NumberCoercionAndArguments), Api(FormToPrecision, NumberCoercionAndArguments)
+Api(FormDateParse, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(FormNewDateYearMonth, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(FormDirectComparison, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(FormSet, DateSubset) | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+Api(FormReduceCallback, ArrayMethodDefaults) | ArrayMethodDefaults | Api(FormSort, ArrayMethodDefaults)
+Api(FormReduceRightCallback, ArrayMethodDefaults) | ArrayMethodDefaults | Api(FormSort, ArrayMethodDefaults)
+Api(FormCallbackValueIndexArray, EscapingCapture) | EscapingCapture | CaptureEffectEscapes
+Api(ArrayNullableFind, NullableElementSearch) | NullableElementSearch | Api(MapNullableGet, NullableElementSearch)
+Api(ArrayNullableFindLast, NullableElementSearch) | NullableElementSearch | Api(MapNullableGet, NullableElementSearch)
+Api(FormNewSetMap, NoTupleType) | NoTupleType | Api(FormNewMapIterable, NoTupleType), ForOfEntries
+Api(FormNewSetGeneratorT, GeneratorSingleUse) | GeneratorSingleUse | ArraySpreadGenerator, AssignmentTypeMismatch
+Api(FormArrayFromMap, BareMapToArray) | BareMapToArray | ArraySpreadMap
+Api(FormArrayFromGeneratorT, GeneratorSingleUse) | GeneratorSingleUse | ArraySpreadGenerator, AssignmentTypeMismatch
+ArraySpreadSource | UserIterationProtocol | ComputedMethodName, ForOfUserClass
+MapCopyKey | MapKeyKind | MapSetTypeKey, NewMapSetKey
+ContextBytesSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+CallSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+SetSourceSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+RegexSticky | RegExpSubset | RegexExec, RegexMember
+ContextValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+NumberValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+JsonValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+DateValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+MapSetValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+NumberGlobalValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+DateMemberWrite | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+NumberMethodValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+ArrayElementDomain | MethodTypeDomain | Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)
+MapCallbackCountedValue | MethodTypeDomain | Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)
+ArrayCallbackSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+ArrayAccumulatorDomain | MethodTypeDomain | Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)
+ArrayMapResult | MethodTypeDomain | Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)
+MapGroupByKey | MapKeyKind | MapSetTypeKey, NewMapSetKey
+ArrayFromTypeCount | ExplicitIntrinsicTypeArguments | ContextBytesMissingType
+ArrayFromSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+ArrayFromSource | SourceConstructionDomain | SetSourceDomain
+VoidPlaceDropsAsyncHandle | DroppedAsyncHandle | AsyncHandleUnawaited
+ContextMember | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+JsonMember | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+ArrayFromValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+ArrayMember | NamespaceObjectMember | ArrayStaticMember
+MapGroupByValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+MapSetMember | NamespaceObjectMember | ArrayStaticMember
+MathMemberWrite | MathSubset | Api(FormMathUsedAsAValue, MathSubset), Api(FormHypotWithMoreThanTwoArguments, MathSubset)
+MathMethodValue | MathSubset | Api(FormMathUsedAsAValue, MathSubset), Api(FormHypotWithMoreThanTwoArguments, MathSubset)
+MathMember | MathSubset | Api(FormMathUsedAsAValue, MathSubset), Api(FormHypotWithMoreThanTwoArguments, MathSubset)
+MathCallCount | MathSubset | Api(FormMathUsedAsAValue, MathSubset), Api(FormHypotWithMoreThanTwoArguments, MathSubset)
+NumberMemberWrite | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+NumberStaticValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+NumberMember | NamespaceObjectMember | ArrayStaticMember
+NumberGlobalCount | NumberCoercionAndArguments | Api(FormNumberValue, NumberCoercionAndArguments), Api(FormToPrecision, NumberCoercionAndArguments)
+StringPatternSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+DateStaticWrite | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+DateStaticValue | CompilerOwnedValue | Api(FormArrayUsedAsAValue, CompilerOwnedValue)
+DateNewSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+DateMember | DateSubset | Api(FormNewDate, DateSubset), Api(DateLocalGetFullYear, DateSubset), Api(FormTemplateInterpolation, DateSubset)
+HalfFloatUnary | StorageOnlyHalfFloat | HalfFloatBinary
+JsonStaticMember | NamespaceObjectMember | ArrayStaticMember
+JsonStringifySpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+JsonParseReviver | JsonCallArguments | JsonStringifyCount
+JsonParseSpread | VariadicArguments | Api(FormSpliceStartDeleteCountItems, VariadicArguments), Api(FormUnshiftValueValues, VariadicArguments)
+JsonParseDomain | JsonTypeDomain | JsonStringifyDomain
+JsonError | JsonSubset | JsonParseTarget, Api(JsonStringifyMapKV, JsonSubset)
+RegexMatchType | RegExpSubset | RegexExec, RegexMember
+HalfFloatUpdate | StorageOnlyHalfFloat | HalfFloatBinary
+ErasedNominalTypeArguments | ErasedAssignableTypeMismatch | ErasedAssignableTypeMismatch
+ThisInStaticMethodArrow | ThisStaticMethodMember | ThisStaticMethodMember
+ClassAlignmentBelowNatural | ValueClassLayout | ValueClassInheritance
+ClassFieldLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+SuspendFrameMemberLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+AsyncChildFrameLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+GeneratorFrameFinalAlignmentLimit | AggregateLayoutLimit | FixedArrayByteLimit
+ClosureEnvironmentLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+StoredAggregateLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+SwitchCaseWriteOutsideDeclaration | DeclarationScope | BlockPendingReadWithoutProgramShadow
+ConstructorFieldReadAfterNestedAssignment | ConstructorFieldReadWithAssignmentFact | ConstructorDefiniteFieldReadBeforeAssignment
+LambdaUsingDeclaration | UsingDeclaration | AwaitUsingDeclaration
+LiteralAliasDuplicateCase | SwitchOverAlias | LiteralAliasSwitchCoverage
+DescriptorDisposeMethod | UsingDeclaration | AwaitUsingDeclaration
+ValueClassDisposeMethod | UsingDeclaration | AwaitUsingDeclaration
+ValueClassWriteAccessor | NamedAccessor | AccessorAssignmentExpressionValue
+AsyncGeneratorMethod | AsyncFunctionShape | AsyncStaticMethod, AsyncArrowFunction
+ValueClassAsyncMethod | AsyncFunctionShape | AsyncStaticMethod, AsyncArrowFunction
+DescriptorOptionalDefaultMissing | OptionalDescriptorMember | DescriptorOptionalInitializerMissing, UndefinedValue
+TypeOnlyExportDeclaration | NamedModuleSurface | DefaultExportDeclaration
+ExportSpecifierKind | NamedModuleSurface | DefaultExportDeclaration
+TypeOnlyOrDefaultExportSpecifier | NamedModuleSurface | DefaultExportDeclaration
+TypeOnlyImportReexport | NamedModuleSurface | DefaultExportDeclaration
+ReexportSpecifierKind | NamedModuleSurface | DefaultExportDeclaration
+CatchBindingUnnarrowedUse | Exceptions | ThrowOperandNotErrorFamily
+CatchBindingPattern | Exceptions | ThrowOperandNotErrorFamily
+CatchBindingAnnotation | Exceptions | ThrowOperandNotErrorFamily
+InstanceofLeftNotErrorFamily | InstanceofNonError | InstanceofRightNotErrorFamily
+EnumNonIntegerMember | IntegerLiteralRange | IntegerLiteralRange, HalfFloatLiteralRange
+WireEnumMemberNonIntegerSyntax | WireEnumValues | WireEnumMemberNonIntegerValue
+WireEnumValueRange | WireEnumValues | WireEnumMemberNonIntegerValue
+DuplicateWireEnumValue | WireEnumValues | WireEnumMemberNonIntegerValue
+TypeOnlyNamespaceImport | NamedModuleSurface | DefaultExportDeclaration
+VoidTypeOutsideResult | VoidValue | VoidExpressionValue
+UndefinedKeywordAnnotation | GeneralUnionAndUndefined | UnionGeneralUnionAndUndefined, UndefinedUnionMember, UndefinedValue
+MirrorNullableView | NullableNonReference | NullableNonReference
+NullableNominalAssignmentShared | SharedLocationNarrowing | NullableMemberShared
+NullableAssignmentShared | SharedLocationNarrowing | NullableMemberShared
+ImplicitNumericAssignment | SizedOperandWidths | BinaryMixedNumericTypes
+CaptureEffectArgument | EscapingCapture | CaptureEffectEscapes
+IndexUpdateExpressionValue | ClassIndexSignature | IndexSignatureGetterMismatch, ClassIndexSetSignature, IndexAssignmentExpressionValue
+AccessorUpdateExpressionValue | NamedAccessor | AccessorAssignmentExpressionValue
+OptionalMemberValueWithoutFallback | OptionalChainUnbound | OptionalCallValueWithoutFallback
+DescriptorAbsentMemberRead | OptionalDescriptorMember | DescriptorOptionalInitializerMissing, UndefinedValue
+InstancePrototypeMember | DynamicObjectModel | NamespaceClassPrototypeRead, DynamicEvaluatorCalled
+UnknownValueName | NamedModuleSurface | DefaultExportDeclaration
+DynamicEvaluatorValue | DynamicObjectModel | NamespaceClassPrototypeRead, DynamicEvaluatorCalled
+ContextByteTargetLayout | ByteAccessTarget | ContextByteTargetKind
+PromiseAllSpread | ForOfSpreadCall | IteratorMethodArgumentCount
+CoroutineStepLayoutLimit | AggregateLayoutLimit | FixedArrayByteLimit
+DynamicFunctionConstructed | DynamicObjectModel | NamespaceClassPrototypeRead, DynamicEvaluatorCalled
+PromiseConstructed | PromiseObject | PromiseStaticCall
+StaticMethodAssignment | MethodAssignment | MethodAssignment
+NamespacePrototypeRead | DynamicObjectModel | NamespaceClassPrototypeRead, DynamicEvaluatorCalled
+GlobalPrototypeRead | DynamicObjectModel | NamespaceClassPrototypeRead, DynamicEvaluatorCalled
+WorkerEntryNotNamedFunction | WorkerEntryShape | WorkerEntryAsync
+DescriptorDefaultThisUse | ThisInFieldInitializer | DescriptorDefaultThisArithmetic, FieldInitializerUninitializedRead, FieldInitializerSelfRead
+FieldInitializerThisUse | ThisInFieldInitializer | DescriptorDefaultThisArithmetic, FieldInitializerUninitializedRead, FieldInitializerSelfRead
+ObjectLiteralWithoutDescriptorContext | ObjectLiteralConstruction | FieldDefiniteAssertionUnassigned, NominalObjectLiteral
+LogicalAssignmentNonBoolean | LogicalNonBooleanOperandForm | LogicalNonBooleanOperand
+StaticAccessorAssignmentExpressionValue | NamedAccessor | AccessorAssignmentExpressionValue
+ArrayMapVoidCallback | VoidValue | VoidExpressionValue
+JsonSerializerTypeKind | JsonTypeDomain | JsonStringifyDomain
+JsonValidatorTypeKind | JsonTypeDomain | JsonStringifyDomain
+JsonConstructorTypeKind | JsonTypeDomain | JsonStringifyDomain
+JsonArrayConstructorTypeKind | JsonTypeDomain | JsonStringifyDomain
+JsonArrayStoreTypeKind | JsonTypeDomain | JsonStringifyDomain
+JsonMissingSyntaxError | JsonTypeDomain | JsonStringifyDomain
+JsonMissingTypeError | JsonTypeDomain | JsonStringifyDomain
+JsonMissingGraphType | JsonTypeDomain | JsonStringifyDomain
+BindingPatternUnsupportedRoot | NestedPattern | ArrayBindingNestedPattern
+ObjectBindingNestedPattern | NestedPattern | ArrayBindingNestedPattern
+ObjectBindingShorthandDefault | PatternDefaultValue | ArrayBindingDefaultValue
+ObjectBindingFieldDefault | PatternDefaultValue | ArrayBindingDefaultValue
+ConditionalJoinSizedOperandWidths | SizedOperandWidths | BinaryMixedNumericTypes
+ConditionalJoinGeneralUnionAndUndefined | GeneralUnionAndUndefined | UnionGeneralUnionAndUndefined, UndefinedUnionMember, UndefinedValue
+AggregateAnnotationLimit | AggregateLayoutLimit | FixedArrayByteLimit
+AssignmentLiteralAlias | LiteralUnionAlias | UnionLiteralUnionAlias
+UndefinedOptionalMember | OptionalDescriptorMember | DescriptorOptionalInitializerMissing, UndefinedValue
+LocalAggregateFrameLimit | AggregateLayoutLimit | FixedArrayByteLimit
+NullableCallShared | SharedLocationNarrowing | NullableMemberShared
+IndexedCallChecked | IndexedReadNullCheck | IndexedMemberChecked
+IndexedAssignmentChecked | IndexedReadNullCheck | IndexedMemberChecked
+ThisStaticField | StaticMemberSurface | GenericClassStaticMember, ThisStaticMethodMember
+IteratorBindingUnsupportedMembers | PatternSourceShape | BindingPatternSourceKind
+
+Command: `cargo test -p subscript-compiler --lib every_subset_rejection_carries_its_divergence -- --test-threads=1 --nocapture`
+
+s307: fragments 2.013s
+s154: 1777 witnesses; 507 variants; tsc 1.705s; checker 3.272s; total 5.687s
+
+## §311 sites with an entry of their own
+
+After the second round, 200 sites have an entry of their
+own; 37 of them are form b. The entries are in
+`compiler/src/check/rejection_examples/`.
+
+- `Api(StringToLocaleLowerCase, LocaleSensitiveString)`
+- `Api(RegexStringMatchAll, RegExpSubset)`
+- `Api(ArrayFind, ArrayMethodDefaults)`
+- `Api(ArrayFindLast, ArrayMethodDefaults)`
+- `Api(ArrayFlatMap, MethodTypeDomain)`
+- `Api(ArrayEntries, NoTupleType)`
+- `Api(ArrayKeys, IteratorTemporary)`
+- `Api(ArrayValues, IteratorTemporary)`
+- `Api(DateLocalGetMonth, DateSubset)`
+- `Api(DateLocalGetDate, DateSubset)`
+- `Api(DateLocalGetDay, DateSubset)`
+- `Api(DateLocalGetHours, DateSubset)`
+- `Api(DateLocalGetMinutes, DateSubset)`
+- `Api(DateLocalGetSeconds, DateSubset)`
+- `Api(DateLocalGetMilliseconds, DateSubset)`
+- `Api(DateLocalGetTimezoneOffset, DateSubset)`
+- `Api(DateStringToString, DateSubset)`
+- `Api(DateStringToDateString, DateSubset)`
+- `Api(DateStringToTimeString, DateSubset)`
+- `Api(DateStringToLocaleString, DateSubset)`
+- `Api(DateStringToLocaleDateString, DateSubset)`
+- `Api(DateStringToLocaleTimeString, DateSubset)`
+- `Api(MapValues, IteratorTemporary)`
+- `Api(MapEntries, NoTupleType)`
+- `Api(SetKeys, IteratorTemporary)`
+- `Api(SetValues, IteratorTemporary)`
+- `Api(SetEntries, NoTupleType)`
+- `Api(JsonStringifySetK, JsonSubset)`
+- `Api(JsonStringifyObject, JsonSubset)`
+- `Api(JsonStringifyFunction, JsonSubset)`
+- `Api(JsonStringifyF16, JsonSubset)`
+- `Api(JsonParseDateText, JsonSubset)`
+- `Api(FormParseIntValue, NumberCoercionAndArguments)`
+- `Api(FormNewNumberValue, NumberCoercionAndArguments)`
+- `Api(FormToString, NumberCoercionAndArguments)`
+- `Api(FormHypotWithMoreThanTwoArguments, MathSubset)`
+- `Api(FormDateParse, DateSubset)`
+- `Api(FormNewDateYearMonth, DateSubset)`
+- `Api(FormDirectComparison, DateSubset)`
+- `Api(FormSet, DateSubset)`
+- `Api(FormReduceCallback, ArrayMethodDefaults)`
+- `Api(FormReduceRightCallback, ArrayMethodDefaults)`
+- `Api(FormCallbackValueIndexArray, EscapingCapture)`
+- `Api(ArrayNullableFind, NullableElementSearch)`
+- `Api(ArrayNullableFindLast, NullableElementSearch)`
+- `Api(FormNewSetMap, NoTupleType)`
+- `Api(FormNewSetGeneratorT, GeneratorSingleUse)`
+- `Api(FormArrayFromMap, BareMapToArray)`
+- `Api(FormArrayFromGeneratorT, GeneratorSingleUse)`
+- `InterfaceCallSignature`
+- `SetClassInheritance`
+- `ArrayClassInheritance`
+- `StringPatternSpreadArity`
+- `ForOfArrayEntries`
+- `ObjectReflectionValue`
+- `KeyofAnnotation`
+- `CallbackSetRepeatedValue`
+- `PromiseThenNullRejection`
+- `AsyncArrowReceiverCapture`
+- `PromiseFinallyCall`
+- `ArrayMapAsyncResult`
+- `ArrayMapFunctionResult`
+- `ArraySpreadSource`
+- `MapCopyKey`
+- `ContextBytesSpread`
+- `CallSpread`
+- `SetSourceSpread`
+- `RegexSticky`
+- `ContextValue`
+- `NumberValue`
+- `JsonValue`
+- `DateValue`
+- `MapSetValue`
+- `NumberGlobalValue`
+- `DateMemberWrite`
+- `DateMethodValue`
+- `NumberMethodValue`
+- `ArrayElementDomain`
+- `MapCallbackCountedValue`
+- `ArrayCallbackSpread`
+- `ArrayAccumulatorDomain`
+- `ArrayMapResult`
+- `MapGroupByKey`
+- `ArrayFromTypeCount`
+- `ArrayFromSpread`
+- `ArrayFromSource`
+- `VoidPlaceDropsAsyncHandle`
+- `ContextMember`
+- `JsonMember`
+- `ArrayFromValue`
+- `ArrayMember`
+- `MapGroupByValue`
+- `MapSetMember`
+- `MathMemberWrite`
+- `MathMethodValue`
+- `MathMember`
+- `MathCallCount`
+- `NumberMemberWrite`
+- `NumberStaticValue`
+- `NumberMember`
+- `NumberGlobalCount`
+- `StringPatternSpread`
+- `DateStaticWrite`
+- `DateStaticValue`
+- `DateNewSpread`
+- `DateMember`
+- `HalfFloatUnary`
+- `JsonStaticMember`
+- `JsonStringifySpread`
+- `JsonParseReviver`
+- `JsonParseSpread`
+- `JsonParseDomain`
+- `JsonError`
+- `ForOfEntries`
+- `RegexMatchType`
+- `HalfFloatUpdate`
+- `ReactionReceiverCapture`
+- `PromiseCatchCall`
+- `RestParameter`
+- `ErasedNominalTypeArguments`
+- `ThisInStaticMethodArrow`
+- `ClassAlignmentBelowNatural`
+- `ClassFieldLayoutLimit`
+- `SuspendFrameMemberLayoutLimit`
+- `GeneratorFrameFinalAlignmentLimit`
+- `ClosureEnvironmentLayoutLimit`
+- `StoredAggregateLayoutLimit`
+- `SwitchCaseWriteOutsideDeclaration`
+- `FunctionBodyMissing`
+- `ConstructorFieldReadAfterNestedAssignment`
+- `LambdaUsingDeclaration`
+- `LiteralAliasDuplicateCase`
+- `DescriptorDisposeMethod`
+- `ValueClassDisposeMethod`
+- `ValueClassWriteAccessor`
+- `AsyncGeneratorMethod`
+- `ValueClassAsyncMethod`
+- `TypeOnlyExportDeclaration`
+- `ExportSpecifierKind`
+- `TypeOnlyOrDefaultExportSpecifier`
+- `TypeOnlyImportReexport`
+- `ReexportSpecifierKind`
+- `CatchBindingUnnarrowedUse`
+- `CatchBindingPattern`
+- `CatchBindingAnnotation`
+- `InstanceofLeftNotErrorFamily`
+- `DefaultExportDeclaration`
+- `EnumNonIntegerMember`
+- `GenericSourceAlias`
+- `WireEnumMemberNonIntegerSyntax`
+- `WireEnumValueRange`
+- `DuplicateWireEnumValue`
+- `TypeOnlyNamespaceImport`
+- `VoidTypeOutsideResult`
+- `UndefinedKeywordAnnotation`
+- `MirrorNullableView`
+- `NullableNominalAssignmentShared`
+- `NullableAssignmentShared`
+- `ImplicitNumericAssignment`
+- `CaptureEffectArgument`
+- `IndexUpdateExpressionValue`
+- `AccessorUpdateExpressionValue`
+- `OptionalMemberValueWithoutFallback`
+- `DescriptorAbsentMemberRead`
+- `InstancePrototypeMember`
+- `UnknownValueName`
+- `DynamicEvaluatorValue`
+- `ContextByteTargetLayout`
+- `PromiseCombinatorCall`
+- `PromiseReactionSpread`
+- `TaskGroupGeneratorBody`
+- `PromiseAllSpread`
+- `CoroutineStepLayoutLimit`
+- `DynamicFunctionConstructed`
+- `PromiseConstructed`
+- `StaticMethodAssignment`
+- `NamespacePrototypeRead`
+- `GlobalPrototypeRead`
+- `WorkerEntryNotNamedFunction`
+- `DescriptorDefaultThisUse`
+- `FieldInitializerThisUse`
+- `ObjectLiteralWithoutDescriptorContext`
+- `LogicalAssignmentNonBoolean`
+- `StaticAccessorAssignmentExpressionValue`
+- `ArrayMapVoidCallback`
+- `BindingPatternUnsupportedRoot`
+- `ObjectBindingNestedPattern`
+- `ObjectBindingShorthandDefault`
+- `ObjectBindingFieldDefault`
+- `ConditionalJoinSizedOperandWidths`
+- `ConditionalJoinGeneralUnionAndUndefined`
+- `AggregateAnnotationLimit`
+- `AssignmentLiteralAlias`
+- `UndefinedOptionalMember`
+- `LocalAggregateFrameLimit`
+- `NullableCallShared`
+- `IndexedCallChecked`
+- `IndexedAssignmentChecked`
+- `ThisStaticField`
+- `IteratorBindingUnsupportedMembers`

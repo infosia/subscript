@@ -190,12 +190,11 @@ impl<'p> Checker<'p> {
                     .get(1)
                     .is_some_and(|arg| std::ptr::eq(arg, argument))
             {
-                let mut diagnostic = crate::check::rejection::diagnostic(
-                    RejectionSite::PromiseCombinatorCall,
+                let diagnostic = crate::check::rejection::diagnostic(
+                    RejectionSite::PromiseThenNullRejection,
                     "`.then(...)` takes no `null` rejection callback; use `.then(f)`",
                     self.pos(argument.expr.span()),
                 );
-                diagnostic.example = Some(&crate::check::diagnostic_text::THEN_NULL_REJECTION);
                 self.diags.push(diagnostic);
                 return None;
             }
@@ -550,13 +549,12 @@ impl<'p> Checker<'p> {
     /// Reports a form that TypeScript accepts and the language does not
     /// (site `PromiseCombinatorCall`).
     fn reject_combinator(&mut self, method: &str, message: impl Into<String>, pos: Pos) {
-        let mut diagnostic =
-            crate::check::rejection::diagnostic(RejectionSite::PromiseCombinatorCall, message, pos);
-        diagnostic.example = match method {
-            "then" => Some(&crate::check::diagnostic_text::THEN),
-            "catch" => Some(&crate::check::diagnostic_text::CATCH),
-            _ => Some(&crate::check::diagnostic_text::FINALLY),
+        let site = match method {
+            "then" => RejectionSite::PromiseCombinatorCall,
+            "catch" => RejectionSite::PromiseCatchCall,
+            _ => RejectionSite::PromiseFinallyCall,
         };
+        let diagnostic = crate::check::rejection::diagnostic(site, message, pos);
         self.diags.push(diagnostic);
     }
 }

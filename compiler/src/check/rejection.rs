@@ -13,6 +13,22 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::InterfaceCallSignature => (RuleCode::S100, Diverges(Divergence::InterfaceMemberForm)),
+    Self::SetClassInheritance => (RuleCode::S100, Diverges(Divergence::ReferenceClassInheritance)),
+    Self::ArrayClassInheritance => (RuleCode::S100, Diverges(Divergence::ReferenceClassInheritance)),
+    Self::StringPatternSpreadArity => (RuleCode::S100, Diverges(Divergence::VariadicArguments)),
+    Self::ForOfArrayEntries => (RuleCode::S014, Diverges(Divergence::NoTupleType)),
+    Self::ObjectReflectionValue => (RuleCode::S016, Diverges(Divergence::LibGlobalValue)),
+    Self::KeyofAnnotation => (RuleCode::S100, Diverges(Divergence::OperatorAnnotation)),
+    Self::ArrayMapFunctionResult => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
+    Self::ArrayMapAsyncResult => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
+    Self::PromiseCatchCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
+    Self::PromiseFinallyCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
+    Self::AsyncArrowReceiverCapture => (RuleCode::S009, Diverges(Divergence::AsyncArrowCapture)),
+    Self::ReactionReceiverCapture => (RuleCode::S009, Diverges(Divergence::AsyncArrowCapture)),
+    Self::PromiseThenNullRejection => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
+    Self::CallbackSetRepeatedValue => (RuleCode::S014, Diverges(Divergence::CallbackParameterShape)),
+
     Self::NullableMemberLoopHead => (RuleCode::S011, TscRejects),
     Self::NullableCallLoopHead => (RuleCode::S100, TscRejects),
     Self::NullableNominalAssignmentLoopHead => (RuleCode::S005, TscRejects),
@@ -252,7 +268,7 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::AggregateLayoutLimit))
     }
     Self::AsyncChildFrameLayoutLimit => {
-        (RuleCode::S100, Diverges(Divergence::AggregateLayoutLimit))
+        (RuleCode::S100, TscRejects)
     }
     Self::GeneratorFrameFinalAlignmentLimit => {
         (RuleCode::S100, Diverges(Divergence::AggregateLayoutLimit))
@@ -494,10 +510,7 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::ContextAffineStaticField),
     ),
-    Self::DescriptorOptionalDefaultMissing => (
-        RuleCode::S012,
-        Diverges(Divergence::OptionalDescriptorMember),
-    ),
+    Self::DescriptorOptionalDefaultMissing => (RuleCode::S012, TscRejects),
     Self::DescriptorRequiredInitializer => (RuleCode::S100, TscRejects),
     Self::DescriptorInitializerWithoutOptional => (
         RuleCode::S100,

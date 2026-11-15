@@ -65,7 +65,31 @@ message does not identify the form; each `RejectionSite` now does
 
 ### 311.3 Phase Review
 
-### 311.4 Open
+Evidence: `specs/tracking/divergence-alternatives.md`. At the contract
+pin, the total check of rule 4 fails at 185 sites. After the change,
+200 sites have an entry of their own, and 10 sites that no
+`tsc`-accepted program reaches are `TscRejects` (§309 rule 4). The
+review compared the CLI output of 500 reject and 493 accept files with
+a pin build: only the example block lines differ, in 91 reject files.
+The debug CLI median is 4.38 ms for a rejected file and 4.66 ms for an
+accepted file at the pin and after the change. The binary grows by
+99,808 bytes (0.19 %).
+
+One fresh review found two MAJOR findings, both realistic, and nine
+MINOR findings.
+
+1. MAJOR: three sites are reached by two forms, and the example fits
+   one: `keyof T`, `Object.keys(x)`, and `arr.entries()` in a `for…of`
+   head. Rule 7 splits them. The class stays open: §311.4 item 1.
+2. MAJOR: the 13 fixed examples of §182 had a `why` of their own, and
+   the variant `why` was false for some (`.then((v) => v + this.n)`).
+   Rule 1 is amended; rule 6 keeps the record id spelling.
+3. MINOR, fixed: two other `why` texts; six examples not on the first
+   diagnostic (rule 8); three programs of another intent; a check that
+   compared a record with the expression that wrote it; a shared
+   fragment checked once for each site; the line count of rule 5; a
+   negative control; a comment with a former cost.
+
 
 1. The total check of rule 4 reads only the example fragment. It cannot
    find a form that reaches the same site and that the example does not

@@ -564,44 +564,45 @@ pub fn render_language_reference(repository_root: &Path) -> io::Result<String> {
     }
 
     writeln!(out, "\n## Listed diagnostic examples (§182)").expect("write to String");
-    for (name, entry) in [
+    use crate::check::rejection::RejectionSite;
+    for (name, site) in [
         (
             "TaskGroup in a generator body",
-            crate::check::diagnostic_text::GROUP,
+            RejectionSite::TaskGroupGeneratorBody,
         ),
-        ("Date method value", crate::check::diagnostic_text::DATE),
+        ("Date method value", RejectionSite::DateMethodValue),
         (
             "Function array map result",
-            crate::check::diagnostic_text::FUNCTION_MAP,
+            RejectionSite::ArrayMapFunctionResult,
         ),
-        (
-            "Async array map result",
-            crate::check::diagnostic_text::ASYNC_MAP,
-        ),
-        ("Promise.then", crate::check::diagnostic_text::THEN),
-        ("Promise.catch", crate::check::diagnostic_text::CATCH),
-        ("Promise.finally", crate::check::diagnostic_text::FINALLY),
+        ("Async array map result", RejectionSite::ArrayMapAsyncResult),
+        ("Promise.then", RejectionSite::PromiseCombinatorCall),
+        ("Promise.catch", RejectionSite::PromiseCatchCall),
+        ("Promise.finally", RejectionSite::PromiseFinallyCall),
         (
             "Async receiver capture",
-            crate::check::diagnostic_text::RECEIVER,
+            RejectionSite::AsyncArrowReceiverCapture,
         ),
         (
             "Promise reaction receiver capture",
-            crate::check::diagnostic_text::REACTION_RECEIVER,
+            RejectionSite::ReactionReceiverCapture,
         ),
-        (
-            "Mutable async capture",
-            crate::divergence::Divergence::AsyncArrowCapture.entry(),
-        ),
+        ("Mutable async capture", RejectionSite::AsyncArrowCapture),
         (
             "Await of a synchronous call",
-            crate::divergence::Divergence::AwaitIndirectCall.entry(),
+            RejectionSite::AwaitIndirectCall,
         ),
         (
             "Generic function value",
-            crate::divergence::Divergence::GenericFunctionValue.entry(),
+            RejectionSite::GenericFunctionValue,
         ),
     ] {
+        let variant = site
+            .class()
+            .1
+            .divergence()
+            .ok_or_else(|| invalid("example site needs a divergence"))?;
+        let entry = site.example().copied().unwrap_or_else(|| variant.entry());
         writeln!(out, "\n### {name}\n\nTypeScript:\n\n```typescript\n{}\n```\n\nsubscript:\n\n```typescript\n{}\n```\n\n{} ({})", entry.ts, entry.subscript, entry.why, entry.collision).expect("write to String");
     }
 

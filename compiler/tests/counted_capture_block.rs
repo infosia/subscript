@@ -198,7 +198,7 @@ fn a_generator_callback_diagnostic_gives_the_for_of_fix() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("for (const value of values) { value.next(); }"),
+        rendered.contains("for (const value of [g()]) { value.next(); }"),
         "{rendered}"
     );
     assert!(!rendered.contains("toFixed"), "{rendered}");

@@ -15,6 +15,9 @@ use crate::{check_program, SourceFile};
 #[path = "rejection_witness_index.rs"]
 mod index;
 
+#[path = "rejection_examples_total.rs"]
+mod examples;
+
 thread_local! {
     static REACHED: std::cell::RefCell<Vec<(RejectionSite, String, Pos)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -159,6 +162,29 @@ const FORM_B_VARIANTS: &[Divergence] = &[
 ];
 
 fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> Vec<String> {
+    fragment_site_checker_failures(None, variant, ts, subscript)
+}
+
+fn fragment_site_checker_failures(
+    site: Option<RejectionSite>,
+    variant: Divergence,
+    ts: &str,
+    subscript: &str,
+) -> Vec<String> {
+    fragment_sites_checker_failures(
+        &site.into_iter().collect::<Vec<_>>(),
+        variant,
+        ts,
+        subscript,
+    )
+}
+
+fn fragment_sites_checker_failures(
+    sites: &[RejectionSite],
+    variant: Divergence,
+    ts: &str,
+    subscript: &str,
+) -> Vec<String> {
     let mut failures = Vec::new();
     for (name, source) in [("ts", ts), ("subscript", subscript)] {
         if source.starts_with(['\n', '\r']) {
@@ -168,7 +194,13 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
         }
     }
     let form_b = subscript.starts_with("no equivalent: ");
-    if form_b && !FORM_B_VARIANTS.contains(&variant) {
+    if let Some(site) = sites.iter().find(|site| site.example().is_some()) {
+        if form_b != examples::FORM_B_SITES.contains(site) {
+            failures.push(format!(
+                "{site:?}: form b field disagrees with FORM_B_SITES"
+            ));
+        }
+    } else if form_b && !FORM_B_VARIANTS.contains(&variant) {
         failures.push(format!(
             "{variant:?}: form b variant is absent from FORM_B_VARIANTS"
         ));
@@ -206,6 +238,7 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
         },
         ..crate::CheckOptions::default()
     };
+    clear_reached();
     let diagnostics = match crate::check_program_with(&files, &options) {
         Ok(module) if variant == Divergence::RunnerMainMissing => {
             module.runner_main().err().into_iter().collect()
@@ -213,6 +246,28 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
         Ok(_) => Vec::new(),
         Err(diagnostics) => diagnostics,
     };
+    let reached = take_reached();
+    for &site in sites {
+        if !reached.iter().any(|(actual, _, _)| *actual == site) {
+            failures.push(format!(
+                "{site:?} | {variant:?} | {:?}",
+                reached.iter().map(|(site, _, _)| site).collect::<Vec<_>>()
+            ));
+        }
+    }
+    for &site in sites {
+        if !diagnostics.first().is_some_and(|first| {
+            first.divergence.is_some_and(|variant| {
+                let actual = first.example.copied().unwrap_or_else(|| variant.entry());
+                (actual.ts, actual.subscript) == (ts, subscript)
+            })
+        }) {
+            failures.push(format!(
+                "{site:?}: example is not on the first diagnostic: {:?}",
+                diagnostics.first().map(|d| &d.message)
+            ));
+        }
+    }
     if !diagnostics
         .iter()
         .any(|diagnostic| diagnostic.divergence == Some(variant))
@@ -465,9 +520,7 @@ fn class_controls() -> [Witness<'static>; 3] {
 }
 
 /// One tsc process measures all witnesses and both carried program fragments.
-/// §307, --test-threads=1: old table fragments 0.185s, revised table fragments 0.280s.
-/// Total 1.736s before, 1.959s after; tsc 0.632s before, 0.696s after.
-/// §309: 1,777 witnesses, tsc 0.675s, total 1.915s with one test thread.
+/// §311, --test-threads=1: site examples 0.117s, tsc 0.849s, total 2.646s.
 /// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -506,6 +559,10 @@ fn every_subset_rejection_carries_its_divergence() {
             enabled_modules: Vec::new(),
         };
         paths.extend(rejection_programs::write_tsc(&program, &temporary));
+    }
+    let site_programs = examples::programs();
+    for program in &site_programs {
+        paths.extend(rejection_programs::write_tsc(program, &temporary));
     }
     let controls = class_controls();
     for witness in witnesses.iter().chain(&controls) {
@@ -565,6 +622,14 @@ fn every_subset_rejection_carries_its_divergence() {
             ));
         }
     }
+    for program in &site_programs {
+        let codes = measured
+            .remove(&format!("@{}", program.key))
+            .unwrap_or_default();
+        if let Some(failure) = fragment_tsc_failure(&program.key, &codes) {
+            failures.push(failure);
+        }
+    }
     for witness in &witnesses {
         let mut codes = measured.remove(witness.file).unwrap_or_default();
         if !witness.mirror.is_empty() {
@@ -618,12 +683,14 @@ fn every_subset_rejection_carries_its_divergence() {
     let fragments_started = Instant::now();
     for variant in carried_variants() {
         let entry = variant.entry();
-        failures.extend(fragment_checker_failures(
+        failures.extend(fragment_sites_checker_failures(
+            &examples::shared_sites(variant),
             variant,
             entry.ts,
             entry.subscript,
         ));
     }
+    failures.extend(examples::all_checker_failures());
     eprintln!(
         "s307: fragments {:.3}s",
         fragments_started.elapsed().as_secs_f64()
@@ -638,7 +705,11 @@ fn every_subset_rejection_carries_its_divergence() {
     );
     let targets: BTreeSet<_> = failures
         .iter()
-        .filter_map(|s| s.split_once(": ").map(|p| p.0))
+        .filter_map(|s| {
+            s.split_once(" | ")
+                .or_else(|| s.split_once(": "))
+                .map(|p| p.0)
+        })
         .collect();
     fs::remove_dir_all(temporary).unwrap();
     assert!(
