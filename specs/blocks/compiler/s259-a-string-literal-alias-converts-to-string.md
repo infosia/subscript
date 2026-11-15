@@ -134,7 +134,10 @@ One fresh review of the implementation. No CRITICAL finding.
    element. `[m, "c"]` gives S100 "array element expects `Mode`, got
    `string`", and `["c", m]` is accepted as `string[]`. `tsc` accepts
    the two.
+   *(Selected 2026-11-15 for §299.)*
 3. `m as string` gives S100 "cannot convert `Mode` to `string`".
    `tsc` accepts it.
+   *(Selected 2026-11-15 for §299.)*
 4. `m === s`, `m.length`, and `"x" + m` stay rejected (rule 4). `tsc`
    accepts each.
+   *(Selected 2026-11-15 for §299.)*

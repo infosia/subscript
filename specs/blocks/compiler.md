@@ -340,3 +340,4 @@ Every section, with its status:
 | §296 | A foreign call releases its scratch on each exit | active | [`s296-a-foreign-call-releases-its-scratch-on-each-exit.md`](compiler/s296-a-foreign-call-releases-its-scratch-on-each-exit.md) |
 | §297 | An invalidation list names only values that dominate it | active | [`s297-an-invalidation-list-names-only-values-that-dominate-it.md`](compiler/s297-an-invalidation-list-names-only-values-that-dominate-it.md) |
 | §298 | The ship tier asserts the string view of a bound callback | active | [`s298-the-ship-tier-asserts-the-string-view-of-a-bound-callback.md`](compiler/s298-the-ship-tier-asserts-the-string-view-of-a-bound-callback.md) |
+| §299 | A string-literal alias is a `string` operand | active | [`s299-a-string-literal-alias-is-a-string-operand.md`](compiler/s299-a-string-literal-alias-is-a-string-operand.md) |
