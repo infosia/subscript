@@ -1428,3 +1428,56 @@ export function main(): void {
     session.call_main().expect("old code remains callable");
     assert_eq!(output(&mut session), "old:absent\n");
 }
+
+// Section 306: measured focused cost below 0.1 s; mirror checks and one JIT session.
+#[test]
+fn reload_refuses_changed_class_boundary_header() {
+    class_boundary_fact_edit(false);
+}
+
+// Section 306: measured focused cost below 0.1 s; mirror checks and one JIT session.
+#[test]
+fn reload_refuses_changed_class_callback_lifetime() {
+    class_boundary_fact_edit(true);
+}
+
+fn class_boundary_fact_edit(callback: bool) {
+    fn sources(header: &str, lifetime: &str, body: &str) -> Vec<SourceFile> {
+        vec![
+            SourceFile::ambient("mirror.d.ts", format!(
+                "// @subscript-c-header include=\"{header}\"\n{lifetime}\n// @subscript-c-callback typedef=\"Callback\" aggregate=\"StringView\" data=\"data\" len=\"len\"\ntype Callback = (message: string, userdata1: object | null, userdata2: object | null) => void;\ndeclare class V {{ callback: Callback; userdata1: object | null; userdata2: object | null; constructor(callback: Callback, userdata1: object | null, userdata2: object | null); }}"
+            )),
+            SourceFile::entry("live.ts", format!("export function main(): void {{ print('{body}'); }}")),
+        ]
+    }
+    let before = sources("old.h", "", "old");
+    let after = if callback {
+        sources(
+            "old.h",
+            "// @subscript-c-callback-lifetime aggregate=\"V\"",
+            "old",
+        )
+    } else {
+        sources("new.h", "", "old")
+    };
+    let a = subscript_compiler::check_program(&before).expect("old mirror");
+    let b = subscript_compiler::check_program(&after).expect("edited mirror");
+    let a_hash = subscript_codegen::declaration_hash(&a);
+    let b_hash = subscript_codegen::declaration_hash(&b);
+    let mut session = ReloadSession::new(&before).expect("session");
+    let error = session
+        .reload(&after)
+        .expect_err("boundary fact edit must be refused");
+    assert!(
+        matches!(error, ReloadError::DeclarationChanged { declaration } if declaration == "class V")
+    );
+    assert_ne!(a_hash, b_hash);
+    assert_eq!(a_hash.first_difference(&b_hash).as_deref(), Some("class V"));
+    session.call_main().unwrap();
+    assert_eq!(output(&mut session), "old\n");
+    session
+        .reload(&sources("old.h", "", "new"))
+        .expect("class-preserving body edit");
+    session.call_main().unwrap();
+    assert_eq!(output(&mut session), "new\n");
+}

@@ -79,4 +79,34 @@ Out of scope: §290.4 item 2 (`return id(b)();`).
 
 ### 306.3 Phase Review
 
+Evidence: `specs/tracking/cycle-and-class-hash.md`. At the contract pin,
+`r516`, `r517`, and `r518` are accepted, and the two reload tests of
+rule 4 fail. Over `corpus/accept` and `corpus/reject`, the diagnostics
+of the pin and the change differ only on these three entries.
+
+One fresh review found one MAJOR finding, realistic, and two MINOR
+findings.
+
+1. MAJOR: rule 1c as first written counted a call through each value
+   that holds an undecided lambda. A dispatch table
+   `const states = [idle, walk]; … states[s]()`, which `tsc` and the
+   pin accept, became rejected. `tsc` gives TS7023 only when each
+   source of the value is in the cycle. Rule 1c is amended, and eight
+   measured forms are accepted unit tests.
+2. MINOR, fixed: `tsc` gives TS2368 for nine more type parameter names.
+   Rule 3 is amended to the list.
+3. MINOR, fixed: the cycle check walked the edge graph on each read. A
+   chain of 3000 lambdas took 9.1 s against 0.87 s at the pin. A cache
+   of the reached set makes it 0.915 s against 0.906 s.
+
+The first full gate failed in the debug suite only: eight tests of
+§306 saw the checker before the change. The debug test binary of that
+run failed again when run alone, and a fresh build of the same commit
+passed. The stale debug artifacts were removed
+(`cargo clean -p subscript-compiler`), and the second full gate passed.
+
 ### 306.4 Open
+
+1. `c ? v : b`, with a function declaration `v` and a lambda `b` of the
+   cycle, stays accepted. `tsc` gives TS7023. The pin gives the same
+   result.

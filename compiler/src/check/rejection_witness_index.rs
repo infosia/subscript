@@ -379,6 +379,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::GenericClassStaticMember => WitnessEntry::General { files: &["generic-class-static-member", "poisoned-constructor-count"], variant: Some(Divergence::StaticMemberSurface), reason: "" },
         RejectionSite::GenericClassGenericMethod => WitnessEntry::General { files: &["generic-class-generic-method"], variant: Some(Divergence::GenericMethodOnGenericClass), reason: "" },
         RejectionSite::SourceFunctionBodyMissing => WitnessEntry::General { files: &["c-initializer-rejected-generic"], variant: None, reason: "" },
+        RejectionSite::UndefinedTypeParameterName => WitnessEntry::General { files: &["s306-undefined-type-parameter"], variant: None, reason: "" },
         RejectionSite::DuplicateTypeParameter => WitnessEntry::General { files: &["duplicate-type-parameter"], variant: None, reason: "" },
         RejectionSite::ModuleBindingPattern => WitnessEntry::General { files: &["module-binding-pattern"], variant: Some(Divergence::ModuleLevelPattern), reason: "" },
         RejectionSite::EnumStringMemberName => WitnessEntry::General { files: &["enum-string-member-name"], variant: Some(Divergence::EnumStringMemberNameForm), reason: "" },

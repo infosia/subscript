@@ -55,6 +55,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::SwitchCaseClosureRead,
     RejectionSite::EnumObjectMember,
     RejectionSite::TypeParameterDefault,
+    RejectionSite::UndefinedTypeParameterName,
     RejectionSite::MapCopyNullableNonMap,
     RejectionSite::ClassUndeclaredPropertyWrite,
     RejectionSite::ClassUndeclaredMemberRead,

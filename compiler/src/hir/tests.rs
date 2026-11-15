@@ -1084,3 +1084,29 @@ fn reload_declaration_hash_global_coverage() {
         pos: _,
     } = module.globals.pop().expect("one global");
 }
+
+// Section 306 rule 4: a new ClassDef field requires a hash decision here.
+// Measured cost: under 0.01 s; one checker invocation and a destructure.
+#[test]
+fn reload_declaration_hash_class_coverage() {
+    let mut module = crate::check_program(&[crate::SourceFile::entry(
+        "class.ts",
+        "class V {} export function main(): void {}",
+    )])
+    .expect("class declaration");
+    let ClassDef {
+        symbol: _,             // name plus source identity is hashed; the symbol adds no fact.
+        name: _,               // hashed in the class text and shape.
+        is_value: _,           // hashed in the layout shape.
+        alignment_override: _, // its value is hashed in the layout shape; position is diagnostic.
+        is_descriptor: _,      // construction/checking only; stored field absence is hashed.
+        is_boundary: _,        // hashed in the layout shape.
+        boundary_header: _,    // hashed: boundary identity.
+        callback_lifetime: _,  // hashed: retained callback lifetime.
+        fields: _,             // hashed: ordered names, types and absence, plus the layout shape.
+        ctor: _,               // its signature is a separate hash entry; body is excluded.
+        methods: _,            // signatures are separate entries; bodies are excluded.
+        index_signature: _,    // check-time rewrite to the hashed method signatures.
+        pos: _,                // file identity is hashed; line and column only locate diagnostics.
+    } = module.classes.pop().expect("V");
+}

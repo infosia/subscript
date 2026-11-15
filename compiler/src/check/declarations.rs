@@ -516,11 +516,43 @@ impl<'p> Checker<'p> {
     }
 
     pub(super) fn reject_type_parameter_defaults(&mut self, params: &ast::TsTypeParamDecl) -> bool {
-        let mut rejected = false;
+        let mut rejected = self.reject_reserved_type_parameter_names(params);
         for parameter in &params.params {
             if let Some(default) = &parameter.default {
                 rejected = true;
                 self.reject_subset(RejectionSite::TypeParameterDefault, "type-parameter defaults are not in the decided surface; pass an explicit type argument", self.pos(default.span()));
+            }
+        }
+        rejected
+    }
+
+    /// Section 306 rule 3 applies to value and type signatures alike.
+    pub(super) fn reject_reserved_type_parameter_names(
+        &mut self,
+        params: &ast::TsTypeParamDecl,
+    ) -> bool {
+        let mut rejected = false;
+        for parameter in &params.params {
+            let name = parameter.name.sym.as_ref();
+            if matches!(
+                name,
+                "undefined"
+                    | "never"
+                    | "string"
+                    | "object"
+                    | "number"
+                    | "boolean"
+                    | "any"
+                    | "unknown"
+                    | "bigint"
+                    | "symbol"
+            ) {
+                rejected = true;
+                self.reject_subset(
+                    RejectionSite::UndefinedTypeParameterName,
+                    format!("a type parameter cannot have the name `{name}`"),
+                    self.pos(parameter.name.span),
+                );
             }
         }
         rejected

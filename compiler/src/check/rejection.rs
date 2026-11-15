@@ -723,6 +723,7 @@ rejection_classes! {
         Diverges(Divergence::GenericMethodOnGenericClass),
     ),
     Self::SourceFunctionBodyMissing => (RuleCode::S100, TscRejects),
+    Self::UndefinedTypeParameterName => (RuleCode::S100, TscRejects),
     Self::DuplicateTypeParameter => (RuleCode::S017, TscRejects),
     Self::ModuleBindingPattern => {
         (RuleCode::S100, Diverges(Divergence::ModuleLevelPattern))

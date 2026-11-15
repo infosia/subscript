@@ -245,6 +245,7 @@ fn run_with_effects(
         task_group_parameters: false,
         deciding_type: false,
         lambda_result_inference: Vec::new(),
+        result_dependencies: Default::default(),
         inferring_result_operand: false,
         generic_callback_context: false,
         lambda_result_hint: None,

@@ -125,6 +125,12 @@ impl<'p> Checker<'p> {
         let void_context = std::mem::take(&mut self.lambda_void_context);
         let called_at_once = std::mem::take(&mut self.lambda_called_at_once);
         let value = self.with_expression_work(|checker| {
+            if a.type_params
+                .as_deref()
+                .is_some_and(|params| checker.reject_reserved_type_parameter_names(params))
+            {
+                return checker.err_expr(pos);
+            }
             if a.is_async && a.type_params.is_some() {
                 checker.reject_subset(
                     RejectionSite::AsyncArrowFunction,
@@ -415,6 +421,8 @@ impl<'p> Checker<'p> {
         let saved_operand = std::mem::replace(&mut self.inferring_result_operand, false);
         let inferring_result = inferred_void || ret.is_none();
         if inferring_result {
+            self.result_dependencies
+                .register(a.span, pos.clone(), ret.is_some());
             self.lambda_result_inference
                 .push(crate::check::initializer::LambdaResultInference {
                     span: a.span,
@@ -706,6 +714,9 @@ impl<'p> Checker<'p> {
                 .pop()
                 .is_some_and(|result| result.rejected)
         {
+            ret = Some(Type::Error);
+        }
+        if self.result_dependencies.rejected.contains(&a.span) {
             ret = Some(Type::Error);
         }
         self.inferring_result_operand = saved_operand;

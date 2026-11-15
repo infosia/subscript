@@ -1550,3 +1550,4 @@ CCallbackRequiresNoEnvironment	c-corpus-r504-c-callback-through-return	S100	a ca
 CCallbackRequiresNoEnvironment	c-corpus-r505-c-callback-through-indirect	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
 CCallbackRequiresNoEnvironment	c-corpus-r506-c-callback-through-array	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
 CCallbackRequiresNoEnvironment	c-corpus-r507-c-callback-through-method	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
+UndefinedTypeParameterName	s306-undefined-type-parameter	S100	a type parameter cannot have the name `undefined`

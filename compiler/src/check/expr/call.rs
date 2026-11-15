@@ -17,6 +17,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        self.read_call_result(c, fx);
         let active = self.active_call.replace(c.span);
         let active_context = self.enter_call_context(c, ctx);
         let checked = self.checked_call(c, Self::poisoned_call, |checker| {

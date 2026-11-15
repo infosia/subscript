@@ -56,6 +56,7 @@ pub(crate) enum RejectionSite {
     SwitchCaseClosureRead,
     EnumObjectMember,
     TypeParameterDefault,
+    UndefinedTypeParameterName,
     Api(ApiRejectionId, Divergence),
     MapCopyNullableNonMap,
 

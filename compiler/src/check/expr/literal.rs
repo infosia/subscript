@@ -492,6 +492,16 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let name = id.sym.to_string();
         let pos = self.pos(id.span);
+        // §306: a completed local result can join a cycle when its caller is checked.
+        if !self.result_dependencies.rejected.is_empty()
+            && self
+                .lambda_value_sources(&ast::Expr::Ident(id.clone()), fx)
+                .into_iter()
+                .flatten()
+                .any(|(span, _)| self.result_dependencies.rejected.contains(&span))
+        {
+            return self.err_expr(pos);
+        }
         if let Some(value) = self.check_group_value(&name, fx, &pos) {
             return value;
         }

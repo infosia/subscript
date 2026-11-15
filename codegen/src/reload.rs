@@ -156,7 +156,8 @@ fn signature_text(f: &hir::Function) -> String {
 
 /// Computes the declaration fingerprint of a checked module (§8.2).
 ///
-/// Covered: classes (kind, field names, types, order, and field absence), enum member
+/// Covered: classes (kind, boundary header, callback lifetime, field names, types,
+/// order, and field absence), enum member
 /// values, Q32 string-alias member spellings and order, module-level
 /// variable names and types, and every user function signature — free
 /// functions, constructors, and methods, including parameter escape facts.
@@ -205,10 +206,12 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
         push(
             label("class", &c.name, &c.pos, ambiguous),
             &format!(
-                "{}|{}|{:?}|{}",
+                "{}|{}|{:?}|{:?}|{:?}|{}",
                 c.pos.file,
                 c.name,
                 crate::layout::class_shape(c),
+                c.callback_lifetime,
+                c.boundary_header,
                 fields.join(";")
             ),
         );

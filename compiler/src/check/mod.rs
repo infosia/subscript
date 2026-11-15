@@ -61,6 +61,7 @@ mod lambda_group;
 mod receiver_capture;
 #[cfg(test)]
 mod receiver_capture_tests;
+mod result_dependency;
 use initializer::{DeferredExpression, Initializer, TypeState};
 mod instance_chain;
 use instance_chain::InstanceArguments;
@@ -548,6 +549,7 @@ pub(crate) struct Scope {
         bool,
         Option<hir::LambdaDefaults>,
     )>,
+    pub result_sources: HashMap<String, Option<Vec<(swc_common::Span, bool)>>>,
     pub lambda_groups: HashMap<swc_common::Span, Vec<lambda_group::Member>>,
     pub group_members: HashMap<String, lambda_group::Member>,
     pub named_lambdas: Shared<HashMap<String, hir::LambdaDefaults>>,
@@ -1358,6 +1360,7 @@ pub(crate) struct Checker<'p> {
     deciding_type: bool,
     /// Unannotated lambda results currently being inferred (§290).
     lambda_result_inference: Vec<initializer::LambdaResultInference>,
+    result_dependencies: result_dependency::ResultDependencies,
     inferring_result_operand: bool,
     generic_callback_context: bool,
     /// The contextual result type of the next lambda with no result

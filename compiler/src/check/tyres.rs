@@ -874,6 +874,13 @@ impl<'p> Checker<'p> {
                 return Type::Error;
             }
         };
+        if fn_ty
+            .type_params
+            .as_deref()
+            .is_some_and(|params| self.reject_reserved_type_parameter_names(params))
+        {
+            return Type::Error;
+        }
         let mut params = Vec::new();
         for p in &fn_ty.params {
             let optional = match p {

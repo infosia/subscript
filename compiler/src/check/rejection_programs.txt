@@ -9965,3 +9965,9 @@ class Holder { constructor(public cb:SubLogCallback) {} install():void { new Sub
 export function main():void { const k:i32=7; new Holder((m,u1,u2):void=>{print(`${k}`);}).install(); }
 END FILE
 END PROGRAM
+PROGRAM	s306-undefined-type-parameter	TS2368		0
+FILE	E	main.ts
+function s306Undefined<undefined>(x: i32): void { return undefined; }
+export {};
+END FILE
+END PROGRAM

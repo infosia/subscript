@@ -515,6 +515,23 @@ impl<'p> Checker<'p> {
             if let (Some(text), Some(scope)) = (string_literal, fx.scopes.last_mut()) {
                 scope.string_literals.insert(name.clone(), text);
             }
+            if pattern_type_ann(&d.name).is_none() {
+                if let Some(source) = &d.init {
+                    // An element captured in a callable alias has its decided
+                    // signature; calling the alias does not read the list again.
+                    let sources =
+                        if matches!(super::expr::unparen_expr(source), ast::Expr::Member(_))
+                            && matches!(self.apparent_type(&init.ty), Type::Func(_))
+                        {
+                            None
+                        } else {
+                            self.lambda_value_sources(source, fx)
+                        };
+                    if let Some(scope) = fx.scopes.last_mut() {
+                        scope.result_sources.insert(name.clone(), sources);
+                    }
+                }
+            }
             self.remember_named_lambda(&name, d, mutable, &init, fx);
             if let Some(identity) = integer_key {
                 if let Some(scope) = fx.scopes.last_mut() {
