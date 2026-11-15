@@ -14,7 +14,7 @@ use subscript_codegen::{
 use subscript_compiler::{check_program, SourceFile};
 
 const MIRROR: &str = "// @subscript-c-header include=\"engine.h\"
-// @subscript-c-callback typedef=\"EngineCallback\"
+// @subscript-c-callback typedef=\"EngineCallback\" aggregate=\"EngineView\" data=\"data\" len=\"len\"
 type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 declare class EngineSink {
   engineCallback: EngineCallback;

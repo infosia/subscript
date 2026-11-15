@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use subscript_bindgen::{generate_for_header, generate_with_options, BindOptions};
 
 const DIRECTIVE: &str = "// @subscript-c-callback-lifetime aggregate=\"SubCallbackInfo\"";
-const CALLBACK_RECORD: &str = "// @subscript-c-callback typedef=\"SubLogCallback\"\n";
+const CALLBACK_RECORD: &str =
+    "// @subscript-c-callback typedef=\"SubLogCallback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n";
 /// The aggregate the committed mirror carries, and its directive line.
 /// `SubRequestInfo` is declared after `SubCallbackInfo` in the header, so
 /// its record follows in the provenance block.

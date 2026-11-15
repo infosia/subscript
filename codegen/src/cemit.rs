@@ -133,6 +133,7 @@ struct Emitter<'m> {
     runtime_symbols: BTreeMap<String, (String, Vec<String>)>,
     foreign_symbols: Vec<String>,
     field_owners: HashMap<l::FieldId, (ClassId, usize)>,
+    callback_views: BTreeMap<String, [String; 2]>,
     helper_prototypes: String,
     helpers: String,
     helper_count: u32,

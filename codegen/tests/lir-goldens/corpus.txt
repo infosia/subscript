@@ -406,7 +406,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -424,7 +424,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -739,7 +739,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -1274,7 +1274,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -1292,7 +1292,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -1607,7 +1607,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -4632,7 +4632,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -4650,7 +4650,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -4965,7 +4965,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -36812,7 +36812,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -36830,7 +36830,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -37145,7 +37145,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -41271,7 +41271,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -41289,7 +41289,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -41604,7 +41604,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"
@@ -75843,7 +75843,7 @@ class c3 "SubChainExtB" value=true descriptor=false boundary=true align=None @ i
   field d9 "scale": F64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:121:3
   field d10 "level": I32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:122:3
 class c4 "SubCallbackInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:130:15 header="interop.h"
-  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:131:3
+  field d11 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:131:3
   field d12 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:132:3
   field d13 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:133:3
 class c5 "SubTransform" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:137:15 header="interop.h"
@@ -75861,7 +75861,7 @@ class c8 "SubDrawList" value=true descriptor=false boundary=true align=None @ in
   field d22 "layer": U32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:176:3
   field d23 "draws": Array(U32) defaulted=false absence=false foreign=None @ interop.generated.d.ts:177:3
 class c9 "SubCompletionInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:185:15 header="interop.h"
-  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:186:3
+  field d24 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:186:3
   field d25 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:187:3
 class c10 "SubVec2" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:194:15 header="interop.h"
   field d26 "x": F32 defaulted=false absence=false foreign=None @ interop.generated.d.ts:195:3
@@ -76176,7 +76176,7 @@ class c89 "SubByValueI64Triple" value=true descriptor=false boundary=true align=
   field d256 "c": I64 defaulted=false absence=false foreign=None @ interop.generated.d.ts:797:3
 class c90 "SubHostOwnedState" value=false descriptor=false boundary=false align=None @ interop.generated.d.ts:813:11
 class c91 "SubRequestInfo" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:820:15 callback-lifetime=explicit header="interop.h"
-  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback" }) @ interop.generated.d.ts:821:3
+  field d257 "callback": Func(FuncType { callback_typedef: "SubLogCallback", params: [Str, Nullable(Object), Nullable(Object)], ret: Void }) defaulted=false absence=false foreign=Some(Callback { typedef_name: "SubLogCallback", host_view: "SubStringView", view_members: ["data", "len"] }) @ interop.generated.d.ts:821:3
   field d258 "userdata": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:822:3
   field d259 "userparam": Nullable(Object) defaulted=false absence=false foreign=None @ interop.generated.d.ts:823:3
 class c92 "SubDescReadLay" value=true descriptor=false boundary=true align=None @ interop.generated.d.ts:838:15 header="interop.h"

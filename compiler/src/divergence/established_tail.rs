@@ -2,14 +2,14 @@
 use super::DivergenceEntry;
 
 pub(super) const PROVENANCEEMPTYCALLBACK: DivergenceEntry = DivergenceEntry {
-                ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"\"\n// file: main.ts\nexport function main():void{}",
+                ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// file: main.ts\nexport function main():void{}",
                 subscript: "no equivalent; regenerate the mirror from its C header",
                 why: "A callback record needs a nonempty C typedef identity.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEDUPLICATECALLBACK: DivergenceEntry = DivergenceEntry {
-                ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"C\"\n// @subscript-c-callback typedef=\"C\"\n// file: main.ts\nexport function main():void{}",
+                ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"C\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// @subscript-c-callback typedef=\"C\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// file: main.ts\nexport function main():void{}",
                 subscript: "no equivalent; regenerate the mirror from its C header",
                 why: "One callback typedef has one provenance record.",
                 collision: "compiler.md §23.3",
@@ -1139,8 +1139,8 @@ class Holder { inner: Inner; constructor() { this.inner = new Inner(); this.show
             };
 
 pub(super) const C_CALLBACK_REQUIRES_NO_ENVIRONMENT: DivergenceEntry = DivergenceEntry {
-    ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const value:i32=7; const cb:Callback=():void=>{print(`${value}`);}; }",
-    subscript: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const cb:Callback=():void=>{}; }",
+    ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const value:i32=7; const cb:Callback=():void=>{print(`${value}`);}; }",
+    subscript: "// file: mirror.d.ts\n// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"Callback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Callback = () => void;\n// file: main.ts\nexport function main(): void { const cb:Callback=():void=>{}; }",
     why: "A C callback type takes only a value with no environment (compiler.md §274 rule 7).",
     collision: "C5",
 };

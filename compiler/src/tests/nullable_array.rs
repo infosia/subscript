@@ -173,7 +173,7 @@ fn rule_3_rejects_each_mirror_declaration() {
             "i32[] | null",
         ),
         (
-            "// @subscript-c-callback typedef=\"Cb\"\ntype Cb = (a: i32[] | null) => void;",
+            "// @subscript-c-callback typedef=\"Cb\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Cb = (a: i32[] | null) => void;",
             "Cb",
             "(i32[] | null) => void",
         ),

@@ -14,7 +14,7 @@
 
 // @subscript-c-header include="engine.h"
 // @subscript-c-member aggregate="EngineWorldOption" member="engineNext" const=true
-// @subscript-c-callback typedef="EngineEventCallback"
+// @subscript-c-callback typedef="EngineEventCallback" aggregate="EngineStringView" data="engineData" len="engineLen"
 // @subscript-c-parameter function="engineWorldCreate" parameter="engineOptions" const=true
 // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
 // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true

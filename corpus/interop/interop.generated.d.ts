@@ -15,7 +15,7 @@
 // @subscript-c-header include="interop.h"
 // @subscript-c-member aggregate="SubChainHeader" member="next" const=false
 // @subscript-c-parameter function="subChainPayloadValue" parameter="chain" const=false
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 // @subscript-c-parameter function="subDeviceCreate" parameter="chain" const=false
 // @subscript-c-descriptor function="subDeviceSubmit" parameter="commands" aggregate="SubBufferView" element="uint32_t" const=true
 // @subscript-c-string-view function="subDeviceSetLabel" parameter="label" aggregate="SubStringView"

@@ -752,7 +752,7 @@ pub(super) const MIRRORPARAMETERTARGETMISSING: DivergenceEntry = DivergenceEntry
             };
 
 pub(super) const MIRRORCALLBACKTARGETMISSING: DivergenceEntry = DivergenceEntry {
-                ts: "// file: prov-target-callback.ts\nexport function main(): void {}\n// file: prov-target-callback.d.ts\n// @subscript-c-callback typedef=\"Missing\"",
+                ts: "// file: prov-target-callback.ts\nexport function main(): void {}\n// file: prov-target-callback.d.ts\n// @subscript-c-callback typedef=\"Missing\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"",
                 subscript: "no equivalent; regenerate the mirror from its C header",
                 why: "Callback provenance must name a callback typedef declared in the same mirror.",
                 collision: "compiler.md §23.3",

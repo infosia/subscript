@@ -94,7 +94,7 @@ fn info_mirror() -> SourceFile {
     SourceFile::ambient(
         "a.d.ts",
         "// @subscript-c-header include=\"a.h\"\n\
-         // @subscript-c-callback typedef=\"Cb\"\n\
+         // @subscript-c-callback typedef=\"Cb\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n\
          type Cb = (message: string, userdata1: object | null, userdata2: object | null) => void;\n\
          declare class Info { callback: Cb; userdata1: object | null; userdata2: object | null; \
          constructor(callback: Cb, userdata1: object | null, userdata2: object | null); }\n",

@@ -326,7 +326,7 @@ fn rule_9_each_boundary_rejects_the_form() {
             "string | null",
         ),
         (
-            "// @subscript-c-callback typedef=\"Cb\"\ntype Cb = (a: string | null) => void;",
+            "// @subscript-c-callback typedef=\"Cb\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Cb = (a: string | null) => void;",
             "Cb",
             "(string | null) => void",
         ),

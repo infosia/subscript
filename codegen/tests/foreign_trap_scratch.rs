@@ -83,7 +83,7 @@ void scratchCall(State *state, Outer *target);
         #[cfg(unix)]
         let fixture = ship_fixture();
         let mirror = r#"// @subscript-c-header include="scratch.h"
-// @subscript-c-callback typedef="Callback"
+// @subscript-c-callback typedef="Callback" aggregate="View" data="data" len="len"
 // @subscript-c-parameter function="scratchCall" parameter="state" const=false
 // @subscript-c-parameter function="scratchCall" parameter="target" const=false
 type Callback = (message: string, userdata: object | null, userparam: object | null) => void;

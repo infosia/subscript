@@ -10,7 +10,7 @@ fn warnings(source: &str) -> Vec<Warning> {
 fn callback_warnings(source: &str) -> Vec<Warning> {
     let mirror = "\
 // @subscript-c-header include=\"warning-fixture.h\"
-// @subscript-c-callback typedef=\"FixtureCallback\"
+// @subscript-c-callback typedef=\"FixtureCallback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"
 type FixtureCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 declare class FixtureCallbackInfo {
   callback: FixtureCallback;

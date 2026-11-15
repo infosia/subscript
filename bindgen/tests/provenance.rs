@@ -74,7 +74,7 @@ fn callback_record_names_the_c_function_pointer_typedef() {
     ";
     let mirror = generate_for_header(header, "sink.h").expect("callback maps");
     assert!(
-        mirror.contains("// @subscript-c-callback typedef=\"EngineDone\""),
+        mirror.contains("// @subscript-c-callback typedef=\"EngineDone\" aggregate=\"EngineText\" data=\"engineData\" len=\"engineLen\""),
         "{mirror}"
     );
     assert!(
@@ -148,7 +148,7 @@ fn unreachable_unsupported_callback_is_omitted_without_rejecting_header() {
     );
     assert!(!mirror.contains("type EngineAllocator"), "{mirror}");
     assert!(
-        !mirror.contains("@subscript-c-callback typedef=\"EngineAllocator\""),
+        !mirror.contains("@subscript-c-callback typedef=\"EngineAllocator\" aggregate=\"SubStringView\" data=\"data\" len=\"len\""),
         "{mirror}"
     );
 }

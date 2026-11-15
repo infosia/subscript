@@ -133,14 +133,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 MemberCrossing::Bytes => parts.push(access),
                 MemberCrossing::Callback(callback) => {
-                    let Some(l::ForeignTypeProvenance::Callback { typedef_name }) =
-                        field.foreign_provenance.as_ref()
+                    let Some(l::ForeignTypeProvenance::Callback {
+                        typedef_name,
+                        host_view,
+                        view_members,
+                    }) = field.foreign_provenance.as_ref()
                     else {
                         return Err(internal(format!(
                             "boundary callback field `{}.{}` has no typedef provenance",
                             definition.source_name, field.source_name
                         )));
                     };
+                    self.emitter
+                        .callback_views
+                        .insert(host_view.clone(), view_members.clone());
                     let userdata = definition
                         .fields
                         .get(callback.userdata)

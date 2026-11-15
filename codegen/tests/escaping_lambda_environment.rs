@@ -63,7 +63,7 @@ fn retired_shapes_match_three_tiers() {
 fn callback_identity_changes_reload_declarations() {
     let module = |name: &str| {
         check_program(&[
-            SourceFile::ambient("callback.generated.d.ts", "// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"First\"\n// @subscript-c-callback typedef=\"Second\"\ntype First=(n:i32)=>void; type Second=(n:i32)=>void;"),
+            SourceFile::ambient("callback.generated.d.ts", "// @subscript-c-header include=\"callback.h\"\n// @subscript-c-callback typedef=\"First\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// @subscript-c-callback typedef=\"Second\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype First=(n:i32)=>void; type Second=(n:i32)=>void;"),
             SourceFile::new("reload.ts", format!("function take(cb:{name}):void {{}} export function main():void {{}}")),
         ]).unwrap()
     };

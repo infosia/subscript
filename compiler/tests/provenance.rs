@@ -135,7 +135,7 @@ fn well_formed_records_are_attached_to_the_typed_hir_surface() {
 // @subscript-c-descriptor function=\"engineUse\" parameter=\"engineRead\" aggregate=\"EngineItemView\" element=\"EngineItem\" const=true
 // @subscript-c-descriptor function=\"engineUse\" parameter=\"engineWrite\" aggregate=\"EngineItemOut\" element=\"EngineItem\" const=false
 // @subscript-c-string-view function=\"engineUse\" parameter=\"engineText\" aggregate=\"EngineStringView\"
-// @subscript-c-callback typedef=\"EngineCallback\"
+// @subscript-c-callback typedef=\"EngineCallback\" aggregate=\"EngineStringView\" data=\"data\" len=\"len\"
 type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 declare class EngineItem {
   engineValue: u32;
@@ -199,6 +199,8 @@ declare function engineUse(engineRead: EngineItem[], engineWrite: EngineItem[], 
         sink.fields[0].foreign_provenance,
         Some(ForeignTypeProvenance::Callback {
             typedef_name: "EngineCallback".to_string(),
+            host_view: "EngineStringView".into(),
+            view_members: ["data".into(), "len".into()],
         })
     );
 }
@@ -332,7 +334,7 @@ fn foreign_direct_callback_parameter_is_rejected() {
     let diagnostics = reject(
         "callback-parameter.d.ts",
         "// @subscript-c-header include=\"engine.h\"\n\
-         // @subscript-c-callback typedef=\"EngineDone\"\n\
+         // @subscript-c-callback typedef=\"EngineDone\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n\
          type EngineDone = (message: string, userdata1: object | null, userdata2: object | null) => void;\n\
          declare function engineInstall(callback: EngineDone): void;\n",
     );
@@ -348,7 +350,7 @@ fn foreign_direct_callback_return_is_rejected() {
     let diagnostics = reject(
         "callback-return.d.ts",
         "// @subscript-c-header include=\"engine.h\"\n\
-         // @subscript-c-callback typedef=\"EngineDone\"\n\
+         // @subscript-c-callback typedef=\"EngineDone\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n\
          type EngineDone = (message: string, userdata1: object | null, userdata2: object | null) => void;\n\
          declare function engineCallback(): EngineDone;\n",
     );
@@ -367,7 +369,7 @@ fn sink_mirror(directive: &str) -> String {
     format!(
         "\
 // @subscript-c-header include=\"engine.h\"
-// @subscript-c-callback typedef=\"EngineCallback\"
+// @subscript-c-callback typedef=\"EngineCallback\" aggregate=\"EngineStringView\" data=\"data\" len=\"len\"
 {directive}type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 declare class EngineItem {{
   engineValue: u32;
@@ -490,6 +492,26 @@ fn a_callback_lifetime_record_without_a_callback_class_is_rejected() {
             &diagnostics,
             name,
             "is no boundary class with a callback field",
+        );
+    }
+}
+
+/// §298 rule 1a. Cost: four checker calls; measured test execution: <0.01 s (macOS).
+#[test]
+fn stale_callback_records_require_regeneration() {
+    for fields in [
+        "",
+        " aggregate=\"View\"",
+        " aggregate=\"View\" data=\"data\"",
+        " aggregate=\"\" data=\"data\" len=\"len\"",
+    ] {
+        let mirror = format!("// @subscript-c-header include=\"host.h\"\n// @subscript-c-callback typedef=\"Callback\"{fields}\ntype Callback = (message: string, u1: object | null, u2: object | null) => void;\n");
+        let diagnostics = reject("stale.d.ts", &mirror);
+        assert_named(&diagnostics, "stale.d.ts", "generate the mirror again");
+        assert_named(
+            &diagnostics,
+            "stale.d.ts",
+            "callback provenance requires aggregate, data, and len",
         );
     }
 }

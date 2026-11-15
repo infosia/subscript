@@ -850,8 +850,33 @@ fn emit_provenance(
     }
     for decl in &parsed.decls {
         match decl {
-            Decl::FnPtr { name, .. } if reachable_callbacks.contains(name) => {
-                records.push(format!("// @subscript-c-callback typedef={}", quoted(name)));
+            Decl::FnPtr { name, params, .. } if reachable_callbacks.contains(name) => {
+                let view = &params
+                    .first()
+                    .ok_or_else(|| ParseError(format!("callback `{name}` has no view parameter")))?
+                    .base;
+                let fields = parsed
+                    .decls
+                    .iter()
+                    .find_map(|decl| match decl {
+                        Decl::Struct { name, fields } if name == view => Some(fields),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        ParseError(format!("callback `{name}` has no view aggregate `{view}`"))
+                    })?;
+                let [data, len] = fields.as_slice() else {
+                    return Err(ParseError(format!(
+                        "callback `{name}` view `{view}` must have two members"
+                    )));
+                };
+                records.push(format!(
+                    "// @subscript-c-callback typedef={} aggregate={} data={} len={}",
+                    quoted(name),
+                    quoted(view),
+                    quoted(&data.name),
+                    quoted(&len.name)
+                ));
             }
             Decl::Struct { name, fields } => {
                 // §111 rule 1: one directive for each selected aggregate, at

@@ -24,6 +24,7 @@ impl<'m> Emitter<'m> {
             runtime_symbols: BTreeMap::new(),
             foreign_symbols: Vec::new(),
             field_owners,
+            callback_views: Default::default(),
             helper_prototypes: String::new(),
             helpers: String::new(),
             helper_count: 0,
@@ -415,6 +416,10 @@ impl<'m> Emitter<'m> {
         }
         if !self.module.foreign_functions.is_empty() {
             source.push_str(CALLBACK_VIEW);
+        }
+        for (view, [data, len]) in &self.callback_views {
+            let runtime = "subscript_callback_string_view";
+            let _ = writeln!(source, "_Static_assert(sizeof({view}) == sizeof({runtime}) && _Alignof({view}) == _Alignof({runtime}) && offsetof({view}, {data}) == offsetof({runtime}, data) && offsetof({view}, {len}) == offsetof({runtime}, len) && sizeof((({view}*)0)->{data}) == sizeof((({runtime}*)0)->data) && sizeof((({view}*)0)->{len}) == sizeof((({runtime}*)0)->len), \"callback string-view layout: {view}\");");
         }
         for (symbol, (return_type, parameter_types)) in &self.runtime_symbols {
             if !runtime_header_declares(symbol) {

@@ -1632,7 +1632,7 @@ fn provenance_fixture() -> subscript_compiler::hir::Module {
 // @subscript-c-descriptor function=\"engineUse\" parameter=\"engineRead\" aggregate=\"EngineItemView\" element=\"EngineItem\" const=true
 // @subscript-c-descriptor function=\"engineUse\" parameter=\"engineWrite\" aggregate=\"EngineItemOut\" element=\"EngineItem\" const=false
 // @subscript-c-string-view function=\"engineUse\" parameter=\"engineLabel\" aggregate=\"EngineStringView\"
-// @subscript-c-callback typedef=\"EngineCallback\"
+// @subscript-c-callback typedef=\"EngineCallback\" aggregate=\"EngineStringView\" data=\"data\" len=\"len\"
 type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 declare class EngineItem {
   engineValue: u32;

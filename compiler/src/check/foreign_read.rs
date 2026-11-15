@@ -360,7 +360,7 @@ impl Scan<'_, '_> {
         for class in classes {
             for field in &checker.classes[class.0].fields {
                 let callback = match &field.foreign_provenance {
-                    Some(hir::ForeignTypeProvenance::Callback { typedef_name }) => {
+                    Some(hir::ForeignTypeProvenance::Callback { typedef_name, .. }) => {
                         typedef_name.clone()
                     }
                     _ => format!("{}.{}", checker.classes[class.0].name, field.name),
@@ -379,7 +379,7 @@ impl Scan<'_, '_> {
         for definition in &checker.foreign_defs {
             for param in &definition.params {
                 let callback = match &param.foreign_provenance {
-                    Some(hir::ForeignTypeProvenance::Callback { typedef_name }) => {
+                    Some(hir::ForeignTypeProvenance::Callback { typedef_name, .. }) => {
                         typedef_name.clone()
                     }
                     _ => format!("{}.{}", definition.name, param.name),

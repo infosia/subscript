@@ -36,7 +36,7 @@ pub(crate) struct Mirror {
     pub header: Option<Record<String>>,
     pub completions: HashMap<String, Record<String>>,
     pub parameters: HashMap<(String, String), Record<Parameter>>,
-    pub callbacks: HashMap<String, Record<String>>,
+    pub callbacks: HashMap<String, Record<(String, String, [String; 2])>>,
     /// Boundary aggregates that take the explicit callback lifetime
     /// (`specs/blocks/compiler.md` §111 rule 1). An aggregate outside this
     /// map has the Context lifetime.
@@ -241,7 +241,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     },
                 );
             }
-            Parsed::Callback(typedef_name) => {
+            Parsed::Callback(typedef_name, host_view, view_members) => {
                 if typedef_name.is_empty() {
                     return Err(malformed(
                         RejectionSite::ProvenanceEmptyCallback,
@@ -263,7 +263,7 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 mirror.callbacks.insert(
                     typedef_name.clone(),
                     Record {
-                        value: typedef_name,
+                        value: (typedef_name, host_view, view_members),
                         line: line_number,
                         raw: trimmed.to_string(),
                     },
@@ -468,7 +468,7 @@ enum Parsed {
         element: String,
         element_const: bool,
     },
-    Callback(String),
+    Callback(String, String, [String; 2]),
     CallbackLifetime(String),
     External(String),
     CEnum {
@@ -514,7 +514,25 @@ fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
             element: cursor.string("element")?,
             element_const: cursor.boolean("const")?,
         },
-        "callback" => Parsed::Callback(cursor.string("typedef")?),
+        "callback" => {
+            let name = cursor.string("typedef")?;
+            let required = (|| {
+                let view = cursor.string("aggregate")?;
+                let members = [cursor.string("data")?, cursor.string("len")?];
+                if view.is_empty() || members.iter().any(String::is_empty) {
+                    return Err(RejectionFailure::new(
+                        RejectionSite::ProvenanceUnexpectedKey,
+                        "callback view fields must be non-empty".to_string(),
+                    ));
+                }
+                Ok((view, members))
+            })();
+            let (view, members) = required.map_err(|mut reason: RejectionFailure| {
+                reason.message.push_str("; callback provenance requires aggregate, data, and len; generate the mirror again");
+                reason
+            })?;
+            Parsed::Callback(name, view, members)
+        }
         // §111 rule 1. The record kind token ends at the first space, so
         // this kind and `callback` never collide.
         "callback-lifetime" => Parsed::CallbackLifetime(cursor.string("aggregate")?),

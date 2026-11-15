@@ -320,7 +320,7 @@ export function main(): void { Fn37(); }
 END FILE
 FILE	A	target/s154/forms/a-s037/mirror.d.ts
 // @subscript-c-header include="probe.h"
-// @subscript-c-callback typedef="Fn37"
+// @subscript-c-callback typedef="Fn37" aggregate="SubStringView" data="data" len="len"
 type Fn37 = () => void;
 END FILE
 END PROGRAM
@@ -821,7 +821,7 @@ export function main(): void { const x = Fn121; }
 END FILE
 FILE	A	target/s154/forms/a-s121/mirror.d.ts
 // @subscript-c-header include="probe.h"
-// @subscript-c-callback typedef="Fn121"
+// @subscript-c-callback typedef="Fn121" aggregate="SubStringView" data="data" len="len"
 type Fn121 = () => void;
 END FILE
 END PROGRAM
@@ -1286,7 +1286,7 @@ export function main(): void { Fn186.x; }
 END FILE
 FILE	A	target/s154/forms/a-s186/mirror.d.ts
 // @subscript-c-header include="probe.h"
-// @subscript-c-callback typedef="Fn186"
+// @subscript-c-callback typedef="Fn186" aggregate="SubStringView" data="data" len="len"
 type Fn186 = () => void;
 END FILE
 END PROGRAM
@@ -4335,7 +4335,7 @@ FILE	E	target/s154/forms/c-prov-target-callback/prov-target-callback.ts
 export function main(): void {}
 END FILE
 FILE	A	target/s154/forms/c-prov-target-callback/prov-target-callback.d.ts
-// @subscript-c-callback typedef="Missing"
+// @subscript-c-callback typedef="Missing" aggregate="SubStringView" data="data" len="len"
 END FILE
 END PROGRAM
 PROGRAM	c-prov-target-lifetime			0
@@ -4470,7 +4470,7 @@ export function main(): void {}
 END FILE
 FILE	A	target/s154/forms/mirror-nullable-array/mirror.d.ts
 // @subscript-c-header include="x.h"
-// @subscript-c-callback typedef="OnValues"
+// @subscript-c-callback typedef="OnValues" aggregate="SubStringView" data="data" len="len"
 type OnValues = (values: i32[] | null) => void;
 declare class Slot { values: i32[] | null; constructor(values: i32[] | null); }
 declare function takes(values: i32[] | null): void;
@@ -4630,8 +4630,8 @@ END FILE
 END PROGRAM
 PROGRAM	new-prov-callback-duplicate			0
 FILE	A	target/s154/forms/new-prov-callback-duplicate/mirror.d.ts
-// @subscript-c-callback typedef="C"
-// @subscript-c-callback typedef="C"
+// @subscript-c-callback typedef="C" aggregate="SubStringView" data="data" len="len"
+// @subscript-c-callback typedef="C" aggregate="SubStringView" data="data" len="len"
 
 END FILE
 FILE	E	target/s154/forms/new-prov-callback-duplicate/main.ts
@@ -4640,7 +4640,7 @@ END FILE
 END PROGRAM
 PROGRAM	new-prov-callback-empty			0
 FILE	A	target/s154/forms/new-prov-callback-empty/mirror.d.ts
-// @subscript-c-callback typedef=""
+// @subscript-c-callback typedef="" aggregate="SubStringView" data="data" len="len"
 
 END FILE
 FILE	E	target/s154/forms/new-prov-callback-empty/main.ts
@@ -9821,7 +9821,7 @@ END PROGRAM
 PROGRAM	c-corpus-r502-a-capturing-lambda-is-not-a-c-callback			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
@@ -9850,7 +9850,7 @@ END PROGRAM
 PROGRAM	c-corpus-r503-c-callback-through-field			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
@@ -9876,7 +9876,7 @@ END PROGRAM
 PROGRAM	c-corpus-r504-c-callback-through-return			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
@@ -9902,7 +9902,7 @@ END PROGRAM
 PROGRAM	c-corpus-r505-c-callback-through-indirect			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
@@ -9928,7 +9928,7 @@ END PROGRAM
 PROGRAM	c-corpus-r506-c-callback-through-array			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {
@@ -9954,7 +9954,7 @@ END PROGRAM
 PROGRAM	c-corpus-r507-c-callback-through-method			0
 FILE	A	interop.generated.d.ts
 // @subscript-c-header include="interop.h"
-// @subscript-c-callback typedef="SubLogCallback"
+// @subscript-c-callback typedef="SubLogCallback" aggregate="SubStringView" data="data" len="len"
 type SubLogCallback = (message: string, userdata1: object | null, userdata2: object | null) => void;
 
 declare class SubCallbackInfo {

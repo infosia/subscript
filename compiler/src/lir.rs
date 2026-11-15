@@ -236,6 +236,10 @@ pub enum ForeignTypeProvenance {
     Callback {
         /// C function-pointer typedef spelling.
         typedef_name: String,
+        /// Host string-view spelling (§298 rule 1).
+        host_view: String,
+        /// Host pointer and length member names (§298 rule 2).
+        view_members: [String; 2],
     },
     /// The C pointer of a struct-pointer parameter, of a struct-pointer
     /// member, or of the elements of a pair member of structs is `const`

@@ -710,11 +710,15 @@ fn convert_provenance(value: &hir::ForeignTypeProvenance) -> l::ForeignTypeProve
                 aggregate: aggregate.clone(),
             }
         }
-        hir::ForeignTypeProvenance::Callback { typedef_name } => {
-            l::ForeignTypeProvenance::Callback {
-                typedef_name: typedef_name.clone(),
-            }
-        }
+        hir::ForeignTypeProvenance::Callback {
+            typedef_name,
+            host_view,
+            view_members,
+        } => l::ForeignTypeProvenance::Callback {
+            typedef_name: typedef_name.clone(),
+            host_view: host_view.clone(),
+            view_members: view_members.clone(),
+        },
         hir::ForeignTypeProvenance::ConstPointer => l::ForeignTypeProvenance::ConstPointer,
         _ => unreachable!("new foreign provenance requires an explicit LIR form"),
     }

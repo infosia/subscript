@@ -18,7 +18,7 @@ fn sink_mirror(directive: &str) -> String {
     format!(
         "\
 // @subscript-c-header include=\"engine.h\"
-// @subscript-c-callback typedef=\"EngineCallback\"
+// @subscript-c-callback typedef=\"EngineCallback\" aggregate=\"EngineStringView\" data=\"data\" len=\"len\"
 {directive}type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
 declare class EngineSink {{
   engineCallback: EngineCallback;

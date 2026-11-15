@@ -13,7 +13,8 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const DIRECTIVE: &str = "// @subscript-c-callback-lifetime aggregate=\"SubCallbackInfo\"";
-const CALLBACK_RECORD: &str = "// @subscript-c-callback typedef=\"SubLogCallback\"\n";
+const CALLBACK_RECORD: &str =
+    "// @subscript-c-callback typedef=\"SubLogCallback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n";
 /// The aggregate the committed mirror already carries. A run that
 /// regenerates that mirror repeats this selection, so the test compares
 /// against the committed text plus one added directive.

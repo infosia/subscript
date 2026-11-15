@@ -161,7 +161,7 @@ fn stock_tsc_checks_every_checker_input_with_the_prelude() {
 #[test]
 fn completion_struct_fields_require_recursive_scalar_layouts() {
     for (bad, good, field) in [
-        ("// @subscript-c-callback typedef=\"Callback\"\ntype Callback = (value: i32) => void; declare class Result { value: Callback; extra: i32; }", "declare class Result { value: i32; extra: i32; }", "value"),
+        ("// @subscript-c-callback typedef=\"Callback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Callback = (value: i32) => void; declare class Result { value: Callback; extra: i32; }", "declare class Result { value: i32; extra: i32; }", "value"),
         ("declare class Result { text: string; value: i32; }", "declare class Result { text: i64; value: i32; }", "text"),
         ("declare class Result { values: i32[]; value: i32; }", "declare class Result { values: i64; value: i32; }", "values"),
         ("declare class Opaque { private __opaque: never; } declare class Result { value: Opaque | null; extra: i32; }", "declare class Result { value: i32; extra: i32; }", "value"),

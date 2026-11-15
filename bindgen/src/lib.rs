@@ -68,7 +68,7 @@
 //! // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
 //! // @subscript-c-scalar-pair function="engineFillBytes" parameter="engineData" element="uint8_t" const=false
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
-//! // @subscript-c-callback typedef="EngineEventCallback"
+//! // @subscript-c-callback typedef="EngineEventCallback" aggregate="EngineStringView" data="engineData" len="engineLen"
 //! // @subscript-c-callback-lifetime aggregate="EngineEventInfo"
 //! // @subscript-c-completion function="engineRead" result="int32_t"
 //! ```

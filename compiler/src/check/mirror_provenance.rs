@@ -473,7 +473,9 @@ impl<'p> Checker<'p> {
         };
         match parsed.provenance.callbacks.get(typedef_name) {
             Some(record) => Some(hir::ForeignTypeProvenance::Callback {
-                typedef_name: record.value.clone(),
+                typedef_name: record.value.0.clone(),
+                host_view: record.value.1.clone(),
+                view_members: record.value.2.clone(),
             }),
             None => {
                 self.reject_subset(

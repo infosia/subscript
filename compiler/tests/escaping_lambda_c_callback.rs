@@ -64,7 +64,7 @@ fn callback_check(
     source: &str,
 ) -> Result<subscript_compiler::hir::Module, Vec<subscript_compiler::Diagnostic>> {
     check_program(&[
-        SourceFile::ambient("simple.generated.d.ts", "// @subscript-c-header include=\"simple.h\"\n// @subscript-c-callback typedef=\"Callback\"\ntype Callback=(m:i32)=>void; type Other=(m:i32)=>void;"),
+        SourceFile::ambient("simple.generated.d.ts", "// @subscript-c-header include=\"simple.h\"\n// @subscript-c-callback typedef=\"Callback\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\ntype Callback=(m:i32)=>void; type Other=(m:i32)=>void;"),
         SourceFile::new("identity.ts", source),
     ])
 }
