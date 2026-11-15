@@ -75,8 +75,108 @@ fn fragment_files(variant: Divergence, source: &str) -> Vec<SourceFile> {
     }
 }
 
+// §307 rule 5a: a form b change must update this explicit review list.
+const FORM_B_VARIANTS: &[Divergence] = &[
+    Divergence::AsyncGeneratorFunction,
+    Divergence::BoundaryObjectMember,
+    Divergence::ClassFinalAlignmentLimit,
+    Divergence::ClassRuntimeObject,
+    Divergence::ConditionalAnnotation,
+    Divergence::ContextAffineArrayElement,
+    Divergence::ContextAffineCapture,
+    Divergence::ContextAffineContainerArgument,
+    Divergence::CoroutineReturnOrThrowCallForm,
+    Divergence::EnumImplicitValueOverflow,
+    Divergence::EnumObjectMember,
+    Divergence::EnumObjectValueForm,
+    Divergence::ErasedAssignableEquality,
+    Divergence::FileModuleDisabled,
+    Divergence::FixedArrayConstantIndexBoundsForm,
+    Divergence::FixedArrayLengthLiteral,
+    Divergence::FixedArrayLengthRange,
+    Divergence::FixedArrayObjectMember,
+    Divergence::ForeignDirectCallback,
+    Divergence::ForeignReturnProvenance,
+    Divergence::GeneratorResultObjectMember,
+    Divergence::GeneratorResultValueWriteForm,
+    Divergence::GeneratorReturnValue,
+    Divergence::InvalidProgramEntry,
+    Divergence::MapObjectMember,
+    Divergence::MathSubset,
+    Divergence::MetaPropertyExpression,
+    Divergence::MirrorAnonymousCallback,
+    Divergence::MirrorArrayProvenanceMissing,
+    Divergence::MirrorCallbackProvenanceMissing,
+    Divergence::MirrorCallbackTargetMissing,
+    Divergence::MirrorHeaderMissing,
+    Divergence::MirrorLifetimeTargetMissing,
+    Divergence::MirrorMemberTargetMissing,
+    Divergence::MirrorModuleDeclarationForm,
+    Divergence::MirrorParameterProvenanceMismatch,
+    Divergence::MirrorParameterTargetMissing,
+    Divergence::MirrorStringProvenanceMissing,
+    Divergence::NamespaceAsValue,
+    Divergence::NeverAnnotation,
+    Divergence::NullableValueClassAssignment,
+    Divergence::ProvenanceControlCharacter,
+    Divergence::ProvenanceDuplicateCEnum,
+    Divergence::ProvenanceDuplicateCallback,
+    Divergence::ProvenanceDuplicateCallbackLifetime,
+    Divergence::ProvenanceDuplicateDescriptor,
+    Divergence::ProvenanceDuplicateExternalType,
+    Divergence::ProvenanceDuplicateHeader,
+    Divergence::ProvenanceDuplicateMember,
+    Divergence::ProvenanceDuplicatePointerParameter,
+    Divergence::ProvenanceDuplicateScalarPair,
+    Divergence::ProvenanceDuplicateStringView,
+    Divergence::ProvenanceEmptyCEnum,
+    Divergence::ProvenanceEmptyCallback,
+    Divergence::ProvenanceEmptyCallbackLifetime,
+    Divergence::ProvenanceEmptyDescriptor,
+    Divergence::ProvenanceEmptyExternalType,
+    Divergence::ProvenanceEmptyMember,
+    Divergence::ProvenanceEmptyPointerParameter,
+    Divergence::ProvenanceEmptyScalarPair,
+    Divergence::ProvenanceEmptyStringView,
+    Divergence::ProvenanceFieldSeparator,
+    Divergence::ProvenanceHeaderBasename,
+    Divergence::ProvenanceInvalidBoolean,
+    Divergence::ProvenanceInvalidUnicodeDigits,
+    Divergence::ProvenanceInvalidUnicodeScalar,
+    Divergence::ProvenanceMissingKind,
+    Divergence::ProvenanceShortUnicodeEscape,
+    Divergence::ProvenanceTrailingData,
+    Divergence::ProvenanceUnexpectedKey,
+    Divergence::ProvenanceUnknownKind,
+    Divergence::ProvenanceUnquotedString,
+    Divergence::ProvenanceUnsupportedEscape,
+    Divergence::ProvenanceUnterminatedEscape,
+    Divergence::ProvenanceUnterminatedString,
+    Divergence::SetObjectMember,
+    Divergence::SymbolAnnotation,
+    Divergence::WireEnumEmpty,
+    Divergence::WorkerStaticObjectMethod,
+];
+
 fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> Vec<String> {
     let mut failures = Vec::new();
+    for (name, source) in [("ts", ts), ("subscript", subscript)] {
+        if source.starts_with(['\n', '\r']) {
+            failures.push(format!(
+                "{variant:?}: {name} fragment starts with a line break"
+            ));
+        }
+    }
+    let form_b = subscript.starts_with("no equivalent: ");
+    if form_b && !FORM_B_VARIANTS.contains(&variant) {
+        failures.push(format!(
+            "{variant:?}: form b variant is absent from FORM_B_VARIANTS"
+        ));
+    } else if !form_b && FORM_B_VARIANTS.contains(&variant) {
+        failures.push(format!(
+            "{variant:?}: listed form b variant has a form a field"
+        ));
+    }
     let files = fragment_files(variant, ts);
     // The discovery guard reads the absent-module option, not only source syntax.
     let options = crate::CheckOptions {
@@ -121,7 +221,9 @@ fn fragment_checker_failures(variant: Divergence, ts: &str, subscript: &str) -> 
             "{variant:?}: ts fragment has no rejection with its variant: {diagnostics:?}"
         ));
     }
-    if !subscript.starts_with("no equivalent; ") {
+    if subscript.starts_with("no equivalent; ") {
+        failures.push(format!("{variant:?}: obsolete no equivalent; field"));
+    } else if !subscript.starts_with("no equivalent: ") {
         let files = fragment_files(variant, subscript);
         let options = crate::CheckOptions {
             enabled_modules: options.enabled_modules,
@@ -334,8 +436,9 @@ fn class_controls() -> [Witness<'static>; 3] {
     ]
 }
 
-/// One tsc process measures all witnesses and every carried TypeScript fragment.
-/// Warm cargo test reports `finished in 1.53s`: tsc 0.588s and checker 0.501s.
+/// One tsc process measures all witnesses and both carried program fragments.
+/// §307, --test-threads=1: old table fragments 0.185s, revised table fragments 0.280s.
+/// Total 1.736s before, 1.959s after; tsc 0.632s before, 0.696s after.
 /// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -352,14 +455,21 @@ fn every_subset_rejection_carries_its_divergence() {
     let mut failures = Vec::new();
     failures.extend(table_failures(&witnesses, &all_sites()));
     let mut paths = vec![root.join("prelude/lang.d.ts")];
-    for variant in carried_variants() {
-        let mut files = fragment_files(variant, variant.entry().ts);
+    for (variant, kind, source) in carried_variants().into_iter().flat_map(|variant| {
+        let entry = variant.entry();
+        [(variant, "fragment", entry.ts)].into_iter().chain(
+            (!entry.subscript.starts_with("no equivalent: ")
+                && !entry.subscript.starts_with("no equivalent; "))
+            .then_some((variant, "alternative", entry.subscript)),
+        )
+    }) {
+        let mut files = fragment_files(variant, source);
         // Each single-file snippet is an isolated TypeScript module.
         if files.len() == 1 {
             files[0].source = format!("export {{}};\n{}", files[0].source);
         }
         let program = rejection_programs::Program {
-            key: format!("fragment-{variant:?}.ts"),
+            key: format!("{kind}-{variant:?}.ts"),
             codes: BTreeSet::new(),
             files,
             poison: Vec::new(),
@@ -454,10 +564,12 @@ fn every_subset_rejection_carries_its_divergence() {
         }
     }
     for variant in carried_variants() {
-        let name = format!("fragment-{variant:?}.ts");
-        let codes = measured.remove(&format!("@{name}")).unwrap_or_default();
-        if let Some(failure) = fragment_tsc_failure(&name, &codes) {
-            failures.push(failure);
+        for kind in ["fragment", "alternative"] {
+            let name = format!("{kind}-{variant:?}.ts");
+            let codes = measured.remove(&format!("@{name}")).unwrap_or_default();
+            if let Some(failure) = fragment_tsc_failure(&name, &codes) {
+                failures.push(failure);
+            }
         }
     }
     assert!(measured.is_empty(), "unowned tsc errors: {measured:?}");
@@ -474,6 +586,7 @@ fn every_subset_rejection_carries_its_divergence() {
         }
     }
     failures.extend(general_checker_failures(&programs));
+    let fragments_started = Instant::now();
     for variant in carried_variants() {
         let entry = variant.entry();
         failures.extend(fragment_checker_failures(
@@ -482,6 +595,10 @@ fn every_subset_rejection_carries_its_divergence() {
             entry.subscript,
         ));
     }
+    eprintln!(
+        "s307: fragments {:.3}s",
+        fragments_started.elapsed().as_secs_f64()
+    );
     eprintln!(
         "s154: {} witnesses; {} variants; tsc {:.3}s; checker {:.3}s; total {:.3}s",
         witnesses.len() + programs.len(),
@@ -624,6 +741,79 @@ fn rejected_subscript_fragment_fires() {
             .iter()
             .any(|failure| failure.contains("subscript fragment rejected"))
     );
+}
+
+/// §307: constructed fields test the prose boundary and the form b review list.
+#[test]
+fn obsolete_instruction_fails_and_no_equivalent_reason_passes() {
+    let started = Instant::now();
+    let variant = Divergence::CompilerOwnedValue;
+    let entry = crate::divergence::DivergenceEntry {
+        subscript: "no equivalent; use an array literal",
+        ..variant.entry()
+    };
+    assert_eq!(
+        fragment_checker_failures(variant, entry.ts, entry.subscript),
+        ["CompilerOwnedValue: obsolete no equivalent; field"]
+    );
+    let variant = Divergence::SymbolAnnotation;
+    let entry = crate::divergence::DivergenceEntry {
+        subscript: "no equivalent: The runtime has no Symbol values.",
+        ..variant.entry()
+    };
+    assert!(fragment_checker_failures(variant, entry.ts, entry.subscript).is_empty());
+    eprintln!(
+        "s307: prose boundary {:.6}s",
+        started.elapsed().as_secs_f64()
+    );
+}
+
+#[test]
+fn form_b_list_mismatches_fail() {
+    let variant = Divergence::CompilerOwnedValue;
+    let entry = crate::divergence::DivergenceEntry {
+        subscript: "no equivalent: Array has no first-class constructor value.",
+        ..variant.entry()
+    };
+    assert_eq!(
+        fragment_checker_failures(variant, entry.ts, entry.subscript),
+        ["CompilerOwnedValue: form b variant is absent from FORM_B_VARIANTS"]
+    );
+    let variant = Divergence::SymbolAnnotation;
+    let entry = crate::divergence::DivergenceEntry {
+        subscript: "function f(x: i32): void {}",
+        ..variant.entry()
+    };
+    assert_eq!(
+        fragment_checker_failures(variant, entry.ts, entry.subscript),
+        ["SymbolAnnotation: listed form b variant has a form a field"]
+    );
+}
+
+#[test]
+fn leading_fragment_line_break_fails() {
+    let variant = Divergence::CompilerOwnedValue;
+    let entry = variant.entry();
+    for line_break in ["\n", "\r\n", "\r"] {
+        for name in ["ts", "subscript"] {
+            let ts = format!(
+                "{}{ts}",
+                if name == "ts" { line_break } else { "" },
+                ts = entry.ts
+            );
+            let subscript = format!(
+                "{}{subscript}",
+                if name == "subscript" { line_break } else { "" },
+                subscript = entry.subscript
+            );
+            assert_eq!(
+                fragment_checker_failures(variant, &ts, &subscript),
+                [format!(
+                    "CompilerOwnedValue: {name} fragment starts with a line break"
+                )]
+            );
+        }
+    }
 }
 
 fn outside_site_map(source: &str) -> bool {

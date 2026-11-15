@@ -3,91 +3,91 @@ use super::DivergenceEntry;
 
 pub(super) const PROVENANCEEMPTYCALLBACK: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A callback record needs a nonempty C typedef identity. Generate the mirror again from its C header.",
                 why: "A callback record needs a nonempty C typedef identity.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEDUPLICATECALLBACK: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-callback typedef=\"C\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// @subscript-c-callback typedef=\"C\" aggregate=\"SubStringView\" data=\"data\" len=\"len\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One callback typedef has one provenance record. Generate the mirror again from its C header.",
                 why: "One callback typedef has one provenance record.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEEMPTYCALLBACKLIFETIME: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-callback-lifetime aggregate=\"\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A callback lifetime record needs a nonempty aggregate identity. Generate the mirror again from its C header.",
                 why: "A callback lifetime record needs a nonempty aggregate identity.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEDUPLICATECALLBACKLIFETIME: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-callback-lifetime aggregate=\"A\"\n// @subscript-c-callback-lifetime aggregate=\"A\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One callback aggregate has one lifetime record. Generate the mirror again from its C header.",
                 why: "One callback aggregate has one lifetime record.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEEMPTYEXTERNALTYPE: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-external type=\"\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: An external-type record needs a nonempty C type identity. Generate the mirror again from its C header.",
                 why: "An external-type record needs a nonempty C type identity.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEDUPLICATEEXTERNALTYPE: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-external type=\"T\"\n// @subscript-c-external type=\"T\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One external type has one provenance record. Generate the mirror again from its C header.",
                 why: "One external type has one provenance record.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEEMPTYCENUM: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-cenum typedef=\"\" alias=\"E\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A CEnum record needs nonempty typedef and alias identities. Generate the mirror again from its C header.",
                 why: "A CEnum record needs nonempty typedef and alias identities.",
                 collision: "compiler.md §23.3",
             };
 
 pub(super) const PROVENANCEDUPLICATEPOINTERPARAMETER: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-parameter function=\"f\" parameter=\"p\" const=false\n// @subscript-c-parameter function=\"f\" parameter=\"p\" const=false\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One pointer parameter has one pointer-parameter record. Generate the mirror again from its C header.",
                 why: "One pointer parameter has one pointer-parameter record.",
                 collision: "compiler.md §187",
             };
 
 pub(super) const PROVENANCEEMPTYPOINTERPARAMETER: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-parameter function=\"\" parameter=\"p\" const=false\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A pointer-parameter record names a non-empty function and parameter. Generate the mirror again from its C header.",
                 why: "A pointer-parameter record names a non-empty function and parameter.",
                 collision: "compiler.md §187",
             };
 
 pub(super) const MIRRORMEMBERTARGETMISSING: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"x.h\"\n// @subscript-c-member aggregate=\"Missing\" member=\"m\" const=true\ndeclare function foreign():void;\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A member record must name a field of a boundary class of its mirror. Generate the mirror again from its C header.",
                 why: "A member record must name a field of a boundary class of its mirror.",
                 collision: "compiler.md §187",
             };
 
 pub(super) const PROVENANCEDUPLICATEMEMBER: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-member aggregate=\"A\" member=\"m\" const=true\n// @subscript-c-member aggregate=\"A\" member=\"m\" const=true\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One boundary-struct member has one member record. Generate the mirror again from its C header.",
                 why: "One boundary-struct member has one member record.",
                 collision: "compiler.md §187",
             };
 
 pub(super) const PROVENANCEEMPTYMEMBER: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-member aggregate=\"\" member=\"m\" const=true\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: A member record names a non-empty aggregate and member. Generate the mirror again from its C header.",
                 why: "A member record names a non-empty aggregate and member.",
                 collision: "compiler.md §187",
             };
 
 pub(super) const PROVENANCEDUPLICATECENUM: DivergenceEntry = DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-cenum typedef=\"T\" alias=\"E\"\n// @subscript-c-cenum typedef=\"T\" alias=\"E\"\n// file: main.ts\nexport function main():void{}",
-                subscript: "no equivalent; regenerate the mirror from its C header",
+                subscript: "no equivalent: One CEnum typedef has one provenance record. Generate the mirror again from its C header.",
                 why: "One CEnum typedef has one provenance record.",
                 collision: "compiler.md §23.3",
             };
@@ -253,20 +253,6 @@ pub(super) const VOIDVALUE: DivergenceEntry = DivergenceEntry {
     collision: "C21",
 };
 
-pub(super) const GENERATORDONEVALUE: DivergenceEntry = DivergenceEntry {
-                ts: "const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`);",
-                subscript: "if (!r.done) { const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`); }",
-                why: "A finished generator traps when its zero value contains a non-nullable null reference or a null string handle. Check done before the read.",
-                collision: "C23",
-            };
-
-pub(super) const REFERENCESEARCHMISS: DivergenceEntry = DivergenceEntry {
-                ts: "const missing = values.get(key); print(`${missing === null}`);",
-                subscript: "const missing = values.get(key); print(`${missing === undefined}`);",
-                why: "A search miss has the `undefined` spelling, so `=== null` is rejected. A finished nullable generator holds null; test it with `== null`.",
-                collision: "C22",
-            };
-
 pub(super) const LONESURROGATEESCAPE: DivergenceEntry = DivergenceEntry {
     ts: r#"const text: string = "\ud83d";"#,
     subscript: r#"const text: string = "\ud83d\udc4d";"#,
@@ -396,7 +382,7 @@ pub(super) const INSTANCEOFNONERROR: DivergenceEntry = DivergenceEntry {
     ts: "class Box {}\n\
                      const box: Box = new Box();\n\
                      const known: boolean = box instanceof Box;",
-    subscript: "no equivalent; the nominal static type already names the class",
+    subscript: "class Box {}\nconst box: Box = new Box(); const known: boolean = true;",
     why: "Only an Error-family object carries a runtime class tag, and a nominal \
                       static type already decides every other class.",
     collision: "C6",
@@ -644,7 +630,7 @@ pub(super) const STATICMEMBERSURFACE: DivergenceEntry = DivergenceEntry {
 pub(super) const MATHSUBSET: DivergenceEntry = DivergenceEntry {
     ts: "const m = Math;\n\
                      print(`${Math.hypot(1, 2, 3)}`);",
-    subscript: "no equivalent; `Math.hypot` takes at most two arguments, and no other form gives its N-argument result",
+    subscript: "no equivalent: The N-argument Math.hypot result has no admitted operation with the same rounding.",
     why: "`Math` is a compiler namespace that lowers to intrinsics, so it is \
                       not a value. A fold of `hypot` rounds differently from its \
                       N-argument form.",
@@ -846,16 +832,6 @@ Context.bytesOf<Point>(point);",
     collision: "stdlib.md §18",
 };
 
-pub(super) const ENTRYPARAMETERTYPE: DivergenceEntry = DivergenceEntry {
-    ts: "type Level = \"low\" | \"high\";\n\
-                     export function configure(level: Level): void {}",
-    subscript: "type Level = CEnum<{ \"low\": 0; \"high\": 1 }>;\n\
-                            export function configure(level: Level): void {}",
-    why: "A host-callable entry takes a C type, and a plain literal alias has \
-                      no wire representation.",
-    collision: "compiler.md §61",
-};
-
 pub(super) const EMBEDDEDHEADERCOPY: DivergenceEntry = DivergenceEntry {
                 ts: "// file: main.ts
 export function main(): void { const e: Ext = new Ext(new Header(null), 1); const h = e.header; }
@@ -955,7 +931,7 @@ pub(super) const ARRAYFROMMAPPER: DivergenceEntry = DivergenceEntry {
 pub(super) const ARRAYISARRAY: DivergenceEntry = DivergenceEntry {
     ts: "const xs: i32[] = [1, 2];\n\
                      const flag: boolean = Array.isArray(xs);",
-    subscript: "no equivalent; a declared type already answers it",
+    subscript: "const xs: i32[] = [1, 2];\nconst flag: boolean = true;",
     why: "A declared type answers this statically, and the runtime classification \
                       a boundary-opaque value needs is not inspected.",
     collision: "compiler.md §105.3",
@@ -1057,8 +1033,7 @@ pub(super) const PATTERNSOURCESHAPE: DivergenceEntry = DivergenceEntry {
 const text = \"ab\";
 const [first, second] = text;
 }",
-    subscript: "no equivalent; a binding pattern reads a `T[]`, a \
-                            `FixedArray<T, N>`, or a class instance",
+    subscript: "function probe(): void { const text = \"ab\"; const first = text.at(0); const second = text.at(1); }",
     why: "A binding pattern reads an array by index, or a class by field name, so \
                       another source shape has no pattern.",
     collision: "compiler.md §107.1",
@@ -1121,8 +1096,7 @@ pub(super) const NESTEDFIELDASSIGNMENTEVERYNORMALEXIT: DivergenceEntry = Diverge
 pub(super) const AMBIENTCLASSCONSTRUCTION: DivergenceEntry = DivergenceEntry {
     ts: "declare class Ext { value: i32; }\n\
                      const ext: Ext = new Ext();",
-    subscript: "no equivalent; declare the class in a `.d.ts` mirror, and take \
-                            the instance from a `declare function` there",
+    subscript: "// file: main.ts\nconst ext = createExt();\n// file: mirror.d.ts\n// @subscript-c-header include=\"probe.h\"\ndeclare class Ext { value: i32; } declare function createExt(): Ext;",
     why: "A `declare class` has no constructor body, so `new` stores no argument \
                       and every field of the instance holds no value.",
     collision: "compiler.md §108",

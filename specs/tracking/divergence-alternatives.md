@@ -114,3 +114,89 @@ TscRejects sites with a tsc-accepted program and no named alternative: NullableM
 - The render stops after 200 items (`MAX_ITEMS`).
 - No JSON, LSP, or tsserver-plugin output exists in the tree.
 
+
+## §307 result
+
+After §307, 428 `subscript` fields are programs and 79 are form b
+(`no equivalent: <reason>`). The form b entries and their reasons:
+
+
+- **AsyncGeneratorFunction**: The runtime has no async iterator or async generator frame.
+- **BoundaryObjectMember**: An opaque boundary object has no fields or default object formatter.
+- **ClassFinalAlignmentLimit**: The requested aligned layout exceeds the signed displacement limit.
+- **ClassRuntimeObject**: Classes have no runtime constructor object or constructor name property.
+- **ConditionalAnnotation**: The type system cannot select a parameter type through a conditional type.
+- **ContextAffineArrayElement**: Worker endpoints cannot enter array storage.
+- **ContextAffineCapture**: A worker endpoint has no closure-environment representation or string formatter.
+- **ContextAffineContainerArgument**: Worker endpoints cannot enter container storage.
+- **CoroutineReturnOrThrowCallForm**: The generator API has no return or throw operation to force completion.
+- **EnumImplicitValueOverflow**: The implicit value 2147483648 cannot fit the i32 enum representation.
+- **EnumObjectMember**: An enum has no runtime object or object method value.
+- **EnumObjectValueForm**: An enum has no runtime object that holds its members.
+- **ErasedAssignableEquality**: Arrays with different element layouts cannot share an identity.
+- **FileModuleDisabled**: File access requires build configuration and host file callbacks.
+- **FixedArrayConstantIndexBoundsForm**: A fixed array of length one has no element at index two.
+- **FixedArrayLengthLiteral**: A C array cannot have a negative length.
+- **FixedArrayLengthRange**: The requested fixed storage exceeds the signed aggregate byte limit.
+- **FixedArrayObjectMember**: The runtime has no constructor object for a fixed array.
+- **ForeignDirectCallback**: A direct foreign callback parameter has no C provenance position; its C API needs a mirrored callback struct.
+- **ForeignReturnProvenance**: A foreign string return has no C return provenance; its C API needs a mirrored output struct.
+- **GeneratorResultObjectMember**: A generator step has no Object method or default object formatter.
+- **GeneratorResultValueWriteForm**: The generator owns its step result; source code cannot overwrite its done flag.
+- **GeneratorReturnValue**: A finished generator result has no slot for a return value.
+- **InvalidProgramEntry**: The build input must select one non-ambient entry module.
+- **MapObjectMember**: The runtime has no constructor object for a Map.
+- **MathSubset**: The N-argument Math.hypot result has no admitted operation with the same rounding.
+- **MetaPropertyExpression**: The runtime has no module metadata object.
+- **MirrorAnonymousCallback**: A callback needs a named C typedef for its trampoline cast. Generate the mirror again from its C header.
+- **MirrorArrayProvenanceMissing**: An absorbed array parameter needs its C aggregate or scalar-pair provenance for C emission. Generate the mirror again from its C header.
+- **MirrorCallbackProvenanceMissing**: A callback needs its recorded C typedef identity for its trampoline cast. Generate the mirror again from its C header.
+- **MirrorCallbackTargetMissing**: Callback provenance must name a callback typedef declared in the same mirror. Generate the mirror again from its C header.
+- **MirrorHeaderMissing**: Foreign functions need a header identity for C emission. Generate the mirror again from its C header.
+- **MirrorLifetimeTargetMissing**: A callback lifetime record must name a boundary class that carries a callback field. Generate the mirror again from its C header.
+- **MirrorMemberTargetMissing**: A member record must name a field of a boundary class of its mirror. Generate the mirror again from its C header.
+- **MirrorModuleDeclarationForm**: C header declarations have no namespace identity.
+- **MirrorParameterProvenanceMismatch**: The declared parameter type must agree with its recorded C parameter shape. Generate the mirror again from its C header.
+- **MirrorParameterTargetMissing**: Parameter provenance must name a parameter declared in the same mirror. Generate the mirror again from its C header.
+- **MirrorStringProvenanceMissing**: An absorbed string parameter needs its C string-view aggregate identity for C emission. Generate the mirror again from its C header.
+- **NamespaceAsValue**: A namespace import has no runtime object value.
+- **NeverAnnotation**: The type system has no uninhabited parameter type.
+- **NullableValueClassAssignment**: A value class has no callable identity or nullable function representation.
+- **ProvenanceControlCharacter**: A provenance string must escape control characters. Generate the mirror again from its C header.
+- **ProvenanceDuplicateCEnum**: One CEnum typedef has one provenance record. Generate the mirror again from its C header.
+- **ProvenanceDuplicateCallback**: One callback typedef has one provenance record. Generate the mirror again from its C header.
+- **ProvenanceDuplicateCallbackLifetime**: One callback aggregate has one lifetime record. Generate the mirror again from its C header.
+- **ProvenanceDuplicateDescriptor**: One parameter has one recorded C shape. Generate the mirror again from its C header.
+- **ProvenanceDuplicateExternalType**: One external type has one provenance record. Generate the mirror again from its C header.
+- **ProvenanceDuplicateHeader**: A mirror has one header identity. Generate the mirror again from its C header.
+- **ProvenanceDuplicateMember**: One boundary-struct member has one member record. Generate the mirror again from its C header.
+- **ProvenanceDuplicatePointerParameter**: One pointer parameter has one pointer-parameter record. Generate the mirror again from its C header.
+- **ProvenanceDuplicateScalarPair**: One parameter has one recorded C shape. Generate the mirror again from its C header.
+- **ProvenanceDuplicateStringView**: One parameter has one recorded C shape. Generate the mirror again from its C header.
+- **ProvenanceEmptyCEnum**: A CEnum record needs nonempty typedef and alias identities. Generate the mirror again from its C header.
+- **ProvenanceEmptyCallback**: A callback record needs a nonempty C typedef identity. Generate the mirror again from its C header.
+- **ProvenanceEmptyCallbackLifetime**: A callback lifetime record needs a nonempty aggregate identity. Generate the mirror again from its C header.
+- **ProvenanceEmptyDescriptor**: A descriptor record needs nonempty function, parameter, aggregate, and element identities. Generate the mirror again from its C header.
+- **ProvenanceEmptyExternalType**: An external-type record needs a nonempty C type identity. Generate the mirror again from its C header.
+- **ProvenanceEmptyMember**: A member record names a non-empty aggregate and member. Generate the mirror again from its C header.
+- **ProvenanceEmptyPointerParameter**: A pointer-parameter record names a non-empty function and parameter. Generate the mirror again from its C header.
+- **ProvenanceEmptyScalarPair**: A scalar-pair record needs nonempty function, parameter, and element identities. Generate the mirror again from its C header.
+- **ProvenanceEmptyStringView**: A string-view record needs nonempty function, parameter, and aggregate identities. Generate the mirror again from its C header.
+- **ProvenanceFieldSeparator**: Whitespace must separate provenance fields. Generate the mirror again from its C header.
+- **ProvenanceHeaderBasename**: A header identity must be a nonempty basename without control characters. Generate the mirror again from its C header.
+- **ProvenanceInvalidBoolean**: A provenance boolean must use true or false. Generate the mirror again from its C header.
+- **ProvenanceInvalidUnicodeDigits**: A Unicode escape must contain four hexadecimal digits. Generate the mirror again from its C header.
+- **ProvenanceInvalidUnicodeScalar**: A provenance string must contain Unicode scalar values. Generate the mirror again from its C header.
+- **ProvenanceMissingKind**: A provenance record needs a record kind. Generate the mirror again from its C header.
+- **ProvenanceShortUnicodeEscape**: A Unicode escape must contain four hexadecimal digits. Generate the mirror again from its C header.
+- **ProvenanceTrailingData**: A provenance record must end after its declared fields. Generate the mirror again from its C header.
+- **ProvenanceUnexpectedKey**: Each provenance field must use the key required by its record kind. Generate the mirror again from its C header.
+- **ProvenanceUnknownKind**: A provenance record must use a declared record kind. Generate the mirror again from its C header.
+- **ProvenanceUnquotedString**: A provenance string must use quotes. Generate the mirror again from its C header.
+- **ProvenanceUnsupportedEscape**: A provenance string must use a declared escape form. Generate the mirror again from its C header.
+- **ProvenanceUnterminatedEscape**: A provenance escape must contain its escaped character. Generate the mirror again from its C header.
+- **ProvenanceUnterminatedString**: A provenance string must have a closing quote. Generate the mirror again from its C header.
+- **SetObjectMember**: The runtime has no constructor object for a Set.
+- **SymbolAnnotation**: The runtime has no Symbol values.
+- **WireEnumEmpty**: A CEnum requires at least one member with a C wire value.
+- **WorkerStaticObjectMethod**: Worker has no runtime constructor object to return from valueOf.

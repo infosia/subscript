@@ -83,4 +83,38 @@ Examples of the last row, measured on the debug CLI:
 
 ### 307.3 Phase Review
 
+Evidence: `specs/tracking/divergence-alternatives.md`. At the contract
+pin, 170 fields are programs and 342 are "no equivalent; …". After the
+change, 428 are programs and 79 are form b; the 5 dead variants are
+deleted. The checker accepts each program, and `tsc` accepts each one
+in the batch of the §154 total test. The fragment check takes 0.280 s
+with one test thread (0.185 s at the pin).
+
+One fresh review found five MAJOR findings, all realistic, and six
+MINOR findings.
+
+1. MAJOR: three entries were form b, but a form exists:
+   `n as E` (a `switch` from the integer to the members), `x: unknown`
+   (a type parameter), and `readonly i32[]` (`i32[]`, as for
+   `ReadonlyArray<i32>`). Each is form a now.
+2. MAJOR: two programs had another intent. `typeof 1` showed
+   `"number";`, and the realistic use is a narrowing test; the entry
+   now shows `typeof x === "string"` and `x !== null`. A labeled
+   `break` showed a loop with no label, which exits only the inner
+   loop; the entry now shows a flag in the outer loop condition.
+3. The class: a vague text passed as form b, and a program of another
+   intent passed as form a. Rule 5a makes each form b entry change a
+   list in the check. The intent of a form a program stays a review
+   item.
+4. MINOR, fixed: the `why` of `SwitchDiscriminantKindForm`,
+   `GeneratorMethodForm`, and `MirrorAccessor`; `DeleteProperty`; a
+   leading line break in some fragments (rule 6).
+5. MINOR, recorded: §307.4 item 1.
+
 ### 307.4 Open
+
+1. The message of `Number(value)` says "use `value as f64`", and
+   `"1.5" as f64` is rejected. The block shows `parseFloat`. Work unit
+   4 (wrong claims) takes it.
+2. A form a program can have another intent and pass the check. No
+   mechanical check reads intent.

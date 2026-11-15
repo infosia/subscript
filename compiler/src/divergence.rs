@@ -102,69 +102,69 @@ pub enum Divergence {
     FunctionParameterIdentity,
     /// The admitted surface excludes this source form.
     ArrayToFixedArray,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// An enum requires an explicit conversion to its integer representation.
     EnumToInteger,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// Enum formatting uses template interpolation; enums have no methods.
     EnumMethod,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// A C function pointer has no call method; call the function directly.
     FunctionMethod,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// Boolean formatting uses template interpolation; booleans have no methods.
     BooleanMethod,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// An enum has no method values; a lambda can format the scalar.
     EnumMember,
-    /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
+    /// A generator method needs a named receiver; a lambda can make the next call.
     GeneratorMember,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// A function pointer carries no arity property; its declaration fixes the parameter count.
     FunctionMember,
-    /// The lib surface is a subset, and a C function pointer has no properties.
+    /// A boolean has no method values; a lambda can format the scalar.
     BooleanMember,
-    /// No lowering is decided for this operator or expression form.
+    /// The runtime has no module metadata object.
     MetaPropertyExpression,
-    /// No lowering is decided for this operator or expression form.
+    /// A class declaration belongs at module scope; a class expression has no runtime constructor value.
     ClassExpression,
-    /// No lowering is decided for this operator or expression form.
+    /// A tagged template has no lowering; an ordinary call accepts an explicit string.
     TaggedTemplateExpression,
-    /// No lowering is decided for this operator or expression form.
+    /// Separate statements preserve the evaluation order without a comma expression.
     CommaExpression,
-    /// No lowering is decided for this operator or expression form.
+    /// A generic function needs a concrete wrapper before it can supply a function value.
     InstantiationExpression,
-    /// No lowering is decided for this operator or expression form.
+    /// Angle assertions have no lowering; a value already has its declared type.
     AngleAssertionExpression,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// A string assertion does not check alias membership; an explicit test selects a declared literal.
     StringAliasAssertion,
     /// The admitted surface excludes this source form.
     NullableClassAssertion,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// An integer assertion cannot prove membership in an enum; a named member has enum identity.
     IntegerEnumAssertion,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// A value already has its nominal type; an identity assertion adds no conversion.
     IdentityAssertion,
     /// No lowering is decided for relational comparisons on two boolean operands.
     BooleanRelationalOperand,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// String concatenation requires explicit formatting of a numeric operand.
     BinaryStringOperand,
     /// No lowering is decided for relational comparisons on two string operands.
     StringRelationalOperand,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// Enum arithmetic requires an explicit conversion to its integer representation.
     BinaryEnumOperand,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// String concatenation requires explicit formatting of a numeric operand.
     CompoundStringOperand,
-    /// The language has no implicit conversion, and an assertion does not check membership.
+    /// Enum arithmetic requires an explicit conversion to its integer representation.
     CompoundEnumOperand,
-    /// No lowering is decided for this operator or expression form.
+    /// Exponentiation uses Math.pow; the exponent operator has no lowering.
     ExponentOperator,
-    /// No lowering is decided for this operator or expression form.
+    /// A nominal class has fixed declared fields; the runtime has no dynamic property lookup.
     InOperator,
-    /// No lowering is decided for this operator or expression form.
+    /// A sized numeric already has a numeric type; unary plus has no lowering.
     UnaryPlusOperator,
-    /// No lowering is decided for this operator or expression form.
+    /// The void operator has no lowering; a statement discards its result.
     VoidOperator,
-    /// No lowering is decided for this operator or expression form.
+    /// Types are static; the runtime has no typeof operator.
     TypeofOperator,
-    /// An annotation names a declared or builtin type; types are nominal.
+    /// A function type parameter uses an identifier; a binding pattern belongs in the function body.
     FunctionTypeObjectPattern,
-    /// An annotation names a declared or builtin type; types are nominal.
+    /// A function type parameter uses an identifier; a binding pattern belongs in the function body.
     FunctionTypeArrayPattern,
-    /// An annotation names a declared or builtin type; types are nominal.
+    /// A function type has fixed arity; one array parameter can carry the arguments.
     FunctionTypeRestParameter,
     /// The admitted surface excludes this source form.
     BigIntAnnotation,
@@ -202,9 +202,9 @@ pub enum Divergence {
     ThisAnnotation,
     /// The admitted surface excludes this source form.
     TupleAnnotation,
-    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
+    /// An accessor field has no lowering; a declared field supplies storage.
     AutoAccessorDeclaration,
-    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
+    /// A static block has no lowering; a named static method can initialize module state.
     StaticBlockDeclaration,
     /// No lowering is decided for these statements; for-in reads dynamic properties.
     LabeledStatement,
@@ -236,13 +236,13 @@ pub enum Divergence {
     TypeParameterDefault,
     /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
     CollectionCallbackTypeMismatchForm,
-    /// No lowering is decided for this operator or expression form.
+    /// An assignment requires a storage place; an assertion expression does not supply one.
     NonPlaceAssignmentTargetForm,
     /// No lowering is decided for this operator or expression form.
     PowerAssignmentForm,
-    /// A lambda captures const locals only; a function expression binds its own this.
+    /// A generator expression has no lowering; a named generator declaration supplies the direct call target.
     FunctionExpressionForm,
-    /// No lowering is decided for this operator or expression form.
+    /// A non-null value needs no assertion; a nullable value requires a null check.
     NonNullAssertionExpressionForm,
     /// A parameter default executes outside the method frame that holds the receiver.
     ThisInParameterDefaultArrow,
@@ -260,7 +260,7 @@ pub enum Divergence {
     MethodAssignment,
     /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
     ConstructorNotNamedClassForm,
-    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    /// A generator exposes next only; it has no return or throw operation.
     CoroutineReturnOrThrowCallForm,
     /// The yield type comes from the generator body.
     GeneratorYieldTypeNotKnownForm,
@@ -290,7 +290,7 @@ pub enum Divergence {
     BigIntLiteral,
     /// An exhaustive enum switch ends the return flow only in tail position.
     LambdaReturnFlowCoverage,
-    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    /// A generator step result exposes read-only done and value fields.
     GeneratorResultValueWriteForm,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
     GeneratorResultDoneWriteForm,
@@ -304,15 +304,15 @@ pub enum Divergence {
     FixedArrayMethodValueForm,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
     ArrayMethodValueForm,
-    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    /// String indexing can produce undefined; at returns a nullable string.
     NonIndexableReceiverForm,
-    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    /// An out-of-range fixed array index always traps.
     FixedArrayConstantIndexBoundsForm,
-    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    /// A fixed array index has type i32; a different width requires an explicit conversion.
     FixedArrayIndexNotIntForm,
-    /// Indices are i32; an out-of-range fixed index always traps, and string indexing can give undefined.
+    /// An array index has type i32; a different width requires an explicit conversion.
     ArrayIndexNotIntForm,
-    /// A generator supplies one yield type through next, with a zero finished value; no lowering is decided for yield delegation.
+    /// Yield delegation has no lowering; an explicit loop yields each value.
     YieldDelegationForm,
     /// The language has no implicit conversion in a truth test.
     ConditionalNonBooleanConditionForm,
@@ -322,7 +322,7 @@ pub enum Divergence {
     LogicalNotNonBooleanForm,
     /// Types require identical arguments and parameters; the language has no implicit conversion, structural substitution, or variance.
     DistinctNominalContainerAssignmentForm,
-    /// Classes lower to C layouts and enums to integer constants; neither has a run-time object.
+    /// A constructor has no first-class value; a factory function can construct the named class.
     ConstructorTypeAnnotationForm,
     /// An annotation names a declared or builtin type; types are nominal.
     IntersectionTypeAnnotationForm,
@@ -364,17 +364,17 @@ pub enum Divergence {
     ParameterPropertyTypeAnnotation,
     /// Field names must be identifiers.
     IdentifierFieldName,
-    /// No lowering is decided for static blocks, accessor fields, or instance generator methods.
+    /// An instance generator method has no lowering; a static generator method has no receiver frame.
     GeneratorMethodForm,
-    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    /// A switch dispatches integer, enum, or alias cases; a boolean condition uses if.
     SwitchDiscriminantKindForm,
     /// Spread arguments require variadic parameters, which the language does not have.
     ForOfSpreadCall,
-    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    /// An iteration head declares a binding; an assignment belongs in the loop body.
     ForOfBindingKindForm,
     /// The language has no undefined value for the function-wide var binding.
     ForOfVarBindingForm,
-    /// Switch dispatch uses constant scalar cases; for await reads async iteration; no lowering is decided for assigning iteration heads.
+    /// A synchronous array uses for-of; the runtime has no async iteration protocol.
     AsyncForOfForm,
     /// The language has no implicit conversion in a truth test.
     StatementNonBooleanConditionForm,
@@ -410,7 +410,7 @@ pub enum Divergence {
     UnaryNumericCoercion,
     /// Bitwise operators take sized integer operands and preserve their integer width.
     BitwiseIntegerOperand,
-    /// A class has a fixed C layout; delete cannot remove a property. Context.free releases an entire instance.
+    /// A descriptor has a fixed C layout; delete cannot remove a property.
     DeleteProperty,
     /// The optional-chain surface tests a nullable receiver for a field read or a method call; it does not test a callable.
     OptionalMethodCall,
@@ -436,7 +436,7 @@ pub enum Divergence {
     UndefinedEqualityPair,
     /// The undefined token is a `T | undefined` or `void` result, or an absence comparison with a nullable value or an absence-capable descriptor member.
     UndefinedEqualityNonMember,
-    /// A bare yield carries no value, so only a void generator can use it.
+    /// A bare yield has no value; a nullable reference yield type can represent an absent numeric value.
     BareYieldNonVoid,
     /// An async method is a direct call target and has no first-class function value.
     AsyncMethodValue,
@@ -689,10 +689,6 @@ pub enum Divergence {
     AsyncReturnQualifiedName,
     /// An async function must spell its suspendable return view as Promise<T>, rather than an alias.
     AsyncReturnAlias,
-    /// The suspendable return view must state exactly one fulfilled-value type.
-    AsyncReturnMissingArgument,
-    /// The suspendable return view must state exactly one fulfilled-value type.
-    AsyncReturnArgumentCount,
     /// A FixedArray must fit the signed aggregate byte limit, which excludes lengths above the element-count range.
     FixedArrayLengthRange,
     /// A C array layout needs a non-negative integer literal length at compile time.
@@ -872,10 +868,6 @@ pub enum Divergence {
     LoneSurrogateEscape,
     /// An inferred `void` binding, a void map callback, or a value return from a void function.
     VoidValue,
-    /// A reference-element search miss uses `null` instead of `undefined`.
-    ReferenceSearchMiss,
-    /// A finished generator value with an invalid zero traps at the read (compiler.md §145).
-    GeneratorDoneValue,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -1004,8 +996,6 @@ pub enum Divergence {
     DescriptorConstruction,
     /// `Context.bytesOf` on a target with no C-identical layout.
     ByteAccessTarget,
-    /// A plain literal-union alias in a host-callable entry signature.
-    EntryParameterType,
     /// A chain header copied out of its enclosing extension.
     EmbeddedHeaderCopy,
     /// A generic function call with conflicting inference candidates.
@@ -1062,7 +1052,7 @@ pub struct DivergenceEntry {
     /// A TypeScript fragment that stock `tsc` accepts.
     pub ts: &'static str,
     /// The fragment this language accepts for the same intent, or the
-    /// sentence `no equivalent; <what to do instead>`.
+    /// sentence `no equivalent: <reason>` (§307 rule 1).
     pub subscript: &'static str,
     /// One sentence, 25 words or fewer, that gives the reason.
     pub why: &'static str,
@@ -1397,8 +1387,6 @@ impl Divergence {
         Divergence::AsyncReturnNonReference,
         Divergence::AsyncReturnQualifiedName,
         Divergence::AsyncReturnAlias,
-        Divergence::AsyncReturnMissingArgument,
-        Divergence::AsyncReturnArgumentCount,
         Divergence::FixedArrayLengthRange,
         Divergence::FixedArrayLengthLiteral,
         Divergence::FixedArrayLengthZero,
@@ -1486,8 +1474,6 @@ impl Divergence {
         Divergence::UserIterationProtocol,
         Divergence::SetAlgebraDomain,
         Divergence::VoidValue,
-        Divergence::ReferenceSearchMiss,
-        Divergence::GeneratorDoneValue,
         Divergence::AnyType,
         Divergence::DynamicObjectModel,
         Divergence::NominalClassIdentity,
@@ -1561,7 +1547,6 @@ impl Divergence {
         Divergence::UnreachableInValuePosition,
         Divergence::DescriptorConstruction,
         Divergence::ByteAccessTarget,
-        Divergence::EntryParameterType,
         Divergence::EmbeddedHeaderCopy,
         Divergence::GenericInferenceCandidates,
         Divergence::GenericInferenceMissing,
@@ -1721,6 +1706,10 @@ mod tests {
     #[test]
     fn collision_ids_and_headings_are_total() {
         let mut headings = recorded_headings();
+        // §307 rule 4 removes the unused C22 and C23 diagnostic variants.
+        for id in ["C22", "C23"] {
+            assert!(headings.remove(id), "the behavior heading {id} must remain");
+        }
         // §99 retains C15's heading for links but retires its diagnostic.
         assert!(
             headings.remove("C15"),
@@ -1765,14 +1754,6 @@ mod tests {
             missing.is_empty(),
             "collisions.md headings with no variant: {missing:?}"
         );
-    }
-
-    #[test]
-    fn generator_done_value_names_collision_c23() {
-        let entry = Divergence::GeneratorDoneValue.entry();
-        assert_eq!(entry.collision, "C23");
-        assert!(entry.subscript.contains("!r.done"));
-        assert!(Divergence::ALL.contains(&Divergence::GeneratorDoneValue));
     }
 
     #[test]
@@ -1836,21 +1817,6 @@ mod tests {
         assert_eq!(entry.ts, "function f(): void {} const a = f();");
         assert_eq!(entry.subscript, "function f(): void {} f();");
         assert!(Divergence::ALL.contains(&Divergence::VoidValue));
-    }
-
-    #[test]
-    fn reference_search_miss_names_its_record_and_null_test() {
-        let entry = Divergence::ReferenceSearchMiss.entry();
-        assert_eq!(entry.collision, "C22");
-        assert_eq!(
-            entry.ts,
-            "const missing = values.get(key); print(`${missing === null}`);"
-        );
-        assert_eq!(
-            entry.subscript,
-            "const missing = values.get(key); print(`${missing === undefined}`);"
-        );
-        assert!(Divergence::ALL.contains(&Divergence::ReferenceSearchMiss));
     }
 
     #[test]
