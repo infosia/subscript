@@ -349,3 +349,4 @@ Every section, with its status:
 | §305 | A conditional or spread element takes part in the list type | active | [`s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md`](compiler/s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md) |
 | §306 | Cycles through a local lambda or a list, and the class hash | active | [`s306-cycles-through-a-local-lambda-or-a-list-and-the-class-hash.md`](compiler/s306-cycles-through-a-local-lambda-or-a-list-and-the-class-hash.md) |
 | §307 | Each divergence shows an accepted program, or states that none exists | active | [`s307-each-divergence-shows-an-accepted-program-or-states-that-none-exists.md`](compiler/s307-each-divergence-shows-an-accepted-program-or-states-that-none-exists.md) |
+| §308 | An approximation rejection names the form to write | active | [`s308-an-approximation-rejection-names-the-form-to-write.md`](compiler/s308-an-approximation-rejection-names-the-form-to-write.md) |
