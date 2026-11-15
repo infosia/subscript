@@ -382,6 +382,9 @@ impl<'p> Checker<'p> {
             } else {
                 HashSet::new()
             };
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.parameter_names.insert(p.name.clone());
+            }
             self.declare_local(
                 &p.name,
                 Local {

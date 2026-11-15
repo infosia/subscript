@@ -271,7 +271,7 @@ impl<'p> Checker<'p> {
                         if crossed == 0 {
                             RejectionSite::ImmediatePendingLocalRead
                         } else {
-                            RejectionSite::BlockPendingReadWithoutProgramShadow
+                            self.pending_capture_site(name, fx)
                         },
                         message,
                         pos,
@@ -347,7 +347,11 @@ impl<'p> Checker<'p> {
             }
             if local.mutable && !async_capture {
                 self.reject_subset(
-                    RejectionSite::MutableLocalCapture,
+                    if fx.parameter_local(name) {
+                        RejectionSite::ParameterCapture
+                    } else {
+                        RejectionSite::MutableLocalCapture
+                    },
                     format!(
                         "lambda captures `{}`, which is not a `const` local; \
                          capturing lambdas may capture only const locals by value",

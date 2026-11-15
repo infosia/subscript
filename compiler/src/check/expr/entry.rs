@@ -810,7 +810,11 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let ast::Callee::Expr(callee) = &call.callee else {
             self.reject_subset(
-                RejectionSite::AwaitNotDirectCall,
+                if Self::is_dynamic_import_call(call) {
+                    RejectionSite::DynamicImportCall
+                } else {
+                    RejectionSite::AwaitNotDirectCall
+                },
                 "awaitable expressions must be direct calls",
                 pos.clone(),
             );

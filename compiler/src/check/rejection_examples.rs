@@ -6,11 +6,13 @@ use crate::divergence::{Divergence, DivergenceEntry};
 mod api;
 mod declarations;
 mod expressions;
+mod forms;
 mod related;
 
 impl RejectionSite {
     pub(crate) fn example(self) -> Option<&'static DivergenceEntry> {
-        related::example(self)
+        forms::example(self)
+            .or_else(|| related::example(self))
             .or_else(|| api::example(self))
             .or_else(|| expressions::example(self))
             .or_else(|| declarations::example(self))

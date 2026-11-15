@@ -435,7 +435,7 @@ impl<'p> Checker<'p> {
                 } else if for_write {
                     self.reject_subset(
                         if id == self.error_class && matches!(name, "stack" | "cause") {
-                            RejectionSite::ErrorMemberOutsideSurface
+                            RejectionSite::ErrorMemberWriteOutsideSurface
                         } else if super::is_object_member(name) {
                             RejectionSite::ClassObjectMemberWrite
                         } else {

@@ -143,7 +143,11 @@ impl Checker<'_> {
             return false;
         };
         self.reject_subset(
-            RejectionSite::CallbackFewerParametersUnadapted,
+            if fx.parameter_value(checked) {
+                RejectionSite::CallbackParameterNeedsConstName
+            } else {
+                RejectionSite::CallbackFewerParametersUnadapted
+            },
             message,
             checked.pos.clone(),
         );
@@ -181,7 +185,14 @@ impl Checker<'_> {
                     self.dropped_handle_message(&checked, &handle, &place, "callback")
                 );
                 self.reject_subset(
-                    RejectionSite::VoidPlaceDropsAsyncHandle,
+                    if ArrFn::ALL
+                        .iter()
+                        .any(|operation| operation.name() == method)
+                    {
+                        RejectionSite::ArrayCallbackDropsAsyncHandle
+                    } else {
+                        RejectionSite::VoidPlaceDropsAsyncHandle
+                    },
                     message,
                     checked.pos.clone(),
                 );

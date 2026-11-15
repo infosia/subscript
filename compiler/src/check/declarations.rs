@@ -87,7 +87,11 @@ impl<'p> Checker<'p> {
                     | ast::ModuleDecl::ExportDefaultExpr(_)),
                 ) => {
                     self.reject_subset(
-                        RejectionSite::DefaultExportDeclaration,
+                        if matches!(other, ast::ModuleDecl::ExportAll(_)) {
+                            RejectionSite::ExportAllDeclaration
+                        } else {
+                            RejectionSite::DefaultExportDeclaration
+                        },
                         "the module surface requires named exports",
                         self.pos(other.span()),
                     );
@@ -708,7 +712,11 @@ impl<'p> Checker<'p> {
         }
         if alias.type_params.is_some() {
             self.reject_subset(
-                RejectionSite::GenericSourceAlias,
+                if !crate::ambient::lib_type_name(&name) {
+                    RejectionSite::GenericUserAlias
+                } else {
+                    RejectionSite::GenericSourceAlias
+                },
                 "source type aliases cannot be generic",
                 pos,
             );
@@ -970,7 +978,11 @@ impl<'p> Checker<'p> {
             other => {
                 let pos = self.pos(other.span());
                 self.reject_subset(
-                    RejectionSite::MirrorModuleDeclaration,
+                    if matches!(other, ast::Decl::TsModule(module) if matches!(module.id, ast::TsModuleName::Str(_))) {
+                        RejectionSite::MirrorStringModuleDeclaration
+                    } else {
+                        RejectionSite::MirrorModuleDeclaration
+                    },
                     "mirror declaration form outside the decided surface",
                     pos,
                 );

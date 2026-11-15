@@ -642,3 +642,14 @@ own; 37 of them are form b. The entries are in
 - `IndexedAssignmentChecked`
 - `ThisStaticField`
 - `IteratorBindingUnsupportedMembers`
+
+## §312 sites that two forms reach
+
+Measured at `66ec3574` by a review subagent: 264 `Diverges` sites have
+two or more witness files; 119 have two or more `tsc`-accepted
+witnesses. The 546 accepted witnesses ran through the debug CLI. 18
+sites showed the example of another form to a realistic form; table
+312.1a lists them. The split sites and their entries are in
+`compiler/src/check/rejection_forms.rs` and
+`compiler/src/check/rejection_examples/forms.rs`. The reviewed list of
+rule 3 is `compiler/src/check/rejection_reviewed.txt` (128 sites).

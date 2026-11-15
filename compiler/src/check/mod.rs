@@ -28,6 +28,7 @@ mod rejection_examples;
 #[cfg(test)]
 mod rejection_fact_tests;
 mod rejection_facts;
+mod rejection_forms;
 #[cfg(test)]
 mod rejection_programs;
 #[cfg(test)]
@@ -543,6 +544,8 @@ pub(crate) struct Local {
 /// lookups that cross it are captures.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
+    /// Source parameter names select the form-specific example (§312 rule 1).
+    pub parameter_names: Shared<HashSet<String>>,
     /// The running lambda binding and its decided signature (§284).
     pub self_call: Option<(
         String,

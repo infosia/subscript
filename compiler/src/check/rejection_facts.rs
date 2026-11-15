@@ -773,3 +773,19 @@ impl super::Checker<'_> {
         true
     }
 }
+
+/// A source declare function takes the mirror example (§312 rule 1).
+pub(super) fn source_ambient_function(
+    module: &swc_ecma_ast::Module,
+    function: &swc_ecma_ast::Function,
+) -> bool {
+    use swc_ecma_ast as ast;
+    module.body.iter().any(|item| {
+        let declaration = match item {
+            ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
+            ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
+            _ => return false,
+        };
+        matches!(declaration, ast::Decl::Fn(f) if f.declare && f.function.span == function.span)
+    })
+}

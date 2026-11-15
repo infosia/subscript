@@ -282,7 +282,15 @@ fn first_diagnostics_and_switch_facts() {
     }) {
         let diagnostics = rejection_programs::check(program);
         assert!(!diagnostics.is_empty(), "{}", program.key);
-        if program.codes.is_empty() {
+        let unloaded_dynamic_import = [2, 4, 6, 8]
+            .iter()
+            .any(|n| program.key == format!("non-expression-callee-unavailable-witness-{n}"));
+        if unloaded_dynamic_import {
+            assert_eq!(
+                diagnostics[0].divergence,
+                Some(crate::divergence::Divergence::DynamicImportCall)
+            );
+        } else if program.codes.is_empty() {
             assert!(
                 diagnostics[0].divergence.is_some(),
                 "{}: {diagnostics:?}",

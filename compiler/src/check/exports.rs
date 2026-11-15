@@ -94,13 +94,13 @@ impl Checker<'_> {
         if let Some(source) = standard_source {
             if &*source.value == super::text_module::SPECIFIER {
                 self.reject_subset(
-                    RejectionSite::TextModuleImportForm,
+                    RejectionSite::TextModuleReexport,
                     super::text_module::FORMS,
                     self.pos(source.span),
                 );
             } else {
                 self.reject_subset(
-                    RejectionSite::FileModuleImportForm,
+                    RejectionSite::FileModuleReexport,
                     super::file_module::FORMS,
                     self.pos(source.span),
                 );

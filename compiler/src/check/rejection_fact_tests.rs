@@ -49,7 +49,7 @@ fn error_member_writes_use_builtin_identity() {
             let source = format!("export function main(): void {{ const e = new {constructor}(\"x\"); e.{member} = \"s\"; }}");
             rejected(
                 &source,
-                "ErrorMemberOutsideSurface",
+                "ErrorMemberWriteOutsideSurface",
                 Some("ErrorMemberOutsideSurface"),
             );
         }
@@ -228,7 +228,7 @@ fn pending_local_splits_on_the_lambda_boundary() {
         "ImmediatePendingLocalRead",
         None,
     );
-    rejected("export function main(): void { const read = (): i32 => x; const x: i32 = 4; print(`${read()}`); }", "BlockPendingReadWithoutProgramShadow", Some("DeclarationScope"));
+    rejected("export function main(): void { const read = (): i32 => x; const x: i32 = 4; print(`${read()}`); }", "LaterLocalCaptureRead", Some("DeclarationScope"));
 }
 
 /// The rejection site of the one diagnostic of a rejected probe.

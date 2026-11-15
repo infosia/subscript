@@ -426,7 +426,9 @@ impl<'p> Checker<'p> {
         {
             let elem_n = self.type_name(&elem);
             self.reject_subset(
-                RejectionSite::ArrayElementDomain,
+                if matches!(f, A::IndexOf | A::LastIndexOf | A::Includes)
+                    && matches!(self.apparent_type(&elem), Type::Class(id) if self.classes[id.0].is_value)
+                { RejectionSite::ValueArraySearch } else { RejectionSite::ArrayElementDomain },
                 format!(
                     "`{}` is defined per element kind (scalars, strings, `Date`, \
                      reference classes); `{}` elements are outside that set (Q22)",

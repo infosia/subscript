@@ -277,7 +277,11 @@ impl<'p> Checker<'p> {
                 if f.delivery != Delivery::Void {
                     let actual = self.type_name(&f.ty);
                     self.reject_subset(
-                        RejectionSite::PromiseReactionResult,
+                        if f.delivery == Delivery::Adopt {
+                            RejectionSite::PromiseFinallyAsyncResult
+                        } else {
+                            RejectionSite::PromiseReactionResult
+                        },
                         format!("a `finally` callback must be `() => void`; it is `{actual}`"),
                         self.pos(call.args[0].expr.span()),
                     );
@@ -486,10 +490,26 @@ impl<'p> Checker<'p> {
                 "{}; a function type has no optional parameter",
                 self.reaction_arity_message(role, method, params)
             );
-            self.reject_subset(RejectionSite::PromiseReactionParameter, message, pos);
+            self.reject_subset(
+                if role == Role::Rejected {
+                    RejectionSite::PromiseRejectionParameter
+                } else {
+                    RejectionSite::PromiseReactionParameter
+                },
+                message,
+                pos,
+            );
         } else {
             let message = self.reaction_parameter_type_message(role, method, actual, params);
-            self.reject_subset(RejectionSite::PromiseReactionParameter, message, pos);
+            self.reject_subset(
+                if role == Role::Rejected {
+                    RejectionSite::PromiseRejectionParameter
+                } else {
+                    RejectionSite::PromiseReactionParameter
+                },
+                message,
+                pos,
+            );
         }
     }
 

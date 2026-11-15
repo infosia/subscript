@@ -5,6 +5,25 @@ use crate::divergence::Divergence;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RejectionSite {
+    ParameterCapture,
+    LaterLocalCaptureRead,
+    SourceAmbientFunctionDeclaration,
+    ExportAllDeclaration,
+    GenericUserAlias,
+    MirrorStringModuleDeclaration,
+    WeakMapConstructor,
+    ValueArraySearch,
+    CallbackParameterNeedsConstName,
+    FunctionParameterNeedsConstName,
+    ArrayCallbackDropsAsyncHandle,
+    IntegerToEnumAssignment,
+    PromiseFinallyAsyncResult,
+    PromiseRejectionParameter,
+    ErrorMemberWriteOutsideSurface,
+    TypeofLiteral,
+    FileModuleReexport,
+    TextModuleReexport,
+
     ArrayMapFunctionResult,
     ArrayMapAsyncResult,
     PromiseCatchCall,

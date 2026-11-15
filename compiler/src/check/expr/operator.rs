@@ -149,7 +149,13 @@ impl<'p> Checker<'p> {
             _ => {
                 self.reject_subset(
                     match u.op {
-                        ast::UnaryOp::TypeOf => RejectionSite::TypeofOperator,
+                        ast::UnaryOp::TypeOf => {
+                            if matches!(super::unparen_expr(&u.arg), ast::Expr::Lit(_)) {
+                                RejectionSite::TypeofLiteral
+                            } else {
+                                RejectionSite::TypeofOperator
+                            }
+                        }
                         ast::UnaryOp::Void => RejectionSite::VoidOperator,
                         _ => RejectionSite::UnaryPlusOperator,
                     },

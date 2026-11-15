@@ -35,14 +35,14 @@ ImmediateShadowedNameRead	c-corpus-r155-class-read-before-declaration	S100	`Foo`
 ImmediateShadowedNameRead	c-corpus-r154-namespace-read-before-declaration	S100	`Math` is read before its declaration in this block
 BlockNameReadBeforeDeclaration	c-lookup-shadow-class	S100	`C` is read before its declaration in this block
 ClassReadBeforeDeclaration	class-read-before-declaration	S100	`B` is used before its declaration
-BlockPendingReadWithoutProgramShadow	c-lookup-pending-closure	S100	`x` is read before its declaration in this block
+LaterLocalCaptureRead	c-lookup-pending-closure	S100	`x` is read before its declaration in this block
 ImmediateNameWriteBeforeDeclaration	c-lookup-pending-write	S100	`x` is assigned before its declaration in this block
 BlockNameWriteBeforeDeclaration	c-lookup-write-closure	S100	`x` is assigned before its declaration in this block
 ContextAffineCapture	c-lookup-context-capture	S100	lambda captures Context-affine `box`; Worker, Inbox, and Outbox values may not be captured
 MutableLocalCapture	c-capture-mutable	S009	lambda captures `x`, which is not a `const` local; capturing lambdas may capture only const locals by value
 ModuleVarDeclaration	module-var-declaration	S100	`var` is not in the language; use `let` or `const`
 ModuleInitializerMissing	module-initializer-missing	S100	module-level variables require an initializer
-FunctionBodyMissing	function-body-missing	S100	function bodies are required
+SourceAmbientFunctionDeclaration	function-body-missing	S100	function bodies are required
 FunctionImplementationMissing	function-implementation-missing	S100	function bodies are required
 AsyncHandleUnawaited	async-handle-unawaited	S013	an async handle is dropped without any await of its completion
 FunctionReturnPathMissing	function-return-path-missing	S100	not all paths return a value
@@ -228,7 +228,7 @@ ModuleBindingPattern	module-binding-pattern	S100	a binding pattern binds inside 
 EnumStringMemberName	enum-string-member-name	S100	string enum member names are not decided
 EnumImplicitValueOverflow	enum-implicit-value-overflow	S008	implicit value for enum member `b` overflows i32
 EnumNonIntegerMember	enum-non-integer-member	S100	enum members must have integer literal values
-GenericSourceAlias	generic-source-alias	S100	source type aliases cannot be generic
+GenericUserAlias	generic-source-alias	S100	source type aliases cannot be generic
 SourceAliasCircular	source-alias-circular	S100	type alias `A` refers to itself
 SourceAliasCircular	source-alias-circular-union	S100	type alias `U` refers to itself
 AliasTypeArguments	alias-type-arguments	S100	type alias `Id` is not generic
@@ -759,8 +759,8 @@ UriCodecArgumentCount	UriCodecArgumentCount	S100	`encodeURI` expects 1 argument(
 MapGetOrArgumentCount	MapGetOrArgumentCount	S100	`Map.getOr` expects 2 argument(s) (2 required), got 3
 CoroutineReturnOrThrowCall	GeneratorMethod	S100	`toString` is outside the coroutine surface (next)
 ArrayFillArgumentCount	ArrayFillArgumentCount	S100	`fill` expects 3 argument(s) (1 required), got 4
-TypeofOperator	a-s208	S100	unary operator outside the decided surface
-TypeofOperator	TypeofOperator	S100	unary operator outside the decided surface
+TypeofLiteral	a-s208	S100	unary operator outside the decided surface
+TypeofLiteral	TypeofOperator	S100	unary operator outside the decided surface
 TemplateLiteralAnnotation	TemplateLiteralAnnotation	S100	type annotation form outside the decided surface
 ObjectTypeOutsideBoundary	a-s081	S011	`object` is a boundary-only type; it is not available to general declarations
 ObjectTypeOutsideBoundary	a-s116	S011	`object` is a boundary-only type; it is not available to general declarations
@@ -794,7 +794,7 @@ LocalAliasDeclaration	c-worker-local-default	S100	nested declarations are not in
 LocalAliasDeclaration	c-worker-local-one	S100	nested declarations are not in the decided surface
 LocalAliasDeclaration	c-worker-local-scalar	S100	nested declarations are not in the decided surface
 LocalAliasDeclaration	LocalAliasDeclaration	S100	nested declarations are not in the decided surface
-MutableLocalCapture	c-lookup-context-capture	S009	lambda captures `box`, which is not a `const` local; capturing lambdas may capture only const locals by value
+ParameterCapture	c-lookup-context-capture	S009	lambda captures `box`, which is not a `const` local; capturing lambdas may capture only const locals by value
 MutableLocalCapture	c-lookup-switch-var-read	S009	lambda captures `x`, which is not a `const` local; capturing lambdas may capture only const locals by value
 ScalarToStringArgumentCount	ScalarToStringArgumentCount	S100	`toString` expects 0 argument(s) (0 required), got 1
 ConstAssertionExpression	ConstAssertionExpression	S100	expression form outside the decided surface
@@ -893,11 +893,11 @@ AssignmentTypeMismatch	AssignmentTypeMismatch	S100	type mismatch: the return val
 ArrayCopyWithinRequiredArgumentCount	ArrayCopyWithinArgumentCount	S100	`copyWithin` expects 2 or 3 arguments (target, start, end?), got 4
 OutboxPostArgumentCount	OutboxPostArgumentCount	S100	`poll` expects 0 argument(s) (0 required), got 1
 DateNowArgumentCount	DateNowArgumentCount	S100	`Date.now` expects 0 argument(s) (0 required), got 1
-MirrorModuleDeclaration	export-source-module-missing-witness-2	S100	mirror declaration form outside the decided surface
-MirrorModuleDeclaration	reexport-member-missing-witness-2	S100	mirror declaration form outside the decided surface
-MirrorModuleDeclaration	poisoned-default-import	S100	mirror declaration form outside the decided surface
-MirrorModuleDeclaration	named-import-module-missing	S100	mirror declaration form outside the decided surface
-MirrorModuleDeclaration	named-import-member-missing-witness-2	S100	mirror declaration form outside the decided surface
+MirrorStringModuleDeclaration	export-source-module-missing-witness-2	S100	mirror declaration form outside the decided surface
+MirrorStringModuleDeclaration	reexport-member-missing-witness-2	S100	mirror declaration form outside the decided surface
+MirrorStringModuleDeclaration	poisoned-default-import	S100	mirror declaration form outside the decided surface
+MirrorStringModuleDeclaration	named-import-module-missing	S100	mirror declaration form outside the decided surface
+MirrorStringModuleDeclaration	named-import-member-missing-witness-2	S100	mirror declaration form outside the decided surface
 BigIntAnnotation	BigIntAnnotation	S100	keyword type outside the decided surface
 AwaitMethodArgumentCount	AwaitMethodArgumentCount	S100	`g` expects 0 argument(s) (0 required), got 1
 UnknownAnnotation	UnknownAnnotation	S100	keyword type outside the decided surface
@@ -983,7 +983,7 @@ GenericSourceAlias	c-array-two-alias	S100	source type aliases cannot be generic
 GenericSourceAlias	c-async-arity-alias	S100	source type aliases cannot be generic
 GenericSourceAlias	c-async-default-alias	S100	source type aliases cannot be generic
 GenericSourceAlias	c-fixed-default-alias	S100	source type aliases cannot be generic
-GenericSourceAlias	c-fixed-one-alias	S100	source type aliases cannot be generic
+GenericUserAlias	c-fixed-one-alias	S100	source type aliases cannot be generic
 GenericSourceAlias	c-pattern-iterator-extended	S100	source type aliases cannot be generic
 GenericSourceAlias	c-promise-arity-alias	S100	source type aliases cannot be generic
 GenericSourceAlias	c-promise-default-alias	S100	source type aliases cannot be generic
@@ -1058,7 +1058,7 @@ NullableNominalAssignment	old-r120-narrowing-escapes-conditional	S005	nominal ty
 AsyncReturnArgumentCount	async-builtin-arity	S100	`Promise` requires exactly one fulfilled-value type argument
 UnboundTypeName	constructor-error-type-count	S016	unknown type name `Missing`
 ClassUndeclaredMemberRead	shadow-fixed-member	S018	`FixedArray<i32, i32>` has no member `length`
-UnknownNamespaceConstructor	lib-constructor	S100	unknown class `WeakMap`
+WeakMapConstructor	lib-constructor	S100	unknown class `WeakMap`
 ValueConstructorArgumentCount	constructor-error-type-count	S100	`C` expects 1 argument(s) (1 required), got 2
 LambdaReturnPathMissing	lambda-missing-return	S100	not all paths return a value
 ConstructorFieldReadAfterNestedAssignment	field-read-nested-assigned	S100	`this.x` reads field `x` of `C` before the constructor assigns it at its top level; move the read after `this.x = …`, or give `x` an initializer
@@ -1097,7 +1097,7 @@ FieldAssignmentNestedUnassignedExit	field-unassigned-exit-0	S100	field `x` of `A
 FieldAssignmentNestedUnassignedExit	field-unassigned-exit-1	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-unassigned-exit-2	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
 FieldAssignmentNestedUnassignedExit	field-unassigned-exit-3	S100	field `x` of `A` is assigned inside a nested statement of the constructor, not at its top level; write `x: i32 = …`, or assign `this.x = …` at the top level of the constructor
-ErasedAssignableTypeMismatch	erased-assignment-0	S100	type mismatch: the initializer expects `E`, got `i32`
+IntegerToEnumAssignment	erased-assignment-0	S100	type mismatch: the initializer expects `E`, got `i32`
 ErasedAssignableTypeMismatch	erased-assignment-1	S100	type mismatch: the initializer expects `f64[]`, got `i32[]`
 ErasedAssignableTypeMismatch	erased-assignment-2	S100	type mismatch: the initializer expects `f64[][]`, got `i32[][]`
 ErasedNominalTypeArguments	erased-assignment-3	S005	nominal types are not interchangeable: the initializer expects `Box<f64>`, got `Box<i32>`
@@ -1202,7 +1202,7 @@ EnumStringValue	enum-string-value	S100	enum members must have integer literal va
 OptionalParameter	optional-parameter-witness-2	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-2	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-2	S100	only named imports are in the decided surface
-DefaultExportDeclaration	default-export-declaration-witness-3	S100	the module surface requires named exports
+ExportAllDeclaration	default-export-declaration-witness-3	S100	the module surface requires named exports
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-3	S005	nominal types are not interchangeable: the argument expects `A`, got `B`
 IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-6	S005	nominal types are not interchangeable: the argument expects `A`, got `B`
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-4	S005	nominal types are not interchangeable: the argument expects `A | null`, got `B`
@@ -1227,7 +1227,7 @@ EnumStringValue	enum-string-value-witness-2	S100	enum members must have integer 
 OptionalParameter	optional-parameter-witness-3	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-4	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-4	S100	only named imports are in the decided surface
-DefaultExportDeclaration	default-export-declaration-witness-5	S100	the module surface requires named exports
+ExportAllDeclaration	default-export-declaration-witness-5	S100	the module surface requires named exports
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-5	S005	nominal types are not interchangeable: the return value expects `A`, got `B`
 IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-11	S005	nominal types are not interchangeable: the return value expects `A`, got `B`
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-6	S005	nominal types are not interchangeable: the return value expects `A | null`, got `B`
@@ -1252,7 +1252,7 @@ EnumStringValue	enum-string-value-witness-3	S100	enum members must have integer 
 OptionalParameter	optional-parameter-witness-4	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-6	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-6	S100	only named imports are in the decided surface
-DefaultExportDeclaration	default-export-declaration-witness-7	S100	the module surface requires named exports
+ExportAllDeclaration	default-export-declaration-witness-7	S100	the module surface requires named exports
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-7	S005	nominal types are not interchangeable: the assignment expects `A`, got `B`
 IncompatibleNominalAssignment	incompatible-nominal-assignment-witness-16	S005	nominal types are not interchangeable: the assignment expects `A`, got `B`
 DistinctNominalClassAssignment	distinct-nominal-class-assignment-witness-8	S005	nominal types are not interchangeable: the assignment expects `A | null`, got `B`
@@ -1277,20 +1277,20 @@ EnumStringValue	enum-string-value-witness-4	S100	enum members must have integer 
 OptionalParameter	optional-parameter-witness-5	S012	optional parameters imply `undefined`; use a default value or `T | null`
 DefaultExportDeclaration	default-export-declaration-witness-8	S100	the module surface requires named exports
 DefaultImport	default-export-declaration-witness-8	S100	only named imports are in the decided surface
-DefaultExportDeclaration	default-export-declaration-witness-9	S100	the module surface requires named exports
+ExportAllDeclaration	default-export-declaration-witness-9	S100	the module surface requires named exports
 OptionalPrivateMember	optional-private-member	S100	an optional chain cannot contain a private name
 UnknownClassConstructor	unknown-class-constructor	S016	unknown class `Missing`
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable	S100	call form outside the decided surface
-NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-2	S100	call form outside the decided surface
+DynamicImportCall	non-expression-callee-unavailable-witness-2	S100	call form outside the decided surface
 ErasedAssignableTypeMismatch	erased-assignable-type-mismatch	S100	type mismatch: the initializer expects `(A | null)[]`, got `A[]`
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-3	S100	call form outside the decided surface
-NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-4	S100	call form outside the decided surface
+DynamicImportCall	non-expression-callee-unavailable-witness-4	S100	call form outside the decided surface
 ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-2	S100	type mismatch: the return value expects `(A | null)[]`, got `A[]`
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-5	S100	call form outside the decided surface
-NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-6	S100	call form outside the decided surface
+DynamicImportCall	non-expression-callee-unavailable-witness-6	S100	call form outside the decided surface
 ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-3	S100	type mismatch: the argument expects `(A | null)[]`, got `A[]`
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-7	S100	call form outside the decided surface
-NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-8	S100	call form outside the decided surface
+DynamicImportCall	non-expression-callee-unavailable-witness-8	S100	call form outside the decided surface
 ErasedAssignableTypeMismatch	erased-assignable-type-mismatch-witness-4	S100	type mismatch: the assignment expects `(A | null)[]`, got `A[]`
 DuplicateNumericIndexSignature	duplicate-numeric-index-signature-witness-2	S100	a class can declare at most one index signature
 NonExpressionCalleeUnavailable	non-expression-callee-unavailable-witness-9	S100	call form outside the decided surface
@@ -1442,7 +1442,7 @@ CatchBindingUnnarrowedUse	s173-catch-template	S010	the catch binding `e` is used
 VoidExpressionNonVoidDestination	s173-void-annotated	S100	a `void` expression is only allowed as an expression statement
 VoidExpressionValue	s173-void-inferred	S100	a `void` expression is only allowed as an expression statement
 ImmediatePendingLocalRead	s173-pending-immediate	S100	`x` is read before its declaration in this block
-BlockPendingReadWithoutProgramShadow	s173-pending-lambda	S100	`x` is read before its declaration in this block
+LaterLocalCaptureRead	s173-pending-lambda	S100	`x` is read before its declaration in this block
 ThisInStaticMethodArrow	s173-static-arrow	S100	a static method must name its class instead of `this`; use `ClassName.member`
 CatchBindingUnnarrowedProperty	s173-catch-property-arrow	S010	the catch binding `e` is used outside `instanceof` and `throw`; narrow it first with `e instanceof Error`
 AssignmentTypeMismatch	s173-nested-access-0	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
@@ -1453,12 +1453,12 @@ AssignmentTypeMismatch	s173-nested-method-access-0	S100	type mismatch: the initi
 AssignmentTypeMismatch	s173-nested-method-access-1	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
 AssignmentTypeMismatch	s173-nested-method-access-2	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
 AssignmentTypeMismatch	s173-nested-method-access-3	S100	type mismatch: the initializer expects `P[]`, got `Q[]`
-ErrorMemberOutsideSurface	s173-error-stack-write	S018	nominal types are closed: `Error` has no property `stack`
-ErrorMemberOutsideSurface	s173-error-cause-write	S018	nominal types are closed: `Error` has no property `cause`
-ErrorMemberOutsideSurface	s173-typeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
-ErrorMemberOutsideSurface	s173-typeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
-ErrorMemberOutsideSurface	s173-rangeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
-ErrorMemberOutsideSurface	s173-rangeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ErrorMemberWriteOutsideSurface	s173-error-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberWriteOutsideSurface	s173-error-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ErrorMemberWriteOutsideSurface	s173-typeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberWriteOutsideSurface	s173-typeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
+ErrorMemberWriteOutsideSurface	s173-rangeerror-stack-write	S018	nominal types are closed: `Error` has no property `stack`
+ErrorMemberWriteOutsideSurface	s173-rangeerror-cause-write	S018	nominal types are closed: `Error` has no property `cause`
 ClassUndeclaredPropertyWrite	s173-error-missing-write	S004	nominal types are closed: `Error` has no property `missing`
 ClassUndeclaredPropertyWrite	s173-source-error-stack-write	S004	nominal types are closed: `Error` has no property `stack`
 AssignmentTypeMismatch	s173-map-pair-mismatch-0	S100	type mismatch: the Map pair value expects `i32`, got `string`
@@ -1489,14 +1489,14 @@ FileModuleNumberArray	s185-i32-data	S100	accepted forms: readFile(path: string, 
 FileModuleNumberArray	s185-f64-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleStringAlias	s185-alias-path	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleStringAlias	s185-alias-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
-FileModuleImportForm	s185-reexport	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
+FileModuleReexport	s185-reexport	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleFunctionValue	s185-function-value	S100	`readFile` from node:fs/promises can only be called; accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 PromiseCombinatorCall	s186-then-no-callback	S013	`.then(...)` requires a callback
 PromiseCatchCall	s186-catch-no-callback	S013	`.catch(...)` requires a callback
 PromiseCombinatorCall	s186-then-type-arguments	S013	`.then(...)` takes no type arguments; the callback result gives the value type
 PromiseCombinatorCall	s186-then-null	S013	`.then(...)` takes no `null` callback; `.catch(r)` takes a rejection callback alone
 PromiseVoidReactionParameter	s186-void-then-parameter	S100	a `.then(...)` callback on `Promise<void>` takes no parameter; the language has no `void` parameter type
-PromiseReactionParameter	s186-catch-parameter-type	S100	a rejection callback parameter of `.catch(...)` must be `Error`; it is `string`
+PromiseRejectionParameter	s186-catch-parameter-type	S100	a rejection callback parameter of `.catch(...)` must be `Error`; it is `string`
 PromiseReactionArguments	s186-then-three	S013	`.then(...)` takes a callback and an optional rejection callback
 PromiseReactionArguments	s186-then-not-function	S013	a `.then(...)` callback must be a function
 PromiseReactionArguments	s186-then-parameter-type	S013	a `.then(...)` callback parameter must be `i32`, the value type of the handle; it is `string`
@@ -1507,7 +1507,7 @@ PromiseReactionResult	s186-catch-string	S013	a `catch` callback must return `i32
 PromiseReactionResult	s289-catch-void-place	S013	a `catch` callback that gives no value on `Promise<i32>` gives `Promise<i32 | void>`; use it only as `await h.catch(r);`
 PromiseReactionResult	s289-then-rejection-void	S013	a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `void`
 PromiseReactionResult	s186-then-rejection-type	S013	a rejection callback of `.then(...)` must return `i32`, the value of its fulfillment callback; it returns `string`
-PromiseReactionResult	s186-finally-value	S013	a `finally` callback must be `() => void`; it is `() => Promise<void>`
+PromiseFinallyAsyncResult	s186-finally-value	S013	a `finally` callback must be `() => void`; it is `() => Promise<void>`
 PromiseReactionSpread	s186-then-spread	S013	spread arguments require variadic parameters, which the language does not have
 AsyncHandleUnawaited	s186-dropped-then	S013	an async handle is dropped without any await of its completion
 PromiseReactionParameter	s186-then-nullable-parameter	S100	a `.then(...)` callback parameter must be `Foo`, the value type of the handle; it is `Foo | null`
@@ -1532,7 +1532,7 @@ TextModuleMember	s193-member	S100	subscript:text has no export `graphemeWidth`; 
 TextModuleImportForm	s193-default	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 TextModuleImportForm	s193-bare	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 TextModuleImportForm	s193-namespace	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
-TextModuleImportForm	s193-reexport	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
+TextModuleReexport	s193-reexport	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 TextModuleFunctionValue	s193-function-value	S100	`graphemeLength` from subscript:text can only be called; import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
 UndefinedNullUnion	s195-null-undefined-union	S011	`T | null | undefined` has no representation; a nullable type has one absence spelling, `null` or `undefined`
 UndefinedSpellingOutsideValue	s195-nested-spelling	S012	the `undefined` spelling is legal only as the whole type of a value, of a local, or of a function result
@@ -1554,3 +1554,25 @@ UndefinedTypeParameterName	s306-undefined-type-parameter	S100	a type parameter c
 NullableMemberLoopHead	s308-loop-member	S011	`A | null` may be null here; narrow with a null check first
 NullableCallLoopHead	s308-loop-call	S100	type `((i32) => i32) | null` is not callable
 NullableNominalAssignmentLoopHead	s308-loop-nominal	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+LaterLocalCaptureRead	s312-LaterLocalCaptureRead.ts	S100	`x` is read before its declaration in this block
+SourceAmbientFunctionDeclaration	s312-SourceAmbientFunctionDeclaration.ts	S100	function bodies are required
+ExportAllDeclaration	s312-ExportAllDeclaration.ts	S100	the module surface requires named exports
+GenericUserAlias	s312-GenericUserAlias.ts	S100	source type aliases cannot be generic
+MirrorStringModuleDeclaration	s312-MirrorStringModuleDeclaration.ts	S100	mirror declaration form outside the decided surface
+WeakMapConstructor	s312-WeakMapConstructor.ts	S100	unknown class `WeakMap`
+ValueArraySearch	s312-ValueArraySearch.ts	S014	`includes` is defined per element kind (scalars, strings, `Date`, reference classes); `Box` elements are outside that set (Q22)
+CallbackParameterNeedsConstName	s312-CallbackParameterNeedsConstName.ts	S014	`forEach` callback `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+FunctionParameterNeedsConstName	s312-FunctionParameterNeedsConstName.ts	S100	function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+ArrayCallbackDropsAsyncHandle	s312-ArrayCallbackDropsAsyncHandle.ts	S013	`forEach` callback returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it
+IntegerToEnumAssignment	s312-IntegerToEnumAssignment.ts	S100	type mismatch: the initializer expects `E`, got `i32`
+PromiseFinallyAsyncResult	s312-PromiseFinallyAsyncResult.ts	S013	a `finally` callback must be `() => void`; it is `() => Promise<void>`
+PromiseRejectionParameter	s312-PromiseRejectionParameter.ts	S100	a rejection callback parameter of `.catch(...)` must be `Error`; it is `string`
+ErrorMemberWriteOutsideSurface	s312-ErrorMemberWriteOutsideSurface.ts	S018	nominal types are closed: `Error` has no property `cause`
+TypeofLiteral	s312-TypeofLiteral.ts	S100	unary operator outside the decided surface
+FileModuleReexport	s312-FileModuleReexport.ts	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
+TextModuleReexport	s312-TextModuleReexport.ts	S100	import named functions from subscript:text; accepted forms: graphemeLength(s: string): i32; sliceGraphemes(s: string, start: i32, end?: i32): string
+BlockPendingReadWithoutProgramShadow	s312-shadowed-local.ts	S100	`outer` is read before its declaration in this block
+ParameterCapture	s312-ParameterCapture.ts	S009	lambda captures `param`, which is not a `const` local; capturing lambdas may capture only const locals by value
+TypeofOperator	s312-typeof-guard.ts	S100	unary operator outside the decided surface
+GenericUserAlias	s312-GenericListAlias.ts	S100	source type aliases cannot be generic
+GenericUserAlias	s312-GenericPairAlias.ts	S100	source type aliases cannot be generic

@@ -1118,7 +1118,11 @@ impl<'p> Checker<'p> {
             if self.needs_adapter_name(from, to, fx) {
                 let message = self.adapter_name_message(from, "function value");
                 self.reject_subset(
-                    RejectionSite::FunctionValueAdapterNeedsConstName,
+                    if fx.parameter_value(from) {
+                        RejectionSite::FunctionParameterNeedsConstName
+                    } else {
+                        RejectionSite::FunctionValueAdapterNeedsConstName
+                    },
                     message,
                     from.pos.clone(),
                 );
@@ -1336,6 +1340,12 @@ impl<'p> Checker<'p> {
                         (Type::Array(_), Type::FixedArray(..)) => RejectionSite::ArrayToFixedArray,
                         (Type::Func(_), Type::Func(_)) if self.ts_erased_assignable(from, to) => {
                             RejectionSite::FunctionParameterIdentity
+                        }
+                        (integer, Type::Enum(_))
+                            if self.apparent_type(integer).is_integer()
+                                && self.ts_erased_assignable(from, to) =>
+                        {
+                            RejectionSite::IntegerToEnumAssignment
                         }
                         _ if self.ts_erased_assignable(from, to) => {
                             RejectionSite::ErasedAssignableTypeMismatch

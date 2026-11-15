@@ -842,6 +842,11 @@ impl<'p> Checker<'p> {
             match &pattern {
                 pattern::Pattern::Rejected(rejection) => self.reject_pattern(rejection, fx),
                 _ if pattern.is_destructuring() => {
+                    if let Some(scope) = fx.scopes.last_mut() {
+                        for binding in pattern::collect_names(pat) {
+                            scope.parameter_names.insert(binding.id.sym.to_string());
+                        }
+                    }
                     let source = hir::Expr {
                         pending_work: None,
                         kind: hir::ExprKind::Local(

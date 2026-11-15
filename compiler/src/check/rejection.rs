@@ -13,6 +13,25 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::ParameterCapture => (RuleCode::S009, Diverges(Divergence::MutableLocalCapture)),
+    Self::LaterLocalCaptureRead => (RuleCode::S100, Diverges(Divergence::DeclarationScope)),
+    Self::SourceAmbientFunctionDeclaration => (RuleCode::S100, Diverges(Divergence::FunctionBodyMissing)),
+    Self::ExportAllDeclaration => (RuleCode::S100, Diverges(Divergence::NamedModuleSurface)),
+    Self::GenericUserAlias => (RuleCode::S100, Diverges(Divergence::GenericSourceAliasForm)),
+    Self::MirrorStringModuleDeclaration => (RuleCode::S100, Diverges(Divergence::MirrorModuleDeclarationForm)),
+    Self::WeakMapConstructor => (RuleCode::S100, Diverges(Divergence::LibConstructorName)),
+    Self::ValueArraySearch => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
+    Self::CallbackParameterNeedsConstName => (RuleCode::S014, Diverges(Divergence::CallbackFewerParametersUnadapted)),
+    Self::FunctionParameterNeedsConstName => (RuleCode::S100, Diverges(Divergence::FunctionValueAdapterNeedsConstName)),
+    Self::ArrayCallbackDropsAsyncHandle => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+    Self::IntegerToEnumAssignment => (RuleCode::S100, Diverges(Divergence::ErasedAssignableTypeMismatch)),
+    Self::PromiseFinallyAsyncResult => (RuleCode::S013, Diverges(Divergence::PromiseReactionResult)),
+    Self::PromiseRejectionParameter => (RuleCode::S100, Diverges(Divergence::PromiseReactionParameter)),
+    Self::ErrorMemberWriteOutsideSurface => (RuleCode::S018, Diverges(Divergence::ErrorMemberOutsideSurface)),
+    Self::TypeofLiteral => (RuleCode::S100, Diverges(Divergence::TypeofOperator)),
+    Self::FileModuleReexport => (RuleCode::S100, Diverges(Divergence::FileModuleImportForm)),
+    Self::TextModuleReexport => (RuleCode::S100, Diverges(Divergence::TextModuleImportForm)),
+
     Self::InterfaceCallSignature => (RuleCode::S100, Diverges(Divergence::InterfaceMemberForm)),
     Self::SetClassInheritance => (RuleCode::S100, Diverges(Divergence::ReferenceClassInheritance)),
     Self::ArrayClassInheritance => (RuleCode::S100, Diverges(Divergence::ReferenceClassInheritance)),

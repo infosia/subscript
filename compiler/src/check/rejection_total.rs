@@ -18,6 +18,12 @@ mod index;
 #[path = "rejection_examples_total.rs"]
 mod examples;
 
+#[path = "rejection_form_tests.rs"]
+mod forms;
+
+#[path = "rejection_reviewed.rs"]
+mod reviewed;
+
 thread_local! {
     static REACHED: std::cell::RefCell<Vec<(RejectionSite, String, Pos)>> = const { std::cell::RefCell::new(Vec::new()) };
 }

@@ -59,7 +59,9 @@ pub(super) const FORM_B_SITES: &[RejectionSite] = &[
 // §182 record spellings remain fixed when the example moves to its site.
 fn fixed_record(site: RejectionSite) -> Option<&'static str> {
     match site {
-        RejectionSite::ArrayElementDomain => Some("compiler.md §176"),
+        RejectionSite::ArrayElementDomain | RejectionSite::ValueArraySearch => {
+            Some("compiler.md §176")
+        }
         RejectionSite::TaskGroupGeneratorBody => Some("collisions.md C24"),
         RejectionSite::DateMethodValue => Some("stdlib.md §3; collisions.md C24 row 12"),
         RejectionSite::ArrayMapFunctionResult => Some("stdlib.md §9"),

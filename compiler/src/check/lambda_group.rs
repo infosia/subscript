@@ -7,6 +7,7 @@ pub(crate) struct EarlierRead {
     pub member: Member,
     pub nested: bool,
     pub decided_result: bool,
+    pub rejection_site: RejectionSite,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +171,7 @@ impl Checker<'_> {
                             member.signature = Some(*signature);
                         }
                     }
+                    let rejection_site = self.pending_capture_site(name, fx);
                     let reads = self.earlier_member_reads.entry(owner).or_default();
                     if !reads.iter().any(|read| read.pos == *pos) {
                         reads.push(EarlierRead {
@@ -177,13 +179,14 @@ impl Checker<'_> {
                             member,
                             nested: crossed,
                             decided_result,
+                            rejection_site,
                         });
                     }
                     return None;
                 }
                 if crossed {
                     self.reject_subset(
-                        RejectionSite::BlockPendingReadWithoutProgramShadow,
+                        self.pending_capture_site(name, fx),
                         format!("`{name}` is read before its declaration in this block"),
                         pos.clone(),
                     );
@@ -490,7 +493,7 @@ fn resolve_reads<'a>(
                         for read in references {
                             if read.nested {
                                 diagnostics.push(diagnostic(
-                                    RejectionSite::BlockPendingReadWithoutProgramShadow,
+                                    read.rejection_site,
                                     format!(
                                         "`{}` is read before its declaration in this block",
                                         read.member.name

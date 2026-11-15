@@ -47,32 +47,10 @@ impl<'p> Checker<'p> {
                     RejectionSite::SuperConstructorCall
                 }
                 ast::Callee::Super(_) => RejectionSite::NonExpressionCalleeUnavailable,
-                ast::Callee::Import(_) => {
-                    let missing_target =
-                        c.args
-                            .first()
-                            .is_some_and(|argument| match &*argument.expr {
-                                ast::Expr::Lit(ast::Lit::Str(path)) => {
-                                    !self.prog.files.iter().any(|file| {
-                                        file.stem
-                                            == crate::check::normalize_module_specifier(
-                                                path.value.as_ref(),
-                                            )
-                                    })
-                                }
-                                ast::Expr::Lit(_) => true,
-                                _ => false,
-                            });
-                    if c.type_args.is_some()
-                        || c.args.is_empty()
-                        || c.args.len() > 2
-                        || missing_target
-                    {
-                        RejectionSite::NonExpressionCalleeUnavailable
-                    } else {
-                        RejectionSite::DynamicImportCall
-                    }
+                ast::Callee::Import(_) if Self::is_dynamic_import_call(c) => {
+                    RejectionSite::DynamicImportCall
                 }
+                ast::Callee::Import(_) => RejectionSite::NonExpressionCalleeUnavailable,
                 ast::Callee::Expr(_) => RejectionSite::NonExpressionCalleeUnavailable,
             };
             self.reject_subset(site, "call form outside the decided surface", pos.clone());
@@ -1881,7 +1859,11 @@ impl<'p> Checker<'p> {
                     || (self.type_scope_item(&name).is_none()
                         && crate::ambient::lib_value_name(&name))
                 {
-                    RejectionSite::UnknownNamespaceConstructor
+                    if matches!(name.as_str(), "WeakMap" | "WeakSet" | "WeakRef") {
+                        RejectionSite::WeakMapConstructor
+                    } else {
+                        RejectionSite::UnknownNamespaceConstructor
+                    }
                 } else {
                     RejectionSite::UnknownClassConstructor
                 };

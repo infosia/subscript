@@ -326,6 +326,11 @@ impl<'p> Checker<'p> {
                         f,
                     ) {
                         RejectionSite::AbstractMethodBodyMissing
+                    } else if super::rejection_facts::source_ambient_function(
+                        &self.prog.files[self.cur_file].module,
+                        f,
+                    ) {
+                        RejectionSite::SourceAmbientFunctionDeclaration
                     } else if super::rejection_facts::has_function_implementation(
                         &self.prog.files[self.cur_file].module,
                         f,
@@ -471,6 +476,9 @@ impl<'p> Checker<'p> {
                     _ => None,
                 }
             };
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.parameter_names.insert(ps.name.clone());
+            }
             self.declare_local(
                 &ps.name,
                 Local {

@@ -89,7 +89,25 @@ Table 312.1a. Sites that split.
 
 ### 312.3 Phase Review
 
-*(Filled in after the review.)*
+At the contract pin, the table test fails for the 18 rows, and the
+rule 2 test fails for the path that does not load the target. After
+the change, both pass. The test of rule 3 holds 128 reviewed sites and
+costs 7.7 ms (`--test-threads=1`); its negative control fails as
+stated. The review compared the CLI output of 923 `check` runs over
+`corpus/accept` and `corpus/reject` with a pin build: 910 are
+byte-identical, and in the other 13 only the example block differs.
+The count of accepted files and of errors does not change.
+
+One fresh review found one MAJOR finding, realistic, and six MINOR
+findings.
+
+1. MAJOR: the split selected a generic alias with a string-union body
+   only, so `type List<T> = T[]` showed the lib-shadow example. Rule 2a
+   is added.
+2. MINOR, fixed: `new WeakSet<K>()` and `new WeakRef<K>(…)` showed the
+   `new Object()` example; `await import("./other")` showed no example
+   (older than §312; rule 2 is amended).
+3. MINOR, recorded in 312.4: `r510`, and three contrived forms.
 
 ### 312.4 Open
 

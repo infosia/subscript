@@ -9989,3 +9989,146 @@ export {};
 class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null, next: A | null): void { if (a !== null) { while (true) { use(a); a = next; } } }
 END FILE
 END PROGRAM
+PROGRAM	s312-ParameterCapture.ts			0
+FILE	E	main.ts
+export {};
+function f(param: i32): void { const read = (): i32 => param; }
+END FILE
+END PROGRAM
+PROGRAM	s312-LaterLocalCaptureRead.ts			0
+FILE	E	main.ts
+export {};
+function f(): void { const read = (): i32 => x; const x: i32 = 4; }
+END FILE
+END PROGRAM
+PROGRAM	s312-SourceAmbientFunctionDeclaration.ts			0
+FILE	E	main.ts
+export {};
+declare function f(): void;
+END FILE
+END PROGRAM
+PROGRAM	s312-ExportAllDeclaration.ts			0
+FILE	N	other.ts
+export function n(): void {}
+END FILE
+FILE	E	main.ts
+export * from "./other";
+END FILE
+END PROGRAM
+PROGRAM	s312-GenericUserAlias.ts			0
+FILE	E	main.ts
+export {};
+type A<T> = "a" | "b";
+END FILE
+END PROGRAM
+PROGRAM	s312-MirrorStringModuleDeclaration.ts			0
+FILE	A	mirror.d.ts
+declare module "x" { var n: i32; }
+END FILE
+FILE	E	main.ts
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s312-WeakMapConstructor.ts			0
+FILE	E	main.ts
+export {};
+class Key {} new WeakMap<Key, i32>();
+END FILE
+END PROGRAM
+PROGRAM	s312-ValueArraySearch.ts			0
+FILE	E	main.ts
+export {};
+@ValueType class Box { x: i32 = 1; }
+function f(xs: Box[], v: Box): boolean { return xs.includes(v); }
+END FILE
+END PROGRAM
+PROGRAM	s312-CallbackParameterNeedsConstName.ts			0
+FILE	E	main.ts
+export {};
+function g(fv: () => void): void { const xs: i32[] = [1]; xs.forEach(fv); }
+END FILE
+END PROGRAM
+PROGRAM	s312-FunctionParameterNeedsConstName.ts			0
+FILE	E	main.ts
+export {};
+function run(cb: (x: i32, y: i32) => void): void { cb(1, 2); }
+function g(fv: (x: i32) => void): void { run(fv); }
+END FILE
+END PROGRAM
+PROGRAM	s312-ArrayCallbackDropsAsyncHandle.ts			0
+FILE	E	main.ts
+export {};
+async function work(x: i32): Promise<void> {}
+function f(xs: i32[]): void { xs.forEach(async (x: i32): Promise<void> => { await work(x); }); }
+END FILE
+END PROGRAM
+PROGRAM	s312-IntegerToEnumAssignment.ts			0
+FILE	E	main.ts
+export {};
+enum E { A, B }
+function f(n: i32): E { const y: E = n; return y; }
+END FILE
+END PROGRAM
+PROGRAM	s312-PromiseFinallyAsyncResult.ts			0
+FILE	E	main.ts
+export {};
+async function f(): Promise<i32> { return 1; }
+async function g(): Promise<void> {}
+async function main(): Promise<void> { await f().finally(g); }
+END FILE
+END PROGRAM
+PROGRAM	s312-PromiseRejectionParameter.ts			0
+FILE	E	main.ts
+export {};
+async function f(): Promise<i32> { return 1; }
+async function main(): Promise<void> { await f().catch((e: string): i32 => 0); }
+END FILE
+END PROGRAM
+PROGRAM	s312-ErrorMemberWriteOutsideSurface.ts			0
+FILE	E	main.ts
+export {};
+const e = new Error("x"); e.cause = "s";
+END FILE
+END PROGRAM
+PROGRAM	s312-TypeofLiteral.ts			0
+FILE	E	main.ts
+export {};
+const t = typeof 1;
+END FILE
+END PROGRAM
+PROGRAM	s312-FileModuleReexport.ts			0	enable-module=node:fs/promises
+FILE	E	main.ts
+export {};
+export { writeFile } from "node:fs/promises";
+END FILE
+END PROGRAM
+PROGRAM	s312-TextModuleReexport.ts			0
+FILE	E	main.ts
+export {};
+export { graphemeLength } from "subscript:text";
+END FILE
+END PROGRAM
+PROGRAM	s312-shadowed-local.ts			0
+FILE	E	main.ts
+const outer: i32 = 3;
+{ const read = (): i32 => outer; const outer: i32 = 4; }
+END FILE
+END PROGRAM
+PROGRAM	s312-typeof-guard.ts			0
+FILE	E	main.ts
+export {};
+function f(x: string | null): void { if (typeof x === "string") { print(x); } }
+END FILE
+END PROGRAM
+PROGRAM	s312-GenericListAlias.ts			0
+FILE	E	main.ts
+export {};
+type List<T> = T[];
+END FILE
+END PROGRAM
+PROGRAM	s312-GenericPairAlias.ts			0
+FILE	E	main.ts
+export {};
+type Pair<T> = [T, T];
+END FILE
+END PROGRAM
