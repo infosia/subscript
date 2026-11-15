@@ -3,6 +3,9 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::NullableMemberLoopHead,
+    RejectionSite::NullableCallLoopHead,
+    RejectionSite::NullableNominalAssignmentLoopHead,
     RejectionSite::AliasArrayToStringArray,
     RejectionSite::FileModuleDisabled,
     RejectionSite::FileModuleArguments,

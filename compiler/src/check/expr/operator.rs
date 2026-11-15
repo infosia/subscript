@@ -1691,6 +1691,7 @@ impl<'p> Checker<'p> {
             (when_false, when_true)
         };
         let mut base = fx.narrowed.clone();
+        let skipped_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
         let skipped = base
             .iter()
@@ -1730,6 +1731,7 @@ impl<'p> Checker<'p> {
             base.retain(|key| fx.narrowed.contains(key));
             fx.narrowed = base;
         }
+        fx.merge_loop_notes(&skipped_loop_notes);
         fx.finish_narrowing_join(&note_paths);
         right
     }

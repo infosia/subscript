@@ -71,4 +71,34 @@ that the program already has.
 
 ### 308.3 Phase Review
 
+Evidence: `specs/tracking/divergence-alternatives.md`. At the contract
+pin, each test of rule 7 fails (no note, or no site of rule 1). The
+`tsc` results of the witnesses of rule 1 are TS18047, TS2721, and
+TS2345. Over the reject corpus, each changed output adds one `= note:`
+line; no message line or position moves.
+
+One fresh review found three MAJOR findings, all realistic, and five
+MINOR findings.
+
+1. MAJOR: the loop note named a null check, and the fact can come from
+   an initializer or an assignment. Each of the seven corpus loop
+   entries narrows by an initializer. Rule 1 is amended.
+2. MAJOR: the note of `DisjointLiteralAliasAssignment` named a test of
+   the value, and a test does not change the alias of the value. Rule 4
+   is amended.
+3. MAJOR: "Move the declaration" was false for a local that hides an
+   outer name (`r154`), where the move changes the meaning, and for the
+   cascade of `r172`, where the declaration comes first. Rule 5 is
+   amended.
+4. MINOR, fixed: the loop note applied after a store or a test in the
+   body flow; a nominal note applied to a type argument mismatch of one
+   class (rule 3 amended); two instructions in one sentence; the test
+   helper checked only the first form of a note.
+5. MINOR, recorded: §308.4 item 1.
+
 ### 308.4 Open
+
+1. `ClassReadBeforeDeclaration` reached through a cycle of static
+   initializers (`class P { static q = Q.z } class Q { static z = P.q }`)
+   gets the note "Move the declaration before the code that uses it.",
+   and a move cannot break the cycle. Contrived.

@@ -1167,6 +1167,25 @@ impl<'p> Checker<'p> {
                 );
                 return;
             }
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
+                && matches!(
+                    self.apparent_type(to),
+                    Type::Class(_) | Type::Map(..) | Type::Set(_)
+                )
+                && fx.loop_ended_fact(from)
+            {
+                self.reject_subset(
+                    RejectionSite::NullableNominalAssignmentLoopHead,
+                    format!(
+                        "nominal types are not interchangeable: {} expects `{}`, got `{}`",
+                        what,
+                        self.type_name(to),
+                        self.type_name(&from.ty)
+                    ),
+                    from.pos.clone(),
+                );
+                return;
+            }
             if self
                 .function_of(to)
                 .is_some_and(|target| target.callback_typedef.is_some())
@@ -1229,7 +1248,26 @@ impl<'p> Checker<'p> {
             {
                 self.reject_subset(RejectionSite::NullableNominalAssignment, message, pos);
             } else if !self.ts_nominal_assignable(from, to) {
-                self.reject_subset(RejectionSite::IncompatibleNominalAssignment, message, pos);
+                let same_class = matches!(
+                    (
+                        &self.apparent_type(from_nominal),
+                        &self.apparent_type(to_nominal)
+                    ),
+                    (Type::Map(..), Type::Map(..)) | (Type::Set(_), Type::Set(_))
+                ) || matches!((&self.apparent_type(from_nominal), &self.apparent_type(to_nominal)), (Type::Class(a), Type::Class(b))
+                        if a == b || self.instance_arguments.get(a).zip(self.instance_arguments.get(b))
+                            .is_some_and(|((a, _), (b, _))| a == b));
+                let mut diagnostic = super::rejection::diagnostic(
+                    RejectionSite::IncompatibleNominalAssignment,
+                    message,
+                    pos,
+                );
+                if same_class {
+                    diagnostic.note = Some(
+                        "The type arguments differ. Use the type arguments of the declared type.",
+                    );
+                }
+                self.diags.push(diagnostic);
             } else if matches!((from_nominal, to_nominal), (Type::Class(a), Type::Class(b)) if self.instance_arguments.get(a).zip(self.instance_arguments.get(b)).is_some_and(|((a, _), (b, _))| a == b))
             {
                 self.reject_subset(RejectionSite::ErasedNominalTypeArguments, message, pos);

@@ -1551,3 +1551,6 @@ CCallbackRequiresNoEnvironment	c-corpus-r505-c-callback-through-indirect	S100	a 
 CCallbackRequiresNoEnvironment	c-corpus-r506-c-callback-through-array	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
 CCallbackRequiresNoEnvironment	c-corpus-r507-c-callback-through-method	S100	a capturing lambda cannot take the C callback type `SubLogCallback`
 UndefinedTypeParameterName	s306-undefined-type-parameter	S100	a type parameter cannot have the name `undefined`
+NullableMemberLoopHead	s308-loop-member	S011	`A | null` may be null here; narrow with a null check first
+NullableCallLoopHead	s308-loop-call	S100	type `((i32) => i32) | null` is not callable
+NullableNominalAssignmentLoopHead	s308-loop-nominal	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`

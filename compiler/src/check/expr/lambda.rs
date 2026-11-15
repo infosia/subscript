@@ -520,6 +520,7 @@ impl<'p> Checker<'p> {
             .collect();
         let saved_notes = std::mem::take(&mut fx.ended_shared_narrowing);
         let saved_loops = std::mem::take(&mut fx.loop_break_facts);
+        let saved_loop_notes = std::mem::take(&mut fx.loop_ended_narrowing);
         let saved_switches = std::mem::take(&mut fx.switch_break_facts);
         let saved_depth = std::mem::replace(&mut fx.loop_depth, 0);
         let saved_adoptions = std::mem::take(&mut fx.adoptions);
@@ -693,6 +694,7 @@ impl<'p> Checker<'p> {
         fx.narrowed = saved_narrowed;
         fx.ended_shared_narrowing = saved_notes;
         fx.loop_break_facts = saved_loops;
+        fx.loop_ended_narrowing = saved_loop_notes;
         fx.switch_break_facts = saved_switches;
         fx.loop_depth = saved_depth;
         fx.switch_depth = saved_switch_depth;

@@ -69,6 +69,7 @@ mod json;
 mod layout;
 mod local_errors;
 mod lookup;
+mod loop_narrowing_note;
 mod mirror_provenance;
 mod namespace_import;
 mod narrowing;
@@ -566,6 +567,8 @@ pub(crate) struct Scope {
     pub shadowed_ended_shared: NarrowingFacts,
     /// Names that declarations later in this scope own.
     pub pending: Shared<HashSet<String>>,
+    /// Source positions distinguish later declarations from rejected earlier declarations (§308 rule 5).
+    pub declaration_positions: Shared<HashMap<String, Pos>>,
     /// The first case that declares each name in a switch body.
     pub switch_declarations: Shared<HashMap<String, usize>>,
     /// Names that already have a duplicate-declaration diagnostic.
@@ -919,6 +922,8 @@ pub(crate) struct FnCtx {
     /// Scope indices that contain hidden path facts.
     pub shadowed_narrowing_scopes: Shared<std::collections::BTreeSet<usize>>,
     pub ended_shared_narrowing: NarrowingFacts,
+    /// Entry narrowing facts ended at each active loop head (§308 rule 1).
+    pub loop_ended_narrowing: Shared<Vec<loop_narrowing_note::EndedLoopFacts>>,
     pub loop_depth: u32,
     /// The handle locals of the adopted returns of this function, one for
     /// each handle type, and their completion state local (compiler.md
@@ -1170,6 +1175,7 @@ impl FnCtx {
             narrowed: Default::default(),
             shadowed_narrowing_scopes: Default::default(),
             ended_shared_narrowing: Default::default(),
+            loop_ended_narrowing: Default::default(),
             loop_depth: 0,
             adoptions: Vec::new(),
             switch_depth: 0,
@@ -1848,3 +1854,6 @@ mod text_module;
 
 #[cfg(test)]
 mod diagnostic_text_tests;
+
+#[cfg(test)]
+mod approximation_note_tests;

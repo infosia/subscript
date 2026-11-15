@@ -9971,3 +9971,21 @@ function s306Undefined<undefined>(x: i32): void { return undefined; }
 export {};
 END FILE
 END PROGRAM
+PROGRAM	s308-loop-member	TS18047		0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; } class H { f: A | null = null; } function f(h: H, next: A | null): void { if (h.f !== null) { while (true) { h.f.x; h.f = next; } } }
+END FILE
+END PROGRAM
+PROGRAM	s308-loop-call	TS2721		0
+FILE	E	main.ts
+export {};
+function f(cb: ((x: i32) => i32) | null, next: ((x: i32) => i32) | null): void { if (cb !== null) { while (true) { cb(1); cb = next; } } }
+END FILE
+END PROGRAM
+PROGRAM	s308-loop-nominal	TS2345		0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null, next: A | null): void { if (a !== null) { while (true) { use(a); a = next; } } }
+END FILE
+END PROGRAM

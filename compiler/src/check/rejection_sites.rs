@@ -104,6 +104,7 @@ pub(crate) enum RejectionSite {
     DescriptorRequiredMemberMissing,
 
     NullableCall,
+    NullableCallLoopHead,
     NullableCallShared,
     IndexedMemberChecked,
     IndexedMemberUnchecked,
@@ -112,6 +113,7 @@ pub(crate) enum RejectionSite {
     IndexedAssignmentChecked,
     IndexedAssignmentUnchecked,
     NullableMember,
+    NullableMemberLoopHead,
     NullableMemberShared,
     UnknownNamespaceConstructor,
     UnknownClassConstructor,
@@ -497,6 +499,7 @@ pub(crate) enum RejectionSite {
     DistinctNominalClassAssignment,
     DistinctNominalContainerAssignment,
     NullableNominalAssignment,
+    NullableNominalAssignmentLoopHead,
     NullableNominalAssignmentShared,
     NullableAssignmentShared,
     ImplicitNumericAssignment,

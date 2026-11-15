@@ -13,6 +13,9 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::NullableMemberLoopHead => (RuleCode::S011, TscRejects),
+    Self::NullableCallLoopHead => (RuleCode::S100, TscRejects),
+    Self::NullableNominalAssignmentLoopHead => (RuleCode::S005, TscRejects),
     Self::CCallbackRequiresNoEnvironment => (RuleCode::S100, Diverges(Divergence::CCallbackRequiresNoEnvironment)),
     Self::AliasArrayToStringArray => (RuleCode::S100, Diverges(Divergence::AliasArrayToStringArray)),
     Self::FileModuleDisabled => (RuleCode::S100, Diverges(Divergence::FileModuleDisabled)),

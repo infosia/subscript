@@ -59,6 +59,14 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
             Some("Pass every argument, or call a declaration with a default directly.");
     }
     match site {
+        RejectionSite::NullableMemberLoopHead
+        | RejectionSite::NullableCallLoopHead
+        | RejectionSite::NullableNominalAssignmentLoopHead => diagnostic.note = Some("The narrowing before the loop does not hold in the loop, because the loop stores this location. Copy the value into a `const` local before the loop. Or test the value for null again before this use."),
+        RejectionSite::MethodValueTruthTest => diagnostic.note = Some("A method is never null. Call it without the test."),
+        RejectionSite::IncompatibleNominalAssignment => diagnostic.note = Some("Classes are nominal. Make an object of the declared class."),
+        RejectionSite::DisjointLiteralAliasAssignment => diagnostic.note = Some("Assign a literal member of the target alias."),
+        RejectionSite::ImmediateShadowedNameRead => diagnostic.note = Some("A later local declaration hides the outer name. Give the local another name."),
+        RejectionSite::ClassReadBeforeDeclaration => diagnostic.note = Some("Move the declaration before the code that uses it."),
         RejectionSite::TaskGroupGeneratorBody => {
             diagnostic.example = Some(&crate::check::diagnostic_text::GROUP);
             diagnostic.rule = Some("A generator body cannot use a TaskGroup because a dropped iterator has no scope exit.");

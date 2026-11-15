@@ -54,6 +54,10 @@ impl<'p> Checker<'p> {
                 // read before it names the order, not the binding (C14).
                 for binding in pattern::collect_names(&declarator.name) {
                     let name = binding.id.sym.to_string();
+                    scope
+                        .declaration_positions
+                        .entry(name.clone())
+                        .or_insert_with(|| self.prog.pos(binding.id.span));
                     if !scope.vars.contains_key(&name) {
                         scope.pending.insert(name);
                     }

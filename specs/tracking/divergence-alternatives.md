@@ -200,3 +200,11 @@ After §307, 428 `subscript` fields are programs and 79 are form b
 - **SymbolAnnotation**: The runtime has no Symbol values.
 - **WireEnumEmpty**: A CEnum requires at least one member with a C wire value.
 - **WorkerStaticObjectMethod**: Worker has no runtime constructor object to return from valueOf.
+
+## §308 result
+
+Each `TscRejects` site of the approximation table names a form in a
+note, except `AssignmentTypeMismatch` (not measured) and
+`FunctionReturnPathMissing` (a cascade only). A read that the loop head
+ends gets a site of its own; a read after a store or a test in the body
+keeps the site of the pin.

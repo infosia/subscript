@@ -154,6 +154,27 @@ impl<'p> Checker<'p> {
         fx.scopes.iter().any(|scope| scope.owns(name)) || self.scope_binding(name).is_some()
     }
 
+    /// Adds the order note only when the source declaration follows this use (§308 rule 5).
+    fn reject_local_order(
+        &mut self,
+        site: RejectionSite,
+        message: String,
+        pos: &Pos,
+        declaration: Option<&Pos>,
+    ) {
+        let mut diagnostic = super::rejection::diagnostic(site, message, pos.clone());
+        if matches!(
+            site,
+            RejectionSite::ImmediatePendingLocalRead
+                | RejectionSite::ImmediateNameWriteBeforeDeclaration
+        ) && declaration.is_some_and(|start| {
+            start.file == pos.file && (start.line, start.col) > (pos.line, pos.col)
+        }) {
+            diagnostic.note = Some("Move the declaration before the code that uses it.");
+        }
+        self.diags.push(diagnostic);
+    }
+
     /// Looks a name up in the local scope stack. A hit that crosses a
     /// lambda boundary is a capture: it is recorded on every crossed
     /// lambda frame and must refer to a `const` binding (C5).
@@ -246,14 +267,15 @@ impl<'p> Checker<'p> {
                         pos.clone(),
                     );
                 } else {
-                    self.reject_subset(
+                    self.reject_local_order(
                         if crossed == 0 {
                             RejectionSite::ImmediatePendingLocalRead
                         } else {
                             RejectionSite::BlockPendingReadWithoutProgramShadow
                         },
                         message,
-                        pos.clone(),
+                        pos,
+                        scope.declaration_positions.get(name),
                     );
                 }
                 return Some(Local {
@@ -270,14 +292,15 @@ impl<'p> Checker<'p> {
                 break;
             }
             if scope.pending.contains(name) {
-                self.reject_subset(
+                self.reject_local_order(
                     if crossed > 0 {
                         RejectionSite::BlockNameWriteBeforeDeclaration
                     } else {
                         RejectionSite::ImmediateNameWriteBeforeDeclaration
                     },
                     format!("`{name}` is assigned before its declaration in {scope_name}"),
-                    pos.clone(),
+                    pos,
+                    scope.declaration_positions.get(name),
                 );
                 return Some(Local {
                     annotated: false,

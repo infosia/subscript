@@ -877,13 +877,16 @@ impl<'p> Checker<'p> {
         let base = fx.narrowed.clone();
         let mut note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
 
+        let initial_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
         fx.narrowed.retain(|key| !else_extra.contains(key));
         fx.narrowed.extend_facts(then_extra.clone());
         let (then_stmts, _) = self.check_branch(&i.cons, fx);
         let then_term = !super::fallthrough::sequence_can_fall_through(&then_stmts);
+        let then_loop_notes = fx.loop_ended_narrowing.clone();
         let then_notes = fx.ended_shared_narrowing.clone();
         let then_facts = fx.narrowed.clone();
+        fx.loop_ended_narrowing = initial_loop_notes;
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         fx.narrowed.retain(|key| !then_extra.contains(key));
@@ -919,6 +922,13 @@ impl<'p> Checker<'p> {
             then_facts.intersection(&else_facts).cloned().collect()
         };
         fx.ended_shared_narrowing.extend_facts(then_notes);
+        if !then_term {
+            if else_term {
+                fx.loop_ended_narrowing = then_loop_notes;
+            } else {
+                fx.merge_loop_notes(&then_loop_notes);
+            }
+        }
         fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::If {
             cond,
@@ -1010,6 +1020,7 @@ impl<'p> Checker<'p> {
     }
 
     fn join_loop_exits(fx: &mut FnCtx, false_exit: Option<super::LoopEdge>) {
+        fx.loop_ended_narrowing.pop();
         let mut exits = fx
             .loop_break_facts
             .pop()

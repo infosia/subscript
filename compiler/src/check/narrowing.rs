@@ -92,6 +92,20 @@ impl Checker<'_> {
 
     pub(super) fn end_shared_narrowing(&self, expression: &hir::Expr, fx: &mut FnCtx) {
         self.apply_operation_effects(expression, fx);
+        if fx
+            .loop_ended_narrowing
+            .iter()
+            .any(|notes| !notes.is_empty())
+        {
+            let (yes, no) = leaf_paths(
+                expression,
+                |ty| self.apparent_type(ty),
+                self.narrowing_classes(),
+            );
+            for fact in yes.iter().chain(&no) {
+                fx.end_loop_note_at_test(&fact.key);
+            }
+        }
         if let hir::ExprKind::Assign {
             op: None,
             target,
@@ -185,6 +199,16 @@ impl Checker<'_> {
             && path_key(expression).is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
         {
             self.reject_subset(sites.1, message, pos);
+        } else if (sites.0 != RejectionSite::NullableCall || nullable_function)
+            && fx.loop_ended_fact(expression)
+        {
+            // §308 refines the ordinary nullable sites; C17 owns shared effects.
+            let site = match sites.0 {
+                RejectionSite::NullableMember => RejectionSite::NullableMemberLoopHead,
+                RejectionSite::NullableCall => RejectionSite::NullableCallLoopHead,
+                _ => sites.0,
+            };
+            self.reject_subset(site, message, pos);
         } else {
             self.reject_subset(sites.0, message, pos);
         }
@@ -585,6 +609,9 @@ impl Checker<'_> {
                 path_kills(key, effects)
             }
         };
+        if !loop_head {
+            fx.end_loop_notes_at_stores(effects);
+        }
         if !fx.has_narrowing_facts() {
             return;
         }
@@ -601,8 +628,12 @@ impl Checker<'_> {
                 }
             });
         }
+        let mut loop_ended = Vec::new();
         fx.narrowed.retain(|key| {
             let (shared_kill, local_kill) = kills(key);
+            if loop_head && key.narrows_type() && (local_kill || shared_kill) {
+                loop_ended.push(key.clone());
+            }
             if shared_kill {
                 fx.ended_shared_narrowing.insert_fact(key.clone());
             }
@@ -611,9 +642,13 @@ impl Checker<'_> {
             }
             !shared_kill && !local_kill
         });
+        for fact in loop_ended {
+            fx.record_loop_ended_fact(&fact);
+        }
     }
 
     pub(super) fn end_loop_narrowing(&self, pos: &Pos, fx: &mut FnCtx) {
+        fx.loop_ended_narrowing.push(Default::default());
         if !fx.has_narrowing_facts() {
             return;
         }
@@ -723,6 +758,10 @@ impl Checker<'_> {
 impl FnCtx {
     pub(super) fn has_narrowing_facts(&self) -> bool {
         !self.narrowed.is_empty()
+            || self
+                .loop_ended_narrowing
+                .iter()
+                .any(|notes| !notes.is_empty())
             || !self.ended_shared_narrowing.is_empty()
             || !self.shadowed_narrowing_scopes.is_empty()
     }

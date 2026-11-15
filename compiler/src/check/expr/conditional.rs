@@ -115,6 +115,7 @@ impl<'p> Checker<'p> {
         let mut note_paths = fx.narrowing_note_paths();
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
         let base = fx.narrowed.clone();
+        let initial_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
 
         // Check the nonliteral arm first so either literal arm can take its context.
@@ -155,6 +156,7 @@ impl<'p> Checker<'p> {
             ),
         };
         let first_facts = fx.narrowed.clone();
+        let first_loop_notes = fx.loop_ended_narrowing.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
         // §300 rule 1: discarded branches are independent statements,
@@ -167,6 +169,7 @@ impl<'p> Checker<'p> {
         } else {
             None
         };
+        fx.loop_ended_narrowing = initial_loop_notes;
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base
             .iter()
@@ -204,6 +207,7 @@ impl<'p> Checker<'p> {
         };
         fx.narrowed = joined;
         fx.ended_shared_narrowing.extend_facts(first_notes);
+        fx.merge_loop_notes(&first_loop_notes);
         fx.finish_narrowing_join(&note_paths);
 
         // compiler.md §242 rule 1a and §244 rule 2: the outer conditional
