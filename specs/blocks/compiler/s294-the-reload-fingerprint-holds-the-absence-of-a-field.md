@@ -80,3 +80,4 @@ values are in the hash; a removal of `@Descriptor` changes
    `boundary_header`, and `Field::foreign_provenance` are not in the
    hash. Each comes from a mirrored `.d.ts`, which a reload edit does
    not typically change.
+   *(Selected 2026-11-15 for §306.)*

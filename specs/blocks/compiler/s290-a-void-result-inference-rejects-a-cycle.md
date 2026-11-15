@@ -87,6 +87,7 @@ bodies.
 1. These cycles stay accepted, and `tsc` rejects each with TS7023:
    `b` calls a local lambda `inner` that calls `a`; `a` calls
    `table[0]()` where `const table = [a];`.
+   *(Selected 2026-11-15 for §306.)*
 2. A generic identity call of a pending lambda in an operand,
    `return id(b)();`, reads the result through a value, and is not
    counted by rule 1.

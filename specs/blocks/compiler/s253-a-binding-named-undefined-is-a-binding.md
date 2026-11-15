@@ -77,3 +77,4 @@ form where the two disagree.
    `tsc` rejects it with TS2368 "Type parameter name cannot be
    'undefined'". This is older than §253: a type parameter is not a
    value binding, so rule 1 does not apply.
+   *(Selected 2026-11-15 for §306.)*

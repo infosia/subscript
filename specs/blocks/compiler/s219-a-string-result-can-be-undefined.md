@@ -90,3 +90,4 @@ CRITICAL or MAJOR finding and five MINOR findings. About 90 forms of rule
 4. `n ?? b` with `n: C | null` and `b: T`, `T extends C`: `nullish_result_type`
    gives `Type::Error` with no diagnostic. A template with no call is
    accepted, and a call gives S100.
+   *(Closed: measured accepted with the right output at `fc8b8b85`, 2026-11-15; `nullish_result_type` places a fitting right operand (§235 rule 5a).)*

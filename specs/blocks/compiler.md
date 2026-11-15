@@ -347,3 +347,4 @@ Every section, with its status:
 | §303 | Diagnostic text fixes from open lists | active | [`s303-diagnostic-text-fixes-from-open-lists.md`](compiler/s303-diagnostic-text-fixes-from-open-lists.md) |
 | §304 | A non-null store and a `const` global keep narrowing | active | [`s304-a-non-null-store-and-a-const-global-keep-narrowing.md`](compiler/s304-a-non-null-store-and-a-const-global-keep-narrowing.md) |
 | §305 | A conditional or spread element takes part in the list type | active | [`s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md`](compiler/s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md) |
+| §306 | Cycles through a local lambda or a list, and the class hash | active | [`s306-cycles-through-a-local-lambda-or-a-list-and-the-class-hash.md`](compiler/s306-cycles-through-a-local-lambda-or-a-list-and-the-class-hash.md) |
