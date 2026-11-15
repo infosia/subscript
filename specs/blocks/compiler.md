@@ -344,3 +344,4 @@ Every section, with its status:
 | §300 | A statement place drops each value leaf | active | [`s300-a-statement-place-drops-each-value-leaf.md`](compiler/s300-a-statement-place-drops-each-value-leaf.md) |
 | §301 | A type argument is inferred from the narrowed argument | withdrawn 2026-11-15; no rule landed | [`s301-a-type-argument-is-inferred-from-the-narrowed-argument.md`](compiler/s301-a-type-argument-is-inferred-from-the-narrowed-argument.md) |
 | §302 | Test and tooling fixes from open lists | active | [`s302-test-and-tooling-fixes-from-open-lists.md`](compiler/s302-test-and-tooling-fixes-from-open-lists.md) |
+| §303 | Diagnostic text fixes from open lists | active | [`s303-diagnostic-text-fixes-from-open-lists.md`](compiler/s303-diagnostic-text-fixes-from-open-lists.md) |

@@ -127,10 +127,13 @@ method by its name.
    `tsc` claim is wrong.
 2. `then(f, null)` gives a message and an example that show
    `catch(r)`; the accepted form is `then(f)`.
+   *(Selected 2026-11-15 for §303.)*
 3. The `PromiseReactionSpread` divergence block shows the §14.4
    spread example, not a reaction form.
+   *(Selected 2026-11-15 for §303.)*
 4. A field comment at `compiler/src/check/mod.rs` cites rule 6 for the
    literal hint; rule 4 holds it.
+   *(Selected 2026-11-15 for §303.)*
 5. A generic callback result `T` instantiated as `Promise<i32>` is
    adopted by the helper, so `return await p.then((v: i32): T => x)`
    gives S100 with no divergence block.

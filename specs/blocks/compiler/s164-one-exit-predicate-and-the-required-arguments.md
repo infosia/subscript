@@ -86,9 +86,10 @@ Three causes:
    callee when the callee is a name, and states the rule:
    `` `h` expects 2 argument(s), got 1: a call through a function value
    passes every parameter `` (with the names and counts of the
-   program). Its note states the form: a function type has no optional
-   parameter (C7); pass every argument, or call a declaration with a
-   default directly.
+   program). Its note states the form: pass every argument, or call a
+   declaration with a default directly. The divergence `why` states the
+   reason: a function type has no optional parameter (C7). *(Note text
+   amended by §303 rule 1.)*
 7. The site of rule 6 splits on one fact (§154 rule 2): `tsc` gives the
    callee optional parameters. The checker records the fact on a
    binding (a local or a global) that has no written type and whose
@@ -193,6 +194,7 @@ that claims `Diverges` where `tsc` rejects is MAJOR.
    before §164. Contrived.
 4. The note and the divergence `why` of the rule 6 site both state that
    a function type has no optional parameter.
+   *(Selected 2026-11-15 for §303.)*
 5. A constant condition built with an operator (`if (true && true)`,
    `while (x > 0 || true)`) is not constant here; `tsc` accepts a
    function that ends after it. A missing fact under 164.2. Contrived.

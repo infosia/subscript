@@ -124,5 +124,7 @@ about 120 callback forms; dev, ship, and `node` gave the same bytes.
    `Map.forEach` and of `Set.forEach`. It is not true for an extra
    index on `sort`, or for `map` with four parameters. This is older
    than §244.
+   *(Selected 2026-11-15 for §303.)*
 4. A conditional diagnostic names the padded type of a leaf, such as
    `(i32, i32) => void` for `one`.
+   *(Selected 2026-11-15 for §303.)*

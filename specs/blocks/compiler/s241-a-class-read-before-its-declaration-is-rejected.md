@@ -108,3 +108,4 @@ exception of rule 1.
    at one site: the diagnostic of rule 1, and the C14 diagnostic
    "`B.z` is accessed before its declaration". `tsc` gives one TS2449.
    The program is rejected in both.
+   *(Selected 2026-11-15 for §303.)*
