@@ -884,11 +884,27 @@ impl Context {
 
     // ----- allocation -----
 
-    /// Refuses the `n`-th subsequent object-level allocation request.
+    /// Refuses the `n`-th subsequent object or boundary scratch allocation request.
     ///
     /// `n == 0` disables a pending fault. A fired fault is one-shot.
     pub fn fail_alloc_after(&mut self, n: u64) {
         self.alloc_fail_countdown = (n != 0).then_some(n);
+    }
+
+    fn allocation_fault(&mut self, pos_id: u32) -> bool {
+        if let Some(remaining) = self.alloc_fail_countdown {
+            if remaining == 1 {
+                self.alloc_fail_countdown = None;
+                self.trap(
+                    TrapKind::AllocationFailure,
+                    "injected allocation failure",
+                    pos_id,
+                );
+                return true;
+            }
+            self.alloc_fail_countdown = Some(remaining - 1);
+        }
+        false
     }
 
     /// Allocates one zeroed system block and initializes its header.
@@ -931,17 +947,8 @@ impl Context {
     /// [`Context::alloc_str_with`] supplies that writer for strings.
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         self.allocation_started = true;
-        if let Some(remaining) = self.alloc_fail_countdown {
-            if remaining == 1 {
-                self.alloc_fail_countdown = None;
-                self.trap(
-                    TrapKind::AllocationFailure,
-                    "injected allocation failure",
-                    pos_id,
-                );
-                return std::ptr::null_mut();
-            }
-            self.alloc_fail_countdown = Some(remaining - 1);
+        if self.allocation_fault(pos_id) {
+            return std::ptr::null_mut();
         }
         if self.uses_ship_arena() {
             return self.arena_alloc(size, class_id, pos_id);
@@ -975,6 +982,9 @@ impl Context {
     /// recursively lowered C element array or pointed-to struct. The matching
     /// mark release frees it after the synchronous foreign call returns.
     pub fn boundary_scratch_alloc(&mut self, size: usize, pos_id: u32) -> *mut u8 {
+        if self.allocation_fault(pos_id) {
+            return std::ptr::null_mut();
+        }
         let Ok(layout) = Layout::from_size_align(size.max(1), 16) else {
             self.trap(
                 TrapKind::AllocationFailure,

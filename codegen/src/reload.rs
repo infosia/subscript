@@ -1515,3 +1515,6 @@ export async function peer(): Promise<void> {
 
 #[cfg(test)]
 mod inspection_tests;
+
+#[cfg(test)]
+mod scratch_exit_tests;

@@ -161,6 +161,7 @@ struct BoundaryPtrWriteback {
 /// and the call writes back each target by code after the call.
 #[derive(Default)]
 struct BoundaryTargets {
+    scratch_mark: Option<String>,
     /// The declarations of the variables of each copy, initialized to null.
     declarations: String,
     /// The copies in build order.

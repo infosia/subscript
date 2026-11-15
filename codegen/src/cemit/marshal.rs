@@ -306,6 +306,26 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(value)
     }
 
+    // §296 rules 1–2: release the call scope before the allocation trap exits.
+    fn scratch_allocation_check(&mut self, out: &mut String) -> Result<(), String> {
+        let mark = self
+            .boundary_targets
+            .as_ref()
+            .and_then(|targets| targets.scratch_mark.clone())
+            .ok_or_else(|| internal("a scratch allocation has no mark"))?;
+        let release = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_boundary_scratch_release",
+            &["void*".into(), "uint64_t".into()],
+            &["ctx".into(), mark],
+        );
+        let _ = writeln!(
+            out,
+            "    if (*(const uint32_t*)ctx != 0u) {{ {release}; goto unwind; }}"
+        );
+        Ok(())
+    }
+
     /// Passes the target of a struct pointer as `plan` says. The writeback
     /// is `Some` only for [`PointerPass::ScratchWrittenBack`]: its storage
     /// holds the scratch struct and then its snapshot. The target of a
@@ -386,7 +406,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "    if ({source} != NULL) {{\n        {header} = ({header_type}*){storage};"
         );
         if !local {
-            out.push_str("        if (*(const uint32_t*)ctx != 0u) goto unwind;\n");
+            self.scratch_allocation_check(out)?;
         }
         let value = self.marshal_boundary_struct(out, target, &format!("*{source}"), position)?;
         let _ = writeln!(out, "        *{header} = {value};");
@@ -462,9 +482,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 format!("{position}u"),
             ],
         );
+        let mut check = String::new();
+        self.scratch_allocation_check(&mut check)?;
         let _ = writeln!(
             out,
-            "    {header_type}* {scratch} = ({header_type}*){allocation};\n    if (*(const uint32_t*)ctx != 0u) goto unwind;\n    for (size_t {index} = 0; {index} < {count_temporary}; {index}++) {{"
+            "    {header_type}* {scratch} = ({header_type}*){allocation};\n{check}    for (size_t {index} = 0; {index} < {count_temporary}; {index}++) {{"
         );
         // §187 rule 11: no build inside the loop writes back a target.
         self.element_depth(1)?;

@@ -255,7 +255,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             None
         };
         let boundary_position = self.emitter.pos_id(&instruction.pos);
-        self.boundary_targets = Some(BoundaryTargets::default());
+        self.boundary_targets = Some(BoundaryTargets {
+            scratch_mark: scratch_mark.clone(),
+            ..BoundaryTargets::default()
+        });
         // The marshaling goes to its own buffer, so the variables of each
         // written-back target are declared before the first of them.
         let outer = out;

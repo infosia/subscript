@@ -69,6 +69,30 @@ pub(crate) fn struct_cycle(owner: &str) -> String {
 }
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
+    // §296 rules 1–2: a failed build releases before propagating its trap.
+    fn scratch_allocation_check(&mut self) -> Result<(), String> {
+        let mark = self
+            .boundary_targets
+            .as_ref()
+            .and_then(|targets| targets.scratch_mark)
+            .ok_or_else(|| internal("a scratch allocation has no mark"))?;
+        let pending = self.pending_trap_state();
+        let failed = self.builder.ins().icmp_imm(IntCC::NotEqual, pending, 0);
+        let release = self.builder.create_block();
+        let done = self.builder.create_block();
+        self.builder.ins().brif(failed, release, &[], done, &[]);
+        self.builder.switch_to_block(release);
+        self.call_runtime(
+            self.ml.rt.boundary_scratch_release,
+            &[self.ctx, mark],
+            false,
+        )?;
+        self.builder.ins().jump(done, &[]);
+        self.builder.switch_to_block(done);
+        self.trap_check();
+        Ok(())
+    }
+
     pub(super) fn foreign_call(
         &mut self,
         id: l::ForeignFunctionId,
@@ -146,6 +170,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             None
         };
         self.boundary_targets = Some(BoundaryTargets {
+            scratch_mark,
             start: self
                 .builder
                 .current_block()
@@ -1343,7 +1368,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 false,
             )?
             .ok_or_else(|| internal("boundary scratch target is missing"))?;
-        self.trap_check();
+        self.scratch_allocation_check()?;
         self.populate_boundary_value(target, source, scratch, pos)?;
         if let Some(slot) = slot {
             let snapshot = self.address_offset(scratch, i64::from(size));
@@ -1403,7 +1428,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 false,
             )?
             .ok_or_else(|| internal("boundary array scratch is missing"))?;
-        self.trap_check();
+        self.scratch_allocation_check()?;
         let condition = self.builder.create_block();
         let body = self.builder.create_block();
         let done = self.builder.create_block();

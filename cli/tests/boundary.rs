@@ -283,6 +283,10 @@ fn plan_writes_back(plan: &CallPlan) -> bool {
 /// emitted C. A mark is in the build that comes after the previous call
 /// or the function start; a write-back is the guarded block that follows
 /// the call statement and its result copy.
+/// A standalone scratch release ends the previous call. In contrast,
+/// `cemit/marshal.rs` emits an allocation-failure release inside a one-line
+/// `if (*(const uint32_t*)ctx != 0u) { ...; goto unwind; }` block: that
+/// conditional exit is part of building the current call, so pass it.
 fn emitted_calls(c: &str, callee: &str) -> Vec<(bool, bool)> {
     let lines = c.lines().collect::<Vec<_>>();
     let call = format!("{callee}(");
@@ -302,7 +306,9 @@ fn emitted_calls(c: &str, callee: &str) -> Vec<(bool, bool)> {
         let mut mark = false;
         for before in lines[..index].iter().rev() {
             if !before.starts_with(' ')
-                || before.contains("subscript_rt_boundary_scratch_release(")
+                || before
+                    .trim_start()
+                    .starts_with("subscript_rt_boundary_scratch_release(")
                 || before
                     .trim_start()
                     .starts_with("if (*(const uint32_t*)ctx == 0u) {")
@@ -432,6 +438,21 @@ fn a_c_text_or_a_plan_that_disagrees_fails_the_compare() -> Result<(), String> {
     let mut other = expected.clone();
     other.insert(callee.into(), (true, true));
     assert!(check_emitted(&c, &other, &sites).is_err());
+    let failure_release = marked.replacen(
+        &format!("    {callee}(t5);"),
+        &format!(
+            "    if (*(const uint32_t*)ctx != 0u) {{ subscript_rt_boundary_scratch_release(ctx, t99); goto unwind; }}\n    {callee}(t5);"
+        ),
+        1,
+    );
+    check_emitted(&failure_release, &other, &sites)?;
+    assert!(check_emitted(&failure_release, &expected, &sites).is_err());
+    let previous_release = marked.replacen(
+        &format!("    {callee}(t5);"),
+        &format!("    subscript_rt_boundary_scratch_release(ctx, t99);\n    {callee}(t5);"),
+        1,
+    );
+    check_emitted(&previous_release, &expected, &sites)?;
     let mut fewer = sites.clone();
     fewer.insert(callee.into(), 2);
     assert!(check_emitted(&c, &expected, &fewer).is_err());

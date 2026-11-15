@@ -168,6 +168,7 @@ struct BoundaryPtrWriteback {
 /// writes back each target by code after the call.
 #[derive(Debug, Clone)]
 struct BoundaryTargets {
+    scratch_mark: Option<Value>,
     /// The block where the build of the call starts.
     start: Block,
     /// The write-back plan and the stack slot of each copy, in build

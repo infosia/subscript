@@ -1599,3 +1599,24 @@ fn class_release_state_is_identical_on_all_three_free_paths() {
         }
     }
 }
+
+// §296 rule 5. Measured cost: two contexts, six requests per tier, <0.01 s.
+#[test]
+fn boundary_scratch_fault_counts_requests_in_both_tiers() {
+    for mut ctx in [Context::new(), Context::new_releasing()] {
+        ctx.fail_alloc_after(3);
+        assert!(!ctx.alloc(8, 1, 0).is_null());
+        assert!(!ctx.boundary_scratch_alloc(8, 1).is_null());
+        assert!(ctx.boundary_scratch_alloc(8, 2).is_null());
+        assert_eq!(ctx.trap_record().unwrap().kind, TrapKind::AllocationFailure);
+        assert_eq!(ctx.trap_record().unwrap().pos_id, 2);
+        ctx.clear_trap();
+        assert!(!ctx.boundary_scratch_alloc(8, 3).is_null());
+        ctx.fail_alloc_after(1);
+        ctx.fail_alloc_after(0);
+        assert!(!ctx.boundary_scratch_alloc(8, 4).is_null());
+        assert!(!ctx.alloc(8, 1, 5).is_null());
+        ctx.boundary_scratch_release(0);
+        assert_eq!(ctx.boundary_scratch_mark(), 0);
+    }
+}
