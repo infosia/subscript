@@ -1372,7 +1372,7 @@ pub(crate) struct Checker<'p> {
     /// (compiler.md §242 rule 1a).
     callback_leaf_place: Option<type_rules::CallbackLeaves>,
     /// The place of the leaves of the next conditional, `&&`, or `||`
-    /// (compiler.md §258 rules 2 and 3).
+    /// (compiler.md §300 rule 1, §258 rule 3).
     void_leaf_place: Option<expr::VoidLeafPlace>,
     /// The direct call operand of an `await` expression statement (§289 rule 1a).
     void_catch_statement: Option<swc_common::Span>,

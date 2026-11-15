@@ -730,6 +730,11 @@ a `void` branch and `a && b` or `a || b` with a `void` right operand
 are accepted, as an `if`. A lambda with no context accepts a
 conditional whose branches are each `void`. Accept adds `a442`.
 
+*Revised 2026-11-15 (§300):* in a statement place, each conditional
+branch and the right operand of `&&` or `||` drops its value even with
+no `void` leaf. The branches need no common type; truth tests still
+require `boolean`, and dropped async handles keep S013. Accept adds `a459`.
+
 ### C22. A JavaScript `undefined` is `null` here
 
 Where `node` gives `undefined` for a value that a checked program holds

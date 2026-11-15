@@ -1,5 +1,5 @@
 //! Checks the conditional expression (compiler.md §146, §195.1, §242
-//! rule 1a, §248 rule 2, §249 rule 1, §258).
+//! rule 1a, §248 rule 2, §249 rule 1, §258 rule 3, §300).
 
 use crate::check::narrowing_fact::FactSet;
 use crate::check::rejection::RejectionSite;
@@ -153,7 +153,12 @@ impl<'p> Checker<'p> {
         let first_facts = fx.narrowed.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
-        let literal_ctx = if ctx.is_none() && literalish(second_ast) {
+        // §300 rule 1: discarded branches are independent statements,
+        // so a literal does not take a sized or alias type from its peer.
+        let literal_ctx = if void_leaves != Some(super::VoidLeafPlace::Statement)
+            && ctx.is_none()
+            && literalish(second_ast)
+        {
             self.literal_context(&first.ty)
         } else {
             None
@@ -200,8 +205,8 @@ impl<'p> Checker<'p> {
         if let Some(leaves) = leaves.as_ref().filter(|leaves| !leaves.nested) {
             self.place_callback_leaves(&mut then, &mut els, leaves, fx);
         }
-        // compiler.md §258 rules 2 and 3: a `void` leaf in a statement
-        // place, or beside another `void` leaf in a lambda body.
+        // compiler.md §300 rule 1: statement branches need no common
+        // type. A lambda body keeps §258 rule 3.
         let void_join = void_leaves.and_then(|place| self.void_leaf_join(&then, &els, ctx, place));
         let ty = if let Some(ty) = void_join {
             ty

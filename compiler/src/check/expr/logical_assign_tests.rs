@@ -1,4 +1,4 @@
-//! Logical assignment tests (compiler.md §199).
+//! Logical assignment tests (compiler.md §199, §300).
 //! Cost: in-process checker calls only; no compiler or engine subprocess.
 
 use swc_ecma_ast as ast;
@@ -66,36 +66,36 @@ fn operator_selection_and_spelling() {
 }
 
 #[test]
-fn local_nullish_assignment_has_the_rule_1_hir() {
+fn local_nullish_assignment_value_has_the_rule_1_hir() {
     let prefix = "  let x: Box | null = maybe();\n";
-    let sugar = main_tail(&format!("{prefix}  x ??= make();"));
-    let spelled = main_tail(&format!("{prefix}  x !== null ? x : (x = make());"));
-    assert_eq!(sugar, spelled);
     let value = main_tail(&format!("{prefix}  print(`${{(x ??= make()).v}}`);"));
     let spelled_value = main_tail(&format!(
         "{prefix}  print(`${{(x !== null ? x : (x = make())).v}}`);"
     ));
     assert_eq!(value, spelled_value);
-    // Control: a different spelling gives a different HIR.
-    let other = main_tail(&format!("{prefix}  x === null ? (x = make()) : x;"));
-    assert_ne!(sugar, other);
+    // §300 discards conditional statement branches separately, so compare
+    // the §199 value spellings in a value position.
+    let other = main_tail(&format!(
+        "{prefix}  print(`${{(x === null ? (x = make()) : x).v}}`);"
+    ));
+    assert_ne!(value, other);
 }
 
 #[test]
-fn local_boolean_logical_assignments_have_the_rule_1_hir() {
+fn local_boolean_logical_assignment_values_have_the_rule_1_hir() {
     let prefix = "  let a: boolean = flag();\n";
     assert_eq!(
-        main_tail(&format!("{prefix}  a ||= flag();")),
-        main_tail(&format!("{prefix}  a ? a : (a = flag());"))
+        main_tail(&format!("{prefix}  print(`${{a ||= flag()}}`);")),
+        main_tail(&format!("{prefix}  print(`${{a ? a : (a = flag())}}`);"))
     );
     assert_eq!(
-        main_tail(&format!("{prefix}  a &&= flag();")),
-        main_tail(&format!("{prefix}  a ? (a = flag()) : a;"))
+        main_tail(&format!("{prefix}  print(`${{a &&= flag()}}`);")),
+        main_tail(&format!("{prefix}  print(`${{a ? (a = flag()) : a}}`);"))
     );
     // Control: the two operators do not share one form.
     assert_ne!(
-        main_tail(&format!("{prefix}  a ||= flag();")),
-        main_tail(&format!("{prefix}  a &&= flag();"))
+        main_tail(&format!("{prefix}  print(`${{a ||= flag()}}`);")),
+        main_tail(&format!("{prefix}  print(`${{a &&= flag()}}`);"))
     );
 }
 

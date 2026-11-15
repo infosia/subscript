@@ -720,8 +720,8 @@ impl<'p> Checker<'p> {
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
-        // compiler.md §258 rule 2: a conditional, `&&`, or `||` takes
-        // `void` leaves.
+        // compiler.md §300 rule 1: a conditional, `&&`, or `||` takes
+        // statement leaves, regardless of their value types.
         let root = self.enter_void_leaf_place(root, super::VoidLeafPlace::Statement);
         let checked = self.check_expr_inner(root, (None, ContextKind::Contextual), fx, false);
         self.void_leaf_place = None;

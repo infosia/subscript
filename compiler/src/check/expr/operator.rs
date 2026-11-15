@@ -1,5 +1,7 @@
 //! Checks the operator expressions, `yield`, and `as`.
 
+use crate::check::narrowing_fact::FactSet;
+
 use crate::check::rejection::RejectionSite;
 use crate::check::string_operand::StringOperand;
 use swc_common::Spanned;
@@ -468,11 +470,10 @@ impl<'p> Checker<'p> {
                 let left = self.check_expr(&b.left, left_ctx.as_ref(), fx);
                 let right_ctx = self.operand_context(&b.right, ctx);
                 let right = self.check_logical_right(&left, b, right_ctx.as_ref(), void_leaves, fx);
-                // compiler.md §258 rule 2: a `void` right operand in a
-                // statement place.
-                let void_right =
-                    void_leaves.is_some() && self.apparent_type(&right.ty) == Type::Void;
-                let sides: &[&hir::Expr] = if void_right {
+                // compiler.md §300 rules 1 and 2: only the left operand
+                // is a truth test when the right operand is discarded.
+                let discarded_right = void_leaves == Some(super::VoidLeafPlace::Statement);
+                let sides: &[&hir::Expr] = if discarded_right {
                     &[&left]
                 } else {
                     &[&left, &right]
@@ -491,7 +492,7 @@ impl<'p> Checker<'p> {
                         );
                     }
                 }
-                let ty = if void_right {
+                let ty = if discarded_right {
                     Type::Void
                 } else if self.involves_type_parameter(&left.ty)
                     || self.involves_type_parameter(&right.ty)
@@ -1672,8 +1673,8 @@ impl<'p> Checker<'p> {
     /// Checks the right operand of `&&` with the facts that hold when the
     /// left operand is true, and of `||` with the facts that hold when it
     /// is false (compiler.md §133). In a statement place the operand is a
-    /// statement place (§258 rule 2). A kill inside the operand ends a fact
-    /// (§124), and the facts end with the operand.
+    /// statement place (§300 rule 1). A kill inside the operand ends a fact
+    /// (§124). Statement paths join as an `if` (§300 rule 5a).
     fn check_logical_right(
         &mut self,
         left: &hir::Expr,
@@ -1682,15 +1683,27 @@ impl<'p> Checker<'p> {
         void_leaves: Option<super::VoidLeafPlace>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        let note_paths = fx.narrowing_note_paths();
+        let mut note_paths = fx.narrowing_note_paths();
         let (when_true, when_false) = self.narrowing_paths(left, fx);
-        let extra = if b.op == ast::BinaryOp::LogicalAnd {
-            when_true
+        let (extra, skipped_extra) = if b.op == ast::BinaryOp::LogicalAnd {
+            (when_true, when_false)
         } else {
-            when_false
+            (when_false, when_true)
         };
         let mut base = fx.narrowed.clone();
-        fx.narrowed = base.iter().cloned().chain(extra).collect();
+        let initial_notes = fx.ended_shared_narrowing.clone();
+        let skipped = base
+            .iter()
+            .filter(|key| !extra.contains(key))
+            .cloned()
+            .chain(skipped_extra.iter().cloned())
+            .collect::<std::collections::BTreeSet<_>>();
+        fx.narrowed = base
+            .iter()
+            .filter(|key| !skipped_extra.contains(key))
+            .cloned()
+            .chain(extra)
+            .collect();
         let right = match void_leaves {
             Some(place) => self.check_void_leaf(
                 &b.right,
@@ -1701,9 +1714,22 @@ impl<'p> Checker<'p> {
             ),
             None => self.check_expr(&b.right, ctx, fx),
         };
-        // Keep kills: facts removed inside the operand stay removed.
-        base.retain(|key| fx.narrowed.contains(key));
-        fx.narrowed = base;
+        if void_leaves == Some(super::VoidLeafPlace::Statement) {
+            // §300 rule 5a: join the executed and skipped statement paths.
+            let executed_possible: std::collections::HashSet<_> = fx
+                .narrowed
+                .union(&fx.ended_shared_narrowing)
+                .cloned()
+                .collect();
+            let skipped_possible: std::collections::HashSet<_> =
+                skipped.union(&initial_notes).cloned().collect();
+            note_paths.extend_facts(executed_possible.intersection(&skipped_possible).cloned());
+            fx.narrowed = fx.narrowed.intersection(&skipped).cloned().collect();
+        } else {
+            // Keep kills: facts removed inside the operand stay removed.
+            base.retain(|key| fx.narrowed.contains(key));
+            fx.narrowed = base;
+        }
         fx.finish_narrowing_join(&note_paths);
         right
     }
