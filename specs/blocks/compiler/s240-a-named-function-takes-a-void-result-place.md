@@ -145,6 +145,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
    accepted.
 8. An array literal as a spread source gets no element context:
    `const all: CB[] = [...[named]];` is rejected. `tsc` accepts it.
+   *(Closed: measured accepted at `67fd8e65`, 2026-11-15.)*
 9. A static method referenced before its class declaration is accepted:
    `const early: CB = B.m;`. `tsc` gives TS2449. A static method with a
    `void` result gives the same result, so this is older than §240. It
