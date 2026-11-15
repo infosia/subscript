@@ -86,6 +86,7 @@ rejection_classes! {
     Self::UnionUnknownTypeMember => (RuleCode::S011, TscRejects),
     Self::BuiltinDescriptorOptions => (RuleCode::S100, TscRejects),
     Self::BuiltinValueTypeAlignmentOutsideSet => (RuleCode::S100, TscRejects),
+    Self::CallbackExcessParameters => (RuleCode::S014, TscRejects),
     Self::CollectionCallbackNotFunction => (RuleCode::S100, TscRejects),
     Self::InstancePrototypeMissing => (RuleCode::S003, TscRejects),
     Self::PoisonedRelativeDefaultImport => (RuleCode::S100, TscRejects),

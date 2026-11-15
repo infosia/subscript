@@ -407,6 +407,7 @@ struct CallbackSpec<'a> {
     method: &'a str,
     q_rule: &'static str,
     allow_index: bool,
+    array_container: bool,
 }
 
 impl<'a> CallbackSpec<'a> {
@@ -415,6 +416,7 @@ impl<'a> CallbackSpec<'a> {
             method,
             q_rule,
             allow_index,
+            array_container: true,
         }
     }
 }

@@ -367,6 +367,10 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         use ArrFn as A;
         let arr_ty = Type::array(elem.clone());
+        let callback_spec = CallbackSpec {
+            array_container: !matches!(self.apparent_type(&recv.ty), Type::FixedArray(..)),
+            ..CallbackSpec::new(f.name(), "Q27", true)
+        };
         if matches!(
             f.counted_class(),
             hir::CountedArrayMethod::Callback | hir::CountedArrayMethod::Search
@@ -873,7 +877,7 @@ impl<'p> Checker<'p> {
                     Some(v) => self.expect_callback_shape(
                         v,
                         (&[acc_ty.clone(), elem], Some(&acc_ty)),
-                        CallbackSpec::new(f.name(), "Q27", true),
+                        callback_spec,
                         fx,
                     ),
                     None => self.check_arr_callback_with_resolved(
@@ -881,7 +885,7 @@ impl<'p> Checker<'p> {
                         vec![acc_ty.clone(), elem],
                         Some(acc_ty.clone()),
                         fx,
-                        CallbackSpec::new(f.name(), "Q27", true),
+                        callback_spec,
                         resolved_acc.as_ref(),
                     ),
                 };
@@ -938,7 +942,7 @@ impl<'p> Checker<'p> {
                     vec![elem.clone()],
                     ret_ctx,
                     fx,
-                    CallbackSpec::new(f.name(), "Q27", true),
+                    callback_spec,
                 );
                 self.lambda_result_hint = None;
                 let ty = match f {

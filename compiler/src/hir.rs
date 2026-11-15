@@ -1426,6 +1426,8 @@ pub enum Callee {
     Worker(WorkerFn),
     /// A direct member call with the current group environment (§293, §284).
     LambdaSelf {
+        /// Source spelling of a self-call (§284 rule 1).
+        name: std::sync::Arc<String>,
         /// The checker identity of the target member.
         id: LambdaId,
         /// The signature decided before the body check.

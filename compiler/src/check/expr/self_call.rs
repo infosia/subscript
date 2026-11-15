@@ -62,6 +62,7 @@ impl Checker<'_> {
             ty: signature.ret.clone(),
             kind: ExprKind::Call {
                 callee: Callee::LambdaSelf {
+                    name: std::sync::Arc::new(name.sym.to_string()),
                     id,
                     signature,
                     is_async,

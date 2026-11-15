@@ -254,6 +254,7 @@ fn run_with_effects(
         void_leaf_place: None,
         void_catch_statement: None,
         declaration_starts: HashMap::new(),
+        diagnosed_class_accesses: Vec::new(),
         initializer_call: None,
         active_call: None,
         active_call_context: None,

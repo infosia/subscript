@@ -862,6 +862,9 @@ impl<'p> Checker<'p> {
         }
         let class_name = self.classes[class.0].name.clone();
         if let Some(signature) = self.class_sigs[class.0].static_fields.get(prop).cloned() {
+            if self.diagnosed_class_accesses.contains(&receiver_pos) {
+                self.diagnosed_class_accesses.push(prop_pos.clone());
+            }
             let symbol = static_member_symbol(class, &class_name, prop);
             if !signature.mutable {
                 self.reject_subset(

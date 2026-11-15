@@ -805,7 +805,7 @@ fn map_group_by_and_set_algebra_are_accepted_by_q27() {
 
 #[test]
 fn q27_array_index_arity_does_not_reach_map_or_set_callbacks() {
-    for (surface, q_rule, source) in [
+    for (surface, expected_text, source) in [
         (
             "Map.forEach",
             "Q24",
@@ -824,7 +824,7 @@ fn q27_array_index_arity_does_not_reach_map_or_set_callbacks() {
         ),
         (
             "Map.groupBy",
-            "Q27",
+            "`Map.groupBy` callback type declares 1 parameter(s); got 2",
             "export function main(): void {\n\
                Map.groupBy([1], (value: i32, index: i32): i32 => value + index);\n\
              }\n",
@@ -833,7 +833,7 @@ fn q27_array_index_arity_does_not_reach_map_or_set_callbacks() {
         let err = check_one(source).unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014, "{surface}");
         assert!(
-            err[0].message.contains(q_rule),
+            err[0].message.contains(expected_text),
             "{surface}: {}",
             err[0].message
         );

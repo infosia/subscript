@@ -1395,6 +1395,7 @@ fn render_call_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<St
     let callee = match callee {
         Callee::Func(name) => name.source_name(),
         Callee::Foreign(name) => name.clone(),
+        Callee::LambdaSelf { name, .. } => name.as_ref().clone(),
         Callee::Value(value) | Callee::NamedLambda { value, .. } => {
             render_place_expr(value, origins)?
         }

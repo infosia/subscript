@@ -140,19 +140,23 @@ fn inferred_binding_facts_split_the_function_value_site() {
                     "{global}: {initializer}: {args}: {errors:?}"
                 );
                 assert!(error.message.starts_with("`h` expects 2 argument(s), got"));
-                assert!(error
-                    .note
-                    .unwrap()
-                    .contains("function type has no optional parameter"));
+                assert_eq!(
+                    error.note,
+                    Some("Pass every argument, or call a declaration with a default directly.")
+                );
                 let rendered = subscript_compiler::render_diagnostics(&files, &errors);
                 assert!(rendered.contains("= note:"));
                 if diverges {
+                    assert_eq!(
+                        error.divergence.unwrap().entry().why,
+                        "A function type has no optional parameter (C7)."
+                    );
                     assert!(
                         rendered.contains("= why: A function type has no optional parameter (C7).")
                     );
                     assert_eq!(
                         rendered
-                            .matches("pass every argument, or call a declaration")
+                            .matches("Pass every argument, or call a declaration")
                             .count(),
                         1
                     );

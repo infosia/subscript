@@ -75,3 +75,24 @@ pub(crate) const RECEIVER_RULE: &str = "An async arrow owns const captures. A di
 /// `void`, and an absence comparison.
 pub(crate) const UNDEFINED_PLACES: &str =
     "`undefined` is legal only as a result `T | undefined`, as a result `void`, and in an absence comparison";
+
+// C8 and compiler.md §186 rules 2 and 3: explicit reaction callbacks.
+pub(crate) const THEN_NULL_REJECTION: DivergenceEntry = DivergenceEntry {
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { await leaf().then((x: i32): i32 => x, null); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { await leaf().then((x: i32): i32 => x); }",
+    why: "Omit a null rejection callback; use then(f).",
+    collision: "collisions.md C8; compiler.md §186 rule 2",
+};
+pub(crate) const REACTION_SPREAD: DivergenceEntry = DivergenceEntry {
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const callbacks: ((x: i32) => i32)[] = [(x: i32): i32 => x]; await leaf().then(...callbacks); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { await leaf().then((x: i32): i32 => x); }",
+    why: "A reaction takes explicit callbacks; spread arguments require variadic parameters, which the language does not have.",
+    collision: "collisions.md C8; compiler.md §186 rule 3",
+};
+
+pub(crate) const SET_REPEATED_VALUE: DivergenceEntry = DivergenceEntry {
+    ts: "new Set<i32>().forEach((v: i32, again: i32): void => {});",
+    subscript: "new Set<i32>().forEach((v: i32): void => {});",
+    why: "Set.forEach passes the value twice in JavaScript; this callback place passes it once.",
+    collision: "stdlib.md §10.4; Q27",
+};

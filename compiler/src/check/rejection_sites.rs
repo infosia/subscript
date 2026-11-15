@@ -968,6 +968,7 @@ pub(crate) enum RejectionSite {
     ArrayFromSpread,
     ArrayFromSource,
     CallbackParameterCount,
+    CallbackExcessParameters,
     CallbackFewerParametersUnadapted,
     FunctionValueAdapterNeedsConstName,
     VoidPlaceDropsAsyncHandle,

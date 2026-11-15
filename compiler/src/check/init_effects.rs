@@ -28,6 +28,7 @@ struct ModuleEffectScanner<'a> {
     ambiguous_class_names: Option<&'a HashSet<&'a str>>,
     effects: ModuleEffects,
     lambda_name: String,
+    diagnosed_accesses: &'a [Pos],
 }
 
 impl<'a> ModuleEffectScanner<'a> {
@@ -39,7 +40,13 @@ impl<'a> ModuleEffectScanner<'a> {
             ambiguous_class_names: None,
             effects: ModuleEffects::default(),
             lambda_name: "[lambda]".to_string(),
+            diagnosed_accesses: &[],
         }
+    }
+
+    fn with_diagnosed_accesses(mut self, positions: &'a [Pos]) -> Self {
+        self.diagnosed_accesses = positions;
+        self
     }
 
     fn with_lambda_name(mut self, name: &str) -> Self {
@@ -696,7 +703,12 @@ impl<'a> ModuleEffectScanner<'a> {
                 }
                 return;
             }
-            K::Global(name) => self.record_access(name.full_text()),
+            K::Global(name) => {
+                // §241 rule 1 owns a direct access diagnosed at this site.
+                if !self.diagnosed_accesses.contains(&expression.pos) {
+                    self.record_access(name.full_text());
+                }
+            }
             K::FuncRef(name) => self.effects.made.push(ModuleFunction::Free(name.clone())),
             K::Call { callee, args } => {
                 self.lambda_defaults(callee, args.len());
@@ -1239,7 +1251,8 @@ pub(super) fn module_initializer_diagnostics(
                     let mut scanner = ModuleEffectScanner::new(&checker.classes)
                         .with_generators(&generators)
                         .with_defaults(&defaults)
-                        .with_class_labels(&ambiguous_class_names);
+                        .with_class_labels(&ambiguous_class_names)
+                        .with_diagnosed_accesses(&checker.diagnosed_class_accesses);
                     scanner = scanner.with_lambda_name(&global.name);
                     scanner.expr(init);
                     check_effect(
@@ -1256,7 +1269,8 @@ pub(super) fn module_initializer_diagnostics(
                 let mut scanner = ModuleEffectScanner::new(&checker.classes)
                     .with_generators(&generators)
                     .with_defaults(&defaults)
-                    .with_class_labels(&ambiguous_class_names);
+                    .with_class_labels(&ambiguous_class_names)
+                    .with_diagnosed_accesses(&checker.diagnosed_class_accesses);
                 scanner.stmt(statement);
                 let pos = init_order::statement_pos(statement)
                     .cloned()

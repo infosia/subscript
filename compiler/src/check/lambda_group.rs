@@ -253,6 +253,7 @@ impl Checker<'_> {
             ty: signature.ret.clone(),
             kind: hir::ExprKind::Call {
                 callee: hir::Callee::LambdaSelf {
+                    name: std::sync::Arc::new(member.name.clone()),
                     id: member.id,
                     signature,
                     is_async: member.is_async,
@@ -532,6 +533,7 @@ fn resolve_reads<'a>(
                         if let Some(read) = value.and_then(|value| reference(&value.pos)) {
                             if let Some(signature) = &read.member.signature {
                                 *callee = hir::Callee::LambdaSelf {
+                                    name: std::sync::Arc::new(read.member.name.clone()),
                                     id: read.member.id,
                                     signature: signature.clone(),
                                     is_async: read.member.is_async,

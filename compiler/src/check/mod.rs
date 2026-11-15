@@ -1359,7 +1359,7 @@ pub(crate) struct Checker<'p> {
     inferring_result_operand: bool,
     generic_callback_context: bool,
     /// The contextual result type of the next lambda with no result
-    /// annotation; the body still decides the result (§186 rule 6).
+    /// annotation; the body still decides the result (§186 rule 4).
     lambda_result_hint: Option<Type>,
     /// The next lambda with no result annotation takes `void` as the
     /// context of its result (compiler.md §238 rule 2).
@@ -1380,6 +1380,9 @@ pub(crate) struct Checker<'p> {
     /// declared in a program file, by file and name (compiler.md §241
     /// rule 1).
     declaration_starts: HashMap<(usize, String), Pos>,
+    /// Access positions already diagnosed by §241 rule 1, including
+    /// the member position of a static field read or write.
+    diagnosed_class_accesses: Vec<Pos>,
     initializer_call: Option<swc_common::Span>,
     active_call: Option<swc_common::Span>,
     /// The contextual type of the active call (§212 rule 1).
@@ -1837,3 +1840,6 @@ mod tests {
 
 mod text;
 mod text_module;
+
+#[cfg(test)]
+mod diagnostic_text_tests;

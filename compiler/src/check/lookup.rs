@@ -87,6 +87,7 @@ impl<'p> Checker<'p> {
         if (pos.line, pos.col) >= (start.line, start.col) {
             return;
         }
+        self.diagnosed_class_accesses.push(pos.clone());
         self.reject_subset(
             RejectionSite::ClassReadBeforeDeclaration,
             format!("`{name}` is used before its declaration"),

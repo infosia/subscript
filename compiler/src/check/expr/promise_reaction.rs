@@ -184,6 +184,21 @@ impl<'p> Checker<'p> {
                 ast::Expr::Lit(ast::Lit::Null(_))
             )
         }) {
+            if method == "then"
+                && call
+                    .args
+                    .get(1)
+                    .is_some_and(|arg| std::ptr::eq(arg, argument))
+            {
+                let mut diagnostic = crate::check::rejection::diagnostic(
+                    RejectionSite::PromiseCombinatorCall,
+                    "`.then(...)` takes no `null` rejection callback; use `.then(f)`",
+                    self.pos(argument.expr.span()),
+                );
+                diagnostic.example = Some(&crate::check::diagnostic_text::THEN_NULL_REJECTION);
+                self.diags.push(diagnostic);
+                return None;
+            }
             self.reject_combinator(
                 method,
                 format!("`.{method}(...)` takes no `null` callback; `.catch(r)` takes a rejection callback alone"),

@@ -201,6 +201,7 @@ impl<'p> Checker<'p> {
 
         // compiler.md §242 rule 1a and §244 rule 2: the outer conditional
         // places each leaf after all of them are checked.
+        let declared_types = (then.ty.clone(), els.ty.clone());
         let nested = leaves.as_ref().is_some_and(|leaves| leaves.nested);
         if let Some(leaves) = leaves.as_ref().filter(|leaves| !leaves.nested) {
             self.place_callback_leaves(&mut then, &mut els, leaves, fx);
@@ -247,8 +248,8 @@ impl<'p> Checker<'p> {
                         site,
                         format!(
                             "conditional branches have no common type: `{}` and `{}`",
-                            self.type_name(&then.ty),
-                            self.type_name(&els.ty),
+                            self.type_name(&declared_types.0),
+                            self.type_name(&declared_types.1),
                         ),
                         pos.clone(),
                     );

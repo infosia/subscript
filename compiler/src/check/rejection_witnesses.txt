@@ -531,7 +531,7 @@ s037.ts	expr/method.rs:1022 check_array_from	TS2769	S014
 export function main(): void { Array.from(1); }
 ===
 s038.ts	expr/callback_shape.rs callback_params_for_arity	TS2345	S014		
-`map` callbacks take 1 parameter(s), or 2 with a trailing `i32` index; got 4 (Q27)
+`map` callback type declares 3 parameter(s); got 4
 export function main(): void { const xs: i32[] = [1]; xs.map((v: i32, index: i32, array: i32[], extra: i32): i32 => v); }
 ===
 s039.ts	expr/namespace.rs:69 check_namespace_member		S014		

@@ -105,7 +105,8 @@ fn the_leaves_take_the_largest_arity() {
 
 /// Rule 4: more parameters than the place allows, a function value with an
 /// environment, a generic function, and a function with a default
-/// parameter keep their diagnostic. An async function gets the S013 of
+/// parameter stay rejected. Excess sort parameters use §303 rule 5a
+/// at CallbackExcessParameters. An async function gets the S013 of
 /// compiler.md §247. The controls: the same
 /// places with an accepted callback.
 #[test]
@@ -119,7 +120,7 @@ fn the_other_forms_keep_their_diagnostic() {
         (
             "function f(): i32 { return [2, 1].sort((a: i32, b: i32, i: i32): i32 => a - b).length; }",
             RuleCode::S014,
-            "`sort` callbacks take exactly 2 parameter(s); got 3 (Q22)",
+            "`sort` callback type declares 2 parameter(s); got 3",
         ),
         (
             "function f(fv: () => void): void { [1].forEach(fv); }",

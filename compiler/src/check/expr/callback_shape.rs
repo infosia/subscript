@@ -40,6 +40,7 @@ impl Checker<'_> {
             method,
             q_rule,
             allow_index,
+            array_container,
         } = spec;
         // compiler.md §244 rule 1: a lambda literal with fewer parameters
         // takes the place of the smallest arity.
@@ -56,7 +57,24 @@ impl Checker<'_> {
             let _ = self.reject_api_form("T[]", "callback(value, index, array)", &actual, pos);
             return None;
         }
-        self.reject_subset(
+        // Q27 and stdlib.md §10.4: the library callback includes the
+        // container slot, except for FixedArray, sort, and Map.groupBy.
+        let declared = if allow_index {
+            base.len() + 1 + usize::from(array_container)
+        } else if matches!(method, "Map.forEach" | "Set.forEach") {
+            3
+        } else {
+            base.len()
+        };
+        if actual > declared {
+            self.reject_subset(
+                RejectionSite::CallbackExcessParameters,
+                format!("`{method}` callback type declares {declared} parameter(s); got {actual}"),
+                pos,
+            );
+            return None;
+        }
+        let mut diagnostic = crate::check::rejection::diagnostic(
             RejectionSite::CallbackParameterCount,
             if allow_index {
                 format!(
@@ -79,6 +97,10 @@ impl Checker<'_> {
             },
             pos,
         );
+        if method == "Set.forEach" && actual == 2 {
+            diagnostic.example = Some(&super::super::diagnostic_text::SET_REPEATED_VALUE);
+        }
+        self.diags.push(diagnostic);
         None
     }
 
