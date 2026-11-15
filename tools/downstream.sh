@@ -55,7 +55,7 @@ cleanup() {
     if [ "$created_dir" -eq 1 ]; then
         rmdir "$downstream/.cargo" 2>/dev/null || :
     fi
-    git -C "$downstream" checkout -- Cargo.lock || :
+    git -C "$downstream" restore --source=HEAD --staged --worktree -- Cargo.lock || :
 }
 
 trap 'trap - 0 HUP INT TERM; cleanup; exit "$status"' 0

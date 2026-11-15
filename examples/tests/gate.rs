@@ -531,12 +531,15 @@ struct ExampleFixture(PathBuf);
 
 impl ExampleFixture {
     fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "subscript-example-discovery-{}-{stamp}",
+            "subscript-example-discovery-{}-{stamp}-{sequence}",
             std::process::id()
         ));
         fs::create_dir(&root).unwrap();
@@ -546,8 +549,19 @@ impl ExampleFixture {
 
 impl Drop for ExampleFixture {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).expect("remove discovery fixture");
+        if let Err(error) = fs::remove_dir_all(&self.0) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("remove discovery fixture {}: {error}", self.0.display());
+            }
+        }
     }
+}
+
+// §302: measured cost: <0.01 s; one directory, no compile.
+fn fixture_cleanup_tolerates_removal_failure() {
+    let first = ExampleFixture::new();
+    fs::remove_dir_all(&first.0).unwrap();
+    assert!(std::panic::catch_unwind(|| drop(first)).is_ok());
 }
 
 fn derived_example_set_excludes_phase_gate_programs() {
@@ -567,6 +581,7 @@ fn derived_example_set_excludes_phase_gate_programs() {
     assert_eq!(example_ids, ["e01-fixture"]);
 
     let empty_fixture = ExampleFixture::new();
+    fs::write(empty_fixture.0.join("helper.ts"), "").unwrap();
     assert_eq!(
         discover_examples(&empty_fixture.0).unwrap_err(),
         "no e<nn>-<slug>.ts examples found"
@@ -655,6 +670,7 @@ fn two_header_gate_emits_both_provenance_vocabularies() {
 fn main() -> std::process::ExitCode {
     main_thread::run(&main_thread_tests![
         parallel: [
+            fixture_cleanup_tolerates_removal_failure,
             derived_example_set_excludes_phase_gate_programs,
             engine_mirror_regenerates_byte_identically,
             typescript_rejected_script_matches_rendered_diagnostic,

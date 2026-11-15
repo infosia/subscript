@@ -1,6 +1,7 @@
 //! Compiler contract §260: keep a changed downstream Cargo.lock.
-//! Cost: eight temporary git repositories and eight shell runs; no downstream build.
-//! Each case runs git init, add, and commit. TERM ends a five-second stub wait early.
+//! Cost: ten temporary git repositories and ten downstream shell runs; no downstream build.
+//! Each repository runs git init, add, and commit; signal delivery uses two extra shells.
+//! TERM ends a five-second stub wait early.
 
 #![cfg(unix)]
 
@@ -249,4 +250,29 @@ fn term_restores_lockfile_and_returns_143() {
     );
     assert!(!fixture.dir.join(".cargo").exists());
     assert!(start.elapsed() < Duration::from_secs(3));
+}
+
+// §302: measured cost: 0.46 s; two scratch git repositories, no build.
+#[test]
+fn staged_gate_change_is_restored() {
+    for status in [0, 7] {
+        let fixture = Downstream::new(status);
+        std::fs::write(
+            fixture.dir.join("tools/gate.sh"),
+            format!(
+                "#!/bin/sh\nprintf 'changed\\n' > Cargo.lock\ngit add Cargo.lock\nexit {status}\n"
+            ),
+        )
+        .unwrap();
+        let output = fixture.run();
+        assert_eq!(output.status.code(), Some(status));
+        assert_eq!(
+            fixture.git(&["show", ":Cargo.lock"]).stdout,
+            COMMITTED.as_bytes()
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.dir.join("Cargo.lock")).unwrap(),
+            COMMITTED
+        );
+    }
 }

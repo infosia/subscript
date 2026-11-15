@@ -334,7 +334,11 @@ mod runner {
                 "compiler.md §190.1 rule 5: the current executable is unknown: {error}"
             )))
         })?;
-        let mut output = RetainedOutput::new()?;
+        let mut output = RetainedOutput::open(
+            std::env::var_os(super::super::JIT_OUTPUT_FILE_ENV)
+                .as_deref()
+                .map(std::path::Path::new),
+        )?;
         let mut request_file = TemporaryFile::new("request")?;
         let mut protocol = TemporaryFile::new("protocol")?;
         let mut stderr = TemporaryFile::new("stderr")?;

@@ -65,6 +65,7 @@ fn dev_scratch_allocation_exit() {
 fn ship_scratch_allocation_exit() {
     let root = std::env::temp_dir().join(format!("subscript-296-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
+    let _guard = ScratchDir(root.clone());
     std::fs::write(root.join("scratch.h"), "#include <stddef.h>\ntypedef struct { const char *data; size_t len; } View;\ntypedef struct Inner { View label; } Inner;\ntypedef struct Outer { View label; const Inner *child; } Outer;\nvoid observe(const Outer *, const Outer *);\n").unwrap();
     let count_file = root.join("count");
     for failure in [0, 2] {
@@ -89,6 +90,7 @@ void observe(const Outer *a, const Outer *b) {{ (void)a; (void)b; }}
         let mut config = crate::RunConfig::default().with_native_libraries(&libraries);
         config.pre_entry_hook = Some("arm");
         config.post_run_hook = Some("count");
+        clear_count(&count_file);
         let result = crate::run_c_aot_configured(&files(), config);
         if failure != 0 {
             assert!(
@@ -102,5 +104,49 @@ void observe(const Outer *a, const Outer *b) {{ (void)a; (void)b; }}
         println!("ship failure={failure}: scratch={count}");
         assert_eq!(count, "0");
     }
-    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+struct ScratchDir(std::path::PathBuf);
+#[cfg(unix)]
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+#[cfg(unix)]
+fn clear_count(path: &std::path::Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => panic!("remove count {}: {error}", path.display()),
+    }
+}
+
+// §302: measured cost: <0.01 s; one directory and one unwind, no build.
+#[cfg(unix)]
+#[test]
+fn scratch_guard_cleans_on_assertion_failure() {
+    let root = std::env::temp_dir().join(format!("subscript-302-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let result = std::panic::catch_unwind(|| {
+        let _guard = ScratchDir(root.clone());
+        assert!(!root.exists(), "injected assertion");
+    });
+    assert!(result.is_err());
+    let exists = root.exists();
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(!exists);
+}
+
+// §302: measured cost: <0.01 s; one count file, no build.
+#[cfg(unix)]
+#[test]
+fn missing_count_cannot_reuse_previous_run() {
+    let path = std::env::temp_dir().join(format!("subscript-302-count-{}", std::process::id()));
+    std::fs::write(&path, "0").unwrap();
+    clear_count(&path);
+    let result = std::fs::read_to_string(&path);
+    let _ = std::fs::remove_file(path);
+    assert!(result.is_err(), "a missing hook reused a stale count");
 }

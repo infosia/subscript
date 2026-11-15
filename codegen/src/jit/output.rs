@@ -11,7 +11,7 @@ use std::io::Write;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use super::{RunError, JIT_OUTPUT_FILE_ENV};
+use super::RunError;
 use crate::lower::internal;
 
 pub(super) struct CapturedStdout {
@@ -104,9 +104,8 @@ pub(super) struct RetainedOutput {
 }
 
 impl RetainedOutput {
-    pub(super) fn new() -> Result<Self, RunError> {
-        if let Some(path) = std::env::var_os(JIT_OUTPUT_FILE_ENV) {
-            let path = Path::new(&path);
+    pub(super) fn open(path: Option<&Path>) -> Result<Self, RunError> {
+        if let Some(path) = path {
             let file = OpenOptions::new()
                 .read(true)
                 .append(true)
@@ -136,6 +135,10 @@ impl RetainedOutput {
             });
         }
 
+        Self::temporary()
+    }
+
+    pub(super) fn temporary() -> Result<Self, RunError> {
         let (path, file) = TemporaryFile::new("output")?.take_parts();
         Ok(Self {
             file,
@@ -271,7 +274,7 @@ mod tests {
     // compiler.md §268 rule 1: two callbacks need one temporary file and no JIT compile.
     #[test]
     fn retained_error_stops_writes_and_keeps_memory_output() {
-        let mut output = RetainedOutput::new().unwrap();
+        let mut output = RetainedOutput::open(None).unwrap();
         let mut stdout = CapturedStdout {
             bytes: Vec::new(),
             write_through: Some((

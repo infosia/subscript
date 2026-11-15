@@ -13,7 +13,8 @@ fn examples_root() -> PathBuf {
 
 fn assert_host_program_matches_golden(directory: &str) {
     let host = examples_root().join(directory);
-    let expected = fs::read(host.join("expected.txt")).unwrap();
+    let golden = host.join("expected.txt");
+    let expected = fs::read(&golden).unwrap();
     let output = Command::new("sh")
         .arg(host.join("build.sh"))
         .env("SUBSCRIPT", env!("CARGO_BIN_EXE_subscript"))
@@ -25,7 +26,7 @@ fn assert_host_program_matches_golden(directory: &str) {
         output.status,
         subscript_codegen::tool_output_report(&output)
     );
-    assert_eq!(output.stdout, expected, "{directory}: stdout differs");
+    assert_stdout(&output.stdout, &expected, &golden);
 }
 
 #[test]
@@ -68,6 +69,7 @@ fn subscript_override_runs_stub_with_build_source_arguments() {
     let scratch =
         std::env::temp_dir().join(format!("subscript-host-control-{}", std::process::id()));
     fs::create_dir(&scratch).unwrap();
+    let _guard = ScratchDir(scratch.clone());
     let stub = scratch.join("stub cli");
     fs::write(
         &stub,
@@ -89,5 +91,51 @@ fn subscript_override_runs_stub_with_build_source_arguments() {
         );
         assert_eq!(output.stdout, b"host override control\n");
     }
-    fs::remove_dir_all(scratch).unwrap();
+}
+
+// §302: measured cost: <0.01 s; one synthetic comparison, no host build.
+#[test]
+fn mismatch_report_contains_text_and_golden_path() {
+    let panic = std::panic::catch_unwind(|| {
+        assert_stdout(
+            b"actual line\n",
+            b"expected\n",
+            std::path::Path::new("fixture/expected.txt"),
+        )
+    })
+    .unwrap_err();
+    let message = panic.downcast_ref::<String>().unwrap();
+    assert!(message.contains("actual line"), "{message}");
+    assert!(message.contains("fixture/expected.txt"), "{message}");
+}
+fn assert_stdout(actual: &[u8], expected: &[u8], golden: &std::path::Path) {
+    assert!(
+        actual == expected,
+        "stdout differs from {}\nactual:\n{}\nexpected:\n{}",
+        golden.display(),
+        String::from_utf8_lossy(actual),
+        String::from_utf8_lossy(expected)
+    );
+}
+
+struct ScratchDir(PathBuf);
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+// §302: measured cost: <0.01 s; one directory and one unwind.
+#[test]
+fn host_scratch_cleans_on_assertion_failure() {
+    let root = std::env::temp_dir().join(format!("subscript-host-guard-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let result = std::panic::catch_unwind(|| {
+        let _guard = ScratchDir(root.clone());
+        assert!(!root.exists(), "injected assertion");
+    });
+    assert!(result.is_err());
+    let exists = root.exists();
+    let _ = fs::remove_dir_all(&root);
+    assert!(!exists);
 }

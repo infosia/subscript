@@ -162,6 +162,7 @@ struct BoundaryPtrWriteback {
 /// and the call writes back each target by code after the call.
 #[derive(Default)]
 struct BoundaryTargets {
+    /// The call scope to release before each exit (§296 rules 1 and 2).
     scratch_mark: Option<String>,
     /// The declarations of the variables of each copy, initialized to null.
     declarations: String,

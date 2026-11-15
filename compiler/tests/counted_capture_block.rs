@@ -124,6 +124,8 @@ fn a_body_binding_and_a_parameter_copy_cover_inner_blocks() {
 
 #[test]
 fn uncounted_bindings_keep_the_same_outer_assignment() {
+    // §302: same i32 return type and outer assignment as the accepted cases.
+    rejected(&format!("{PRELUDE} export async function main(): Promise<void> {{ let f: () => i32 = () => 0; {{ const h: Promise<i32>[] = [work()]; await h[0]; f = () => h.length; }} }}"), 1);
     for (setup, read) in [
         ("const h: i32 = 7;", "h"),
         ("const h: i32[] = [7];", "h[0]"),

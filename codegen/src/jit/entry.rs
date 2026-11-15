@@ -215,7 +215,11 @@ pub(super) fn execute_entry_retained(
     options: EntryOptions,
     settle: bool,
 ) -> Result<Vec<u8>, RunError> {
-    let mut output = RetainedOutput::new()?;
+    let mut output = RetainedOutput::open(
+        std::env::var_os(super::JIT_OUTPUT_FILE_ENV)
+            .as_deref()
+            .map(std::path::Path::new),
+    )?;
     let writer = output.writer()?;
     let mut protocol = TemporaryFile::new("protocol")?;
     let mut stderr = TemporaryFile::new("stderr")?;
@@ -327,7 +331,11 @@ pub(super) fn execute_entry_retained(
     options: EntryOptions,
     _settle: bool,
 ) -> Result<Vec<u8>, RunError> {
-    let output = RetainedOutput::new()?;
+    let output = RetainedOutput::open(
+        std::env::var_os(super::JIT_OUTPUT_FILE_ENV)
+            .as_deref()
+            .map(std::path::Path::new),
+    )?;
     let writer = output.writer()?;
     execute_entry(module, lowered, options, Some(writer)).map(|run| run.stdout)
 }
@@ -366,7 +374,7 @@ mod retained_output_tests {
             "export function main(): void { print(`123`); print(`456`); }",
         )];
         let (module, lowered) = compile_jit(&files, &[]).unwrap();
-        let mut output = RetainedOutput::new().unwrap();
+        let mut output = RetainedOutput::open(None).unwrap();
         let readonly = File::open(output.path()).unwrap();
         let result = execute_entry(
             &module,
@@ -408,7 +416,7 @@ mod retained_output_tests {
             "export function main(): void { print(`123`); throw new Error(`script failure`); }",
         )];
         let (module, lowered) = compile_jit(&files, &[]).unwrap();
-        let output = RetainedOutput::new().unwrap();
+        let output = RetainedOutput::open(None).unwrap();
         let result = execute_entry(
             &module,
             &lowered,

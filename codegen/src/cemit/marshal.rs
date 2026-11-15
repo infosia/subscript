@@ -313,7 +313,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     // §296 rules 1–2: release the call scope before the allocation trap exits.
-    fn scratch_allocation_check(&mut self, out: &mut String) -> Result<(), String> {
+    fn scratch_allocation_check(&mut self, out: &mut String, indent: &str) -> Result<(), String> {
         let mark = self
             .boundary_targets
             .as_ref()
@@ -327,7 +327,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         );
         let _ = writeln!(
             out,
-            "    if (*(const uint32_t*)ctx != 0u) {{ {release}; goto unwind; }}"
+            "{indent}if (*(const uint32_t*)ctx != 0u) {{ {release}; goto unwind; }}"
         );
         Ok(())
     }
@@ -412,7 +412,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "    if ({source} != NULL) {{\n        {header} = ({header_type}*){storage};"
         );
         if !local {
-            self.scratch_allocation_check(out)?;
+            self.scratch_allocation_check(out, "        ")?;
         }
         let value = self.marshal_boundary_struct(out, target, &format!("*{source}"), position)?;
         let _ = writeln!(out, "        *{header} = {value};");
@@ -489,7 +489,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             ],
         );
         let mut check = String::new();
-        self.scratch_allocation_check(&mut check)?;
+        self.scratch_allocation_check(&mut check, "    ")?;
         let _ = writeln!(
             out,
             "    {header_type}* {scratch} = ({header_type}*){allocation};\n{check}    for (size_t {index} = 0; {index} < {count_temporary}; {index}++) {{"
