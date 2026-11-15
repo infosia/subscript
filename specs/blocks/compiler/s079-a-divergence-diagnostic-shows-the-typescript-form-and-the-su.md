@@ -11,7 +11,8 @@ from TypeScript. The diagnostic shows both forms in code.
 `Divergence`, one variant per divergence topic, and one table that
 gives each variant: `ts` (a TypeScript fragment that `tsc` accepts),
 `subscript` (the fragment this language accepts for the same intent,
-or the sentence "no equivalent; <what to do instead>"), `why` (one
+or, only when no such fragment exists, the sentence `no equivalent:
+<reason>`; §307 rule 1), `why` (one
 sentence, 25 words or fewer), and `collision` (the `collisions.md`
 heading id, `C1`..`C14`, or a `compiler.md` section id when
 `collisions.md` has no heading). No other place holds the fragments.
