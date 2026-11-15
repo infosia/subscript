@@ -90,3 +90,4 @@ Rule 4 of the contract now states its scope.
    `wf(x: f64): Promise<void>`, `[1].forEach(b ? wf : work)` gives one
    S013 on `work`. The user place gives a diagnostic on each leaf. The
    program is rejected in both places.
+   *(Selected 2026-11-16 for §313.)*

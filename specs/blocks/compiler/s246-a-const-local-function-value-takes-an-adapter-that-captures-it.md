@@ -113,3 +113,4 @@ One fresh review of the implementation. No CRITICAL finding.
    gives "conditional branches have no common type", and
    `run(b ? p : both)` gives the text of rule 5. Rule 6 covers names
    only.
+   *(Selected 2026-11-16 for §313.)*
