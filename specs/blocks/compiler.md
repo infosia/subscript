@@ -338,3 +338,4 @@ Every section, with its status:
 | §294 | The reload fingerprint holds the absence of a field | active | [`s294-the-reload-fingerprint-holds-the-absence-of-a-field.md`](compiler/s294-the-reload-fingerprint-holds-the-absence-of-a-field.md) |
 | §295 | An operand that can raise holds the operands before it | active | [`s295-an-operand-that-can-raise-holds-the-operands-before-it.md`](compiler/s295-an-operand-that-can-raise-holds-the-operands-before-it.md) |
 | §296 | A foreign call releases its scratch on each exit | active | [`s296-a-foreign-call-releases-its-scratch-on-each-exit.md`](compiler/s296-a-foreign-call-releases-its-scratch-on-each-exit.md) |
+| §297 | An invalidation list names only values that dominate it | active | [`s297-an-invalidation-list-names-only-values-that-dominate-it.md`](compiler/s297-an-invalidation-list-names-only-values-that-dominate-it.md) |

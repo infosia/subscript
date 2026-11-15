@@ -127,3 +127,4 @@ this section was not measured.
 1. In `a341`, function `arrays`, block `b10`, the invalidation list of
    an instruction names a value that does not dominate the block, before
    and after this section. Only the LIR verifier reads the list.
+   *(Selected 2026-11-15 for §297.)*
