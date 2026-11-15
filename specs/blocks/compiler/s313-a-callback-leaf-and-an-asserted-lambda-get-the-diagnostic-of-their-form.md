@@ -57,8 +57,36 @@ Problem, measured at `d5e4246e` with the debug CLI.
 
 ### 313.3 Phase Review
 
-*(Filled in after the review.)*
+At the contract pin, the four rule tests fail and the user place
+controls pass. After the change, all five pass. The coding agent
+compared the CLI output of 1,501 files and directories of
+`corpus/reject` and `corpus/accept` with a pin build: no output and no
+acceptance changes. So no corpus file is listed under acceptance item
+3. The review ran 279 probe files with a pin build and the change, in
+each built-in callback place against a user function with the same
+callback type, and a sample of 243 corpus entries.
+
+One fresh review found no CRITICAL or MAJOR finding, and four MINOR
+findings.
+
+1. MINOR, contrived, recorded: after the context, the `as` message can
+   name the same type twice, as in "cannot convert `i32[]` to
+   `i32[]`" for `[() => 1] as i32[]`. An element or body diagnostic
+   before it gives the cause, and `tsc` rejects these forms.
+2. MINOR, realistic, recorded: the context adds the body diagnostics
+   that a type annotation gives. `((x: i32) => 1.5) as CB` also gives
+   S008, and `((x: i32) => x) as (x: i32) => i64` also gives S007.
+   These are forms of rule 3 that reach the same code.
+3. MINOR, realistic, recorded: a callback leaf says "the callback
+   expects", and the user place says "the then branch expects". The
+   code and the position are the same, as §247 rule 1 allows for S013.
+4. MINOR, fixed: a comment that described former behaviour, and the
+   stated cost of the new test.
 
 ### 313.4 Open
 
-None.
+1. Rule 2 does not reach a conditional or a nested array literal
+   inside `as`: `(b ? (x) => x : one) as CB` and
+   `[[(x) => x]] as CB[][]` still give "parameters require a type
+   annotation". `tsc` accepts both. The program is rejected in both
+   places.

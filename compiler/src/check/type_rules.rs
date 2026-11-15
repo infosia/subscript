@@ -452,9 +452,9 @@ impl<'p> Checker<'p> {
         fits
     }
 
-    /// Places each leaf of `expr` at `place`. A leaf that drops a handle
-    /// gets the diagnostic of compiler.md §247 rule 1 after `subject`, as
-    /// the callback itself gets it.
+    /// Places each leaf of `expr` at `place` using the user-place check
+    /// (compiler.md §313 rule 1). A dropped handle names `subject`, as
+    /// the callback itself does (§247 rule 1).
     fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, subject: &str, fx: &FnCtx) {
         if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
             self.place_leaves(then, place, subject, fx);
@@ -480,17 +480,17 @@ impl<'p> Checker<'p> {
             }
             return;
         }
-        if self.place_value(expr, place, fx) {
+        // Excess arity gives the conditional no common type (compiler.md §244 rule 4).
+        if self
+            .function_of(&expr.ty)
+            .zip(self.function_of(place))
+            .is_some_and(|(own, target)| own.params.len() > target.params.len())
+        {
             return;
         }
-        // compiler.md §247 rule 3: the leaf that holds the handle names it.
-        if let Some(handle) = self.dropped_handle(expr, place, fx) {
-            let message = self.dropped_handle_message(expr, &handle, place, subject);
-            self.reject_subset(
-                RejectionSite::VoidPlaceDropsAsyncHandle,
-                message,
-                expr.pos.clone(),
-            );
+        let before = self.diags.len();
+        self.require_expr_assignable_subject(expr, place, fx, "the callback", subject);
+        if self.diags.len() != before {
             expr.ty = Type::Error;
         }
     }
@@ -1101,11 +1101,23 @@ impl<'p> Checker<'p> {
         fx: &FnCtx,
         what: &str,
     ) {
+        self.require_expr_assignable_subject(from, to, fx, what, "function value");
+    }
+
+    // compiler.md §313 rule 1: callback leaves use the user-place check.
+    fn require_expr_assignable_subject(
+        &mut self,
+        from: &mut hir::Expr,
+        to: &Type,
+        fx: &FnCtx,
+        what: &str,
+        subject: &str,
+    ) {
         if !self.place_value(from, to, fx) {
             // compiler.md §247 rule 1: a value that fits except for the
             // handle that the place drops names the handle.
             if let Some(handle) = self.dropped_handle(from, to, fx) {
-                let message = self.dropped_handle_message(from, &handle, to, "function value");
+                let message = self.dropped_handle_message(from, &handle, to, subject);
                 self.reject_subset(
                     RejectionSite::VoidPlaceDropsAsyncHandle,
                     message,

@@ -1808,7 +1808,19 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_as(&mut self, a: &ast::TsAsExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         let target = self.resolve_type(&a.type_ann);
-        let mut inner = self.check_expr(&a.expr, None, fx);
+        // compiler.md §313 rule 2: an assertion supplies lambda context.
+        let context = match super::unparen_expr(&a.expr) {
+            ast::Expr::Arrow(_) => Some(&target),
+            ast::Expr::Array(array)
+                if array.elems.iter().flatten().any(|element| {
+                    matches!(super::unparen_expr(&element.expr), ast::Expr::Arrow(_))
+                }) =>
+            {
+                Some(&target)
+            }
+            _ => None,
+        };
+        let mut inner = self.check_expr(&a.expr, context, fx);
         if self.convert_string_operand(&mut inner, StringOperand::Assertion(&target)) {
             return inner;
         }
