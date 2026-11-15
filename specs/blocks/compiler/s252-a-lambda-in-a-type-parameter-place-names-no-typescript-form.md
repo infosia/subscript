@@ -84,3 +84,5 @@ MAJOR finding.
    is accepted, and the lambda takes the parameter types of `CB`
    (§251). `tsc` narrows `g` to `null`, infers `T` as `null`, and gives
    TS2345 and TS7006. Before §251 the lambda gave S100.
+   *(Selected 2026-11-15 for §301; §301 was withdrawn on measurement:
+   the form needs a `null` type, which C7 does not have.)*

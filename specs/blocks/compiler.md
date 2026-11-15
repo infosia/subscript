@@ -342,3 +342,4 @@ Every section, with its status:
 | §298 | The ship tier asserts the string view of a bound callback | active | [`s298-the-ship-tier-asserts-the-string-view-of-a-bound-callback.md`](compiler/s298-the-ship-tier-asserts-the-string-view-of-a-bound-callback.md) |
 | §299 | A string-literal alias is a `string` operand | active | [`s299-a-string-literal-alias-is-a-string-operand.md`](compiler/s299-a-string-literal-alias-is-a-string-operand.md) |
 | §300 | A statement place drops each value leaf | active | [`s300-a-statement-place-drops-each-value-leaf.md`](compiler/s300-a-statement-place-drops-each-value-leaf.md) |
+| §301 | A type argument is inferred from the narrowed argument | withdrawn 2026-11-15; no rule landed | [`s301-a-type-argument-is-inferred-from-the-narrowed-argument.md`](compiler/s301-a-type-argument-is-inferred-from-the-narrowed-argument.md) |
