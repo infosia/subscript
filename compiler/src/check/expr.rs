@@ -183,7 +183,7 @@ impl Place {
 pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     match &e.kind {
         ExprKind::Local(n, _, _) => Some(n.clone()),
-        ExprKind::Global(n) => Some(format!("[[global]]{}", n.full_text())),
+        ExprKind::Global(n, _) => Some(format!("[[global]]{}", n.full_text())),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => path_key(obj)
             .filter(|p| !p.contains(".[[element:"))
@@ -199,7 +199,7 @@ pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
 
 fn is_place_expr(expr: &hir::Expr) -> bool {
     match &expr.kind {
-        ExprKind::Local(..) | ExprKind::Global(_) | ExprKind::This => true,
+        ExprKind::Local(..) | ExprKind::Global(_, _) | ExprKind::This => true,
         ExprKind::Field { obj, .. } => is_place_expr(obj),
         ExprKind::Index { obj, index, .. } => is_place_expr(obj) && is_place_expr(index),
         _ => false,

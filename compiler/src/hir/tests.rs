@@ -113,7 +113,7 @@ fn expr_children_yield_every_child() {
         ExprKind::Null,
         ExprKind::This,
         ExprKind::Local(String::new(), Type::I32, false),
-        ExprKind::Global(Symbol::from_full_text("")),
+        ExprKind::Global(Symbol::from_full_text(""), true),
         ExprKind::FuncRef(Symbol::from_full_text("")),
         ExprKind::EnumMember {
             id: EnumId(0),
@@ -1061,4 +1061,26 @@ fn reload_declaration_hash_field_coverage() {
         foreign_provenance: _,
         pos: _,
     } = field;
+}
+
+// Section 304: the reload declaration hash holds symbol, ty, and mutable.
+// The symbol already identifies the name; init and initializer_index concern
+// construction, and pos concerns diagnostics. A new Global member requires a
+// hash coverage decision here.
+#[test]
+fn reload_declaration_hash_global_coverage() {
+    let mut module = crate::check_program(&[crate::SourceFile::new(
+        "global.ts",
+        "let value:i32=1; export function main():void{}",
+    )])
+    .expect("global declaration");
+    let Global {
+        symbol: _,
+        name: _,
+        ty: _,
+        mutable: _,
+        init: _,
+        initializer_index: _,
+        pos: _,
+    } = module.globals.pop().expect("one global");
 }

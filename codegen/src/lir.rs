@@ -815,7 +815,7 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
     matches!(
         expr.kind,
         hir::ExprKind::Local(..)
-            | hir::ExprKind::Global(_)
+            | hir::ExprKind::Global(_, _)
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Index { .. }
     )

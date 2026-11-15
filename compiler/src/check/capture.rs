@@ -254,7 +254,7 @@ impl<'a> Analysis<'a> {
                         self.equations.push((*id, value));
                     }
                 }
-                E::Global(_) => self.escapes.push(("global store".to_owned(), value)),
+                E::Global(_, _) => self.escapes.push(("global store".to_owned(), value)),
                 E::Field { .. } => self.escapes.push(("field store".to_owned(), value)),
                 E::Index { .. } => self.escapes.push(("element store".to_owned(), value)),
                 _ => {}
@@ -743,7 +743,7 @@ fn record_child(child: hir::HirChildMut<'_>, escaping: &HashMap<usize, hir::Esca
 fn value_name(module: &hir::Module, expr: &Expr) -> String {
     match &expr.kind {
         E::Local(name, _, _) => format!("value `{name}`"),
-        E::Global(symbol) => format!(
+        E::Global(symbol, _) => format!(
             "value `{}`",
             super::identity::module_declaration_label(module, symbol)
         ),

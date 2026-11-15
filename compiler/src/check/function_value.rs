@@ -76,7 +76,7 @@ impl Checker<'_> {
                 .rev()
                 .find_map(|scope| scope.vars.get(name))
                 .and_then(|local| local.function_value_required),
-            ExprKind::Global(symbol) => self
+            ExprKind::Global(symbol, _) => self
                 .global_sigs
                 .get(symbol.full_text())
                 .and_then(|sig| sig.function_value_required),
@@ -153,7 +153,7 @@ impl Checker<'_> {
                 .rev()
                 .find(|scope| scope.owns(name))
                 .and_then(|scope| scope.named_lambdas.get(name).cloned()),
-            ExprKind::Global(symbol) => self.named_global_lambda_defaults(symbol),
+            ExprKind::Global(symbol, _) => self.named_global_lambda_defaults(symbol),
             _ => None,
         }
     }

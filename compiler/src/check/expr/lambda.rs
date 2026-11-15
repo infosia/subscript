@@ -500,13 +500,13 @@ impl<'p> Checker<'p> {
             .filter(|fact| {
                 fact.narrows_type()
                     && !fact.contains('.')
-                    && !fact.starts_with("[[global]]")
-                    && fx
-                        .scopes
-                        .iter()
-                        .rev()
-                        .find_map(|scope| scope.vars.get(&fact.key))
-                        .is_some_and(|local| !local.mutable)
+                    && (!fact.shared && fact.starts_with("[[global]]")
+                        || fx
+                            .scopes
+                            .iter()
+                            .rev()
+                            .find_map(|scope| scope.vars.get(&fact.key))
+                            .is_some_and(|local| !local.mutable))
             })
             .cloned()
             .collect();

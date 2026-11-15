@@ -79,7 +79,7 @@ impl Checker<'_> {
         let effects = later.narrowing_effects(
             self.narrowing_classes(),
             self.narrowing_helpers(),
-            self.narrowing_globals(),
+            hir::StoreTypes::Checked(&|ty| self.apparent_type(ty)),
         );
         facts.retain(|key| {
             let (shared, local) = path_kills(key, &effects);
@@ -129,7 +129,7 @@ impl Checker<'_> {
                 &expression.operation_narrowing_effects(
                     self.narrowing_classes(),
                     self.narrowing_helpers(),
-                    None,
+                    hir::StoreTypes::Checked(&|ty| self.apparent_type(ty)),
                 ),
                 fx,
             );
@@ -195,7 +195,9 @@ impl Checker<'_> {
 #[derive(Default)]
 pub(super) struct Analysis {
     classes: Vec<hir::ClassDef>,
-    globals: std::collections::HashMap<hir::Symbol, Type>,
+    sources: hir::LoopValueSources,
+    const_scopes: Vec<std::collections::HashMap<String, bool>>,
+    needs_const_pass: bool,
     helpers: std::collections::HashSet<hir::Symbol>,
     loops: std::collections::HashMap<(String, u32, u32), hir::NarrowingEffects>,
     /// The test of each `do…while`, by loop position (compiler.md §203.1 rule 4).
@@ -211,22 +213,23 @@ impl Analysis {
         let classes = module.classes.clone();
         let mut analysis = Self {
             helpers: module.synthesized_helpers.clone(),
-            globals: module
-                .globals
-                .iter()
-                .map(|global| (global.symbol.clone(), global.ty.clone()))
-                .collect(),
+            sources: hir::LoopValueSources {
+                globals: module
+                    .globals
+                    .iter()
+                    .map(|global| (global.symbol.clone(), global.ty.clone()))
+                    .collect(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         for owner in module.expression_owners_mut() {
             match owner {
                 hir::ExpressionOwnerMut::Expr(expression) => {
-                    analysis.expression(expression, &classes)
+                    analysis.owner(|analysis| analysis.expression(expression, &classes))
                 }
                 hir::ExpressionOwnerMut::Body(body) => {
-                    for statement in body {
-                        analysis.statement(statement, &classes);
-                    }
+                    analysis.owner(|analysis| analysis.body(body, &classes));
                 }
             }
         }
@@ -244,26 +247,216 @@ impl Analysis {
         }
     }
 
+    /// Derive const proofs only when the first source summary needs them (§304 rule 4).
+    /// Both visits derive summaries; neither visit checks a body again.
+    fn owner(&mut self, visit: impl Fn(&mut Self)) {
+        let prior_loops = std::mem::take(&mut self.loops);
+        let prior_need = std::mem::replace(&mut self.needs_const_pass, false);
+        visit(self);
+        if self.needs_const_pass {
+            self.loops.clear();
+            self.const_scopes.push(Default::default());
+            visit(self);
+            self.const_scopes.pop();
+        }
+        let loops = std::mem::replace(&mut self.loops, prior_loops);
+        for (key, effects) in loops {
+            self.loops.entry(key).or_default().merge(effects);
+        }
+        self.needs_const_pass = prior_need;
+    }
+
     fn function(&mut self, function: &hir::Function, classes: &[hir::ClassDef]) {
-        for default in function
-            .params
-            .iter()
-            .filter_map(|parameter| parameter.default.as_ref())
-        {
-            self.expression(default, classes);
-        }
-        for statement in &function.body {
-            self.statement(statement, classes);
-        }
+        self.owner(|analysis| {
+            let track = !analysis.const_scopes.is_empty();
+            if track {
+                analysis.const_scopes.push(
+                    function
+                        .params
+                        .iter()
+                        .map(|param| (param.name.clone(), false))
+                        .collect(),
+                );
+            }
+            for default in function
+                .params
+                .iter()
+                .filter_map(|parameter| parameter.default.as_ref())
+            {
+                analysis.expression(default, classes);
+            }
+            analysis.body(&function.body, classes);
+            if track {
+                analysis.const_scopes.pop();
+            }
+        });
     }
 
     fn expression(&mut self, expression: &hir::Expr, classes: &[hir::ClassDef]) {
-        for child in expression.children() {
-            self.child(child, classes);
+        if let ExprKind::Local(name, ..) = &expression.kind {
+            if self
+                .const_scopes
+                .iter()
+                .rev()
+                .find_map(|scope| scope.get(name))
+                .copied()
+                == Some(true)
+            {
+                self.sources
+                    .const_reads
+                    .insert(position_key(&expression.pos));
+            }
+        }
+        if let ExprKind::Lambda { params, body, .. } = &expression.kind {
+            let track = !self.const_scopes.is_empty();
+            if track {
+                self.const_scopes.push(
+                    params
+                        .iter()
+                        .map(|param| (param.name.clone(), false))
+                        .collect(),
+                );
+            }
+            for default in params.iter().filter_map(|param| param.default.as_ref()) {
+                self.expression(default, classes);
+            }
+            self.body(body, classes);
+            if track {
+                self.const_scopes.pop();
+            }
+        } else {
+            for child in expression.children() {
+                self.child(child, classes);
+            }
+        }
+    }
+
+    fn body(&mut self, body: &[hir::Stmt], classes: &[hir::ClassDef]) {
+        // Reserve all names before initializers, so a shadow never reads an outer proof (§304 rule 1a).
+        let track = !self.const_scopes.is_empty();
+        if track {
+            self.const_scopes.push(
+                body.iter()
+                    .filter_map(|statement| match statement {
+                        hir::Stmt::Let { name, .. } => Some((name.clone(), false)),
+                        _ => None,
+                    })
+                    .collect(),
+            );
+        }
+        for statement in body {
+            self.statement(statement, classes);
+        }
+        if track {
+            self.const_scopes.pop();
         }
     }
 
     fn statement(&mut self, statement: &hir::Stmt, classes: &[hir::ClassDef]) {
+        let for_scope = matches!(statement, hir::Stmt::For { .. }) && !self.const_scopes.is_empty();
+        if for_scope {
+            self.const_scopes.push(Default::default());
+        }
+        if let hir::Stmt::For {
+            init: Some(init), ..
+        } = statement
+        {
+            self.statement(init, classes);
+        }
+        for child in statement.children() {
+            if let hir::HirChild::Expr(expression) = child {
+                self.expression(expression, classes);
+            }
+        }
+        match statement {
+            hir::Stmt::Let {
+                name,
+                mutable,
+                init,
+                ..
+            } => {
+                if self.const_scopes.is_empty() {
+                    return;
+                }
+                let non_null = !mutable && init.non_null_without_facts(classes, &self.sources);
+                if let Some(scope) = self.const_scopes.last_mut() {
+                    scope.insert(name.clone(), non_null);
+                }
+            }
+            hir::Stmt::If { then, els, .. } => {
+                self.body(then, classes);
+                if let Some(els) = els {
+                    self.body(els, classes);
+                }
+            }
+            hir::Stmt::While { body, .. }
+            | hir::Stmt::DoWhile { body, .. }
+            | hir::Stmt::Block(body) => self.body(body, classes),
+            hir::Stmt::For { body, step, .. } => {
+                self.body(body, classes);
+                self.body(step, classes);
+            }
+            hir::Stmt::ForOf { name, body, .. } | hir::Stmt::GeneratorForOf { name, body, .. } => {
+                self.const_scopes.push([(name.clone(), false)].into());
+                self.body(body, classes);
+                self.const_scopes.pop();
+            }
+            hir::Stmt::Switch { cases, .. } => {
+                self.const_scopes.push(
+                    cases
+                        .iter()
+                        .flat_map(|case| &case.body)
+                        .filter_map(|statement| match statement {
+                            hir::Stmt::Let { name, .. } => Some((name.clone(), false)),
+                            _ => None,
+                        })
+                        .collect(),
+                );
+                for case in cases {
+                    self.body(&case.body, classes);
+                }
+                self.const_scopes.pop();
+            }
+            hir::Stmt::Try {
+                body,
+                binding,
+                handler,
+                ..
+            } => {
+                self.body(body, classes);
+                self.const_scopes.push(
+                    binding
+                        .iter()
+                        .map(|(name, _)| (name.clone(), false))
+                        .collect(),
+                );
+                self.body(handler, classes);
+                self.const_scopes.pop();
+            }
+            hir::Stmt::Using {
+                bindings,
+                body,
+                finalizer,
+                ..
+            } => {
+                self.const_scopes.push(
+                    bindings
+                        .iter()
+                        .map(|binding| (binding.name.clone(), false))
+                        .collect(),
+                );
+                self.body(body, classes);
+                if let Some(finalizer) = finalizer {
+                    self.body(finalizer, classes);
+                }
+                self.const_scopes.pop();
+            }
+            hir::Stmt::Expr(_)
+            | hir::Stmt::Return { .. }
+            | hir::Stmt::Break(_)
+            | hir::Stmt::Continue(_)
+            | hir::Stmt::Throw { .. } => {}
+        }
         if let hir::Stmt::While {
             pos,
             cond: _,
@@ -298,16 +491,22 @@ impl Analysis {
             body: _,
         } = statement
         {
+            let effects = statement.narrowing_effects(
+                classes,
+                &self.helpers,
+                hir::StoreTypes::Source(&self.sources),
+            );
+            self.needs_const_pass |= effects.const_sources;
             self.loops
                 .entry(position_key(pos))
                 .or_default()
-                .merge(statement.narrowing_effects(classes, &self.helpers, Some(&self.globals)));
+                .merge(effects);
         }
         if let hir::Stmt::DoWhile { cond, pos, body: _ } = statement {
             self.do_while_tests.insert(position_key(pos), cond.clone());
         }
-        for child in statement.children() {
-            self.child(child, classes);
+        if for_scope {
+            self.const_scopes.pop();
         }
     }
 
@@ -331,11 +530,14 @@ impl Checker<'_> {
     ) -> Analysis {
         let mut analysis = Analysis {
             helpers: self.narrowing_helpers().clone(),
-            globals: self
-                .globals
-                .iter()
-                .map(|global| (global.symbol.clone(), global.ty.clone()))
-                .collect(),
+            sources: hir::LoopValueSources {
+                globals: self
+                    .globals
+                    .iter()
+                    .map(|global| (global.symbol.clone(), global.ty.clone()))
+                    .collect(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         for function in self.functions.iter().skip(functions) {
@@ -350,19 +552,13 @@ impl Checker<'_> {
                 continue;
             }
             for init in class.fields.iter().filter_map(|field| field.init.as_ref()) {
-                analysis.expression(init, &self.classes);
+                analysis.owner(|analysis| analysis.expression(init, &self.classes));
             }
             for function in class.ctor.iter().chain(class.methods.iter()) {
                 analysis.function(function, &self.classes);
             }
         }
         analysis
-    }
-
-    fn narrowing_globals(&self) -> Option<&std::collections::HashMap<hir::Symbol, Type>> {
-        self.narrowing_analysis
-            .as_ref()
-            .map(|analysis| &analysis.globals)
     }
 
     fn narrowing_helpers(&self) -> &std::collections::HashSet<hir::Symbol> {
@@ -426,7 +622,34 @@ impl Checker<'_> {
             .as_ref()
             .and_then(|analysis| analysis.loops.get(&position_key(pos)))
         {
-            self.apply_flow_effects(effects, fx, true);
+            if effects.dependent_stores.is_empty() {
+                self.apply_flow_effects(effects, fx, true);
+                return;
+            }
+            let mut resolved = effects.clone();
+            let mut remaining: Vec<_> = resolved.dependent_stores.drain(..).collect();
+            loop {
+                self.apply_flow_effects(&resolved, fx, true);
+                let mut changed = false;
+                remaining.retain(|(path, field, sources)| {
+                    if sources.iter().all(|source| {
+                        fx.narrowed
+                            .get(source)
+                            .is_some_and(NarrowingFact::narrows_type)
+                    }) {
+                        return true;
+                    }
+                    resolved.nullable_stores.insert(path.clone());
+                    if let Some(field) = field {
+                        resolved.fields.insert(field.clone());
+                    }
+                    changed = true;
+                    false
+                });
+                if !changed {
+                    break;
+                }
+            }
         }
     }
 
@@ -491,7 +714,7 @@ impl Checker<'_> {
                 body,
                 self.narrowing_classes(),
                 self.narrowing_helpers(),
-                self.narrowing_globals(),
+                hir::StoreTypes::Checked(&|ty| self.apparent_type(ty)),
             )
         })
     }
@@ -538,21 +761,27 @@ fn path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (bool, bo
     }
     let root = super::stmt::root_of(key);
     let global = root.starts_with("[[global]]");
-    let shared = key.shared;
-    let shared_kill = shared
+    let shared_kill = shared_path_kills(key, effects);
+    let local_kill = effects.nullable_store_ends(key)
+        || !global
+            && effects.locals.iter().any(|stored| {
+                key.key == *stored && !stored.contains('.')
+                    || key.starts_with(&format!("{stored}."))
+            });
+    (shared_kill, local_kill)
+}
+
+fn shared_path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> bool {
+    key.shared
         && (effects.script
-            || key
-                .split('.')
-                .skip(1)
-                .any(|field| effects.fields.contains(field)))
+            || key.split('.').skip(1).enumerate().any(|(index, field)| {
+                effects.fields.contains(field)
+                    || index + 2 < key.split('.').count() && effects.replaced_fields.contains(field)
+            }))
         || effects.globals.iter().any(|name| {
             let stored = format!("[[global]]{}", name.full_text());
             key.key == *stored || key.starts_with(&format!("{stored}."))
-        });
-    let same_path = |stored: &String| key.key == *stored || key.starts_with(&format!("{stored}."));
-    let local_kill =
-        effects.nullable_store_ends(key) || !global && effects.locals.iter().any(same_path);
-    (shared_kill, local_kill)
+        })
 }
 
 /// compiler.md §162 rule 3 keeps a whole-local fact through a non-null store.
@@ -560,12 +789,13 @@ fn loop_path_kills(key: &NarrowingFact, effects: &hir::NarrowingEffects) -> (boo
     if !key.narrows_type() {
         return path_kills(key, effects);
     }
-    let shared_kill = path_kills(key, effects).0;
+    let shared_kill = shared_path_kills(key, effects);
     let local_kill = effects.nullable_store_ends(key)
         || !super::stmt::root_of(key).starts_with("[[global]]")
-            && effects.locals.iter().any(|stored| {
-                key.starts_with(&format!("{stored}.")) || stored.contains('.') && key.key == *stored
-            });
+            && effects
+                .locals
+                .iter()
+                .any(|stored| key.starts_with(&format!("{stored}.")));
     (shared_kill, local_kill)
 }
 
@@ -785,13 +1015,17 @@ impl Checker<'_> {
         if self.narrowing_analysis.is_none() || kept.is_empty() {
             return;
         }
-        let mut effects =
-            hir::NarrowingEffects::body(body, &self.classes, self.narrowing_helpers(), None);
+        let mut effects = hir::NarrowingEffects::body(
+            body,
+            &self.classes,
+            self.narrowing_helpers(),
+            hir::StoreTypes::Checked(&|ty| self.apparent_type(ty)),
+        );
         for expression in expressions {
             effects.merge(expression.narrowing_effects(
                 &self.classes,
                 self.narrowing_helpers(),
-                None,
+                hir::StoreTypes::Checked(&|ty| self.apparent_type(ty)),
             ));
         }
         for diagnostic in checked_loop_store_diagnostics(effects, kept) {
@@ -809,21 +1043,118 @@ fn checked_loop_store_diagnostics(
     effects: hir::NarrowingEffects,
     kept: &super::NarrowingFacts,
 ) -> Vec<crate::diag::Diagnostic> {
-    effects.nullable_store_sites.into_iter().filter_map(|(path, pos)| {
-        kept.iter().any(|fact| fact.narrows_type() && (fact.key == path || fact.starts_with(&format!("{path}.")))).then(|| {
-            let path = hir::source_name(path.strip_prefix("[[global]]").unwrap_or(&path));
-            super::rejection::diagnostic(
-                RejectionSite::NullableMember,
-                format!("`{path}` may be null at the loop head: this store can set it to null\nnote: the loop keeps the null check of `{path}` made before the loop"),
-                pos,
-            )
-        })
-    }).collect()
+    let mut errors = Vec::new();
+    for (path, pos) in effects.nullable_store_sites {
+        if let Some(fact) = kept.iter().find(|fact| {
+            fact.narrows_type() && (fact.key == path || fact.starts_with(&format!("{path}.")))
+        }) {
+            errors.push(loop_store_diagnostic(&fact.key, pos));
+        }
+    }
+    for (field, pos) in effects.nullable_field_store_sites {
+        if errors.iter().any(|error| error.pos == pos) {
+            continue;
+        }
+        if let Some(fact) = kept.iter().find(|fact| {
+            fact.narrows_type()
+                && fact.shared
+                && fact.split('.').skip(1).any(|segment| segment == field)
+        }) {
+            errors.push(loop_store_diagnostic(&fact.key, pos));
+        }
+    }
+    errors
+}
+
+fn loop_store_diagnostic(path: &str, pos: Pos) -> crate::diag::Diagnostic {
+    let path = hir::source_name(path.strip_prefix("[[global]]").unwrap_or(path));
+    super::rejection::diagnostic(
+        RejectionSite::NullableMember,
+        format!("`{path}` may be null at the loop head: this store can set it to null\nnote: the loop keeps the null check of `{path}` made before the loop"),
+        pos,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cost: less than 0.01 seconds for four HIR bodies; no compiler or engine subprocess.
+    #[test]
+    fn checked_field_store_closes_retained_facts_through_any_receiver() {
+        for receiver in ["h", "k"] {
+            for nullable in [false, true] {
+                let ty = Type::Nullable(
+                    Box::new(Type::Class(crate::types::ClassId(0))),
+                    crate::types::Absence::Null,
+                );
+                let pos = Pos::new("field.ts", 4, 3);
+                let expression = |kind, ty| hir::Expr {
+                    pending_work: None,
+                    kind,
+                    ty,
+                    pos: pos.clone(),
+                };
+                let target = expression(
+                    ExprKind::Field {
+                        obj: Box::new(expression(
+                            ExprKind::Local(
+                                receiver.into(),
+                                Type::Class(crate::types::ClassId(1)),
+                                true,
+                            ),
+                            Type::Class(crate::types::ClassId(1)),
+                        )),
+                        name: "f".into(),
+                    },
+                    ty.clone(),
+                );
+                let value = expression(
+                    ExprKind::Local("p".into(), ty.clone(), true),
+                    if nullable {
+                        ty
+                    } else {
+                        Type::Class(crate::types::ClassId(0))
+                    },
+                );
+                let store = expression(
+                    ExprKind::Assign {
+                        update: None,
+                        op: None,
+                        target: Box::new(target),
+                        value: Box::new(value),
+                    },
+                    Type::Void,
+                );
+                let body = [hir::Stmt::Expr(store)];
+                let kept = [NarrowingFact {
+                    key: "h.f".into(),
+                    shared: true,
+                    kind: super::super::narrowing_fact::FactKind::Narrowing,
+                }]
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into();
+                // The nullable body violates the entry invariant. No derived summary record changes.
+                let effects = hir::NarrowingEffects::body(
+                    &body,
+                    &[],
+                    &Default::default(),
+                    hir::StoreTypes::Checked(&Type::clone),
+                );
+                let errors = checked_loop_store_diagnostics(effects, &kept);
+                assert_eq!(errors.len(), usize::from(nullable));
+                if nullable {
+                    assert_eq!(errors[0].code, crate::diag::RuleCode::S011);
+                    assert_eq!(errors[0].pos, pos);
+                    assert_eq!(errors[0].divergence, None);
+                    assert!(errors[0]
+                        .message
+                        .contains("loop keeps the null check of `h.f`"));
+                }
+            }
+        }
+    }
 
     #[test]
     fn scope_exit_discards_only_facts_that_need_its_const_binding() {
@@ -904,7 +1235,7 @@ mod tests {
                 let target = hir::Expr {
                     pending_work: None,
                     kind: if let Some(symbol) = path.strip_prefix("[[global]]") {
-                        ExprKind::Global(hir::Symbol::from_full_text(symbol))
+                        ExprKind::Global(hir::Symbol::from_full_text(symbol), true)
                     } else {
                         ExprKind::Local(
                             path.into(),
@@ -934,7 +1265,12 @@ mod tests {
                 };
                 // Build the violating body. Do not alter a summary record after its derivation.
                 let body = [hir::Stmt::Expr(store)];
-                let effects = hir::NarrowingEffects::body(&body, &[], &Default::default(), None);
+                let effects = hir::NarrowingEffects::body(
+                    &body,
+                    &[],
+                    &Default::default(),
+                    hir::StoreTypes::Checked(&Type::clone),
+                );
                 let errors = checked_loop_store_diagnostics(effects, &kept);
                 assert_eq!(!errors.is_empty(), rejected);
                 if rejected {

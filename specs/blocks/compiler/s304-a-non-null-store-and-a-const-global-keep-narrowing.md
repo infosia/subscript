@@ -96,4 +96,41 @@ null comparison of a non-null type (§159.4 item 1, C7).
 
 ### 304.3 Phase Review
 
+Evidence: `specs/tracking/non-null-store-narrowing.md`. At the contract
+pin, `a460` gives eight S011, one in each row function. `tsc` gives one
+TS18047 in each of `r512` to `r515`. The largest time ratio of the
+s161_gen.py forms is 1.0135 (`narrowed`, 4000).
+
+One fresh review found two MAJOR findings, both realistic, and four
+MINOR findings.
+
+1. MAJOR: the reload declaration hash did not hold the mutability of a
+   module global. A swap from `let G` to `const G` was accepted. A
+   lambda from before the swap that stored `null` to `G` then gave a
+   process stop with no trap, because rule 3 removes the runtime check
+   of a `const` global read. Fixed: the hash holds the mutability, and
+   a test destructures `hir::Global`, so a new field fails the test
+   until the hash decides it. A reload test refuses each direction of
+   the swap.
+2. MAJOR: a store to a block-local that hides a loop local stayed in
+   the loop summary, and ended the fact of the outer local. One
+   program that the pin accepts became rejected. Fixed: a hidden
+   binding removes the stores to its name and to the paths below it.
+3. MINOR, fixed: the headers of `r512` to `r514` were the same; a test
+   variable named the wrong result; the replaced intermediate field had
+   no control in the same shape.
+4. MINOR, recorded: item 1 of §304.4.
+
+The first full gate failed in two tests of
+`compiler/tests/narrowing_flow.rs`. Each one pinned a §162 result that
+rules 1a and 2 change: a non-null field store ended the fact, and
+`const c = new A(); a = c;` was nullable. The tests now pin the §304
+results. A nullable store through the same receiver before `break`
+stays rejected with no block: the loop summary does not use the order
+of the stores (§162.4 item 1).
+
 ### 304.4 Open
+
+1. A `static readonly` field stays a shared location. No code can store
+   it after the class initializer, so rule 3 can apply to it. `tsc`
+   keeps its narrowing across a call. Not measured on a program.

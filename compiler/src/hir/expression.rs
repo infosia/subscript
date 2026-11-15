@@ -183,7 +183,7 @@ impl Expr {
             | K::Null
             | K::This
             | K::Local(..)
-            | K::Global(_)
+            | K::Global(_, _)
             | K::FuncRef(_)
             | K::LambdaMember(_)
             | K::EnumMember { .. }
@@ -286,7 +286,7 @@ impl Expr {
             | K::Null
             | K::This
             | K::Local(..)
-            | K::Global(_)
+            | K::Global(_, _)
             | K::FuncRef(_)
             | K::LambdaMember(_)
             | K::EnumMember { .. }

@@ -104,6 +104,41 @@ fn empty_module_run_order_change_is_refused() {
     );
 }
 
+fn global_mutability_reload_is_refused(before_binding: &str, after_binding: &str) {
+    let before = format!(
+        "class A {{ x:i32=1; }} function mk():A|null{{return new A();}} \
+         {before_binding} G:A|null=mk(); \
+         export function main():void{{if(G!==null){{print(`${{G.x}}`);}}}}"
+    );
+    let mut session = ReloadSession::new(&files(&before)).expect("session");
+    session
+        .reload(&files(&before))
+        .expect("unchanged declaration control");
+    session.call_main().expect("control call");
+    assert_eq!(output(&mut session), "1\n");
+
+    let after = before.replace(
+        &format!("{before_binding} G:"),
+        &format!("{after_binding} G:"),
+    );
+    assert!(matches!(
+        session.reload(&files(&after)),
+        Err(ReloadError::DeclarationChanged { declaration }) if declaration == "variable G"
+    ));
+    session.call_main().expect("old code remains callable");
+    assert_eq!(output(&mut session), "1\n");
+}
+
+#[test]
+fn let_to_const_global_reload_is_refused() {
+    global_mutability_reload_is_refused("let", "const");
+}
+
+#[test]
+fn const_to_let_global_reload_is_refused() {
+    global_mutability_reload_is_refused("const", "let");
+}
+
 // ----- entry-less sessions (§53) -----
 
 const ENTRYLESS_V1: &str = "\

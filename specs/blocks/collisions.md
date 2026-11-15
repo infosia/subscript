@@ -593,10 +593,13 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
 `tsc` keeps a null-check narrowing across a call and across an `await`,
 so it accepts a read of a field or module global that the call set to
 `null`. This compiler ends the narrowing of a shared location (a module
-global, a static field, or a field of an object that another name can
-reach, including a boundary box) at every point where other code can
-run, and at a store to the same field through any receiver
-(`compiler.md` §124). A local binding keeps its narrowing: a lambda
+`let` global, a static field, or a field of an object that another name
+can reach, including a boundary box) at every point where other code
+can run, and at a store of a value that can be null to the same field
+through any receiver (`compiler.md` §124, §304 rule 2). A store of a
+non-null value does not end it. A module `const` global is not shared:
+no code can store it, so it keeps its narrowing as a `const` local does
+(§304 rule 3). A local binding keeps its narrowing: a lambda
 captures only `const` locals, by value. A field of a boundary box that a
 local holds is shared, because another name can hold the same box. The program narrows again after the call
 or copies the value to a `const` local first.
@@ -617,9 +620,9 @@ Measured before the rule landed: 1 of 350 corpus sources and examples
 rejected. The owner chose on 2026-09-28 to keep the rule and copy the
 global to a `const` local in `a137`.
 
-Accept: `a274`, `a137`. Reject: `r252`, `r253`, `r254`, `r255`,
-`r256`, `r257`, `r258`, `r259`, `r260`, `r261`, `r262`, `r263`,
-`r265`, `r266`.
+Accept: `a274`, `a137`, `a460`. Reject: `r252`, `r253`, `r254`,
+`r255`, `r256`, `r257`, `r258`, `r259`, `r260`, `r261`, `r262`,
+`r263`, `r265`, `r266`, `r514`, `r515`.
 
 ### C18. The module surface is named exports, named imports, and namespace imports
 

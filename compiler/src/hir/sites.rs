@@ -94,7 +94,7 @@ impl Expr {
         };
 
         let declared = match &self.kind {
-            K::Global(name) => module
+            K::Global(name, _) => module
                 .globals
                 .iter()
                 .find(|global| global.symbol == *name)
@@ -557,7 +557,7 @@ impl Expr {
             | K::Null
             | K::This
             | K::Local(..)
-            | K::Global(_)
+            | K::Global(_, _)
             | K::FuncRef(_)
             | K::LambdaMember(_)
             | K::EnumMember { .. }

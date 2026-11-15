@@ -70,7 +70,7 @@ impl<'a> ModuleEffectScanner<'a> {
         };
         let owner = match callee {
             hir::Callee::NamedLambda { value, .. } => match &value.kind {
-                hir::ExprKind::Global(name) => source_name(name.full_text()),
+                hir::ExprKind::Global(name, _) => source_name(name.full_text()),
                 hir::ExprKind::Local(name, ..) => name.clone(),
                 _ => self.lambda_name.clone(),
             },
@@ -703,7 +703,7 @@ impl<'a> ModuleEffectScanner<'a> {
                 }
                 return;
             }
-            K::Global(name) => {
+            K::Global(name, _) => {
                 // §241 rule 1 owns a direct access diagnosed at this site.
                 if !self.diagnosed_accesses.contains(&expression.pos) {
                     self.record_access(name.full_text());

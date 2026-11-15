@@ -116,7 +116,7 @@ fn a_module_const_takes_an_adapter_with_no_capture() {
     assert!(
         matches!(body.as_slice(), [hir::Stmt::Expr(hir::Expr {
             kind: hir::ExprKind::Call { callee: hir::Callee::Value(value), .. }, ..
-        })] if matches!(value.kind, hir::ExprKind::Global(_))),
+        })] if matches!(value.kind, hir::ExprKind::Global(_, _))),
         "{body:?}"
     );
 }

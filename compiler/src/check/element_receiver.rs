@@ -268,7 +268,7 @@ impl<'a> Graph<'a> {
             | ExprKind::Null
             | ExprKind::This
             | ExprKind::Local(..)
-            | ExprKind::Global(_)
+            | ExprKind::Global(_, _)
             | ExprKind::EnumMember { .. }
             | ExprKind::Unary { .. }
             | ExprKind::Binary { .. }
@@ -566,7 +566,7 @@ fn spelling(place: &Expr) -> Option<String> {
     match &place.kind {
         ExprKind::This => Some("this".to_string()),
         ExprKind::Local(name, ..) => Some(name.clone()),
-        ExprKind::Global(symbol) => Some(symbol.source_name()),
+        ExprKind::Global(symbol, _) => Some(symbol.source_name()),
         ExprKind::Field { obj, name } => Some(format!("{}.{name}", spelling(obj)?)),
         ExprKind::Index { obj, index, .. } => {
             let index = match &index.kind {

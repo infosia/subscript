@@ -513,7 +513,7 @@ impl<'p> Checker<'p> {
             match &root.kind {
                 ExprKind::Field { .. } | ExprKind::Index { .. } => step = root,
                 ExprKind::Local(..)
-                | ExprKind::Global(_)
+                | ExprKind::Global(_, _)
                 | ExprKind::This
                 | ExprKind::Seq { .. } => return,
                 _ => {
@@ -589,7 +589,7 @@ impl<'p> Checker<'p> {
                         let ty = self.decide_global(&g, ident_pos.clone());
                         return Place::Global(hir::Expr {
                             pending_work: None,
-                            kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
+                            kind: ExprKind::Global(hir::Symbol::from_full_text(g), true),
                             ty,
                             pos: ident_pos,
                         });
@@ -876,7 +876,7 @@ impl<'p> Checker<'p> {
             let ty = self.decide_global(&symbol, prop_pos.clone());
             return Some(Place::StaticField(hir::Expr {
                 pending_work: None,
-                kind: ExprKind::Global(hir::Symbol::from_full_text(symbol)),
+                kind: ExprKind::Global(hir::Symbol::from_full_text(symbol), true),
                 ty,
                 pos: prop_pos,
             }));

@@ -292,7 +292,7 @@ pub(super) fn collect_trap_expression(
             | hir::ExprKind::Null
             | hir::ExprKind::This
             | hir::ExprKind::Local(..)
-            | hir::ExprKind::Global(_)
+            | hir::ExprKind::Global(_, _)
             | hir::ExprKind::FuncRef(_)
             | hir::ExprKind::LambdaMember(_)
             | hir::ExprKind::EnumMember { .. }

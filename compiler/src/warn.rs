@@ -339,7 +339,7 @@ impl WarningChecker<'_> {
             ExprKind::Assign { target, value, .. } => {
                 self.scan_w001_expr(target, loop_depth, collect_mutes, AllocationSink::Use);
                 let value_sink = match target.kind {
-                    ExprKind::Global(_)
+                    ExprKind::Global(_, _)
                     | ExprKind::Field { .. }
                     | ExprKind::Index { .. }
                     | ExprKind::Local(..) => AllocationSink::Escape,
@@ -1365,7 +1365,7 @@ fn generator_for_of_subject_source(
 
 fn copy_place_source(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
-        ExprKind::Local(..) | ExprKind::Global(_) => render_place_expr(expr, origins),
+        ExprKind::Local(..) | ExprKind::Global(_, _) => render_place_expr(expr, origins),
         ExprKind::Field { .. } if field_chain_has_copy_root(expr) => {
             render_place_expr(expr, origins)
         }
@@ -1377,7 +1377,9 @@ fn copy_place_source(expr: &Expr, origins: &HashMap<String, String>) -> Option<S
 fn field_chain_has_copy_root(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Field { obj, .. } => field_chain_has_copy_root(obj),
-        ExprKind::Local(..) | ExprKind::Global(_) | ExprKind::This | ExprKind::Index { .. } => true,
+        ExprKind::Local(..) | ExprKind::Global(_, _) | ExprKind::This | ExprKind::Index { .. } => {
+            true
+        }
         _ => false,
     }
 }
@@ -1424,7 +1426,7 @@ fn render_local(name: &str, origins: &HashMap<String, String>) -> String {
 fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
         ExprKind::Local(name, _, _) => Some(render_local(name, origins)),
-        ExprKind::Global(name) => Some(name.source_name()),
+        ExprKind::Global(name, _) => Some(name.source_name()),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => {
             Some(format!("{}.{}", render_place_expr(obj, origins)?, name))
@@ -1441,7 +1443,7 @@ fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<S
 fn render_index_expr(expr: &Expr, origins: &HashMap<String, String>) -> String {
     match &expr.kind {
         ExprKind::Local(name, _, _) => render_local(name, origins),
-        ExprKind::Global(name) => name.source_name(),
+        ExprKind::Global(name, _) => name.source_name(),
         ExprKind::This => "this".to_string(),
         ExprKind::Field { .. } | ExprKind::Index { .. } => {
             render_place_expr(expr, origins).unwrap_or_else(|| "…".to_string())
@@ -1551,7 +1553,7 @@ fn w004_assignment_root<'a>(
     indices: &mut Vec<&'a Expr>,
 ) -> Option<(&'a Expr, bool)> {
     match &target.kind {
-        ExprKind::Local(..) | ExprKind::Global(_) | ExprKind::This => Some((target, false)),
+        ExprKind::Local(..) | ExprKind::Global(_, _) | ExprKind::This => Some((target, false)),
         ExprKind::Field { obj, .. } => {
             let (root, _) = w004_assignment_root(obj, indices)?;
             Some((root, true))
@@ -1852,7 +1854,7 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
                 && matches!(
                     target.kind,
                     ExprKind::Local(..)
-                        | ExprKind::Global(_)
+                        | ExprKind::Global(_, _)
                         | ExprKind::Field { .. }
                         | ExprKind::Index { .. }
                 )

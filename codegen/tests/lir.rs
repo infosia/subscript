@@ -1,6 +1,8 @@
 //! §68 step 1: every accepted corpus program lowers to verified LIR.
 
 // This target uses only part of the shared corpus helpers.
+#[path = "lir/const_global_narrowing.rs"]
+mod const_global_narrowing;
 #[allow(dead_code)]
 mod corpus;
 #[path = "support/lir_facts.rs"]

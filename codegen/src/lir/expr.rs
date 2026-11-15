@@ -145,7 +145,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     )?)
                 }
             }
-            K::Global(name) => {
+            K::Global(name, _) => {
                 let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
                     self.error(
                         &expr.pos,

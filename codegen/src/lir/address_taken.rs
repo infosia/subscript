@@ -183,7 +183,7 @@ impl AddressTaken<'_> {
         match &expr.kind {
             K::Assign { target, value, .. } => {
                 match target.kind {
-                    K::Local(..) | K::Global(_) => {}
+                    K::Local(..) | K::Global(_, _) => {}
                     _ => self.place(target),
                 }
                 self.expr(value);
@@ -308,7 +308,7 @@ impl AddressTaken<'_> {
                 }
                 self.expr(index);
             }
-            hir::ExprKind::Global(_) | hir::ExprKind::This => {}
+            hir::ExprKind::Global(_, _) | hir::ExprKind::This => {}
             _ => self.expr(expr),
         }
     }

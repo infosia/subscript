@@ -8,9 +8,9 @@ impl Expr {
     pub fn is_shared_location(&self, classes: &[ClassDef]) -> bool {
         use ExprKind as K;
         match &self.kind {
-            K::Global(_) => true,
+            K::Global(_, shared) => *shared,
             K::Field { obj, .. } => {
-                matches!(obj.kind, K::This)
+                matches!(obj.kind, K::This | K::Global(..))
                     || receiver_is_shared(obj.storage_type(classes), classes, false)
                     || obj.is_shared_location(classes)
             }
@@ -62,7 +62,7 @@ impl Expr {
             K::Field { obj, name } => {
                 super::sites::declared_field_type(&obj.ty, name, classes).unwrap_or(&self.ty)
             }
-            K::Global(_)
+            K::Global(_, _)
             | K::Cast(_)
             | K::This
             | K::Int(_)
@@ -196,7 +196,10 @@ mod tests {
         for ty in [class_type("Value"), Type::IterResult(Box::new(Type::I32))] {
             let local = expr(ExprKind::Local("r".into(), ty.clone(), false), ty.clone());
             assert!(!field(local).is_shared_location(&module.classes));
-            let global = expr(ExprKind::Global(Symbol::from_full_text("r")), ty.clone());
+            let global = expr(
+                ExprKind::Global(Symbol::from_full_text("r"), true),
+                ty.clone(),
+            );
             assert!(field(global).is_shared_location(&module.classes));
             let this = expr(ExprKind::This, ty);
             assert!(field(this).is_shared_location(&module.classes));
@@ -207,7 +210,10 @@ mod tests {
         );
         assert!(!local_ref.is_shared_location(&module.classes));
         assert!(field(local_ref).is_shared_location(&module.classes));
-        let global = expr(ExprKind::Global(Symbol::from_full_text("S.opt")), Type::I32);
+        let global = expr(
+            ExprKind::Global(Symbol::from_full_text("S.opt"), true),
+            Type::I32,
+        );
         assert!(global.is_shared_location(&module.classes));
     }
 

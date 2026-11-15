@@ -73,7 +73,7 @@ impl<'a> Analysis<'a> {
             E::Null
             | E::Zero
             | E::FuncRef(_)
-            | E::Global(_)
+            | E::Global(_, _)
             | E::This
             | E::AsyncHandleAwait(_)
             | E::AsyncCall { .. } => false,

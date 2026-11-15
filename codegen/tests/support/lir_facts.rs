@@ -1047,7 +1047,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
         | hir::ExprKind::Null
         | hir::ExprKind::This
         | hir::ExprKind::Local(..)
-        | hir::ExprKind::Global(_)
+        | hir::ExprKind::Global(_, _)
         | hir::ExprKind::FuncRef(_)
         | hir::ExprKind::LambdaMember(_)
         | hir::ExprKind::EnumMember { .. }
@@ -1777,7 +1777,7 @@ fn walk_place_children<'a>(
             walk_expr(hir, obj, visit);
             walk_expr(hir, index, visit);
         }
-        hir::ExprKind::Local(..) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
+        hir::ExprKind::Local(..) | hir::ExprKind::Global(_, _) | hir::ExprKind::This => {}
         _ => walk_expr(hir, expr, visit),
     }
 }

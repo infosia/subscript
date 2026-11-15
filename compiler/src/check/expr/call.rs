@@ -700,7 +700,7 @@ impl<'p> Checker<'p> {
                         });
                     let name = match &callee.kind {
                         ExprKind::Local(name, ..) => name.clone(),
-                        ExprKind::Global(symbol) => symbol.source_name(),
+                        ExprKind::Global(symbol, _) => symbol.source_name(),
                         _ => "the function value".to_string(),
                     };
                     let count_site = if defaults.is_some() {

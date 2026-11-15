@@ -288,7 +288,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
                     .count()
                     > 1,
             ),
-            &format!("{}:{:?}", g.symbol.full_text(), g.ty),
+            &format!("{}:{:?}:{}", g.symbol.full_text(), g.ty, g.mutable),
         );
     }
     for f in m.functions.iter().filter(|f| !f.synthesized_helper) {

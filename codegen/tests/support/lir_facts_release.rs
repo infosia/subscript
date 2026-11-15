@@ -114,7 +114,7 @@ pub(super) fn compare_for_reload(
 fn traversal_owners(subject: &hir::Expr) -> usize {
     use hir::ExprKind as K;
     match &subject.kind {
-        K::Local(..) | K::Global(_) | K::This => 0,
+        K::Local(..) | K::Global(_, _) | K::This => 0,
         K::Field { obj, .. } | K::Index { obj, .. } if matches!(obj.ty, Type::FixedArray(..)) => {
             traversal_owners(obj)
         }
@@ -230,7 +230,7 @@ fn fixed_array_place(expr: &hir::Expr) -> bool {
     matches!(expr.ty, Type::FixedArray(..))
         && matches!(
             expr.kind,
-            K::Local(..) | K::Global(_) | K::Field { .. } | K::Index { .. } | K::This
+            K::Local(..) | K::Global(_, _) | K::Field { .. } | K::Index { .. } | K::This
         )
 }
 

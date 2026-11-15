@@ -177,7 +177,7 @@ impl<'p> Checker<'p> {
                 };
                 hir::Expr {
                     pending_work: None,
-                    kind: ExprKind::Global(hir::Symbol::from_full_text(name)),
+                    kind: ExprKind::Global(hir::Symbol::from_full_text(name), false),
                     ty: Type::RegExp,
                     pos,
                 }
@@ -576,10 +576,11 @@ impl<'p> Checker<'p> {
                         pos,
                     };
                 }
+                let shared = self.global_sigs.get(&g).is_none_or(|sig| sig.mutable);
                 let ty = self.decide_global(&g, pos.clone());
                 let mut expr = hir::Expr {
                     pending_work: None,
-                    kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
+                    kind: ExprKind::Global(hir::Symbol::from_full_text(g), shared),
                     ty,
                     pos,
                 };

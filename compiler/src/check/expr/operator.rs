@@ -618,7 +618,7 @@ impl<'p> Checker<'p> {
             } => target.as_ref(),
             _ => expression,
         };
-        let storage = if let ExprKind::Global(name) = &target.kind {
+        let storage = if let ExprKind::Global(name, _) = &target.kind {
             self.globals
                 .iter()
                 .find(|global| global.symbol == *name)

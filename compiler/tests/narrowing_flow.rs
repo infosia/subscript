@@ -104,16 +104,18 @@ fn recorded_missing_store_order_fact_stays_rejected() {
 }
 
 #[test]
-fn any_same_name_field_store_ends_the_loop_head_fact() {
-    for receiver in ["h", "alias"] {
-        let source = format!("class A {{ x: i32 = 1; f: A | null = null; }} function read(): void {{ const h = new A(); const alias = h; h.f = new A(); while (true) {{ h.f.x; {receiver}.f = new A(); break; }} }}");
+fn only_nullable_same_name_field_stores_end_the_loop_head_fact() {
+    // h is the recorded store-order gap.
+    for (receiver, divergence) in [
+        ("h", None),
+        ("alias", Some(Divergence::SharedLocationNarrowing)),
+    ] {
+        let source = format!("class A {{ x: i32 = 1; f: A | null = null; }} function read(): void {{ const h = new A(); const alias = h; h.f = new A(); while (true) {{ h.f.x; {receiver}.f = null; break; }} }}");
         let errors = check_program(&[SourceFile::new("test.ts", source)]).unwrap_err();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].code, RuleCode::S011);
-        assert_eq!(
-            errors[0].divergence,
-            Some(Divergence::SharedLocationNarrowing)
-        );
+        assert_eq!(errors[0].divergence, divergence);
+        check(&format!("function read(): void {{ const h = new A(); const alias = h; h.f = new A(); while (true) {{ h.f.x; {receiver}.f = new A(); break; }} }}"), true);
     }
     check("function read(): void { let h: A | null = new A(); while (true) { h.x; h = new A(); break; } }", true);
 }
@@ -214,7 +216,7 @@ fn loop_store_forms_require_annotation_provenance() {
         ("for (const c of [b]) { a = c; }", false),
         ("const c: A = new A(); a = c;", true),
         ("a = p;", true),
-        ("const c = new A(); a = c;", false),
+        ("const c = new A(); a = c;", true),
     ] {
         check(&format!("function id<T>(v: T): T {{ return v; }} function read(p: A): void {{ let a: A | null = new A(); let b: A | null = new A(); for (let i: i32 = 0; i < 3; i++) {{ a.x; {store} b = null; }} }}"), accepted);
     }

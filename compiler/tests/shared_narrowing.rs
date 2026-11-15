@@ -427,7 +427,7 @@ fn shared_reads_derive_sites_from_declared_storage_types() {
             .iter()
             .any(|site| matches!(site, TrapSite::NullNarrowing { .. }));
         match &expr.kind {
-            ExprKind::Global(_) if guarded => counts[0] += 1,
+            ExprKind::Global(_, _) if guarded => counts[0] += 1,
             ExprKind::Field { .. } if guarded => counts[1] += 1,
             ExprKind::Local(..) => {
                 assert!(!guarded);

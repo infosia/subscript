@@ -19,7 +19,7 @@ mod host_entry;
 pub use host_entry::{HostEntry, HostSignature};
 mod effects;
 mod expression;
-pub(crate) use effects::NarrowingEffects;
+pub(crate) use effects::{LoopValueSources, NarrowingEffects, StoreTypes};
 mod intrinsics;
 mod shared;
 mod sites;
@@ -1623,8 +1623,8 @@ pub enum ExprKind {
     This,
     /// Local name, storage type, and a written annotation without type parameters (§124, §162 rule 3a).
     Local(String, Type, bool),
-    /// Reference to a module-level variable by its declaration symbol.
-    Global(Symbol),
+    /// A global symbol and its shared-storage flag (§304). Module const bindings are not shared.
+    Global(Symbol, bool),
     /// A function declaration symbol used as a value (non-capturing — C5).
     FuncRef(Symbol),
     /// An enum member, e.g. `Status.Complete`.

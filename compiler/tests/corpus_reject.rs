@@ -780,6 +780,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r341-void-loop-binding-read.ts", RuleCode::S100, 10),
     ("r342-void-generator-value-read.ts", RuleCode::S100, 10),
     ("r343-generator-other-void-argument.ts", RuleCode::S100, 8),
+    ("r512-loop-nullable-const-store.ts", RuleCode::S011, 14),
+    ("r513-loop-unstable-local-store.ts", RuleCode::S011, 14),
+    ("r514-loop-nullable-field-store.ts", RuleCode::S011, 14),
+    ("r515-let-global-lambda-narrowing.ts", RuleCode::S011, 13),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

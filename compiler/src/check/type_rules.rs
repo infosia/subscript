@@ -666,7 +666,7 @@ impl<'p> Checker<'p> {
                     local.function_value_required.is_some(),
                 ))
             }
-            hir::ExprKind::Global(symbol) => {
+            hir::ExprKind::Global(symbol, _) => {
                 let sig = self.global_sigs.get(symbol.full_text())?;
                 if sig.mutable {
                     return None;
@@ -772,7 +772,7 @@ impl<'p> Checker<'p> {
         let name = match &value.kind {
             hir::ExprKind::FuncRef(symbol) => Some(hir::source_name(symbol.full_text())),
             hir::ExprKind::Local(name, ..) => Some(name.clone()),
-            hir::ExprKind::Global(symbol) => Some(symbol.source_name()),
+            hir::ExprKind::Global(symbol, _) => Some(symbol.source_name()),
             _ => None,
         };
         let subject = match name {
@@ -839,7 +839,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn adapter_name_message(&self, value: &hir::Expr, subject: &str) -> String {
         let name = match &value.kind {
             hir::ExprKind::Local(name, ..) => Some(name.clone()),
-            hir::ExprKind::Global(symbol) => Some(symbol.source_name()),
+            hir::ExprKind::Global(symbol, _) => Some(symbol.source_name()),
             _ => None,
         };
         let subject = match name {

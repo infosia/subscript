@@ -62,7 +62,7 @@ impl FunctionBuilder<'_, '_> {
                         .lookup_binding(name, &expr.pos)
                         .is_ok_and(|binding| self.bindings[binding.0].storage.is_some())
             }
-            hir::ExprKind::Global(_) => true,
+            hir::ExprKind::Global(_, _) => true,
             hir::ExprKind::Field { obj, .. } => {
                 !is_stored_aggregate(self.lowering.hir, &obj.ty)
                     || matches!(obj.kind, hir::ExprKind::This)

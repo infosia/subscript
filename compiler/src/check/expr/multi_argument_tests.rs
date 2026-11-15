@@ -183,7 +183,7 @@ fn a_global_receiver_is_read_before_the_arguments() {
     else {
         panic!("expected the receiver store");
     };
-    assert!(matches!(read.kind, hir::ExprKind::Global(_)));
+    assert!(matches!(read.kind, hir::ExprKind::Global(_, _)));
     assert_eq!(receiver(&effects[2]), target.as_ref());
     assert_eq!(receiver(value), target.as_ref());
     // Control: order-free arguments read the global with no local.
@@ -192,9 +192,9 @@ fn a_global_receiver_is_read_before_the_arguments() {
     assert_eq!(effects.len(), 1);
     assert!(matches!(
         receiver(&effects[0]).kind,
-        hir::ExprKind::Global(_)
+        hir::ExprKind::Global(_, _)
     ));
-    assert!(matches!(receiver(value).kind, hir::ExprKind::Global(_)));
+    assert!(matches!(receiver(value).kind, hir::ExprKind::Global(_, _)));
 }
 
 #[test]

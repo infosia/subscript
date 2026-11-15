@@ -63,7 +63,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 })?;
                 PreparedPlaceKind::Local(local, ty)
             }
-            hir::ExprKind::Global(name) => {
+            hir::ExprKind::Global(name, _) => {
                 let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
                     self.error(
                         &expr.pos,
