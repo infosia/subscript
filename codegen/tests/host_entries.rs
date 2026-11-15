@@ -135,7 +135,10 @@ fn main_with_parameters_is_a_host_entry_but_not_a_runner_entry() {
         "export function main(value: i32): void { print(`${value}`); }",
     )];
     let checked = check_program(&files).unwrap();
-    assert!(emit_c(&checked).unwrap_err().contains("main(): void"));
+    assert!(emit_c(&checked)
+        .unwrap_err()
+        .to_string()
+        .contains("main(): void"));
     let emitted = emit_c_without_main(&checked).unwrap();
     assert!(emitted
         .host_header

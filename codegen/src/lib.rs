@@ -146,13 +146,42 @@ pub struct RunOutput {
     pub memory_accounting: Option<JitMemoryAccounting>,
 }
 
+/// Failure while emitting checked HIR as C.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum EmitCError {
+    /// The runner entry was rejected by the checker.
+    Diagnostic(subscript_compiler::Diagnostic),
+    /// C lowering or transcription failed.
+    Emission(String),
+}
+
+impl std::fmt::Display for EmitCError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Diagnostic(diagnostic) => {
+                write!(f, "{diagnostic}\n{}", diagnostic.detail_lines())
+            }
+            Self::Emission(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for EmitCError {}
+
+impl From<String> for EmitCError {
+    fn from(message: String) -> Self {
+        Self::Emission(message)
+    }
+}
+
 /// Lowers checked HIR to verified LIR and emits ship-tier C.
 ///
 /// # Errors
 ///
 /// Returns an error for discovery HIR, invalid LIR, unsupported target
 /// transcription, or a missing exported `main(): void`.
-pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
+pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, EmitCError> {
     emit_c_program(module, true)
 }
 
@@ -164,23 +193,23 @@ pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, Stri
 ///
 /// Returns an error for discovery HIR, invalid LIR, or unsupported target
 /// transcription.
-pub fn emit_c_without_main(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
+pub fn emit_c_without_main(
+    module: &subscript_compiler::hir::Module,
+) -> Result<CProgram, EmitCError> {
     emit_c_program(module, false)
 }
 
 fn emit_c_program(
     module: &subscript_compiler::hir::Module,
     with_main: bool,
-) -> Result<CProgram, String> {
+) -> Result<CProgram, EmitCError> {
     reject_discovery_hir_for_c(module)?;
     if with_main {
-        module
-            .runner_main()
-            .map_err(|diagnostic| diagnostic.to_string())?;
+        module.runner_main().map_err(EmitCError::Diagnostic)?;
     }
     let lir = lir::lower_module(module)
         .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
-    cemit::emit_lir_c(&lir, with_main)
+    cemit::emit_lir_c(&lir, with_main).map_err(EmitCError::Emission)
 }
 
 fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), String> {
@@ -200,6 +229,31 @@ mod tests {
     use super::*;
     use subscript_compiler::SourceFile;
     use subscript_runtime::TrapKind;
+
+    #[test]
+    fn embedder_displays_stop_at_cli_item_limit() {
+        let diagnostics = (0..subscript_compiler::MAX_ITEMS + 1)
+            .map(|index| {
+                subscript_compiler::Diagnostic::new(
+                    subscript_compiler::RuleCode::S100,
+                    format!("item {index}"),
+                    subscript_compiler::Pos::new("test.ts", 1, 1),
+                )
+            })
+            .collect::<Vec<_>>();
+        for text in [
+            RunError::Rejected(diagnostics.clone()).to_string(),
+            ReloadError::Rejected(diagnostics.clone()).to_string(),
+            EmitCFilesError::Diagnostics(diagnostics).to_string(),
+        ] {
+            assert_eq!(
+                text.matches("= rule:").count(),
+                subscript_compiler::MAX_ITEMS
+            );
+            assert!(text.contains("item 199"));
+            assert!(!text.contains("item 200"));
+        }
+    }
 
     #[test]
     fn configured_tier_runs_use_the_default_contract() {

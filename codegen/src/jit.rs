@@ -121,8 +121,8 @@ impl std::fmt::Display for RunError {
         match self {
             RunError::Rejected(diags) => {
                 write!(f, "rejected with {} diagnostic(s)", diags.len())?;
-                for d in diags {
-                    write!(f, "\n  {d}")?;
+                for d in diags.iter().take(subscript_compiler::MAX_ITEMS) {
+                    write!(f, "\n  {d}\n{}", d.detail_lines())?;
                 }
                 Ok(())
             }
@@ -154,6 +154,22 @@ mod tests {
     use super::compile::compile_jit;
     use super::*;
     use crate::RunConfig;
+
+    #[test]
+    fn embedder_error_carries_details() {
+        // Cost: one in-memory check; no backend or filesystem work.
+        let started = std::time::Instant::now();
+        let diagnostics =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::entry(
+                "probe.ts",
+                "const count: number = 3;",
+            )])
+            .expect_err("bare number is rejected");
+        let text = RunError::Rejected(diagnostics).to_string();
+        eprintln!("probe: {text}\ncost: {:?}", started.elapsed());
+        assert!(text.contains("= subscript:"));
+        assert!(text.contains("= rule:"));
+    }
 
     struct ObservedTrap {
         calls: u32,

@@ -227,3 +227,10 @@ Measured at `364301e8` on a clean copy with its own target directory, with `tsc`
 
 
 The Phase Review found that the four sites kept as `Diverges` still showed "TypeScript accepts" for plain extra arguments, which `tsc` rejects. Rule 1a sends a call with a spread argument to the spread site first, so each of these sites becomes `TscRejects`.
+
+## §310 result
+
+`RunError`, `ReloadError`, and `EmitCFilesError` print the rule, the
+note, and the block of each diagnostic, as the CLI does. The ship tier
+and `emit_c` keep the checker `Diagnostic`. Work unit 2 (an example for
+each site) is next.

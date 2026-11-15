@@ -1083,7 +1083,10 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
     }
     let hir = subscript_compiler::check_program_with(files, &config.check_options())
         .map_err(RunError::Rejected)?;
-    let program = crate::emit_c(&hir).map_err(|error| RunError::Internal(internal(error)))?;
+    let program = crate::emit_c(&hir).map_err(|error| match error {
+        crate::EmitCError::Diagnostic(diagnostic) => RunError::Rejected(vec![diagnostic]),
+        crate::EmitCError::Emission(message) => RunError::Internal(internal(message)),
+    })?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("crun")?;

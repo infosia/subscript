@@ -398,8 +398,8 @@ impl std::fmt::Display for ReloadError {
         match self {
             ReloadError::Rejected(diags) => {
                 write!(f, "reload rejected with {} diagnostic(s)", diags.len())?;
-                for d in diags {
-                    write!(f, "\n  {d}")?;
+                for d in diags.iter().take(subscript_compiler::MAX_ITEMS) {
+                    write!(f, "\n  {d}\n{}", d.detail_lines())?;
                 }
                 Ok(())
             }

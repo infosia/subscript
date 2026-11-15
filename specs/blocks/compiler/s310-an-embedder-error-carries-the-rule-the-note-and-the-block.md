@@ -60,4 +60,25 @@ divergence; no site has one now.
 
 ### 310.3 Phase Review
 
+At the contract pin, the tests of acceptance items 1 and 2 fail. Over
+983 files of `corpus/reject`, `corpus/accept`, `corpus/warn`, and
+`corpus/trap`, the CLI output of the pin and of the change is
+byte-identical (measured by the review).
+
+One fresh review found one MAJOR finding, realistic, and four MINOR
+findings.
+
+1. MAJOR: the ship tier turned the `runner_main` diagnostic into a
+   `String` and gave `RunError::Internal` with one line, while the
+   development tier gave `RunError::Rejected`. `emit_c` did the same.
+   Rule 2a is added; both keep the `Diagnostic` now.
+2. MINOR: rule 4 printed an example with no divergence under the label
+   "TypeScript accepts", which §79 rules 3 and 4 forbid. Rule 4 is
+   withdrawn.
+3. MINOR, fixed: the fallbacks of the rule and the example had two
+   copies (rule 4a); the three `Display`s had no item limit; the doc of
+   `detail_lines`; the order of `use` lines in test modules.
+
 ### 310.4 Open
+
+None.

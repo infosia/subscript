@@ -199,6 +199,24 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+    /// Returns the rule, note, and example lines with a fixed two-space indent,
+    /// without a source excerpt or trailing newline.
+    #[must_use]
+    pub fn detail_lines(&self) -> String {
+        let (rule, example) = self.detail_fields();
+        crate::diag_render::render_detail_lines(rule, self.note, example, "  ")
+    }
+
+    pub(crate) fn detail_fields(
+        &self,
+    ) -> (&'static str, Option<crate::divergence::DivergenceEntry>) {
+        (
+            self.rule.unwrap_or_else(|| self.code.explanation()),
+            self.divergence
+                .map(|divergence| self.example.copied().unwrap_or_else(|| divergence.entry())),
+        )
+    }
+
     /// Builds a diagnostic.
     #[must_use]
     pub fn new(code: RuleCode, message: impl Into<String>, pos: Pos) -> Self {
@@ -224,6 +242,26 @@ impl fmt::Display for Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detail_lines_include_overrides_and_keep_display_on_one_line() {
+        // Cost: two detail renders; no checker or filesystem work.
+        let started = std::time::Instant::now();
+        let mut d = Diagnostic::new(RuleCode::S007, "bare number", Pos::new("a.ts", 1, 1));
+        assert_eq!(
+            d.detail_lines(),
+            format!("  = rule: {}", d.code.explanation())
+        );
+        d.rule = Some("custom rule");
+        d.note = Some("custom note");
+        d.divergence = Some(Divergence::BareNumber);
+        let details = d.detail_lines();
+        assert!(details.starts_with("  = rule: custom rule\n  = note: custom note\n"));
+        assert!(details.contains("= subscript:"));
+        assert!(!details.ends_with('\n'));
+        assert_eq!(d.to_string(), "a.ts:1:1: bare number [S007]");
+        eprintln!("cost: {:?}", started.elapsed());
+    }
 
     #[test]
     fn rule_code_display_matches_as_str() {

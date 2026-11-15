@@ -14,7 +14,7 @@ fn c_emission_rejects_a_discovery_hir() {
     let error = emit_c(&discovery_hir()).expect_err("discovery HIR must not emit C");
 
     assert_eq!(
-        error,
+        error.to_string(),
         "cannot emit discovery HIR: poisoned import `./p.typegpu`"
     );
 }
@@ -25,7 +25,7 @@ fn value_class_layouts_rejects_a_discovery_hir() {
         value_class_layouts(&discovery_hir()).expect_err("discovery HIR must not produce layouts");
 
     assert_eq!(
-        error,
+        error.to_string(),
         "cannot lay out discovery HIR: poisoned import `./p.typegpu`"
     );
 }

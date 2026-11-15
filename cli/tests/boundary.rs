@@ -369,7 +369,9 @@ fn emitted_entry(id: &str) -> Result<(String, Expected, HashMap<String, usize>),
     let files = corpus::entry_sources(&accept, id);
     let hir = corpus::check_program(&files).map_err(|d| format!("{id}: rejected: {d:?}"))?;
     let lowered = subscript_codegen::lir::lower_module(&hir).map_err(|e| format!("{id}: {e}"))?;
-    let c = subscript_codegen::emit_c(&hir)?.source;
+    let c = subscript_codegen::emit_c(&hir)
+        .map_err(|error| error.to_string())?
+        .source;
     let mut expected = Expected::new();
     let mut sites = HashMap::new();
     for site in call_sites(&lowered)? {

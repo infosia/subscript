@@ -2,7 +2,6 @@
 
 use std::fmt::Write as _;
 
-use crate::divergence::Divergence;
 use crate::{Diagnostic, Pos, SourceFile, Warning};
 
 /// The most bytes of a source line that one snippet carries (§113.2 rule 3).
@@ -16,16 +15,15 @@ const CUT: &str = "…";
 
 /// The most items that one render writes (§113.2 rule 3). The summary line
 /// carries the total.
-const MAX_ITEMS: usize = 200;
+pub const MAX_ITEMS: usize = 200;
 
 struct RenderItem<'a> {
     code: &'static str,
     message: &'a str,
     pos: &'a Pos,
     explanation: &'static str,
-    divergence: Option<Divergence>,
     note: Option<&'a str>,
-    example: Option<&'static crate::divergence::DivergenceEntry>,
+    example: Option<crate::divergence::DivergenceEntry>,
 }
 
 /// The byte offset where each line of one source starts.
@@ -134,16 +132,16 @@ fn snippet(line: &str, col: u32) -> Snippet {
 pub fn render_diagnostics(files: &[SourceFile], diagnostics: &[Diagnostic]) -> String {
     let items = diagnostics
         .iter()
-        .map(|diagnostic| RenderItem {
-            code: diagnostic.code.as_str(),
-            message: &diagnostic.message,
-            pos: &diagnostic.pos,
-            explanation: diagnostic
-                .rule
-                .unwrap_or_else(|| diagnostic.code.explanation()),
-            divergence: diagnostic.divergence,
-            note: diagnostic.note,
-            example: diagnostic.example,
+        .map(|diagnostic| {
+            let (explanation, example) = diagnostic.detail_fields();
+            RenderItem {
+                code: diagnostic.code.as_str(),
+                message: &diagnostic.message,
+                pos: &diagnostic.pos,
+                explanation,
+                note: diagnostic.note,
+                example,
+            }
         })
         .collect::<Vec<_>>();
     render_items(files, &items, "error")
@@ -163,7 +161,6 @@ pub fn render_warnings(files: &[SourceFile], warnings: &[Warning]) -> String {
             message: &warning.message,
             pos: &warning.pos,
             explanation: warning.code.explanation(),
-            divergence: None,
             note: None,
             example: None,
         })
@@ -207,36 +204,50 @@ fn render_items(files: &[SourceFile], items: &[RenderItem<'_>], severity: &str) 
             width = gutter_width
         );
         let _ = writeln!(rendered, "{gutter_padding}| {caret_padding}^");
-        let _ = writeln!(rendered, "{gutter_padding}= rule: {}", item.explanation);
-        if let Some(note) = item.note {
-            let _ = writeln!(rendered, "{gutter_padding}= note: {note}");
-        }
-        if let Some(divergence) = item.divergence {
-            let entry = item.example.copied().unwrap_or_else(|| divergence.entry());
-            let _ = writeln!(rendered, "{gutter_padding}= TypeScript accepts:");
-            for line in entry.ts.lines() {
-                let _ = writeln!(rendered, "{gutter_padding}|   {line}");
-            }
-            let _ = writeln!(rendered, "{gutter_padding}= subscript:");
-            for line in entry.subscript.lines() {
-                let _ = writeln!(rendered, "{gutter_padding}|   {line}");
-            }
-            let collision = if entry.collision.starts_with('C')
-                && entry.collision[1..].chars().all(|c| c.is_ascii_digit())
-            {
-                format!("collisions.md {}", entry.collision)
-            } else {
-                entry.collision.to_string()
-            };
-            let _ = writeln!(
-                rendered,
-                "{gutter_padding}= why: {} ({collision})",
-                entry.why
-            );
-        }
+        let details =
+            render_detail_lines(item.explanation, item.note, item.example, &gutter_padding);
+        let _ = writeln!(rendered, "{details}");
     }
 
     let _ = write!(rendered, "{severity}: {} {severity}(s)", items.len());
+    rendered
+}
+
+/// Formats detail lines with the caller's gutter padding (§310 rule 1).
+pub(crate) fn render_detail_lines(
+    explanation: &str,
+    note: Option<&str>,
+    example: Option<crate::divergence::DivergenceEntry>,
+    gutter_padding: &str,
+) -> String {
+    let mut rendered = String::new();
+    let _ = writeln!(rendered, "{gutter_padding}= rule: {}", explanation);
+    if let Some(note) = note {
+        let _ = writeln!(rendered, "{gutter_padding}= note: {note}");
+    }
+    if let Some(entry) = example {
+        let _ = writeln!(rendered, "{gutter_padding}= TypeScript accepts:");
+        for line in entry.ts.lines() {
+            let _ = writeln!(rendered, "{gutter_padding}|   {line}");
+        }
+        let _ = writeln!(rendered, "{gutter_padding}= subscript:");
+        for line in entry.subscript.lines() {
+            let _ = writeln!(rendered, "{gutter_padding}|   {line}");
+        }
+        let collision = if entry.collision.starts_with('C')
+            && entry.collision[1..].chars().all(|c| c.is_ascii_digit())
+        {
+            format!("collisions.md {}", entry.collision)
+        } else {
+            entry.collision.to_string()
+        };
+        let _ = writeln!(
+            rendered,
+            "{gutter_padding}= why: {} ({collision})",
+            entry.why
+        );
+    }
+    rendered.pop();
     rendered
 }
 
@@ -254,7 +265,28 @@ fn source_line<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::divergence::Divergence;
     use crate::{Pos, RuleCode, WarnCode, Warning};
+
+    #[test]
+    fn detail_lines_match_cli_details() {
+        let files = [SourceFile::entry("main.ts", "x")];
+        let mut block = Diagnostic::new(RuleCode::S007, "block", Pos::new("main.ts", 1, 1));
+        block.divergence = Some(crate::divergence::Divergence::BareNumber);
+        let mut note = Diagnostic::new(RuleCode::S100, "note", Pos::new("main.ts", 1, 1));
+        note.rule = Some("custom rule");
+        note.note = Some("custom note");
+        for diagnostic in [block, note] {
+            let rendered = render_diagnostics(&files, std::slice::from_ref(&diagnostic));
+            let lines = rendered
+                .lines()
+                .skip(5)
+                .take_while(|line| line.starts_with("  "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(diagnostic.detail_lines(), lines);
+        }
+    }
 
     /// The snippet line of the first rendered item, without its gutter.
     fn snippet_line(rendered: &str) -> &str {

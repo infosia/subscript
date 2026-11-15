@@ -666,3 +666,18 @@ fn declaration_hash_ignores_field_default() {
     assert_eq!(a, b);
     assert_eq!(a.first_difference(&b), None);
 }
+
+#[test]
+fn embedder_error_carries_details() {
+    // Cost: one in-memory check; no backend or filesystem work.
+    let started = std::time::Instant::now();
+    let diagnostics = subscript_compiler::check_program(&[subscript_compiler::SourceFile::entry(
+        "probe.ts",
+        "const count: number = 3;",
+    )])
+    .expect_err("bare number is rejected");
+    let text = ReloadError::Rejected(diagnostics).to_string();
+    eprintln!("probe: {text}\ncost: {:?}", started.elapsed());
+    assert!(text.contains("= rule:"));
+    assert!(text.contains("= subscript:"));
+}

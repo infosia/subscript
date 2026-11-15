@@ -47,8 +47,8 @@ impl fmt::Display for EmitCFilesError {
         match self {
             Self::Diagnostics(diagnostics) => {
                 write!(f, "program did not check")?;
-                for diagnostic in diagnostics {
-                    write!(f, "\n  {diagnostic}")?;
+                for diagnostic in diagnostics.iter().take(subscript_compiler::MAX_ITEMS) {
+                    write!(f, "\n  {diagnostic}\n{}", diagnostic.detail_lines())?;
                 }
                 Ok(())
             }
@@ -125,7 +125,10 @@ pub fn emit_c_files_with_options(
     } else {
         emit_c_without_main(&hir)
     }
-    .map_err(EmitCFilesError::Emission)?;
+    .map_err(|error| match error {
+        crate::EmitCError::Diagnostic(diagnostic) => EmitCFilesError::Diagnostics(vec![diagnostic]),
+        crate::EmitCError::Emission(message) => EmitCFilesError::Emission(message),
+    })?;
 
     let entry = if write_entry {
         let path = out_dir.join("entry.c");
@@ -176,6 +179,22 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use subscript_compiler::check_program;
 
+    #[test]
+    fn embedder_error_carries_details() {
+        // Cost: one in-memory check; no backend or filesystem work.
+        let started = std::time::Instant::now();
+        let diagnostics =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::entry(
+                "probe.ts",
+                "const count: number = 3;",
+            )])
+            .expect_err("bare number is rejected");
+        let text = EmitCFilesError::Diagnostics(diagnostics).to_string();
+        eprintln!("probe: {text}\ncost: {:?}", started.elapsed());
+        assert!(text.contains("= subscript:"));
+        assert!(text.contains("= rule:"));
+    }
+
     struct TestDir(PathBuf);
 
     impl TestDir {
@@ -212,7 +231,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         })?;
-        let direct = emit_c(&hir)?;
+        let direct = emit_c(&hir).map_err(|error| error.to_string())?;
         let written =
             emit_c_files(&files, &directory.0, "program", true).map_err(|e| e.to_string())?;
 

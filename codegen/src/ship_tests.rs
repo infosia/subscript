@@ -1609,3 +1609,12 @@ fn marking_the_archive_current_makes_it_fresh_after_a_newer_lockfile() {
         "a source that changed during the build stays newer than the archive"
     );
 }
+
+#[test]
+fn aot_missing_main_preserves_diagnostic_details() {
+    let error =
+        run_c_aot(&sources("export function tick(): void {}")).expect_err("runner requires main");
+    eprintln!("run_c_aot: {error}");
+    assert!(matches!(&error, RunError::Rejected(_)), "{error:?}");
+    assert!(error.to_string().contains("= rule:"));
+}
