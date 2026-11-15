@@ -59,6 +59,16 @@ pub(crate) fn diagnostic(site: RejectionSite, message: impl Into<String>, pos: P
             Some("Pass every argument, or call a declaration with a default directly.");
     }
     match site {
+        RejectionSite::Api(crate::ambient::ApiRejectionId::DateLocalGetYear, _) => diagnostic.note = Some("Use `date.getUTCFullYear()` to read the UTC year."),
+        RejectionSite::Api(crate::ambient::ApiRejectionId::FormGroupBy, _) => diagnostic.note = Some("Object groups have no admitted type. Use `Map.groupBy(items, callback)`."),
+        RejectionSite::ContextBytesTypeCount => diagnostic.note = Some("Each byte conversion has one target type. Use `Context.bytesOf<T>(value)`, `Context.bytesInto<T>(value, target, offset)`, or `Context.fromBytes<T>(bytes, offset)`."),
+        RejectionSite::NumberMethodArgumentCount => diagnostic.note = Some("Use zero or one argument for `x.toFixed(digits)` and `x.toExponential(digits)`, or exactly one for `x.toString(radix)` and `x.toPrecision(digits)`."),
+        RejectionSite::ContextBytesArgumentCount => diagnostic.note = Some("Use one argument for `Context.bytesOf<T>(value)`, three for `Context.bytesInto<T>(value, target, offset)`, or two for `Context.fromBytes<T>(bytes, offset)`."),
+        RejectionSite::ArrayFromArgumentCount => diagnostic.note = Some("Use exactly one source argument: `Array.from(source)`."),
+        RejectionSite::NumberPredicateCount => diagnostic.note = Some("Use exactly one f64 argument: `Number.isFinite(value)`, `Number.isNaN(value)`, `Number.isInteger(value)`, or `Number.isSafeInteger(value)`."),
+        RejectionSite::JsonParseCount => diagnostic.note = Some("Use exactly one text argument: `JSON.parse<T>(text)`."),
+        RejectionSite::JsonParseTypeCount => diagnostic.note = Some("JSON parsing has one target type. Use `JSON.parse<T>(text)`."),
+        RejectionSite::ForOfKeys => diagnostic.note = Some("FixedArray has no iterator view methods. Iterate values with `for (const value of items)`, or indices with `for (let i: i32 = 0; i < items.length; i++)`."),
         RejectionSite::NullableMemberLoopHead
         | RejectionSite::NullableCallLoopHead
         | RejectionSite::NullableNominalAssignmentLoopHead => diagnostic.note = Some("The narrowing before the loop does not hold in the loop, because the loop stores this location. Copy the value into a `const` local before the loop. Or test the value for null again before this use."),

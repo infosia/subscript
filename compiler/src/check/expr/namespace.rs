@@ -522,6 +522,15 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if let Some(spread) = c.args.iter().find_map(|argument| argument.spread) {
+            let spread_pos = self.pos(spread);
+            self.reject_subset(
+                RejectionSite::CallSpread,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos.clone(),
+            );
+            return self.err_expr(spread_pos);
+        }
         if c.args.len() != 1 {
             self.reject_subset(
                 RejectionSite::NumberPredicateCount,

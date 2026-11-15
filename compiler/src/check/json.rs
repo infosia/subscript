@@ -153,18 +153,7 @@ impl Checker<'_> {
         pos: Pos,
         member_pos: Pos,
     ) -> hir::Expr {
-        if call.args.len() != 1 {
-            self.reject_subset(
-                RejectionSite::JsonParseCount,
-                format!(
-                    "`JSON.parse` expects exactly 1 argument, got {}",
-                    call.args.len()
-                ),
-                pos.clone(),
-            );
-            return self.err_expr(pos);
-        }
-        if let Some(spread) = call.args[0].spread {
+        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
             let spread_pos = self.pos(spread);
             self.reject_subset(
                 RejectionSite::JsonParseSpread,
@@ -174,6 +163,21 @@ impl Checker<'_> {
             return self.err_expr(spread_pos);
         }
 
+        if call.args.len() != 1 {
+            self.reject_subset(
+                if call.args.len() == 2 {
+                    RejectionSite::JsonParseReviver
+                } else {
+                    RejectionSite::JsonParseCount
+                },
+                format!(
+                    "`JSON.parse` expects exactly 1 argument, got {}",
+                    call.args.len()
+                ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
         // `spelling` is the target as the source spells it (§115.7 rule 5).
         let (target, spelling) = if let Some(type_args) = &call.type_args {
             if type_args.params.len() != 1 {

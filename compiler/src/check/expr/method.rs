@@ -99,6 +99,15 @@ impl<'p> Checker<'p> {
             ),
             _ => return self.err_expr(pos),
         };
+        if let Some(spread) = c.args.iter().find_map(|argument| argument.spread) {
+            let spread_pos = self.pos(spread);
+            self.reject_subset(
+                RejectionSite::CallSpread,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos.clone(),
+            );
+            return self.err_expr(spread_pos);
+        }
         let arity_ok = if optional {
             c.args.len() <= 1
         } else {
@@ -1245,6 +1254,16 @@ impl<'p> Checker<'p> {
             }
             None => None,
         };
+        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
+            let spread_pos = self.pos(spread);
+            self.reject_subset(
+                RejectionSite::ArrayFromSpread,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos,
+            );
+            self.check_poisoned_arguments(&call.args, fx);
+            return self.err_expr(pos);
+        }
         // §105.2 rule 7: the mapper overload is rejected for the work it
         // needs. TypeScript spells it `from(source, mapfn, thisArg?)`,
         // so two arguments select it and three do too.
@@ -1270,16 +1289,6 @@ impl<'p> Checker<'p> {
             self.check_poisoned_arguments(&call.args, fx);
             return self.err_expr(pos);
         };
-        if let Some(spread) = argument.spread {
-            let spread_pos = self.pos(spread);
-            self.reject_subset(
-                RejectionSite::ArrayFromSpread,
-                "spread arguments require variadic parameters, which the language does not have",
-                spread_pos,
-            );
-            self.check_poisoned_arguments(&call.args, fx);
-            return self.err_expr(pos);
-        }
         let context = declared.clone().map(Type::array);
         let source = self.check_expr(&argument.expr, context.as_ref(), fx);
         let selected = match &self.apparent_type(&source.ty) {

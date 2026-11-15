@@ -160,11 +160,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) {
         let message = crate::ambient::rejection_message(rejection, actual);
-        self.reject_subset(
-            RejectionSite::Api(rejection.id, rejection.divergence),
-            message,
-            pos,
-        );
+        self.reject_subset(rejection.site, message, pos);
     }
 
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {

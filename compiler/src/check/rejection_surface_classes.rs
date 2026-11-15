@@ -212,6 +212,7 @@ macro_rules! rejection_classes {
                     Self::LocalAggregateFrameLimit => {
                         (RuleCode::S100, Diverges(Divergence::AggregateLayoutLimit))
                     }
+                    Self::Api(crate::ambient::ApiRejectionId::DateLocalGetYear | crate::ambient::ApiRejectionId::FormGroupBy, _) => (RuleCode::S014, TscRejects),
                     Self::Api(_, variant) => (RuleCode::S014, Diverges(variant)),
                     Self::StatementAlwaysTruthyCondition
                     | Self::ConditionalAlwaysTruthyCondition
@@ -233,14 +234,8 @@ macro_rules! rejection_classes {
                         RuleCode::S014,
                         Diverges(Divergence::ExplicitIntrinsicTypeArguments),
                     ),
-                    Self::ContextBytesTypeCount => (
-                        RuleCode::S014,
-                        Diverges(Divergence::ExplicitIntrinsicTypeArguments),
-                    ),
-                    Self::ContextBytesArgumentCount => (
-                        RuleCode::S014,
-                        Diverges(Divergence::ExplicitIntrinsicTypeArguments),
-                    ),
+                    Self::ContextBytesTypeCount => (RuleCode::S014, TscRejects),
+                    Self::ContextBytesArgumentCount => (RuleCode::S014, TscRejects),
                     Self::ContextBytesSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
                     Self::CallSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
                     Self::SetSourceSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
@@ -260,10 +255,7 @@ macro_rules! rejection_classes {
                     Self::DateMemberWrite => (RuleCode::S014, Diverges(Divergence::DateSubset)),
                     Self::DateMethodValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::NumberMethodValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
-                    Self::NumberMethodArgumentCount => (
-                        RuleCode::S014,
-                        Diverges(Divergence::NumberCoercionAndArguments),
-                    ),
+                    Self::NumberMethodArgumentCount => (RuleCode::S014, TscRejects),
                     Self::ArrayElementDomain | Self::MapCallbackCountedValue => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
                     Self::ArrayJoinDomain => (RuleCode::S014, Diverges(Divergence::ArrayJoinDomain)),
                     Self::ArrayCallbackSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
@@ -279,7 +271,7 @@ macro_rules! rejection_classes {
                         RuleCode::S014,
                         Diverges(Divergence::ExplicitIntrinsicTypeArguments),
                     ),
-                    Self::ArrayFromArgumentCount => (RuleCode::S014, Diverges(Divergence::ArrayFromMapper)),
+                    Self::ArrayFromArgumentCount => (RuleCode::S014, TscRejects),
                     Self::ArrayFromSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
                     Self::ArrayFromSource => (
                         RuleCode::S014,
@@ -312,10 +304,7 @@ macro_rules! rejection_classes {
                     Self::NumberMemberWrite => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::NumberStaticValue => (RuleCode::S014, Diverges(Divergence::CompilerOwnedValue)),
                     Self::NumberMember => (RuleCode::S014, Diverges(Divergence::NamespaceObjectMember)),
-                    Self::NumberPredicateCount => (
-                        RuleCode::S014,
-                        Diverges(Divergence::NumberCoercionAndArguments),
-                    ),
+                    Self::NumberPredicateCount => (RuleCode::S014, TscRejects),
                     Self::NumberGlobalCount => (
                         RuleCode::S014,
                         Diverges(Divergence::NumberCoercionAndArguments),
@@ -334,14 +323,15 @@ macro_rules! rejection_classes {
                     Self::JsonStringifyCount => (RuleCode::S014, Diverges(Divergence::JsonCallArguments)),
                     Self::JsonStringifySpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
                     Self::JsonStringifyDomain => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
-                    Self::JsonParseCount => (RuleCode::S014, Diverges(Divergence::JsonCallArguments)),
+                    Self::JsonParseCount => (RuleCode::S014, TscRejects),
+                    Self::JsonParseReviver => (RuleCode::S014, Diverges(Divergence::JsonCallArguments)),
                     Self::JsonParseSpread => (RuleCode::S014, Diverges(Divergence::VariadicArguments)),
-                    Self::JsonParseTypeCount => (RuleCode::S014, Diverges(Divergence::JsonSubset)),
+                    Self::JsonParseTypeCount => (RuleCode::S014, TscRejects),
                     Self::JsonParseTarget => (RuleCode::S014, Diverges(Divergence::JsonSubset)),
                     Self::JsonParseDomain => (RuleCode::S014, Diverges(Divergence::JsonTypeDomain)),
                     Self::JsonError => (RuleCode::S014, Diverges(Divergence::JsonSubset)),
                     Self::ForOfEntries => (RuleCode::S014, Diverges(Divergence::NoTupleType)),
-                    Self::ForOfKeys => (RuleCode::S014, Diverges(Divergence::IteratorTemporary)),
+                    Self::ForOfKeys => (RuleCode::S014, TscRejects),
                     Self::ForOfMap => (RuleCode::S014, Diverges(Divergence::BareMapSubject)),
                     Self::ForOfUserClass => (RuleCode::S014, Diverges(Divergence::UserIterationProtocol)),
                     Self::ForOfSubject => (RuleCode::S014, Diverges(Divergence::IterationSubjectDomain)),

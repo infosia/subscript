@@ -1329,7 +1329,7 @@ BinaryInvalidOperand	string-subtract	S100	operator not defined for `string` and 
 BinaryInvalidOperand	string-multiply	S100	operator not defined for `string` and `string`
 BinaryInvalidOperand	string-bitwise	S100	operator not defined for `string` and `string`
 Api(FormToFixedToStringToExponentialToPrecision, MethodTypeDomain)	a-probe-unconstrained-object	S014	`toString` is rejected: Number formatting methods are accepted only on floating-point receivers; use `convert to f32 or f64 first` (Q25/Q26)
-Api(FormNumberValue, NumberCoercionAndArguments)	b-probe-conversions	S014	`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+Api(FormNumberValue, NumberCoercionAndArguments)	b-probe-conversions	S014	`Number(value)` is rejected: Numeric coercion is not part of the language; use `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum (Q25)
 Api(FormSpliceStartDeleteCountItems, VariadicArguments)	ArraySpliceArgumentCount	S014	`splice with inserted elements` is rejected: Variadic parameters are the missing prerequisite for insertion through `splice`. (Q27)
 Api(FormUnshiftValueValues, VariadicArguments)	ArrayUnshiftArgumentCount	S014	`unshift with multiple elements` is rejected: Variadic parameters are the missing prerequisite for prepending multiple elements. (Q27)
 Api(MapScalarGet, MapScalarGet)	MapGetArgumentCount	S014	`get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24)

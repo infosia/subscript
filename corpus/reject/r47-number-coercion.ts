@@ -1,5 +1,5 @@
 // corpus: reject/r47-number-coercion
-// purpose: Rejects Number(x) coercion; explicit `as` is the conversion.
+// purpose: Rejects Number("1") coercion; parseFloat("1") converts the string explicitly.
 // exercises: rejected-number-coercion
 // questions: Q25
 // tsc: accepts

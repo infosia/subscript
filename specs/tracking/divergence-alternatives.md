@@ -208,3 +208,22 @@ note, except `AssignmentTypeMismatch` (not measured) and
 `FunctionReturnPathMissing` (a cascade only). A read that the loop head
 ends gets a site of its own; a read after a store or a test in the body
 keeps the site of the pin.
+
+## §309 measurement of rule 1
+
+Measured at `364301e8` on a clean copy with its own target directory, with `tsc` 5.9.2 on 74 probes.
+
+| Site | Reaching forms / guard | Measured tsc outcome | Decision |
+|---|---|---|---|
+| Api(DateLocalGetYear) | Date member reads and calls named `getYear`, before call-arity checking. | TS2339 | TscRejects; note names `date.getUTCFullYear()`. |
+| Api(FormGroupBy) | Unshadowed `Object.groupBy` calls, independent of arguments. The pinned ES2022 library has no member. | TS2550 | TscRejects; note names `Map.groupBy(items, callback)`. |
+| ContextBytesTypeCount | `bytesOf`, `bytesInto`, `fromBytes` with an explicit type-argument list of length other than one. Missing list has its own site. | TS2558 (2+ types); TS1099 (empty list) | TscRejects; note names each operation with exactly one type argument. |
+| ContextBytesArgumentCount | Each byte operation, one valid storage type, source argument count different from 1 / 3 / 2. Spread expressions count as one source argument. | TS2554 for plain bad counts; accepts a valid call plus `...[]`, or a tuple spread for bytesInto/fromBytes | Keep Diverges; add accepted witness `Context.bytesOf<Box>(new Box(), ...[])`. |
+| NumberMethodArgumentCount | f32/f64 toFixed, toString, toExponential, toPrecision with 2+ source arguments. Zero-argument toString/toPrecision use API sites instead; toFixed/toExponential accept zero. | TS2554 for 2 plain arguments; accepts `x.toFixed(1, ...[])` and the other methods with the same spread | Keep Diverges; add accepted toFixed witness. |
+| ArrayFromArgumentCount | Array.from after valid type-argument selection, with 0 or 4+ source arguments. 2/3 source arguments select the mapper API site. | TS2554 for 0 or 4 plain arguments; accepts `Array.from([1], ...[], ...[], ...[])` | Keep Diverges; add that accepted witness. |
+| NumberPredicateCount | Number.isFinite/isNaN/isInteger/isSafeInteger, and global isFinite/isNaN, with source argument count other than one. | TS2554 for plain bad counts; accepts a value plus `...[]` | Keep Diverges; add accepted Number.isFinite witness. |
+| JsonParseTypeCount | JSON.parse with one non-spread argument and explicit type list of length other than one. Absent type list and spread/count branches are separate. | TS2558 (2+ types); TS1099 (empty list) | TscRejects; note names `JSON.parse<T>(text)`. |
+| ForOfKeys | Zero-argument keys()/values() in a for-of subject on FixedArray. Array/Map/Set select valid fused views; non-container receivers dispatch ordinary methods; entries has its own site. | TS2339 | TscRejects; note names direct value iteration and an index loop. |
+
+
+The Phase Review found that the four sites kept as `Diverges` still showed "TypeScript accepts" for plain extra arguments, which `tsc` rejects. Rule 1a sends a call with a spread argument to the spread site first, so each of these sites becomes `TscRejects`.

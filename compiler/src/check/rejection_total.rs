@@ -26,7 +26,7 @@ pub(super) fn record_site(site: RejectionSite, message: &str, pos: &Pos) {
 fn all_sites() -> Vec<RejectionSite> {
     crate::ambient::rejected_api()
         .into_iter()
-        .map(|row| RejectionSite::Api(row.id, row.divergence))
+        .map(|row| row.site)
         .chain(index::DIRECT_SITES.iter().copied())
         .chain(index::GENERAL_SITES.iter().copied())
         .collect()
@@ -313,6 +313,12 @@ fn checker_failures(witness: &Witness<'_>, site: RejectionSite) -> Vec<String> {
     };
     let expected = index::witness_key(site).1;
     let mut failures = Vec::new();
+    if tsc_rejects_target_is_follow_on(site.class().1, &diagnostics, diagnostic, &files) {
+        failures.push(format!(
+            "{site:?}: {}: TscRejects witness first diagnostic is elsewhere",
+            witness.file
+        ));
+    }
     if !reached.iter().any(|(actual, message, pos)| {
         *actual == site && message == &diagnostic.message && pos == &diagnostic.pos
     }) {
@@ -389,16 +395,38 @@ fn table_failures(witnesses: &[Witness<'_>], sites: &[RejectionSite]) -> Vec<Str
     for site in sites {
         let entry = index::witness_entry(*site);
         let (_, variant) = entry.key();
+        let mut accepted = false;
         for key in entry.files() {
             if !witnesses.iter().any(|w| w.file == *key) && !programs.iter().any(|p| p.key == *key)
             {
                 failures.push(format!("{site:?}: named target has no witness {key}"));
+            }
+            let codes = witnesses
+                .iter()
+                .find(|w| w.file == *key)
+                .map(|w| &w.codes)
+                .or_else(|| programs.iter().find(|p| p.key == *key).map(|p| &p.codes));
+            if let Some(codes) = codes {
+                accepted |= codes.is_empty();
+                if let Some(failure) =
+                    site_class_failure(&format!("{site:?}: {key}"), site.class().1, codes)
+                {
+                    failures.push(failure);
+                }
             }
         }
         if site.class().1.divergence() != variant {
             failures.push(format!(
                 "{site:?}: production variant disagrees with witness table"
             ));
+        }
+        if let Some(failure) = diverges_witness_failure(
+            &format!("{site:?}"),
+            site.class().1,
+            !entry.files().is_empty(),
+            accepted,
+        ) {
+            failures.push(failure);
         }
     }
     failures
@@ -439,6 +467,7 @@ fn class_controls() -> [Witness<'static>; 3] {
 /// One tsc process measures all witnesses and both carried program fragments.
 /// §307, --test-threads=1: old table fragments 0.185s, revised table fragments 0.280s.
 /// Total 1.736s before, 1.959s after; tsc 0.632s before, 0.696s after.
+/// §309: 1,777 witnesses, tsc 0.675s, total 1.915s with one test thread.
 /// The batch proves both classes and fragment truth without a second tsc run.
 #[test]
 fn every_subset_rejection_carries_its_divergence() {
@@ -702,15 +731,13 @@ fn witness_without_named_target_fires() {
 
 #[test]
 fn production_variant_mismatch_fires() {
-    let row = crate::ambient::ApiRejection {
-        divergence: Divergence::DateSubset,
-        ..crate::ambient::rejected_api()[0]
-    };
-    assert!(
-        table_failures(&witnesses(), &[RejectionSite::Api(row.id, row.divergence)])
-            .iter()
-            .any(|failure| failure.contains("production variant disagrees"))
-    );
+    let row = crate::ambient::rejected_api()[0];
+    assert!(table_failures(
+        &witnesses(),
+        &[RejectionSite::Api(row.id, Divergence::DateSubset)]
+    )
+    .iter()
+    .any(|failure| failure.contains("production variant disagrees")));
 }
 
 #[test]
@@ -1002,24 +1029,6 @@ fn general_checker_failures(programs: &[rejection_programs::Program]) -> Vec<Str
                 expected,
                 &program.files,
             ));
-            if let Some(failure) = site_class_failure(&name, site.class().1, &program.codes) {
-                failures.push(failure);
-            }
-        }
-    }
-    for site in index::GENERAL_SITES {
-        let entry = index::witness_entry(*site);
-        if site.class().0.as_str() != "S014"
-            && entry.key().1.is_some()
-            && !entry.files().is_empty()
-            && !entry
-                .files()
-                .iter()
-                .any(|key| programs.iter().any(|p| p.key == *key && p.codes.is_empty()))
-        {
-            failures.push(format!(
-                "{site:?}: Diverges site has no tsc-accepted witness"
-            ));
         }
     }
     failures
@@ -1032,6 +1041,50 @@ fn site_class_failure(
 ) -> Option<String> {
     (class == RejectionClass::TscRejects && codes.is_empty())
         .then(|| format!("{target}: TscRejects witness is accepted by tsc"))
+}
+
+fn diverges_witness_failure(
+    target: &str,
+    class: RejectionClass,
+    has_witness: bool,
+    has_accepted_witness: bool,
+) -> Option<String> {
+    (class.divergence().is_some() && has_witness && !has_accepted_witness)
+        .then(|| format!("{target}: Diverges site has no tsc-accepted witness"))
+}
+
+/// §309: a built witness set tests the table check; measured cost below 0.01s.
+#[test]
+fn diverges_with_only_rejected_witnesses_fires() {
+    let site = RejectionSite::ArrayFromSpread;
+    let files = index::witness_entry(site).files();
+    let mut rejected = Vec::new();
+    for file in files {
+        rejected.push(Witness {
+            file,
+            target: "spread control",
+            codes: BTreeSet::from(["TS2556".to_owned()]),
+            code: "S014",
+            mirror: "",
+            message: "spread arguments require variadic parameters, which the language does not have",
+            source: "export function main(): void { const sources: i32[][] = [[1]]; Array.from(...sources); }",
+        });
+    }
+    let failures = table_failures(&rejected, &[site]);
+    assert_eq!(
+        failures,
+        ["ArrayFromSpread: Diverges site has no tsc-accepted witness"]
+    );
+    for witness in &rejected {
+        assert!(checker_failures(witness, site).is_empty());
+    }
+    let class = RejectionClass::Diverges(Divergence::ArrayFromMapper);
+    assert!(diverges_witness_failure("control", class, true, false).is_some());
+    assert!(diverges_witness_failure("control", class, true, true).is_none());
+    assert!(diverges_witness_failure("control", class, false, false).is_none());
+    for class in [RejectionClass::TscRejects, RejectionClass::ProgramInput] {
+        assert!(diverges_witness_failure("control", class, true, false).is_none());
+    }
 }
 
 #[test]

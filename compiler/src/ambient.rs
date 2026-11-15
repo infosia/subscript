@@ -49,8 +49,8 @@ pub(crate) struct ApiItem {
 pub(crate) struct ApiRejection {
     /// Closed identity for the total witness table.
     pub id: ApiRejectionId,
-    /// The divergence rendered by this row.
-    pub divergence: Divergence,
+    /// The rejection site supplies the code and divergence class.
+    pub site: crate::check::rejection::RejectionSite,
     /// Receiver, namespace, or source-form heading.
     pub group: &'static str,
     /// Rejected spelling or call shape.
@@ -594,10 +594,12 @@ const JSON_REJECTIONS: &[ApiRejection] = &[
     ),
 ];
 
+const NUMBER_CONVERSIONS: &str = "`parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum";
+
 const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection((ApiRejectionId::FormParseIntValue, Divergence::NumberCoercionAndArguments), "global", "parseInt(value)", "Q25", Some("parseInt(value, radix)"), "The radix is a required `i32` argument.", Some("r50-parse-int-no-radix.ts")),
-    rejection((ApiRejectionId::FormNumberValue, Divergence::NumberCoercionAndArguments), "Number", "Number(value)", "Q25", Some("value as f64"), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
-    rejection((ApiRejectionId::FormNewNumberValue, Divergence::NumberCoercionAndArguments), "Number", "new Number(value)", "Q25", Some("value as f64"), "Boxed numbers and numeric coercion are unavailable.", None),
+    rejection((ApiRejectionId::FormNumberValue, Divergence::NumberCoercionAndArguments), "Number", "Number(value)", "Q25", Some(NUMBER_CONVERSIONS), "Numeric coercion is not part of the language.", Some("r47-number-coercion.ts")),
+    rejection((ApiRejectionId::FormNewNumberValue, Divergence::NumberCoercionAndArguments), "Number", "new Number(value)", "Q25", Some(NUMBER_CONVERSIONS), "Boxed numbers and numeric coercion are unavailable.", None),
     rejection((ApiRejectionId::FormToLocaleString, Divergence::LocaleNumberFormatting), "f32 / f64", "toLocaleString", "Q25", None, "Locale-sensitive number formatting is unavailable.", None),
     rejection((ApiRejectionId::FormToString, Divergence::NumberCoercionAndArguments), "f32 / f64", "toString()", "Q26", Some("toString(radix)"), "An explicit radix is required.", Some("r49-number-to-string-radix.ts")),
     rejection((ApiRejectionId::FormToPrecision, Divergence::NumberCoercionAndArguments), "f32 / f64", "toPrecision()", "Q26", Some("toPrecision(digits)"), "An explicit digit count is required.", Some("r48-number-to-precision.ts")),
@@ -647,7 +649,7 @@ const fn rejection(
 ) -> ApiRejection {
     ApiRejection {
         id: site.0,
-        divergence: site.1,
+        site: crate::check::rejection::RejectionSite::Api(site.0, site.1),
         group,
         surface,
         q_rule,
@@ -658,11 +660,23 @@ const fn rejection(
 }
 
 impl ApiRejection {
+    /// Formats typed alternatives as prose and single forms as source code.
+    pub(crate) fn replacement_markdown(self) -> Option<String> {
+        self.replacement.map(|replacement| {
+            if matches!(
+                self.id,
+                ApiRejectionId::FormNumberValue | ApiRejectionId::FormNewNumberValue
+            ) {
+                replacement.to_owned()
+            } else {
+                format!("`{replacement}`")
+            }
+        })
+    }
+
     /// The stable code that the named site supplies.
     pub(crate) fn code(self) -> RuleCode {
-        crate::check::rejection::RejectionSite::Api(self.id, self.divergence)
-            .class()
-            .0
+        self.site.class().0
     }
 }
 
@@ -1459,11 +1473,11 @@ pub(crate) fn form_rejection(group: &str, surface: &str) -> Option<ApiRejection>
 /// Formats the diagnostic shared by a named checker rejection and the
 /// generated API-reference row.
 pub(crate) fn rejection_message(rejection: ApiRejection, actual: &str) -> String {
-    match rejection.replacement {
+    match rejection.replacement_markdown() {
         // The summary is a sentence, and the replacement clause
         // continues it, so the sentence's final stop goes.
         Some(replacement) => format!(
-            "`{actual}` is rejected: {}; use `{replacement}` ({})",
+            "`{actual}` is rejected: {}; use {replacement} ({})",
             rejection.summary.trim_end_matches('.'),
             rejection.q_rule
         ),

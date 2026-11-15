@@ -205,11 +205,11 @@ a048.ts	FORM_REJECTIONS/global / parseInt(value)		S014
 export function main(): void { parseInt("1"); }
 ===
 a049.ts	FORM_REJECTIONS/Number / Number(value)		S014		
-`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+`Number(value)` is rejected: Numeric coercion is not part of the language; use `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum (Q25)
 export function main(): void { Number("1"); }
 ===
 a050.ts	FORM_REJECTIONS/Number / new Number(value)		S014		
-`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `value as f64` (Q25)
+`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum (Q25)
 export function main(): void { new Number(1.0); }
 ===
 a051.ts	FORM_REJECTIONS/f32 / f64 / toLocaleString		S014		
@@ -828,11 +828,11 @@ a048-b.ts	FORM_REJECTIONS/global / parseInt(value)	TS2345	S014
 export function main(): void { parseInt(1); }
 ===
 a049-b.ts	FORM_REJECTIONS/Number / Number(value)	TS2554	S014		
-`Number(value)` is rejected: Numeric coercion is not part of the language; use `value as f64` (Q25)
+`Number(value)` is rejected: Numeric coercion is not part of the language; use `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum (Q25)
 export function main(): void { Number("1", 2); }
 ===
 a050-b.ts	FORM_REJECTIONS/Number / new Number(value)	TS2554	S014		
-`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `value as f64` (Q25)
+`new Number(value)` is rejected: Boxed numbers and numeric coercion are unavailable; use `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum (Q25)
 export function main(): void { new Number(1, 2); }
 ===
 a051-b.ts	FORM_REJECTIONS/f32 / f64 / toLocaleString	TS2769	S014		
@@ -1554,4 +1554,24 @@ s195-find-last-nullable.ts	FORM_REJECTIONS/(T | null)[] / findLast		S014
 `findLast` is rejected: On a nullable element, the result needs both `null` and `undefined`, and a miss and a stored `null` have one representation (compiler.md §195.5); use `findLastIndex` (Q22)
 class Box { v: i32 = 1; }
 export function main(): void { const xs: (Box | null)[] = [null]; print(`${xs.findLast((b: Box | null): boolean => b === null) === undefined}`); }
+===
+s309-ContextBytesSpread.ts	§309/ContextBytesSpread		S014		
+spread arguments require variadic parameters, which the language does not have
+export {}; @ValueType class Box { x: i32 = 1; } Context.bytesOf<Box>(new Box(), ...[]);
+===
+s309-NumberMethodSpread.ts	§309/NumberMethodSpread		S014		
+spread arguments require variadic parameters, which the language does not have
+export {}; const x: f64 = 1.0; x.toFixed(1, ...[]);
+===
+s309-ArrayFromSpread.ts	§309/ArrayFromSpread		S014		
+spread arguments require variadic parameters, which the language does not have
+export {}; Array.from([1], ...[], ...[], ...[]);
+===
+s309-NumberPredicateSpread.ts	§309/NumberPredicateSpread		S014		
+spread arguments require variadic parameters, which the language does not have
+export {}; Number.isFinite(1.0, ...[]);
+===
+s309-JsonParseSpread.ts	§309/JsonParseSpread		S014		
+spread arguments require variadic parameters, which the language does not have
+export {}; JSON.parse("1", ...[]);
 ===

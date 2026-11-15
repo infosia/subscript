@@ -453,8 +453,8 @@ pub fn render_markdown() -> String {
             rejection.code(),
             rejection.q_rule,
             rejection
-                .replacement
-                .map(|value| format!("`{}`", escape_table(value)))
+                .replacement_markdown()
+                .map(|value| escape_table(&value))
                 .unwrap_or_else(|| "—".to_string()),
             escape_table(rejection.summary),
             rejection

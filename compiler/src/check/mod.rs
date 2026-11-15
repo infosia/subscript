@@ -1857,3 +1857,6 @@ mod diagnostic_text_tests;
 
 #[cfg(test)]
 mod approximation_note_tests;
+
+#[cfg(test)]
+mod rejection_alternative_tests;

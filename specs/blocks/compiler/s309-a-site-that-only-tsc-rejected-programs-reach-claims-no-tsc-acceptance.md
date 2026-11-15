@@ -61,4 +61,26 @@ that the site rejects.
 
 ### 309.3 Phase Review
 
+Evidence: `specs/tracking/divergence-alternatives.md`. At the contract
+pin, the total check of rule 4 fails with the nine sites of the
+problem, and with no other site.
+
+One fresh review found two MAJOR findings, both realistic, and eight
+MINOR findings.
+
+1. MAJOR: the first round kept four count sites as `Diverges` with a
+   witness `x.toFixed(1, ...[])`. A program with plain extra arguments,
+   which `tsc` rejects, still showed "TypeScript accepts" with an
+   unrelated example. Rule 1a sends a call with a spread argument to
+   the spread site first, so the five count sites are `TscRejects`.
+2. MAJOR: `Number(v)` with a `boolean` or an integer enum named forms
+   that the checker rejects. Rule 3 is amended.
+3. MINOR, fixed: `new Number(value)`; the alternative column of the API
+   reference; the divergence values of two API rows; two note texts;
+   the header of `r47`; the negative control of rule 4.
+4. MINOR: the tracking note of acceptance item 1 is Claude's work, and
+   is written.
+
 ### 309.4 Open
+
+None.

@@ -561,6 +561,15 @@ impl<'p> Checker<'p> {
                 vec![Type::array(Type::U8), Type::U32]
             }
         };
+        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
+            let spread_pos = self.pos(spread);
+            self.reject_subset(
+                RejectionSite::ContextBytesSpread,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos.clone(),
+            );
+            return self.err_expr(spread_pos);
+        }
         if call.args.len() != params.len() {
             self.reject_subset(
                 RejectionSite::ContextBytesArgumentCount,
@@ -575,15 +584,6 @@ impl<'p> Checker<'p> {
         }
         let mut args = Vec::with_capacity(params.len());
         for (argument, expected) in call.args.iter().zip(&params) {
-            if let Some(spread) = argument.spread {
-                let spread_pos = self.pos(spread);
-                self.reject_subset(
-                    RejectionSite::ContextBytesSpread,
-                    "spread arguments require variadic parameters, which the language does not have",
-                    spread_pos.clone(),
-                );
-                return self.err_expr(spread_pos);
-            }
             let mut checked = self.check_expr(&argument.expr, Some(expected), fx);
             if self.involves_type_parameter(expected) || self.involves_type_parameter(&checked.ty) {
                 self.require_expr_assignable(

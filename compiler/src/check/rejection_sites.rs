@@ -1004,6 +1004,7 @@ pub(crate) enum RejectionSite {
     JsonStringifySpread,
     JsonStringifyDomain,
     JsonParseCount,
+    JsonParseReviver,
     JsonParseSpread,
     JsonParseTypeCount,
     JsonParseTarget,

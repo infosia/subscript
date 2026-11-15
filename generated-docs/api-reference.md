@@ -408,8 +408,8 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | JSON | `stringify(f16)` | S014 | Q28 | — | f16 is a storage-only type with no arithmetic/formatting domain. | — |
 | JSON | `parse<Date>(text)` | S014 | Q28 | — | An untagged ISO string cannot identify a Date, so the target could never match. | `r61-json-parse-date.ts` |
 | global | `parseInt(value)` | S014 | Q25 | `parseInt(value, radix)` | The radix is a required `i32` argument. | `r50-parse-int-no-radix.ts` |
-| Number | `Number(value)` | S014 | Q25 | `value as f64` | Numeric coercion is not part of the language. | `r47-number-coercion.ts` |
-| Number | `new Number(value)` | S014 | Q25 | `value as f64` | Boxed numbers and numeric coercion are unavailable. | — |
+| Number | `Number(value)` | S014 | Q25 | `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum | Numeric coercion is not part of the language. | `r47-number-coercion.ts` |
+| Number | `new Number(value)` | S014 | Q25 | `parseFloat(value)` for a string, `value as f64` for a number, `value ? 1.0 : 0.0` for a boolean, or `(value as i32) as f64` for an integer enum | Boxed numbers and numeric coercion are unavailable. | — |
 | f32 / f64 | `toLocaleString` | S014 | Q25 | — | Locale-sensitive number formatting is unavailable. | — |
 | f32 / f64 | `toString()` | S014 | Q26 | `toString(radix)` | An explicit radix is required. | `r49-number-to-string-radix.ts` |
 | f32 / f64 | `toPrecision()` | S014 | Q26 | `toPrecision(digits)` | An explicit digit count is required. | `r48-number-to-precision.ts` |
