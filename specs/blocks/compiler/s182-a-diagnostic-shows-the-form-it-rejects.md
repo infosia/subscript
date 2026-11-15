@@ -71,6 +71,7 @@ program, the current text, and the evidence for each):
    accepted file.
    A fix needs a form identity that each checker rejection site
    carries; the message is not one.
+   *(Selected 2026-11-16 for §311.)*
 
 2. **Sibling forms of two listed sites keep the site example.**
    `[1].flatMap((v: i32) => [work()])` reports that `flatMap` cannot
@@ -78,6 +79,7 @@ program, the current text, and the evidence for each):
    `map` callback that returns a nullable function prints the correct
    element type, but shows the same example: the function-array entry
    matches only a non-nullable function type. Item 1 is the class.
+   *(Selected 2026-11-16 for §311.)*
 3. **`.then`, `.catch`, and `.finally` are rejected on any receiver.**
    `class C { then(): void {} } new C().then();` reports "Promise
    combinator `.then(...)`" with the handle example. The receiver test
