@@ -1,6 +1,7 @@
 //! Checks the operator expressions, `yield`, and `as`.
 
 use crate::check::rejection::RejectionSite;
+use crate::check::string_operand::StringOperand;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
@@ -543,21 +544,20 @@ impl<'p> Checker<'p> {
                     self.mark_operand_calls(&b.left);
                     self.mark_operand_calls(&b.right);
                 }
-                let (mut left, mut right);
-                if literalish(&b.left) && !literalish(&b.right) {
+                let (mut left, mut right) = if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
-                    let c = self.literal_context(&r.ty).or(outer);
-                    left = self.check_expr(&b.left, c.as_ref(), fx);
-                    right = r;
+                    let c = self.binary_literal_context(&r.ty, b.op).or(outer);
+                    (self.check_expr(&b.left, c.as_ref(), fx), r)
                 } else {
-                    left = self.check_expr(&b.left, outer.as_ref(), fx);
+                    let left = self.check_expr(&b.left, outer.as_ref(), fx);
                     let c = if literalish(&b.right) {
-                        self.literal_context(&left.ty).or(outer)
+                        self.binary_literal_context(&left.ty, b.op).or(outer)
                     } else {
                         outer
                     };
-                    right = self.check_expr(&b.right, c.as_ref(), fx);
-                }
+                    let right = self.check_expr(&b.right, c.as_ref(), fx);
+                    (left, right)
+                };
                 if matches!(b.op, B::EqEqEq | B::NotEqEq) {
                     if let (Some(l), Some(r)) =
                         (self.operand_spelling(&left), self.operand_spelling(&right))
@@ -582,6 +582,28 @@ impl<'p> Checker<'p> {
                         self.restore_nullable_storage(&mut right);
                     }
                 }
+                let left_literal = self.string_literal_operand(&b.left, fx);
+                let right_literal = self.string_literal_operand(&b.right, fx);
+                self.convert_string_operand(
+                    &mut left,
+                    StringOperand::Binary {
+                        op: b.op,
+                        other: &mut right,
+                        literal: right_literal.as_deref(),
+                        compound: false,
+                        left: true,
+                    },
+                );
+                self.convert_string_operand(
+                    &mut right,
+                    StringOperand::Binary {
+                        op: b.op,
+                        other: &mut left,
+                        literal: left_literal.as_deref(),
+                        compound: false,
+                        left: false,
+                    },
+                );
                 self.bin_result(b.op, left, right, pos, BinUse::Expression)
                     .expr
             }
@@ -1246,11 +1268,19 @@ impl<'p> Checker<'p> {
         );
     }
 
+    fn binary_literal_context(&self, ty: &Type, op: ast::BinaryOp) -> Option<Type> {
+        if matches!(self.apparent_type(ty), Type::StringAlias(_)) && op == ast::BinaryOp::Add {
+            None
+        } else {
+            self.literal_context(ty)
+        }
+    }
+
     pub(super) fn bin_result(
         &mut self,
         op: ast::BinaryOp,
-        left: hir::Expr,
-        right: hir::Expr,
+        mut left: hir::Expr,
+        mut right: hir::Expr,
         pos: Pos,
         use_kind: BinUse,
     ) -> BinResult {
@@ -1262,6 +1292,27 @@ impl<'p> Checker<'p> {
             B::NotEqEq => Some("!=="),
             _ => None,
         };
+        let compound = use_kind == BinUse::CompoundAssignment;
+        self.convert_string_operand(
+            &mut left,
+            StringOperand::Binary {
+                op,
+                other: &mut right,
+                literal: None,
+                compound,
+                left: true,
+            },
+        );
+        self.convert_string_operand(
+            &mut right,
+            StringOperand::Binary {
+                op,
+                other: &mut left,
+                literal: None,
+                compound,
+                left: false,
+            },
+        );
         let lt = self.apparent_type(&left.ty);
         let rt = self.apparent_type(&right.ty);
         let parameter =
@@ -1723,7 +1774,10 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_as(&mut self, a: &ast::TsAsExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         let target = self.resolve_type(&a.type_ann);
-        let inner = self.check_expr(&a.expr, None, fx);
+        let mut inner = self.check_expr(&a.expr, None, fx);
+        if self.convert_string_operand(&mut inner, StringOperand::Assertion(&target)) {
+            return inner;
+        }
         let src = inner.ty.clone();
         let generic_cast = (self
             .instance_restriction(crate::check::opaque::InstanceRestriction::CastKind, &src)

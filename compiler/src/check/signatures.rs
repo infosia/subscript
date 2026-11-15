@@ -179,6 +179,7 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             symbol,
                             GlobalSig {
+                                annotated: false,
                                 named_lambda: false,
                                 lambda_defaults: None,
                                 function_value_required: None,
@@ -541,6 +542,7 @@ impl<'p> Checker<'p> {
                         self.global_sigs.insert(
                             self.declaration_symbol(file, &name),
                             GlobalSig {
+                                annotated: binding.type_ann.is_some(),
                                 named_lambda: v.kind == ast::VarDeclKind::Const
                                     && binding.type_ann.is_none()
                                     && matches!(

@@ -80,6 +80,7 @@ pub(crate) mod pattern;
 mod signatures;
 mod snapshot;
 mod source_alias;
+mod string_operand;
 use snapshot::Shared;
 mod async_return;
 mod stmt;
@@ -406,6 +407,7 @@ fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
 /// A module-level variable's declared shape.
 #[derive(Debug, Clone)]
 pub(crate) struct GlobalSig {
+    pub annotated: bool,
     pub named_lambda: bool,
     pub lambda_defaults: Option<hir::LambdaDefaults>,
     pub function_value_required: Option<usize>,
@@ -550,6 +552,8 @@ pub(crate) struct Scope {
     pub vars: Shared<HashMap<String, Local>>,
     /// Source declaration identities for const index keys (§163).
     pub const_keys: Shared<HashMap<String, String>>,
+    /// Literal initializers of local const bindings (§299 rule 2a).
+    pub string_literals: Shared<HashMap<String, String>>,
     /// Names whose apparent local types are the error type.
     pub rejected_local_names: Shared<std::collections::BTreeSet<String>>,
     /// Outer facts hidden by declarations in this scope.

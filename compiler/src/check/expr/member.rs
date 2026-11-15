@@ -352,7 +352,11 @@ impl<'p> Checker<'p> {
             }
             return result.unwrap_or_else(|| self.err_expr(prop_pos));
         }
-        let obj = self.apparent_expr(obj);
+        let mut obj = self.apparent_expr(obj);
+        self.convert_string_operand(
+            &mut obj,
+            crate::check::string_operand::StringOperand::Member,
+        );
         match self.apparent_type(&obj.ty.clone()) {
             Type::Error => self.err_expr(prop_pos),
             Type::Interface(interface) => self.check_interface_member_read(
@@ -789,7 +793,6 @@ impl<'p> Checker<'p> {
                         Type::Func(_) => RejectionSite::FunctionMember,
                         Type::Generator(_) => RejectionSite::GeneratorMember,
                         Type::Enum(_) => RejectionSite::EnumMember,
-                        Type::StringAlias(_) => RejectionSite::LiteralAliasMember,
                         _ => RejectionSite::InvalidReceiverMember,
                     },
                     format!("`{}` has no member `{}`", type_name, name),

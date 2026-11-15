@@ -105,15 +105,11 @@ pub enum Divergence {
     /// The language has no implicit conversion, and an assertion does not check membership.
     EnumToInteger,
     /// The lib surface is a subset, and a C function pointer has no properties.
-    LiteralAliasMethod,
-    /// The lib surface is a subset, and a C function pointer has no properties.
     EnumMethod,
     /// The lib surface is a subset, and a C function pointer has no properties.
     FunctionMethod,
     /// The lib surface is a subset, and a C function pointer has no properties.
     BooleanMethod,
-    /// The lib surface is a subset, and a C function pointer has no properties.
-    LiteralAliasMember,
     /// The lib surface is a subset, and a C function pointer has no properties.
     EnumMember,
     /// A method value loses its receiver; a bound value captures it, and capturing values cannot escape.
@@ -1110,11 +1106,9 @@ impl Divergence {
         Divergence::FunctionParameterIdentity,
         Divergence::ArrayToFixedArray,
         Divergence::EnumToInteger,
-        Divergence::LiteralAliasMethod,
         Divergence::EnumMethod,
         Divergence::FunctionMethod,
         Divergence::BooleanMethod,
-        Divergence::LiteralAliasMember,
         Divergence::EnumMember,
         Divergence::GeneratorMember,
         Divergence::FunctionMember,

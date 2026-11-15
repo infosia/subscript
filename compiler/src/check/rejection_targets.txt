@@ -817,7 +817,6 @@ BindingPatternUnsupportedRoot	value-type-alignment-outside-set	S100	a nested bin
 BindingPatternUnsupportedRoot	descriptor-options-witness-2	S100	a nested binding pattern needs recursive type checks and ordered effects
 ArrayToFixedArray	ArrayToFixedArray	S100	type mismatch: the return value expects `FixedArray<i32, 2>`, got `i32[]`
 MapSetArgumentCount	MapSetArgumentCount	S100	`Map.set` expects 2 argument(s) (2 required), got 3
-LiteralAliasMember	LiteralAliasMember	S100	`A` has no member `length`
 FunctionTypeObjectPattern	FunctionTypeObjectPattern	S100	function type parameter form outside the decided surface
 AsyncHandleUnawaited	AsyncMethodArgumentCount	S013	an async handle is dropped without any await of its completion
 FunctionValueArgumentCount	FunctionValueArgumentCount	S100	`g` expects 1 argument(s), got 2: a call through a function value passes every parameter
@@ -913,7 +912,6 @@ CompoundEnumOperand	a-s226	S100	operator `+=` is not defined for `E` and `i32`
 CompoundEnumOperand	CompoundEnumOperand	S100	operator `+=` is not defined for `E` and `i32`
 NumericUnknownMethod	a-s051	S018	`i32` has no method `foo`
 MetaPropertyExpression	MetaPropertyExpression	S100	expression form outside the decided surface
-LiteralAliasMethod	LiteralAliasMethod	S100	`A` has no method `toUpperCase`
 LocalVarDeclaration	c-lookup-switch-var-read	S100	`var` is not in the language; use `let` or `const`
 IntegerEnumAssertion	IntegerEnumAssertion	S100	`as` converts between sized numerics, enum to integer, or narrows `object | null` to a class; cannot convert `i32` to `E`
 InstantiationExpression	InstantiationExpression	S100	expression form outside the decided surface

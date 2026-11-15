@@ -484,6 +484,13 @@ impl<'p> Checker<'p> {
             } else {
                 None
             };
+            let string_literal = (!mutable && !dispose && pattern_type_ann(&d.name).is_none())
+                .then(|| {
+                    d.init
+                        .as_deref()
+                        .and_then(|source| self.string_literal_operand(source, fx))
+                })
+                .flatten();
             let async_origins = self.expr_async_origins(&init, fx);
             let function_value_required = if pattern_type_ann(&d.name).is_some() {
                 None
@@ -505,6 +512,9 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
+            if let (Some(text), Some(scope)) = (string_literal, fx.scopes.last_mut()) {
+                scope.string_literals.insert(name.clone(), text);
+            }
             self.remember_named_lambda(&name, d, mutable, &init, fx);
             if let Some(identity) = integer_key {
                 if let Some(scope) = fx.scopes.last_mut() {
@@ -1672,62 +1682,10 @@ impl<'p> Checker<'p> {
         (subject, None, Type::Error, false)
     }
 
-    fn check_switch_case_test(
-        &mut self,
-        t: &ast::Expr,
-        disc_ty: &Type,
-        alias_switch: Option<&(String, Vec<String>)>,
-        alias_members_seen: &mut HashSet<usize>,
-        alias_labels_valid: &mut bool,
-        fx: &mut FnCtx,
-    ) -> hir::Expr {
-        self.mark_operand_calls(t);
-        let mut checked = self.check_expr(t, Some(disc_ty), fx);
-        if let Some((alias_name, members)) = alias_switch {
-            match t {
-                ast::Expr::Lit(ast::Lit::Str(label)) => {
-                    let label = label.value.to_string();
-                    if let Some(index) = members.iter().position(|member| member == &label) {
-                        self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
-                        if !alias_members_seen.insert(index) {
-                            *alias_labels_valid = false;
-                            self.reject_subset(RejectionSite::LiteralAliasDuplicateCase, format!(
-                                    "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
-                                ), checked.pos.clone());
-                        }
-                    } else {
-                        *alias_labels_valid = false;
-                        self.reject_subset(RejectionSite::LiteralAliasUnknownCase, format!(
-                                "case label {label:?} is not a member of string-literal union alias `{alias_name}`"
-                            ), checked.pos.clone());
-                    }
-                }
-                _ => {
-                    *alias_labels_valid = false;
-                    self.reject_subset(RejectionSite::AliasCaseNonLiteral, format!(
-                            "case labels for string-literal union alias `{alias_name}` must be string literals naming a member"
-                        ), checked.pos.clone());
-                }
-            }
-        } else if (self.involves_type_parameter(disc_ty)
-            || self.involves_type_parameter(&checked.ty))
-            && self.generic_overlap(disc_ty, &checked.ty)
-        {
-            // §143 rule 1a: case labels compare values, rather than assign them.
-        } else if self.apparent_type(disc_ty) == Type::Str
-            && matches!(self.apparent_type(&checked.ty), Type::StringAlias(_))
-        {
-            // Section 259: a case label compares values without conversion.
-            self.require_assignable(&checked.ty, disc_ty, checked.pos.clone(), "the case label");
-        } else {
-            self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
-        }
-        checked
-    }
-
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
-        let disc = self.check_expr(&sw.discriminant, None, fx);
+        let subject_literal = self.string_literal_operand(&sw.discriminant, fx);
+        let mut disc = self.check_expr(&sw.discriminant, None, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::SwitchKind,
             &disc.ty,
@@ -1809,7 +1767,7 @@ impl<'p> Checker<'p> {
                     |fx| {
                         self.check_switch_case_test(
                             t,
-                            &disc_ty,
+                            (&disc, subject_literal.as_deref()),
                             alias_switch.as_ref(),
                             &mut alias_members_seen,
                             &mut alias_labels_valid,
@@ -1871,6 +1829,7 @@ impl<'p> Checker<'p> {
                     ), pos.clone());
             }
         }
+        self.finish_literal_string_switch(&mut disc, &mut cases, subject_literal.as_deref());
         out.push(hir::Stmt::Switch { disc, cases, pos });
     }
 }

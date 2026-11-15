@@ -335,12 +335,6 @@ pub(super) const ENUMMEMBER: DivergenceEntry = DivergenceEntry {
     why: "The lib surface is a subset, and a C function pointer has no properties.",
     collision: "C24", // row 30,
 };
-pub(super) const LITERALALIASMEMBER: DivergenceEntry = DivergenceEntry {
-    ts: "type A = \"a\"|\"b\"; function f(a: A): void { a.length; }",
-    subscript: "no equivalent; use an explicit admitted operation",
-    why: "The lib surface is a subset, and a C function pointer has no properties.",
-    collision: "C24", // row 30,
-};
 pub(super) const BOOLEANMETHOD: DivergenceEntry = DivergenceEntry {
     ts: "function f(b: boolean): void { b.toString(); }",
     subscript: "no equivalent; use an explicit admitted operation",
@@ -355,12 +349,6 @@ pub(super) const FUNCTIONMETHOD: DivergenceEntry = DivergenceEntry {
 };
 pub(super) const ENUMMETHOD: DivergenceEntry = DivergenceEntry {
     ts: "enum E { A } function f(): void { E.A.toString(); }",
-    subscript: "no equivalent; use an explicit admitted operation",
-    why: "The lib surface is a subset, and a C function pointer has no properties.",
-    collision: "C24", // row 30,
-};
-pub(super) const LITERALALIASMETHOD: DivergenceEntry = DivergenceEntry {
-    ts: "type A = \"a\"|\"b\"; function f(a: A): void { a.toUpperCase(); }",
     subscript: "no equivalent; use an explicit admitted operation",
     why: "The lib surface is a subset, and a C function pointer has no properties.",
     collision: "C24", // row 30,

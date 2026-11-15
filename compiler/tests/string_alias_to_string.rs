@@ -1,4 +1,4 @@
-//! String places convert alias values (compiler.md section 259).
+//! String places convert alias values (compiler.md sections 259 and 299).
 use subscript_compiler::{check_program, hir, RuleCode, SourceFile, Type};
 
 #[test]
@@ -55,14 +55,6 @@ fn other_alias_operations_stay_rejected() {
     for (form, message) in [
         ("const x: Mode = s;", "expects `Mode`, got `string`"),
         ("const x: Other = m;", "expects `Other`, got `Mode`"),
-        (
-            "switch (s) { case m: break; }",
-            "type mismatch: the case label expects `string`, got `Mode`",
-        ),
-        ("m === s;", "operator `===`"),
-        ("m !== s;", "operator `!==`"),
-        ("m.length;", "has no member `length`"),
-        ("\"x\" + m;", "operator not defined"),
         (
             "const xs: string[] = ms;",
             "expects `string[]`, got `Mode[]`",

@@ -60,7 +60,12 @@ fn numeric_literal_type(n: &ast::Number) -> Type {
 }
 
 impl<'p> Checker<'p> {
-    pub(super) fn check_lit(&mut self, lit: &ast::Lit, ctx: Option<&Type>, pos: Pos) -> hir::Expr {
+    pub(in crate::check) fn check_lit(
+        &mut self,
+        lit: &ast::Lit,
+        ctx: Option<&Type>,
+        pos: Pos,
+    ) -> hir::Expr {
         match lit {
             ast::Lit::Num(n) => self.check_num_lit(n, false, ctx, pos),
             ast::Lit::Str(s) => {

@@ -40,8 +40,8 @@ impl TypeState {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Initializer {
-    expression: Box<ast::Expr>,
-    file: usize,
+    pub(super) expression: Box<ast::Expr>,
+    pub(super) file: usize,
     subst: HashMap<String, Type>,
     class: Option<ClassId>,
     checked: Option<hir::Expr>,

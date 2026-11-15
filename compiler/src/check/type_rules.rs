@@ -984,14 +984,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        // Section 259: only a value place converts an alias to string.
-        let target = self.apparent_type(to);
-        if matches!(self.apparent_type(&value.ty), Type::StringAlias(_))
-            && (target == Type::Str
-                || matches!(target, Type::Nullable(ref inner, _) if **inner == Type::Str))
-        {
-            *value = cast_value(value.clone(), Type::Str);
-        }
+        self.convert_string_operand(value, super::string_operand::StringOperand::Place(to));
         self.place_function_value(value, to, fx);
         self.assignable(&value.ty, to)
     }
@@ -1336,7 +1329,7 @@ impl<'p> Checker<'p> {
 
 /// A `Cast` of `value` to `ty`, the conversion node of compiler.md §235
 /// rule 5a.
-fn cast_value(value: hir::Expr, ty: Type) -> hir::Expr {
+pub(super) fn cast_value(value: hir::Expr, ty: Type) -> hir::Expr {
     let pos = value.pos.clone();
     hir::Expr {
         pending_work: None,

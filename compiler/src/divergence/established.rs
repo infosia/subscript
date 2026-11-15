@@ -100,10 +100,10 @@ pub(super) const FOROFAWAITUSING: DivergenceEntry = DivergenceEntry {
             };
 
 pub(super) const ALIASCASENONLITERAL: DivergenceEntry = DivergenceEntry {
-                ts: "type A=\"a\"|\"b\";\nexport function main(): void { const x:A=\"a\";const y:A=\"a\";switch(x){case y:break;} }",
-                subscript: "no equivalent; use a member string literal for each case label",
-                why: "A switch over a string-literal alias requires each case label to spell a member literal.",
-                collision: "compiler.md §41",
+                ts: "type A=\"a\"|\"b\";\nexport function main(): void { const x:A=\"a\";let y:A=\"a\";switch(x){case y:break;} }",
+                subscript: "no equivalent; use a member literal operand for each case label (§299 rule 2a)",
+                why: "A switch over a string-literal alias requires each case label to be a literal operand naming a member.",
+                collision: "compiler.md §299",
             };
 
 pub(super) const CLASSMEMBERNAMECLASH: DivergenceEntry = DivergenceEntry {

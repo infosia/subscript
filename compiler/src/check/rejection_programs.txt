@@ -2909,7 +2909,7 @@ END PROGRAM
 PROGRAM	alias-case-non-literal			0
 FILE	E	target/s154/forms/alias-case-non-literal/main.ts
 type A="a"|"b";
-export function main(): void { const x:A="a";const y:A="a";switch(x){case y:break;} }
+export function main(): void { const x:A="a";let y:A="a";switch(x){case y:break;} }
 END FILE
 END PROGRAM
 PROGRAM	switch-discriminant-kind			0
@@ -6099,12 +6099,6 @@ export {};
 enum E { A } function f(): void { E.A.toString; }
 END FILE
 END PROGRAM
-PROGRAM	LiteralAliasMember			0
-FILE	E	target/s154/forms/LiteralAliasMember/main.ts
-export {};
-type A = "a"|"b"; function f(a: A): void { a.length; }
-END FILE
-END PROGRAM
 PROGRAM	InvalidReceiverMember	TS18050		0
 FILE	E	target/s154/forms/InvalidReceiverMember/main.ts
 export {};
@@ -6133,12 +6127,6 @@ PROGRAM	EnumMethod			0
 FILE	E	target/s154/forms/EnumMethod/main.ts
 export {};
 enum E { A } function f(): void { E.A.toString(); }
-END FILE
-END PROGRAM
-PROGRAM	LiteralAliasMethod			0
-FILE	E	target/s154/forms/LiteralAliasMethod/main.ts
-export {};
-type A = "a"|"b"; function f(a: A): void { a.toUpperCase(); }
 END FILE
 END PROGRAM
 PROGRAM	InvalidReceiverMethod	TS18050		0

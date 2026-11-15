@@ -663,9 +663,6 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("type_rules.rs", "assignable_through_constraints", 0x31a177474a276034),
         ("type_rules.rs", "report_not_assignable", 0x667ba08eb1797cc9),
     ] },
-    AllowGroup { name: "string-value-place", reason: "Section 259 checks the nullable inner type after apparent_type resolves the target.", sites: &[
-        ("type_rules.rs", "place_value", 0xdfaee0ea686405d5),
-    ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[
         ("type_rules.rs", "contains_string_alias", 0xf9567ff408902747),
         ("type_rules.rs", "supported_wire_alias_boundary_type", 0xda2c3c78f1e6611c),

@@ -522,7 +522,9 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     }
     // C21 excludes void controls; C24 row 1 records truth controls.
     // The split rejection classes omit concrete forms outside their recorded restrictions.
-    assert_eq!(omitted.len(), 7815, "the omitted instance set changed");
+    // §299 rule 1 admits alias casts to string and alias case labels for string subjects.
+    // §299.4 records nonliteral alias case labels, so matching concrete controls enter the matrix.
+    assert_eq!(omitted.len(), 7813, "the omitted instance set changed");
     let additional_pairs: usize = kinds::additional()
         .iter()
         .map(|kind| 2 + usize::from(kinds::numeric(kind)))

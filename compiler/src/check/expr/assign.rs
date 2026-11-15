@@ -387,6 +387,9 @@ impl<'p> Checker<'p> {
             if result.terminal {
                 return result.expr;
             }
+            if let ExprKind::Binary { right, .. } = result.expr.kind {
+                value = *right;
+            }
             result.expr.ty
         } else {
             value.ty.clone()

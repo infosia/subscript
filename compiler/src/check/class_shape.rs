@@ -614,6 +614,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         let signature = GlobalSig {
+                            annotated: prop.type_ann.is_some(),
                             named_lambda: false,
                             lambda_defaults: None,
                             function_value_required: None,
@@ -806,6 +807,7 @@ impl<'p> Checker<'p> {
                         self.class_sigs[id.0].fields.insert(
                             name.clone(),
                             GlobalSig {
+                                annotated: false,
                                 named_lambda: false,
                                 lambda_defaults: None,
                                 function_value_required: None,

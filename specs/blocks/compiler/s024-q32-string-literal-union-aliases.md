@@ -20,9 +20,10 @@ rejection. The rejection codes are whatever the checker's existing
 mismatch paths produce — pinned by the corpus entries, not minted
 anew unless no existing code fits.
 
-*(Revised 2026-11-13 by §259: a value of an alias converts to `string`
-at a place that expects `string`. The comparison rules above do not
-change.)*
+*(Revised 2026-11-13 by §259 and 2026-11-15 by §299: an alias value
+converts at a place that expects `string` and at the string operand
+places of §299. Comparisons with the same alias or a member literal
+keep the integer comparison above.)*
 
 ### 24.2 Lowering (both tiers)
 

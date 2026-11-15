@@ -1025,7 +1025,8 @@ impl<'p> Checker<'p> {
             }
             return result.unwrap_or_else(|| checker.err_expr(pos));
         }
-        let recv = checker.apparent_expr(recv);
+        let mut recv = checker.apparent_expr(recv);
+        checker.convert_string_operand(&mut recv, crate::check::string_operand::StringOperand::Member);
         // §231 rule 1: a user class or an interface constraint has user methods.
         if matches!(checker.apparent_type(&recv.ty), Type::Class(id) if id != checker.error_class)
             || matches!(checker.apparent_type(&recv.ty), Type::Interface(_))
@@ -1472,7 +1473,6 @@ impl<'p> Checker<'p> {
                         Type::Func(_) => RejectionSite::FunctionMethod,
                         Type::Generator(_) => RejectionSite::GeneratorMethod,
                         Type::Enum(_) => RejectionSite::EnumMethod,
-                        Type::StringAlias(_) => RejectionSite::LiteralAliasMethod,
                         _ => RejectionSite::InvalidReceiverMethod,
                     },
                     format!("`{}` has no method `{}`", type_name, name),

@@ -126,8 +126,11 @@ impl<'p> Checker<'p> {
                 let mut out = vec![first];
                 let mut deferred = Vec::new();
                 for e in &elems[1..] {
-                    // §212 rule 1a: the type of the first element is a hint.
-                    let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
+                    // §212 rule 1a: the first element gives a hint, except an
+                    // alias must let string elements widen it (§299 rule 1.6).
+                    let context = (!self.involves_type_parameter(&elem_ty)
+                        && !matches!(self.apparent_type(&elem_ty), Type::StringAlias(_)))
+                    .then_some(&elem_ty);
                     let checked = self.check_expr_as(&e.expr, context, ContextKind::Hint, fx);
                     if function_list {
                         deferred.push(checked);
@@ -175,7 +178,10 @@ impl<'p> Checker<'p> {
         elem_ty: Type,
         fx: &FnCtx,
     ) -> Type {
-        let elem_ty = if self.involves_type_parameter(&elem_ty)
+        let elem_ty = if let Some(ty) = self.string_alias_array_element(out, &mut checked, &elem_ty)
+        {
+            ty
+        } else if self.involves_type_parameter(&elem_ty)
             || self.involves_type_parameter(&checked.ty)
         {
             self.generic_union(&elem_ty, &checked.ty)

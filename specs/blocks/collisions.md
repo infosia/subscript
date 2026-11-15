@@ -806,7 +806,7 @@ it as a candidate to accept.
 | 27 | A call of an unannotated generator before the checker reads its body | The yield type comes from the body. | a `Generator<T>` result annotation |
 | 28 | A type-parameter default (`<T = i32>`) | No lowering is decided. | an explicit type argument |
 | 29 | A labeled statement, `for…in` | No lowering is decided, except: `for…in` reads dynamic properties (C10). | a flag for a labeled exit; `for…of` over the keys for `for…in` |
-| 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
+| 30 | A member of `boolean`, of a function value, of an enum value, or of a literal alias outside its operations (`compiler.md` §299 admits string members) | The lib surface is a subset (`stdlib.md` §0 rule 1). A C function pointer has no properties. | an explicit form |
 | 31 | `<`, `>`, `<=`, or `>=` on two `string` or two `boolean` operands | No lowering is decided. | a comparison of `charCodeAt` values; an explicit `boolean` test |
 | 32 | A null check of an indexed read (`xs[0] !== null`), then a read of the same element | An element is a shared location: another name can hold the array and change the element (C17). `tsc` narrows an element only for a literal or unchanged key, not for a loop key. A `const` copy narrows for every key (`compiler.md` §163). | `const v = xs[i]; if (v !== null) { v.x }` |
 | 33 | A call through a function value with fewer arguments than parameters, where `tsc` gives the value optional parameters (`const h = (a: i32, b: i32 = 5): i32 => a + b; h(1)`) | A function type has no optional parameter (C7), so a call through a function value passes every parameter. A default belongs to a declaration (`compiler.md` §164). | every argument; a direct call of the declaration |
@@ -1716,16 +1716,19 @@ Accept: `a369`, `a370`. Reject: `r421`.
     literals and same-alias values; template-literal interpolation
     prints the member string. Comparison or assignment with plain
     `string` (or another alias) is rejected.
-    *Revised 2026-11-13 (`compiler.md` §259):* a value of an alias
-    converts to `string` at a place that expects `string`,
-    `string | null`, or `string | undefined`. The text is the member
-    spelling. A `string` where an alias is expected, a comparison
-    with `string`, a `string` member, an operator with a `string`
-    operand, and `Alias[]` where `string[]` is expected stay
-    rejected. A `case` label with an alias value in a `switch` over
-    a `string` is a comparison, and stays rejected. The conversion
-    reads the static string table of the alias. Accept: `a443`.
-    Reject: `r501`.
+    *Revised 2026-11-13 (`compiler.md` §259) and 2026-11-15 (§299):*
+    an alias value converts to `string` at a place that expects
+    `string`, `string | null`, or `string | undefined`, and at the
+    string operand places of §299: `===` or `!==` with a string,
+    concatenation, a string member, `as string`, a case label of a
+    string switch, and an uncontextualized array literal containing
+    a non-member string. The text is the member spelling, read from
+    the static string table. Same-alias and member-literal equality
+    keeps the integer comparison; an array of alias values and member
+    literals only keeps the alias element type. A `string` where an
+    alias is expected, another alias where an alias is expected, an
+    operator between distinct aliases, and `Alias[]` where `string[]`
+    is expected stay rejected. Accept: `a443`, `a458`. Reject: `r501`.
   - **Representation**: an `i32` discriminant (declaration order);
     a per-alias static string table used **only** for formatting —
     comparisons lower to integer compares, never string compares.
