@@ -50,6 +50,16 @@ pub(super) fn verify_dominance(function: &l::Function, errors: &mut Vec<VerifyEr
                     );
                 }
             }
+            // compiler.md §297 rule 3: invalidation values must dominate this instruction.
+            check_invalidation_dominance(
+                function,
+                &instruction.invalidates,
+                (block.id, index),
+                "an instruction",
+                &definitions,
+                &dominators,
+                errors,
+            );
         }
         for value in terminator_values(&block.terminator) {
             check_dominates(
@@ -62,9 +72,49 @@ pub(super) fn verify_dominance(function: &l::Function, errors: &mut Vec<VerifyEr
                 errors,
             );
         }
+        if let l::Terminator::Suspend { invalidates, .. } = &block.terminator {
+            check_invalidation_dominance(
+                function,
+                invalidates,
+                (block.id, block.instructions.len()),
+                "a suspend terminator",
+                &definitions,
+                &dominators,
+                errors,
+            );
+        }
     }
     verify_array_base_dominance(function, &definitions, &dominators, errors);
     verify_suspend_definition_boundaries(function, &definitions, &dominators, errors);
+}
+
+fn check_invalidation_dominance(
+    function: &l::Function,
+    invalidates: &[l::ValueId],
+    site: (l::BlockId, usize),
+    kind: &str,
+    definitions: &[Option<DefinitionSite>],
+    dominators: &[BTreeSet<l::BlockId>],
+    errors: &mut Vec<VerifyError>,
+) {
+    for value in invalidates {
+        if definitions
+            .get(value.0 as usize)
+            .and_then(|site| *site)
+            .is_some_and(|definition| {
+                !definition_dominates_definition(
+                    definition,
+                    DefinitionSite::Instruction(site.0, site.1),
+                    dominators,
+                )
+            })
+        {
+            errors.push(finding(function, format!(
+                "invalidation list of {kind} in block {} names value {}, which does not dominate it",
+                site.0.0, value.0
+            )));
+        }
+    }
 }
 
 fn verify_array_base_dominance(
@@ -412,4 +462,174 @@ fn definition_position(function: &l::Function, value: l::ValueId) -> Option<(l::
 
 fn instruction_uses(instruction: &l::Instruction, value: l::ValueId) -> bool {
     instruction.operands.contains(&l::Operand::Value(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// compiler.md §297 acceptance 3: reject another branch; accept the entry parameter.
+    /// Measured debug cost: 0.01 s for four module constructions and verifier calls; no native compilation.
+    #[test]
+    fn invalidation_list_requires_a_dominating_value() {
+        fn module(invalidated: l::ValueId) -> l::Module {
+            let pos = Pos::new("invalidation.ts", 1, 1);
+            let array = l::ValueType::Data(Type::Array(Box::new(Type::I32)));
+            let returned = l::Terminator::Return {
+                value: None,
+                pos: pos.clone(),
+            };
+            l::Module {
+                host_entries: Vec::new(),
+                entry: None,
+                async_roots: Vec::new(),
+                classes: Vec::new(),
+                enums: Vec::new(),
+                string_aliases: Vec::new(),
+                globals: Vec::new(),
+                foreign_functions: Vec::new(),
+                worker_entries: Vec::new(),
+                intrinsic_operations: Vec::new(),
+                initializer: None,
+                functions: vec![l::Function {
+                    lambda_group: None,
+                    id: l::FunctionId(0),
+                    source_name: "branch_invalidation".to_string(),
+                    kind: l::FunctionKind::Free,
+                    exported: false,
+                    is_generator: false,
+                    is_async: false,
+                    creation_traps: Vec::new(),
+                    host_entry_traps: None,
+                    can_raise: false,
+                    parameters: vec![l::Parameter {
+                        storage: None,
+                        value: l::ValueId(0),
+                        source_name: "array".to_string(),
+                        kind: l::ParameterKind::Explicit,
+                        pos: pos.clone(),
+                    }],
+                    return_type: Type::Void,
+                    locals: Vec::new(),
+                    values: (0..2)
+                        .map(|index| l::Value {
+                            id: l::ValueId(index),
+                            ty: array.clone(),
+                            fresh_owner: false,
+                            source_name: None,
+                        })
+                        .collect(),
+                    liveness: l::Liveness::default(),
+                    blocks: vec![
+                        l::BasicBlock {
+                            id: l::BlockId(0),
+                            source_name: None,
+                            parameters: Vec::new(),
+                            instructions: Vec::new(),
+                            terminator: l::Terminator::ConditionalBranch {
+                                condition: l::Operand::Constant(l::Constant {
+                                    ty: Type::Bool,
+                                    kind: l::ConstantKind::Boolean(true),
+                                }),
+                                then_target: l::BlockTarget {
+                                    block: l::BlockId(1),
+                                    arguments: Vec::new(),
+                                    ownership: Vec::new(),
+                                },
+                                else_target: l::BlockTarget {
+                                    block: l::BlockId(2),
+                                    arguments: Vec::new(),
+                                    ownership: Vec::new(),
+                                },
+                            },
+                        },
+                        l::BasicBlock {
+                            id: l::BlockId(1),
+                            source_name: None,
+                            parameters: Vec::new(),
+                            instructions: vec![l::Instruction {
+                                count_action: None,
+                                result: Some(l::ValueId(1)),
+                                kind: l::InstructionKind::Copy,
+                                operands: vec![l::Operand::Value(l::ValueId(0))],
+                                invalidates: Vec::new(),
+                                traps: Vec::new(),
+                                pos: pos.clone(),
+                            }],
+                            terminator: returned.clone(),
+                        },
+                        l::BasicBlock {
+                            id: l::BlockId(2),
+                            source_name: None,
+                            parameters: Vec::new(),
+                            instructions: vec![l::Instruction {
+                                count_action: None,
+                                result: None,
+                                kind: l::InstructionKind::Call(l::CallTarget {
+                                    kind: l::CallTargetKind::Function(l::FunctionId(0)),
+                                    parameter_types: vec![array],
+                                    return_type: None,
+                                }),
+                                operands: vec![l::Operand::Value(l::ValueId(0))],
+                                invalidates: vec![invalidated],
+                                traps: vec![l::Trap {
+                                    kind: l::TrapKind::Call,
+                                    pos: pos.clone(),
+                                }],
+                                pos: pos.clone(),
+                            }],
+                            terminator: returned,
+                        },
+                    ],
+                    entry: l::BlockId(0),
+                    pos,
+                }],
+            }
+        }
+
+        let errors = verify_module(&module(l::ValueId(1))).expect_err("another branch must fail");
+        assert_eq!(
+            errors,
+            vec![VerifyError {
+                message: "function 0 (`branch_invalidation`): invalidation list of an instruction in block 2 names value 1, which does not dominate it".to_string(),
+            }]
+        );
+        verify_module(&module(l::ValueId(0))).expect("the entry parameter dominates both branches");
+        for value in [l::ValueId(0), l::ValueId(1)] {
+            let mut module = module(l::ValueId(0));
+            let function = &mut module.functions[0];
+            function.is_async = true;
+            let block = &mut function.blocks[2];
+            block.instructions.clear();
+            block.terminator = l::Terminator::Suspend {
+                ownership: Vec::new(),
+                kind: l::SuspendKind::Async,
+                pos: function.pos.clone(),
+                successor: l::BlockId(3),
+                resume_value: None,
+                arguments: Vec::new(),
+                invalidates: vec![value],
+                traps: Vec::new(),
+            };
+            function.blocks.push(l::BasicBlock {
+                id: l::BlockId(3),
+                source_name: None,
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: function.pos.clone(),
+                },
+            });
+            let mut errors = Vec::new();
+            verify_dominance(function, &mut errors);
+            if value == l::ValueId(0) {
+                assert!(errors.is_empty(), "{errors:?}");
+            } else {
+                assert_eq!(errors, vec![VerifyError {
+                    message: "function 0 (`branch_invalidation`): invalidation list of a suspend terminator in block 2 names value 1, which does not dominate it".to_string(),
+                }]);
+            }
+        }
+    }
 }

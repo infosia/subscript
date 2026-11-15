@@ -22,6 +22,7 @@ mod exception;
 mod expr;
 mod fixed_traversal;
 mod generator_close;
+mod invalidation;
 mod lambda;
 mod lambda_group;
 mod liveness;
@@ -135,6 +136,7 @@ pub fn lower_module_for_reload(
     }
     unroll::run(&mut lowered);
     for function in &mut lowered.functions {
+        invalidation::scope_array_invalidations(function);
         thread_suspension_live_ins(function)?;
         classify_local_storage(function);
     }

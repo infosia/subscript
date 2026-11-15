@@ -480,3 +480,147 @@ export async function main(): Promise<void> {
         "the call invalidates exactly the preceding array definitions in order"
     );
 }
+
+/// Measured debug cost: 0.03 s for three source checks and LIR lowerings; no native compilation.
+#[test]
+fn async_call_invalidations_follow_branch_loop_and_suspend_dominance() {
+    use std::collections::BTreeSet;
+    for source in [
+        r#"
+async function grow(a: i32[]): Promise<void> { a.push(3); }
+async function main(flag: boolean): Promise<void> {
+  const before: i32[] = [1];
+  if (flag) { const branch: i32[] = [2]; print(`${branch.length}`); }
+  const h: Promise<void> = grow(before);
+  await h;
+}
+"#,
+        r#"
+async function grow(a: i32[]): Promise<void> { a.push(3); }
+async function main(flag: boolean): Promise<void> {
+  const before: i32[] = [1];
+  while (flag) { const body: i32[] = [2]; print(`${body.length}`); }
+  const h: Promise<void> = grow(before);
+  await h;
+}
+"#,
+        r#"
+async function grow(a: i32[]): Promise<void> { a.push(3); }
+async function main(flag: boolean): Promise<void> {
+  const live: i32[] = [1];
+  while (flag) {
+    await Context.suspend();
+    const h: Promise<void> = grow(live);
+    print(`${live.length}`);
+    await h;
+  }
+}
+"#,
+    ] {
+        let module = lower_source("cfg-invalidations.ts", source);
+        verify_module(&module).expect("lowered CFG verifies");
+        let f = module
+            .functions
+            .iter()
+            .find(|f| f.source_name == "main")
+            .unwrap();
+        let all: BTreeSet<_> = f.blocks.iter().map(|b| b.id).collect();
+        let mut dom = vec![all.clone(); f.blocks.len()];
+        dom[f.entry.0 as usize] = [f.entry].into_iter().collect();
+        loop {
+            let old = dom.clone();
+            for b in &f.blocks {
+                if b.id == f.entry {
+                    continue;
+                }
+                let mut next = all.clone();
+                for pred in f.blocks.iter().filter(|p| p.successors().contains(&b.id)) {
+                    next.retain(|id| old[pred.id.0 as usize].contains(id));
+                }
+                next.insert(b.id);
+                dom[b.id.0 as usize] = next;
+            }
+            if dom == old {
+                break;
+            }
+        }
+        let mut calls = 0;
+        for b in &f.blocks {
+            for (index, call) in b.instructions.iter().enumerate() {
+                if !matches!(call.kind, InstructionKind::AsyncHandleCreate(_)) {
+                    continue;
+                }
+                calls += 1;
+                // §273: successor parameters replace definitions outside the resume region.
+                let resume_regions: Vec<_> = f
+                    .blocks
+                    .iter()
+                    .filter_map(|block| {
+                        if let Terminator::Suspend { successor, .. } = block.terminator {
+                            dom[b.id.0 as usize]
+                                .contains(&successor)
+                                .then_some(successor)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let expected: BTreeSet<_> = f
+                    .blocks
+                    .iter()
+                    .filter(|definition| {
+                        dom[b.id.0 as usize].contains(&definition.id)
+                            && resume_regions
+                                .iter()
+                                .all(|region| dom[definition.id.0 as usize].contains(region))
+                    })
+                    .flat_map(|definition| {
+                        definition.parameters.iter().copied().chain(
+                            definition
+                                .instructions
+                                .iter()
+                                .enumerate()
+                                .filter(|(i, _)| definition.id != b.id || *i < index)
+                                .filter_map(|(_, instruction)| instruction.result),
+                        )
+                    })
+                    .filter(|value| {
+                        matches!(
+                            f.values[value.0 as usize].ty,
+                            ValueType::Data(Type::Array(_))
+                        )
+                    })
+                    .collect();
+                assert_eq!(
+                    expected.len(),
+                    1,
+                    "only the dominating array version is visible"
+                );
+                if !resume_regions.is_empty() {
+                    assert!(
+                        b.parameters
+                            .iter()
+                            .chain(
+                                f.blocks
+                                    .iter()
+                                    .filter(|block| resume_regions.contains(&block.id))
+                                    .flat_map(|block| &block.parameters)
+                            )
+                            .any(|value| expected.contains(value)),
+                        "the call invalidates a suspension successor version"
+                    );
+                }
+                assert_eq!(
+                    call.invalidates.iter().copied().collect::<BTreeSet<_>>(),
+                    expected
+                );
+                assert_eq!(
+                    call.invalidates.len(),
+                    expected.len(),
+                    "no duplicate invalidations"
+                );
+            }
+        }
+        assert_eq!(calls, 1);
+    }
+}
