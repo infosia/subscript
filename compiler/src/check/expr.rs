@@ -11,6 +11,7 @@ mod callback_shape;
 mod conditional;
 mod container_new;
 mod entry;
+mod function_list;
 pub(crate) use entry::ContextKind;
 pub(super) mod lambda;
 pub(super) mod literal;

@@ -1922,22 +1922,59 @@ fn collected_tasks_trap_in_task_id_order() {
 
 #[test]
 fn owning_generic_lambda_fact_key_keeps_function_instances() {
-    let accept = corpus::corpus_accept();
-    let sources = corpus::entry_sources(
-        &accept,
-        "a446-a-capturing-lambda-that-escapes-owns-its-environment",
-    );
-    let hir = check_program(&sources).expect("a446 checks");
-    let lir = lower_module(&hir).expect("a446 lowers");
-    let mut position_only = Vec::new();
-    lir_facts::async_environments::compare_with_key(&hir, &lir, &mut position_only, false);
-    assert!(
-        position_only
-            .iter()
-            .any(|finding| finding.contains(":13:18: an owning lambda")),
-        "{position_only:?}"
-    );
+    // Both instances capture the same layout. Only the owner key detects
+    // when both creation sites point at the first instance's lambda.
+    let sources = [SourceFile::new(
+        "instances.ts",
+        r#"
+function build<T>(value: T): () => i32 {
+    const k: i32 = 3;
+    return (): i32 => k;
+}
+export function main(): void {
+    const f = build<i32>(1);
+    const g = build<string>("x");
+    print(`${f()} ${g()}`);
+}
+"#,
+    )];
+    let hir = check_program(&sources).expect("generic captures check");
+    let mut lir = lower_module(&hir).expect("generic captures lower");
     let mut instance = Vec::new();
     lir_facts::async_environments::compare_with_key(&hir, &lir, &mut instance, true);
-    assert!(instance.is_empty(), "{instance:?}");
+    assert!(instance.is_empty(), "clean control: {instance:?}");
+    let owned: Vec<_> =
+        lir.functions
+            .iter()
+            .filter(|function| {
+                function.kind == lir::FunctionKind::Lambda
+                    && function.parameters.first().is_some_and(|parameter| {
+                        parameter.kind == lir::ParameterKind::OwnedEnvironment
+                    })
+            })
+            .map(|function| function.id)
+            .collect();
+    assert_eq!(owned.len(), 2);
+    let mut changed = 0;
+    for instruction in lir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+    {
+        if instruction.kind == InstructionKind::MakeClosure(owned[1]) {
+            instruction.kind = InstructionKind::MakeClosure(owned[0]);
+            changed += 1;
+        }
+    }
+    assert_eq!(changed, 1);
+    let mut position_only = Vec::new();
+    lir_facts::async_environments::compare_with_key(&hir, &lir, &mut position_only, false);
+    assert!(position_only.is_empty(), "{position_only:?}");
+    lir_facts::async_environments::compare_with_key(&hir, &lir, &mut instance, true);
+    assert!(
+        instance.iter().any(|finding| finding
+            .contains("an owning lambda drops its capture class layout or environment parameter")),
+        "{instance:?}"
+    );
 }

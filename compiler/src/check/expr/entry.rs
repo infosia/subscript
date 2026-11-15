@@ -298,7 +298,7 @@ impl<'p> Checker<'p> {
         // compiler.md §249 rule 1a: only the forms that `reads_hint` names
         // read a hint. Each other form reads a hint as no context.
         let expected = match kind {
-            ContextKind::Hint if !reads_hint(e) => None,
+            ContextKind::Hint | ContextKind::FunctionListHint if !reads_hint(e) => None,
             _ => ctx,
         };
         // compiler.md §290 rule 1: arguments and other value positions do
@@ -393,10 +393,25 @@ impl<'p> Checker<'p> {
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
+        // The list-selection policy belongs only to this conditional
+        // element (through parentheses), never to a nested container.
+        let list_candidate = kind == ContextKind::FunctionListHint;
+        let kind = if list_candidate {
+            ContextKind::Hint
+        } else {
+            kind
+        };
         let mut checked = match e {
             ast::Expr::Paren(p) => self.check_expr_with_policy(
                 &p.expr,
-                (ctx, kind),
+                (
+                    ctx,
+                    if list_candidate {
+                        ContextKind::FunctionListHint
+                    } else {
+                        kind
+                    },
+                ),
                 fx,
                 allow_embedded_header_receiver,
                 false,
@@ -517,7 +532,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
             ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
-            ast::Expr::Cond(c) => self.check_cond(c, (ctx, kind), fx, pos),
+            ast::Expr::Cond(c) => self.check_cond(c, (ctx, kind), list_candidate, fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
             ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, (ctx, kind), fx, pos),
@@ -1302,4 +1317,7 @@ pub(crate) enum ContextKind {
     Contextual,
     /// A hint.
     Hint,
+    /// A context-free function-list element hint, whose conditional may
+    /// defer placement until the whole list selects its type (§305).
+    FunctionListHint,
 }

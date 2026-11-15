@@ -77,6 +77,7 @@ type, diagnostics, or output.
 4. MINOR, recorded: `compiler/src/check/expr/operator.rs` has 1,990
    lines. The next change to the conditional code moves `check_cond`
    and its helpers into a module of their own first.
+   *(Done before §305: `check_cond` is in `conditional.rs`.)*
 5. MINOR, fixed: the header of `a433` named `capture`, and `a433` has no
    capture.
 6. Outside the diff, older than §248: §248.4 item 3.

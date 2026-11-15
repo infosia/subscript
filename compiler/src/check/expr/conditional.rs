@@ -86,6 +86,7 @@ impl<'p> Checker<'p> {
         &mut self,
         c: &ast::CondExpr,
         (ctx, kind): (Option<&Type>, super::entry::ContextKind),
+        list_candidate: bool,
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -143,6 +144,9 @@ impl<'p> Checker<'p> {
                 place,
                 fx,
             ),
+            None if list_candidate => {
+                self.check_function_list_element(first_ast, first_ctx.as_ref(), fx)
+            }
             None => self.check_expr_as(
                 first_ast,
                 first_ctx.as_ref(),
@@ -180,6 +184,9 @@ impl<'p> Checker<'p> {
             Some(place) => {
                 self.check_void_leaf(second_ast, second_ctx.as_ref(), second_kind, place, fx)
             }
+            None if list_candidate => {
+                self.check_function_list_element(second_ast, second_ctx.as_ref(), fx)
+            }
             None => self.check_expr_as(second_ast, second_ctx.as_ref(), second_kind, fx),
         };
         let first_possible: HashSet<_> = first_facts.union(&first_notes).cloned().collect();
@@ -209,6 +216,14 @@ impl<'p> Checker<'p> {
         // compiler.md §300 rule 1: statement branches need no common
         // type. A lambda body keeps §258 rule 3.
         let void_join = void_leaves.and_then(|place| self.void_leaf_join(&then, &els, ctx, place));
+        // §305 rules 1 and 4: only the context-free list consumer defers
+        // placement to its selection. Other contexts place the leaves here.
+        let function_candidate = (list_candidate
+            && ctx.is_some_and(|ty| matches!(self.apparent_type(ty), Type::Func(_)))
+            && leaves.is_none()
+            && void_leaves.is_none())
+        .then(|| self.place_function_list(&mut [&mut then, &mut els], fx))
+        .flatten();
         let ty = if let Some(ty) = void_join {
             ty
         } else if nested {
@@ -220,6 +235,8 @@ impl<'p> Checker<'p> {
             Type::Error
         } else if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty) {
             self.generic_union(&then.ty, &els.ty)
+        } else if let Some(ty) = function_candidate {
+            ty
         } else if let Some(context) = ctx {
             self.require_expr_assignable(&mut then, context, fx, "the then branch");
             self.require_expr_assignable(&mut els, context, fx, "the else branch");

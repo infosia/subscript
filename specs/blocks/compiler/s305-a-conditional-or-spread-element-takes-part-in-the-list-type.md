@@ -59,4 +59,38 @@ spread element does not take part in the selection.
 
 ### 305.3 Phase Review
 
+Evidence: `specs/tracking/conditional-spread-list-elements.md`. At the
+contract pin, `a461` gives twelve S100. After the change, the
+development tier, the ship tier, the interpreter, and `node` give the
+same output.
+
+Rule 6 was already met at the pin: `check_cond` is in
+`compiler/src/check/expr/conditional.rs`, and `operator.rs` has 1,884
+lines. §248.3 item 4 was not updated when the move landed.
+
+One fresh review found one MAJOR finding, realistic, and six MINOR
+findings.
+
+1. MAJOR: the candidate type of a conditional replaced the leaf
+   placement of §242 rule 1a in each place with a function context.
+   A nested list `[[nvoid], [nvoid, b ? nv : nv2]]` that the pin
+   accepts became rejected. Fixed: only the selection of a context-free
+   list reads the candidate type. A unit test holds the nested forms.
+2. MINOR, fixed: the same cause replaced the adapter diagnostic of
+   `[none, b ? make(4) : make(5)]` with a type mismatch.
+3. MINOR, fixed: a new test ran `a461` in three tiers, which the golden
+   gates already do. It is deleted. The test of spread adapters moved
+   into `codegen/tests/array_of_functions.rs`.
+4. MINOR, fixed: the LIR environment check selected any owned lambda at
+   a position. It now selects the lambda whose capture layout matches.
+   A test builds the violating form.
+5. MINOR, fixed: two copies of the element check in
+   `check_array_spread_lit` are one call.
+6. MINOR, recorded: §305.4 item 1.
+
 ### 305.4 Open
+
+1. A spread of a `FixedArray` or a `Set` of functions is not a
+   candidate, and a spread of an array of async functions gives the
+   type mismatch, not the S013 of §247. `tsc` accepts the first two
+   forms. Not seen in a program.

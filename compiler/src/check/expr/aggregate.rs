@@ -131,7 +131,11 @@ impl<'p> Checker<'p> {
                     let context = (!self.involves_type_parameter(&elem_ty)
                         && !matches!(self.apparent_type(&elem_ty), Type::StringAlias(_)))
                     .then_some(&elem_ty);
-                    let checked = self.check_expr_as(&e.expr, context, ContextKind::Hint, fx);
+                    let checked = if function_list {
+                        self.check_function_list_element(&e.expr, context, fx)
+                    } else {
+                        self.check_expr_as(&e.expr, context, ContextKind::Hint, fx)
+                    };
                     if function_list {
                         deferred.push(checked);
                     } else {
@@ -186,7 +190,7 @@ impl<'p> Checker<'p> {
         {
             self.generic_union(&elem_ty, &checked.ty)
         } else {
-            self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
+            self.require_function_list_element(&mut checked, &elem_ty, fx, "the array element");
             elem_ty
         };
         out.push(checked);
@@ -356,6 +360,8 @@ impl<'p> Checker<'p> {
         };
         let mut checked = Vec::new();
         let mut inferred: Option<Type> = context_elem.clone();
+        let mut element_types = Vec::new();
+        let mut function_list = false;
         for slot in &a.elems {
             let Some(slot) = slot else {
                 self.reject_subset(
@@ -372,12 +378,16 @@ impl<'p> Checker<'p> {
             } else {
                 ContextKind::Hint
             };
-            let mut expr = self.check_expr_as(
-                &slot.expr,
-                if is_spread { None } else { inferred.as_ref() },
-                element_kind,
-                fx,
-            );
+            let expr = if function_list && !is_spread {
+                self.check_function_list_element(&slot.expr, inferred.as_ref(), fx)
+            } else {
+                self.check_expr_as(
+                    &slot.expr,
+                    if is_spread { None } else { inferred.as_ref() },
+                    element_kind,
+                    fx,
+                )
+            };
             let (spread, element_ty) = if is_spread {
                 let spread_pos = self.pos(slot.spread.unwrap_or(a.span));
                 let apparent = self.apparent_type(&expr.ty);
@@ -438,24 +448,39 @@ impl<'p> Checker<'p> {
                     expr.pos.clone(),
                 );
                 self.leave_container_context(saved_context);
+                function_list = context_elem.is_none()
+                    && matches!(self.apparent_type(&admitted), Type::Func(_))
+                    && !self.involves_type_parameter(&admitted);
                 inferred = Some(admitted);
             }
-            // compiler.md §240 rule 2a: an element is a value, so it takes
-            // the check that takes the value. A spread source gives an
-            // element type, not a value.
-            if let Some(expected) = inferred.clone() {
-                if is_spread {
+            element_types.push(element_ty);
+            checked.push(hir::ArrayLitElem { expr, spread });
+        }
+        let selected = function_list
+            .then(|| self.place_spread_function_list(&mut checked, fx))
+            .flatten();
+        if let Some(selected) = selected {
+            inferred = Some(selected);
+        } else if let Some(expected) = inferred.as_ref() {
+            // §240 rule 2a and §305 rule 4: spreads compare element
+            // types; other elements take the value check.
+            for (element, ty) in checked.iter_mut().zip(&element_types) {
+                if element.spread.is_some() {
                     self.require_assignable(
-                        &element_ty,
-                        &expected,
-                        expr.pos.clone(),
+                        ty,
+                        expected,
+                        element.expr.pos.clone(),
                         "the array element",
                     );
                 } else {
-                    self.require_expr_assignable(&mut expr, &expected, fx, "the array element");
+                    self.require_function_list_element(
+                        &mut element.expr,
+                        expected,
+                        fx,
+                        "the array element",
+                    );
                 }
             }
-            checked.push(hir::ArrayLitElem { expr, spread });
         }
         // A spread literal holds at least one element, so the element
         // type is absent only after a hole or a rejected element, and

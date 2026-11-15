@@ -41,7 +41,7 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
         "expr/aggregate.rs",
         "check_array_spread_lit",
         1,
-        "The element type of a spread source is a type of a collection, not a value; each other element takes the check that takes the value.",
+        "Contextual spreads and noncandidate lists compare collection element types. Function candidates copy through adapters (§305); other elements take the value check.",
     ),
     (
         "expr/assign.rs",
