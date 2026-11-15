@@ -345,3 +345,4 @@ Every section, with its status:
 | §301 | A type argument is inferred from the narrowed argument | withdrawn 2026-11-15; no rule landed | [`s301-a-type-argument-is-inferred-from-the-narrowed-argument.md`](compiler/s301-a-type-argument-is-inferred-from-the-narrowed-argument.md) |
 | §302 | Test and tooling fixes from open lists | active | [`s302-test-and-tooling-fixes-from-open-lists.md`](compiler/s302-test-and-tooling-fixes-from-open-lists.md) |
 | §303 | Diagnostic text fixes from open lists | active | [`s303-diagnostic-text-fixes-from-open-lists.md`](compiler/s303-diagnostic-text-fixes-from-open-lists.md) |
+| §304 | A non-null store and a `const` global keep narrowing | active | [`s304-a-non-null-store-and-a-const-global-keep-narrowing.md`](compiler/s304-a-non-null-store-and-a-const-global-keep-narrowing.md) |

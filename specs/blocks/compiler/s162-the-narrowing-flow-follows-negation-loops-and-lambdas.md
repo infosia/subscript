@@ -125,10 +125,13 @@ is fixed when it is found and does not block a phase. A program that
    A(); break; }` is rejected with the C17 block; `tsc` accepts it
    (measured 2026-10-05). A missing fact under
    162.2.
+   *(Selected 2026-11-15 for §304.)*
 3. Rule 3a counts a value outside its forms as nullable. `a = b;` with
    `b` narrowed through the loop, and `const n = new A(); a = n;`, end
    the fact of `a`; `tsc` accepts both. A missing fact under 162.2.
+   *(Selected 2026-11-15 for §304.)*
 4. Rule 4 keeps facts of `const` locals only. A lambda that reads a
    module `const` global narrowed before it (`if (GC === null) { return;
    } const g = (): i32 => GC.x;`) is rejected; `tsc` accepts it. A
    missing fact under 162.2.
+   *(Selected 2026-11-15 for §304.)*
