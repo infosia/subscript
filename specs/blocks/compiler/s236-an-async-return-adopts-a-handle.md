@@ -164,6 +164,11 @@ rules 2 to 4.
    `finally` is. A function with four value returns and one adopting
    return has 739 lines of C `resume` against 168 for the form with
    `return await`. One shared epilogue needs a new HIR form.
+   *(Measured 2026-11-16 at `bdfb6ec1`: each value exit adds about 138
+   lines of C `resume` with an adopting return, against 26 with
+   `return await`; ship build +2.3 ms and JIT +0.55 ms for each exit of
+   each function. Three accept entries have such a function, each with
+   two exits: a423, a424, a452.)*
 4. A call with two arguments that each make a handle, such as
    `two(v(), v())`, fails the release fact of the LIR test model at
    `3aa70ee7`. The output of the program is correct. `a423` holds such

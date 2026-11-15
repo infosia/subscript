@@ -130,12 +130,24 @@ closed the list.
    `for (const h of hs) { await two(h, v()); }` does one more retain and
    release per call than `const k = h; await two(k, v());`. The output
    is the same. The cost is not measured.
+   *(Measured 2026-11-16 at `bdfb6ec1`, ship tier: with an async handle
+   the extra pair is an inline count change, below noise (0.2 ns per
+   call). With a generator or a container of handles it is a call of
+   `subscript_rt_counted_value`: about 19 to 20 ns per call. The form
+   `const k = h;` emits the same C, so it also does the extra pair.)*
 2. A capture of a lambda that borrows its environment cannot change in
    one expression either, and rule 1 holds it in the same way.
+   *(Measured 2026-11-16 at `bdfb6ec1`, ship tier: with an async handle
+   the extra pair is an inline count change, below noise (0.2 ns per
+   call). With a generator or a container of handles it is a call of
+   `subscript_rt_counted_value`: about 19 to 20 ns per call. The form
+   `const k = h;` emits the same C, so it also does the extra pair.)*
 3. If sites 5 and 6 of rule 1 both apply, the second count is not
    needed: the hold of site 5 already keeps the base through the value.
    `hs[idx()] = boom()` with a `let hs` does one more retain and release
    than one hold needs. The output is the same.
+   *(Measured 2026-11-16 at `bdfb6ec1`, ship tier: 4.3 ns for each
+   assignment, a call of `async_retain_array`.)*
 4. A counted parameter default followed by another omitted default stops
    the lowering: `all(xs: Promise<i32>[] = [], k: i32 = 0)` called as
    `all()` gives "stores counted operand 0 (value 0) without a fresh

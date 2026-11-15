@@ -99,6 +99,9 @@ its control with explicit arguments.
    verifier: the owner then has three uses, and the verifier accepts a
    fresh owner at a store only at one use. A verifier that counts the retains before a store accepts
    the single retain. The cost is not measured.
+   *(Measured 2026-11-16 at `bdfb6ec1`, ship tier: below noise for an
+   async handle; 21 ns for each omitted default with a generator
+   argument.)*
 2. An async handle that a parameter default creates gets S013.
    `one(p: Promise<i32> = v(), k: i32 = 2)` with `return (await p) + k;`
    gives "an async handle is dropped without any await of its
