@@ -145,7 +145,9 @@ the completion, not the ownership.
    is above one, and calls the runtime otherwise; the runtime keeps
    the free, the rule 4 trap, and every check at one and at zero. A
    generator frame, whose offset 4 is its reload epoch, never takes
-   the inline path. *(Added 2026-09-27. Measured: after the two forms
+   the inline path. *(Amended 2026-11-16 by §314: a generator takes an inline
+   path of its own, at its holder count `HOLDERS_OFFSET`, not at offset
+   4.)* *(Added 2026-09-27. Measured: after the two forms
    above, `held-handles` stayed 12.0% slower than `154cc3d`, because
    rule 4a adds a runtime retain and release per `await` of a held
    handle, and each call searches the Context's frame table before it
