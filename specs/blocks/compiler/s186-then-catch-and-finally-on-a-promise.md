@@ -137,3 +137,4 @@ method by its name.
 6. A handle inside an awaited value (`(await many()).length`, with
    `many(): Promise<Promise<i32>[]>`) is dropped with no S013. This
    gap is older than this section.
+   *(Closed by §188.)*

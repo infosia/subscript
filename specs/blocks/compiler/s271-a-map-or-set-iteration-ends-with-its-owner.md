@@ -151,3 +151,4 @@ result, so this section did not cause it. §271.4 item 3.
    `main` with `for (let r = 0; r < 1; r++) { for (const j of [0, 1])
    { if (j > 0) { break; } } for (const x of gen()) { await
    Context.suspend(); n++; } }`. Each of the four parts is necessary.
+   *(Closed by §273.)*

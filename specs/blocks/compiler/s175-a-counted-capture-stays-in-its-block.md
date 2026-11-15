@@ -115,6 +115,7 @@ The Phase Review found these. None is CRITICAL or MAJOR.
    its block exits" is not true for them.
 3. The test name `each_loop_iteration_owns_its_counted_bindings` says
    "owns" for a for-of binding, which borrows.
+   *(Closed by §182.)*
 4. `uncounted_bindings_keep_the_same_outer_assignment` has no rejected
    control in the shape of its four accepted programs.
 5. The four reject entries share the id `r396`. No test needs a unique

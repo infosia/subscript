@@ -82,3 +82,4 @@ program, the current text, and the evidence for each):
    `class C { then(): void {} } new C().then();` reports "Promise
    combinator `.then(...)`" with the handle example. The receiver test
    is missing at `93453f87` too.
+   *(Closed by §186.)*

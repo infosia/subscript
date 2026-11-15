@@ -107,11 +107,14 @@ indexed path).
    narrowing at the loop head (`for (…) { e.x; e = new A(); }` with a
    non-null `e` before the loop). `tsc` accepts it. Present at
    `f62ba7ad` for a null check. Realistic, uncommon.
+   *(Closed by §162.)*
 3. A lambda drops the narrowing of a `const` local that it captures
    (`const a: A | null = new A(); const f = (): i32 => a.x;`). `tsc`
    accepts it. Present at `f62ba7ad`. Contrived.
+   *(Closed by §162.)*
 4. Missing facts found by the second Phase Review (present at `f62ba7ad`
    for a null check, rejected with no block, `tsc` accepts): `while
    (true) { a = new A(); if (c()) { break; } } a.x`, `if (!((a = mk())
    === null)) { a.x }`, and an indexed target `if ((xs[0] = mk()) !==
    null) { xs[0].x }`. Realistic, uncommon.
+   *(Closed by §162. §163 decides the indexed target: it is not narrowed.)*
