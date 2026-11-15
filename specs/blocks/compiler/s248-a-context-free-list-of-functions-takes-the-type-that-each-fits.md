@@ -87,10 +87,12 @@ type, diagnostics, or output.
    as its context (§212 rule 1a), so its branches fail before the list
    type is selected: `[none, b ? one : nv]` and `[none, b ? one : one]`
    give two branch diagnostics. `tsc` accepts both.
+   *(Selected 2026-11-15 for §305.)*
 2. A spread element does not take part in the selection:
    `const base = [one]; const hs = [none, ...base];` gives S100 "the
    array element expects `() => void`, got `(i32) => void`". `tsc`
    accepts it.
+   *(Selected 2026-11-15 for §305.)*
 3. A lambda with a parameter that has no type annotation, in a
    context-free array literal, takes its parameter types from the first
    element (§212 rule 1a): `` const fs = [one, (x) => print(`u ${x}`)]; ``

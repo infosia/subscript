@@ -346,3 +346,4 @@ Every section, with its status:
 | §302 | Test and tooling fixes from open lists | active | [`s302-test-and-tooling-fixes-from-open-lists.md`](compiler/s302-test-and-tooling-fixes-from-open-lists.md) |
 | §303 | Diagnostic text fixes from open lists | active | [`s303-diagnostic-text-fixes-from-open-lists.md`](compiler/s303-diagnostic-text-fixes-from-open-lists.md) |
 | §304 | A non-null store and a `const` global keep narrowing | active | [`s304-a-non-null-store-and-a-const-global-keep-narrowing.md`](compiler/s304-a-non-null-store-and-a-const-global-keep-narrowing.md) |
+| §305 | A conditional or spread element takes part in the list type | active | [`s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md`](compiler/s305-a-conditional-or-spread-element-takes-part-in-the-list-type.md) |
