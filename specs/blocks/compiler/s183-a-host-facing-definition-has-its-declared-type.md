@@ -83,3 +83,4 @@ see it.
    spelling, so the emitter cannot write a layout assertion for it. No
    good-faith header reaches a mismatch today, because the binder
    rejects another view shape.
+   *(Selected 2026-11-15 for §298.)*
