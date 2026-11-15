@@ -96,3 +96,4 @@ MINOR findings.
    fit (rule 7). 114 `Diverges` sites have more than one witness file;
    the Phase Review sampled them and found the three of rule 7. No
    mechanical check reads whether two forms are the same form.
+   *(Measured 2026-11-16 at `66ec3574`: 18 realistic sites. Selected for §312.)*
