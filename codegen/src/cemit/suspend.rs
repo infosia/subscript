@@ -500,7 +500,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
         }
         // compiler.md §116.1 rule 4a: release the registration's handle count.
-        self.emit_async_count(out, &handle, Some((pos, &[])))?;
+        self.emit_frame_count(out, &handle, 4, Some((pos, &[])))?;
         Ok(())
     }
 }

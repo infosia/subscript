@@ -382,6 +382,7 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::MirrorLifetimeTargetMissing => WitnessEntry::General { files: &["c-prov-target-lifetime"], variant: Some(Divergence::MirrorLifetimeTargetMissing), reason: "" },
         RejectionSite::MirrorArrayProvenanceMissing => WitnessEntry::General { files: &["c-prov-array"], variant: Some(Divergence::MirrorArrayProvenanceMissing), reason: "" },
         RejectionSite::MirrorStringProvenanceMissing => WitnessEntry::General { files: &["c-prov-string"], variant: Some(Divergence::MirrorStringProvenanceMissing), reason: "" },
+        RejectionSite::MirrorGeneratorType => WitnessEntry::General { files: &["mirror-generator"], variant: Some(Divergence::MirrorGeneratorType), reason: "" },
         RejectionSite::MirrorNullableView => WitnessEntry::General { files: &["mirror-nullable-array"], variant: Some(Divergence::NullableNonReference), reason: "" },
         RejectionSite::WriteThroughValueTemporary => WitnessEntry::General { files: &["write-through-value-temporary"], variant: Some(Divergence::WriteThroughValueTemporary), reason: "" },
         RejectionSite::ElementMethodMovesArray => WitnessEntry::General { files: &["element-method-moves-array"], variant: Some(Divergence::ElementMethodMovesArray), reason: "" },

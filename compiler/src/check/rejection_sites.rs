@@ -358,6 +358,7 @@ pub(crate) enum RejectionSite {
     MirrorStringProvenanceMissing,
     MirrorParameterProvenanceMismatch,
     MirrorNullableView,
+    MirrorGeneratorType,
     WriteThroughValueTemporary,
     ElementMethodMovesArray,
     MirrorAnonymousCallback,

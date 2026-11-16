@@ -822,6 +822,7 @@ it as a candidate to accept.
 | 35 | `Promise.all(jobs)` where the result type `T` holds a count: an async handle, or an array of async handles | The aggregate stores each result by a byte copy; a counted result needs the §70.3 store path (`compiler.md` §166 rule 12). | await each input, and build the array |
 | 36 | An async arrow that captures `let`, `var`, or `this` | An async arrow owns `const` captures in a reference environment (`compiler.md` §181). Mutable bindings need shared cells. `this` stays rejected. Rejects: `r379`, `r398`. Controls: `a336`, `a353`. | copy the value into a `const`; use a class field |
 | 37 | A `TaskGroup` outside one `const` local or a synchronous parameter: a field, an array element, a global, a result, a `let`, an async parameter, a generator body, a type argument, a literal, an assignment, a return, a capture | A group checks its tasks when its one holder ends. A count does not reach every last holder, and a field holder ends only at an explicit collection (`compiler.md` §170 rules 2 and 15; `r384`–`r386`). | a `const` local and `join()` in the same scope; a synchronous helper with a `TaskGroup` parameter |
+| 38 | `Generator<T>` in a mirror parameter, result, or held type | The C ABI has no generator or frame registration function (`compiler.md` §314 rule 2a). Reject: `r519`. | no equivalent |
 
 Reject: `r344`, `r352` (row 4, a generic-class default, §156), `r355`
 (row 15, a `@ValueType` receiver, §157), `r362` (row 3, a module variable

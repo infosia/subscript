@@ -505,6 +505,14 @@ impl<'p> Checker<'p> {
                 return Type::Error;
             }
             "Generator" if self.type_scope_item(name).is_none() => {
+                if self.in_boundary {
+                    self.reject_subset(
+                        RejectionSite::MirrorGeneratorType,
+                        "a mirror names `Generator`; the C ABI has no generator and cannot register a generator frame",
+                        pos,
+                    );
+                    return Type::Error;
+                }
                 if let Some(args) = &r.type_params {
                     if let Some(first) = args.params.first() {
                         let y = self.resolve_result_type(first);

@@ -172,7 +172,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "    *(void**)((unsigned char*)({0}) + {offset}) = NULL;",
                     operands[0]
                 );
-                if ty.counted_type().is_some() {
+                if matches!(&**ty, Type::Generator(_)) {
+                    let pos = self.emitter.pos_id(&instruction.pos);
+                    let _ = writeln!(out, "    if (!{done}) {{");
+                    self.emit_frame_count(
+                        out,
+                        &temporary,
+                        subscript_runtime::generator_layout::HOLDERS_OFFSET,
+                        Some((pos, &[])),
+                    )?;
+                    out.push_str("    }\n");
+                } else if ty.counted_type().is_some() {
                     let bytes = crate::counted::description(&self.emitter.layouts, ty)?;
                     let words = bytes
                         .chunks_exact(8)
@@ -698,12 +708,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 Ok(())
             }
             l::InstructionKind::AsyncHandleRetain => {
-                self.emit_async_count(out, &operands[0], None)?;
+                self.emit_frame_count(out, &operands[0], 4, None)?;
                 self.assign(out, result, &operands[0])
             }
             l::InstructionKind::AsyncHandleRelease => {
                 let pos = self.emitter.pos_id(&instruction.pos);
-                self.emit_async_count(out, &operands[0], Some((pos, &instruction.traps)))
+                self.emit_frame_count(out, &operands[0], 4, Some((pos, &instruction.traps)))
             }
             l::InstructionKind::AsyncHandleArrayRetain
             | l::InstructionKind::AsyncHandleArrayRelease => {
@@ -728,6 +738,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     instruction.kind,
                     l::InstructionKind::AsyncHandleArrayRelease
                 );
+                if matches!(ty, Type::Generator(_)) {
+                    let pos = self.emitter.pos_id(&instruction.pos);
+                    self.emit_frame_count(
+                        out,
+                        &operands[0],
+                        subscript_runtime::generator_layout::HOLDERS_OFFSET,
+                        release.then_some((pos, instruction.traps.as_slice())),
+                    )?;
+                    return self.assign(out, result, &operands[0]);
+                }
                 if matches!(ty, Type::Array(_)) && !release
                     || matches!(ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)))
                 {

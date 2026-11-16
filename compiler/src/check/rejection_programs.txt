@@ -10132,3 +10132,12 @@ export {};
 type Pair<T> = [T, T];
 END FILE
 END PROGRAM
+PROGRAM	mirror-generator			0
+FILE	E	target/s154/forms/mirror-generator/main.ts
+export function main(): void {}
+END FILE
+FILE	A	target/s154/forms/mirror-generator/mirror.d.ts
+// @subscript-c-header include="host.h"
+declare function hostGenerator(): Generator<i32>;
+END FILE
+END PROGRAM

@@ -1576,3 +1576,4 @@ ParameterCapture	s312-ParameterCapture.ts	S009	lambda captures `param`, which is
 TypeofOperator	s312-typeof-guard.ts	S100	unary operator outside the decided surface
 GenericUserAlias	s312-GenericListAlias.ts	S100	source type aliases cannot be generic
 GenericUserAlias	s312-GenericPairAlias.ts	S100	source type aliases cannot be generic
+MirrorGeneratorType	mirror-generator	S100	a mirror names `Generator`; the C ABI has no generator and cannot register a generator frame

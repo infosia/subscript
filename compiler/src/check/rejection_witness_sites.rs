@@ -467,6 +467,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::UndefinedUnionMember,
     RejectionSite::NullableNonReference,
     RejectionSite::MirrorNullableView,
+    RejectionSite::MirrorGeneratorType,
     RejectionSite::WriteThroughValueTemporary,
     RejectionSite::ElementMethodMovesArray,
     RejectionSite::UndefinedNullUnion,

@@ -95,7 +95,24 @@ lookups, not only the extra pairs of §255.4 and §256.4.
 
 ### 314.3 Phase Review
 
-*(Filled in after the review.)*
+Two rounds stopped under rule 2 before the implementation landed:
+a mirror that returns `Generator<i32>` (rule 2a closes it), and a
+mirror `object` cast to a script class, with an object and a frame
+that the host built from the internal layouts (rule 2b puts it outside
+the C ABI). Evidence: `specs/tracking/s314-generator-count.md`. On the
+ship tier, the `for…of` form goes from 1103.5 ms to 138.8 ms and `pick`
+from 430.6 ms to 54.3 ms, for 10^7 calls. The review measured 1108.0 ms
+to 138.6 ms and 437.2 ms to 57.1 ms with a pin build of its own.
+
+One fresh review found no CRITICAL or MAJOR finding, and eight MINOR
+findings, all realistic. All are fixed: a blank line that cut the r519
+row from the C24 table; the pin and line of the r519 header; a form b
+example where a form a program exists (a mirror `hostNext(): i32` and a
+script generator that yields it); the place of r519 in the reject test
+table; the stated cost of each new test; an end-to-end test of the
+release at the last holder on both tiers; a text match in the emission
+test; and two citations of §116 in this section, with a note in §116.2
+rule 6.
 
 ### 314.4 Open
 

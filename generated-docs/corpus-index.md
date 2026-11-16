@@ -965,6 +965,7 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r516-cycle-through-a-local-lambda`](../corpus/reject/r516-cycle-through-a-local-lambda.ts) | Rejects a result cycle through a local lambda. | lambda, inference, type-parameter | compiler.md §306 |
 | [`reject/r517-cycle-through-a-list`](../corpus/reject/r517-cycle-through-a-list.ts) | Rejects a result cycle through an inferred list element. | lambda, inference, type-parameter | compiler.md §306 |
 | [`reject/r518-undefined-type-parameter`](../corpus/reject/r518-undefined-type-parameter.ts) | Rejects the reserved type parameter name undefined. | lambda, inference, type-parameter | compiler.md §306 |
+| [`reject/r519-mirror-generator`](../corpus/reject/r519-mirror-generator.ts) | A host cannot supply a generator through the C ABI. | mirror, generator, foreign-result | compiler.md §314, collisions.md C24 |
 | [`reject/r54-map-groupby-key`](../corpus/reject/r54-map-groupby-key.ts) | Applies the Q24 key whitelist to the key inferred from a Map.groupBy callback. | Map.groupBy, map-key-whitelist, callback-result | Q27, Q24 |
 | [`reject/r55-array-callback-container`](../corpus/reject/r55-array-callback-container.ts) | Rejects the callback's reference to the array being iterated. | Array-callback, container-parameter, non-escaping-by-construction | Q27, C5 |
 | [`reject/r56-json-stringify-map`](../corpus/reject/r56-json-stringify-map.ts) | Rejects Map as JSON.stringify input instead of silently emitting {}. | JSON.stringify, Map, rejected-input-family | Q28 |

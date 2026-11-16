@@ -758,7 +758,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .first()
                         .ok_or_else(|| internal("async retain has no handle"))?,
                 )?;
-                self.async_count(frame, None)?;
+                self.frame_count(frame, 4, None)?;
                 instruction.result.map(|_| RV::Scalar(frame))
             }
             l::InstructionKind::AsyncHandleRelease => {
@@ -767,7 +767,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .first()
                         .ok_or_else(|| internal("async release has no handle"))?,
                 )?;
-                self.async_count(frame, Some((&instruction.pos, &instruction.traps)))?;
+                self.frame_count(frame, 4, Some((&instruction.pos, &instruction.traps)))?;
                 None
             }
             l::InstructionKind::AsyncHandleArrayRetain
@@ -794,6 +794,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         instruction.kind,
                         l::InstructionKind::AsyncHandleArrayRelease
                     );
+                    if matches!(ty, Type::Generator(_)) {
+                        let frame = self.expect_scalar(operands[0])?;
+                        self.frame_count(
+                            frame,
+                            subscript_runtime::generator_layout::HOLDERS_OFFSET,
+                            release.then_some((&instruction.pos, instruction.traps.as_slice())),
+                        )?;
+                        if let Some(result) = instruction.result {
+                            self.set_value(result, RV::Scalar(frame))?;
+                        }
+                        return Ok(());
+                    }
                     // An array acquire needs no element description. The handle-array
                     // release wrapper supplies its static leaf description.
                     let array_wrapper = matches!(ty, Type::Array(_)) && !release
@@ -1044,18 +1056,27 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let release = self.builder.create_block();
                     self.builder.ins().brif(completed, done, &[], release, &[]);
                     self.builder.switch_to_block(release);
-                    let bytes = crate::counted::description(&self.ml.layouts, ty)?;
-                    let data = self.ml.literal_data(&bytes)?;
-                    let global = self.ml.module.declare_data_in_func(data, self.builder.func);
-                    let description = self.builder.ins().symbol_value(types::I64, global);
-                    let operation = self.iconst(types::I32, 1);
-                    let pos = self.position_id(&instruction.pos);
-                    let pos = self.iconst(types::I32, pos);
-                    self.call_runtime(
-                        self.ml.rt.counted_value,
-                        &[self.ctx, result, description, operation, pos],
-                        false,
-                    )?;
+                    if matches!(&**ty, Type::Generator(_)) {
+                        let frame = self.builder.ins().load(types::I64, flags(), result, 0);
+                        self.frame_count(
+                            frame,
+                            subscript_runtime::generator_layout::HOLDERS_OFFSET,
+                            Some((&instruction.pos, &[])),
+                        )?;
+                    } else {
+                        let bytes = crate::counted::description(&self.ml.layouts, ty)?;
+                        let data = self.ml.literal_data(&bytes)?;
+                        let global = self.ml.module.declare_data_in_func(data, self.builder.func);
+                        let description = self.builder.ins().symbol_value(types::I64, global);
+                        let operation = self.iconst(types::I32, 1);
+                        let pos = self.position_id(&instruction.pos);
+                        let pos = self.iconst(types::I32, pos);
+                        self.call_runtime(
+                            self.ml.rt.counted_value,
+                            &[self.ctx, result, description, operation, pos],
+                            false,
+                        )?;
+                    }
                 }
                 self.builder.ins().jump(done, &[]);
                 self.builder.switch_to_block(done);

@@ -1,15 +1,16 @@
-//! Inline async handle counts (compiler.md §116.2 rule 6).
+//! Inline frame counts (§116.2 rule 6 and §314 rule 1).
 
 use super::*;
 
 impl Body<'_, '_, '_> {
-    pub(super) fn emit_async_count(
+    pub(super) fn emit_frame_count(
         &mut self,
         out: &mut String,
         handle: &str,
+        offset: u32,
         release: Option<(u32, &[l::Trap])>,
     ) -> Result<(), String> {
-        let slot = format!("*(uint32_t*)((uint8_t*){handle} + 4)");
+        let slot = format!("*(uint32_t*)((uint8_t*){handle} + {offset})");
         if let Some((pos, traps)) = release {
             let _ = writeln!(out, "    if ({handle} != NULL && {slot} > 1u) {{");
             let _ = writeln!(out, "        --({slot});");

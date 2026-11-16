@@ -9,6 +9,12 @@ impl Divergence {
     #[must_use]
     pub const fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::MirrorGeneratorType => DivergenceEntry {
+                ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"host.h\"\ndeclare function hostGenerator(): Generator<i32>;",
+                subscript: "// file: mirror.d.ts\n// @subscript-c-header include=\"host.h\"\ndeclare function hostNext(): i32;\n// file: main.ts\nfunction* hostGenerator(): Generator<i32> { yield hostNext(); }",
+                why: "Only script generator functions register generator frames. A mirror cannot supply an unregistered frame.",
+                collision: "C24",
+            },
             Divergence::FileModuleDisabled => DivergenceEntry {
                 ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
                 subscript: "no equivalent: File access requires build configuration and host file callbacks.",

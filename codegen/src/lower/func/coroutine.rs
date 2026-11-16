@@ -685,7 +685,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
         }
         // compiler.md §116.1 rule 4a: release the registration's handle count.
-        self.async_count(handle, Some((pos, &[])))?;
+        self.frame_count(handle, 4, Some((pos, &[])))?;
         Ok(())
     }
 

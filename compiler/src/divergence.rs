@@ -649,6 +649,8 @@ pub enum Divergence {
     ForeignDirectCallback,
     /// A foreign string-view, descriptor, or callback return has no return provenance in the boundary vocabulary.
     ForeignReturnProvenance,
+    /// The C ABI has no generator frame or generator registration function.
+    MirrorGeneratorType,
     /// C writes a struct the script reads; no read lowering exists for its pair, view, callback, descriptor, userdata, or validated-pair member (§187).
     ForeignResultRead,
     /// A call builds each scratch copy once; a struct that reaches itself through pointers it must copy has no finite scratch build (§187 rule 9).
@@ -1361,6 +1363,7 @@ impl Divergence {
         Divergence::WireAliasNestedForeignReturn,
         Divergence::ForeignDirectCallback,
         Divergence::ForeignReturnProvenance,
+        Divergence::MirrorGeneratorType,
         Divergence::ForeignResultRead,
         Divergence::ForeignStructCycle,
         Divergence::AsyncGeneratorFunction,

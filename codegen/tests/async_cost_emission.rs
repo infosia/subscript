@@ -1,4 +1,5 @@
 //! Async cost regressions that whole-program output checks cannot detect.
+//! Cost: seven checker/emitter cases; measured debug suite: 0.04 s.
 
 use subscript_codegen::{emit_c, lir::lower_module};
 use subscript_compiler::{
@@ -75,4 +76,48 @@ fn handle_array_release_uses_the_direct_leaf_abi() {
     let c = emit_c(&hir).expect("emitted workload").source;
     assert!(c.contains("subscript_rt_async_release_array(ctx, roots.v7,"));
     assert!(!c.contains("subscript_rt_counted_value("));
+}
+
+#[test]
+fn generator_counts_emit_inline_without_description_dispatch() {
+    let source = include_str!("fixtures/generator-count.ts");
+    let hir =
+        check_program(&[SourceFile::new("generator-count.ts", source)]).expect("checked generator");
+    let c = emit_c(&hir).expect("emitted generator").source;
+    assert!(!c.contains("subscript_rt_counted_value("), "{c}");
+    let retain = c
+        .lines()
+        .find(|line| line.contains("!= UINT32_MAX"))
+        .expect("inline retain");
+    let handle = retain
+        .trim()
+        .strip_prefix("if (*(uint32_t*)((uint8_t*)")
+        .and_then(|line| line.split_once(" + "))
+        .expect("generator count cast")
+        .0;
+    let slot = format!(
+        "*(uint32_t*)((uint8_t*){handle} + {})",
+        subscript_runtime::generator_layout::HOLDERS_OFFSET
+    );
+    assert!(c.contains(&format!("{slot} > 1u")), "{c}");
+    assert!(c.contains("!= UINT32_MAX"), "the increment saturates");
+    assert!(c.contains("> 1u"), "the release checks the last holder");
+    assert!(
+        c.contains("subscript_rt_async_release("),
+        "the runtime handles zero and one"
+    );
+}
+
+#[test]
+fn generator_containers_keep_description_dispatch() {
+    for source in [
+        "function hold(xs: Generator<i32>[]): void { const copy = xs; }",
+        "function hold(xs: FixedArray<Generator<i32>, 1>): void { const copy = xs; }",
+        "function* leaf(): Generator<i32> { yield 1; } function* outer(g: Generator<i32>): Generator<Generator<i32>> { yield g; } function probe(): void { const g = leaf(); const o = outer(g); const result = o.next(); const copy = result; print(`${copy.value.next().value}`); }",
+    ] {
+        let source = format!("{source} export function main(): void {{}}");
+        let hir = check_program(&[SourceFile::new("generator-container.ts", source)]).expect("checked container");
+        let c = emit_c(&hir).expect("emitted container").source;
+        assert!(c.contains("subscript_rt_counted_value("), "{c}");
+    }
 }
