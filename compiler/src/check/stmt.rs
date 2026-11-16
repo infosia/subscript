@@ -727,6 +727,20 @@ impl<'p> Checker<'p> {
         }
         let diagnostics = self.diags.len();
         let (statements, ty) = self.check_void_operand(arg, fx);
+        // compiler.md §318 rule 2: the present path adopts through §236.
+        if matches!(arg, ast::Expr::OptChain(_))
+            && fx.frames.last().is_some_and(|frame| frame.is_async)
+            && matches!(self.apparent_type(&ty), Type::AsyncHandle(inner) if self.apparent_type(&inner) == Type::Void)
+        {
+            let mut adopted = Vec::new();
+            if !self.adopt_void_return_statements(statements, fx, pos, &mut adopted) {
+                self.reject_void_return_value(diagnostics, fx, pos);
+                self.read_statement_handles(&adopted, fx);
+            }
+            out.extend(adopted);
+            out.push(bare_return);
+            return None;
+        }
         if !matches!(self.apparent_type(&ty), Type::Void | Type::Error) {
             self.reject_void_return_value(diagnostics, fx, pos);
             // The rejected return reads its handles, so a handle gives no

@@ -99,6 +99,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r530-readonly-literal-nonmember.ts", RuleCode::S100, 15),
     ("r531-readonly-literal-store.ts", RuleCode::S100, 9),
     ("r532-readonly-number-boolean-store.ts", RuleCode::S100, 10),
+    ("r536-optional-lambda-result.ts", RuleCode::S100, 8),
+    ("r537-optional-lambda-parameter.ts", RuleCode::S100, 8),
     ("r506-c-callback-through-array.ts", RuleCode::S100, 8),
     ("r505-c-callback-through-indirect.ts", RuleCode::S100, 8),
     ("r504-c-callback-through-return.ts", RuleCode::S100, 7),

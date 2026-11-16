@@ -55,8 +55,23 @@ and `end`.
 
 ### 318.3 Phase Review
 
-*(Filled in after the review.)*
+One fresh review found no CRITICAL or MAJOR finding. No probe that
+`tsc` rejects is accepted: `F | undefined` is legal only as a function
+or method result (§195), so `return` is the only new site of rule 1.
+Rule 2 probes give the output of `node` on the dev tier and the ship
+tier; an uncaught rejection traps on both. The CLI output differs from
+the pin in a466 to a468 (accepted) and r536 (same code and line, a new
+message). Three MINOR findings: two reject entries and a test were not
+Red at the pin (fixed: they assert the message of rule 1; r536, r537,
+and the two `undefined` cases fail at the pin, and the two `null`
+cases, which §251 covers, stay as regression tests); the branch
+of rule 2 took every `Promise<void>` operand, so `return h = s.am();`
+changed its diagnostic (fixed: the branch takes an optional chain only);
+one is recorded in 318.4.
 
 ### 318.4 Open
 
-None.
+1. The adoption of rule 2 reads each expression statement of the
+   `then` branch of the lowered chain, and not the `else` branch. A
+   chain lowering that puts another statement there gives a wrong S100.
+   No probe reaches it at this landing. Contrived.

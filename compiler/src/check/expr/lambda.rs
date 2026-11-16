@@ -91,17 +91,15 @@ impl<'p> Checker<'p> {
     }
 
     /// The function type that the contextual type `ctx` gives a lambda: a
-    /// function type, or the function type `F` of `F | null` (compiler.md
-    /// §251 rule 1). Another type gives no function type.
+    /// function type, or `F` of `F | null` or `F | undefined`
+    /// (compiler.md §318 rule 1). Another type gives no function type.
     pub(crate) fn lambda_context(&self, ctx: &Type) -> Option<crate::types::FuncType> {
         match self.apparent_type(ctx) {
             Type::Func(function) => Some(*function),
-            Type::Nullable(inner, crate::types::Absence::Null) => {
-                match self.apparent_type(&inner) {
-                    Type::Func(function) => Some(*function),
-                    _ => None,
-                }
-            }
+            Type::Nullable(inner, _) => match self.apparent_type(&inner) {
+                Type::Func(function) => Some(*function),
+                _ => None,
+            },
             _ => None,
         }
     }

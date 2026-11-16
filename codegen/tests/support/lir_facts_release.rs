@@ -8,6 +8,10 @@ use subscript_compiler::{hir, lir as l, Pos, Type};
 #[path = "lir_facts_release_raise.rs"]
 mod raising_operands;
 
+#[cfg(test)]
+#[path = "lir_facts_release_optional.rs"]
+mod optional_handle_return;
+
 pub(super) fn compare(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
     compare_for_reload(hir, lir, false, findings);
 }

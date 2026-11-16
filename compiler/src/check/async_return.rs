@@ -35,6 +35,48 @@ pub(crate) struct Adoption {
 }
 
 impl Checker<'_> {
+    /// Adopts the handle under each optional-chain test, or completes with
+    /// no value on an absent path (compiler.md §318 rule 2).
+    /// Returns whether each value adopts; preserves each rejected operand.
+    pub(in crate::check) fn adopt_void_return_statements(
+        &mut self,
+        statements: Vec<hir::Stmt>,
+        fx: &mut FnCtx,
+        pos: &Pos,
+        out: &mut Vec<hir::Stmt>,
+    ) -> bool {
+        let mut adopted = true;
+        for statement in statements {
+            match statement {
+                hir::Stmt::Expr(value) => {
+                    if let Some(value) =
+                        self.adopt_returned_handle(value, &Type::Void, fx, pos, out)
+                    {
+                        adopted = false;
+                        out.push(hir::Stmt::Expr(value));
+                    }
+                }
+                hir::Stmt::If {
+                    cond,
+                    then,
+                    els,
+                    pos: branch_pos,
+                } => {
+                    let mut body = Vec::new();
+                    adopted &= self.adopt_void_return_statements(then, fx, pos, &mut body);
+                    out.push(hir::Stmt::If {
+                        cond,
+                        then: body,
+                        els,
+                        pos: branch_pos,
+                    });
+                }
+                other => out.push(other),
+            }
+        }
+        adopted
+    }
+
     /// compiler.md §236 rule 3: a return whose leaves mix a handle and a
     /// value has the meaning of one return per leaf. `return b ? x : h` is
     /// `if (b) return x; else return h;`, so the condition runs once. A

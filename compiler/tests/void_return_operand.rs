@@ -264,15 +264,14 @@ fn a_parenthesized_operand_has_the_type_of_its_expression() {
     }
 }
 
-/// Rule 5: a rejected return gives one diagnostic. An optional async call
-/// is a `Promise<void> | undefined`, and the return reads its handle, so
-/// S013 does not fire (§237.4 item 4). The leaves of a split conditional
-/// give one S100, at the return.
+/// Rule 5: a rejected return gives one diagnostic. A synchronous return
+/// of an optional async call reads its handle, so S013 does not fire.
+/// An async return adopts it (compiler.md §318 rule 2).
+/// The leaves of a split conditional give one S100 at the return.
 #[test]
 fn a_rejected_return_gives_one_diagnostic() {
     for body in [
         "function f(s: S | null): void { return s?.am(); }",
-        "async function f(s: S | null): Promise<void> { return s?.am(); }",
         "function f(b: boolean): void { return b ? 1 : 2; }",
         "function f(b: boolean, c: boolean): void { return b ? 1 : (c ? 2 : v()); }",
     ] {
@@ -297,4 +296,19 @@ fn a_void_yield_operand_stays_rejected() {
         diagnostic.message,
         "a `void` expression is only allowed as an expression statement"
     );
+}
+
+/// An assignment return keeps S100 before the dropped-handle diagnostic.
+#[test]
+fn an_async_handle_assignment_return_keeps_the_value_rejection() {
+    let diagnostics =
+        check("async function f(s: S): Promise<void> { let h: Promise<void>; return h = s.am(); }")
+            .expect_err("assignment return");
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(
+        diagnostics[0].message,
+        "a `void` function cannot return a value"
+    );
+    assert_eq!(diagnostics[1].code, RuleCode::S013);
 }
