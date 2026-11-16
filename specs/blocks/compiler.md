@@ -355,3 +355,4 @@ Every section, with its status:
 | §311 | Each rejection site shows an example of its own form | active | [`s311-each-rejection-site-shows-an-example-of-its-own-form.md`](compiler/s311-each-rejection-site-shows-an-example-of-its-own-form.md) |
 | §312 | A site that two forms reach splits by form | active | [`s312-a-site-that-two-forms-reach-splits-by-form.md`](compiler/s312-a-site-that-two-forms-reach-splits-by-form.md) |
 | §313 | A callback leaf and an asserted lambda get the diagnostic of their form | active | [`s313-a-callback-leaf-and-an-asserted-lambda-get-the-diagnostic-of-their-form.md`](compiler/s313-a-callback-leaf-and-an-asserted-lambda-get-the-diagnostic-of-their-form.md) |
+| §315 | A loop keeps a local fact that holds at each back edge | active | [`s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md`](compiler/s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md) |

@@ -119,6 +119,7 @@ is fixed when it is found and does not block a phase. A program that
 1. Rule 3 does not use the order of the stores. `for (…) { e.x; e =
    mk(); e = new A(); }` with a non-null `e` before the loop is
    rejected; `tsc` accepts it (measured 2026-10-05). The reversed order is TS18047. A missing fact under 162.2.
+   *(Selected 2026-11-16 for §315.)*
 2. Rule 3 keeps no fact of a field path at the loop head when the loop
    stores a non-null value to a field of the same name, even through
    the same receiver: `h.f = new A(); while (true) { h.f.x; h.f = new
