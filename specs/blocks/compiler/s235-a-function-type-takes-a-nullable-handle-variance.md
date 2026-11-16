@@ -161,6 +161,7 @@ fix changed the form; the contract gained rules 5a–5d.
 
 1. A conditional with no context, `b ? (x: C): C => x : (x: C): C | null
    => null`, has no common type (S100). `tsc` accepts it.
+   *(Closed: measured accepted at `11d0c3fd`; the program prints `1`.)*
 2. Collection element types stay invariant: `Array.from<F>(ids)`,
    a spread, and a `Set` source with a fitting function element are
    rejected. `tsc` accepts them.

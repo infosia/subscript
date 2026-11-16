@@ -116,5 +116,6 @@ MINOR findings.
 1. The message of `Number(value)` says "use `value as f64`", and
    `"1.5" as f64` is rejected. The block shows `parseFloat`. Work unit
    4 (wrong claims) takes it.
+   *(Closed: measured at `11d0c3fd`; the `Number(value)` message names `parseFloat` for a string.)*
 2. A form a program can have another intent and pass the check. No
    mechanical check reads intent.

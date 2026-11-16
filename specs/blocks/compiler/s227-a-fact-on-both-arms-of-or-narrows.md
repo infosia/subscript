@@ -80,3 +80,4 @@ gave no read of a null.
    `g === "x" || (call() || g === "y")` stay rejected with S011. `tsc`
    accepts them. The checker is stricter there, and no read of a null
    follows.
+   *(Closed: measured accepted at `11d0c3fd`; both forms print `ok`.)*

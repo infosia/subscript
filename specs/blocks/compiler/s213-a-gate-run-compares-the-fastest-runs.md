@@ -105,3 +105,4 @@ MAJOR and eight MINOR findings.
    installed. *(2026-11-06: §226 measured the Windows path. At two busy
    processes per CPU its dev-JIT wall minimum missed 6.00x and 25.00x;
    §226 widens those two limits on Windows. The item is closed.)*
+   *(Closed: measured at `11d0c3fd`; the item records that §226 closed it.)*

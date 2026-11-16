@@ -148,3 +148,4 @@ lambda and of a §240 reference.
    rejected.)* *(The conditional closed 2026-11-08 by §244.)*
 2. `finally(id(tick))` keeps S013, and `tsc` accepts it. A lambda with
    no parameters in an array callback place is S014.
+   *(Closed: measured accepted at `11d0c3fd`; `v().finally(id(tick))` prints `t`.)*

@@ -181,9 +181,11 @@ and four MINOR findings, and one cost finding.
 3. `xs.reduce<string | null>((acc, x) => …, null)` ignores the type
    argument for a lambda with no parameter types. It stays rejected. The
    annotated form passes.
+   *(Closed: measured accepted at `11d0c3fd`; the program prints `ab`.)*
 4. `reduce` rejects a callback whose result is narrower than the
    accumulator: `xs.reduce((acc: string | null, x: string): string => …,
    null)`. `tsc` is not measured on it.
+   *(Closed: measured accepted at `11d0c3fd`; the program prints `ab`.)*
 5. *(Closed by §220.)* The hidden subject of a `for…of` over a `FixedArray` stays rooted until
    the function returns. A `Context.collect()` after the loop keeps the
    handles of that array. The hold is one array per loop site. A named

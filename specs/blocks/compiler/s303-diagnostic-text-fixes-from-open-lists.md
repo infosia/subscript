@@ -102,5 +102,6 @@ second reads the reason in the `why`.
 2. A static field read through an immediately called lambda before its
    class, `const s: i32 = ((): i32 => B.z)();`, gives the S100 of §241
    rule 1 and the C14 diagnostic "through an indirect call".
+   *(Closed: measured accepted at `11d0c3fd`; `((): i32 => B.z)()` before `class B` prints `5`.)*
 3. The message of rule 5a for `sort` no longer cites Q22; the message
    before §303 did.

@@ -77,6 +77,7 @@ method, a static method, a constructor, a lambda, and a generator.
    called as `await f()` gives S100 "`f` expects 1 argument(s), got 0:
    a call through a function value passes every parameter". `tsc`
    accepts it. An immediately called lambda gives the same S100.
+   *(Closed: measured accepted at `11d0c3fd`; the program prints `4`.)*
 2. A default that reads an earlier parameter discharges it, as an
    argument does.
    `async function f(p: Promise<i32>, q: Promise<i32> = p)` with
