@@ -1367,6 +1367,7 @@ impl<'p> Checker<'p> {
                     ), pos.clone());
             }
         }
+        self.finish_alias_string_switch(&mut disc, &mut cases, out);
         self.finish_literal_string_switch(&mut disc, &mut cases, subject_literal.as_deref());
         out.push(hir::Stmt::Switch { disc, cases, pos });
     }

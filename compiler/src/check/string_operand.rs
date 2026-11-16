@@ -318,6 +318,7 @@ impl Checker<'_> {
             },
         );
         let disc_ty = &disc.ty;
+        let string_subject = self.apparent_type(disc_ty) == Type::Str;
         if let Some((alias_name, members)) = alias_switch {
             match label_literal {
                 Some(label) => {
@@ -336,6 +337,7 @@ impl Checker<'_> {
                             ), checked.pos.clone());
                     }
                 }
+                _ if string_subject => {}
                 _ => {
                     *alias_labels_valid = false;
                     self.reject_subset(RejectionSite::AliasCaseNonLiteral, format!(
@@ -352,6 +354,74 @@ impl Checker<'_> {
             self.require_expr_assignable(&mut checked, disc_ty, fx, "the case label");
         }
         checked
+    }
+
+    /// §321: save the subject once and compare each label in source order.
+    pub(super) fn finish_alias_string_switch(
+        &mut self,
+        disc: &mut hir::Expr,
+        cases: &mut [hir::SwitchCase],
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        if !matches!(self.apparent_type(&disc.ty), Type::StringAlias(_))
+            || !cases.iter().filter_map(|c| c.test.as_ref()).any(|test| {
+                let ty = self.apparent_type(&test.ty);
+                ty == Type::Str
+                    || matches!(ty, Type::Nullable(ref inner, _) if self.apparent_type(inner) == Type::Str)
+            })
+        {
+            return;
+        }
+        let name = format!("#switch:{}:{}", disc.pos.line, disc.pos.col);
+        out.push(hir::Stmt::Let {
+            name: name.clone(),
+            ty: disc.ty.clone(),
+            mutable: false,
+            dispose: false,
+            init: disc.clone(),
+            pos: disc.pos.clone(),
+        });
+        for case in cases {
+            if let Some(test) = case.test.take() {
+                let mut subject = hir::Expr {
+                    kind: hir::ExprKind::Local(name.clone(), disc.ty.clone(), false),
+                    ..disc.clone()
+                };
+                let mut other = test.clone();
+                self.convert_string_operand(
+                    &mut subject,
+                    StringOperand::Binary {
+                        op: BinaryOp::EqEqEq,
+                        other: &mut other,
+                        literal: None,
+                        compound: false,
+                        left: true,
+                    },
+                );
+                case.test = Some(hir::Expr {
+                    pending_work: None,
+                    kind: hir::ExprKind::Binary {
+                        op: if Type::compares_string_content(
+                            &self.apparent_type(&subject.ty),
+                            &self.apparent_type(&test.ty),
+                        ) {
+                            hir::BinOp::StrEq
+                        } else {
+                            hir::BinOp::Eq
+                        },
+                        left: Box::new(subject),
+                        right: Box::new(test),
+                    },
+                    ty: Type::Bool,
+                    pos: case.pos.clone(),
+                });
+            }
+        }
+        *disc = hir::Expr {
+            kind: hir::ExprKind::Bool(true),
+            ty: Type::Bool,
+            ..disc.clone()
+        };
     }
 
     /// §299 rule 2: a literal subject can meet alias and string labels in

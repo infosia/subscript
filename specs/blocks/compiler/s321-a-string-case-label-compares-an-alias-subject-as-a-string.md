@@ -49,8 +49,24 @@ already converts an alias value to `string` for `===` against a
 
 ### 321.3 Phase Review
 
-*(Filled in after the review.)*
+One fresh review found no CRITICAL or MAJOR finding. Every accepted
+probe was `tsc`-clean, and its output on the development tier and the
+ship tier equals `node` byte for byte: parameter, local, field, §316
+field, call, and template labels; `string | null` and
+`string | undefined` labels; mixed member and string labels;
+fall-through; `default` in the middle; a subject call that runs once;
+a wire alias; nested switches; `yield` and `await` in a case body. The
+ship C lowers a member label to an integer compare and a string label
+to a string compare (rule 2). Over 1,021 corpus files, only a471
+differs from the pin. Two MINOR findings are recorded in 321.4.
 
 ### 321.4 Open
 
-None.
+1. An `i32` label against an alias subject reaches the
+   `AliasCaseNonLiteral` site, whose block says that TypeScript accepts
+   the form; `tsc` gives TS2678 (measured). Older than §321. A label
+   that is not a string and not an alias needs a site of its own with
+   a `TscRejects` claim (§312 rule 1).
+2. The variable `string_subject` in `compiler/src/check/string_operand.rs`
+   is true only when the label converts the subject; its name says
+   more than that.

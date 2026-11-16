@@ -348,7 +348,7 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
     if name.starts_with("product-string-alias-") && name.contains("-case-parameter-") {
         records.push(Divergence {
             code: RuleCode::S100,
-            record: "compiler.md §299",
+            record: "compiler.md §321",
             message: "case labels for string-literal union alias",
             token: "divergence `AliasCaseNonLiteral`",
         });
