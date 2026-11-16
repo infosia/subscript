@@ -356,3 +356,4 @@ Every section, with its status:
 | §312 | A site that two forms reach splits by form | active | [`s312-a-site-that-two-forms-reach-splits-by-form.md`](compiler/s312-a-site-that-two-forms-reach-splits-by-form.md) |
 | §313 | A callback leaf and an asserted lambda get the diagnostic of their form | active | [`s313-a-callback-leaf-and-an-asserted-lambda-get-the-diagnostic-of-their-form.md`](compiler/s313-a-callback-leaf-and-an-asserted-lambda-get-the-diagnostic-of-their-form.md) |
 | §315 | A loop keeps a local fact that holds at each back edge | active | [`s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md`](compiler/s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md) |
+| §316 | A readonly literal field is a literal operand | active | [`s316-a-readonly-literal-field-is-a-literal-operand.md`](compiler/s316-a-readonly-literal-field-is-a-literal-operand.md) |

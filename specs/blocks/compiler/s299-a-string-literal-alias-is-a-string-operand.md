@@ -148,6 +148,7 @@ divergence cell of the matrix.
    a function with a literal result type) is a `string` operand here.
    `m === K.Z`, with `static readonly Z = "zzz"`, is accepted and gives
    `false`; `tsc` gives TS2367.
+   *(Selected 2026-11-16 for §316.)*
 2. `let c = "zzz"; switch (m) { case c: }` stays rejected with the
    divergence `AliasCaseNonLiteral`. `tsc` accepts it. This is older
    than §299: rule 1.5 covers a `string` subject only.
