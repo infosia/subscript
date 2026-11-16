@@ -477,7 +477,7 @@ impl<'p> Checker<'p> {
                 .then(|| {
                     d.init
                         .as_deref()
-                        .and_then(|source| self.string_literal_operand(source, fx))
+                        .and_then(|source| self.checked_string_literal_operand(source, &init, fx))
                 })
                 .flatten();
             let async_origins = self.expr_async_origins(&init, fx);
@@ -1199,8 +1199,8 @@ impl<'p> Checker<'p> {
 
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
-        let subject_literal = self.string_literal_operand(&sw.discriminant, fx);
         let mut disc = self.check_expr(&sw.discriminant, None, fx);
+        let subject_literal = self.checked_string_literal_operand(&sw.discriminant, &disc, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::SwitchKind,
             &disc.ty,

@@ -13,6 +13,7 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::ReadonlyLiteralStore => (RuleCode::S100, TscRejects),
     Self::MirrorGeneratorType => (RuleCode::S100, Diverges(Divergence::MirrorGeneratorType)),
     Self::ParameterCapture => (RuleCode::S009, Diverges(Divergence::MutableLocalCapture)),
     Self::LaterLocalCaptureRead => (RuleCode::S100, Diverges(Divergence::DeclarationScope)),

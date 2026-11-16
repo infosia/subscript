@@ -589,8 +589,8 @@ impl<'p> Checker<'p> {
                         self.restore_nullable_storage(&mut right);
                     }
                 }
-                let left_literal = self.string_literal_operand(&b.left, fx);
-                let right_literal = self.string_literal_operand(&b.right, fx);
+                let left_literal = self.checked_string_literal_operand(&b.left, &left, fx);
+                let right_literal = self.checked_string_literal_operand(&b.right, &right, fx);
                 self.convert_string_operand(
                     &mut left,
                     StringOperand::Binary {

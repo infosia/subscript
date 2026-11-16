@@ -62,6 +62,7 @@ pub(crate) enum RejectionSite {
     RestrictedConstructorOutsideClass,
     ValueTypeRestrictedConstructor,
     AbstractClassConstructed,
+    ReadonlyLiteralStore,
     ReadonlyFieldWriteOutsideConstructor,
     OptionalFunctionTypeParameter,
     StatementAlwaysTruthyCondition,

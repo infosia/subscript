@@ -60,6 +60,7 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::RestrictedConstructorOutsideClass,
     RejectionSite::ValueTypeRestrictedConstructor,
     RejectionSite::AbstractClassConstructed,
+    RejectionSite::ReadonlyLiteralStore,
     RejectionSite::ReadonlyFieldWriteOutsideConstructor,
     RejectionSite::OptionalFunctionTypeParameter,
     RejectionSite::StatementAlwaysTruthyCondition,

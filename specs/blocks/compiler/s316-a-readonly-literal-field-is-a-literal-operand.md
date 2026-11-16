@@ -76,7 +76,19 @@ the only declaration of §299.4 item 1 that reaches the checker.
 
 ### 316.3 Phase Review
 
-*(Filled in after the review.)*
+Before the review, a measurement found that round 1 excluded the
+instance fields of a class with a constructor body, so `m === k.w`
+stayed accepted there, and that `this.w = "yyy"` in a constructor was
+accepted at `51135545`; `tsc` rejects both. Rule 4 is amended.
+
+One fresh review found one MAJOR finding, realistic and older than
+§316: a constructor store to a `readonly` field with a number or a
+boolean literal initializer took another value (`readonly n = 0` with
+`this.n = c`); `tsc` gives TS2322. Rule 4a is added. Four MINOR
+findings: `readonly b = this.a` read no literal (rule 4b, fixed); the
+store message printed a Rust debug value (fixed); two contrived forms
+are recorded in 316.4. Over 1,126 corpus files, the CLI output differs
+from the pin in the new entries only, and each is Red at the pin.
 
 ### 316.4 Open
 

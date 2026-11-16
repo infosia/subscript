@@ -373,6 +373,47 @@ impl<'p> Checker<'p> {
             };
         }
         let target = place.into_read(self);
+        // §316: an inferred readonly field keeps its initializer literal.
+        if matches!(target.kind, ExprKind::Field { .. }) {
+            if let Some(expected) = self.checked_string_literal_operand(&a.right, &target, fx) {
+                let actual = self.checked_string_literal_operand(&a.right, &value, fx);
+                if op.is_some() || actual.as_ref() != Some(&expected) {
+                    self.reject_subset(
+                        RejectionSite::ReadonlyLiteralStore,
+                        format!("readonly field assignment expects literal {expected:?}"),
+                        value.pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+            }
+        }
+        if let ExprKind::Field { obj, name } = &target.kind {
+            if let Type::Class(class) = self.apparent_type(&obj.ty) {
+                if let Some(field) = self.class_sigs[class.0].fields.get(name) {
+                    if !field.mutable && !field.annotated {
+                        if let Some((expected, spelling)) =
+                            field.initializer.as_ref().and_then(|init| {
+                                Some((
+                                    numeric_or_boolean_literal(&init.expression)?,
+                                    numeric_or_boolean_literal_spelling(&init.expression)?,
+                                ))
+                            })
+                        {
+                            if op.is_some()
+                                || numeric_or_boolean_literal(&a.right).as_ref() != Some(&expected)
+                            {
+                                self.reject_subset(
+                                    RejectionSite::ReadonlyLiteralStore,
+                                    format!("readonly field assignment expects literal {spelling}"),
+                                    value.pos.clone(),
+                                );
+                                return self.err_expr(pos);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let result_ty = if let Some(bin) = op {
             let Some(binary_op) = assign_binary_op(bin) else {
                 return self.err_expr(pos);
@@ -918,6 +959,42 @@ fn local_element_root(target: &hir::Expr) -> Option<&str> {
             ExprKind::Index { .. } => local_element_root(obj),
             _ => None,
         },
+        _ => None,
+    }
+}
+
+// Keep the numeric value, rather than the spelling (0 and 0.0 are the same literal).
+#[derive(Debug, PartialEq)]
+enum NumericOrBooleanLiteral {
+    Number(f64),
+    Boolean(bool),
+}
+
+fn numeric_or_boolean_literal(source: &ast::Expr) -> Option<NumericOrBooleanLiteral> {
+    match super::unparen_expr(source) {
+        ast::Expr::Lit(ast::Lit::Num(n)) => Some(NumericOrBooleanLiteral::Number(n.value)),
+        ast::Expr::Lit(ast::Lit::Bool(b)) => Some(NumericOrBooleanLiteral::Boolean(b.value)),
+        ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => {
+            match numeric_or_boolean_literal(&u.arg)? {
+                NumericOrBooleanLiteral::Number(n) => Some(NumericOrBooleanLiteral::Number(-n)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn numeric_or_boolean_literal_spelling(source: &ast::Expr) -> Option<String> {
+    match super::unparen_expr(source) {
+        ast::Expr::Lit(ast::Lit::Num(n)) => Some(
+            n.raw
+                .as_ref()
+                .map_or_else(|| n.value.to_string(), |raw| raw.to_string()),
+        ),
+        ast::Expr::Lit(ast::Lit::Bool(b)) => Some(b.value.to_string()),
+        ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => {
+            Some(format!("-{}", numeric_or_boolean_literal_spelling(&u.arg)?))
+        }
         _ => None,
     }
 }

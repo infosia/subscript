@@ -1583,3 +1583,4 @@ NullableNominalAssignmentFinallyJump	s315-nominal-loop	S005	nominal types are no
 NullableNominalAssignmentFinallyJump	s315-nominal-switch	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
 NullableCallFinallyJump	s315-call-loop	S100	type `((i32) => i32) | null` is not callable
 NullableCallFinallyJump	s315-call-switch	S100	type `((i32) => i32) | null` is not callable
+ReadonlyLiteralStore	s316-readonly-store	S100	readonly field assignment expects literal "zzz"

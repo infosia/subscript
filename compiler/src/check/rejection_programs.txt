@@ -10226,3 +10226,8 @@ function take(a: A): void {}
 function id(x: i32): i32 { return x; } function f(next: ((x: i32) => i32) | null): void { let cb: ((x: i32) => i32) | null = id; switch (0) { default: try { break; } finally { cb = next; } } print(`${cb(1)}`); }
 END FILE
 END PROGRAM
+PROGRAM	s316-readonly-store	TS2322		0
+FILE	E	target/s316/main.ts
+class K { readonly w = "zzz"; constructor() { this.w = "yyy"; } } export function main(): void { print(new K().w); }
+END FILE
+END PROGRAM

@@ -204,3 +204,117 @@ fn literal_operands_keep_integer_comparisons_and_nonmember_diagnostics() {
         }
     }
 }
+
+// Measured cost: 0.01 s for this checker/HIR test; no execution tier.
+#[test]
+fn readonly_fields_follow_the_literal_operand_table() {
+    let fields = "class K { static readonly Z = \"zzz\"; static readonly A = \"aaa\"; readonly w = \"zzz\"; readonly b = \"bbb\"; static readonly S: string = \"zzz\"; }";
+    for (body, count) in [
+        ("m === K.A;", 0),
+        ("m === k.b;", 0),
+        ("m === K.S;", 1),
+        ("switch (m) { case K.A: break; case k.b: break; }", 0),
+    ] {
+        let source = format!(
+            "type Mode = \"aaa\" | \"bbb\"; {fields} function f(m: Mode, k: K): void {{ {body} }}"
+        );
+        let checked = check_program(&[SourceFile::new("fields.ts", source)]).unwrap();
+        let f = checked.functions.iter().find(|f| f.name == "f").unwrap();
+        assert_eq!(
+            f.body
+                .iter()
+                .map(|s| conversions(hir::HirChild::Stmt(s)))
+                .sum::<usize>(),
+            count,
+            "{body}"
+        );
+    }
+    for operand in ["K.Z", "k.w"] {
+        let source = format!("type Mode = \"aaa\" | \"bbb\"; {fields} function f(m: Mode, k: K): void {{ m === {operand}; }}");
+        let errors = check_program(&[SourceFile::new("fields.ts", source)]).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message,
+            "operator `===` not defined for `Mode` and `string`"
+        );
+    }
+    for constructor in [
+        "n: i32; constructor(n: i32) { this.n = n; }",
+        "constructor() { this.w = \"zzz\"; }",
+    ] {
+        let source = format!("type Mode = \"aaa\" | \"bbb\"; class K {{ readonly w = \"zzz\"; {constructor} }} function f(m: Mode, k: K): void {{ m === k.w; }}");
+        let errors = check_program(&[SourceFile::new("constructor.ts", source)]).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message,
+            "operator `===` not defined for `Mode` and `string`"
+        );
+    }
+    for value in ["\"zzz\"", "\"yyy\"", "value"] {
+        let source = format!("class K {{ readonly w = \"zzz\"; constructor(value: string) {{ this.w = {value}; }} }}");
+        let result = check_program(&[SourceFile::new("store.ts", &source)]);
+        if value == "\"zzz\"" {
+            result.unwrap();
+        } else {
+            let errors = result.unwrap_err();
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                errors[0].message,
+                "readonly field assignment expects literal \"zzz\""
+            );
+        }
+    }
+    let errors = check_program(&[SourceFile::new(
+        "subclass.ts",
+        "class K { readonly w = \"zzz\"; } class D extends K { readonly w = \"zzz\"; }",
+    )])
+    .unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "class inheritance is not in the decided surface"));
+}
+
+#[test]
+fn readonly_numeric_and_boolean_constructor_stores_preserve_literals() {
+    for (initial, same, different, parameter) in [
+        ("0", "(0)", "1", "i32"),
+        ("false", "false", "true", "boolean"),
+        ("true", "true", "false", "boolean"),
+        ("-2", "(-2)", "2", "i32"),
+        ("0.0", "0", "1", "f64"),
+        ("0x10", "16", "17", "i32"),
+    ] {
+        for value in [same, different, "c"] {
+            let source = format!("class K {{ readonly n = {initial}; constructor(c: {parameter}) {{ this.n = {value}; }} }}");
+            let result = check_program(&[SourceFile::new("store.ts", &source)]);
+            if value == same {
+                result.unwrap();
+            } else {
+                let errors = result.unwrap_err();
+                assert_eq!(errors.len(), 1, "{source}: {errors:?}");
+                assert_eq!(
+                    errors[0].message,
+                    format!("readonly field assignment expects literal {initial}")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn readonly_initializer_this_reads_keep_their_literal() {
+    for literal in ["zzz", "aaa"] {
+        let source = format!("type Mode = \"aaa\" | \"bbb\"; class K {{ readonly a = \"{literal}\"; readonly b = this.a; readonly c = this.b; }} function f(m: Mode, k: K): void {{ m === k.c; }}");
+        let result = check_program(&[SourceFile::new("fields.ts", source)]);
+        if literal == "aaa" {
+            result.unwrap();
+        } else {
+            let errors = result.unwrap_err();
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                errors[0].message,
+                "operator `===` not defined for `Mode` and `string`"
+            );
+        }
+    }
+}
