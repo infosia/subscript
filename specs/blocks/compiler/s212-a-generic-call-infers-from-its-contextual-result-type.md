@@ -144,6 +144,7 @@ MAJOR and eight MINOR findings.
    `function f<U>(a: Buf<U> | null): Buf<U> { return a ?? empty(); }`
    and `a ?? []` stay rejected. `tsc` accepts them. A context there
    changes the type of `a ?? 1` and `a ?? id(1)`, which rule 6 forbids.
+   *(Selected 2026-11-16 for §319.)*
 7. *(`c || zero()` and `c && zero()` closed by §232. `!zero()` stays, §232.1 rule 4.)* `!zero()`, `c || zero()`, `c && zero()`, and `empty() ?? null` take
    no contextual candidate. `tsc` accepts them.
 8. *(Closed: both forms are accepted at `0bd4204a`.)* `id<Mode>("a")` with `type Mode = "a" | "b"` gives "the argument

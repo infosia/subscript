@@ -359,3 +359,4 @@ Every section, with its status:
 | §316 | A readonly literal field is a literal operand | active | [`s316-a-readonly-literal-field-is-a-literal-operand.md`](compiler/s316-a-readonly-literal-field-is-a-literal-operand.md) |
 | §317 | A handle that reaches an await on some paths only is not discharged | active | [`s317-a-handle-that-reaches-an-await-on-some-paths-only-is-not-discharged.md`](compiler/s317-a-handle-that-reaches-an-await-on-some-paths-only-is-not-discharged.md) |
 | §318 | An optional context and an optional handle return | active | [`s318-an-optional-context-and-an-optional-handle-return.md`](compiler/s318-an-optional-context-and-an-optional-handle-return.md) |
+| §319 | A nullish right operand in a generic body takes the context | active | [`s319-a-nullish-right-operand-in-a-generic-body-takes-the-context.md`](compiler/s319-a-nullish-right-operand-in-a-generic-body-takes-the-context.md) |
