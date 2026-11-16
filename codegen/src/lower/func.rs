@@ -794,6 +794,7 @@ fn define_group_bridge<M: Module>(
     ml: &mut ModLower<'_, M>,
     element: &Type,
     key: &Type,
+    indexed: bool,
 ) -> Result<cranelift_module::FuncId, String> {
     let Repr::Scalar(key_repr) = ml.layouts.repr(key)? else {
         return Err(internal(format!(
@@ -804,13 +805,18 @@ fn define_group_bridge<M: Module>(
     for _ in 0..5 {
         signature.params.push(AbiParam::new(types::I64));
     }
+    signature.params.push(AbiParam::new(types::I32));
     let name = format!("subscript_group_bridge{}", ml.lambda_count);
     ml.lambda_count += 1;
     let id = ml
         .module
         .declare_function(&name, Linkage::Local, &signature)
         .map_err(|error| internal(format!("declare {name}: {error}")))?;
-    let script_signature = ml.make_sig(std::slice::from_ref(element), key, true, false)?;
+    let mut params = vec![element.clone()];
+    if indexed {
+        params.push(Type::I32);
+    }
+    let script_signature = ml.make_sig(&params, key, true, false)?;
     let mut context = ml.module.make_context();
     context.func.signature = signature;
     let mut builder_context = FunctionBuilderContext::new();
@@ -852,6 +858,9 @@ fn define_group_bridge<M: Module>(
                 );
                 arguments.push(copy);
             }
+        }
+        if indexed {
+            arguments.push(fixed[5]);
         }
         let signature = builder.import_signature(script_signature);
         let call = builder.ins().call_indirect(signature, fixed[1], &arguments);

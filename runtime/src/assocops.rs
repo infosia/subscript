@@ -825,9 +825,9 @@ type MapBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const
 type SetBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8);
 
 /// Fixed ABI of a generated `Map.groupBy` callback bridge. The bridge
-/// copies/loads one array element into the script ABI and writes the
-/// callback's concrete key result to `key_out`.
-type GroupBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8, *mut u8);
+/// passes the element and index into the script ABI and writes the key result.
+type GroupBridge =
+    unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8, *mut u8, i32);
 
 /// Groups an array under callback-produced keys. The output map, every
 /// group array, and every stored element own fresh Context storage.
@@ -839,9 +839,9 @@ type GroupBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *con
 ///
 /// # Safety
 ///
-/// `items` is a live array; `code`/`env` are a callback `(T) -> K`;
+/// `items` is a live array; `code`/`env` are a callback `(T[, i32]) -> K`;
 /// `bridge` has the [`GroupBridge`] signature and writes `key_size`
-/// bytes to its final argument.
+/// bytes to its `key_out` argument.
 pub(crate) unsafe fn group_by(
     ctx: *mut Context,
     items: *mut u8,
@@ -897,9 +897,10 @@ pub(crate) unsafe fn group_by(
         // owns exactly the tier's element width.
         unsafe { std::ptr::copy_nonoverlapping(source, element_ptr, elem_size) };
         let mut key = 0u64;
+        let key_out = (&mut key as *mut u64).cast();
         // SAFETY: generated bridge contract. Q24 key widths are at most
         // eight bytes, validated by `new`.
-        unsafe { call(ctx, code, env, element_ptr, (&mut key as *mut u64).cast()) };
+        unsafe { call(ctx, code, env, element_ptr, key_out, index as i32) };
         if unsafe { (*ctx).trapped() } {
             break;
         }
@@ -1371,6 +1372,7 @@ mod tests {
         env: *const u8,
         element: *const u8,
         key_out: *mut u8,
+        _index: i32,
     ) {
         let callback: unsafe extern "C" fn(*mut Context, *const u8, Pair) -> i32 =
             unsafe { std::mem::transmute(code) };

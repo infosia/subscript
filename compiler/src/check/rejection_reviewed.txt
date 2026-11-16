@@ -56,6 +56,7 @@ FixedArrayLengthZero	s254-annotation.ts,s254-result.ts
 FixedArrayLiteralLength	a-s001,a-s058
 ForeignReturnProvenance	foreign-return-provenance,wire-alias-nested-foreign-return
 FunctionBodyMissing	class-member-name-clash,class-member-name-clash-witness-2,class-member-name-clash-witness-3,top-level-name-clash
+FunctionDefaultsAdapterNeedsConstName	s320-let-local.ts,s320-selected-local.ts
 FunctionParameterIdentity	FunctionParameterIdentity,function-erasure-0,function-erasure-1,function-erasure-2,function-erasure-3,probe-function-result-0,probe-function-result-1,probe-function-result-2
 FunctionParameterNeedsConstName	s246-parameter.ts,s312-FunctionParameterNeedsConstName.ts
 FunctionTypeRestParameter	FunctionTypeRestParameter,c-function-rest

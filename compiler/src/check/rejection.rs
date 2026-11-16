@@ -31,6 +31,8 @@ rejection_classes! {
     Self::WeakMapConstructor => (RuleCode::S100, Diverges(Divergence::LibConstructorName)),
     Self::ValueArraySearch => (RuleCode::S014, Diverges(Divergence::MethodTypeDomain)),
     Self::CallbackParameterNeedsConstName => (RuleCode::S014, Diverges(Divergence::CallbackFewerParametersUnadapted)),
+    Self::FunctionDefaultsAdapterNeedsConstName => (RuleCode::S100, Diverges(Divergence::FunctionValueAdapterNeedsConstName)),
+    Self::FunctionDefaultsCallbackNeedsConstName => (RuleCode::S100, Diverges(Divergence::FunctionValueAdapterNeedsConstName)),
     Self::FunctionParameterNeedsConstName => (RuleCode::S100, Diverges(Divergence::FunctionValueAdapterNeedsConstName)),
     Self::ArrayCallbackDropsAsyncHandle => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
     Self::IntegerToEnumAssignment => (RuleCode::S100, Diverges(Divergence::ErasedAssignableTypeMismatch)),

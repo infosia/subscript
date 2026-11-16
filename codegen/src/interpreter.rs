@@ -1713,13 +1713,13 @@ unsafe extern "C" fn set_callback_bridge(
         unsafe { callback_failed(ctx, state, error) };
     }
 }
-
 unsafe extern "C" fn group_by_callback_bridge(
     ctx: *mut Context,
     _code: *const u8,
     env: *const u8,
     element: *const u8,
     key_out: *mut u8,
+    index: i32,
 ) {
     let state = unsafe { callback_state(env) };
     if state.error.is_some() {
@@ -1741,7 +1741,12 @@ unsafe extern "C" fn group_by_callback_bridge(
             .ok_or_else(|| interpreter.invalid(None, "Map.groupBy key has no layout"))?;
         let bytes = unsafe { std::slice::from_raw_parts(element, element_layout.size) };
         let element = interpreter.unpack(&first_ty, bytes)?;
-        let key = interpreter.invoke_callable(&callable, vec![element], None)?;
+        let mut arguments = vec![element];
+        let function = interpreter.function(callable.function)?;
+        if crate::lir_types::explicit_parameters(function).count() == 2 {
+            arguments.push(Value::I(i64::from(index)));
+        }
+        let key = interpreter.invoke_callable(&callable, arguments, None)?;
         let packed = interpreter.pack(key_ty, &key)?;
         unsafe { std::ptr::copy_nonoverlapping(packed.as_ptr(), key_out, key_layout.size) };
         Ok::<(), InterpretError>(())
@@ -1750,7 +1755,6 @@ unsafe extern "C" fn group_by_callback_bridge(
         unsafe { callback_failed(ctx, state, error) };
     }
 }
-
 impl Value {
     fn as_i64(&self) -> Result<i64, InterpretError> {
         match self {

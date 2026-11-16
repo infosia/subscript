@@ -522,6 +522,7 @@ impl<'p> Checker<'p> {
                 }
             }
             self.remember_named_lambda(&name, d, mutable, &init, fx);
+            self.remember_adapter_defaults(&name, mutable, annotated, &init, fx);
             if let Some(identity) = integer_key {
                 if let Some(scope) = fx.scopes.last_mut() {
                     scope.const_keys.insert(name.clone(), identity);

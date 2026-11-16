@@ -1481,13 +1481,19 @@ impl<'m> Emitter<'m> {
         &mut self,
         element: &Type,
         key: &Type,
+        indexed: bool,
     ) -> Result<String, String> {
         let name = format!("subscript_group_bridge{}", self.helper_count);
         self.helper_count += 1;
         let element_type = self.ctype(element)?;
         let key_type = self.ctype(key)?;
-        let signature = format!("static void {name}(void* ctx, const void* code, const void* env, const void* element, void* key_out)");
-        let call = format!("*({key_type}*)key_out = (({key_type} (*)(void*, void*, {element_type}))code)(ctx, (void*)env, *(const {element_type}*)element)");
+        let signature = format!("static void {name}(void* ctx, const void* code, const void* env, const void* element, void* key_out, int32_t index)");
+        let (index_type, index_arg) = if indexed {
+            (", int32_t", ", index")
+        } else {
+            ("", "")
+        };
+        let call = format!("*({key_type}*)key_out = (({key_type} (*)(void*, void*, {element_type}{index_type}))code)(ctx, (void*)env, *(const {element_type}*)element{index_arg})");
         let _ = writeln!(self.helper_prototypes, "{signature};");
         let _ = writeln!(self.helpers, "{signature} {{ {call}; }}");
         Ok(name)

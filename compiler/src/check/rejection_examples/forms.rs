@@ -101,6 +101,24 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
             };
             Some(&ENTRY)
         }
+        RejectionSite::FunctionDefaultsAdapterNeedsConstName => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "function f(a: i32, b: i32 = 10): i32 { return a + b; }\nfunction app(k: (a: i32) => i32): i32 { return k(1); } function g(): void { let l = f; app(l); }",
+                subscript: "function f(a: i32, b: i32 = 10): i32 { return a + b; }\nfunction app(k: (a: i32) => i32): i32 { return k(1); } function g(): void { app((a: i32): i32 => f(a)); }",
+                why: "The defaults of this value are not known at check time. Write a lambda that calls the function.",
+                collision: "compiler.md §320 rule 4",
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::FunctionDefaultsCallbackNeedsConstName => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "function f(a: i32, i: i32 = 10, b: i32 = 20): i32 { return a + i + b; }\nfunction g(): void { let l = f; [1].sort(l); }",
+                subscript: "function f(a: i32, i: i32 = 10, b: i32 = 20): i32 { return a + i + b; }\nfunction g(): void { [1].sort((a: i32, i: i32): i32 => f(a, i)); }",
+                why: "The defaults of this value are not known at check time. Write a lambda that calls the function.",
+                collision: "compiler.md §320 rule 4",
+            };
+            Some(&ENTRY)
+        }
         RejectionSite::FunctionParameterNeedsConstName => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
                 ts: "function run(cb: (x: i32, y: i32) => void): void { cb(1, 2); }\nfunction g(fv: (x: i32) => void): void { run(fv); }",

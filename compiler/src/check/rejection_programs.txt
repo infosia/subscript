@@ -10263,3 +10263,27 @@ async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { r
 export function main(): void {}
 END FILE
 END PROGRAM
+PROGRAM	s320-let-local.ts			0
+FILE	E	main.ts
+export {};
+function f(a: i32, b: i32 = 10): i32 { return a + b; }
+function app(k: (a: i32) => i32): i32 { return k(1); }
+function g(): void { let l = f; app(l); }
+END FILE
+END PROGRAM
+PROGRAM	s320-selected-local.ts			0
+FILE	E	main.ts
+export {};
+function f(a: i32, b: i32 = 10): i32 { return a + b; }
+function g(a: i32, b: i32 = 20): i32 { return a * b; }
+function app(k: (a: i32) => i32): i32 { return k(1); }
+function test(flag: boolean): void { let l = flag ? f : g; const saved = l; app(saved); }
+END FILE
+END PROGRAM
+PROGRAM	s320-callback.ts			0
+FILE	E	main.ts
+export {};
+function f(a: i32, i: i32 = 10, b: i32 = 20): i32 { return a + i + b; }
+function g(): void { let l = f; [1].sort(l); }
+END FILE
+END PROGRAM

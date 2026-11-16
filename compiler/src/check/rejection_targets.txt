@@ -1563,6 +1563,7 @@ WeakMapConstructor	s312-WeakMapConstructor.ts	S100	unknown class `WeakMap`
 ValueArraySearch	s312-ValueArraySearch.ts	S014	`includes` is defined per element kind (scalars, strings, `Date`, reference classes); `Box` elements are outside that set (Q22)
 CallbackParameterNeedsConstName	s312-CallbackParameterNeedsConstName.ts	S014	`forEach` callback `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
 FunctionParameterNeedsConstName	s312-FunctionParameterNeedsConstName.ts	S100	function value `fv` needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it
+FunctionDefaultsAdapterNeedsConstName	s320-let-local.ts	S100	function value `l` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function
 ArrayCallbackDropsAsyncHandle	s312-ArrayCallbackDropsAsyncHandle.ts	S013	`forEach` callback returns `Promise<void>`, which the place `(i32) => void` drops, and no holder awaits the handle; a place with the result `Promise<void>` can await it
 IntegerToEnumAssignment	s312-IntegerToEnumAssignment.ts	S100	type mismatch: the initializer expects `E`, got `i32`
 PromiseFinallyAsyncResult	s312-PromiseFinallyAsyncResult.ts	S013	a `finally` callback must be `() => void`; it is `() => Promise<void>`
@@ -1589,3 +1590,5 @@ AsyncConditionalBinding	s317-AsyncConditionalBinding	S013	an async handle is dro
 AsyncConditionalParameter	s317-AsyncConditionalParameter	S013	an async handle is dropped without any await of its completion
 AsyncConditionalReturnBinding	s317-AsyncConditionalReturnBinding	S013	an async handle is dropped without any await of its completion
 AsyncConditionalReturnParameter	s317-AsyncConditionalReturnParameter	S013	an async handle is dropped without any await of its completion
+FunctionDefaultsAdapterNeedsConstName	s320-selected-local.ts	S100	function value `saved` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function
+FunctionDefaultsCallbackNeedsConstName	s320-callback.ts	S100	`sort` callback `l` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function

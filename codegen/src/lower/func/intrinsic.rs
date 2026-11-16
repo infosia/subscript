@@ -672,7 +672,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .get(1)
                     .ok_or_else(|| internal("Map.GroupBy callback is missing"))?,
             )?;
-            let bridge = define_group_bridge(self.ml, &element, &key)?;
+            let Some(l::ValueType::Data(Type::Func(callback))) = parameter_types.get(1) else {
+                return Err(internal("Map.GroupBy callback type is missing"));
+            };
+            let bridge = define_group_bridge(self.ml, &element, &key, callback.params.len() == 2)?;
             let bridge = self
                 .ml
                 .module

@@ -423,7 +423,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let callback = operands
                 .get(1)
                 .ok_or_else(|| internal("Map.GroupBy callback is missing"))?;
-            let bridge = self.emitter.define_group_bridge(element, key)?;
+            let Some(l::ValueType::Data(Type::Func(function))) = operand_types.get(1) else {
+                return Err(internal("Map.GroupBy callback type is missing"));
+            };
+            let bridge =
+                self.emitter
+                    .define_group_bridge(element, key, function.params.len() == 2)?;
             let position = self.emitter.pos_id(&instruction.pos);
             let call = self.emitter.runtime_call(
                 "void*",

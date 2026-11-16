@@ -378,7 +378,7 @@ impl<'p> Checker<'p> {
         let arr_ty = Type::array(elem.clone());
         let callback_spec = CallbackSpec {
             array_container: !matches!(self.apparent_type(&recv.ty), Type::FixedArray(..)),
-            ..CallbackSpec::new(f.name(), "Q27", true)
+            ..CallbackSpec::new(super::CallbackMethod::Array(f))
         };
         if matches!(
             f.counted_class(),
@@ -798,7 +798,7 @@ impl<'p> Checker<'p> {
                     vec![elem.clone(), elem],
                     Some(Type::I32),
                     fx,
-                    CallbackSpec::new("sort", "Q22", false),
+                    CallbackSpec::new(super::CallbackMethod::Array(A::Sort)),
                 );
                 mk(vec![recv, cb], arr_ty, pos)
             }
@@ -1137,7 +1137,7 @@ impl<'p> Checker<'p> {
             vec![elem.clone()],
             explicit.map(|(key, _)| key),
             fx,
-            CallbackSpec::new("Map.groupBy", "Q27", false),
+            CallbackSpec::new(super::CallbackMethod::MapGroupBy),
         );
         let key = match &self.apparent_type(&callback.ty) {
             Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
@@ -1523,7 +1523,7 @@ impl<'p> Checker<'p> {
                     vec![value, key],
                     Some(Type::Void),
                     fx,
-                    CallbackSpec::new("Map.forEach", "Q24", false),
+                    CallbackSpec::new(super::CallbackMethod::MapForEach),
                 );
                 mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
@@ -1621,7 +1621,7 @@ impl<'p> Checker<'p> {
                     vec![key],
                     Some(Type::Void),
                     fx,
-                    CallbackSpec::new("Set.forEach", "Q24", false),
+                    CallbackSpec::new(super::CallbackMethod::SetForEach),
                 );
                 mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
@@ -1735,6 +1735,13 @@ impl<'p> Checker<'p> {
         }
         let expr = &*arg.expr;
         if let ast::Expr::Arrow(a) = expr {
+            let spec = CallbackSpec {
+                allow_index: spec.allow_index
+                    || (spec.method == "Map.groupBy"
+                        && a.params.len() == 2
+                        && matches!(a.params.get(1), Some(ast::Pat::Assign(_)))),
+                ..spec
+            };
             let a_pos = self.pos(a.span);
             let Some(expected) = self.callback_params_for_arity(
                 &params,
@@ -1761,22 +1768,22 @@ impl<'p> Checker<'p> {
         // A dual-arity Array callback has no single contextual function
         // type; named and local function values already carry their full
         // declared type and are validated below.
-        let ctx_ty = (!spec.allow_index)
+        let conditional = matches!(super::unparen_expr(expr), ast::Expr::Cond(_));
+        let ctx_ty = (!conditional && !spec.allow_index && spec.method != "Map.groupBy")
             .then_some(ret.as_ref())
             .flatten()
             .map(|r| Type::func(params.clone(), r.clone()));
         // compiler.md §242 rule 1a: with an optional index, each leaf of a
         // conditional takes the place of its own arity.
-        let conditional = matches!(super::unparen_expr(expr), ast::Expr::Cond(_));
-        if conditional && spec.allow_index {
-            self.callback_leaf_place =
-                ret.clone()
-                    .map(|ret| crate::check::type_rules::CallbackLeaves {
-                        params: params.clone(),
-                        ret,
-                        method: spec.method.to_string(),
-                        nested: false,
-                    });
+        if conditional {
+            self.callback_leaf_place = Some(crate::check::type_rules::CallbackLeaves {
+                params: params.clone(),
+                ret: ret.clone(),
+                method: spec.method.to_string(),
+                allow_index: spec.allow_index,
+                runtime_arity: spec.runtime_arity,
+                nested: false,
+            });
         }
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
         self.callback_leaf_place = None;

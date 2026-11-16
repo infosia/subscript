@@ -954,6 +954,15 @@ impl<'p> Checker<'p> {
 }
 
 impl Checker<'_> {
+    /// Read a decided inferred global's initializer for its default call
+    /// provenance (compiler.md §320 rules 1–3).
+    pub(super) fn global_adapter_source(&self, symbol: &hir::Symbol) -> Option<hir::Expr> {
+        let signature = self.global_sigs.get(symbol.full_text())?;
+        if signature.mutable || signature.annotated {
+            return None;
+        }
+        signature.initializer.as_ref()?.checked.clone()
+    }
     // compiler.md §288 rule 2: a global body can call itself before its initializer is complete.
     pub(super) fn cache_global_lambda_defaults(
         &mut self,

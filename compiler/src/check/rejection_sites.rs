@@ -15,6 +15,8 @@ pub(crate) enum RejectionSite {
     ValueArraySearch,
     CallbackParameterNeedsConstName,
     FunctionParameterNeedsConstName,
+    FunctionDefaultsAdapterNeedsConstName,
+    FunctionDefaultsCallbackNeedsConstName,
     ArrayCallbackDropsAsyncHandle,
     IntegerToEnumAssignment,
     PromiseFinallyAsyncResult,

@@ -80,12 +80,84 @@ impl Checker<'_> {
                 .global_sigs
                 .get(symbol.full_text())
                 .and_then(|sig| sig.function_value_required),
+            // A selection retains optional-argument facts, but does not name
+            // a known function whose defaults an adapter can call (§320 rule 3).
+            ExprKind::Cond { then, els, .. } => Some(
+                self.function_value_required(then, fx)?
+                    .max(self.function_value_required(els, fx)?),
+            ),
             _ => None,
         }
     }
 }
 
 impl Checker<'_> {
+    /// The existing call form that evaluates an inferred const's defaults
+    /// (compiler.md §320 rule 2). Lambda defaults keep the value's environment.
+    pub(super) fn adapter_default_callee(
+        &mut self,
+        value: &hir::Expr,
+        fx: &FnCtx,
+    ) -> Option<hir::Callee> {
+        let callee = match &value.kind {
+            ExprKind::FuncRef(symbol) => hir::Callee::Func(symbol.clone()),
+            ExprKind::Lambda { id, params, .. } => hir::Callee::NamedLambda {
+                value: Box::new(value.clone()),
+                defaults: hir::LambdaDefaults {
+                    id: *id,
+                    params: params.clone(),
+                },
+            },
+            ExprKind::Local(name, ..) => fx
+                .scopes
+                .iter()
+                .rev()
+                .find(|scope| scope.owns(name))?
+                .adapter_defaults
+                .get(name)?
+                .clone(),
+            ExprKind::Global(symbol, _) => {
+                if let Some(defaults) = self.named_global_lambda_defaults(symbol) {
+                    hir::Callee::NamedLambda {
+                        value: Box::new(value.clone()),
+                        defaults,
+                    }
+                } else {
+                    let source = self.global_adapter_source(symbol)?;
+                    self.adapter_default_callee(&source, fx)?
+                }
+            }
+            _ => return None,
+        };
+        Some(match callee {
+            hir::Callee::NamedLambda { defaults, .. } => hir::Callee::NamedLambda {
+                value: Box::new(value.clone()),
+                defaults,
+            },
+            callee => callee,
+        })
+    }
+
+    /// Preserve defaults across const aliases without changing ordinary calls
+    /// through those aliases (compiler.md §320 rules 1–3, §288 rule 4).
+    pub(super) fn remember_adapter_defaults(
+        &mut self,
+        name: &str,
+        mutable: bool,
+        annotated: bool,
+        value: &hir::Expr,
+        fx: &mut FnCtx,
+    ) {
+        if mutable || annotated || self.function_value_required(value, fx).is_none() {
+            return;
+        }
+        if let Some(callee) = self.adapter_default_callee(value, fx) {
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.adapter_defaults.insert(name.to_string(), callee);
+            }
+        }
+    }
+
     pub(super) fn prepare_named_lambda(
         &self,
         declaration: &swc_ecma_ast::VarDeclarator,

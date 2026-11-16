@@ -76,6 +76,8 @@ fn fixed_record(site: RejectionSite) -> Option<&'static str> {
         }
         RejectionSite::PromiseReactionSpread => Some("collisions.md C8; compiler.md §186 rule 3"),
         RejectionSite::CallbackSetRepeatedValue => Some("stdlib.md §10.4; Q27"),
+        RejectionSite::FunctionDefaultsAdapterNeedsConstName
+        | RejectionSite::FunctionDefaultsCallbackNeedsConstName => Some("compiler.md §320 rule 4"),
         _ => None,
     }
 }

@@ -563,6 +563,8 @@ pub(crate) struct Scope {
     pub lambda_groups: HashMap<swc_common::Span, Vec<lambda_group::Member>>,
     pub group_members: HashMap<String, lambda_group::Member>,
     pub named_lambdas: Shared<HashMap<String, hir::LambdaDefaults>>,
+    /// Defaults retained by inferred const aliases (compiler.md §320 rules 1–3).
+    pub adapter_defaults: Shared<HashMap<String, hir::Callee>>,
     pub vars: Shared<HashMap<String, Local>>,
     /// Source declaration identities for const index keys (§163).
     pub const_keys: Shared<HashMap<String, String>>,

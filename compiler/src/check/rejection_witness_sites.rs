@@ -18,6 +18,8 @@ pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
     RejectionSite::ValueArraySearch,
     RejectionSite::CallbackParameterNeedsConstName,
     RejectionSite::FunctionParameterNeedsConstName,
+    RejectionSite::FunctionDefaultsAdapterNeedsConstName,
+    RejectionSite::FunctionDefaultsCallbackNeedsConstName,
     RejectionSite::ArrayCallbackDropsAsyncHandle,
     RejectionSite::IntegerToEnumAssignment,
     RejectionSite::PromiseFinallyAsyncResult,

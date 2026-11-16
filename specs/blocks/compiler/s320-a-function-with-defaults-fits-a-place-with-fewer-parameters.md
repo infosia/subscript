@@ -51,7 +51,9 @@ site claims `TscRejects`, which is false for these forms.
 4a. A built-in callback place keeps §244. Its parameters are each
    argument that the method passes (`map` passes the element, the
    index, and the array; `Map.groupBy` passes the element and the
-   index; `Set.forEach` passes the value twice and the set). A
+   index; `Set.forEach` passes the value twice and the set). These are the arguments that the method passes at run
+   time in `node`, also where the prelude declares fewer: a
+   `FixedArray` callback receives the array as its third argument. A
    parameter of the value at a position that the method fills takes
    that argument, as in `node`, never its default. Where the pin
    rejects the value at that position (the repeated value of
@@ -62,7 +64,8 @@ site claims `TscRejects`, which is false for these forms.
    parameter at a filled position its default, so
    `Map.groupBy([5, 6], grp)` with `grp(a: i32, i: i32 = 99)` gave the
    keys `5:99` and `6:99`, and `node` gives `5:0` and `6:1`; the three
-   tiers agreed, so the differential gate did not see it.)*
+   tiers agreed, so the differential gate did not see it. A focused
+   review then found the same class at the `FixedArray` callbacks.)*
 5. A default runs once per call of the place, as the call of rule 2
    runs it. The program has no other run-time cost.
 6. No accepted program changes its meaning. No program that `tsc`
@@ -84,7 +87,23 @@ site claims `TscRejects`, which is false for these forms.
 
 ### 320.3 Phase Review
 
-*(Filled in after the review.)*
+Round 1 stopped: the first text of rule 3 took each `const` local, and
+the defaults of `const saved = l;` are not known at check time. Rule 3
+is amended.
+
+One fresh review found one MAJOR finding, realistic: a parameter at a
+position that a built-in method fills took its default, so
+`Map.groupBy([5, 6], grp)` gave `5:99` and `6:99` where `node` gives
+`5:0` and `6:1`, and `Set.forEach(sv)` printed the default. The three
+tiers agreed (core principle 12). Rule 4a is amended. Two MINOR
+findings are fixed: the rule 4 text told the user to copy a `const`
+into a `const`, and the order of the reviewed list. A focused fresh
+review of every built-in callback place then found the same class at
+the `FixedArray` callbacks: the prelude declares `(value, index)`, and
+`node` passes the array as the third argument; the change gave the
+default where the pin gave Q27. The filled positions now come from one
+table of what each method passes at run time, and the pin diagnostic
+stays. Over 1,070 corpus entries, only a470 differs from the pin.
 
 ### 320.4 Open
 

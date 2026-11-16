@@ -353,7 +353,10 @@ impl<'p> Checker<'p> {
                 });
                 None
             }
-            ast::Expr::Arrow(arrow) => Some(leaves.place(arrow.params.len())),
+            ast::Expr::Arrow(arrow) => leaves
+                .ret
+                .as_ref()
+                .map(|ret| leaves.place(arrow.params.len(), ret.clone())),
             _ => None,
         }
     }
@@ -380,10 +383,39 @@ impl<'p> Checker<'p> {
         };
         // A leaf with more parameters than the place allows keeps its
         // type, so its conditional has no common type.
-        let place = leaves.place(largest.clamp(leaves.params.len(), leaves.params.len() + 1));
+        let accepted = leaves.params.len() + usize::from(leaves.allow_index);
+        // §320 rule 4a: a conditional cannot omit an excluded library argument.
+        let omit_defaults = leaves.runtime_arity <= accepted;
+        let ret = match &leaves.ret {
+            Some(ret) => ret.clone(),
+            None => {
+                let mut results = Vec::new();
+                self.callback_leaf_results(then, &mut results);
+                self.callback_leaf_results(els, &mut results);
+                let Some(ret) = results
+                    .iter()
+                    .find(|candidate| {
+                        let place = crate::types::FuncType {
+                            callback_typedef: None,
+                            params: Vec::new(),
+                            ret: (*candidate).clone(),
+                        };
+                        results
+                            .iter()
+                            .all(|actual| self.result_fits(actual, &place))
+                    })
+                    // If no result fits, placement must diagnose each incompatible leaf.
+                    .or_else(|| results.first())
+                else {
+                    return;
+                };
+                ret.clone()
+            }
+        };
+        let place = leaves.place(largest.clamp(leaves.params.len(), accepted), ret);
         let subject = format!("`{}` callback", leaves.method);
-        self.place_leaves(then, &place, &subject, fx);
-        self.place_leaves(els, &place, &subject, fx);
+        self.place_leaves_with_defaults(then, &place, &subject, fx, omit_defaults);
+        self.place_leaves_with_defaults(els, &place, &subject, fx, omit_defaults);
     }
 
     fn leaf_arities(&self, expr: &hir::Expr, out: &mut Vec<usize>) {
@@ -392,6 +424,15 @@ impl<'p> Checker<'p> {
             self.leaf_arities(els, out);
         } else if let Some(function) = self.function_of(&expr.ty) {
             out.push(function.params.len());
+        }
+    }
+
+    fn callback_leaf_results(&self, expr: &hir::Expr, out: &mut Vec<Type>) {
+        if let hir::ExprKind::Cond { then, els, .. } = &expr.kind {
+            self.callback_leaf_results(then, out);
+            self.callback_leaf_results(els, out);
+        } else if let Some(function) = self.function_of(&expr.ty) {
+            out.push(function.ret);
         }
     }
 
@@ -456,9 +497,20 @@ impl<'p> Checker<'p> {
     /// (compiler.md §313 rule 1). A dropped handle names `subject`, as
     /// the callback itself does (§247 rule 1).
     fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, subject: &str, fx: &FnCtx) {
+        self.place_leaves_with_defaults(expr, place, subject, fx, true);
+    }
+
+    fn place_leaves_with_defaults(
+        &mut self,
+        expr: &mut hir::Expr,
+        place: &Type,
+        subject: &str,
+        fx: &FnCtx,
+        omit_defaults: bool,
+    ) {
         if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
-            self.place_leaves(then, place, subject, fx);
-            self.place_leaves(els, place, subject, fx);
+            self.place_leaves_with_defaults(then, place, subject, fx, omit_defaults);
+            self.place_leaves_with_defaults(els, place, subject, fx, omit_defaults);
             if self.apparent_type(&then.ty) == Type::Error
                 || self.apparent_type(&els.ty) == Type::Error
             {
@@ -480,11 +532,18 @@ impl<'p> Checker<'p> {
             }
             return;
         }
-        // Excess arity gives the conditional no common type (compiler.md §244 rule 4).
+        // compiler.md §244 rule 4 and §320 rule 1: excess parameters keep
+        // the branch diagnostic unless trailing defaults can be omitted.
         if self
             .function_of(&expr.ty)
             .zip(self.function_of(place))
-            .is_some_and(|(own, target)| own.params.len() > target.params.len())
+            .is_some_and(|(own, target)| {
+                own.params.len() > target.params.len()
+                    && (!omit_defaults
+                        || self
+                            .function_value_required(expr, fx)
+                            .is_none_or(|required| required > target.params.len()))
+            })
         {
             return;
         }
@@ -625,14 +684,14 @@ impl<'p> Checker<'p> {
     fn adapter_callee(&self, value: &hir::Expr, fx: &FnCtx) -> Option<AdapterCallee> {
         let value_callee = |function: crate::types::FuncType,
                             captures: Vec<hir::Capture>,
-                            has_default: bool| AdapterCallee {
+                            required: Option<usize>| AdapterCallee {
             callee: hir::Callee::Value(Box::new(value.clone())),
             refused: false,
             is_async: matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_)),
             own: function.params,
             ret: function.ret,
             captures,
-            has_default,
+            required,
         };
         match &value.kind {
             hir::ExprKind::FuncRef(symbol) => {
@@ -644,7 +703,12 @@ impl<'p> Checker<'p> {
                     captures: Vec::new(),
                     refused: sig.generic || sig.is_generator,
                     is_async: sig.is_async,
-                    has_default: sig.params.iter().any(|p| p.has_default),
+                    required: sig.params.iter().any(|p| p.has_default).then(|| {
+                        sig.params
+                            .iter()
+                            .rposition(|p| !p.has_default)
+                            .map_or(0, |i| i + 1)
+                    }),
                 })
             }
             hir::ExprKind::Local(name, ..) => {
@@ -663,7 +727,7 @@ impl<'p> Checker<'p> {
                 Some(value_callee(
                     *function,
                     vec![super::lookup::local_capture(name, &local)],
-                    local.function_value_required.is_some(),
+                    local.function_value_required,
                 ))
             }
             hir::ExprKind::Global(symbol, _) => {
@@ -671,11 +735,11 @@ impl<'p> Checker<'p> {
                 if sig.mutable {
                     return None;
                 }
-                let has_default = sig.function_value_required.is_some();
+                let required = sig.function_value_required;
                 let Type::Func(function) = self.apparent_type(&value.ty) else {
                     return None;
                 };
-                Some(value_callee(*function, Vec::new(), has_default))
+                Some(value_callee(*function, Vec::new(), required))
             }
             _ => None,
         }
@@ -686,11 +750,19 @@ impl<'p> Checker<'p> {
     /// a const local name (§246 rule 5). The decision is the one of rule 1:
     /// the same callee facts, the same fit of the adapter, and the
     /// value-taking check of the adapted type against the place.
-    pub(crate) fn needs_adapter_name(&self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+    pub(crate) fn needs_adapter_name(&mut self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
         if matches!(
             value.kind,
             hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. } | hir::ExprKind::Cond { .. }
-        ) || self.adapter_callee(value, fx).is_some()
+        ) {
+            return false;
+        }
+        let omits = self
+            .function_of(&value.ty)
+            .zip(self.function_of(to))
+            .is_some_and(|(own, place)| own.params.len() > place.params.len());
+        if self.adapter_callee(value, fx).is_some()
+            && (!omits || self.adapter_default_callee(value, fx).is_some())
         {
             return false;
         }
@@ -720,7 +792,7 @@ impl<'p> Checker<'p> {
             own: function.params,
             ret: function.ret,
             captures: Vec::new(),
-            has_default: false,
+            required: self.function_value_required(value, fx),
         })
     }
 
@@ -788,7 +860,8 @@ impl<'p> Checker<'p> {
 
     /// The shape of the adapter of `target` in the place `place`, when the
     /// place needs one and `target` takes it (compiler.md §240 rule 2,
-    /// §243 rule 2, §246 rule 1): the place has more parameters, or the
+    /// §243 rule 2, §246 rule 1, §320 rule 1): the place omits trailing
+    /// defaults, has more parameters, or has the
     /// result `void` and the value a value result to discard. The value is
     /// not refused, has no default parameter when the place has more
     /// parameters, and its parameters and result fit the place. With
@@ -803,6 +876,13 @@ impl<'p> Checker<'p> {
         drops_handle: bool,
     ) -> Option<AdapterShape> {
         let fewer = target.own.len() < place.params.len();
+        let omits = target.own.len() > place.params.len()
+            && target
+                .required
+                .is_some_and(|required| place.params.len() >= required);
+        if target.own.len() > place.params.len() && !omits {
+            return None;
+        }
         let place_void = self.apparent_type(&place.ret) == Type::Void;
         let discards = place_void && self.apparent_type(&target.ret) != Type::Void;
         let result_fits = if drops_handle {
@@ -812,9 +892,12 @@ impl<'p> Checker<'p> {
         };
         if target.refused
             || (target.is_async && !drops_handle)
-            || (fewer && target.has_default)
-            || (!fewer && !discards)
-            || !self.prefix_parameters_fit(&target.own, place)
+            || (fewer && target.required.is_some())
+            || (!fewer && !omits && !discards)
+            || !self.prefix_parameters_fit(
+                &target.own[..target.own.len().min(place.params.len())],
+                place,
+            )
             || !result_fits
         {
             return None;
@@ -824,7 +907,7 @@ impl<'p> Checker<'p> {
         } else {
             target.ret.clone()
         };
-        let mut params = target.own.clone();
+        let mut params = target.own[..target.own.len().min(place.params.len())].to_vec();
         params.extend(place.params.iter().skip(target.own.len()).cloned());
         Some(AdapterShape {
             ty: Type::func(params.clone(), ret.clone()),
@@ -836,7 +919,12 @@ impl<'p> Checker<'p> {
 
     /// The text of the diagnostic of compiler.md §246 rule 5 for `value`,
     /// after `subject`, such as "callback".
-    pub(crate) fn adapter_name_message(&self, value: &hir::Expr, subject: &str) -> String {
+    pub(crate) fn adapter_name_message(
+        &self,
+        value: &hir::Expr,
+        place: &Type,
+        subject: &str,
+    ) -> String {
         let name = match &value.kind {
             hir::ExprKind::Local(name, ..) => Some(name.clone()),
             hir::ExprKind::Global(symbol, _) => Some(symbol.source_name()),
@@ -846,6 +934,15 @@ impl<'p> Checker<'p> {
             Some(name) => format!("{subject} `{name}`"),
             None => subject.to_string(),
         };
+        if self
+            .function_of(&value.ty)
+            .zip(self.function_of(place))
+            .is_some_and(|(own, place)| own.params.len() > place.params.len())
+        {
+            return format!(
+                "{subject} needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function"
+            );
+        }
         format!(
             "{subject} needs an adapter for this place, and only a const local or a module `const` takes one; copy it into a const local, or write a lambda that calls it"
         )
@@ -855,7 +952,8 @@ impl<'p> Checker<'p> {
     /// rules 1 and 2, §243 rule 2, §246 rules 1 and 2). A reference to a
     /// function declaration, a static method, a const local, or a module
     /// `const` becomes a lambda with the parameters of the place, which
-    /// calls the value with its own number of arguments, when the place
+    /// calls the value with those arguments when trailing defaults are
+    /// omitted (§320 rule 2), or its own number of arguments when the place
     /// has more parameters, or when the place has the result `void` and the
     /// value a value result to discard. A const local is captured by value.
     /// The value is not generic, not async, and not a generator. With more
@@ -879,6 +977,14 @@ impl<'p> Checker<'p> {
         else {
             return;
         };
+        let callee = if params.len() < target.own.len() {
+            let Some(callee) = self.adapter_default_callee(value, fx) else {
+                return;
+            };
+            callee
+        } else {
+            target.callee
+        };
         let own = target.own;
         let call_ret = target.ret;
         let pos = value.pos.clone();
@@ -888,7 +994,7 @@ impl<'p> Checker<'p> {
         let call = hir::Expr {
             pending_work: None,
             kind: hir::ExprKind::Call {
-                callee: target.callee,
+                callee,
                 args: names
                     .iter()
                     .zip(&own)
@@ -1128,9 +1234,15 @@ impl<'p> Checker<'p> {
             // compiler.md §246 rule 5: a value that fits with an adapter
             // names the cause.
             if self.needs_adapter_name(from, to, fx) {
-                let message = self.adapter_name_message(from, "function value");
+                let message = self.adapter_name_message(from, to, "function value");
                 self.reject_subset(
-                    if fx.parameter_value(from) {
+                    if self
+                        .function_of(&from.ty)
+                        .zip(self.function_of(to))
+                        .is_some_and(|(own, place)| own.params.len() > place.params.len())
+                    {
+                        RejectionSite::FunctionDefaultsAdapterNeedsConstName
+                    } else if fx.parameter_value(from) {
                         RejectionSite::FunctionParameterNeedsConstName
                     } else {
                         RejectionSite::FunctionValueAdapterNeedsConstName
@@ -1475,16 +1587,20 @@ fn discard_return_values(body: &mut Vec<hir::Stmt>) {
     }
 }
 
-/// The place of a built-in callback with an optional trailing index, for
+/// The place of a built-in callback, for
 /// the leaves of a conditional (compiler.md §242 rule 1a, §244 rule 2).
 #[derive(Debug, Clone)]
 pub(crate) struct CallbackLeaves {
     /// The parameters of the place without the index.
     pub(crate) params: Vec<Type>,
     /// The result of the place.
-    pub(crate) ret: Type,
+    pub(crate) ret: Option<Type>,
     /// The method that takes the callback, as its diagnostics name it.
     pub(crate) method: String,
+    /// The place permits a trailing index.
+    pub(crate) allow_index: bool,
+    /// The method's argument count from the built-in table.
+    pub(crate) runtime_arity: usize,
     /// The conditional is a branch of another conditional, which places
     /// the leaves of both.
     pub(crate) nested: bool,
@@ -1493,12 +1609,12 @@ pub(crate) struct CallbackLeaves {
 impl CallbackLeaves {
     /// The place for a leaf with `arity` parameters: the place with the
     /// trailing index when the leaf takes one parameter more.
-    fn place(&self, arity: usize) -> Type {
+    fn place(&self, arity: usize, ret: Type) -> Type {
         let mut place = self.params.clone();
-        if arity == self.params.len() + 1 {
+        if self.allow_index && arity == self.params.len() + 1 {
             place.push(Type::I32);
         }
-        Type::func(place, self.ret.clone())
+        Type::func(place, ret)
     }
 }
 
@@ -1529,7 +1645,7 @@ struct AdapterCallee {
     /// takes no adapter. Its handle result names the diagnostic of
     /// compiler.md §247.
     is_async: bool,
-    has_default: bool,
+    required: Option<usize>,
 }
 
 /// The parameters, the result, and the type of an adapter (compiler.md

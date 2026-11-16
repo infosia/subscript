@@ -1515,6 +1515,16 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s244-default.ts"],
             variant: Divergence::CallbackFewerParametersUnadapted,
         },
+        RejectionSite::FunctionDefaultsAdapterNeedsConstName => WitnessEntry::General {
+            files: &["s320-let-local.ts", "s320-selected-local.ts"],
+            variant: Some(Divergence::FunctionValueAdapterNeedsConstName),
+            reason: "",
+        },
+        RejectionSite::FunctionDefaultsCallbackNeedsConstName => WitnessEntry::General {
+            files: &["s320-callback.ts"],
+            variant: Some(Divergence::FunctionValueAdapterNeedsConstName),
+            reason: "",
+        },
         RejectionSite::FunctionValueAdapterNeedsConstName => WitnessEntry::Reachable {
             files: &["s246-let-local.ts"],
             variant: Divergence::FunctionValueAdapterNeedsConstName,

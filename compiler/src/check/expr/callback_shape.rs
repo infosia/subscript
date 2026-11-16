@@ -41,6 +41,7 @@ impl Checker<'_> {
             q_rule,
             allow_index,
             array_container,
+            ..
         } = spec;
         // compiler.md §244 rule 1: a lambda literal with fewer parameters
         // takes the place of the smallest arity.
@@ -107,8 +108,8 @@ impl Checker<'_> {
 
     /// Rejects a callback value that the place takes only with an adapter
     /// it cannot have, with the cause (compiler.md §244 rule 4a, §246 rule
-    /// 5): a function with a default parameter has no adapter, and only a
-    /// const local or a module `const` takes one. Returns whether it gave
+    /// 5, §320 rule 4): only a const local or a module `const` takes one;
+    /// omitting defaults also requires a known function. Returns whether it gave
     /// the diagnostic. A lambda literal and a conditional get the type
     /// mismatch of the place or of their branches.
     fn reject_unadapted_callback(
@@ -137,13 +138,19 @@ impl Checker<'_> {
         } else if self.needs_adapter_name(checked, place, fx) {
             format!(
                 "`{method}` {}",
-                self.adapter_name_message(checked, "callback")
+                self.adapter_name_message(checked, place, "callback")
             )
         } else {
             return false;
         };
         self.reject_subset(
-            if fx.parameter_value(checked) {
+            if self
+                .function_of(&checked.ty)
+                .zip(self.function_of(place))
+                .is_some_and(|(own, place)| own.params.len() > place.params.len())
+            {
+                RejectionSite::FunctionDefaultsCallbackNeedsConstName
+            } else if fx.parameter_value(checked) {
                 RejectionSite::CallbackParameterNeedsConstName
             } else {
                 RejectionSite::CallbackFewerParametersUnadapted
@@ -165,11 +172,27 @@ impl Checker<'_> {
         spec: CallbackSpec<'_>,
         fx: &FnCtx,
     ) -> hir::Expr {
+        // compiler.md §320 rule 4a: groupBy fills a defaulted index.
+        // Its one-parameter library type still excludes a required index.
+        let spec = CallbackSpec {
+            allow_index: spec.allow_index
+                || (spec.method == "Map.groupBy"
+                    && self
+                        .function_value_required(&checked, fx)
+                        .is_some_and(|required| required <= params.len())),
+            ..spec
+        };
         let CallbackSpec {
             method,
             allow_index,
             ..
         } = spec;
+        // compiler.md §320 rule 4a: an excluded library argument keeps
+        // the pin's arity diagnostic, even when its parameter has a default.
+        let excludes_filled_parameter = |arity: usize| {
+            let accepted = params.len() + usize::from(allow_index);
+            arity > accepted && spec.runtime_arity > accepted
+        };
         // compiler.md §247 rule 1: a callback that fits a place with the
         // result `void`, except for the handle that the place drops, names
         // the handle. A counted result that is not a handle keeps §171.
@@ -199,21 +222,17 @@ impl Checker<'_> {
                 return self.err_expr(checked.pos);
             }
         }
-        // compiler.md §244 rule 1: a value with fewer parameters takes the
-        // place of the smallest arity.
+        // compiler.md §244 rule 1 and §320 rule 4a: use the parameters the
+        // method passes, including the index before any omitted defaults.
         if let Type::Func(own) = self.apparent_type(&checked.ty) {
-            if own.params.len() < params.len() {
-                let place = Type::func(params.to_vec(), ret.cloned().unwrap_or(own.ret));
-                self.discard_function_result(&mut checked, &place, fx);
-            }
-        }
-        // compiler.md §240 rule 2: a callback place with the result `void`.
-        if let (Some(ret), Type::Func(own)) = (ret, self.apparent_type(&checked.ty)) {
             let mut place = params.to_vec();
-            if allow_index && own.params.len() == params.len() + 1 {
+            if allow_index && own.params.len() > params.len() {
                 place.push(Type::I32);
             }
-            self.discard_function_result(&mut checked, &Type::func(place, ret.clone()), fx);
+            let place = Type::func(place, ret.cloned().unwrap_or(own.ret));
+            if !excludes_filled_parameter(own.params.len()) {
+                self.discard_function_result(&mut checked, &place, fx);
+            }
         }
         let counted_callback = matches!(method, "Map.groupBy" | "Map.forEach")
             || ArrFn::ALL.iter().any(|operation| {
@@ -294,11 +313,11 @@ impl Checker<'_> {
             // mismatch of the place below. Only a value with more
             // parameters than the place allows reaches the arity diagnostic.
             let mut place = params.to_vec();
-            if allow_index && ft.params.len() == params.len() + 1 {
+            if allow_index && ft.params.len() > params.len() {
                 place.push(Type::I32);
             }
             let place = Type::func(place, ret.cloned().unwrap_or(ft.ret.clone()));
-            if (ft.params.len() < params.len() || accepted_arity)
+            if !excludes_filled_parameter(ft.params.len())
                 && self.reject_unadapted_callback(&checked, &place, method, fx)
             {
                 return self.err_expr(checked.pos);

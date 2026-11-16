@@ -404,20 +404,82 @@ enum DescriptorProp<'a> {
 }
 
 #[derive(Clone, Copy)]
+enum CallbackMethod {
+    Array(hir::ArrFn),
+    MapForEach,
+    SetForEach,
+    MapGroupBy,
+}
+
+#[derive(Clone, Copy)]
 struct CallbackSpec<'a> {
     method: &'a str,
     q_rule: &'static str,
     allow_index: bool,
+    /// The prelude declaration includes the array; this is not a run-time fact.
     array_container: bool,
+    /// The argument count from the exhaustive built-in table below.
+    runtime_arity: usize,
 }
 
-impl<'a> CallbackSpec<'a> {
-    fn new(method: &'a str, q_rule: &'static str, allow_index: bool) -> Self {
+impl CallbackSpec<'static> {
+    fn new(operation: CallbackMethod) -> Self {
+        use hir::ArrFn as A;
+        // Each row states the arguments that JavaScript passes at run time.
+        // The exhaustive Array match requires a row for each new method.
+        let (method, q_rule, allow_index, runtime_arity) = match operation {
+            CallbackMethod::Array(operation) => {
+                let (allow_index, arity) = match operation {
+                    // value, index, array (also for FixedArray)
+                    A::ForEach
+                    | A::Map
+                    | A::Filter
+                    | A::Some
+                    | A::Every
+                    | A::FindIndex
+                    | A::Find
+                    | A::FindLast
+                    | A::FindLastIndex
+                    | A::FlatMap => (true, 3),
+                    // accumulator, value, index, array
+                    A::Reduce | A::ReduceRight => (true, 4),
+                    // left, right
+                    A::Sort => (false, 2),
+                    // These methods have no callback.
+                    A::IndexOf
+                    | A::LastIndexOf
+                    | A::Includes
+                    | A::Join
+                    | A::Slice
+                    | A::Fill
+                    | A::Reverse
+                    | A::Concat
+                    | A::Splice
+                    | A::Shift
+                    | A::Unshift
+                    | A::CopyWithin
+                    | A::At => (false, 0),
+                };
+                (
+                    operation.name(),
+                    if operation == A::Sort { "Q22" } else { "Q27" },
+                    allow_index,
+                    arity,
+                )
+            }
+            // value, key, map
+            CallbackMethod::MapForEach => ("Map.forEach", "Q24", false, 3),
+            // value, repeated value, set
+            CallbackMethod::SetForEach => ("Set.forEach", "Q24", false, 3),
+            // value, index (the prelude declares only the value)
+            CallbackMethod::MapGroupBy => ("Map.groupBy", "Q27", false, 2),
+        };
         Self {
             method,
             q_rule,
             allow_index,
-            array_container: true,
+            array_container: matches!(operation, CallbackMethod::Array(_)),
+            runtime_arity,
         }
     }
 }
