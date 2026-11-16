@@ -3,6 +3,7 @@ use crate::check::rejection::RejectionSite;
 
 /// A generic-class instance that an alias named before every alias
 /// resolved. Its members resolve after the aliases (§202.1 rule 3).
+#[derive(Clone)]
 pub(crate) struct PendingInstanceShape {
     id: ClassId,
     key: String,
@@ -670,7 +671,7 @@ impl<'p> Checker<'p> {
     /// Completes each instance that an alias named while the aliases
     /// resolved (§202.1 rule 3). Every alias is resolved here.
     pub(crate) fn complete_pending_instance_shapes(&mut self) {
-        for pending in std::mem::take(&mut self.pending_instance_shapes) {
+        for pending in self.pending_instance_shapes.take() {
             let Some(template) = self.generic_classes.get(&pending.key).cloned() else {
                 self.reject_subset(
                     RejectionSite::DeferredInstanceTemplateMissing,
@@ -712,7 +713,7 @@ impl<'p> Checker<'p> {
 
     /// Checks deferred instance bodies with all module signatures (§138 rule 1).
     pub(crate) fn check_pending_instance_bodies(&mut self) {
-        for (id, chain) in std::mem::take(&mut self.pending_instance_bodies) {
+        for (id, chain) in self.pending_instance_bodies.take() {
             let Some((key, args)) = self.instance_arguments.get(&id).cloned() else {
                 self.reject_subset(
                     RejectionSite::DeferredInstanceArgumentsMissing,

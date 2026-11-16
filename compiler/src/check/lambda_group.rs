@@ -2,6 +2,7 @@
 use super::*;
 
 /// An earlier name is checked as an ordinary const capture until forward links are known.
+#[derive(Clone)]
 pub(crate) struct EarlierRead {
     pub pos: Pos,
     pub member: Member,

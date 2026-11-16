@@ -86,6 +86,9 @@ ModuleInitializerMissing	module-initializer-missing,worker-endpoint-module-globa
 NestedNominalClass	s173-nested-0-equal,s173-nested-1-equal,s173-nested-2-equal,s173-nested-3-equal,s173-nested-4-equal,s173-nested-5-equal
 NeverAnnotation	NeverAnnotation,c-annotation-never
 NonNullableNullEquality	nonnull-null-equality-0,nonnull-null-equality-1,nonnull-null-equality-2,nonnull-null-equality-3
+NullableCallFinallyJump	s315-call-loop,s315-call-switch
+NullableMemberFinallyJump	r521-loop-break-finalizer,r522-switch-break-finalizer
+NullableNominalAssignmentFinallyJump	s315-nominal-loop,s315-nominal-switch
 NumberGlobalValue	s020.ts,s021.ts
 NumberLiteralAnnotation	NumberLiteralAnnotation,c-annotation-literal
 ObjectLiteralWithoutDescriptorContext	a-s084,await-using-declaration

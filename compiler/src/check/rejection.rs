@@ -49,6 +49,9 @@ rejection_classes! {
     Self::PromiseThenNullRejection => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
     Self::CallbackSetRepeatedValue => (RuleCode::S014, Diverges(Divergence::CallbackParameterShape)),
 
+    Self::NullableCallFinallyJump => (RuleCode::S100, Diverges(Divergence::FinallyJumpNarrowing)),
+    Self::NullableNominalAssignmentFinallyJump => (RuleCode::S005, Diverges(Divergence::FinallyJumpNarrowing)),
+    Self::NullableMemberFinallyJump => (RuleCode::S011, Diverges(Divergence::FinallyJumpNarrowing)),
     Self::NullableMemberLoopHead => (RuleCode::S011, TscRejects),
     Self::NullableCallLoopHead => (RuleCode::S100, TscRejects),
     Self::NullableNominalAssignmentLoopHead => (RuleCode::S005, TscRejects),

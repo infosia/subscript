@@ -47,11 +47,11 @@ fn loop_shapes(site: &str, code: &str, message: &str, prefix: &str, value_type: 
         "for (let i: i32 = 0; i < 2; i++) { READ a = next; }",
         "do { READ a = next; } while (false);",
         "for (const i of [1, 2]) { READ a = next; }",
-        "while (true) { while (true) { READ a = next; break; } break; }",
+        "while (true) { while (true) { READ a = next; continue; } break; }",
         "while ((a = next) !== null) { READ break; }",
         "for (; true; a = next) { READ }",
         // §304 rule 1b removes `a` after the dependent source `b` ends.
-        "while (true) { READ a = b; b = next; break; }",
+        "while (true) { READ a = b; b = next; continue; }",
     ] {
         let make = |body: String| {
             format!("{prefix} function f(a: {value_type} | null, next: {value_type} | null): void {{ let b = a; if (a !== null) {{ if (b !== null) {{ {body} }} }} }}")
@@ -115,10 +115,10 @@ fn s308_nullable_member_loop_head() {
     );
     let start = std::time::Instant::now();
     for body in [
-        "while (true) { a.x; a = null; break; }",
-        "if (a !== null) { while (true) { a = null; break; } a.x; }",
-        "if (a !== null) { while (true) { { let a: A | null = null; a.x; } a = null; break; } }",
-        "if (a !== null) { while (true) { const g = (): i32 => a.x; a = null; break; } }",
+        "while (true) { a.x; a = null; continue; }",
+        "if (a !== null) { while (true) { a = null; continue; } a.x; }",
+        "if (a !== null) { while (true) { { let a: A | null = null; a.x; } a = null; continue; } }",
+        "if (a !== null) { while (true) { const g = (): i32 => a.x; a = null; continue; } }",
     ] {
         let source =
             format!("class A {{ x: i32 = 1; }} function f(a: A | null): void {{ {body} }}");
@@ -140,8 +140,8 @@ fn s308_nullable_member_loop_head() {
 #[test]
 fn s308_nullable_call_loop_head() {
     pair("NullableCallLoopHead", "S100", "type `((i32) => i32) | null` is not callable", LOOP_NOTE,
-        "function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { while (true) { cb(1); cb = null; break; } } }",
-        &["function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { const c = cb; while (true) { c(1); cb = null; break; } } }", "function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { while (true) { if (cb !== null) { cb(1); } cb = null; break; } } }"]);
+        "function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { while (true) { cb(1); cb = null; continue; } } }",
+        &["function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { const c = cb; while (true) { c(1); cb = null; continue; } } }", "function f(cb: ((x: i32) => i32) | null): void { if (cb !== null) { while (true) { if (cb !== null) { cb(1); } cb = null; continue; } } }"]);
     loop_shapes(
         "NullableCallLoopHead",
         "S100",
@@ -155,8 +155,8 @@ fn s308_nullable_call_loop_head() {
 #[test]
 fn s308_nullable_nominal_assignment_loop_head() {
     pair("NullableNominalAssignmentLoopHead", "S005", "nominal types are not interchangeable: the argument expects `A`, got `A | null`", LOOP_NOTE,
-        "class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { while (true) { use(a); a = null; break; } } }",
-        &["class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { const b = a; while (true) { use(b); a = null; break; } } }", "class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { while (true) { if (a !== null) { use(a); } a = null; break; } } }"]);
+        "class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { while (true) { use(a); a = null; continue; } } }",
+        &["class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { const b = a; while (true) { use(b); a = null; continue; } } }", "class A { x: i32 = 1; } function use(a: A): void {} function f(a: A | null): void { if (a !== null) { while (true) { if (a !== null) { use(a); } a = null; continue; } } }"]);
     loop_shapes(
         "NullableNominalAssignmentLoopHead",
         "S005",
@@ -286,13 +286,19 @@ fn s308_loop_note_ends_at_body_test() {
         ),
     ] {
         ordinary_loop_read(
-            "if (a !== null) {} READ a = next; break;",
+            "if (a !== null) {} READ a = next; continue;",
             read,
             prefix,
             ty,
             site,
         );
-        ordinary_loop_read("a === null; READ a = next; break;", read, prefix, ty, site);
+        ordinary_loop_read(
+            "a === null; READ a = next; continue;",
+            read,
+            prefix,
+            ty,
+            site,
+        );
         ordinary_loop_read(
             "if (a === null) { READ } a = next; break;",
             read,
@@ -360,9 +366,9 @@ fn s308_no_declaration_move_note_after_declaration() {
 fn s308_loop_notes_follow_branch_flow() {
     let start = std::time::Instant::now();
     for body in [
-        "if (next === null) { a = next; } else { a.x; } a = null; break;",
-        "next === null ? (a = next) : a.x; a = null; break;",
-        "next === null && (a = next); a.x; a = null; break;",
+        "if (next === null) { a = next; } else { a.x; } a = null; continue;",
+        "next === null ? (a = next) : a.x; a = null; continue;",
+        "next === null && (a = next); a.x; a = null; continue;",
     ] {
         let rejected = format!("class A {{ x: i32 = 1; }} function f(a: A | null, next: A | null): void {{ if (a !== null) {{ while (true) {{ {body} }} }} }}");
         let saved = rejected

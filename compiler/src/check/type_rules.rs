@@ -1155,6 +1155,25 @@ impl<'p> Checker<'p> {
                 return;
             }
             if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
+                && matches!(
+                    self.apparent_type(to),
+                    Type::Class(_) | Type::Map(..) | Type::Set(_)
+                )
+                && super::expr::path_key(from).is_some_and(|key| fx.finally_ended_path(&key))
+            {
+                self.reject_subset(
+                    RejectionSite::NullableNominalAssignmentFinallyJump,
+                    format!(
+                        "nominal types are not interchangeable: {} expects `{}`, got `{}`",
+                        what,
+                        self.type_name(to),
+                        self.type_name(&from.ty)
+                    ),
+                    from.pos.clone(),
+                );
+                return;
+            }
+            if matches!(self.apparent_type(&from.ty), Type::Nullable(inner, _) if *inner == self.apparent_type(to))
                 && super::expr::path_key(from)
                     .is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
             {

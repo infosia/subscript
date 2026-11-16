@@ -521,6 +521,7 @@ impl<'p> Checker<'p> {
             })
             .cloned()
             .collect();
+        let saved_finally = std::mem::take(&mut fx.finally_ended_narrowing);
         let saved_notes = std::mem::take(&mut fx.ended_shared_narrowing);
         let saved_loops = std::mem::take(&mut fx.loop_break_facts);
         let saved_loop_notes = std::mem::take(&mut fx.loop_ended_narrowing);
@@ -695,6 +696,7 @@ impl<'p> Checker<'p> {
         let adoptions = std::mem::replace(&mut fx.adoptions, saved_adoptions);
         let body = self.adoption_epilogue(body, adoptions, &pos);
         fx.narrowed = saved_narrowed;
+        fx.finally_ended_narrowing = saved_finally;
         fx.ended_shared_narrowing = saved_notes;
         fx.loop_break_facts = saved_loops;
         fx.loop_ended_narrowing = saved_loop_notes;

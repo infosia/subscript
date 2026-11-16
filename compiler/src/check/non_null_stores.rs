@@ -14,14 +14,15 @@ fn check(source: &str, accepted: bool) {
     }
 }
 
-/// Cost: 0.01 seconds for 9 checker programs; no engine subprocess.
+/// Cost: 0.01 seconds for 10 checker programs; no engine subprocess.
 #[test]
 fn const_initializer_proofs_have_lexical_scope() {
     for (binding, accepted) in [
         ("const n=new A();", true),
         ("const b=new A(); const n=b;", true),
         ("const n=mk();", false),
-        ("let n=new A();", false),
+        ("let n=new A();", true),
+        ("let n:A|null=new A(); n=mk();", false),
         ("const n=otherFlag()?new A():new A();", true),
         ("const n=otherFlag()?new A():null;", false),
     ] {
@@ -50,8 +51,8 @@ fn loop_sources_form_the_largest_stable_set() {
     }
     check("export function main():void{let a:A|null=new A(); let b:A|null=new A(); for(let i:i32=0;i<2;i++){a.x; a=b; b=a;}}", true);
     check("export function main():void{let a:A|null=new A(); let b:A|null=null; for(let i:i32=0;i<2;i++){a.x; a=b; b=a;}}", false);
-    for source in ["new A()", "mk()"] {
-        check(&format!("export function main():void{{let b:A|null=new A(); let a:A|null=new A(); for(let i:i32=0;i<2;i++){{a.x; {{let b={source}; a=b;}}}}}}"), false);
+    for (source, accepted) in [("new A()", true), ("mk()", false)] {
+        check(&format!("export function main():void{{let b:A|null=new A(); let a:A|null=new A(); for(let i:i32=0;i<2;i++){{a.x; {{let b={source}; a=b;}}}}}}"), accepted);
     }
     // The annotation supplies the proof independently of the retained set.
     check("export function main():void{let a:A|null=new A(); for(let i:i32=0;i<2;i++){a.x; let b:A=new A(); a=b;}}", true);

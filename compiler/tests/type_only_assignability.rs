@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 /// of calls and the reason that no value flows to a place there.
 const ALLOWED: &[(&str, &str, usize, &str)] = &[
     (
-        "stmt.rs",
+        "loop_flow.rs",
         "check_for_of",
         2,
         "The binding annotation and the element type are compared in both directions, so they are the same type and need no conversion.",

@@ -10141,3 +10141,88 @@ FILE	A	target/s154/forms/mirror-generator/mirror.d.ts
 declare function hostGenerator(): Generator<i32>;
 END FILE
 END PROGRAM
+PROGRAM	r521-loop-break-finalizer			0
+FILE	E	main.ts
+// corpus: reject/r521-loop-break-finalizer
+// purpose: A loop break carries the finalizer's nullable store.
+// exercises: loop-exit, break, finally, nullable-local
+// questions: compiler.md §315 rule 1a, collisions.md C7
+// tsc: accepts
+// expected-error: S011 at line 17, e can be null after the finalizer
+
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+export function main(): void {
+  let e: A | null = new A();
+  if (e === null) { return; }
+  for (let i = 0; i < 3; i++) {
+    try { break; }
+    finally { e = mk(); }
+  }
+  print(`${e.x}`);
+}
+
+// tsc-version: TypeScript 5.9.2; exit 0.
+END FILE
+END PROGRAM
+PROGRAM	r522-switch-break-finalizer			0
+FILE	E	main.ts
+// corpus: reject/r522-switch-break-finalizer
+// purpose: A switch break carries the finalizer's nullable store.
+// exercises: switch-exit, break, finally, nullable-local
+// questions: compiler.md §315 rule 1a, collisions.md C7
+// tsc: accepts
+// expected-error: S011 at line 18, e can be null after the finalizer
+
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+export function main(): void {
+  let e: A | null = new A();
+  if (e === null) { return; }
+  const k: i32 = 1;
+  switch (k) {
+    case 1: try { break; }
+            finally { e = mk(); }
+  }
+  print(`${e.x}`);
+}
+
+// tsc-version: TypeScript 5.9.2; exit 0.
+END FILE
+END PROGRAM
+PROGRAM	s315-nominal-loop			0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+function take(a: A): void {}
+function f(): void { let e: A | null = new A(); for (let i = 0; i < 3; i++) { try { break; } finally { e = mk(); } } take(e); }
+END FILE
+END PROGRAM
+PROGRAM	s315-nominal-switch			0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+function take(a: A): void {}
+function f(): void { let e: A | null = new A(); switch (0) { default: try { break; } finally { e = mk(); } } take(e); }
+END FILE
+END PROGRAM
+PROGRAM	s315-call-loop			0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+function take(a: A): void {}
+function id(x: i32): i32 { return x; } function f(next: ((x: i32) => i32) | null): void { let cb: ((x: i32) => i32) | null = id; for (let i = 0; i < 3; i++) { try { break; } finally { cb = next; } } print(`${cb(1)}`); }
+END FILE
+END PROGRAM
+PROGRAM	s315-call-switch			0
+FILE	E	main.ts
+export {};
+class A { x: i32 = 1; }
+function mk(): A | null { return null; }
+function take(a: A): void {}
+function id(x: i32): i32 { return x; } function f(next: ((x: i32) => i32) | null): void { let cb: ((x: i32) => i32) | null = id; switch (0) { default: try { break; } finally { cb = next; } } print(`${cb(1)}`); }
+END FILE
+END PROGRAM

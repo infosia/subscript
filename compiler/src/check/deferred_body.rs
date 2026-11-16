@@ -36,7 +36,7 @@ impl Checker<'_> {
 
     pub(super) fn check_pending_function_bodies(&mut self) {
         while !self.pending_function_bodies.is_empty() {
-            for pending in std::mem::take(&mut self.pending_function_bodies) {
+            for pending in self.pending_function_bodies.take() {
                 let file = std::mem::replace(&mut self.cur_file, pending.file);
                 let subst = std::mem::replace(&mut self.subst, pending.subst);
                 let chain = std::mem::replace(&mut self.instance_chain, pending.chain);

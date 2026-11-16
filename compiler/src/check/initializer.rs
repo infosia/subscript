@@ -193,7 +193,7 @@ impl<'p> Checker<'p> {
         let direct_value = self.function_value_decision && matches!(root, ast::Expr::Ident(_));
         let function_value = std::mem::replace(&mut self.function_value_decision, direct_value);
         let diagnostics = self.diags.len();
-        let pending = std::mem::take(&mut self.deferred_expressions);
+        let pending = self.deferred_expressions.take();
         let value = fx
             .with_synthetic_owner(
                 SyntheticOwnerKind::Initializer(self.pos(source.expression.span())),
@@ -207,7 +207,7 @@ impl<'p> Checker<'p> {
             Type::Error
         };
         source.checked = Some(value);
-        source.pending = std::mem::replace(&mut self.deferred_expressions, pending);
+        source.pending = self.deferred_expressions.replace(pending);
         source.captures = fx
             .frames
             .last()
@@ -792,12 +792,11 @@ impl<'p> Checker<'p> {
         if self.deciding_type {
             self.deferred_expressions.append(&mut source.pending);
         } else {
-            let pending = std::mem::replace(
-                &mut self.deferred_expressions,
-                std::mem::take(&mut source.pending),
-            );
+            let pending = self
+                .deferred_expressions
+                .replace(std::mem::take(&mut source.pending));
             self.finish_expression(&mut value);
-            self.deferred_expressions = pending;
+            self.deferred_expressions.replace(pending);
         }
         Some(value)
     }
@@ -962,18 +961,18 @@ impl Checker<'_> {
         id: hir::LambdaId,
         params: &[hir::Param],
     ) {
-        for signature in self.global_sigs.values_mut() {
-            if signature.named_lambda
+        let key = self.global_sigs.iter().find_map(|(key, signature)| {
+            (signature.named_lambda
                 && signature.initializer.as_ref().is_some_and(|source| {
                     super::expr::unparen_expr(&source.expression).span() == span
-                })
-            {
-                signature.lambda_defaults = Some(hir::LambdaDefaults {
-                    id,
-                    params: params.to_vec(),
-                });
-                break;
-            }
+                }))
+            .then(|| key.clone())
+        });
+        if let Some(signature) = key.and_then(|key| self.global_sigs.get_mut(&key)) {
+            signature.lambda_defaults = Some(hir::LambdaDefaults {
+                id,
+                params: params.to_vec(),
+            });
         }
     }
 

@@ -79,6 +79,20 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r517-cycle-through-a-list.ts", RuleCode::S100, 8),
     ("r518-undefined-type-parameter.ts", RuleCode::S100, 8),
     ("r519-mirror-generator.ts", RuleCode::S100, 10),
+    ("r520-loop-nullable-continue.ts", RuleCode::S011, 14),
+    ("r521-loop-break-finalizer.ts", RuleCode::S011, 17),
+    ("r522-switch-break-finalizer.ts", RuleCode::S011, 18),
+    ("r523-loop-break-finalizer-no-fact.ts", RuleCode::S011, 10),
+    ("r524-switch-break-finalizer-no-fact.ts", RuleCode::S011, 10),
+    ("r525-continue-finalizer-no-fact.ts", RuleCode::S011, 10),
+    (
+        "r526-loop-finalizer-mixed-back-edges.ts",
+        RuleCode::S011,
+        10,
+    ),
+    ("r527-finalizer-normal-branch-join.ts", RuleCode::S011, 10),
+    ("r528-finalizer-nominal.ts", RuleCode::S005, 12),
+    ("r529-finalizer-call.ts", RuleCode::S100, 12),
     ("r506-c-callback-through-array.ts", RuleCode::S100, 8),
     ("r505-c-callback-through-indirect.ts", RuleCode::S100, 8),
     ("r504-c-callback-through-return.ts", RuleCode::S100, 7),
@@ -1860,4 +1874,23 @@ fn foreign_promise_rejection_names_the_missing_completion_directive() {
         diagnostics[0].message,
         "foreign function `read` returns Promise<T> without a `@subscript-c-completion` directive"
     );
+}
+
+/// §315 rule 1b keeps both tsc-accepted finalizer witnesses and pins their block.
+#[test]
+fn finalizer_jump_entries_show_the_null_check_after_the_target() {
+    const EXPECTED: &str = "= TypeScript accepts:\n   |   class A { x: i32 = 1; } function mk(): A | null { return null; }\n   |   function f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = mk(); } } e.x; }\n   = subscript:\n   |   class A { x: i32 = 1; } function mk(): A | null { return null; }\n   |   function f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = mk(); } } if (e === null) { return; } e.x; }\n   = why: A finally store can make the local null before the jump reaches its target. Test the local again before use. (collisions.md C7)";
+    for file in [
+        "r521-loop-break-finalizer.ts",
+        "r522-switch-break-finalizer.ts",
+    ] {
+        let files = reject_sources(&corpus_dir().join("reject"), file);
+        let errors = check_program(&files).expect_err(file);
+        assert_eq!(
+            errors[0].divergence,
+            Some(subscript_compiler::divergence::Divergence::FinallyJumpNarrowing)
+        );
+        let rendered = render_diagnostics(&files, &errors[..1]);
+        assert!(rendered.contains(EXPECTED), "{file}: {rendered}");
+    }
 }

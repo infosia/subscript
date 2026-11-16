@@ -127,8 +127,46 @@ Programs a and c are missing facts under §162.2.
 
 ### 315.3 Phase Review
 
-*(Filled in after the review.)*
+Three fresh reviews. Evidence: `specs/tracking/s315-loop-back-edge.md`.
+
+1. The first review found two MAJOR findings, both realistic. A
+   `finally` between a jump and its target did not reach the edge, so
+   `try { break; } finally { e = mk(); }` with a later `e.x` was
+   accepted and stopped at run time; a `switch` `break` had the same
+   defect at `92baab50` (r522). Rule 1a is added. With a failed
+   assumption at each level, nested loops checked the innermost body
+   2^depth times (256 ms at depth 10). Rule 4 is amended; the count is
+   depth + 2. Two MINOR findings are fixed: a transaction that copied
+   each map entry for each lambda, and a removed test control.
+2. A round stopped because `tsc` accepts r521 and r522 (its flow does
+   not apply a `finally` store to a jump edge; `node` throws a
+   `TypeError` at the read), and the flow form did not carry the cause.
+   Rule 1b is added.
+3. The second review found three MAJOR findings, all realistic. The
+   edge took the facts at the end of the `finally`, so a restore in the
+   `finally` was accepted and `tsc` rejects it (invariant 5); a join
+   kept the cause after a normal end of the fact; only the member read
+   selected the cause. Rules 1a and 1b are amended.
+4. The third review stated the residual policy of §162.2 first, and
+   found no CRITICAL or MAJOR finding in 41 probes and over 1,053
+   corpus entries. The CLI output differs from the pin in six entries
+   only: a462 and a463 (accepted), r522 (rejected; the pin accepted
+   it), and r521, r528, r529 (the block of rule 1b is added). Three
+   MINOR findings: two are recorded in 315.4, and a round label in a
+   test comment and the order of the reviewed list are fixed.
+
+The corpus check time grows by 0.24 % (median of five runs).
 
 ### 315.4 Open
 
-None.
+1. The loop head does not apply the join of rule 1b. After
+   `while (true) { try { break; } finally { e = nul(); } }`, a loop
+   `for (…) { print(e.x); e = nul(); }` gives S011 with the block of
+   rule 1b; `tsc` rejects it (TS18047). The program is rejected in
+   both. Realistic, rare.
+2. An alias drops the cause: `const d = e; d.x` after a `finally`
+   `break` gives a plain S011 that claims `TscRejects`; `tsc` accepts.
+   Contrived.
+3. r520 and r523 to r527 give the same output at the pin; they failed
+   at an intermediate candidate only, so they are not Red at the pin
+   (core principle 10).

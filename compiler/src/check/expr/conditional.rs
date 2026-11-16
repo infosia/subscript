@@ -115,6 +115,7 @@ impl<'p> Checker<'p> {
         let mut note_paths = fx.narrowing_note_paths();
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
         let base = fx.narrowed.clone();
+        let initial_finally = fx.finally_ended_narrowing.clone();
         let initial_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
 
@@ -131,6 +132,7 @@ impl<'p> Checker<'p> {
             .cloned()
             .chain(first_extra.clone())
             .collect();
+        fx.replace_finally_causes_at_facts();
         let first_ctx = self.leaf_context(first_ast, leaves.as_ref(), ctx);
         // compiler.md §249 rule 1: a branch takes the kind of the context.
         let branch_kind = |leaf_place: bool| match leaf_place {
@@ -156,6 +158,7 @@ impl<'p> Checker<'p> {
             ),
         };
         let first_facts = fx.narrowed.clone();
+        let first_finally = fx.finally_ended_narrowing.clone();
         let first_loop_notes = fx.loop_ended_narrowing.clone();
         let first_notes = fx.ended_shared_narrowing.clone();
 
@@ -169,6 +172,7 @@ impl<'p> Checker<'p> {
         } else {
             None
         };
+        fx.finally_ended_narrowing = initial_finally;
         fx.loop_ended_narrowing = initial_loop_notes;
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base
@@ -177,6 +181,7 @@ impl<'p> Checker<'p> {
             .cloned()
             .chain(second_extra)
             .collect();
+        fx.replace_finally_causes_at_facts();
         let second_ctx =
             self.leaf_context(second_ast, leaves.as_ref(), ctx.or(literal_ctx.as_ref()));
         let second_kind = match ctx {
@@ -205,6 +210,7 @@ impl<'p> Checker<'p> {
         } else {
             (first, second)
         };
+        fx.merge_finally_causes(&first_finally, &first_facts);
         fx.narrowed = joined;
         fx.ended_shared_narrowing.extend_facts(first_notes);
         fx.merge_loop_notes(&first_loop_notes);

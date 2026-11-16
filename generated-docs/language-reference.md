@@ -97,21 +97,21 @@ export function main(): void {
 
 No structural substitution between nominal types.
 
-Pinned corpus: [`corpus/reject/r120-narrowing-escapes-conditional.ts`](../corpus/reject/r120-narrowing-escapes-conditional.ts), line 22.
+Pinned corpus: [`corpus/reject/r528-finalizer-nominal.ts`](../corpus/reject/r528-finalizer-nominal.ts), line 12.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS2345
-// expected-error: S005 at the post-conditional argument
+// tsc: accepts
+// expected-error: S005 at line 12, the finalizer can end the local fact
 ```
 
 ```ts
-function escaped(value: EscapingValue | null): u32 {
-  const observed: u32 = value !== null ? use(value) : 0;
-  return use(value);
-}
+function mk(): A | null { return null; }
+function take(a: A): void {}
+function f(): void { let e: A | null = new A(); for (let i = 0; i < 3; i++) { try { break; } finally { e = mk(); } } take(e); }
 
+// tsc-version: TypeScript 5.9.2; exit 0.
 ```
 
 ### S006
@@ -223,21 +223,21 @@ export function main(): void {
 
 Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access.
 
-Pinned corpus: [`corpus/reject/r427-undefined-scalar-result.ts`](../corpus/reject/r427-undefined-scalar-result.ts), line 10.
+Pinned corpus: [`corpus/reject/r520-loop-nullable-continue.ts`](../corpus/reject/r520-loop-nullable-continue.ts), line 14.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: S011, `i32 | undefined` is not a reference type union
+// tsc: rejects TS18047
+// expected-error: S011 at line 14, e can be null at the loop head
 ```
 
 ```ts
-  v: i32 = 1;
+  if (e === null) { return; }
+  for (let i = 0; i < 3; i++) {
+    print(`${e.x}`); e = new A(); if (i === 1) { e = mk(); continue; }
+  }
 }
-function pick(f: boolean): i32 | undefined {
-  if (f) {
-    return 1;
 ```
 
 ### S012

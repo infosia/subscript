@@ -974,6 +974,8 @@ pub enum Divergence {
     MapNonNullableGet,
     /// A shared location read after a call, suspension, or alias store.
     SharedLocationNarrowing,
+    /// A finalizer store ends a local fact on a jump edge (§315 rule 1b).
+    FinallyJumpNarrowing,
     /// A pair-valued construction or view, which needs a tuple type.
     NoTupleType,
     /// A coercing numeric call, and an omitted radix or digit count.
@@ -1537,6 +1539,7 @@ impl Divergence {
         Divergence::MapScalarGet,
         Divergence::MapNonNullableGet,
         Divergence::SharedLocationNarrowing,
+        Divergence::FinallyJumpNarrowing,
         Divergence::NoTupleType,
         Divergence::NumberCoercionAndArguments,
         Divergence::JsonSubset,

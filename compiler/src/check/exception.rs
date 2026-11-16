@@ -21,6 +21,62 @@ use crate::types::{ClassId, Type};
 
 use super::{Checker, FnCtx, Local};
 
+/// Only jumps to targets outside this try run its finalizer. Targets created
+/// within the try consume their own edges before the finalizer is checked.
+struct FinalizerJumpMark {
+    loops: Vec<(usize, usize)>,
+    switches: Vec<usize>,
+}
+
+enum FinalizerJumpTarget {
+    Break(usize),
+    Continue(usize),
+    Switch(usize),
+}
+
+impl FinalizerJumpMark {
+    fn new(fx: &FnCtx) -> Self {
+        Self {
+            loops: fx
+                .loop_break_facts
+                .iter()
+                .map(|(_, breaks, continues)| (breaks.len(), continues.len()))
+                .collect(),
+            switches: fx
+                .switch_break_facts
+                .iter()
+                .map(|(_, edges)| edges.len())
+                .collect(),
+        }
+    }
+
+    fn take(self, fx: &mut FnCtx) -> Vec<(FinalizerJumpTarget, super::LoopEdge)> {
+        let mut pending = Vec::new();
+        for (index, (breaks, continues)) in self.loops.into_iter().enumerate() {
+            let (_, break_edges, continue_edges) = &mut fx.loop_break_facts[index];
+            pending.extend(
+                break_edges
+                    .drain(breaks..)
+                    .map(|edge| (FinalizerJumpTarget::Break(index), edge)),
+            );
+            pending.extend(
+                continue_edges
+                    .drain(continues..)
+                    .map(|edge| (FinalizerJumpTarget::Continue(index), edge)),
+            );
+        }
+        for (index, start) in self.switches.into_iter().enumerate() {
+            pending.extend(
+                fx.switch_break_facts[index]
+                    .1
+                    .drain(start..)
+                    .map(|edge| (FinalizerJumpTarget::Switch(index), edge)),
+            );
+        }
+        pending
+    }
+}
+
 /// The class names and stable tags of the Error family (stdlib.md §19.1).
 pub(crate) const ERROR_CLASSES: &[&str] = &[
     "Error",
@@ -419,19 +475,24 @@ impl Checker<'_> {
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let pos = self.pos(t.span);
+        let jump_mark = t.finalizer.as_ref().map(|_| FinalizerJumpMark::new(fx));
         if t.handler.is_none() {
             let base = fx.narrowed.clone();
             let notes = fx.ended_shared_narrowing.clone();
             let (body, _) = self.check_block(&t.block.stmts, fx);
             let effects = self.body_narrowing_effects(&body, fx, &base, &notes);
             fx.narrowed = base;
+            let body_finally = fx.finally_ended_narrowing.clone();
             if let Some(effects) = &effects {
                 self.apply_narrowing_effects(effects, fx);
             }
+            // This summary replaces live facts; it does not execute the stores again.
+            fx.finally_ended_narrowing = body_finally;
             let finalizer = t
                 .finalizer
                 .as_ref()
-                .map(|block| self.check_block(&block.stmts, fx).0);
+                .zip(jump_mark)
+                .map(|(block, mark)| self.check_finalizer(block, mark, fx));
             out.push(hir::Stmt::Using {
                 bindings: Vec::new(),
                 body,
@@ -445,11 +506,14 @@ impl Checker<'_> {
         };
         let mut note_paths = fx.narrowing_note_paths();
         let base = fx.narrowed.clone();
+        let initial_finally = fx.finally_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
         let (body, _) = self.check_block(&t.block.stmts, fx);
+        let body_finally = fx.finally_ended_narrowing.clone();
         let body_facts = fx.narrowed.clone();
         let mut body_notes = fx.ended_shared_narrowing.clone();
         let effects = self.body_narrowing_effects(&body, fx, &base, &initial_notes);
+        fx.finally_ended_narrowing = initial_finally;
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         if let Some(effects) = &effects {
@@ -499,6 +563,9 @@ impl Checker<'_> {
                         .is_none_or(|effects| !effects.nullable_store_ends(key))
             });
         }
+        if !body_terminates && !handler_terminates {
+            fx.merge_finally_causes(&body_finally, &body_facts);
+        }
         fx.narrowed = if body_terminates {
             handler_facts
         } else if handler_terminates {
@@ -506,6 +573,9 @@ impl Checker<'_> {
         } else {
             body_facts.intersection(&handler_facts).cloned().collect()
         };
+        if !body_terminates && handler_terminates {
+            fx.finally_ended_narrowing = body_finally;
+        }
         fx.ended_shared_narrowing.extend_facts(body_notes);
         fx.finish_narrowing_join(&note_paths);
         let statement = hir::Stmt::Try {
@@ -514,16 +584,18 @@ impl Checker<'_> {
             handler: handler_body,
             pos: pos.clone(),
         };
-        if let Some(block) = &t.finalizer {
+        if let (Some(block), Some(mark)) = (&t.finalizer, jump_mark) {
             // Every exit reaches the finalizer, including a terminating catch.
             let notes = fx.ended_shared_narrowing.clone();
             let effects =
                 self.body_narrowing_effects(std::slice::from_ref(&statement), fx, &base, &notes);
             fx.narrowed = base.clone();
+            let joined_finally = fx.finally_ended_narrowing.clone();
             if let Some(effects) = &effects {
                 self.apply_narrowing_effects(effects, fx);
             }
-            let finalizer = self.check_block(&block.stmts, fx).0;
+            fx.finally_ended_narrowing = joined_finally;
+            let finalizer = self.check_finalizer(block, mark, fx);
             out.push(hir::Stmt::Using {
                 bindings: Vec::new(),
                 body: vec![statement],
@@ -534,6 +606,91 @@ impl Checker<'_> {
             out.push(statement);
         }
         !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..])
+    }
+
+    /// Hold outgoing edges until this finalizer has run, so an enclosing try
+    /// sees the inner finalizer's result before applying its own (§315 rule 1a).
+    fn check_finalizer(
+        &mut self,
+        block: &ast::BlockStmt,
+        mark: FinalizerJumpMark,
+        fx: &mut FnCtx,
+    ) -> Vec<hir::Stmt> {
+        let pending = mark.take(fx);
+        for (_, edge) in &pending {
+            // Facts used while checking the finalizer must hold on every entry.
+            fx.merge_finally_causes(&edge.finally_ended, &edge.facts);
+            fx.narrowed.retain(|fact| edge.facts.contains(fact));
+            fx.ended_shared_narrowing.extend_facts(edge.notes.clone());
+        }
+        let incoming = fx.narrowed.clone();
+        let notes = fx.ended_shared_narrowing.clone();
+        let (body, terminates) = self.check_block(&block.stmts, fx);
+        if !terminates && !pending.is_empty() {
+            let mut edge_facts = incoming;
+            for (_, edge) in &pending {
+                edge_facts.extend_facts(edge.facts.clone());
+                edge_facts.extend_facts(edge.notes.clone());
+            }
+            let effects = self.body_narrowing_effects(&body, fx, &edge_facts, &notes);
+            for (target, edge) in pending {
+                let mut edge_fx = fx.clone();
+                let before = edge.facts.clone();
+                let prior_causes = edge.finally_ended.clone();
+                edge_fx.finally_ended_narrowing = edge.finally_ended;
+                edge_fx.narrowed = edge.facts;
+                edge_fx.ended_shared_narrowing = edge.notes;
+                if let Some(effects) = &effects {
+                    self.apply_narrowing_effects(effects, &mut edge_fx);
+                }
+                // A finalizer only ends facts on a held jump edge.
+                edge_fx.narrowed.extend_facts(
+                    before
+                        .iter()
+                        .filter(|fact| {
+                            fact.narrows_type()
+                                && !fact.shared
+                                && !fact.contains('.')
+                                && effects
+                                    .as_ref()
+                                    .is_none_or(|effects| !effects.nullable_store_ends(fact))
+                        })
+                        .cloned(),
+                );
+                for fact in &*before {
+                    if fact.narrows_type()
+                        && !fact.shared
+                        && !fact.contains('.')
+                        && !edge_fx.narrowed.contains(fact)
+                        && effects
+                            .as_ref()
+                            .is_some_and(|effects| effects.nullable_store_ends(fact))
+                    {
+                        edge_fx
+                            .finally_ended_narrowing
+                            .insert((fact.key.clone(), fx.path_scope(&fact.key)));
+                    }
+                }
+                for (path, scope) in &*prior_causes {
+                    if !edge_fx.narrowed.contains(path) {
+                        edge_fx
+                            .finally_ended_narrowing
+                            .insert((path.clone(), *scope));
+                    }
+                }
+                let edge = super::LoopEdge {
+                    facts: edge_fx.narrowed,
+                    notes: edge_fx.ended_shared_narrowing,
+                    finally_ended: edge_fx.finally_ended_narrowing,
+                };
+                match target {
+                    FinalizerJumpTarget::Break(index) => fx.loop_break_facts[index].1.push(edge),
+                    FinalizerJumpTarget::Continue(index) => fx.loop_break_facts[index].2.push(edge),
+                    FinalizerJumpTarget::Switch(index) => fx.switch_break_facts[index].1.push(edge),
+                }
+            }
+        }
+        body
     }
 
     /// Checks one block in its own scope.

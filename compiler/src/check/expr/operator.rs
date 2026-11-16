@@ -1697,6 +1697,7 @@ impl<'p> Checker<'p> {
             (when_false, when_true)
         };
         let mut base = fx.narrowed.clone();
+        let skipped_finally = fx.finally_ended_narrowing.clone();
         let skipped_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
         let skipped = base
@@ -1704,13 +1705,14 @@ impl<'p> Checker<'p> {
             .filter(|key| !extra.contains(key))
             .cloned()
             .chain(skipped_extra.iter().cloned())
-            .collect::<std::collections::BTreeSet<_>>();
+            .collect::<crate::check::NarrowingFacts>();
         fx.narrowed = base
             .iter()
             .filter(|key| !skipped_extra.contains(key))
             .cloned()
             .chain(extra)
             .collect();
+        fx.replace_finally_causes_at_facts();
         let right = match void_leaves {
             Some(place) => self.check_void_leaf(
                 &b.right,
@@ -1721,6 +1723,7 @@ impl<'p> Checker<'p> {
             ),
             None => self.check_expr(&b.right, ctx, fx),
         };
+        fx.merge_finally_causes(&skipped_finally, &skipped);
         if void_leaves == Some(super::VoidLeafPlace::Statement) {
             // §300 rule 5a: join the executed and skipped statement paths.
             let executed_possible: std::collections::HashSet<_> = fx

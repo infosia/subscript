@@ -627,21 +627,21 @@ impl<'p> Checker<'p> {
                 .iter()
                 .map(|class| class.methods.len())
                 .collect(),
-            class_sigs: self.class_sigs.clone(),
-            class_ids: self.class_ids.clone(),
-            fn_sigs: self.fn_sigs.clone(),
-            instance_symbols: self.instance_symbols.clone(),
+            class_sigs: self.class_sigs.snapshot(),
+            class_ids: self.class_ids.snapshot(),
+            fn_sigs: self.fn_sigs.snapshot(),
+            instance_symbols: self.instance_symbols.snapshot(),
             type_handle_classes: self.type_handle_classes.len(),
             pending_layouts: self.pending_layouts.len(),
             globals: self.globals.len(),
-            global_sigs: self.global_sigs.clone(),
-            regex_literals: self.regex_literals.clone(),
+            global_sigs: self.global_sigs.snapshot(),
+            regex_literals: self.regex_literals.snapshot(),
             worker_entries: self.worker_entries.len(),
             top_level: self.top_level.len(),
-            deferred_expressions: self.deferred_expressions.clone(),
-            deferred_captures: self.deferred_captures.clone(),
-            pending_function_bodies: self.pending_function_bodies.clone(),
-            pending_instance_bodies: self.pending_instance_bodies.clone(),
+            deferred_expressions: self.deferred_expressions.snapshot(),
+            deferred_captures: self.deferred_captures.snapshot(),
+            pending_function_bodies: self.pending_function_bodies.snapshot(),
+            pending_instance_bodies: self.pending_instance_bodies.snapshot(),
         }
     }
 
@@ -652,22 +652,22 @@ impl<'p> Checker<'p> {
         for (class, methods) in self.classes.iter_mut().zip(snapshot.methods) {
             class.methods.truncate(methods);
         }
-        self.class_sigs = snapshot.class_sigs;
-        self.class_ids = snapshot.class_ids;
-        self.fn_sigs = snapshot.fn_sigs;
-        self.instance_symbols = snapshot.instance_symbols;
+        self.class_sigs = snapshot.class_sigs.into();
+        self.class_ids = snapshot.class_ids.into();
+        self.fn_sigs = snapshot.fn_sigs.into();
+        self.instance_symbols = snapshot.instance_symbols.into();
         self.type_handle_classes
             .truncate(snapshot.type_handle_classes);
         self.pending_layouts.truncate(snapshot.pending_layouts);
         self.globals.truncate(snapshot.globals);
-        self.global_sigs = snapshot.global_sigs;
-        self.regex_literals = snapshot.regex_literals;
+        self.global_sigs = snapshot.global_sigs.into();
+        self.regex_literals = snapshot.regex_literals.into();
         self.worker_entries.truncate(snapshot.worker_entries);
         self.top_level.truncate(snapshot.top_level);
-        self.deferred_expressions = snapshot.deferred_expressions;
-        self.deferred_captures = snapshot.deferred_captures;
-        self.pending_function_bodies = snapshot.pending_function_bodies;
-        self.pending_instance_bodies = snapshot.pending_instance_bodies;
+        self.deferred_expressions = snapshot.deferred_expressions.into();
+        self.deferred_captures = snapshot.deferred_captures.into();
+        self.pending_function_bodies = snapshot.pending_function_bodies.into();
+        self.pending_instance_bodies = snapshot.pending_instance_bodies.into();
         let classes = snapshot.classes;
         self.handle_classes.retain(|id| id.0 < classes);
         self.declared_classes.retain(|id| id.0 < classes);

@@ -214,7 +214,17 @@ nullable pointer; narrowing is required before member access. A null
 check, a non-null initializer, and a non-null assignment narrow a
 location; C17 ends the narrowing of a shared location (`compiler.md`
 §159). A negation, a loop head and exit, and a lambda follow the
-narrowing flow (`compiler.md` §162).
+narrowing flow (`compiler.md` §162). A whole local keeps its entry fact if
+each loop back edge holds it (§315; `a462`, `a463`, `r520`).
+Jump edges carry finalizer stores through nested tries (§315 rule 1a;
+`r521`, `r522`). A finalizer ends jump facts but never establishes them.
+A join retains the cause only if each incoming edge without the fact carries it.
+A store or a null check that establishes the fact replaces the cause.
+TypeScript accepts the four divergence witnesses below. A null check after the target supplies the accepted form.
+
+| Divergence variant | Rejected form | Accepted form | Entries |
+|---|---|---|---|
+| `FinallyJumpNarrowing` | A nullable member read, argument, assignment, or call with the finalizer jump cause (§315 rule 1b) | A null check after the target | `r521`, `r522`, `r528`, `r529` |
 
 **Q33 exception (owner, 2026-07-31): defaulted optional members on
 descriptor classes.** Inside a `@Descriptor` class (Q33) — and only

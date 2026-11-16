@@ -67,10 +67,12 @@ mod result_dependency;
 use initializer::{DeferredExpression, Initializer, TypeState};
 mod instance_chain;
 use instance_chain::InstanceArguments;
+mod finally_narrowing;
 mod json;
 mod layout;
 mod local_errors;
 mod lookup;
+mod loop_flow;
 mod loop_narrowing_note;
 mod mirror_provenance;
 mod namespace_import;
@@ -78,6 +80,7 @@ mod narrowing;
 mod narrowing_fact;
 #[cfg(test)]
 mod non_null_stores;
+mod transaction;
 use narrowing_fact::{FactSet, NarrowingFact};
 mod opaque;
 mod pipeline;
@@ -897,8 +900,11 @@ type LoopBreakFacts = Vec<(usize, Vec<LoopEdge>, Vec<LoopEdge>)>;
 pub(crate) struct LoopEdge {
     facts: NarrowingFacts,
     notes: NarrowingFacts,
+    finally_ended: FinallyEndedFacts,
 }
-type SwitchBreakFacts = Vec<(u32, Vec<NarrowingFacts>)>;
+type SwitchBreakFacts = Vec<(u32, Vec<LoopEdge>)>;
+/// Path and lexical scope of a local fact ended on a finalizer jump edge.
+type FinallyEndedFacts = Shared<std::collections::BTreeSet<(String, Option<usize>)>>;
 
 /// Per-body checking state: scope stack, frames, and the narrowing set of
 /// path keys known non-null or present (C7, §43).
@@ -926,6 +932,8 @@ pub(crate) struct FnCtx {
     /// Scope indices that contain hidden path facts.
     pub shadowed_narrowing_scopes: Shared<std::collections::BTreeSet<usize>>,
     pub ended_shared_narrowing: NarrowingFacts,
+    pub finally_ended_narrowing: FinallyEndedFacts,
+    failed_loop_finally_causes: Rc<RefCell<HashMap<swc_common::Span, LoopEdge>>>,
     /// Entry narrowing facts ended at each active loop head (§308 rule 1).
     pub loop_ended_narrowing: Shared<Vec<loop_narrowing_note::EndedLoopFacts>>,
     pub loop_depth: u32,
@@ -936,6 +944,9 @@ pub(crate) struct FnCtx {
     pub switch_depth: u32,
     pub switch_break_facts: Shared<SwitchBreakFacts>,
     pub loop_break_facts: Shared<LoopBreakFacts>,
+    /// A failed §315 assumption stays failed across enclosing-loop retries.
+    /// Unlike flow snapshots, this memo belongs to the entire body check.
+    failed_loop_assumptions: Rc<RefCell<HashSet<swc_common::Span>>>,
     pub flow_reachable: bool,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Shared<Vec<(Pos, bool)>>,
@@ -1179,12 +1190,15 @@ impl FnCtx {
             narrowed: Default::default(),
             shadowed_narrowing_scopes: Default::default(),
             ended_shared_narrowing: Default::default(),
+            finally_ended_narrowing: Default::default(),
+            failed_loop_finally_causes: Default::default(),
             loop_ended_narrowing: Default::default(),
             loop_depth: 0,
             adoptions: Vec::new(),
             switch_depth: 0,
             switch_break_facts: Vec::new().into(),
             loop_break_facts: Vec::new().into(),
+            failed_loop_assumptions: Default::default(),
             flow_reachable: true,
             async_origins: Vec::new().into(),
             group_origins: HashSet::new(),
@@ -1336,6 +1350,8 @@ impl FnCtx {
     /// Exits a scope and restores the facts hidden by its declarations.
     pub(crate) fn pop_scope(&mut self) {
         if let Some(scope) = self.scopes.pop() {
+            self.finally_ended_narrowing
+                .retain(|(_, scope)| *scope != Some(self.scopes.len()));
             self.shadowed_narrowing_scopes.remove(&self.scopes.len());
             if !scope.vars.is_empty() {
                 self.narrowed.retain(|key| {
@@ -1404,45 +1420,45 @@ pub(crate) struct Checker<'p> {
     active_call_context: Option<Type>,
     /// Each call that `mark_operand_calls` marks. Such a call has no
     /// contextual type (§212 rule 1a).
-    operand_calls: HashSet<swc_common::Span>,
+    operand_calls: transaction::Set<swc_common::Span>,
     /// The context of the call that ends the optional chain being checked
     /// (§232 rule 1).
     optional_chain_context: Option<Type>,
     /// Each type argument entry of an active call that the checker did not
     /// read yet (§230 rule 3).
-    type_argument_watch: HashSet<swc_common::Span>,
+    type_argument_watch: transaction::Set<swc_common::Span>,
     /// The count of type arguments that a built-in call reads, by call
     /// span (§230 rule 3).
-    type_argument_takes: HashMap<swc_common::Span, usize>,
+    type_argument_takes: transaction::Map<swc_common::Span, usize>,
     /// Each call with a type argument list that reaches a user method
     /// (`true`) or a user function or function value (§231 rule 1).
-    type_argument_user_calls: HashMap<swc_common::Span, bool>,
+    type_argument_user_calls: transaction::Map<swc_common::Span, bool>,
     function_value_decision: bool,
     initializer_root: Option<swc_common::Span>,
-    static_method_owners: HashMap<String, (ClassId, String)>,
+    static_method_owners: transaction::Map<String, (ClassId, String)>,
     /// The file and the class name of the class body that encloses each
     /// moved local function, by function symbol (§207.1 rule 2a).
-    local_function_classes: HashMap<String, (usize, String)>,
+    local_function_classes: transaction::Map<String, (usize, String)>,
     next_deferred_id: usize,
     expression_work: Vec<Option<usize>>,
-    deferred_expressions: Vec<DeferredExpression>,
-    deferred_captures: HashMap<hir::LambdaId, Vec<hir::Capture>>,
-    pending_function_bodies: Vec<deferred_body::PendingFunctionBody>,
+    deferred_expressions: transaction::Vector<DeferredExpression>,
+    deferred_captures: transaction::Map<hir::LambdaId, Vec<hir::Capture>>,
+    pending_function_bodies: transaction::Vector<deferred_body::PendingFunctionBody>,
     narrowing_analysis: Option<narrowing::Analysis>,
     narrowing_helper_symbols: HashSet<hir::Symbol>,
     pub prog: &'p ParsedProgram,
     pub diags: DiagnosticSink,
     /// Unchanged empty context for independent field initializer snapshots.
     initializer_context: Option<FnCtx>,
-    pub classes: Vec<hir::ClassDef>,
-    pub class_sigs: Vec<ClassSig>,
-    pub class_ids: HashMap<String, ClassId>,
+    pub classes: transaction::Vector<hir::ClassDef>,
+    pub class_sigs: transaction::Vector<ClassSig>,
+    pub class_ids: transaction::Map<String, ClassId>,
     pub enums: Vec<hir::EnumDef>,
     pub string_aliases: Vec<hir::StringAliasDef>,
-    pub fn_sigs: HashMap<String, FnSig>,
+    pub fn_sigs: transaction::Map<String, FnSig>,
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
-    pub global_sigs: HashMap<String, GlobalSig>,
+    pub global_sigs: transaction::Map<String, GlobalSig>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,
@@ -1450,7 +1466,7 @@ pub(crate) struct Checker<'p> {
     pub(crate) interfaces: Vec<interface::InterfaceDef>,
     /// The interfaces that each implementing class declares (§208.1 rule 3).
     pub(crate) implements: interface::ImplementsClauses,
-    pub instance_symbols: HashMap<String, String>,
+    pub instance_symbols: transaction::Map<String, String>,
     pub file_scopes: Vec<HashMap<String, ScopeBinding>>,
     pub exports: Vec<HashMap<String, ScopeItem>>,
     export_definitions: Vec<BTreeMap<String, exports::ExportBinding>>,
@@ -1458,7 +1474,7 @@ pub(crate) struct Checker<'p> {
     pub poison_missing_modules: HashSet<String>,
     pub poisoned_imports: Vec<hir::PoisonedImport>,
     /// Use sites that already report a value use of a type-only import.
-    pub type_only_value_uses: HashSet<(usize, u32, u32)>,
+    pub type_only_value_uses: transaction::Set<(usize, u32, u32)>,
     /// Rejected local names in the active statement scope.
     pub rejected_local_names: Vec<Shared<std::collections::BTreeSet<String>>>,
     /// Rejected mirror module exports, keyed by normalized module name.
@@ -1498,7 +1514,7 @@ pub(crate) struct Checker<'p> {
     /// True while the aliases resolve: an instance defers its members.
     pub defer_instance_shapes: bool,
     /// Instances whose members wait for every alias (§202.1 rule 3).
-    pub pending_instance_shapes: Vec<generics::PendingInstanceShape>,
+    pub pending_instance_shapes: transaction::Vector<generics::PendingInstanceShape>,
     /// True while resolving mirror declarations: the boundary null forms
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
@@ -1545,7 +1561,7 @@ pub(crate) struct Checker<'p> {
     /// `for…of` subject across the fused loop.
     pub next_for_of_id: usize,
     /// Earlier const reads reconsidered after forward group links are known (§293).
-    pub earlier_member_reads: HashMap<hir::LambdaId, Vec<lambda_group::EarlierRead>>,
+    pub earlier_member_reads: transaction::Map<hir::LambdaId, Vec<lambda_group::EarlierRead>>,
     /// Monotonic lambda unit identity (compiler.md §137 rule 5b).
     pub next_lambda_id: usize,
     /// Check order keeps synthetic parameter names independent of forward identities (§293 rule 1).
@@ -1554,7 +1570,7 @@ pub(crate) struct Checker<'p> {
     ///
     /// Each initializer compiles and allocates one rooted handle; every
     /// evaluation of the literal reads that handle.
-    pub regex_literals: HashMap<(String, u32, u32), String>,
+    pub regex_literals: transaction::Map<(String, u32, u32), String>,
     /// Monotonic suffix for collision-free regex-literal global names.
     pub next_regex_literal_id: usize,
     /// Monotonic suffix for switch-body disposal storage.
@@ -1581,17 +1597,19 @@ pub(crate) struct Checker<'p> {
     /// The template key and the type arguments of each generic class
     /// instance, read by the constraint relation of compiler.md §135.1
     /// rule 2b.
-    pub instance_arguments: HashMap<ClassId, (String, Vec<Type>)>,
+    pub instance_arguments: transaction::Map<ClassId, (String, Vec<Type>)>,
     /// Instance bodies wait until every module signature resolves (§138 rule 1).
     pub signatures_resolved: bool,
     /// Instances with bodies that wait for the signature pass (§138 rule 1).
-    pub pending_instance_bodies: Vec<(ClassId, Vec<instance_chain::InstanceRequest>)>,
+    pub pending_instance_bodies:
+        transaction::Vector<(ClassId, Vec<instance_chain::InstanceRequest>)>,
     /// The active requests for generic instances (compiler.md §140 rule 1).
     pub instance_chain: Vec<instance_chain::InstanceRequest>,
     /// Symbolic edges from the opaque check, retained for inferred instance requests (§149).
-    pub inferred_edges: HashMap<(String, u32, u32), Vec<Vec<instance_chain::ParameterEdge>>>,
+    pub inferred_edges:
+        transaction::Map<(String, u32, u32), Vec<Vec<instance_chain::ParameterEdge>>>,
     /// One request site per cycle, including rotations of its templates (§140 acceptance 2).
-    pub growing_cycles: Vec<(Vec<Pos>, Pos)>,
+    pub growing_cycles: transaction::Vector<(Vec<Pos>, Pos)>,
     /// Diagnostic indices and argument ranges for S011 priority (§140 acceptance 2).
     pub growth_reports: Vec<(usize, Pos, Pos)>,
     /// The loop narrowing effects of the opaque check's bodies, collected

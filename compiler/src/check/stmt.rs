@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::hir::{self, ExprKind};
+use crate::hir;
 use crate::types::Type;
 
 use super::{Checker, FnCtx, Local};
@@ -201,23 +201,12 @@ impl<'p> Checker<'p> {
                         .last()
                         .is_some_and(|(depth, _)| *depth == fx.loop_depth);
                     if switch_exit {
-                        let mut facts = fx.narrowed.clone();
-                        if let Some(depth) = fx.scopes.iter().rposition(|scope| scope.is_switch) {
-                            for scope in fx.scopes[depth + 1..].iter().rev() {
-                                facts.retain(|fact| {
-                                    fact.narrows_type()
-                                        || !scope.vars.contains_key(root_of(fact))
-                                            && !fact.leaves_const_scope(&scope.const_keys)
-                                });
-                                facts.extend_facts(
-                                    scope
-                                        .shadowed_narrowing
-                                        .iter()
-                                        .filter(|fact| !fact.narrows_type())
-                                        .cloned(),
-                                );
-                            }
-                        }
+                        let depth = fx
+                            .scopes
+                            .iter()
+                            .rposition(|scope| scope.is_switch)
+                            .map_or(fx.scopes.len(), |depth| depth + 1);
+                        let facts = Self::flow_edge_leaving_scopes(fx, depth);
                         if let Some((_, edges)) = fx.switch_break_facts.last_mut() {
                             edges.push(facts);
                         }
@@ -300,7 +289,7 @@ impl<'p> Checker<'p> {
         terminates
     }
 
-    fn check_let(&mut self, v: &ast::VarDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+    pub(super) fn check_let(&mut self, v: &ast::VarDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         if v.kind == ast::VarDeclKind::Var {
             let pos = self.pos(v.span);
             self.reject_subset(
@@ -823,7 +812,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn require_bool(&mut self, cond: &hir::Expr) {
+    pub(super) fn require_bool(&mut self, cond: &hir::Expr) {
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
             &cond.ty,
@@ -847,7 +836,7 @@ impl<'p> Checker<'p> {
 
     /// Checks a branch body (a block or a single statement) in its own
     /// scope. Returns the statements and whether the branch terminates.
-    fn check_branch(&mut self, s: &ast::Stmt, fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
+    pub(super) fn check_branch(&mut self, s: &ast::Stmt, fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
         let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         let mut out = Vec::new();
@@ -877,20 +866,25 @@ impl<'p> Checker<'p> {
         let base = fx.narrowed.clone();
         let mut note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
 
+        let initial_finally = fx.finally_ended_narrowing.clone();
         let initial_loop_notes = fx.loop_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
         fx.narrowed.retain(|key| !else_extra.contains(key));
         fx.narrowed.extend_facts(then_extra.clone());
+        fx.replace_finally_causes_at_facts();
         let (then_stmts, _) = self.check_branch(&i.cons, fx);
         let then_term = !super::fallthrough::sequence_can_fall_through(&then_stmts);
+        let then_finally = fx.finally_ended_narrowing.clone();
         let then_loop_notes = fx.loop_ended_narrowing.clone();
         let then_notes = fx.ended_shared_narrowing.clone();
         let then_facts = fx.narrowed.clone();
+        fx.finally_ended_narrowing = initial_finally;
         fx.loop_ended_narrowing = initial_loop_notes;
         fx.ended_shared_narrowing = initial_notes;
         fx.narrowed = base.clone();
         fx.narrowed.retain(|key| !then_extra.contains(key));
         fx.narrowed.extend_facts(else_extra);
+        fx.replace_finally_causes_at_facts();
         let (els_stmts, _) = match &i.alt {
             Some(alt) => {
                 let (stmts, term) = self.check_branch(alt, fx);
@@ -914,6 +908,9 @@ impl<'p> Checker<'p> {
         } else {
             note_paths.extend_facts(then_possible.intersection(&else_possible).cloned());
         }
+        if !then_term && !else_term {
+            fx.merge_finally_causes(&then_finally, &then_facts);
+        }
         fx.narrowed = if then_term {
             else_facts
         } else if else_term {
@@ -923,6 +920,9 @@ impl<'p> Checker<'p> {
         };
         fx.ended_shared_narrowing.extend_facts(then_notes);
         if !then_term {
+            if else_term {
+                fx.finally_ended_narrowing = then_finally.clone();
+            }
             if else_term {
                 fx.loop_ended_narrowing = then_loop_notes;
             } else {
@@ -939,522 +939,9 @@ impl<'p> Checker<'p> {
         !super::fallthrough::sequence_can_fall_through(&out[out.len() - 1..])
     }
 
-    fn record_loop_edge(&self, fx: &mut FnCtx, is_continue: bool) {
-        if !fx.flow_reachable {
-            return;
-        }
-        if !fx.has_narrowing_facts() {
-            if let Some((_, breaks, continues)) = fx.loop_break_facts.last_mut() {
-                let edge = super::LoopEdge {
-                    facts: Default::default(),
-                    notes: Default::default(),
-                };
-                if is_continue {
-                    continues.push(edge);
-                } else {
-                    breaks.push(edge);
-                }
-            }
-            return;
-        }
-        if let Some((scope_depth, _, _)) = fx.loop_break_facts.last() {
-            let mut edge = super::LoopEdge {
-                facts: fx.narrowed.clone(),
-                notes: fx.ended_shared_narrowing.clone(),
-            };
-            let mut disposed = false;
-            for scope in fx.scopes[*scope_depth..].iter().rev() {
-                disposed |= scope.dispose_on_exit;
-                if scope.dispose_on_exit
-                    && edge
-                        .facts
-                        .iter()
-                        .any(|key| key.shared && key.narrows_type())
-                {
-                    edge.facts.retain(|key| {
-                        if key.shared && key.narrows_type() {
-                            edge.notes.insert_fact(key.clone());
-                            false
-                        } else {
-                            true
-                        }
-                    });
-                }
-                if !scope.vars.is_empty()
-                    && edge.facts.iter().any(|key| {
-                        scope.vars.contains_key(root_of(key))
-                            || key.leaves_const_scope(&scope.const_keys)
-                    })
-                {
-                    edge.facts.retain(|key| {
-                        !scope.vars.contains_key(root_of(key))
-                            && !key.leaves_const_scope(&scope.const_keys)
-                    });
-                }
-                if !scope.shadowed_narrowing.is_empty() {
-                    let mut facts = scope.shadowed_narrowing.clone();
-                    if disposed && facts.iter().any(|key| key.shared && key.narrows_type()) {
-                        facts.retain(|key| {
-                            if key.shared && key.narrows_type() {
-                                edge.notes.insert_fact(key.clone());
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                    }
-                    edge.facts.extend_facts(facts);
-                }
-                if !scope.shadowed_ended_shared.is_empty() {
-                    edge.notes.extend_facts(scope.shadowed_ended_shared.clone());
-                }
-            }
-            if let Some((_, breaks, continues)) = fx.loop_break_facts.last_mut() {
-                if is_continue {
-                    continues.push(edge);
-                } else {
-                    breaks.push(edge);
-                }
-            }
-        }
-    }
-
-    fn join_loop_exits(fx: &mut FnCtx, false_exit: Option<super::LoopEdge>) {
-        fx.loop_ended_narrowing.pop();
-        let mut exits = fx
-            .loop_break_facts
-            .pop()
-            .map_or_else(Vec::new, |(_, edges, _)| edges);
-        exits.extend(false_exit);
-        Self::join_flow_edges(fx, exits);
-    }
-
-    fn join_flow_edges(fx: &mut FnCtx, mut edges: Vec<super::LoopEdge>) {
-        if edges.iter().all(|edge| edge.notes.is_empty()) {
-            fx.narrowed = edges.pop().map_or_else(Default::default, |edge| edge.facts);
-            fx.ended_shared_narrowing = Default::default();
-            for edge in edges {
-                if !std::ptr::eq(&*fx.narrowed, &*edge.facts) && *fx.narrowed != *edge.facts {
-                    fx.narrowed.retain(|key| edge.facts.contains(key));
-                }
-            }
-            return;
-        }
-        let first = edges.pop();
-        let mut eligible: HashSet<_> = first.as_ref().map_or_else(HashSet::new, |edge| {
-            edge.facts.union(&edge.notes).cloned().collect()
-        });
-        fx.narrowed = first
-            .as_ref()
-            .map_or_else(Default::default, |edge| edge.facts.clone());
-        fx.ended_shared_narrowing = first.map_or_else(Default::default, |edge| edge.notes);
-        for edge in edges {
-            eligible.retain(|key| edge.facts.contains(key) || edge.notes.contains(key));
-            fx.narrowed.retain(|key| edge.facts.contains(key));
-            fx.ended_shared_narrowing.extend_facts(edge.notes);
-        }
-        fx.finish_narrowing_join(&eligible);
-    }
-
-    fn check_while(&mut self, w: &ast::WhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        let pos = self.pos(w.span);
-        self.end_loop_narrowing(&pos, fx);
-        let kept = fx.narrowed.clone();
-
-        let cond = self.check_truth_expr(&w.test, fx);
-        self.require_bool(&cond);
-        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
-        let mut false_exit = fx.narrowed.clone();
-        if !then_extra.is_empty() {
-            false_exit.retain(|key| !then_extra.contains(key));
-        }
-        if !else_extra.is_empty() {
-            false_exit.extend_facts(else_extra);
-        }
-        let false_exit = (!matches!(cond.kind, ExprKind::Bool(true))).then_some(super::LoopEdge {
-            facts: false_exit,
-            notes: fx.ended_shared_narrowing.clone(),
-        });
-        if !then_extra.is_empty() {
-            fx.narrowed.extend_facts(then_extra.clone());
-        }
-        fx.loop_depth += 1;
-        fx.loop_break_facts
-            .push((fx.scopes.len(), Vec::new(), Vec::new()));
-        let (body, _) = self.check_branch(&w.body, fx);
-        self.check_loop_stores(&body, std::iter::once(&cond), &kept);
-        fx.loop_depth -= 1;
-        Self::join_loop_exits(fx, false_exit);
-
-        out.push(hir::Stmt::While { cond, body, pos });
-    }
-
-    /// Checks `do { body } while (test);` (`compiler.md` §203): the body
-    /// runs first, and the test sees the join of the body end and each
-    /// `continue`.
-    fn check_do_while(&mut self, d: &ast::DoWhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        let pos = self.pos(d.span);
-        let before = fx.narrowed.clone();
-        self.end_loop_narrowing(&pos, fx);
-        let kept = fx.narrowed.clone();
-        self.enter_do_while_body(&pos, &before, fx);
-        fx.loop_depth += 1;
-        fx.loop_break_facts
-            .push((fx.scopes.len(), Vec::new(), Vec::new()));
-        let (body, terminates) = self.check_branch(&d.body, fx);
-        let mut test_edges = fx
-            .loop_break_facts
-            .last()
-            .map_or_else(Vec::new, |(_, _, edges)| edges.clone());
-        if !terminates {
-            test_edges.push(super::LoopEdge {
-                facts: fx.narrowed.clone(),
-                notes: fx.ended_shared_narrowing.clone(),
-            });
-        }
-        Self::join_flow_edges(fx, test_edges);
-        let cond = self.check_truth_expr(&d.test, fx);
-        self.require_bool(&cond);
-        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
-        let mut false_exit = fx.narrowed.clone();
-        if !then_extra.is_empty() {
-            false_exit.retain(|key| !then_extra.contains(key));
-        }
-        if !else_extra.is_empty() {
-            false_exit.extend_facts(else_extra);
-        }
-        let false_exit = (!matches!(cond.kind, ExprKind::Bool(true))).then_some(super::LoopEdge {
-            facts: false_exit,
-            notes: fx.ended_shared_narrowing.clone(),
-        });
-        self.check_loop_stores(&body, std::iter::once(&cond), &kept);
-        fx.loop_depth -= 1;
-        Self::join_loop_exits(fx, false_exit);
-
-        out.push(hir::Stmt::DoWhile { body, cond, pos });
-    }
-
-    fn check_for(&mut self, f: &ast::ForStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        let pos = self.pos(f.span);
-        fx.scopes.push(Default::default());
-        let init = match &f.init {
-            Some(ast::VarDeclOrExpr::VarDecl(v)) => {
-                let (init_out, prefix) = fx.with_synthetic_owner(
-                    super::SyntheticOwnerKind::ForInit(self.pos(v.span)),
-                    |fx| {
-                        let mut init_out = Vec::new();
-                        self.check_let(v, fx, &mut init_out);
-                        init_out
-                    },
-                );
-                let mut statements = prefix.into_statements();
-                statements.extend(init_out);
-                let mut init_out = statements;
-                let init = init_out.pop().map(Box::new);
-                out.extend(init_out);
-                init
-            }
-            Some(ast::VarDeclOrExpr::Expr(e)) => {
-                let (checked, prefix) = fx.with_synthetic_owner(
-                    super::SyntheticOwnerKind::ForInit(self.pos(e.span())),
-                    |fx| self.check_expr(e, None, fx),
-                );
-                out.extend(prefix);
-                Some(Box::new(hir::Stmt::Expr(checked)))
-            }
-            None => None,
-        };
-
-        self.end_loop_narrowing(&pos, fx);
-        let kept = fx.narrowed.clone();
-
-        let (cond, cond_prefix) = match &f.test {
-            Some(test) => {
-                let (checked, prefix) = fx.with_synthetic_owner(
-                    super::SyntheticOwnerKind::ForCond(self.pos(test.span())),
-                    |fx| {
-                        let checked = self.check_truth_expr(test, fx);
-                        self.require_bool(&checked);
-                        checked
-                    },
-                );
-                (Some(checked), prefix)
-            }
-            None => (None, super::SyntheticPrefix::default()),
-        };
-        let (then_extra, else_extra) = cond
-            .as_ref()
-            .map(|c| self.narrowing_paths(c, fx))
-            .unwrap_or_default();
-        let mut false_exit = fx.narrowed.clone();
-        if !then_extra.is_empty() {
-            false_exit.retain(|key| !then_extra.contains(key));
-        }
-        if !else_extra.is_empty() {
-            false_exit.extend_facts(else_extra);
-        }
-        let false_exit = cond
-            .as_ref()
-            .is_some_and(|c| !matches!(c.kind, ExprKind::Bool(true)))
-            .then_some(super::LoopEdge {
-                facts: false_exit,
-                notes: fx.ended_shared_narrowing.clone(),
-            });
-        if !then_extra.is_empty() {
-            fx.narrowed.extend_facts(then_extra);
-        }
-        fx.loop_depth += 1;
-        fx.loop_break_facts
-            .push((fx.scopes.len(), Vec::new(), Vec::new()));
-        let (body, terminates) = self.check_branch(&f.body, fx);
-        let mut update_edges = fx
-            .loop_break_facts
-            .last()
-            .map_or_else(Vec::new, |(_, _, edges)| edges.clone());
-        if !terminates {
-            update_edges.push(super::LoopEdge {
-                facts: fx.narrowed.clone(),
-                notes: fx.ended_shared_narrowing.clone(),
-            });
-        }
-        Self::join_flow_edges(fx, update_edges);
-        let step_statements = f.update.as_ref().map(|update| {
-            let (statements, prefix) = fx.with_synthetic_owner(
-                super::SyntheticOwnerKind::ForUpdate(self.pos(update.span())),
-                |fx| self.check_expr_stmt(update, fx),
-            );
-            let mut step = prefix.into_statements();
-            step.extend(statements);
-            step
-        });
-        self.check_loop_stores(&body, cond.iter(), &kept);
-        if !cond_prefix.is_empty() {
-            self.check_loop_stores(&cond_prefix.0, std::iter::empty(), &kept);
-        }
-        if let Some(step) = &step_statements {
-            self.check_loop_stores(step, std::iter::empty(), &kept);
-        }
-        fx.loop_depth -= 1;
-        Self::join_loop_exits(fx, false_exit);
-        fx.pop_scope();
-
-        let step = step_statements.unwrap_or_default();
-        if cond_prefix.is_empty() {
-            out.push(hir::Stmt::For {
-                init,
-                cond,
-                step,
-                body,
-                pos,
-            });
-            return;
-        }
-
-        let cond = cond.unwrap_or_else(|| hir::Expr {
-            pending_work: None,
-            kind: hir::ExprKind::Bool(true),
-            ty: Type::Bool,
-            pos: pos.clone(),
-        });
-        let (cond, body) = if cond_prefix.is_empty() {
-            (cond, body)
-        } else {
-            let mut guarded = cond_prefix.into_statements();
-            guarded.push(hir::Stmt::If {
-                cond,
-                then: body,
-                els: Some(vec![hir::Stmt::Break(pos.clone())]),
-                pos: pos.clone(),
-            });
-            (
-                hir::Expr {
-                    pending_work: None,
-                    kind: hir::ExprKind::Bool(true),
-                    ty: Type::Bool,
-                    pos: pos.clone(),
-                },
-                guarded,
-            )
-        };
-        let mut block = Vec::new();
-        if let Some(init) = init {
-            block.push(*init);
-        }
-        block.push(hir::Stmt::For {
-            init: None,
-            cond: Some(cond),
-            step,
-            body,
-            pos,
-        });
-        out.push(hir::Stmt::Block(block));
-    }
-
-    /// Checks and binds the closed `for…of` surface (stdlib.md §14).
-    /// Container views are recognized here, before ordinary call
-    /// checking, because `keys()` / `values()` have no value type outside
-    /// this exact subject position.
-    fn check_for_of(&mut self, f: &ast::ForOfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        let pos = self.pos(f.span);
-        if f.is_await {
-            self.reject_subset(RejectionSite::AsyncForOf, "`for await…of` requires the Promise object/iterator surface, which is not in the language", pos);
-            return;
-        }
-
-        let Some((pattern, mutable, binding_pos, annotation)) = self.for_of_binding(&f.left) else {
-            return;
-        };
-        // §107.1: a rejected subject keeps its own rule, so the subject
-        // runs before the pattern reports.
-        let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
-        if let super::pattern::Pattern::Rejected(rejection) = &pattern {
-            // The names bind inside the loop, which this rejection skips.
-            fx.scopes.push(Default::default());
-            self.reject_pattern(rejection, fx);
-            fx.pop_scope();
-            return;
-        }
-        if matches!(self.apparent_type(&subject.ty), Type::Error)
-            || matches!(self.apparent_type(&elem_ty), Type::Error)
-        {
-            return;
-        }
-        if let Some(annotation) = annotation {
-            self.require_assignable(
-                &elem_ty,
-                &annotation,
-                binding_pos.clone(),
-                "the `for…of` binding",
-            );
-            self.require_assignable(
-                &annotation,
-                &elem_ty,
-                binding_pos.clone(),
-                "the `for…of` binding",
-            );
-        }
-
-        self.end_loop_narrowing(&pos, fx);
-
-        let base = super::LoopEdge {
-            facts: fx.narrowed.clone(),
-            notes: fx.ended_shared_narrowing.clone(),
-        };
-        let binding_async_origins = self.expr_async_origins(&subject, fx);
-        fx.scopes.push(Default::default());
-        // A pattern binds the element into checker-generated storage and
-        // reads its names out of that (§107.2).
-        let name = match &pattern {
-            super::pattern::Pattern::Name(binding) => binding.id.sym.to_string(),
-            _ => {
-                let id = self.next_pattern_id;
-                self.next_pattern_id += 1;
-                format!("[[pattern#{id}.element]]")
-            }
-        };
-        let mut prologue = Vec::new();
-        if pattern.is_destructuring() {
-            self.declare_pattern_storage(&name, &elem_ty, binding_async_origins, fx);
-            let element = hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Local(name.clone(), elem_ty.clone(), false),
-                ty: elem_ty.clone(),
-                pos: binding_pos.clone(),
-            };
-            self.bind_pattern_from(&pattern, &element, mutable, false, fx, &mut prologue);
-        } else {
-            self.declare_local(
-                &name,
-                Local {
-                    annotated: false,
-                    ty: elem_ty.clone(),
-                    mutable,
-                    async_origins: binding_async_origins,
-                    caught: false,
-                    function_value_required: None,
-                },
-                binding_pos.clone(),
-                fx,
-            );
-        }
-        let prefix = format!("{name}.");
-        fx.narrowed
-            .retain(|key| key != &name && !key.starts_with(&prefix));
-        let kept = fx.narrowed.clone();
-        fx.loop_depth += 1;
-        fx.loop_break_facts
-            .push((fx.scopes.len() - 1, Vec::new(), Vec::new()));
-        let (body, _) = self.check_branch(&f.body, fx);
-        self.check_loop_stores(&body, std::iter::empty(), &kept);
-        fx.loop_depth -= 1;
-        fx.pop_scope();
-        Self::join_loop_exits(fx, Some(base));
-        let body = if prologue.is_empty() {
-            body
-        } else {
-            prologue.extend(body);
-            prologue
-        };
-
-        if generator {
-            out.push(hir::Stmt::GeneratorForOf {
-                name,
-                ty: elem_ty,
-                mutable,
-                subject,
-                body,
-                pos,
-            });
-            return;
-        }
-
-        let kind = kind.expect("non-generator `for…of` has a fused kind");
-        // A `FixedArray` traversal reads its place (compiler.md §220.1 rule 1),
-        // so the subject stays an expression and no local copies it.
-        if kind == hir::ForOfKind::FixedArrayValues {
-            out.push(hir::Stmt::ForOf {
-                name,
-                ty: elem_ty,
-                subject,
-                kind,
-                body,
-                pos,
-            });
-            return;
-        }
-        let id = self.next_for_of_id;
-        self.next_for_of_id += 1;
-        let subject_name = format!("[[for.of#{id}.subject]]");
-        let subject_ty = subject.ty.clone();
-        let subject_local = hir::Expr {
-            pending_work: None,
-            kind: ExprKind::Local(subject_name.clone(), subject_ty.clone(), false),
-            ty: subject_ty.clone(),
-            pos: subject.pos.clone(),
-        };
-        let subject_let = hir::Stmt::Let {
-            name: subject_name.clone(),
-            ty: subject_ty,
-            mutable: false,
-            dispose: false,
-            init: subject,
-            pos: pos.clone(),
-        };
-
-        let loop_stmt = hir::Stmt::ForOf {
-            name,
-            ty: elem_ty,
-            subject: subject_local,
-            kind,
-            body,
-            pos: pos.clone(),
-        };
-        out.push(hir::Stmt::Block(vec![subject_let, loop_stmt]));
-    }
-
     /// Resolves the single declaration accepted on the left of
     /// `for…of`.
-    fn for_of_binding<'a>(
+    pub(super) fn for_of_binding<'a>(
         &mut self,
         head: &'a ast::ForHead,
     ) -> Option<(
@@ -1528,7 +1015,7 @@ impl<'p> Checker<'p> {
     /// The subject environment does not depend on the member name
     /// (compiler.md §103.2 rule 4), so the flag covers every path
     /// through the subject, the fused views included.
-    fn check_for_of_subject(
+    pub(super) fn check_for_of_subject(
         &mut self,
         expression: &ast::Expr,
         fx: &mut FnCtx,
@@ -1542,7 +1029,7 @@ impl<'p> Checker<'p> {
 
     /// The body of [`Self::check_for_of_subject`], which runs with
     /// `in_for_of_subject` set on every path.
-    fn check_for_of_subject_under_flag(
+    pub(super) fn check_for_of_subject_under_flag(
         &mut self,
         expression: &ast::Expr,
         fx: &mut FnCtx,
@@ -1774,10 +1261,11 @@ impl<'p> Checker<'p> {
             }
         }
         let note_paths = fx.narrowing_note_paths();
+        let dispatch_finally = fx.finally_ended_narrowing.clone();
         let dispatch_notes = fx.ended_shared_narrowing.clone();
         let mut exit_notes = dispatch_notes.clone();
         let mut dispatch = fx.narrowed.clone();
-        let mut fallthrough: Option<super::NarrowingFacts> = None;
+        let mut fallthrough: Option<super::LoopEdge> = None;
         fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let reachable = fx.flow_reachable;
         let mut cases = Vec::new();
@@ -1788,6 +1276,7 @@ impl<'p> Checker<'p> {
             }
             fx.flow_reachable = reachable;
             fx.narrowed = dispatch.clone();
+            fx.finally_ended_narrowing = dispatch_finally.clone();
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
                 let (checked, _) = fx.with_synthetic_owner(
@@ -1810,7 +1299,8 @@ impl<'p> Checker<'p> {
             };
             dispatch = fx.narrowed.clone();
             if let Some(previous) = &fallthrough {
-                fx.narrowed.retain(|key| previous.contains(key));
+                fx.merge_finally_causes(&previous.finally_ended, &previous.facts);
+                fx.narrowed.retain(|key| previous.facts.contains(key));
             }
             let mut body = Vec::new();
             for s in &case.cons {
@@ -1819,7 +1309,11 @@ impl<'p> Checker<'p> {
             let terminates = !super::fallthrough::sequence_can_fall_through(&body);
             self.end_scope_narrowing(fx);
             exit_notes.extend_facts(fx.ended_shared_narrowing.iter().cloned());
-            fallthrough = (!terminates).then(|| fx.narrowed.clone());
+            fallthrough = (!terminates).then(|| super::LoopEdge {
+                facts: fx.narrowed.clone(),
+                notes: fx.ended_shared_narrowing.clone(),
+                finally_ended: fx.finally_ended_narrowing.clone(),
+            });
             cases.push(hir::SwitchCase {
                 test,
                 body,
@@ -1833,12 +1327,13 @@ impl<'p> Checker<'p> {
             .map_or_else(Vec::new, |(_, edges)| edges);
         exits.extend(fallthrough);
         if !has_default {
-            exits.push(dispatch);
+            exits.push(super::LoopEdge {
+                facts: dispatch,
+                notes: dispatch_notes,
+                finally_ended: dispatch_finally,
+            });
         }
-        fx.narrowed = exits.pop().unwrap_or_default();
-        for edge in exits {
-            fx.narrowed.retain(|key| edge.contains(key));
-        }
+        Self::join_flow_edges(fx, exits);
         fx.ended_shared_narrowing.extend_facts(exit_notes);
         fx.finish_narrowing_join(&note_paths);
         fx.pop_scope();
@@ -1867,6 +1362,7 @@ mod tests {
     use super::*;
     use crate::diag::Pos;
     use crate::hir::BinOp;
+    use crate::hir::ExprKind;
 
     fn narrow_paths(
         cond: &hir::Expr,

@@ -7,7 +7,7 @@ use crate::hir;
 pub(super) type EndedLoopFacts = std::collections::HashMap<String, Option<usize>>;
 
 impl FnCtx {
-    fn path_scope(&self, key: &str) -> Option<usize> {
+    pub(super) fn path_scope(&self, key: &str) -> Option<usize> {
         let root = root_of(key);
         self.scopes
             .iter()

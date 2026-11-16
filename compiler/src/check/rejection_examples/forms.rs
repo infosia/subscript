@@ -3,6 +3,22 @@ use super::*;
 
 pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
     match site {
+        RejectionSite::NullableNominalAssignmentFinallyJump => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "class A { x: i32 = 1; } function take(a: A): void {}\nfunction f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = null; } } take(e); }",
+                subscript: "class A { x: i32 = 1; } function take(a: A): void {}\nfunction f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = null; } } if (e === null) { return; } take(e); }",
+                ..Divergence::FinallyJumpNarrowing.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::NullableCallFinallyJump => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "function id(x: i32): i32 { return x; }\nfunction f(): void { let e: ((x: i32) => i32) | null = id; while (true) { try { break; } finally { e = null; } } e(1); }",
+                subscript: "function id(x: i32): i32 { return x; }\nfunction f(): void { let e: ((x: i32) => i32) | null = id; while (true) { try { break; } finally { e = null; } } if (e === null) { return; } e(1); }",
+                ..Divergence::FinallyJumpNarrowing.entry()
+            };
+            Some(&ENTRY)
+        }
         RejectionSite::ParameterCapture => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
                 ts: "function f(param: i32): void { const read = (): i32 => param; }",

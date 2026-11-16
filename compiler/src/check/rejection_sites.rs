@@ -132,6 +132,7 @@ pub(crate) enum RejectionSite {
 
     NullableCall,
     NullableCallLoopHead,
+    NullableCallFinallyJump,
     NullableCallShared,
     IndexedMemberChecked,
     IndexedMemberUnchecked,
@@ -141,6 +142,7 @@ pub(crate) enum RejectionSite {
     IndexedAssignmentUnchecked,
     NullableMember,
     NullableMemberLoopHead,
+    NullableMemberFinallyJump,
     NullableMemberShared,
     UnknownNamespaceConstructor,
     UnknownClassConstructor,
@@ -532,6 +534,7 @@ pub(crate) enum RejectionSite {
     DistinctNominalContainerAssignment,
     NullableNominalAssignment,
     NullableNominalAssignmentLoopHead,
+    NullableNominalAssignmentFinallyJump,
     NullableNominalAssignmentShared,
     NullableAssignmentShared,
     ImplicitNumericAssignment,

@@ -1577,3 +1577,9 @@ TypeofOperator	s312-typeof-guard.ts	S100	unary operator outside the decided surf
 GenericUserAlias	s312-GenericListAlias.ts	S100	source type aliases cannot be generic
 GenericUserAlias	s312-GenericPairAlias.ts	S100	source type aliases cannot be generic
 MirrorGeneratorType	mirror-generator	S100	a mirror names `Generator`; the C ABI has no generator and cannot register a generator frame
+NullableMemberFinallyJump	r521-loop-break-finalizer	S011	`A | null` may be null here; narrow with a null check first
+NullableMemberFinallyJump	r522-switch-break-finalizer	S011	`A | null` may be null here; narrow with a null check first
+NullableNominalAssignmentFinallyJump	s315-nominal-loop	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableNominalAssignmentFinallyJump	s315-nominal-switch	S005	nominal types are not interchangeable: the argument expects `A`, got `A | null`
+NullableCallFinallyJump	s315-call-loop	S100	type `((i32) => i32) | null` is not callable
+NullableCallFinallyJump	s315-call-switch	S100	type `((i32) => i32) | null` is not callable

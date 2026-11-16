@@ -4,14 +4,35 @@ use swc_common::Span;
 
 #[derive(Default)]
 pub(super) struct ResultDependencies {
-    nodes: HashMap<Span, (Pos, bool)>,
-    edges: HashMap<Span, Vec<Vec<Span>>>,
+    nodes: transaction::Map<Span, (Pos, bool)>,
+    edges: transaction::Map<Span, Vec<Vec<Span>>>,
     // New reads invalidate the transitive sets; repeated reads reuse them.
-    reached: HashMap<Span, HashSet<Span>>,
-    pub rejected: HashSet<Span>,
+    reached: transaction::Map<Span, HashSet<Span>>,
+    pub rejected: transaction::Set<Span>,
 }
 
 impl ResultDependencies {
+    pub(super) fn begin(&mut self) {
+        self.nodes.begin();
+        self.edges.begin();
+        self.reached.begin();
+        self.rejected.begin();
+    }
+
+    pub(super) fn commit(&mut self) {
+        self.nodes.commit();
+        self.edges.commit();
+        self.reached.commit();
+        self.rejected.commit();
+    }
+
+    pub(super) fn rollback(&mut self) {
+        self.nodes.rollback();
+        self.edges.rollback();
+        self.reached.rollback();
+        self.rejected.rollback();
+    }
+
     pub fn register(&mut self, span: Span, pos: Pos, provisional: bool) {
         self.nodes.insert(span, (pos, provisional));
     }
@@ -23,7 +44,7 @@ impl ResultDependencies {
     }
 
     fn walk(
-        edges: &HashMap<Span, Vec<Vec<Span>>>,
+        edges: &transaction::Map<Span, Vec<Vec<Span>>>,
         from: Span,
         excluded: &HashSet<(Span, usize)>,
     ) -> HashSet<Span> {
@@ -55,7 +76,15 @@ impl ResultDependencies {
         let reads = self.edges.entry(owner).or_default();
         if !reads.contains(&targets) {
             reads.push(targets.clone());
-            self.reached.clear();
+            // Only ancestors of this owner can gain paths through its new read.
+            let invalidated: Vec<_> = self
+                .reached
+                .iter()
+                .filter_map(|(key, reached)| reached.contains(&owner).then_some(*key))
+                .collect();
+            for key in invalidated {
+                self.reached.remove(&key);
+            }
         }
         if !targets
             .iter()
@@ -217,5 +246,30 @@ impl Checker<'_> {
         for pos in diagnostics {
             self.cycle(pos);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::BytePos;
+
+    #[test]
+    /// Cost: less than 0.001 seconds; no compiler or engine subprocess.
+    fn a_new_read_invalidates_only_its_ancestors_and_rollback_restores_them() {
+        let [a, b, c, d, e] = [1, 2, 3, 4, 5].map(|pos| Span::new(BytePos(pos), BytePos(pos + 1)));
+        let mut dependencies = ResultDependencies::default();
+        dependencies.read(a, vec![(b, false)]);
+        dependencies.read(c, vec![(d, false)]);
+        assert_eq!(dependencies.reached(a), &HashSet::from([a, b]));
+        assert_eq!(dependencies.reached(c), &HashSet::from([c, d]));
+        dependencies.begin();
+        dependencies.read(b, vec![(e, false)]);
+        assert!(!dependencies.reached.contains_key(&a));
+        assert_eq!(dependencies.reached.get(&c), Some(&HashSet::from([c, d])));
+        assert_eq!(dependencies.reached(a), &HashSet::from([a, b, e]));
+        dependencies.rollback();
+        assert_eq!(dependencies.reached(a), &HashSet::from([a, b]));
+        assert_eq!(dependencies.reached(c), &HashSet::from([c, d]));
     }
 }

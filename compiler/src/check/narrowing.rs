@@ -91,6 +91,7 @@ impl Checker<'_> {
     }
 
     pub(super) fn end_shared_narrowing(&self, expression: &hir::Expr, fx: &mut FnCtx) {
+        fx.replace_finally_causes_at_facts();
         self.apply_operation_effects(expression, fx);
         if fx
             .loop_ended_narrowing
@@ -196,6 +197,15 @@ impl Checker<'_> {
             return;
         }
         if (sites.0 != RejectionSite::NullableCall || nullable_function)
+            && path_key(expression).is_some_and(|key| fx.finally_ended_path(&key))
+        {
+            let site = match sites.0 {
+                RejectionSite::NullableMember => RejectionSite::NullableMemberFinallyJump,
+                RejectionSite::NullableCall => RejectionSite::NullableCallFinallyJump,
+                _ => sites.0,
+            };
+            self.reject_subset(site, message, pos);
+        } else if (sites.0 != RejectionSite::NullableCall || nullable_function)
             && path_key(expression).is_some_and(|key| fx.ended_shared_narrowing.contains(&key))
         {
             self.reject_subset(sites.1, message, pos);
@@ -611,6 +621,7 @@ impl Checker<'_> {
         };
         if !loop_head {
             fx.end_loop_notes_at_stores(effects);
+            fx.end_finally_causes_at_stores(effects);
         }
         if !fx.has_narrowing_facts() {
             return;
@@ -757,7 +768,8 @@ impl Checker<'_> {
 
 impl FnCtx {
     pub(super) fn has_narrowing_facts(&self) -> bool {
-        !self.narrowed.is_empty()
+        !self.finally_ended_narrowing.is_empty()
+            || !self.narrowed.is_empty()
             || self
                 .loop_ended_narrowing
                 .iter()

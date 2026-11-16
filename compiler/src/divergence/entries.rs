@@ -9,6 +9,13 @@ impl Divergence {
     #[must_use]
     pub const fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::FinallyJumpNarrowing => DivergenceEntry {
+                ts: "class A { x: i32 = 1; } function mk(): A | null { return null; }\nfunction f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = mk(); } } e.x; }",
+                subscript: "class A { x: i32 = 1; } function mk(): A | null { return null; }\nfunction f(): void { let e: A | null = new A(); while (true) { try { break; } finally { e = mk(); } } if (e === null) { return; } e.x; }",
+                why: "A finally store can make the local null before the jump reaches its target. Test the local again before use.",
+                collision: "C7",
+            },
+
             Divergence::MirrorGeneratorType => DivergenceEntry {
                 ts: "// file: mirror.d.ts\n// @subscript-c-header include=\"host.h\"\ndeclare function hostGenerator(): Generator<i32>;",
                 subscript: "// file: mirror.d.ts\n// @subscript-c-header include=\"host.h\"\ndeclare function hostNext(): i32;\n// file: main.ts\nfunction* hostGenerator(): Generator<i32> { yield hostNext(); }",
