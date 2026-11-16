@@ -152,3 +152,4 @@ divergence cell of the matrix.
 2. `let c = "zzz"; switch (m) { case c: }` stays rejected with the
    divergence `AliasCaseNonLiteral`. `tsc` accepts it. This is older
    than §299: rule 1.5 covers a `string` subject only.
+   *(Selected 2026-11-17 for §321.)*
