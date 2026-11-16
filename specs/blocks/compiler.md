@@ -362,3 +362,4 @@ Every section, with its status:
 | §319 | A nullish right operand in a generic body takes the context | active | [`s319-a-nullish-right-operand-in-a-generic-body-takes-the-context.md`](compiler/s319-a-nullish-right-operand-in-a-generic-body-takes-the-context.md) |
 | §320 | A function with defaults fits a place with fewer parameters | active | [`s320-a-function-with-defaults-fits-a-place-with-fewer-parameters.md`](compiler/s320-a-function-with-defaults-fits-a-place-with-fewer-parameters.md) |
 | §321 | A string case label compares an alias subject as a string | active | [`s321-a-string-case-label-compares-an-alias-subject-as-a-string.md`](compiler/s321-a-string-case-label-compares-an-alias-subject-as-a-string.md) |
+| §322 | A static readonly field keeps its narrowing | active | [`s322-a-static-readonly-field-keeps-its-narrowing.md`](compiler/s322-a-static-readonly-field-keeps-its-narrowing.md) |

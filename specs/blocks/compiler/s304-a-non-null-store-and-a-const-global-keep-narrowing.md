@@ -134,3 +134,4 @@ of the stores (§162.4 item 1).
 1. A `static readonly` field stays a shared location. No code can store
    it after the class initializer, so rule 3 can apply to it. `tsc`
    keeps its narrowing across a call. Not measured on a program.
+   *(Selected 2026-11-17 for §322.)*

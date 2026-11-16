@@ -95,5 +95,6 @@ CRITICAL or MAJOR finding and seven MINOR findings.
    context.
 2. *(Closed by §232.)* `await k?.make()` (§212.4 item 1).
 3. `await saf()`, with a synchronous `saf<T>(): Promise<T>` (rule 3a).
+   *(Closed: measured accepted at `b384b8c4`; `await saf(3)` and `await saf<i32>(4)` print `3` and `4`.)*
 4. `arrv([1, 2], 3.5)` (rule 6): `tsc` gives `T` the type `number`. The
    language has no such join of `i32` and `f64`.
