@@ -477,7 +477,7 @@ impl<'p> Checker<'p> {
                     annotated: param.annotated,
                     ty: param.ty().clone(),
                     mutable: true,
-                    async_origins: HashSet::new(),
+                    async_origins: Default::default(),
                     caught: false,
                     function_value_required: None,
                 },

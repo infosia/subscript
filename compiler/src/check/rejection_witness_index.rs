@@ -62,6 +62,13 @@ pub(super) fn witness_key(site: RejectionSite) -> (&'static str, Option<Divergen
 #[rustfmt::skip]
 pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
     match site {
+        RejectionSite::AsyncConditionalReturnBinding => WitnessEntry::Reachable { files: &["s317-AsyncConditionalReturnBinding"], variant: Divergence::DroppedAsyncHandle },
+        RejectionSite::AsyncConditionalReturnParameter => WitnessEntry::Reachable { files: &["s317-AsyncConditionalReturnParameter"], variant: Divergence::DroppedAsyncHandle },
+
+        RejectionSite::AsyncDefaultReadsParameter => WitnessEntry::Reachable { files: &["s317-AsyncDefaultReadsParameter"], variant: Divergence::DroppedAsyncHandle },
+        RejectionSite::AsyncConditionalBinding => WitnessEntry::Reachable { files: &["s317-AsyncConditionalBinding"], variant: Divergence::DroppedAsyncHandle },
+        RejectionSite::AsyncConditionalParameter => WitnessEntry::Reachable { files: &["s317-AsyncConditionalParameter"], variant: Divergence::DroppedAsyncHandle },
+
         RejectionSite::ReadonlyLiteralStore => WitnessEntry::General { files: &["s316-readonly-store"], variant: None, reason: "" },
         RejectionSite::ParameterCapture => WitnessEntry::General { files: &["s312-ParameterCapture.ts", "c-lookup-context-capture"], variant: Some(Divergence::MutableLocalCapture), reason: "" },
         RejectionSite::LaterLocalCaptureRead => WitnessEntry::General { files: &["s312-LaterLocalCaptureRead.ts", "s173-pending-lambda", "c-lookup-pending-closure"], variant: Some(Divergence::DeclarationScope), reason: "" },

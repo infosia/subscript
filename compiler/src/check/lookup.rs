@@ -239,7 +239,7 @@ impl<'p> Checker<'p> {
                             annotated: false,
                             ty: Type::Error,
                             mutable: true,
-                            async_origins: HashSet::new(),
+                            async_origins: Default::default(),
                             caught: false,
                             function_value_required: None,
                         });
@@ -282,7 +282,7 @@ impl<'p> Checker<'p> {
                     annotated: false,
                     ty: Type::Error,
                     mutable: true,
-                    async_origins: HashSet::new(),
+                    async_origins: Default::default(),
                     caught: false,
                     function_value_required: None,
                 });
@@ -306,7 +306,7 @@ impl<'p> Checker<'p> {
                     annotated: false,
                     ty: Type::Error,
                     mutable: true,
-                    async_origins: HashSet::new(),
+                    async_origins: Default::default(),
                     caught: false,
                     function_value_required: None,
                 });

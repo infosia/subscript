@@ -10231,3 +10231,35 @@ FILE	E	target/s316/main.ts
 class K { readonly w = "zzz"; constructor() { this.w = "yyy"; } } export function main(): void { print(new K().w); }
 END FILE
 END PROGRAM
+PROGRAM	s317-AsyncDefaultReadsParameter			0
+FILE	E	main.ts
+async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s317-AsyncConditionalBinding			0
+FILE	E	main.ts
+async function v(n: i32): Promise<i32> { return n; }
+async function g(c: boolean): Promise<i32> { const p = v(1); const q = v(2); const r = c ? p : q; return await r; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s317-AsyncConditionalParameter			0
+FILE	E	main.ts
+async function h(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return await (c ? p : q); }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s317-AsyncConditionalReturnBinding			0
+FILE	E	main.ts
+async function v(n: i32): Promise<i32> { return n; }
+async function f(c: boolean): Promise<i32> { const p = v(1); const q = v(2); return c ? p : q; }
+export function main(): void {}
+END FILE
+END PROGRAM
+PROGRAM	s317-AsyncConditionalReturnParameter			0
+FILE	E	main.ts
+async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }
+export function main(): void {}
+END FILE
+END PROGRAM

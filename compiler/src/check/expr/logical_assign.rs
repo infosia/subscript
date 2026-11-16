@@ -430,7 +430,7 @@ impl<'p> Checker<'p> {
                 annotated: false,
                 ty: ty.clone(),
                 mutable: true,
-                async_origins: std::collections::HashSet::new(),
+                async_origins: Default::default(),
                 caught: false,
                 function_value_required: None,
             },

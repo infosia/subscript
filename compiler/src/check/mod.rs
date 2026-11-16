@@ -38,6 +38,8 @@ mod rejection_total;
 pub(crate) use crate::hir::source_name;
 pub(crate) use container_argument::ContainerSlot;
 use init_effects::module_initializer_diagnostics;
+mod async_origins;
+use async_origins::{AsyncOrigin, AsyncOrigins};
 mod bindings;
 mod bodies;
 #[cfg(test)]
@@ -536,7 +538,7 @@ pub(crate) struct Local {
     pub ty: Type,
     pub mutable: bool,
     /// Async-handle creation obligations reachable through this value.
-    pub async_origins: HashSet<u32>,
+    pub async_origins: AsyncOrigins,
     /// True for a catch binding. Before a narrowing test it has two legal
     /// uses: the left operand of `instanceof` and the operand of `throw`
     /// (compiler.md §115.3 rule 4).
@@ -949,8 +951,10 @@ pub(crate) struct FnCtx {
     failed_loop_assumptions: Rc<RefCell<HashSet<swc_common::Span>>>,
     pub flow_reachable: bool,
     /// Each async handle creation or async-handle parameter in this body.
-    pub async_origins: Shared<Vec<(Pos, bool)>>,
+    pub async_origins: Shared<Vec<AsyncOrigin>>,
     pub group_origins: HashSet<u32>,
+    /// Compiler temporaries preserve the origin kind of their source operand (§317).
+    pub async_operand_origins: Shared<HashMap<String, AsyncOrigins>>,
     /// Owner-scoped local declarations required by rewritten expressions.
     synthetic_owners: Shared<Vec<SyntheticPrefix>>,
     synthetic_owner_kinds: Shared<Vec<SyntheticOwnerKind>>,
@@ -1177,7 +1181,7 @@ impl FnCtx {
                             annotated: false,
                             ty,
                             mutable: false,
-                            async_origins: HashSet::new(),
+                            async_origins: Default::default(),
                             caught: false,
                             function_value_required: None,
                         },
@@ -1202,6 +1206,7 @@ impl FnCtx {
             flow_reachable: true,
             async_origins: Vec::new().into(),
             group_origins: HashSet::new(),
+            async_operand_origins: Default::default(),
             synthetic_owners: Vec::new().into(),
             synthetic_owner_kinds: Vec::new().into(),
             diagnostics,
@@ -1267,43 +1272,6 @@ impl FnCtx {
             .last_mut()
             .expect("a synthetic prefix must have an owner")
             .push(statement);
-    }
-
-    /// Registers one handle whose underlying computation needs one await.
-    pub(crate) fn register_async_origin(&mut self, pos: Pos) -> u32 {
-        let id = self.async_origins.len() as u32;
-        self.async_origins.push((pos, false));
-        id
-    }
-
-    /// Discharges every supplied handle origin through await, pass, or return.
-    pub(crate) fn handle_async_origins(&mut self, origins: &HashSet<u32>) {
-        for origin in origins {
-            if let Some((_, handled)) = self.async_origins.get_mut(*origin as usize) {
-                *handled = true;
-            }
-        }
-    }
-
-    /// Returns the async obligations carried by one already-resolved local.
-    pub(crate) fn local_async_origins(&self, name: &str) -> HashSet<u32> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.vars.get(name))
-            .map_or_else(HashSet::new, |local| local.async_origins.clone())
-    }
-
-    /// Replaces the obligations carried by a mutable local assignment.
-    pub(crate) fn set_local_async_origins(&mut self, name: &str, origins: HashSet<u32>) {
-        if let Some(local) = self
-            .scopes
-            .iter_mut()
-            .rev()
-            .find_map(|scope| scope.vars.get_mut(name))
-        {
-            local.async_origins = origins;
-        }
     }
 
     /// Returns true if a local scope owns the name.

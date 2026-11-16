@@ -66,6 +66,9 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    ("r533-default-reads-earlier-handle.ts", RuleCode::S013, 8),
+    ("r534-conditional-handle-binding.ts", RuleCode::S013, 8),
+    ("r535-conditional-handle-value.ts", RuleCode::S013, 8),
     ("r507-c-callback-through-method.ts", RuleCode::S100, 8),
     ("r508-nested-lambda-calls-outer-name.ts", RuleCode::S100, 8),
     ("r509-group-call-in-a-nested-lambda.ts", RuleCode::S100, 8),

@@ -1,7 +1,6 @@
 //! Checks arrow function expressions (C5).
 
 use crate::check::rejection::RejectionSite;
-use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
@@ -378,9 +377,9 @@ impl<'p> Checker<'p> {
             };
             let param_pos = self.pos(pattern.span());
             let async_origins = if self.apparent_type(p.ty()).holds_async_handle() {
-                HashSet::from([fx.register_async_origin(param_pos.clone())])
+                crate::check::AsyncOrigins::made(fx.register_async_parameter(param_pos.clone()))
             } else {
-                HashSet::new()
+                Default::default()
             };
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.parameter_names.insert(p.name.clone());
@@ -650,7 +649,7 @@ impl<'p> Checker<'p> {
                     if self.transfers_async_origins(&checked.ty) || self.diags.len() != diagnostics
                     {
                         let origins = self.expr_async_origins(&checked, fx);
-                        fx.handle_async_origins(&origins);
+                        fx.handle_return_async_origins(&origins);
                     }
                     let value_pos = checked.pos.clone();
                     vec![hir::Stmt::Return {

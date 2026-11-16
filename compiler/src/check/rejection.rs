@@ -13,6 +13,13 @@ pub(crate) use sites::RejectionSite;
 mod surface_classes;
 
 rejection_classes! {
+    Self::AsyncConditionalReturnBinding => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+    Self::AsyncConditionalReturnParameter => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+
+    Self::AsyncDefaultReadsParameter => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+    Self::AsyncConditionalBinding => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+    Self::AsyncConditionalParameter => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
+
     Self::ReadonlyLiteralStore => (RuleCode::S100, TscRejects),
     Self::MirrorGeneratorType => (RuleCode::S100, Diverges(Divergence::MirrorGeneratorType)),
     Self::ParameterCapture => (RuleCode::S009, Diverges(Divergence::MutableLocalCapture)),

@@ -47,7 +47,7 @@ impl<'p> Checker<'p> {
             annotated: false,
             ty: Type::Error,
             mutable: false,
-            async_origins: HashSet::new(),
+            async_origins: Default::default(),
             caught: false,
             function_value_required: None,
         };
@@ -121,7 +121,7 @@ impl<'p> Checker<'p> {
                                 annotated: false,
                                 ty: Type::Error,
                                 mutable: false,
-                                async_origins: HashSet::new(),
+                                async_origins: Default::default(),
                                 caught: false,
                                 function_value_required: None,
                             },
@@ -619,7 +619,7 @@ impl<'p> Checker<'p> {
                     if self.transfers_async_origins(&checked.ty) || self.diags.len() != diagnostics
                     {
                         let origins = self.expr_async_origins(&checked, fx);
-                        fx.handle_async_origins(&origins);
+                        fx.handle_return_async_origins(&origins);
                     }
                     Some(checked)
                 }
@@ -675,7 +675,7 @@ impl<'p> Checker<'p> {
             let checked = self.check_expr(arg, None, fx);
             self.reject_void_return_value(diagnostics, fx, pos);
             let origins = self.expr_async_origins(&checked, fx);
-            fx.handle_async_origins(&origins);
+            fx.handle_return_async_origins(&origins);
             return Some(checked);
         }
         // compiler.md §250 rules 1 to 3: the literal `undefined` is
@@ -713,7 +713,7 @@ impl<'p> Checker<'p> {
             let checked = self.adopt_returned_handle(checked, &ret, fx, pos, out)?;
             self.reject_void_return_value(diagnostics, fx, pos);
             let origins = self.expr_async_origins(&checked, fx);
-            fx.handle_async_origins(&origins);
+            fx.handle_return_async_origins(&origins);
             return Some(checked);
         }
         let bare_return = hir::Stmt::Return {

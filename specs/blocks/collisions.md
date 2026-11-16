@@ -355,6 +355,10 @@ an ordinary method. Accept adds `a357`–`a361`; reject adds
 pattern binding) is an S013 origin, and a store into a field or a
 module global discharges it. Accept adds `a364`–`a367`; reject adds
 `r414`–`r418`.
+*Revised 2026-11-16 (§317):* a conditional value discharges a selected
+origin only when each operand reads it. A parameter default does not
+discharge an earlier parameter. Accept adds `a465`; reject adds
+`r533`–`r535`.
 
 ### C9. Field initializers — every construction, earlier fields through `this`
 

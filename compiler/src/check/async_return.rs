@@ -313,7 +313,7 @@ impl Checker<'_> {
             return Some(checked);
         }
         let origins = self.expr_async_origins(&checked, fx);
-        fx.handle_async_origins(&origins);
+        fx.handle_return_async_origins(&origins);
         let ty = checked.ty.clone();
         let index = match fx.adoptions.iter().position(|adoption| adoption.ty == ty) {
             Some(index) => index,

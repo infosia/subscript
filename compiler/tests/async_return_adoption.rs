@@ -151,7 +151,7 @@ fn a_returned_handle_in_a_try_statement_adopts() {
 fn the_leaves_of_a_returned_conditional_decide_its_context() {
     for body in [
         "async function h(b: boolean): Promise<i32> { return b ? v() : v(); }",
-        "async function h(b: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return b ? p : q; }",
+        "async function h(b: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { await p; await q; return b ? p : q; }",
         "function f(): void { const job = async (b: boolean): Promise<i32> => b ? v() : v(); }",
         "async function h(b: boolean): Promise<i32> { return b ? 1 : 2; }",
     ] {

@@ -142,7 +142,7 @@ async function choose(b: boolean): Promise<i32> {
 }
 
 async function chooseHeld(b: boolean, h1: Promise<i32>, h2: Promise<i32>): Promise<i32> {
-  return b ? h1 : h2;
+  await h1; await h2; return b ? h1 : h2;
 }
 
 async function finallyThrows(): Promise<i32> {

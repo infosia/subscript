@@ -1584,3 +1584,8 @@ NullableNominalAssignmentFinallyJump	s315-nominal-switch	S005	nominal types are 
 NullableCallFinallyJump	s315-call-loop	S100	type `((i32) => i32) | null` is not callable
 NullableCallFinallyJump	s315-call-switch	S100	type `((i32) => i32) | null` is not callable
 ReadonlyLiteralStore	s316-readonly-store	S100	readonly field assignment expects literal "zzz"
+AsyncDefaultReadsParameter	s317-AsyncDefaultReadsParameter	S013	an async handle is dropped without any await of its completion
+AsyncConditionalBinding	s317-AsyncConditionalBinding	S013	an async handle is dropped without any await of its completion
+AsyncConditionalParameter	s317-AsyncConditionalParameter	S013	an async handle is dropped without any await of its completion
+AsyncConditionalReturnBinding	s317-AsyncConditionalReturnBinding	S013	an async handle is dropped without any await of its completion
+AsyncConditionalReturnParameter	s317-AsyncConditionalReturnParameter	S013	an async handle is dropped without any await of its completion

@@ -73,8 +73,28 @@ rule 4 exists to report this drop at check time.
 
 ### 317.3 Phase Review
 
-*(Filled in after the review.)*
+Round 1 stopped: the origin set merged both operands and kept no
+condition, and the first text of rule 1 rejected
+`await (c ? v(1) : v(2))`. Rule 1 is amended to a kind of each origin
+(made in the operand, or selected). The corpus entry a423 returned one
+of two parameter handles (`return b ? h1 : h2`) and gets S013 under
+rule 1; it now awaits both before it returns the selected one, and its
+output does not change.
+
+One fresh review ran 70 probes and compared 1,061 corpus entries with
+a pin build: only r533, r534, and r535 differ. It found no CRITICAL or
+MAJOR finding. A sync helper that returns one of two parameter handles
+(`function pick(c, p, q): Promise<i32> { return c ? p : q; }`) is
+rejected. This follows from §188 rule 2: a parameter is an origin, and
+`return p` with an unused `q` is S013 at the pin too. Three MINOR
+findings: the example of a sync body showed `await`, and the text of
+two sites named an await for forms with no await (both fixed: each
+example now transfers one handle, which fits an async and a sync body
+and each discharge form); and two contrived correct programs are rejected
+(317.4).
 
 ### 317.4 Open
 
-None.
+1. `const t = c ? p : q; const u = c ? q : p; await t; await u;` and
+   `[c ? p : q, c ? q : p]` discharge each handle on each path, and get
+   S013: rule 1 reads each conditional alone. Contrived.

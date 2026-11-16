@@ -1,12 +1,11 @@
 //! Checks the expression entry points, statement expressions, and `await`.
 
 use crate::check::rejection::RejectionSite;
-use std::collections::HashSet;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{Checker, FnCtx, ScopeItem};
+use crate::check::{AsyncOrigins, Checker, FnCtx, ScopeItem};
 use crate::diag::Pos;
 use crate::hir::{self, AsyncCallee, ExprKind};
 use crate::types::{ClassId, Type};
@@ -59,7 +58,7 @@ impl<'p> Checker<'p> {
     }
 
     /// Returns the must-await origins carried through one checked value.
-    pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> HashSet<u32> {
+    pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> AsyncOrigins {
         use hir::ExprKind as K;
         match &expr.kind {
             K::TaskGroup {
@@ -67,27 +66,42 @@ impl<'p> Checker<'p> {
                 ..
             }
             | K::AsyncAll { origin, .. }
-            | K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
-            K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
+            | K::AsyncHandleCreate { origin, .. } => AsyncOrigins::made(*origin),
+            K::AsyncHandleTransfer { origin, .. } => AsyncOrigins::made(*origin),
             K::Local(name, _, _) => fx.local_async_origins(name),
-            K::ArrayLit(elements) => elements
-                .iter()
-                .flat_map(|element| self.expr_async_origins(element, fx))
-                .collect(),
-            K::ArraySpreadLit(elements) => elements
-                .iter()
-                .flat_map(|element| self.expr_async_origins(&element.expr, fx))
-                .collect(),
+            K::ArrayLit(elements) => {
+                elements
+                    .iter()
+                    .fold(AsyncOrigins::default(), |mut origins, element| {
+                        origins.extend(self.expr_async_origins(element, fx));
+                        origins
+                    })
+            }
+            K::ArraySpreadLit(elements) => {
+                elements
+                    .iter()
+                    .fold(AsyncOrigins::default(), |mut origins, element| {
+                        origins.extend(self.expr_async_origins(&element.expr, fx));
+                        origins
+                    })
+            }
             K::Index { obj, .. } | K::Field { obj, .. } | K::Cast(obj) => {
                 self.expr_async_origins(obj, fx)
             }
-            K::Cond { then, els, .. } => self
-                .expr_async_origins(then, fx)
-                .into_iter()
-                .chain(self.expr_async_origins(els, fx))
-                .collect(),
+            K::Cond { then, els, .. } => AsyncOrigins::conditional(
+                self.expr_async_origins(then, fx),
+                self.expr_async_origins(els, fx),
+            ),
+            K::Binary {
+                op: hir::BinOp::And | hir::BinOp::Or,
+                left,
+                right,
+            } => AsyncOrigins::conditional(
+                self.expr_async_origins(left, fx),
+                self.expr_async_origins(right, fx),
+            ),
             K::Seq { value, .. } => self.expr_async_origins(value, fx),
-            _ => HashSet::new(),
+            _ => AsyncOrigins::default(),
         }
     }
 
@@ -101,7 +115,7 @@ impl<'p> Checker<'p> {
 
     /// Discharges the origins of a parameter default whose parameter type
     /// transfers them, as an argument of that type does (`compiler.md`
-    /// §257.1 rule 1, §188.1 rule 3).
+    /// §257.1 rule 1, §317.1 rule 2).
     pub(crate) fn discharge_parameter_default(
         &self,
         default: &hir::Expr,
@@ -110,7 +124,7 @@ impl<'p> Checker<'p> {
     ) {
         if self.transfers_async_origins(param_ty) {
             let origins = self.expr_async_origins(default, fx);
-            fx.handle_async_origins(&origins);
+            fx.handle_default_origins(origins);
         }
     }
 

@@ -529,7 +529,7 @@ impl Checker<'_> {
                     annotated: false,
                     ty: Type::Class(class),
                     mutable: false,
-                    async_origins: HashSet::new(),
+                    async_origins: Default::default(),
                     caught: true,
                     function_value_required: None,
                 },

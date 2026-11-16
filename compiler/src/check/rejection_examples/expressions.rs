@@ -3,6 +3,51 @@ use super::*;
 
 pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
     match site {
+        RejectionSite::AsyncConditionalReturnBinding => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function v(n: i32): Promise<i32> { return n; }\nasync function f(c: boolean): Promise<i32> { const p = v(1); const q = v(2); return c ? p : q; }",
+                subscript: "async function v(n: i32): Promise<i32> { return n; }\nasync function f(c: boolean): Promise<i32> { const p = await v(1); const q = await v(2); return c ? p : q; }",
+                why: "Returning a conditional value transfers only the selected handle; each existing handle needs its own await.",
+                ..Divergence::DroppedAsyncHandle.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::AsyncConditionalReturnParameter => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }",
+                subscript: "function f(p: Promise<i32>): Promise<i32> { return p; }",
+                why: "Returning a conditional value transfers only the selected handle. Take one handle and return it, or transfer both supplied handles separately.",
+                ..Divergence::DroppedAsyncHandle.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::AsyncDefaultReadsParameter => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }",
+                subscript: "async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { await p; return await q; }",
+                why: "A default runs only for an omitted argument, so it cannot discharge an earlier parameter.",
+                ..Divergence::DroppedAsyncHandle.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::AsyncConditionalBinding => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function v(n: i32): Promise<i32> { return n; }\nlet stored: Promise<i32>[] = []; function g(c: boolean): void { const p = v(1); const q = v(2); stored = c ? [p] : [q]; }",
+                subscript: "async function v(n: i32): Promise<i32> { return n; }\nlet stored: Promise<i32>[] = []; function g(): void { const p = v(1); stored = [p]; }",
+                why: "A conditional value transfers only the selected handle. Create one handle and transfer it, or transfer both existing handles separately.",
+                ..Divergence::DroppedAsyncHandle.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::AsyncConditionalParameter => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "let stored: Promise<i32>[] = []; function h(c: boolean, p: Promise<i32>, q: Promise<i32>): void { stored = c ? [p] : [q]; }",
+                subscript: "let stored: Promise<i32>[] = []; function h(p: Promise<i32>): void { stored = [p]; }",
+                why: "A conditional value transfers only the selected handle. Take one handle and transfer it, or transfer both supplied handles separately.",
+                ..Divergence::DroppedAsyncHandle.entry()
+            };
+            Some(&ENTRY)
+        }
         RejectionSite::ArraySpreadSource => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
                 ts: "// file: bag.d.ts\ndeclare class SpreadBag { [Symbol.iterator](): Iterator<i32>; }\n// file: main.ts\nconst copy = [...new SpreadBag()];",

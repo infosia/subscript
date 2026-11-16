@@ -411,27 +411,25 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn report_unhandled_async_origins(&mut self, fx: &FnCtx, start: usize) {
         let unhandled = fx.async_origins[start..]
             .iter()
-            .filter(|(_, handled)| !*handled)
-            .map(|(pos, _)| pos.clone())
+            .enumerate()
+            .filter(|(_, origin)| !origin.handled)
+            .map(|(index, origin)| (start + index, origin.clone()))
             .collect::<Vec<_>>();
-        for origin in unhandled {
-            let group = fx.group_origins.iter().any(|id| {
-                fx.async_origins
-                    .get(*id as usize)
-                    .is_some_and(|(pos, _)| *pos == origin)
-            });
+        for (id, origin) in unhandled {
+            let group = fx.group_origins.contains(&(id as u32));
+            let site = if group {
+                RejectionSite::TaskGroupUnjoined
+            } else {
+                origin.rejection_site()
+            };
             self.reject_subset(
-                if group {
-                    RejectionSite::TaskGroupUnjoined
-                } else {
-                    RejectionSite::AsyncHandleUnawaited
-                },
+                site,
                 if group {
                     "a task group requires a join in its declaring scope"
                 } else {
                     "an async handle is dropped without any await of its completion"
                 },
-                origin,
+                origin.pos,
             );
         }
     }
@@ -486,9 +484,9 @@ impl<'p> Checker<'p> {
                     ty: ps.ty().clone(),
                     mutable: true,
                     async_origins: if self.apparent_type(ps.ty()).holds_async_handle() {
-                        HashSet::from([fx.register_async_origin(pos.clone())])
+                        super::AsyncOrigins::made(fx.register_async_parameter(pos.clone()))
                     } else {
-                        HashSet::new()
+                        Default::default()
                     },
                     caught: false,
                     function_value_required: None,
@@ -746,9 +744,11 @@ impl<'p> Checker<'p> {
                         };
                         let param_pos = self.pos(param.span);
                         let async_origins = if self.apparent_type(ps.ty()).holds_async_handle() {
-                            HashSet::from([fx.register_async_origin(param_pos.clone())])
+                            super::AsyncOrigins::made(
+                                fx.register_async_parameter(param_pos.clone()),
+                            )
                         } else {
-                            HashSet::new()
+                            Default::default()
                         };
                         self.declare_local(
                             &ps.name,

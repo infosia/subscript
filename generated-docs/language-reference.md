@@ -265,21 +265,20 @@ Header guidance:
 
 Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.
 
-Pinned corpus: [`corpus/reject/r383-unjoined-task-group.ts`](../corpus/reject/r383-unjoined-task-group.ts), line 10.
+Pinned corpus: [`corpus/reject/r533-default-reads-earlier-handle.ts`](../corpus/reject/r533-default-reads-earlier-handle.ts), line 8.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// js-comparable: no C8: TaskGroup has no JavaScript counterpart.
-// expected-error: S013 at the group creation with no join
+// expected-error: S013 at line 8
 ```
 
 ```ts
-
-export function main(): void {
-  const group: TaskGroup = new TaskGroup();
-}
+// expected-error: S013 at line 8
+async function v(n: i32): Promise<i32> { return n; }
+async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }
+export function main(): void {}
 ```
 
 ### S014

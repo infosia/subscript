@@ -1050,13 +1050,15 @@ impl<'p> Checker<'p> {
         self.next_compound_local_id += 1;
         let name = format!("[[compound#{id}.nullish]]");
         let nullable = operand.ty.clone();
+        let origins = self.expr_async_origins(&operand, fx);
+        fx.async_operand_origins.insert(name.clone(), origins);
         self.declare_in_context(
             &name,
             crate::check::Local {
                 annotated: false,
                 ty: nullable.clone(),
                 mutable: true,
-                async_origins: std::collections::HashSet::new(),
+                async_origins: Default::default(),
                 caught: false,
                 function_value_required: None,
             },

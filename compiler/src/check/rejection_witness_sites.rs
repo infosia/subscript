@@ -3,6 +3,11 @@
 use super::RejectionSite;
 
 pub(crate) const GENERAL_SITES: &[RejectionSite] = &[
+    RejectionSite::AsyncConditionalReturnBinding,
+    RejectionSite::AsyncConditionalReturnParameter,
+    RejectionSite::AsyncDefaultReadsParameter,
+    RejectionSite::AsyncConditionalBinding,
+    RejectionSite::AsyncConditionalParameter,
     RejectionSite::ParameterCapture,
     RejectionSite::LaterLocalCaptureRead,
     RejectionSite::SourceAmbientFunctionDeclaration,
