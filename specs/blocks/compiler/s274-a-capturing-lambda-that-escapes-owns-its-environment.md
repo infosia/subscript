@@ -163,3 +163,11 @@ rejection that `tsc` makes. Each is fixed.
 1. A conditional of two values that a C callback type takes
    (`flag ? f : g`) is rejected at a C callback place: the check
    converts only a lambda or a function name.
+   *(Measured 2026-11-17 at `fa84a3ed` with the interop mirror: a
+   conditional of two capture-free lambdas at `SubLogCallback` is
+   accepted. A named function cannot declare the `object` userdata
+   parameters (S011), so it reaches only a C callback type with no
+   boundary-only parameter; no fixture has one. A named function with
+   fewer parameters, `function lf(message: string): void`, is rejected
+   at `SubLogCallback` ("a value that is not a named function or a
+   capture-free lambda"); `tsc` accepts it. Not a selected item.)*
