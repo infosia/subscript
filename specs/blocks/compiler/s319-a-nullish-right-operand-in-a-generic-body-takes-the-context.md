@@ -57,7 +57,18 @@ type of `a ?? 1` and of `a ?? id(1)`, which §212 rule 6 forbids.
 
 ### 319.3 Phase Review
 
-*(Filled in after the review.)*
+One fresh review ran 28 probes in generic bodies with a pin build and
+`tsc`. It found one MAJOR finding, realistic and of an uncommon shape:
+the round checked each nested call argument with the missing-candidate
+context only, so `a ?? sum(u, id(1))` with `sum<T>(x: T, y: f32): T`
+gave S007; the pin and `tsc` accept it. Rule 1a is added; the argument
+keeps the context of the pin first, and a test holds the `f32` and
+`f64` forms. Three MINOR findings are fixed: nested arguments were not
+in the contract (rule 1a), an unused variable, and two tests with no
+stated cost. No newly accepted probe is rejected by `tsc`. Over 1,146
+corpus files, only a469 differs from the pin. Forms with no outer
+context (`const r = a ?? empty()`) and `a ?? (c ? [] : [])` stay
+rejected, as at the pin; `tsc` accepts them.
 
 ### 319.4 Open
 

@@ -907,7 +907,22 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if self.involves_type_parameter(&left.ty) {
-            let right = self.check_expr(&binary.right, None, fx);
+            // §319: only an empty array or a call with missing candidates
+            // takes context. Inference checks arguments once before that choice.
+            let fallback = unparen_expr(&binary.right);
+            let saved = self.nullish_fallback_call.take();
+            self.nullish_fallback_call = match fallback {
+                ast::Expr::Call(call) if call.type_args.is_none() => {
+                    ctx.cloned().map(|context| (call.span, context))
+                }
+                _ => None,
+            };
+            let right_ctx = match fallback {
+                ast::Expr::Array(array) if array.elems.is_empty() => ctx,
+                _ => None,
+            };
+            let right = self.check_expr(&binary.right, right_ctx, fx);
+            self.nullish_fallback_call = saved;
             let inner = self.non_null_type(&left.ty);
             let ty = if self.joins_null_and_undefined(&inner, &right.ty) {
                 // §195.11 rule 5: the join holds both spellings.

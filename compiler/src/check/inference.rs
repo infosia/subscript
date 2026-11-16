@@ -174,7 +174,16 @@ impl<'p> Checker<'p> {
             source_name(key),
         );
         let contextual = self.contextual_result_candidates(&target, call);
-        self.infer_arguments(&target, &call.args, &contextual, fx, pos)
+        self.infer_arguments(
+            &target,
+            &call.args,
+            &contextual,
+            self.nullish_fallback_call
+                .as_ref()
+                .is_some_and(|(span, _)| *span == call.span),
+            fx,
+            pos,
+        )
     }
 
     /// Infers the type arguments of a generic method call (§197 rule 1,
@@ -206,7 +215,16 @@ impl<'p> Checker<'p> {
             format!("{owner}.{name}"),
         );
         let contextual = self.contextual_result_candidates(&target, call);
-        self.infer_arguments(&target, &call.args, &contextual, fx, pos)
+        self.infer_arguments(
+            &target,
+            &call.args,
+            &contextual,
+            self.nullish_fallback_call
+                .as_ref()
+                .is_some_and(|(span, _)| *span == call.span),
+            fx,
+            pos,
+        )
     }
 
     /// The explicit `U` of `map<U>` or `flatMap<U>`, as the result type of
@@ -403,8 +421,13 @@ impl<'p> Checker<'p> {
         if self.active_call != Some(call.span) {
             return Vec::new();
         }
-        let (Some(result), Some(context)) = (target.result, self.active_call_context.clone())
-        else {
+        let context = self
+            .nullish_fallback_call
+            .as_ref()
+            .filter(|(span, _)| *span == call.span)
+            .map(|(_, context)| context.clone())
+            .or_else(|| self.active_call_context.clone());
+        let (Some(result), Some(context)) = (target.result, context) else {
             return Vec::new();
         };
         let mut candidates = vec![Vec::new(); target.type_params.len()];
@@ -462,7 +485,7 @@ impl<'p> Checker<'p> {
             _ => Vec::new(),
         };
         let target = InferenceTarget::constructor(&template, source_name(key));
-        self.infer_arguments(&target, args, &contextual, fx, pos)
+        self.infer_arguments(&target, args, &contextual, false, fx, pos)
     }
 
     /// The apparent contextual type with an outer `| null` removed (§197 rule 3).
@@ -620,6 +643,7 @@ impl<'p> Checker<'p> {
         target: &InferenceTarget<'_>,
         args: &[ast::ExprOrSpread],
         contextual: &[Option<Type>],
+        missing_only: bool,
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Option<Inferred> {
@@ -627,7 +651,12 @@ impl<'p> Checker<'p> {
         let annotations = &target.annotations;
         let mut candidates = vec![Vec::new(); parameters.len()];
         let mut checked = vec![None; args.len()];
-        let mut contextual = contextual.to_vec();
+        let mut fallback_context = missing_only.then(|| contextual.to_vec());
+        let mut contextual = if missing_only {
+            Vec::new()
+        } else {
+            contextual.to_vec()
+        };
         let mut has_context: Vec<bool> = (0..parameters.len())
             .map(|index| contextual.get(index).is_some_and(Option::is_some))
             .collect();
@@ -658,12 +687,36 @@ impl<'p> Checker<'p> {
                     }
                 }
             }
+            // A nested undecided operand gets the same missing-only context.
+            let nested = match unparen_expr(&argument.expr) {
+                ast::Expr::Call(call) => call.type_args.is_none(),
+                ast::Expr::Array(array) => array.elems.is_empty(),
+                _ => false,
+            };
+            // §319 rule 1a: preserve the context supplied at the pin first.
+            let use_fallback = nested
+                && missing_only
+                && annotations
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .is_some_and(|annotation| {
+                        type_mentions_missing(annotation, parameters, &has_context)
+                    });
+            let argument_candidates = if use_fallback {
+                fallback_context.as_ref().unwrap_or(&contextual)
+            } else {
+                &contextual
+            };
+            let argument_has_context: Vec<_> = (0..parameters.len())
+                .map(|index| argument_candidates.get(index).is_some_and(Option::is_some))
+                .collect();
             let context = annotations
                 .get(index)
                 .copied()
                 .flatten()
                 .and_then(|annotation| {
-                    if type_mentions_missing(annotation, parameters, &has_context) {
+                    if type_mentions_missing(annotation, parameters, &argument_has_context) {
                         None
                     } else {
                         // §197 rule 3: each contextual candidate replaces its parameter.
@@ -671,7 +724,7 @@ impl<'p> Checker<'p> {
                         self.cur_file = target.file;
                         let saved: Vec<_> = parameters
                             .iter()
-                            .zip(&contextual)
+                            .zip(argument_candidates)
                             .filter_map(|(parameter, candidate)| {
                                 let candidate = candidate.clone()?;
                                 Some((
@@ -725,7 +778,31 @@ impl<'p> Checker<'p> {
                     .and_then(|annotation| callback_result_parameter(annotation, parameters))
                     .and_then(|parameter| contextual.get(parameter).cloned().flatten());
             }
-            let value = self.check_expr(&argument.expr, context.as_ref(), fx);
+            let saved_fallback = self.nullish_fallback_call.clone();
+            let nested_call = if use_fallback {
+                match unparen_expr(&argument.expr) {
+                    ast::Expr::Call(call) if call.type_args.is_none() => {
+                        context.clone().map(|context| (call.span, context))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let nested_missing = nested_call.is_some();
+            if nested_missing {
+                self.nullish_fallback_call = nested_call;
+            }
+            let value = self.check_expr(
+                &argument.expr,
+                if nested_missing {
+                    None
+                } else {
+                    context.as_ref()
+                },
+                fx,
+            );
+            self.nullish_fallback_call = saved_fallback;
             self.lambda_result_hint = None;
             self.lambda_void_context = false;
             self.generic_callback_context = saved;
@@ -736,9 +813,17 @@ impl<'p> Checker<'p> {
                 // §212 rule 3: `null` is the candidate of a parameter that
                 // is the annotation, or a direct member of its union.
                 if target.result.is_some() && value.ty == Type::Null {
-                    for (index, candidate) in contextual.iter_mut().enumerate() {
-                        if accepts_null_as_parameter(annotation, &parameters[index]) {
-                            *candidate = None;
+                    for (index, parameter) in parameters.iter().enumerate() {
+                        if accepts_null_as_parameter(annotation, parameter) {
+                            if let Some(candidate) = contextual.get_mut(index) {
+                                *candidate = None;
+                            }
+                            if let Some(candidate) = fallback_context
+                                .as_mut()
+                                .and_then(|values| values.get_mut(index))
+                            {
+                                *candidate = None;
+                            }
                             has_context[index] = false;
                         }
                     }
@@ -788,6 +873,17 @@ impl<'p> Checker<'p> {
             for (index, values) in defaults.into_iter().enumerate() {
                 if !nonliteral[index] {
                     candidates[index].extend(values);
+                }
+            }
+        }
+        // §319: argument candidates and literal defaults retain their type.
+        // Only a missing candidate reads the fallback call's result context.
+        if let Some(contextual) = fallback_context {
+            for (values, context) in candidates.iter_mut().zip(contextual) {
+                if self.join_candidates(values).ok().flatten().is_none() {
+                    if let Some(context) = context {
+                        values.push(context);
+                    }
                 }
             }
         }

@@ -297,30 +297,80 @@ fn a_contextual_operand_keeps_the_context() {
     accept("const c: boolean = true; const b: Buf<P> = c ? empty() : new Buf<P>();");
 }
 
-/// §212.3 item 6a: the right operand of `??` has no context in a generic
-/// body, so a call there has no candidate.
+/// §319: the checker reads each short body once, without code generation.
 #[test]
-fn a_nullish_right_operand_in_a_generic_body_has_no_context() {
+fn a_nullish_right_operand_in_a_generic_body_takes_missing_context() {
     let source = format!(
         "{PRELUDE}
 function f<U>(a: Buf<U> | null): Buf<U> {{ return a ?? empty(); }}
-export function main(): void {{}}
-"
+function g<U>(a: U[] | null): U[] {{ return a ?? []; }}
+function nested<U>(a: Buf<Buf<U>> | null): Buf<Buf<U>> {{ return a ?? wrap(empty()); }}
+export function main(): void {{}}"
     );
-    let errors =
-        check_program(&[SourceFile::new("test.ts", source.as_str())]).expect_err("must reject");
-    assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(errors[0].code, RuleCode::S100, "{errors:?}");
-    assert_eq!(errors[0].message, no_candidate("T", "empty"));
-    // The control: a literal default decides the same position.
+    check_program(&[SourceFile::new("test.ts", &source)]).expect("missing context");
+}
+
+/// §319 rule 1a: a nested call keeps its parameter's existing context.
+#[test]
+fn generic_nullish_nested_call_keeps_parameter_context() {
+    for (ty, literal) in [("f32", "1"), ("f64", "2")] {
+        let source = format!(
+            "{PRELUDE}
+function sum<T>(x: T, y: {ty}): T {{ return x; }}
+function f<U>(a: U | null, u: U): U {{ return a ?? sum(u, id({literal})); }}
+export function main(): void {{}}"
+        );
+        check_program(&[SourceFile::new("test.ts", &source)]).expect("parameter context");
+    }
+}
+
+/// §319 rule 2: literal candidates keep the pin's diagnostic and type.
+/// Measured cost: 43 ms for three checker runs, one test thread, debug build.
+#[test]
+fn generic_nullish_literal_candidates_keep_their_type() {
+    let started = std::time::Instant::now();
+    for operand in ["1", "id(1)", "id(true ? 1 : 2)"] {
+        let source = format!(
+            "{PRELUDE}
+function f<U>(a: U | null): U {{ return a ?? {operand}; }}
+export function main(): void {{}}"
+        );
+        let errors =
+            check_program(&[SourceFile::new("test.ts", &source)]).expect_err("must reject");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code, RuleCode::S100);
+        assert_eq!(
+            errors[0].message,
+            "type mismatch: the return value expects `U`, got `U | i32`"
+        );
+    }
+    eprintln!(
+        "generic_nullish_literal_candidates_keep_their_type cost: {:?}",
+        started.elapsed()
+    );
+}
+
+/// The nested literal default also keeps its pin diagnostic.
+/// Measured cost: 7 ms for one checker run, one test thread, debug build.
+#[test]
+fn generic_nullish_nested_literal_keeps_its_type() {
+    let started = std::time::Instant::now();
     let source = format!(
         "{PRELUDE}
-function g<U>(a: U | null): void {{ const r = a ?? id(1); }}
-export function main(): void {{}}
-"
+function f<U>(a: Buf<U> | null): Buf<U> {{ return a ?? wrap(id(1)); }}
+export function main(): void {{}}"
     );
-    check_program(&[SourceFile::new("test.ts", source.as_str())])
-        .unwrap_or_else(|errors| panic!("{errors:?}"));
+    let errors = check_program(&[SourceFile::new("test.ts", &source)]).expect_err("must reject");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100);
+    assert_eq!(
+        errors[0].message,
+        "type mismatch: the return value expects `Buf<U>`, got `Buf<U> | Buf<i32>`"
+    );
+    eprintln!(
+        "generic_nullish_nested_literal_keeps_its_type cost: {:?}",
+        started.elapsed()
+    );
 }
 
 /// Rule 1: `void` gives no candidate, so a call with no argument for `T`

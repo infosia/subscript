@@ -259,6 +259,7 @@ fn run_with_effects(
         initializer_call: None,
         active_call: None,
         active_call_context: None,
+        nullish_fallback_call: None,
         operand_calls: Default::default(),
         optional_chain_context: None,
         type_argument_watch: Default::default(),
