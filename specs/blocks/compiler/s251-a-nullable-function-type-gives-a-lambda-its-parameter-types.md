@@ -89,3 +89,4 @@ MAJOR finding.
    `function r(): CB | undefined { return (x) => …; }` gives the S100
    "parameters require a type annotation", and `tsc` accepts it. The
    type is legal only as a result type (§195).
+   *(Selected 2026-11-16 for §318.)*

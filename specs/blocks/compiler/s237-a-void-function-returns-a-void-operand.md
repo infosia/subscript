@@ -158,6 +158,7 @@ limit of rule 4, and the examples of rule 5.
    `return s?.am()` with an async `am(): Promise<void>` stays rejected.
    `tsc` accepts it. The operand is a `Promise<void> | undefined`,
    which is not a handle of rule 3.
+   *(Selected 2026-11-16 for §318.)*
 5. A lambda with no result annotation gets no `void` context from a
    `then` callback (§233 gives a literal hint only) or from a generic
    parameter whose `T` is not inferred. So

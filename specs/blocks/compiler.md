@@ -358,3 +358,4 @@ Every section, with its status:
 | §315 | A loop keeps a local fact that holds at each back edge | active | [`s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md`](compiler/s315-a-loop-keeps-a-local-fact-that-holds-at-each-back-edge.md) |
 | §316 | A readonly literal field is a literal operand | active | [`s316-a-readonly-literal-field-is-a-literal-operand.md`](compiler/s316-a-readonly-literal-field-is-a-literal-operand.md) |
 | §317 | A handle that reaches an await on some paths only is not discharged | active | [`s317-a-handle-that-reaches-an-await-on-some-paths-only-is-not-discharged.md`](compiler/s317-a-handle-that-reaches-an-await-on-some-paths-only-is-not-discharged.md) |
+| §318 | An optional context and an optional handle return | active | [`s318-an-optional-context-and-an-optional-handle-return.md`](compiler/s318-an-optional-context-and-an-optional-handle-return.md) |
