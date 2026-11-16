@@ -183,6 +183,7 @@ that claims `Diverges` where `tsc` rejects is MAJOR.
    `k: (a: i32) => i32`), is rejected with a type mismatch; `tsc`
    accepts it. The site claims `TscRejects`. A missing fact under
    164.2: an adapter that fills the default has no decided lowering.
+   *(Selected 2026-11-16 for §320.)*
 2. A parenthesized literal condition (`if ((true))`, `while ((true))`)
    counts as constant here; `tsc` counts only a bare `true` or `false`
    (TS2366, and TS18047 for a narrowing after it). The HIR does not
