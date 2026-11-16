@@ -87,3 +87,4 @@ method, a static method, a constructor, a lambda, and a generator.
    (`uncaught-exception`). The check of §188 does not follow control
    flow, and it accepts the same drop through
    `const r = c ? p : q; await r;`.
+   *(Selected 2026-11-16 for §317.)*
