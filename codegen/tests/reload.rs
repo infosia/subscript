@@ -139,6 +139,32 @@ fn const_to_let_global_reload_is_refused() {
     global_mutability_reload_is_refused("const", "let");
 }
 
+/// Cost: 0.09 seconds for two JIT sessions and four reload attempts; no C compiler.
+#[test]
+fn static_field_mutability_reload_is_refused_in_both_directions() {
+    let start = std::time::Instant::now();
+    for (before, after) in [("readonly ", ""), ("", "readonly ")] {
+        let source = |modifier| {
+            format!(
+                "class A {{ x: i32 = 1; }} function mk(): A | null {{ return new A(); }} \
+             class K {{ static {modifier}R: A | null = mk(); }} \
+             export function main(): void {{ if (K.R !== null) {{ print(`${{K.R.x}}`); }} }}"
+            )
+        };
+        let mut session = ReloadSession::new(&files(&source(before))).expect("session");
+        session
+            .reload(&files(&source(before)))
+            .expect("unchanged control");
+        assert!(matches!(
+            session.reload(&files(&source(after))),
+            Err(ReloadError::DeclarationChanged { declaration }) if declaration == "variable K.R"
+        ));
+        session.call_main().expect("old code remains callable");
+        assert_eq!(output(&mut session), "1\n");
+    }
+    eprintln!("static field mutability reload: {:?}", start.elapsed());
+}
+
 // ----- entry-less sessions (§53) -----
 
 const ENTRYLESS_V1: &str = "\

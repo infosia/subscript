@@ -1623,7 +1623,7 @@ pub enum ExprKind {
     This,
     /// Local name, storage type, and a written annotation without type parameters (§124, §162 rule 3a).
     Local(String, Type, bool),
-    /// A global symbol and its shared-storage flag (§304). Module const bindings are not shared.
+    /// A global symbol and its shared-storage flag (§304, §322). Const globals and static readonly fields are not shared.
     Global(Symbol, bool),
     /// A function declaration symbol used as a value (non-capturing — C5).
     FuncRef(Symbol),

@@ -476,6 +476,7 @@ impl<'p> Checker<'p> {
             self.next_lambda_id += 1;
             id
         };
+        let called_at_once = std::mem::take(&mut self.lambda_called_at_once);
         let frame = Frame {
             ret: ret.clone().unwrap_or(Type::Error),
             result_kind,
@@ -488,8 +489,7 @@ impl<'p> Checker<'p> {
             inferred_void: inferred_void.then(|| (pos.clone(), false)),
             rejects_return_operand: false,
             void_split: None,
-            deferred: evaluation_of(std::mem::take(&mut self.lambda_called_at_once))
-                == crate::check::Evaluation::Deferred,
+            deferred: evaluation_of(called_at_once) == crate::check::Evaluation::Deferred,
             lambda_id: Some(id),
             captures: Vec::new().into(),
             this_ty: None,
@@ -506,15 +506,18 @@ impl<'p> Checker<'p> {
         fx.narrowed = saved_narrowed
             .iter()
             .filter(|fact| {
+                // compiler.md §322 rule 1: only a non-async immediate callee keeps the static field fact.
+                let immutable_global = !fact.shared && fact.starts_with("[[global]]");
                 fact.narrows_type()
-                    && !fact.contains('.')
-                    && (!fact.shared && fact.starts_with("[[global]]")
-                        || fx
-                            .scopes
-                            .iter()
-                            .rev()
-                            .find_map(|scope| scope.vars.get(&fact.key))
-                            .is_some_and(|local| !local.mutable))
+                    && (called_at_once && !a.is_async && immutable_global
+                        || !fact.contains('.')
+                            && (immutable_global
+                                || fx
+                                    .scopes
+                                    .iter()
+                                    .rev()
+                                    .find_map(|scope| scope.vars.get(&fact.key))
+                                    .is_some_and(|local| !local.mutable)))
             })
             .cloned()
             .collect();

@@ -82,6 +82,8 @@ mod narrowing;
 mod narrowing_fact;
 #[cfg(test)]
 mod non_null_stores;
+#[cfg(test)]
+mod static_readonly_tests;
 mod transaction;
 use narrowing_fact::{FactSet, NarrowingFact};
 mod opaque;

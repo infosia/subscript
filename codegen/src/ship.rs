@@ -25,6 +25,10 @@ use crate::native::missing_symbol;
 use crate::position_table::PositionTable;
 use crate::{NativeLibrary, RunConfig, RunOutput};
 
+#[cfg(test)]
+#[path = "static_readonly_tests.rs"]
+mod static_readonly_tests;
+
 #[cfg(unix)]
 #[path = "../clang_resolver.rs"]
 mod clang_resolver;

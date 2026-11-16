@@ -64,7 +64,21 @@ keeps a static field shared (C17).
 
 ### 322.3 Phase Review
 
-*(Filled in after the review.)*
+Three rounds stopped on the contract before the implementation landed:
+rule 2 asked for a fact about when a read runs, which the checker does
+not have (rule 2 now rests on the one store, the `null` before it, and
+the init-order check of §71); the init-order check rejects the source
+form of the rule 2 test (the test builds the read in the HIR, and each
+tier gives `null`); rule 1 kept the fact in a lambda body, which `tsc`
+rejects.
+
+One fresh review found one MAJOR finding, realistic: an async lambda
+called at once kept the fact; `tsc` gives TS18047. Rule 1 is amended
+(r539, r540). Two MINOR findings are fixed: the C17 text named each
+static field as shared, and r538 cited C7. The review probed a call, a
+loop, a generator `yield`, a getter, a static method, a sync lambda
+called at once, and a hot reload that flips `readonly` (the reload hash
+refuses it). Over 1,143 corpus files, only a472 differs from the pin.
 
 ### 322.4 Open
 

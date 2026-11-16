@@ -172,7 +172,11 @@ impl<'p> Checker<'p> {
                     }
                     let mut field = hir::Expr {
                         pending_work: None,
-                        kind: ExprKind::Global(hir::Symbol::from_full_text(symbol.clone()), true),
+                        // compiler.md §322 rule 1: only mutable static fields are shared.
+                        kind: ExprKind::Global(
+                            hir::Symbol::from_full_text(symbol.clone()),
+                            signature.mutable,
+                        ),
                         ty: self.decide_global(&symbol, prop_pos.clone()),
                         pos: prop_pos,
                     };
