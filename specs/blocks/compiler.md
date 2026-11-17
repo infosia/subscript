@@ -365,3 +365,4 @@ Every section, with its status:
 | §322 | A static readonly field keeps its narrowing | active | [`s322-a-static-readonly-field-keeps-its-narrowing.md`](compiler/s322-a-static-readonly-field-keeps-its-narrowing.md) |
 | §323 | A foreign call keeps the storage it borrows | active | [`s323-a-foreign-call-keeps-the-storage-it-borrows.md`](compiler/s323-a-foreign-call-keeps-the-storage-it-borrows.md) |
 | §324 | A C array parameter is a pointer to the script array | active | [`s324-a-c-array-parameter-is-a-pointer-to-the-script-array.md`](compiler/s324-a-c-array-parameter-is-a-pointer-to-the-script-array.md) |
+| §325 | A C write that replaces a pointer is received or stops | active | [`s325-a-c-write-that-replaces-a-pointer-is-received-or-stops.md`](compiler/s325-a-c-write-that-replaces-a-pointer-is-received-or-stops.md) |

@@ -192,7 +192,7 @@ LayList*` form is rejected.
 1. A host that writes the direct pair of a filled out-parameter loses
    that write without a diagnostic (rule 4). A read lowering for the
    pair (a copy into a new script array, as §28 rule 3 does for a
-   string field) is a separate decision.
+   string field) is a separate decision. §325 rule 1 decides it.
 2. A by-value C array parameter (`void fillLays(Lay out[2])`) binds as
    `FixedArray<Lay, 2>`. C AOT fails to compile the call. The C
    compiler reports an incompatible parameter type. The same holds for
@@ -208,7 +208,8 @@ LayList*` form is rejected.
    7). A C write that replaces a direct pair of a fill is lost (rule
    4). A C write to a userdata slot or a callback field of a scratch
    struct is lost (rule 8). No diagnostic reports them. A C pointer
-   cannot become a script object.
+   cannot become a script object. §325 receives a pair and stops on
+   the others.
 
 5. Rule 7 writes a pointer target and a pair element back by the fill
    copy-back. That copy-back can materialize a string view. But rule 2
@@ -228,7 +229,7 @@ LayList*` form is rejected.
 8. A struct whose bytes the call copies passes script memory. So a C
    write of a pointer member in it becomes a script reference to C
    memory (`Base { const struct Base *next; }` as an embedded header,
-   measured `3 7`). This contradicts item 4.
+   measured `3 7`). This contradicts item 4. §325 rule 5 fixes it.
 9. Rule 7 cannot order a C write against a callback write to the same
    member. When both write, C's value stays. During a callback the
    script reads the values from before the call.
