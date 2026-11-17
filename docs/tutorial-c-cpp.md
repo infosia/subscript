@@ -933,7 +933,8 @@ and each crossing position. A line gives the pass: the value, the
 script memory, or a scratch copy that the call builds. In brackets, it
 names the members that make the struct a scratch copy. After
 `writes-back`, it names the members that the call copies back when C
-changed them (`compiler.md` §189).
+changed them (`compiler.md` §189). A replaced pair receives a copy of the C
+elements. A replaced non-null pointer gives an error (§325).
 
 ```sh
 subscript boundary game.ts --mirror engine.generated.d.ts
@@ -941,7 +942,7 @@ subscript boundary game.ts --mirror engine.generated.d.ts
 
 ```text
 // excerpt of cli/tests/boundary/a100-interop-texture-descriptor-read.txt
-corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor: scratch written-back if changed, none for null [SGPUProbeTextureDescriptor.label string view, SGPUProbeTextureDescriptor.viewFormats pair] writes-back label extent format mipLevelCount sampleCount dimension usage
+corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor: scratch written-back if changed, none for null [SGPUProbeTextureDescriptor.label string view, SGPUProbeTextureDescriptor.viewFormats pair] writes-back label extent viewFormats format mipLevelCount sampleCount dimension usage
 corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.label: string view of script bytes
 corpus/accept/a100-interop-texture-descriptor-read.ts:26:3 subProbeTextureDescriptorFill descriptor.viewFormats[]: script memory
 ```

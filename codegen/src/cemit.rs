@@ -42,9 +42,11 @@ mod intrinsic;
 mod iterator;
 mod literal;
 mod marshal;
+mod receive;
 mod suspend;
 mod terminator;
 mod verify;
+mod watch;
 mod worker;
 
 use self::analysis::{
@@ -153,6 +155,8 @@ struct BoundaryPtrWriteback {
     scratch: String,
     /// The bytes that the call put in `scratch` before the call.
     snapshot: String,
+    /// Input script array handles, before a callback can replace a member.
+    original: String,
 }
 
 /// The scratch copies of pointer targets that the build of one foreign
@@ -162,6 +166,9 @@ struct BoundaryPtrWriteback {
 /// and the call writes back each target by code after the call.
 #[derive(Default)]
 struct BoundaryTargets {
+    callee: String,
+    watches: Vec<String>,
+    inline_watches: Vec<watch::Inline>,
     /// The call scope to release before each exit (§296 rules 1 and 2).
     scratch_mark: Option<String>,
     /// The declarations of the variables of each copy, initialized to null.

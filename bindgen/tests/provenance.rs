@@ -1020,12 +1020,6 @@ fn every_emitted_array_position_is_a_collapsed_pair_at_any_depth() {
             "unsupported element `char`",
         ),
         (
-            "nested descriptor aggregate",
-            "typedef struct EngineWords { const uint32_t *items; size_t count; } EngineWords;\n\
-             typedef struct EngineBad { EngineWords words; uint32_t tag; } EngineBad;",
-            "emitted array fields are reserved for collapsed adjacent count/pointer pairs",
-        ),
-        (
             "parameter wrong count width",
             "typedef struct EngineLayoutImpl *EngineLayout;\n\
              void engineBad(uint32_t layoutsCount, const EngineLayout *layouts);",
@@ -1635,4 +1629,14 @@ fn every_mirror_accepted_string_field_position_has_a_recursive_lowering_at_any_d
             result.expect("accepted mirror")
         );
     }
+}
+
+#[test]
+fn a_pointer_first_descriptor_used_as_a_struct_has_an_order_record() {
+    let header = "#include <stddef.h>\n#include <stdint.h>\ntypedef struct Words { const uint32_t *items; size_t count; } Words;\nvoid fill(Words *out);\n";
+    let mirror =
+        generate_for_header(header, "words.h").expect("descriptor pointer has a struct mirror");
+    assert!(mirror.contains("declare class Words"));
+    assert!(mirror.contains("member=\"items\" const=true order=pointer-first"));
+    assert!(mirror.contains("fill(out: Words | null)"));
 }

@@ -1136,6 +1136,22 @@ impl Context {
         handle
     }
 
+    /// Allocates zeroed storage for received C elements (compiler.md §325 rule 2).
+    pub(crate) fn array_received(&mut self, count: usize, stride: usize, pos: u32) -> *mut u8 {
+        let handle = self.array_with_capacity(count, stride, pos);
+        if !handle.is_null() {
+            // SAFETY: the new handle owns capacity for all `count` elements.
+            unsafe {
+                let header = &mut *handle.cast::<ArrayHeader>();
+                if count != 0 {
+                    std::ptr::write_bytes(header.data, 0, count * stride);
+                }
+                header.len = count as u64;
+            }
+        }
+        handle
+    }
+
     /// Allocates a byte array and copies `len` bytes from `src`.
     ///
     /// # Safety

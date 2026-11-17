@@ -14,20 +14,10 @@ implementation commit of that section.
 
 ## 1. Wrong output, a stopped process, or a failed build on accepted code
 
-2. A C write that replaces a pair of an out-parameter fill, a pointer
-   member, a userdata slot, or a callback field is lost with no
-   diagnostic (§187.3 items 1, 4). A typical out-struct API
-   (`getItems(Out*)`) gets its old array back. Owner decision
-   2026-11-17: a replaced pair is copied into a new script array; a
-   replaced pointer member, userdata slot, or callback field gives a
-   runtime error. Medium to large.
 3. A C cast from an embedded-header link to its extension reads wrong
    values (`10000`, C gives `10003`) or reads past the scratch copy
    (§187.3 item 13). Only headers that use inheritance by first member.
    Medium.
-4. A struct whose bytes the call copies passes script memory, so a C
-   write of a pointer member becomes a script reference to C memory
-   (measured `3 7`, §187.3 item 8). Medium.
 5. A struct with a `FixedArray` of structs that the call rebuilds is
    rejected only at code generation (§187.3 item 6). Small.
 6. Invalid UTF-8 stays at a string-view parameter, a string field

@@ -59,13 +59,7 @@ fn messages(files: &[SourceFile]) -> Vec<String> {
 /// pointer member (rule 1).
 #[test]
 fn a_mutable_pointer_member_is_read_at_a_value_and_a_const_root() {
-    let through = |function: &str| {
-        format!(
-            "foreign function `{function}` parameter `h` through `Holder.lay` reads \
-             `Lay.ud`, a userdata field that C can write {TAIL}"
-        )
-    };
-    let expected = vec![through("holderTouch"), through("holderTouchC")];
+    let expected: Vec<String> = Vec::new();
     let mutable = "// @subscript-c-member aggregate=\"Holder\" member=\"lay\" const=false";
     assert_eq!(
         messages(&[holder_mirror(mutable), holder_user(), main_file()]),
@@ -122,10 +116,7 @@ fn box_user(external: &str, record: &str) -> SourceFile {
 fn a_fill_reads_an_embedded_struct_and_a_const_input_does_not() {
     let fill = "// @subscript-c-parameter function=\"boxUse\" parameter=\"box\" const=false\n";
     let input = "// @subscript-c-parameter function=\"boxUse\" parameter=\"box\" const=true\n";
-    let pair = vec![format!(
-        "foreign function `boxUse` parameter `box` reads `Lay.ud`, a userdata field that C \
-         can write {TAIL}"
-    )];
+    let pair: Vec<String> = Vec::new();
     assert_eq!(
         messages(&[outer_mirror(), box_user("Outer", fill), main_file()]),
         pair
@@ -166,7 +157,8 @@ fn a_handle_by_value_is_no_struct() {
          // @subscript-c-external type=\"Holder\"\n\
          declare function deviceTag(device: Holder): u32;\n",
     );
-    assert_eq!(messages(&[holder_mirror(""), user, main_file()]).len(), 1);
+    let owner = SourceFile::ambient("a.d.ts", "// @subscript-c-header include=\"a.h\"\ndeclare class Text { label: string; constructor(label: string); }\ndeclare class Holder { lay: Text | null; constructor(lay: Text | null); }\n");
+    assert_eq!(messages(&[owner, user, main_file()]).len(), 1);
 }
 
 /// A hand-written mirror can declare a callback parameter of a foreign

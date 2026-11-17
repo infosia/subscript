@@ -781,6 +781,328 @@ export async function main(): Promise<void> {
     assert_eq!(both_tiers(program), b"2 4 6 8\n11 22 33 44\n");
 }
 
+// compiler.md §325 acceptance 1: C replacements enter script storage.
+fn c_replaced_members_are_received() {
+    assert_eq!(
+        both_tiers(include_str!(
+            "../../corpus/accept/a475-c-replaced-members.ts"
+        )),
+        include_bytes!("../../corpus/accept/a475-c-replaced-members.expected")
+    );
+}
+
+// compiler.md §325 rule 2: retain input arrays before a callback can replace the script member.
+fn a_count_shrink_keeps_the_pre_callback_array() {
+    for call in ["sub325ShrinkReentrant(out)", "sub325ShrinkIndirect(holder)"] {
+        let program = format!("let active: Sub325ReentrantHolder | null = null;\nexport function main(): void {{\n  const items: Sub325Link[] = [new Sub325Link(1, new Sub325Leaf(71)), new Sub325Link(2, null)];\n  const holder = new Sub325ReentrantHolder(new Sub325Reentrant(items, new SubCallbackInfo((message, userdata, userparam) => {{ const h = active; if (h !== null) {{ const o = h.out; if (o !== null) {{ const empty: Sub325Link[] = []; o.items = empty; }} }} }}, null, null)));\n  active = holder;\n  const out = holder.out;\n  if (out !== null) {{ {call}; const leaf = out.items[0].leaf; if (leaf !== null) print(`${{out.items.length}} ${{leaf.value}}`); }}\n}}\n");
+        assert_eq!(both_tiers(&program), b"1 71\n", "{call}");
+    }
+    let program = "let active: Sub325WatchGroup[] = [];\nexport function main(): void {\n const items: Sub325Link[] = [new Sub325Link(1, new Sub325Leaf(71)), new Sub325Link(2, null)];\n const groups: Sub325WatchGroup[] = [new Sub325WatchGroup(\"kept\", items), new Sub325WatchGroup(\"removed\", items)];\n active = groups;\n const out = new Sub325ReentrantGroups(groups, new SubCallbackInfo((message, userdata, userparam) => { const empty: Sub325Link[] = []; active[0].items = empty; }, null, null));\n sub325ShrinkReentrantGroups(out);\n const leaf = out.groups[0].items[0].leaf;\n if (leaf !== null) print(`${out.groups.length} ${out.groups[0].items.length} ${leaf.value}`);\n}\n";
+    assert_eq!(both_tiers(program), b"1 2 71\n");
+}
+
+// compiler.md §325 acceptance 2: every fixture executes the offending C write.
+// Cost: twelve runs per tier; each ship run compiles one small program.
+fn c_pointer_replacements_report_the_same_trap_in_both_tiers() {
+    let callback = "new SubCallbackInfo((message, userdata, userparam) => {}, null, null)";
+    let cases = [
+        (
+            "const items: Sub325Link[] = [new Sub325Link(0, new Sub325Leaf(9))]; const out = new Sub325MutableLinks(items);".to_string(),
+            "sub325ShrinkMutable(out, 1)",
+            "sub325ShrinkMutable.out.items",
+            "C returned an invalid pointer/count pair",
+        ),
+        (
+            "const items: Sub325Link[] = [new Sub325Link(0, new Sub325Leaf(9)), new Sub325Link(1, null)]; const out = new Sub325MutableLinks(items);".to_string(),
+            "sub325ShrinkMutable(out, 2)",
+            "sub325ShrinkMutable.out.items[0].leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const out = new Sub325Scratch([1], new Sub325Leaf(1));".to_string(),
+            "sub325Pointer(out)",
+            "sub325Pointer.out.leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            format!("const out = {callback};"),
+            "sub325Userdata(out)",
+            "sub325Userdata.out.userdata",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            format!("const out = {callback};"),
+            "sub325Callback(out)",
+            "sub325Callback.out.callback",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const out = new Sub325Link(1, new Sub325Leaf(1));".to_string(),
+            "sub325Bytes(out)",
+            "sub325Bytes.out.leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const out = new Sub325List(1, [1]);".to_string(),
+            "sub325BadPair(out)",
+            "sub325BadPair.out.items",
+            "C returned an invalid pointer/count pair",
+        ),
+        (
+            "const items: Sub325Link[] = []; const out = new Sub325Links(1, items);".to_string(),
+            "sub325Received(out)",
+            "sub325Received.out.items[0].leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const items: Sub325TextLink[] = []; const out = new Sub325TextLinks(1, items);"
+                .to_string(),
+            "sub325ReceivedScratch(out)",
+            "sub325ReceivedScratch.out.items[0].leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const out = new Sub325Embedded(\"before\", new Sub325Link(0, null));".to_string(),
+            "sub325Embedded(out)",
+            "sub325Embedded.out.inner.leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const out = new Sub325Graph(new Sub325Link(0, null));".to_string(),
+            "sub325Graph(out)",
+            "sub325Graph.out.link.leaf",
+            "C replaced a pointer that the script cannot receive",
+        ),
+        (
+            "const items: Sub325Link[] = [new Sub325Link(0, null)]; const groups: Sub325MutableLinks[] = [new Sub325MutableLinks(items)]; const out = new Sub325Nested(groups);".to_string(),
+            "sub325Nested(out)", "sub325Nested.out.groups[0].items[0].leaf", "C replaced a pointer that the script cannot receive",
+        ),
+    ];
+    let libraries = [native_fixture::fixture().expect("native fixture").library()];
+    for (setup, call, path, reason) in cases {
+        let program = format!("export function main(): void {{\n  {setup}\n  {call};\n}}\n");
+        let files = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            SourceFile::new("replacement.ts", program),
+        ];
+        let jit = run_jit_with_native_libraries(&files, &libraries);
+        let ship = run_c_aot_with_native_libraries(&files, &libraries);
+        match (jit, ship) {
+            (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+                assert_eq!(jit, ship, "{call}");
+                assert_eq!(jit.rule, TrapKind::ForeignPointerReplaced);
+                assert_eq!(jit.message, format!("{path}: {reason}"));
+                assert_eq!(
+                    jit.pos,
+                    subscript_compiler::Pos::new("replacement.ts", 3, 3)
+                );
+            }
+            (jit, ship) => {
+                panic!("{call}: expected pointer replacement traps: jit={jit:?}, ship={ship:?}")
+            }
+        }
+    }
+}
+
+// compiler.md §325 rule 4: an embedded external-mirror userdata slot is compared.
+// Cost: two programs per tier, each ship program has one C compiler process.
+fn an_external_embedded_userdata_slot_is_compared() {
+    let mirror = "// @subscript-c-header include=\"external-userdata.h\"\ndeclare class Sub325ExternalUd { tag: i32; inner: SubDescReadUd; constructor(tag: i32, inner: SubDescReadUd); }\ndeclare function sub325ExternalKeep(out: Sub325ExternalUd | null): void;\ndeclare function sub325ExternalReplace(out: Sub325ExternalUd | null): void;\n";
+    let libraries = [native_fixture::fixture().expect("fixture").library()];
+    for replace in [false, true] {
+        let call = if replace {
+            "sub325ExternalReplace"
+        } else {
+            "sub325ExternalKeep"
+        };
+        let files = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            interop::mirror("external-device.generated.d.ts", SourceFile::ambient),
+            SourceFile::ambient("external-userdata.d.ts", mirror),
+            SourceFile::new("external-userdata.ts", format!("export function main(): void {{\n  const out = new Sub325ExternalUd(0, new SubDescReadUd(4, null));\n  {call}(out);\n  print(`${{out.inner.k}} ${{out.inner.ud === null}}`);\n}}")),
+        ];
+        let jit = run_jit_with_native_libraries(&files, &libraries);
+        let ship = run_c_aot_with_native_libraries(&files, &libraries);
+        if replace {
+            match (jit, ship) {
+                (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+                    assert_eq!(jit, ship);
+                    assert_eq!(jit.rule, TrapKind::ForeignPointerReplaced);
+                    assert_eq!(
+                        jit.pos,
+                        subscript_compiler::Pos::new("external-userdata.ts", 3, 3)
+                    );
+                    assert_eq!(jit.message, "sub325ExternalReplace.out.inner.ud: C replaced a pointer that the script cannot receive");
+                }
+                (jit, ship) => panic!("expected replacement trap: {jit:?}, {ship:?}"),
+            }
+        } else {
+            assert_eq!(jit.expect("unchanged JIT"), b"5 true\n");
+            assert_eq!(ship.expect("unchanged ship"), b"5 true\n");
+        }
+    }
+}
+
+// compiler.md §325 rules 5 and 9: finite arrays use loops; recursive headers keep the walker.
+// Cost: five programs per tier. Each ship program starts one C compiler.
+fn finite_array_watches_and_recursive_headers_match_both_tiers() {
+    let libraries = [native_fixture::fixture().expect("fixture").library()];
+    let setup = "const items: Sub325Link[] = [new Sub325Link(0, null), new Sub325Link(1, null), new Sub325Link(2, null), new Sub325Link(3, null), new Sub325Link(4, null), new Sub325Link(5, null), new Sub325Link(6, null), new Sub325Link(7, null)]; const out = new Sub325MutableLinks(items);";
+    for (recursive, replace) in [(false, false), (false, true), (true, false), (true, true)] {
+        let setup = if recursive {
+            "const out = new Sub325Recursive(1, new Sub325Recursive(2, null, null), null);"
+        } else {
+            setup
+        };
+        let call = if recursive {
+            "sub325Recursive"
+        } else {
+            "sub325WatchEight"
+        };
+        let program = format!("export function main(): void {{\n  {setup}\n  {call}(out, {});\n  print(\"kept\");\n}}", i32::from(replace));
+        let files = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            SourceFile::new("watch.ts", program),
+        ];
+        let emitted = subscript_codegen::emit_c(
+            &subscript_compiler::check_program(&files).expect("watch checks"),
+        )
+        .expect("C emission");
+        assert_eq!(
+            emitted
+                .source
+                .contains("subscript_rt_boundary_watch_finish("),
+            recursive
+        );
+        assert_eq!(
+            emitted
+                .source
+                .contains("subscript_rt_boundary_watch_buffer("),
+            !recursive
+        );
+        if !recursive {
+            let call = emitted
+                .source
+                .split(" = subscript_rt_boundary_watch_buffer(")
+                .nth(1)
+                .expect("buffer acquisition");
+            assert!(
+                call.split('\n')
+                    .next()
+                    .expect("buffer call")
+                    .contains("* 1u"),
+                "one saved word per leaf slot"
+            );
+            let before_call = call.split("sub325WatchEight(").next().expect("call site");
+            assert!(
+                !before_call.contains("subscript_rt_array_len("),
+                "length must be evaluated before the buffer call"
+            );
+            assert!(
+                !before_call.contains("subscript_rt_array_data("),
+                "data must be evaluated before the buffer call"
+            );
+            let loop_start = before_call.find("for (uint64_t").expect("capture loop");
+            let body_start =
+                before_call[loop_start..].find('{').expect("loop body") + loop_start + 1;
+            let body_end = before_call[body_start..].find('}').expect("loop end") + body_start;
+            let body = &before_call[body_start..body_end];
+            assert!(!body.contains(" = 0;"), "each saved slot is written once");
+            assert!(
+                !body.contains("(uintptr_t)"),
+                "slot addresses are derived from the saved span"
+            );
+            assert_eq!(
+                body.matches("memcpy(").count(),
+                1,
+                "one before-value load per leaf slot"
+            );
+        }
+        let jit = run_jit_with_native_libraries(&files, &libraries);
+        let ship = run_c_aot_with_native_libraries(&files, &libraries);
+        if replace {
+            match (jit, ship) {
+                (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+                    assert_eq!(jit, ship);
+                    assert_eq!(jit.rule, TrapKind::ForeignPointerReplaced);
+                    assert_eq!(jit.pos, subscript_compiler::Pos::new("watch.ts", 3, 3));
+                    let member = if recursive {
+                        "userdata"
+                    } else {
+                        "items[6].leaf"
+                    };
+                    assert_eq!(jit.message, format!("{call}.out.{member}: C replaced a pointer that the script cannot receive"));
+                }
+                (jit, ship) => panic!("replacement trap: {jit:?}, {ship:?}"),
+            }
+        } else {
+            assert_eq!(jit.expect("JIT keeps slots"), b"kept\n");
+            assert_eq!(ship.expect("ship keeps slots"), b"kept\n");
+        }
+    }
+    let files = [interop::mirror("interop.generated.d.ts", SourceFile::ambient), SourceFile::new("null.ts", "export function main(): void { const out = new Sub325Graph(null); sub325Graph(out); print(`${out.link === null}`); }")];
+    let emitted = subscript_codegen::emit_c(
+        &subscript_compiler::check_program(&files).expect("watch checks"),
+    )
+    .expect("finite C emission");
+    assert!(!emitted
+        .source
+        .contains("subscript_rt_boundary_watch_finish("));
+    assert!(!emitted
+        .source
+        .contains("subscript_rt_boundary_watch_buffer("));
+    assert_eq!(
+        run_jit_with_native_libraries(&files, &libraries).expect("null JIT"),
+        b"true\n"
+    );
+    assert_eq!(
+        run_c_aot_with_native_libraries(&files, &libraries).expect("null ship"),
+        b"true\n"
+    );
+}
+
+// compiler.md §325 rules 5 and 6: scratch outer elements keep watches of shared inner arrays.
+// Cost: two programs per tier, each with one C compiler process for ship.
+fn nested_scratch_elements_keep_nonzero_watch_indices() {
+    let libraries = [native_fixture::fixture().expect("fixture").library()];
+    for replace in [0, 1] {
+        let program = format!("export function main(): void {{\n  const empty: Sub325Link[] = []; const items: Sub325Link[] = [new Sub325Link(0, null), new Sub325Link(1, null), new Sub325Link(2, null), new Sub325Link(3, null), new Sub325Link(4, null), new Sub325Link(5, null), new Sub325Link(6, null), new Sub325Link(7, null)];\n  const groups: Sub325WatchGroup[] = [new Sub325WatchGroup(\"empty\", empty), new Sub325WatchGroup(\"full\", items)]; const out = new Sub325WatchGroups(0, groups);\n  sub325WatchNested(out, {replace});\n  print(\"nested kept\");\n}}");
+        let files = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            SourceFile::new("nested-watch.ts", program),
+        ];
+        let jit = run_jit_with_native_libraries(&files, &libraries);
+        let ship = run_c_aot_with_native_libraries(&files, &libraries);
+        if replace == 0 {
+            assert_eq!(jit.expect("nested JIT"), b"nested kept\n");
+            assert_eq!(ship.expect("nested ship"), b"nested kept\n");
+        } else {
+            match (jit, ship) {
+                (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+                    assert_eq!(jit, ship);
+                    assert_eq!(jit.rule, TrapKind::ForeignPointerReplaced);
+                    assert_eq!(
+                        jit.pos,
+                        subscript_compiler::Pos::new("nested-watch.ts", 4, 3)
+                    );
+                    assert_eq!(jit.message, "sub325WatchNested.out.groups[1].items[6].leaf: C replaced a pointer that the script cannot receive");
+                }
+                (jit, ship) => panic!("nested replacement trap: {jit:?}, {ship:?}"),
+            }
+        }
+    }
+}
+
+// compiler.md §325 acceptance 3: a const target receives no comparison code.
+fn a_const_target_has_no_read_back_compare() {
+    let files = [interop::mirror("interop.generated.d.ts", SourceFile::ambient), SourceFile::new("read.ts", "export function main(): void { const out = new Sub325List(0, [1]); print(`${sub325Read(out)}`); }")];
+    let module = subscript_compiler::check_program(&files).expect("const read checks");
+    let emitted = subscript_codegen::emit_c(&module).expect("const read emits");
+    assert!(!emitted.source.contains("subscript_rt_boundary_receive"));
+    assert!(!emitted.source.contains("subscript_rt_boundary_pointer"));
+    assert!(!emitted.source.contains("memcmp("));
+}
+
 // compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
 // starts a dev run with a native library or a file provider and runs in
 // its own process, on that process's main thread.
@@ -789,6 +1111,13 @@ pub(super) fn main() -> std::process::ExitCode {
         parallel: [
         ],
         main_thread: [
+            nested_scratch_elements_keep_nonzero_watch_indices,
+            finite_array_watches_and_recursive_headers_match_both_tiers,
+            an_external_embedded_userdata_slot_is_compared,
+            c_replaced_members_are_received,
+            a_count_shrink_keeps_the_pre_callback_array,
+            c_pointer_replacements_report_the_same_trap_in_both_tiers,
+            a_const_target_has_no_read_back_compare,
             fixed_array_parameters_share_places_and_materialize_temporaries,
             fixed_array_locals_keep_storage_across_await_and_yield,
             fixed_array_parameter_checks_an_element_place,

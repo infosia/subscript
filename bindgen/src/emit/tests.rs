@@ -314,13 +314,7 @@ fn every_stdint_lang_scalar_maps_at_scalar_parameter_pair_site() {
 }
 
 #[test]
-fn pointer_first_embedded_shape_fails_loud() {
-    // Pointer-before-count inside a larger struct is NOT the shape both
-    // lowerings reconstruct (count immediately before pointer), so the
-    // pointer stays a lone scalar pointer → fail loud. (A bare two-field
-    // `{const T*; size_t}` is instead the standalone descriptor absorbed
-    // to `T[]`, a26/a31 — a different, correct path; hence the third
-    // field here forces the embedded interpretation.)
+fn pointer_first_embedded_shape_carries_its_order() {
     let decls = vec![Decl::Struct {
         name: "SubPtrFirst".into(),
         fields: vec![
@@ -329,10 +323,9 @@ fn pointer_first_embedded_shape_fails_loud() {
             field("size_t", false, false, "drawsCount"),
         ],
     }];
-    let err = emit(&parsed_with(decls)).expect_err("pointer-first must fail loud");
-    assert!(err.0.contains("SubPtrFirst"), "{}", err.0);
-    assert!(err.0.contains("drawsCount"), "{}", err.0);
-    assert!(err.0.contains("adjacent count-first"), "{}", err.0);
+    let mirror = emit(&parsed_with(decls)).expect("pointer-first has a lowering");
+    assert!(mirror.contains("draws: u32[]"));
+    assert!(mirror.contains("member=\"draws\" const=true order=pointer-first"));
 }
 
 #[test]
@@ -492,5 +485,84 @@ impl From<Constant> for crate::clangfe::Constant {
             type_base: c.1.into(),
             value: c.2,
         }
+    }
+}
+
+#[test]
+fn adjacent_pairs_keep_the_order_of_their_own_halves() {
+    let header = "#include <stddef.h>\n#include <stdint.h>\ntypedef struct Lists { size_t firstCount; const int32_t *first; size_t secondCount; const int32_t *second; } Lists;\nvoid fill(Lists *out);\n";
+    let mirror = crate::generate_for_header(header, "lists.h").expect("adjacent pairs bind");
+    assert!(mirror.contains("member=\"first\" const=true order=count-first"));
+    assert!(mirror.contains("member=\"second\" const=true order=count-first"));
+}
+
+#[test]
+fn descriptor_value_keeps_its_array_type_beside_pointer_uses() {
+    for count in ["count", "dataCount", "data_count"] {
+        let mirror = crate::generate_for_header(
+        &format!("#include <stddef.h>\ntypedef struct FloatSpan {{ const float *data; size_t {count}; }} FloatSpan;\nvoid fill(FloatSpan *out); void setData(FloatSpan s);"),
+        "span.h",
+    )
+    .expect("descriptor binds");
+        assert!(mirror.contains("setData(s: f32[]): void"), "{mirror}");
+        assert!(
+            mirror.contains("fill(out: FloatSpan | null): void"),
+            "{mirror}"
+        );
+        assert!(
+            mirror.contains("@subscript-c-descriptor function=\"setData\""),
+            "{mirror}"
+        );
+        assert!(
+            !mirror.contains("@subscript-c-descriptor function=\"fill\""),
+            "{mirror}"
+        );
+    }
+}
+
+#[test]
+fn embedded_descriptor_keeps_its_descriptor_rejection() {
+    let error = crate::generate_for_header(
+        "#include <stddef.h>\n\
+        typedef struct FloatSpan { const float *data; size_t count; } FloatSpan;\n\
+        typedef struct Holder { int tag; FloatSpan span; } Holder;\n\
+        void setData(FloatSpan s);",
+        "span.h",
+    )
+    .expect_err("embedded descriptor has no lowering");
+    assert!(
+        error.0.contains("embeds descriptor aggregate `FloatSpan`"),
+        "{}",
+        error.0
+    );
+}
+
+#[test]
+fn descriptor_length_pointer_keeps_the_function_diagnostic() {
+    let error = crate::generate_for_header(
+        "#include <stddef.h>\n\
+        typedef struct FloatSpan { const float *data; size_t length; } FloatSpan;\n\
+        void fill(FloatSpan *out); void setData(FloatSpan s);",
+        "span.h",
+    )
+    .expect_err("descriptor pointer has no lowering");
+    assert!(error.0.contains("foreign function `fill`"), "{}", error.0);
+    assert!(!error.0.contains("unmapped"), "{}", error.0);
+}
+
+#[test]
+fn fixed_arrays_of_descriptors_fail_with_the_aggregate_diagnostic() {
+    for pointer_use in ["", "void fill(Items *out);"] {
+        let error = crate::generate_for_header(
+            &format!("#include <stddef.h>\n#include <stdint.h>\ntypedef struct Item {{ int32_t value; }} Item;\ntypedef struct Items {{ const Item *items; size_t count; }} Items;\ntypedef struct Holder {{ Items arr[2]; }} Holder;\nvoid hold(Holder *h); {pointer_use}"),
+            "fixed-descriptor.h",
+        ).expect_err("a fixed array of descriptor aggregates has no scratch lowering");
+        assert!(
+            error.0.contains("descriptor aggregate")
+                || error.0.contains("fixed array of aggregates"),
+            "{}",
+            error.0
+        );
+        assert!(!error.0.contains("internal error"), "{}", error.0);
     }
 }

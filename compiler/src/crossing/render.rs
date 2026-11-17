@@ -48,6 +48,8 @@ pub enum Word {
     CallbackRegistration,
     /// The completion endpoint of a host completion.
     CompletionEndpoint,
+    /// The finite graph of script-memory pointer comparisons (§325 rule 5).
+    PointerCompares,
     /// A form that code generation does not lower.
     NotLowered,
     /// A struct result that the script reads as its bytes.
@@ -58,7 +60,8 @@ pub enum Word {
 
 impl Word {
     /// Every word, in the order of the contract.
-    pub const ALL: [Word; 17] = [
+    pub const ALL: [Word; 18] = [
+        Word::PointerCompares,
         Word::Value,
         Word::ByValueBytes,
         Word::ByValueScratch,
@@ -82,6 +85,7 @@ impl Word {
     #[must_use]
     pub fn text(self) -> &'static str {
         match self {
+            Self::PointerCompares => "pointer compares",
             Self::Value => "value",
             Self::ByValueBytes => "by-value bytes",
             Self::ByValueScratch => "by-value scratch",
@@ -298,6 +302,7 @@ impl Writer<'_> {
         let causes = self.causes(structure)?;
         let written = self.written(write_back)?;
         self.line(path, word.text(), &causes, &written);
+        self.watch(path, structure.watch.as_ref())?;
         self.members(path, structure)
     }
 
@@ -341,11 +346,65 @@ impl Writer<'_> {
         Ok(())
     }
 
+    fn watch(&mut self, path: &str, watch: Option<&super::WatchPlan>) -> Result<(), String> {
+        use super::WatchMember;
+        let Some(watch) = watch else {
+            return Ok(());
+        };
+        let mode = if watch.recursive {
+            "recursive runtime walk"
+        } else if watch.nodes.iter().any(|node| {
+            node.members
+                .iter()
+                .any(|member| matches!(member, WatchMember::Array { .. }))
+        }) {
+            "inline with reused array buffers"
+        } else {
+            "inline"
+        };
+        let mut records = vec![mode.to_string(), format!("root node {}", watch.root)];
+        for (index, node) in watch.nodes.iter().enumerate() {
+            let class = self.class(node.class)?;
+            for member in &node.members {
+                let (field, action) = match member {
+                    WatchMember::Compare { field, nullable } => {
+                        (*field, format!("compare, nullable={nullable}"))
+                    }
+                    WatchMember::Pointer { field, target } => {
+                        (*field, format!("pointer to node {target}"))
+                    }
+                    WatchMember::Embedded { field, target } => {
+                        (*field, format!("embedded node {target}"))
+                    }
+                    WatchMember::Array { field, target } => {
+                        (*field, format!("elements [] to node {target}"))
+                    }
+                    WatchMember::Element {
+                        field,
+                        index,
+                        target,
+                    } => (*field, format!("element [{index}] to node {target}")),
+                };
+                let name = &class
+                    .fields
+                    .get(field)
+                    .ok_or_else(|| super::internal("a watch member has no field"))?
+                    .source_name;
+                records.push(format!(
+                    "node {index} {}.{name} {action}",
+                    class.source_name
+                ));
+            }
+        }
+        self.line(path, Word::PointerCompares.text(), &records, &[]);
+        Ok(())
+    }
+
     fn pointer(&mut self, path: &str, pointer: &PointerPlan) -> Result<(), String> {
         let word = match pointer.pass {
             PointerPass::ScriptMemory => {
                 self.line(path, Word::ScriptMemory.text(), &[], &[]);
-                return Ok(());
+                return self.watch(path, pointer.watch.as_ref());
             }
             PointerPass::Cycle => return self.not_lowered(path, NotLowered::StructCycle.reason()),
             PointerPass::ScratchReadOnly => Word::ScratchReadOnly,
@@ -361,6 +420,7 @@ impl Writer<'_> {
     fn pair(&mut self, path: &str, pair: &PairPlan) -> Result<(), String> {
         self.line(path, Word::Pair.text(), &[], &[]);
         let path = format!("{path}[]");
+        self.watch(&path, pair.watch.as_ref())?;
         match &pair.elements {
             None => self.line(&path, Word::ScriptMemory.text(), &[], &[]),
             Some(ElementsPlan {

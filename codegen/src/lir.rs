@@ -10,6 +10,9 @@ use subscript_compiler::{ClassId, Pos, Type};
 
 use crate::lir_types::boundary_box_class;
 
+mod foreign_provenance;
+use foreign_provenance::convert_provenance;
+
 mod address_taken;
 mod array_ownership;
 mod async_defaults;
@@ -684,43 +687,6 @@ fn lower_builtin_method(method: hir::BuiltinMethod) -> l::BuiltinMethod {
         hir::BuiltinMethod::ArrayClear => l::BuiltinMethod::ArrayClear,
         hir::BuiltinMethod::StringSlice => l::BuiltinMethod::StringSlice,
         hir::BuiltinMethod::GeneratorNext => l::BuiltinMethod::GeneratorNext,
-    }
-}
-
-fn convert_provenance(value: &hir::ForeignTypeProvenance) -> l::ForeignTypeProvenance {
-    match value {
-        hir::ForeignTypeProvenance::Descriptor {
-            aggregate,
-            element,
-            element_const,
-        } => l::ForeignTypeProvenance::Descriptor {
-            aggregate: aggregate.clone(),
-            element: element.clone(),
-            element_const: *element_const,
-        },
-        hir::ForeignTypeProvenance::ScalarPair {
-            element,
-            element_const,
-        } => l::ForeignTypeProvenance::ScalarPair {
-            element: element.clone(),
-            element_const: *element_const,
-        },
-        hir::ForeignTypeProvenance::StringView { aggregate } => {
-            l::ForeignTypeProvenance::StringView {
-                aggregate: aggregate.clone(),
-            }
-        }
-        hir::ForeignTypeProvenance::Callback {
-            typedef_name,
-            host_view,
-            view_members,
-        } => l::ForeignTypeProvenance::Callback {
-            typedef_name: typedef_name.clone(),
-            host_view: host_view.clone(),
-            view_members: view_members.clone(),
-        },
-        hir::ForeignTypeProvenance::ConstPointer => l::ForeignTypeProvenance::ConstPointer,
-        _ => unreachable!("new foreign provenance requires an explicit LIR form"),
     }
 }
 

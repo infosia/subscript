@@ -521,6 +521,7 @@ struct BoundaryScratchAllocation {
 // compiler.md §323: a call scope owns each exact storage snapshot.
 enum BoundaryBorrow {
     Scope {
+        watch: (usize, usize),
         scratch: usize,
     },
     Value {
@@ -675,6 +676,7 @@ pub struct Context {
     // Collection marks and sweeps only this map.
     allocations: HashMap<usize, Allocation>,
     boundary_scratch: Vec<BoundaryScratchAllocation>,
+    pub(crate) boundary_watch: crate::ffi::watch::WatchPool,
     boundary_borrows: Vec<BoundaryBorrow>,
     // Diagnostic-mode retained-and-poisoned addresses. Exact membership
     // preserves double-delete classification without putting dead records

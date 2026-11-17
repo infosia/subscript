@@ -515,3 +515,62 @@ fn stale_callback_records_require_regeneration() {
         );
     }
 }
+
+#[test]
+fn pair_order_reaches_hir_and_legacy_records_keep_count_first() {
+    for (record, expected) in [
+        (" order=pointer-first", Some(true)),
+        (" order=count-first", Some(false)),
+        ("", None),
+    ] {
+        let text = format!("// @subscript-c-header include=\"pairs.h\"\n// @subscript-c-member aggregate=\"Out\" member=\"items\" const=true{record}\ndeclare class Out {{ items: i32[]; constructor(items: i32[]); }}\ndeclare function fill(out: Out | null): void;\n");
+        let module = subscript_compiler::check_program(&[
+            SourceFile::ambient("pairs.d.ts", text),
+            SourceFile::new("main.ts", "export function main(): void {}"),
+        ])
+        .expect("pair record checks");
+        let field = &module
+            .classes
+            .iter()
+            .find(|class| class.name == "Out")
+            .expect("Out")
+            .fields[0];
+        match (expected, &field.foreign_provenance) {
+            (
+                Some(expected),
+                Some(subscript_compiler::hir::ForeignTypeProvenance::PairOrder {
+                    pointer_first,
+                    element_const,
+                }),
+            ) => {
+                assert_eq!(*pointer_first, expected);
+                assert!(*element_const);
+            }
+            (None, Some(subscript_compiler::hir::ForeignTypeProvenance::ConstPointer)) => {}
+            other => panic!("unexpected pair provenance: {other:?}"),
+        }
+    }
+    let diagnostics = reject("pairs.d.ts", "// @subscript-c-header include=\"pairs.h\"\n// @subscript-c-member aggregate=\"Out\" member=\"items\" const=true order=wrong\ndeclare class Out { items: i32[]; constructor(items: i32[]); }\n");
+    assert_named(
+        &diagnostics,
+        "pairs.d.ts",
+        "pair order must be count-first or pointer-first",
+    );
+}
+
+#[test]
+fn pair_order_requires_an_exact_word() {
+    for value in [
+        "pointer-firstExtra",
+        "count-firstExtra",
+        "pointer-first=bad",
+    ] {
+        let text = format!("// @subscript-c-header include=\"pairs.h\"\n// @subscript-c-member aggregate=\"Out\" member=\"items\" const=true order={value}\ndeclare class Out {{ items: i32[]; constructor(items: i32[]); }}\n");
+        let diagnostics = reject("pairs.d.ts", &text);
+        assert_named(
+            &diagnostics,
+            "pairs.d.ts",
+            "pair order must be count-first or pointer-first",
+        );
+    }
+}

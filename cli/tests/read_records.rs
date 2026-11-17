@@ -14,9 +14,6 @@ use std::path::PathBuf;
 use subscript_bindgen::generate_for_header;
 use subscript_compiler::{check_program, SourceFile};
 
-const TAIL: &str = "with no read lowering; a struct that C writes and the script reads must \
-                    not hold one (compiler.md §187)";
-
 /// A temporary directory for one case's headers.
 struct Directory(PathBuf);
 
@@ -46,7 +43,7 @@ impl Drop for Directory {
 
 /// Binds each `(name, header)` and checks the mirrors with an empty
 /// program. Returns the diagnostic messages.
-fn bind_and_check(headers: &[(&str, String)]) -> Vec<String> {
+fn bind_and_check(headers: &[(&str, String)], watched: bool) -> Vec<String> {
     let mut files: Vec<SourceFile> = headers
         .iter()
         .map(|(name, text)| {
@@ -59,8 +56,93 @@ fn bind_and_check(headers: &[(&str, String)]) -> Vec<String> {
         "main.ts",
         "export function main(): void {}\n",
     ));
-    match check_program(&files) {
-        Ok(_) => Vec::new(),
+    check_slots(&files, watched)
+}
+
+fn check_slots(files: &[SourceFile], watched: bool) -> Vec<String> {
+    match check_program(files) {
+        Ok(hir) => {
+            use subscript_compiler::crossing::{call_plan, ParameterPlan};
+            let module = subscript_codegen::lir::lower_module(&hir).expect("lower mirrors");
+            let lay = module
+                .classes
+                .iter()
+                .find(|class| class.source_name == "Lay")
+                .expect("Lay")
+                .id;
+            fn compares_pointer(
+                pointer: &subscript_compiler::crossing::PointerPlan,
+                lay: subscript_compiler::ClassId,
+            ) -> bool {
+                pointer.watch.as_ref().is_some_and(|watch| {
+                    watch.nodes.iter().any(|node| {
+                        node.class == lay
+                            && node.members.iter().any(|member| {
+                                matches!(
+                                    member,
+                                    subscript_compiler::crossing::WatchMember::Compare {
+                                        field: 1,
+                                        ..
+                                    }
+                                )
+                            })
+                    })
+                }) || pointer
+                    .target
+                    .as_ref()
+                    .is_some_and(|value| compares_struct(value, lay))
+                    || pointer.write_back.as_ref().is_some_and(|write| {
+                        write.class == lay
+                            && write.members.iter().any(|member| {
+                                member.field == 1
+                                    && matches!(
+                                        member.write,
+                                        subscript_compiler::crossing::WriteBack::Pointer { .. }
+                                    )
+                            })
+                    })
+            }
+            fn compares_struct(
+                value: &subscript_compiler::crossing::StructPlan,
+                lay: subscript_compiler::ClassId,
+            ) -> bool {
+                value.watch.as_ref().is_some_and(|watch| {
+                    watch.nodes.iter().any(|node| {
+                        node.class == lay
+                            && node.members.iter().any(|member| {
+                                matches!(
+                                    member,
+                                    subscript_compiler::crossing::WatchMember::Compare {
+                                        field: 1,
+                                        ..
+                                    }
+                                )
+                            })
+                    })
+                }) || value.members.iter().any(|member| match &member.crossing {
+                    subscript_compiler::crossing::MemberCrossing::Pointer(pointer) => {
+                        compares_pointer(pointer, lay)
+                    }
+                    subscript_compiler::crossing::MemberCrossing::Embedded(nested) => {
+                        compares_struct(nested, lay)
+                    }
+                    _ => false,
+                })
+            }
+            let mut found = false;
+            for declaration in &module.foreign_functions {
+                let plan = call_plan(&module, declaration.id).expect("crossing plan");
+                for parameter in &plan.parameters {
+                    found |= match parameter {
+                        ParameterPlan::Pointer(pointer) => compares_pointer(pointer, lay),
+                        ParameterPlan::ByValue(value) => compares_struct(value, lay),
+                        _ => false,
+                    };
+                }
+            }
+            assert_eq!(found, watched, "Lay.ud compare follows the C const record");
+            Vec::new()
+        }
         Err(diagnostics) => diagnostics
             .into_iter()
             .map(|diagnostic| diagnostic.message)
@@ -68,9 +150,7 @@ fn bind_and_check(headers: &[(&str, String)]) -> Vec<String> {
     }
 }
 
-/// `Lay` holds a userdata slot, which has no read lowering where C writes
-/// it (§187 rule 8); a pair has a read lowering at every reach of a fill
-/// (rule 11).
+/// `Lay` holds a userdata slot that a writable target compares (§325 rule 4).
 const LAY: &str = "#include <stdint.h>\n#include <stddef.h>\n\
                    typedef struct Lay { int32_t tag; void *ud; } Lay;\n\
                    int32_t layTag(const Lay *lay);\n";
@@ -92,25 +172,9 @@ fn an_external_reached_through_an_include_is_read() {
              void outerFill(Outer *out);\nvoid outerTouch(Outer o);\nint32_t outerUse(const Outer *o);\n",
             directory.header("a.h", &a)
         );
-        bind_and_check(&[("c.h", c), ("a.h", a), ("b.h", b)])
+        bind_and_check(&[("c.h", c), ("a.h", a), ("b.h", b)], qualifier.is_empty())
     };
-    assert_eq!(
-        case("include", ""),
-        [
-            format!(
-                "foreign function `outerFill` parameter `out` reads `Lay.ud`, a userdata field \
-                 that C can write {TAIL}"
-            ),
-            format!(
-                "foreign function `outerTouch` parameter `o` through `Outer.lay` reads \
-                 `Lay.ud`, a userdata field that C can write {TAIL}"
-            ),
-            format!(
-                "foreign function `outerUse` parameter `o` through `Outer.lay` reads \
-                 `Lay.ud`, a userdata field that C can write {TAIL}"
-            ),
-        ]
-    );
+    assert!(case("include", "").is_empty());
     // Twin: `const struct Lay *lay`. C only reads `Lay`, at the inputs and
     // under the fill; the fill keeps the script link (§187 rule 7).
     assert!(case("include-const", "const ").is_empty());
@@ -127,23 +191,16 @@ fn a_declaration_only_header_records_its_members() {
         let user = "#include <stdint.h>\n/* @subscript-external Holder */\n\
                     int32_t holderUse(Holder h);\n"
             .to_string();
-        bind_and_check(&[("types.h", types), ("use.h", user)])
+        bind_and_check(&[("types.h", types), ("use.h", user)], qualifier.is_empty())
     };
     assert!(case("const ").is_empty());
-    assert_eq!(
-        case(""),
-        [format!(
-            "foreign function `holderUse` parameter `h` through `Holder.lay` reads `Lay.ud`, \
-             a userdata field that C can write {TAIL}"
-        )]
-    );
+    assert!(case("").is_empty());
 }
 
 /// A hand-written mirror with no `@subscript-c-parameter` record counts its
-/// pointer parameter as non-`const`: a fill that reads a nested userdata slot is
-/// rejected.
+/// pointer parameter as non-`const`: the call compares a nested userdata slot.
 #[test]
-fn a_hand_written_mirror_with_no_record_fails_closed() {
+fn a_hand_written_mirror_with_no_record_compares_the_writable_slot() {
     let check = |records: &str| {
         let files = [
             SourceFile::ambient(
@@ -161,22 +218,28 @@ fn a_hand_written_mirror_with_no_record_fails_closed() {
             ),
             SourceFile::new("main.ts", "export function main(): void {}\n"),
         ];
-        match check_program(&files) {
-            Ok(_) => Vec::new(),
-            Err(diagnostics) => diagnostics.into_iter().map(|d| d.message).collect(),
-        }
+        check_slots(&files, !records.contains("const=true"))
     };
-    let rejected = vec![format!(
-        "foreign function `outerFill` parameter `out` reads `Lay.ud`, a userdata field that \
-         C can write {TAIL}"
-    )];
-    assert_eq!(check(""), rejected);
-    assert_eq!(
-        check("// @subscript-c-parameter function=\"outerFill\" parameter=\"out\" const=false\n"),
-        rejected
-    );
+    assert!(check("").is_empty());
+    assert!(check(
+        "// @subscript-c-parameter function=\"outerFill\" parameter=\"out\" const=false\n"
+    )
+    .is_empty());
     assert!(check(
         "// @subscript-c-parameter function=\"outerFill\" parameter=\"out\" const=true\n"
     )
     .is_empty());
+}
+
+/// A new C value still has no registration for a userdata address (§187 rule 8).
+#[test]
+fn a_returned_userdata_slot_still_has_no_read_lowering() {
+    let error = generate_for_header(&format!("{LAY}Lay getLay(void);\n"), "lay.h")
+        .expect_err("userdata result must fail");
+    assert!(
+        error.0.contains("foreign function `getLay` result"),
+        "{}",
+        error.0
+    );
+    assert!(error.0.contains("userdata field"), "{}", error.0);
 }

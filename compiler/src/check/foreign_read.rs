@@ -47,8 +47,10 @@ impl BoundaryClasses for MirrorClasses<'_, '_> {
                     .map(|field| {
                         (
                             field.ty.clone(),
-                            field.foreign_provenance
-                                == Some(hir::ForeignTypeProvenance::ConstPointer),
+                            field
+                                .foreign_provenance
+                                .as_ref()
+                                .is_some_and(|value| value.cannot_write()),
                         )
                     })
                     .collect(),
@@ -157,8 +159,10 @@ impl Scan<'_, '_> {
                 .fields
                 .iter()
                 .map(|field| {
-                    let constant =
-                        field.foreign_provenance == Some(hir::ForeignTypeProvenance::ConstPointer);
+                    let constant = field
+                        .foreign_provenance
+                        .as_ref()
+                        .is_some_and(|value| value.cannot_write());
                     let shape = with_constant(field_shape(&self.classes, &field.ty), constant);
                     let nested = shape
                         .nested()
@@ -172,8 +176,10 @@ impl Scan<'_, '_> {
                     };
                     // The `const` fact that code generation reads (§187 rule
                     // 7); a member with no record is mutable (rule 3).
-                    let mutable =
-                        field.foreign_provenance != Some(hir::ForeignTypeProvenance::ConstPointer);
+                    let mutable = !field
+                        .foreign_provenance
+                        .as_ref()
+                        .is_some_and(|value| value.cannot_write());
                     ReadMember::new(field.name.clone(), shape, mutable)
                 })
                 .collect(),

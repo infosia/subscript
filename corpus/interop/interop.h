@@ -1370,4 +1370,70 @@ int32_t subFixedReadLays(const SubDescReadLay values[2]);
 void subFixedTwoLays(SubDescReadLay first[2], SubDescReadLay second[2]);
 void subFixedLayPointer(SubDescReadLay first[2], SubDescReadLay *second);
 
+/* compiler.md §325: receive replaced pairs and diagnose replaced pointers. */
+typedef struct Sub325List { int32_t tag; size_t itemsCount; int32_t *items; } Sub325List;
+typedef struct Sub325First { int32_t tag; const int32_t *items; size_t itemsCount; } Sub325First;
+typedef struct Sub325Holder { Sub325List *list; } Sub325Holder;
+typedef struct Sub325Leaf { int32_t value; } Sub325Leaf;
+typedef struct Sub325Link { int32_t tag; const Sub325Leaf *leaf; } Sub325Link;
+typedef struct Sub325Scratch { size_t itemsCount; const int32_t *items; Sub325Leaf *leaf; } Sub325Scratch;
+typedef struct Sub325Text { SubStringView label; int32_t value; } Sub325Text;
+typedef struct Sub325Texts { int32_t tag; size_t itemsCount; const Sub325Text *items; } Sub325Texts;
+typedef struct Sub325Links { int32_t tag; size_t itemsCount; const Sub325Link *items; } Sub325Links;
+void sub325Replace(Sub325List *out);
+void sub325First(Sub325First *out);
+void sub325Indirect(Sub325Holder *out);
+void sub325Texts(Sub325Texts *out);
+void sub325Write(Sub325List *out);
+void sub325Empty(Sub325List *out);
+void sub325Null(Sub325Scratch *out);
+void sub325Pointer(Sub325Scratch *out);
+void sub325Bytes(Sub325Link *out);
+void sub325Userdata(SubCallbackInfo *out);
+void sub325Callback(SubCallbackInfo *out);
+void sub325BadPair(Sub325List *out);
+void sub325Received(Sub325Links *out);
+void sub325ReceivedNull(Sub325Links *out);
+int32_t sub325Read(const Sub325List *out);
+void sub325Unchanged(Sub325List *out);
+typedef struct Sub325Descriptor { const int32_t *items; size_t count; } Sub325Descriptor;
+typedef struct Sub325TextLink { SubStringView label; const Sub325Leaf *leaf; } Sub325TextLink;
+typedef struct Sub325TextLinks { int32_t tag; size_t itemsCount; const Sub325TextLink *items; } Sub325TextLinks;
+typedef struct Sub325Embedded { SubStringView label; Sub325Link inner; } Sub325Embedded;
+typedef struct Sub325LinkExtension { Sub325Link header; int32_t value; } Sub325LinkExtension;
+typedef struct Sub325Graph { Sub325Link *link; } Sub325Graph;
+void sub325Descriptor(Sub325Descriptor *out);
+void sub325ReceivedScratch(Sub325TextLinks *out);
+void sub325ReceivedScratchNull(Sub325TextLinks *out);
+void sub325Embedded(Sub325Embedded *out);
+void sub325Graph(const Sub325Graph *out);
+typedef struct Sub325MutableLinks { size_t itemsCount; Sub325Link *items; } Sub325MutableLinks;
+typedef struct Sub325Nested { size_t groupsCount; const Sub325MutableLinks *groups; } Sub325Nested;
+void sub325Nested(const Sub325Nested *out);
+void sub325NestedReceive(Sub325Nested *out);
+
+void sub325WatchEight(Sub325MutableLinks *out, int32_t replace);
+typedef struct Sub325Recursive { int32_t value; struct Sub325Recursive *next; void *userdata; } Sub325Recursive;
+typedef struct Sub325RecursiveExtension { Sub325Recursive header; int32_t extra; } Sub325RecursiveExtension;
+void sub325Recursive(Sub325Recursive *out, int32_t replace);
+
+typedef struct Sub325WatchGroup { SubStringView label; size_t itemsCount; Sub325Link *items; } Sub325WatchGroup;
+typedef struct Sub325WatchGroups { int32_t tag; size_t groupsCount; const Sub325WatchGroup *groups; } Sub325WatchGroups;
+void sub325WatchNested(const Sub325WatchGroups *out, int32_t replace);
+
+void sub325Shrink(Sub325Links *out);
+void sub325ShrinkMutable(Sub325MutableLinks *out, int32_t mode);
+void sub325ShrinkScratch(Sub325TextLinks *out);
+typedef struct Sub325Callbacks { int32_t tag; size_t itemsCount; const SubCallbackInfo *items; } Sub325Callbacks;
+void sub325ShrinkCallbacks(Sub325Callbacks *out);
+void sub325ShrinkGroups(Sub325WatchGroups *out);
+
+typedef struct Sub325Reentrant { size_t itemsCount; const Sub325Link *items; SubCallbackInfo info; } Sub325Reentrant;
+typedef struct Sub325ReentrantHolder { Sub325Reentrant *out; } Sub325ReentrantHolder;
+void sub325ShrinkReentrant(Sub325Reentrant *out);
+void sub325ShrinkIndirect(Sub325ReentrantHolder *holder);
+
+typedef struct Sub325ReentrantGroups { size_t groupsCount; const Sub325WatchGroup *groups; SubCallbackInfo info; } Sub325ReentrantGroups;
+void sub325ShrinkReentrantGroups(Sub325ReentrantGroups *out);
+
 #endif /* SUBSCRIPT_INTEROP_H */

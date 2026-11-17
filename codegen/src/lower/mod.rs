@@ -32,6 +32,8 @@
 //! table returned in [`Lowered::positions`].
 
 mod func;
+pub(crate) mod receive;
+pub(crate) mod watch;
 
 pub(crate) use func::{
     fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
@@ -111,6 +113,12 @@ pub(crate) struct RtFns {
     pub globals_init: FuncId,
     pub root_add: FuncId,
     pub boundary_scratch_alloc: FuncId,
+    pub boundary_receive: FuncId,
+    pub boundary_pointer: FuncId,
+    pub boundary_watch_buffer: FuncId,
+    pub boundary_watch_error: FuncId,
+    pub boundary_watch: FuncId,
+    pub boundary_watch_finish: FuncId,
     pub delete: FuncId,
     pub trap: FuncId,
     pub trap_index_out_of_bounds: FuncId,
@@ -941,6 +949,32 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             "subscript_rt_boundary_scratch_alloc",
             &[I64, I64, I32],
             Some(I64),
+        )?,
+        boundary_watch_buffer: mk(
+            "subscript_rt_boundary_watch_buffer",
+            &[I64, I64, I32],
+            Some(I64),
+        )?,
+        boundary_watch_error: mk(
+            "subscript_rt_boundary_watch_error",
+            &[I64, I64, I32, I64, I32, I32],
+            None,
+        )?,
+        boundary_watch: mk(
+            "subscript_rt_boundary_watch",
+            &[I64, I64, I64, I32, I64, I64, I32, I32],
+            Some(I64),
+        )?,
+        boundary_watch_finish: mk("subscript_rt_boundary_watch_finish", &[I64, I64], None)?,
+        boundary_receive: mk(
+            "subscript_rt_boundary_receive",
+            &[I64, I64, I64, I64, I64, I32, I32, I64],
+            Some(I64),
+        )?,
+        boundary_pointer: mk(
+            "subscript_rt_boundary_pointer",
+            &[I64, I64, I32, I64, I32, I32],
+            None,
         )?,
         delete: mk("subscript_rt_delete", &[I64, I64, I32], None)?,
         trap: mk("subscript_rt_trap", &[I64, I32, I32], None)?,

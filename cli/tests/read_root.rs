@@ -1,10 +1,11 @@
 //! `specs/blocks/compiler.md` §187 rules 3 and 6 to 15, end to end: the
 //! read root of each position is the code-generation fact; the call writes
 //! back the members that C changed in each scratch copy of a non-`const`
-//! pointer and skips a userdata slot and a callback field; no call builds
-//! a struct cycle, and a `const` cycle of byte-copied structs passes as
-//! script memory; a by-value struct whose bytes the call copies passes
-//! them; a pair keeps its script array at every reach, a pair whose
+//! pointer. A replaced pointer, userdata slot, or callback stops the call
+//! (§325 rule 4). No call builds a struct cycle, and a `const` cycle of
+//! byte-copied structs passes as script memory. A by-value struct whose
+//! bytes the call copies passes them. A replaced pair receives C's elements;
+//! a pair whose
 //! elements the call writes back is rejected, and a writable pair of
 //! validated elements has no read lowering; a result lowers by its read
 //! facts; a scalar fixed array in a scratch struct copies as bytes; a link
@@ -37,7 +38,7 @@ use std::path::PathBuf;
 use subscript_bindgen::{boundary_passes, generate_for_header};
 use subscript_boundary::{member_pass, struct_pass, FieldShape, StructPass, StructView};
 use subscript_codegen::{
-    run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary,
+    run_c_aot_with_native_libraries, run_jit_with_native_libraries, NativeLibrary, RunError,
 };
 use subscript_compiler::boundary_pass::Classes;
 use subscript_compiler::lir::ForeignTypeProvenance;
@@ -455,6 +456,25 @@ fn run_both(mirror: &str, program: &str) -> (String, String) {
     )
 }
 
+/// A C replacement reports the same cause and call site in both tiers (§325 rule 6).
+fn assert_pointer_trap(mirror: &str, program: &str, path: &str) {
+    let files = files(mirror, program);
+    let libraries = [library()];
+    let jit = run_jit_with_native_libraries(&files, &libraries);
+    let ship = run_c_aot_with_native_libraries(&files, &libraries);
+    match (jit, ship) {
+        (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+            assert_eq!(jit, ship);
+            assert_eq!(jit.rule as u32, 37);
+            assert_eq!(
+                jit.message,
+                format!("{path}: C replaced a pointer that the script cannot receive")
+            );
+        }
+        (jit, ship) => panic!("expected replacement trap: {jit:?}, {ship:?}"),
+    }
+}
+
 /// The binder's mirror of a rejected header: the mirror of its `const`
 /// twin, with the `const` record of the twin set back to `false`.
 fn rejected_mirror(keep: &[&str], from: &str, to: &str, record: &str) -> String {
@@ -464,16 +484,6 @@ fn rejected_mirror(keep: &[&str], from: &str, to: &str, record: &str) -> String 
     let true_record = format!("{record} const=true");
     assert!(mirror.contains(&true_record), "{mirror}");
     mirror.replace(&true_record, &format!("{record} const=false"))
-}
-
-/// Asserts that the binder rejects `keep` and the checker rejects the
-/// binder's mirror of it, each with `message`.
-fn assert_rejected(keep: &[&str], twin: (&str, &str, &str), message: &str) {
-    let expected = format!("{message} {TAIL}");
-    assert_eq!(bind(&subset(keep)), Err(expected.clone()), "binder");
-    let mirror = rejected_mirror(keep, twin.0, twin.1, twin.2);
-    let program = "export function main(): void {}\n";
-    assert_eq!(check(&mirror, program), vec![expected], "checker");
 }
 
 /// Runs `program(call)` with `call` and with no call, in both tiers, and
@@ -490,24 +500,21 @@ fn assert_runs(mirror: &str, program: impl Fn(&str) -> String, call: &str, outpu
     }
 }
 
-/// §187 rule 7, 187.3 item 4: `subReadRootHolderFill` replaces `out->p`.
-/// The copy-back keeps the script link, so the replacement is lost and
-/// the script `RrPoint` keeps its value; `k` is read.
-fn a_fill_keeps_the_script_link_of_a_pointer_member() {
+/// §325 rule 4: a C replacement cannot become a script pointer.
+fn a_fill_reports_a_replaced_pointer_member() {
     let mirror = bind(&subset(&["subReadRootHolderFill"])).expect("the fill binds");
-    let program = |call: &str| {
-        format!(
-            "export function main(): void {{\n  \
-             const holder = new RrHolder(0, new RrPoint(70));\n  {call}\n  \
-             const p = holder.p;\n  \
-             print(`${{holder.k}} ${{p === null ? -1 : p.x}}`);\n}}\n"
-        )
-    };
-    assert_runs(
+    let setup = "const holder = new RrHolder(0, new RrPoint(70));";
+    assert_pointer_trap(
         &mirror,
-        program,
-        "subReadRootHolderFill(holder);",
-        ["5 70", "0 70"],
+        &format!("export function main(): void {{ {setup} subReadRootHolderFill(holder); }}"),
+        "subReadRootHolderFill.out.p",
+    );
+    assert_eq!(
+        run_both(
+            &mirror,
+            &format!("export function main(): void {{ {setup} print(`${{holder.k}}`); }}")
+        ),
+        ("0\n".into(), "0\n".into())
     );
 }
 
@@ -931,72 +938,55 @@ fn a_header_of_a_math_or_graphics_header_binds_and_runs() {
     );
 }
 
-/// §187 rule 8: the copy-back of a scratch struct skips a userdata slot and
-/// a callback field, so a fill of `RrNamed` is accepted and the script keeps
-/// its slot; `subReadRootPSubmit` writes a scalar and the userdata of a
-/// callback field, and only the scalar reaches the script. In a struct whose
-/// bytes the call passes, the script reads C's bytes, so the slot has no
-/// read lowering: embedded by value in a scratch struct (`RrNamedUd`), at a
-/// root that copies its bytes (`RrUd`), and behind a pointer member
-/// (`subReadRootPStep`).
-fn a_userdata_slot_is_read_only_where_the_copy_back_skips_it() {
-    let tail = "a userdata field that C can write";
-    assert_rejected(
-        &["subReadRootNamedUdFill", "RrNamedUd"],
+/// §325 rule 4: fills compare userdata slots in both crossing forms.
+fn a_userdata_replacement_stops_at_each_reach() {
+    let cases: &[(&[&str], &str, &str, &str)] = &[
         (
-            "subReadRootNamedUdFill(RrNamedUd *out)",
-            "subReadRootNamedUdFill(const RrNamedUd *out)",
-            "// @subscript-c-parameter function=\"subReadRootNamedUdFill\" parameter=\"out\"",
+            &["subReadRootNamedUdFill", "RrNamedUd"],
+            "const out = new RrNamedUd(\"x\", new RrUd(null, 0));",
+            "subReadRootNamedUdFill(out);",
+            "subReadRootNamedUdFill.out.inner.ud",
         ),
-        &format!(
-            "foreign function `subReadRootNamedUdFill` parameter `out` reads `RrUd.ud`, {tail}"
-        ),
-    );
-    assert_rejected(
-        &["subReadRootUdFill"],
         (
-            "subReadRootUdFill(RrUd *out)",
-            "subReadRootUdFill(const RrUd *out)",
-            "// @subscript-c-parameter function=\"subReadRootUdFill\" parameter=\"out\"",
+            &["subReadRootUdFill"],
+            "const out = new RrUd(null, 0);",
+            "subReadRootUdFill(out);",
+            "subReadRootUdFill.out.ud",
         ),
-        &format!("foreign function `subReadRootUdFill` parameter `out` reads `RrUd.ud`, {tail}"),
-    );
-    assert_eq!(
-        bind(&subset(&["subReadRootPStep", "RrPBody", "RrPWorld"])),
-        Err(format!(
-            "foreign function `subReadRootPStep` parameter `w` reads `RrPBody.user`, {tail} \
-             {TAIL}"
-        ))
-    );
-    let mirror = bind(&subset(&["subReadRootNamedFill", "RrNamed"])).expect("the fill binds");
-    let program = |call: &str| {
-        format!(
-            "export function main(): void {{\n  \
-             const named = new RrNamed(\"x\", null);\n  {call}\n  \
-             print(`${{named.name}} ${{named.ud === null}}`);\n}}\n"
-        )
-    };
-    assert_runs(
-        &mirror,
-        program,
-        "subReadRootNamedFill(named);",
-        ["aa true", "x true"],
-    );
-    let mirror =
-        bind(&subset(&["subReadRootPSubmit", "RrJobCallback", "RrPJob"])).expect("the job binds");
-    let program = |call: &str| {
-        format!(
-            "export function main(): void {{\n  \
-             const job = new RrPJob((m, a, b) => {{}}, null, null, 1);\n  {call}\n  \
-             print(`${{job.prio}} ${{job.userdata === null}}`);\n}}\n"
-        )
-    };
-    assert_runs(
-        &mirror,
-        program,
-        "subReadRootPSubmit(job);",
-        ["9 true", "1 true"],
-    );
+        (
+            &["subReadRootPStep", "RrPBody", "RrPWorld"],
+            "const out = new RrPWorld(0, new RrPBody(0, 0, null));",
+            "subReadRootPStep(out);",
+            "subReadRootPStep.w.player.user",
+        ),
+        (
+            &["subReadRootNamedFill", "RrNamed"],
+            "const out = new RrNamed(\"x\", null);",
+            "subReadRootNamedFill(out);",
+            "subReadRootNamedFill.out.ud",
+        ),
+        (
+            &["subReadRootPSubmit", "RrJobCallback", "RrPJob"],
+            "const out = new RrPJob((m, a, b) => {}, null, null, 1);",
+            "subReadRootPSubmit(out);",
+            "subReadRootPSubmit.job.userdata",
+        ),
+    ];
+    for (keep, setup, call, path) in cases {
+        let mirror = bind(&subset(keep)).expect("the fill binds");
+        assert_pointer_trap(
+            &mirror,
+            &format!("export function main(): void {{ {setup} {call} }}"),
+            path,
+        );
+        assert_eq!(
+            run_both(
+                &mirror,
+                &format!("export function main(): void {{ {setup} }}")
+            ),
+            (String::new(), String::new())
+        );
+    }
     let mirror = bind(&subset(&[
         "subReadRootDeviceNamedFill",
         "RrDeviceNamed",
@@ -1579,14 +1569,14 @@ pub(super) fn main() -> std::process::ExitCode {
             the_binder_and_code_generation_take_one_pass_decision,
         ],
         main_thread: [
-            a_fill_keeps_the_script_link_of_a_pointer_member,
+            a_fill_reports_a_replaced_pointer_member,
             a_pointer_target_is_written_back,
             a_scene_graph_is_written_back_at_every_depth,
             a_const_scene_twin_binds_and_runs,
             a_const_pair_of_struct_elements_is_read,
             a_link_to_an_embedded_header_passes_its_declared_type,
             a_header_of_a_math_or_graphics_header_binds_and_runs,
-            a_userdata_slot_is_read_only_where_the_copy_back_skips_it,
+            a_userdata_replacement_stops_at_each_reach,
             a_target_passed_as_script_memory_is_read,
             a_script_write_during_the_call_stays_when_c_leaves_the_member,
             a_target_behind_a_const_pointer_is_not_written_back,

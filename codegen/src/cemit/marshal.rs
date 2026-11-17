@@ -82,7 +82,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 };
                 let header_type = self.emitter.class(pointer.class)?.source_name.clone();
                 match pointer.pass {
-                    PointerPass::ScriptMemory => return Ok(format!("(({header_type}*)({value}))")),
+                    PointerPass::ScriptMemory => {
+                        let language_type = self.emitter.ctype(&parameter.ty)?;
+                        for index in 0..array.kind.length {
+                            let element = format!("&(({language_type}*)({value}))->a[{index}]");
+                            self.snapshot_script_pointer(out, pointer, &element, position)?;
+                        }
+                        return Ok(format!("(({header_type}*)({value}))"));
+                    }
                     PointerPass::Cycle => return Err(crate::lower::struct_cycle(&header_type)),
                     PointerPass::ScratchWrittenBack | PointerPass::ScratchReadOnly => {}
                 }
@@ -102,11 +109,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     if let Some(plan) = &pointer.write_back {
                         let snapshot = self.fresh();
                         let _ = writeln!(out, "    {header_type} {snapshot}; memcpy(&{snapshot}, &{to}, sizeof {snapshot});");
+                        let original =
+                            self.capture_input_arrays(out, plan, &format!("(&{from})"))?;
                         writebacks.push(BoundaryPtrWriteback {
                             plan: plan.clone(),
                             source: format!("(&{from})"),
                             scratch: format!("(&{to})"),
                             snapshot: format!("(&{snapshot})"),
+                            original,
                         });
                     }
                 }
@@ -180,7 +190,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             // The C bytes are the script bytes, a fixed array of scalars
             // included (§187 rule 10).
             StructPass::Bytes => {
-                return Ok(format!("(*({}*)&{temporary})", definition.source_name))
+                if let Some(watch) = &plan.watch {
+                    self.watch_memory(
+                        out,
+                        watch,
+                        &plan.path,
+                        &format!("&{temporary}"),
+                        ("1u", false),
+                        position,
+                    )?;
+                }
+                return Ok(format!("(*({}*)&{temporary})", definition.source_name));
             }
             StructPass::Cycle => return Err(crate::lower::struct_cycle(&definition.source_name)),
             StructPass::Scratch => {}
@@ -295,6 +315,21 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         &["void*".into(), "const void*".into()],
                         &["ctx".into(), access],
                     );
+                    let count = self.fresh();
+                    let data = self.fresh();
+                    let _ = writeln!(out, "    int32_t {count} = {count_call};\n    const void* {data} = {data_call};");
+                    let count_call = count;
+                    let data_call = data;
+                    if let Some(watch) = &pair.watch {
+                        self.watch_memory(
+                            out,
+                            watch,
+                            &pair.path,
+                            &data_call,
+                            (&count_call, true),
+                            position,
+                        )?;
+                    }
                     let (data, count) = match &pair.elements {
                         Some(elements) => self.marshal_boundary_array(
                             out,
@@ -305,8 +340,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         )?,
                         None => (data_call, count_call),
                     };
-                    parts.push(format!("(size_t)({count})"));
-                    parts.push(format!("(void*)({data})"));
+                    if pair.pointer_first {
+                        parts.push(format!("(void*)({data})"));
+                        parts.push(format!("(size_t)({count})"));
+                    } else {
+                        parts.push(format!("(size_t)({count})"));
+                        parts.push(format!("(void*)({data})"));
+                    }
                 }
                 MemberCrossing::StringView => {
                     self.keep_foreign_storage(out, &access, false)?;
@@ -381,7 +421,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     // §296 rules 1–2: release the call scope before the allocation trap exits.
-    fn scratch_allocation_check(&mut self, out: &mut String, indent: &str) -> Result<(), String> {
+    pub(super) fn scratch_allocation_check(
+        &mut self,
+        out: &mut String,
+        indent: &str,
+    ) -> Result<(), String> {
         let mark = self
             .boundary_targets
             .as_ref()
@@ -418,10 +462,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let class = plan.class;
         let written_back = match plan.pass {
             PointerPass::ScriptMemory => {
+                self.snapshot_script_pointer(out, plan, pointer, position)?;
                 return Ok((
                     format!("(({}*)({pointer}))", self.emitter.class(class)?.source_name),
                     None,
-                ))
+                ));
             }
             PointerPass::Cycle => {
                 return Err(crate::lower::struct_cycle(
@@ -483,6 +528,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         if !local {
             self.scratch_allocation_check(out, "        ")?;
         }
+        let original = if let Some(plan) = &plan.write_back {
+            self.capture_input_arrays(out, plan, &source)?
+        } else {
+            "NULL".into()
+        };
         let value = self.marshal_boundary_struct(out, target, &format!("*{source}"), position)?;
         let _ = writeln!(out, "        *{header} = {value};");
         if written_back {
@@ -501,6 +551,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 source,
                 scratch: header.clone(),
                 snapshot,
+                original,
             })
         } else {
             None
@@ -539,6 +590,13 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .element
             .as_ref()
             .ok_or_else(|| internal("a scratch array has no element plan"))?;
+        let slots = crate::lower::receive::input_slots(
+            self.emitter.module,
+            &self.emitter.layouts,
+            element_class,
+        )?;
+        let script_stride = self.emitter.layouts.class(element_class.0)?.size;
+        let extra = if slots.is_empty() { 0 } else { script_stride };
         let source_temporary = self.fresh();
         let count_temporary = self.fresh();
         let scratch = self.fresh();
@@ -553,7 +611,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             &["void*".into(), "uint64_t".into(), "uint32_t".into()],
             &[
                 "ctx".into(),
-                format!("(uint64_t)({count_temporary} * sizeof({header_type}))"),
+                format!("(uint64_t)({count_temporary} * (sizeof({header_type}) + {extra}u))"),
                 format!("{position}u"),
             ],
         );
@@ -573,7 +631,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         );
         self.element_depth(-1)?;
         let value = value?;
-        let _ = writeln!(out, "        {scratch}[{index}] = {value};\n    }}");
+        let _ = writeln!(out, "        {scratch}[{index}] = {value};");
+        for (offset, size) in slots {
+            let _ = writeln!(out, "        memcpy((unsigned char*)({scratch} + {count_temporary}) + {index} * {script_stride}u + {offset}u, (const unsigned char*)(&{source_temporary}[{index}]) + {offset}u, {size}u);");
+        }
+        out.push_str("    }\n");
         Ok((scratch, count_temporary))
     }
 
@@ -601,8 +663,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out: &mut String,
         writeback: BoundaryPtrWriteback,
         position: u32,
+        callee: &str,
     ) -> Result<(), String> {
         let class = self.emitter.class(writeback.plan.class)?.clone();
+        let (offsets, _, _) = crate::lower::receive::c_class(self.emitter.module, class.id)?;
         let _ = writeln!(out, "    if ({} != NULL) {{", writeback.source);
         for member in &writeback.plan.members {
             let field = class
@@ -614,6 +678,43 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let before = format!("{}->{}", writeback.snapshot, field.source_name);
             let changed = format!("memcmp(&{header}, &{before}, sizeof {header}) != 0");
             match &member.write {
+                WriteBack::Pointer { .. } | WriteBack::Pair { .. } => {
+                    let label = format!("{callee}.{}.{}", writeback.plan.path, field.source_name);
+                    let (changed, source) = if matches!(member.write, WriteBack::Pair { .. }) {
+                        let offset = offsets[member.field];
+                        let from =
+                            format!("((const unsigned char*){} + {offset}u)", writeback.scratch);
+                        let before =
+                            format!("((const unsigned char*){} + {offset}u)", writeback.snapshot);
+                        (format!("memcmp({from}, {before}, 16u) != 0"), from)
+                    } else {
+                        (changed, header.clone())
+                    };
+                    let _ = writeln!(out, "        if ({changed}) {{");
+                    self.emit_received_member(
+                        out,
+                        &member.write,
+                        (
+                            &source,
+                            &format!(
+                                "((const unsigned char*){} + {}u)",
+                                writeback.snapshot, offsets[member.field]
+                            ),
+                            &format!(
+                                "((const unsigned char*){} + {}u)",
+                                writeback.original,
+                                self.emitter
+                                    .layouts
+                                    .class(writeback.plan.class.0)?
+                                    .field_offsets[member.field]
+                            ),
+                        ),
+                        (&language, &field.ty),
+                        &label,
+                        position,
+                    )?;
+                    out.push_str("        }\n");
+                }
                 WriteBack::Bytes if is_half(&field.ty) => {
                     let _ = writeln!(
                         out,
@@ -668,8 +769,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         source: format!("(&{language})"),
                         scratch: format!("(&{header})"),
                         snapshot: format!("(&{before})"),
+                        original: format!(
+                            "((const unsigned char*){} + {}u)",
+                            writeback.original,
+                            self.emitter
+                                .layouts
+                                .class(writeback.plan.class.0)?
+                                .field_offsets[member.field]
+                        ),
                     },
                     position,
+                    callee,
                 )?,
                 WriteBack::Cycle(nested) => {
                     return Err(crate::lower::struct_cycle(

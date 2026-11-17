@@ -28,8 +28,10 @@
 // @subscript-c-descriptor function="subSliceChecksumU16" parameter="data" aggregate="SubSliceU16" element="uint16_t" const=true
 // @subscript-c-descriptor function="subSliceChecksumI16" parameter="data" aggregate="SubSliceI16" element="int16_t" const=true
 // @subscript-c-descriptor function="subSliceChecksumF16" parameter="data" aggregate="SubSliceF16" element="SubFloat16" const=true
+// @subscript-c-member aggregate="SubDrawList" member="draws" const=true order=count-first
 // @subscript-c-descriptor function="subBulkConsumeF32" parameter="data" aggregate="SubSliceF32" element="float" const=true
 // @subscript-c-member aggregate="SubEventHeader" member="next" const=false
+// @subscript-c-member aggregate="SubCommandBuffer" member="commands" const=true order=count-first
 // @subscript-c-parameter function="subDeviceQuery" parameter="status" const=false
 // @subscript-c-descriptor function="subDeviceWait" parameter="waits" aggregate="SubWaitList" element="SubWaitEntry" const=false
 // @subscript-c-scalar-pair function="subDeviceSumBytes" parameter="data" element="uint8_t" const=true
@@ -37,45 +39,51 @@
 // @subscript-c-scalar-pair function="subDeviceFillShorts" parameter="data" element="uint16_t" const=false
 // @subscript-c-parameter function="subBoundaryStringCheck" parameter="record" const=true
 // @subscript-c-parameter function="subBoundaryStringFill" parameter="record" const=false
+// @subscript-c-member aggregate="SGPUProbeTextureDescriptor" member="viewFormats" const=true order=count-first
 // @subscript-c-parameter function="subProbeTextureDescriptorCheck" parameter="descriptor" const=true
 // @subscript-c-parameter function="subProbeTextureDescriptorFill" parameter="descriptor" const=false
+// @subscript-c-member aggregate="SubProbePipelineLayoutDescriptor" member="bindGroupLayouts" const=true order=count-first
 // @subscript-c-parameter function="subProbePipelineLayoutCheck" parameter="descriptor" const=true
 // @subscript-c-parameter function="subProbeBindGroupEntryCheck" parameter="entry" const=true
 // @subscript-c-parameter function="subProbeBindGroupEntryFill" parameter="entry" const=false
 // @subscript-c-parameter function="subProbeComputePipelineCheck" parameter="descriptor" const=true
-// @subscript-c-member aggregate="SGPUProbeVertexBufferLayout" member="attributes" const=true
-// @subscript-c-member aggregate="SGPUProbeVertexState" member="buffers" const=true
+// @subscript-c-member aggregate="SGPUProbeVertexBufferLayout" member="attributes" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeVertexState" member="buffers" const=true order=count-first
 // @subscript-c-parameter function="subProbeRenderPipelineCheck" parameter="descriptor" const=true
-// @subscript-c-member aggregate="SGPUProbeProgrammableStage" member="constants" const=true
+// @subscript-c-member aggregate="SGPUProbeProgrammableStage" member="constants" const=true order=count-first
 // @subscript-c-parameter function="subProbeProgrammableStageCheck" parameter="stage" const=true
 // @subscript-c-member aggregate="SGPUProbeColorTargetState" member="blend" const=true
-// @subscript-c-member aggregate="SGPUProbeFragmentState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeFragmentState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeFragmentState" member="targets" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeFullRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeFullRenderPipelineCheck" parameter="descriptor" const=true
-// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeHandleFragmentState" member="targets" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeHandleRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeFullRenderPipelineWithHandleCheck" parameter="descriptor" const=true
 // @subscript-c-member aggregate="SGPUProbeNestedColorTargetState" member="blend" const=true
-// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeNestedFragmentState" member="targets" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeNestedRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeFullRenderPipelineWithNestedBlendCheck" parameter="descriptor" const=true
 // @subscript-c-member aggregate="SGPUProbeUnmarkedColorTargetState" member="blend" const=true
-// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="targets" const=true
+// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeUnmarkedFragmentState" member="targets" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeUnmarkedRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeFullRenderPipelineWithUnmarkedBlendCheck" parameter="descriptor" const=true
+// @subscript-c-member aggregate="SGPUProbeBreadthDepthStencilState" member="biases" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeBreadthFragmentState" member="constants" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeBreadthRenderPipelineDescriptor" member="depthStencil" const=true
 // @subscript-c-member aggregate="SGPUProbeBreadthRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeBreadthRenderPipelineCheck" parameter="descriptor" const=true
-// @subscript-c-member aggregate="SGPUProbeWideVertexState" member="buffers" const=true
+// @subscript-c-member aggregate="SGPUProbeWidePairEntry" member="values" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeWideVertexState" member="buffers" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeWidePayload" member="values" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeWidePointerElement" member="payload" const=true
-// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="elements" const=true
-// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="constants" const=true
-// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="elements" const=true
+// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeWideDepthStencilState" member="elements" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="constants" const=true order=count-first
+// @subscript-c-member aggregate="SGPUProbeWideFragmentState" member="elements" const=true order=count-first
 // @subscript-c-member aggregate="SGPUProbeWideRenderPipelineDescriptor" member="depthStencil" const=true
 // @subscript-c-member aggregate="SGPUProbeWideRenderPipelineDescriptor" member="fragment" const=true
 // @subscript-c-parameter function="subProbeWideRenderPipelineCheck" parameter="descriptor" const=true
@@ -92,6 +100,7 @@
 // @subscript-c-parameter function="subByValueI32I64Report" parameter="report" const=false
 // @subscript-c-parameter function="subByValueI64TripleReport" parameter="report" const=false
 // @subscript-c-callback-lifetime aggregate="SubRequestInfo"
+// @subscript-c-member aggregate="SubDescReadLay" member="items" const=true order=count-first
 // @subscript-c-member aggregate="SubDescReadHolder" member="inner" const=true
 // @subscript-c-member aggregate="SubDescReadStrHolder" member="inner" const=true
 // @subscript-c-member aggregate="SubDescReadMutHolder" member="inner" const=false
@@ -101,7 +110,7 @@
 // @subscript-c-parameter function="subBorrowPointer" parameter="value" const=true
 // @subscript-c-parameter function="subBorrowMemberPointer" parameter="value" const=true
 // @subscript-c-parameter function="subBorrowMemberString" parameter="value" const=true
-// @subscript-c-member aggregate="SubBorrowDrawLists" member="values" const=true
+// @subscript-c-member aggregate="SubBorrowDrawLists" member="values" const=true order=count-first
 // @subscript-c-parameter function="subFixedInts" parameter="values" const=false
 // @subscript-c-parameter function="subFixedReadInts" parameter="values" const=true
 // @subscript-c-parameter function="subFixedBytes" parameter="values" const=false
@@ -114,6 +123,61 @@
 // @subscript-c-parameter function="subFixedTwoLays" parameter="second" const=false
 // @subscript-c-parameter function="subFixedLayPointer" parameter="first" const=false
 // @subscript-c-parameter function="subFixedLayPointer" parameter="second" const=false
+// @subscript-c-member aggregate="Sub325List" member="items" const=false order=count-first
+// @subscript-c-member aggregate="Sub325First" member="items" const=true order=pointer-first
+// @subscript-c-member aggregate="Sub325Holder" member="list" const=false
+// @subscript-c-member aggregate="Sub325Link" member="leaf" const=true
+// @subscript-c-member aggregate="Sub325Scratch" member="items" const=true order=count-first
+// @subscript-c-member aggregate="Sub325Scratch" member="leaf" const=false
+// @subscript-c-member aggregate="Sub325Texts" member="items" const=true order=count-first
+// @subscript-c-member aggregate="Sub325Links" member="items" const=true order=count-first
+// @subscript-c-parameter function="sub325Replace" parameter="out" const=false
+// @subscript-c-parameter function="sub325First" parameter="out" const=false
+// @subscript-c-parameter function="sub325Indirect" parameter="out" const=false
+// @subscript-c-parameter function="sub325Texts" parameter="out" const=false
+// @subscript-c-parameter function="sub325Write" parameter="out" const=false
+// @subscript-c-parameter function="sub325Empty" parameter="out" const=false
+// @subscript-c-parameter function="sub325Null" parameter="out" const=false
+// @subscript-c-parameter function="sub325Pointer" parameter="out" const=false
+// @subscript-c-parameter function="sub325Bytes" parameter="out" const=false
+// @subscript-c-parameter function="sub325Userdata" parameter="out" const=false
+// @subscript-c-parameter function="sub325Callback" parameter="out" const=false
+// @subscript-c-parameter function="sub325BadPair" parameter="out" const=false
+// @subscript-c-parameter function="sub325Received" parameter="out" const=false
+// @subscript-c-parameter function="sub325ReceivedNull" parameter="out" const=false
+// @subscript-c-parameter function="sub325Read" parameter="out" const=true
+// @subscript-c-parameter function="sub325Unchanged" parameter="out" const=false
+// @subscript-c-member aggregate="Sub325Descriptor" member="items" const=true order=pointer-first
+// @subscript-c-member aggregate="Sub325TextLink" member="leaf" const=true
+// @subscript-c-member aggregate="Sub325TextLinks" member="items" const=true order=count-first
+// @subscript-c-member aggregate="Sub325Graph" member="link" const=false
+// @subscript-c-parameter function="sub325Descriptor" parameter="out" const=false
+// @subscript-c-parameter function="sub325ReceivedScratch" parameter="out" const=false
+// @subscript-c-parameter function="sub325ReceivedScratchNull" parameter="out" const=false
+// @subscript-c-parameter function="sub325Embedded" parameter="out" const=false
+// @subscript-c-parameter function="sub325Graph" parameter="out" const=true
+// @subscript-c-member aggregate="Sub325MutableLinks" member="items" const=false order=count-first
+// @subscript-c-member aggregate="Sub325Nested" member="groups" const=true order=count-first
+// @subscript-c-parameter function="sub325Nested" parameter="out" const=true
+// @subscript-c-parameter function="sub325NestedReceive" parameter="out" const=false
+// @subscript-c-parameter function="sub325WatchEight" parameter="out" const=false
+// @subscript-c-member aggregate="Sub325Recursive" member="next" const=false
+// @subscript-c-parameter function="sub325Recursive" parameter="out" const=false
+// @subscript-c-member aggregate="Sub325WatchGroup" member="items" const=false order=count-first
+// @subscript-c-member aggregate="Sub325WatchGroups" member="groups" const=true order=count-first
+// @subscript-c-parameter function="sub325WatchNested" parameter="out" const=true
+// @subscript-c-parameter function="sub325Shrink" parameter="out" const=false
+// @subscript-c-parameter function="sub325ShrinkMutable" parameter="out" const=false
+// @subscript-c-parameter function="sub325ShrinkScratch" parameter="out" const=false
+// @subscript-c-member aggregate="Sub325Callbacks" member="items" const=true order=count-first
+// @subscript-c-parameter function="sub325ShrinkCallbacks" parameter="out" const=false
+// @subscript-c-parameter function="sub325ShrinkGroups" parameter="out" const=false
+// @subscript-c-member aggregate="Sub325Reentrant" member="items" const=true order=count-first
+// @subscript-c-member aggregate="Sub325ReentrantHolder" member="out" const=false
+// @subscript-c-parameter function="sub325ShrinkReentrant" parameter="out" const=false
+// @subscript-c-parameter function="sub325ShrinkIndirect" parameter="holder" const=false
+// @subscript-c-member aggregate="Sub325ReentrantGroups" member="groups" const=true order=count-first
+// @subscript-c-parameter function="sub325ShrinkReentrantGroups" parameter="out" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -915,6 +979,192 @@ declare function subFixedSum(values: FixedArray<i32, 4>): i32;
 declare function subFixedReadLays(values: FixedArray<SubDescReadLay, 2>): i32;
 declare function subFixedTwoLays(first: FixedArray<SubDescReadLay, 2>, second: FixedArray<SubDescReadLay, 2>): void;
 declare function subFixedLayPointer(first: FixedArray<SubDescReadLay, 2>, second: SubDescReadLay | null): void;
+
+declare class Sub325List {
+  tag: i32;
+  items: i32[];
+  constructor(tag: i32, items: i32[]);
+}
+
+declare class Sub325First {
+  tag: i32;
+  items: i32[];
+  constructor(tag: i32, items: i32[]);
+}
+
+declare class Sub325Holder {
+  list: Sub325List | null;
+  constructor(list: Sub325List | null);
+}
+
+declare class Sub325Leaf {
+  value: i32;
+  constructor(value: i32);
+}
+
+declare class Sub325Link {
+  tag: i32;
+  leaf: Sub325Leaf | null;
+  constructor(tag: i32, leaf: Sub325Leaf | null);
+}
+
+declare class Sub325Scratch {
+  items: i32[];
+  leaf: Sub325Leaf | null;
+  constructor(items: i32[], leaf: Sub325Leaf | null);
+}
+
+declare class Sub325Text {
+  label: string;
+  value: i32;
+  constructor(label: string, value: i32);
+}
+
+declare class Sub325Texts {
+  tag: i32;
+  items: Sub325Text[];
+  constructor(tag: i32, items: Sub325Text[]);
+}
+
+declare class Sub325Links {
+  tag: i32;
+  items: Sub325Link[];
+  constructor(tag: i32, items: Sub325Link[]);
+}
+
+declare function sub325Replace(out: Sub325List | null): void;
+declare function sub325First(out: Sub325First | null): void;
+declare function sub325Indirect(out: Sub325Holder | null): void;
+declare function sub325Texts(out: Sub325Texts | null): void;
+declare function sub325Write(out: Sub325List | null): void;
+declare function sub325Empty(out: Sub325List | null): void;
+declare function sub325Null(out: Sub325Scratch | null): void;
+declare function sub325Pointer(out: Sub325Scratch | null): void;
+declare function sub325Bytes(out: Sub325Link | null): void;
+declare function sub325Userdata(out: SubCallbackInfo | null): void;
+declare function sub325Callback(out: SubCallbackInfo | null): void;
+declare function sub325BadPair(out: Sub325List | null): void;
+declare function sub325Received(out: Sub325Links | null): void;
+declare function sub325ReceivedNull(out: Sub325Links | null): void;
+declare function sub325Read(out: Sub325List | null): i32;
+declare function sub325Unchanged(out: Sub325List | null): void;
+
+declare class Sub325Descriptor {
+  items: i32[];
+  constructor(items: i32[]);
+}
+
+declare class Sub325TextLink {
+  label: string;
+  leaf: Sub325Leaf | null;
+  constructor(label: string, leaf: Sub325Leaf | null);
+}
+
+declare class Sub325TextLinks {
+  tag: i32;
+  items: Sub325TextLink[];
+  constructor(tag: i32, items: Sub325TextLink[]);
+}
+
+declare class Sub325Embedded {
+  label: string;
+  inner: Sub325Link;
+  constructor(label: string, inner: Sub325Link);
+}
+
+declare class Sub325LinkExtension {
+  header: Sub325Link;
+  value: i32;
+  constructor(header: Sub325Link, value: i32);
+}
+
+declare class Sub325Graph {
+  link: Sub325Link | null;
+  constructor(link: Sub325Link | null);
+}
+
+declare function sub325Descriptor(out: Sub325Descriptor | null): void;
+declare function sub325ReceivedScratch(out: Sub325TextLinks | null): void;
+declare function sub325ReceivedScratchNull(out: Sub325TextLinks | null): void;
+declare function sub325Embedded(out: Sub325Embedded | null): void;
+declare function sub325Graph(out: Sub325Graph | null): void;
+
+declare class Sub325MutableLinks {
+  items: Sub325Link[];
+  constructor(items: Sub325Link[]);
+}
+
+declare class Sub325Nested {
+  groups: Sub325MutableLinks[];
+  constructor(groups: Sub325MutableLinks[]);
+}
+
+declare function sub325Nested(out: Sub325Nested | null): void;
+declare function sub325NestedReceive(out: Sub325Nested | null): void;
+declare function sub325WatchEight(out: Sub325MutableLinks | null, replace: i32): void;
+
+declare class Sub325Recursive {
+  value: i32;
+  next: Sub325Recursive | null;
+  userdata: object | null;
+  constructor(value: i32, next: Sub325Recursive | null, userdata: object | null);
+}
+
+declare class Sub325RecursiveExtension {
+  header: Sub325Recursive;
+  extra: i32;
+  constructor(header: Sub325Recursive, extra: i32);
+}
+
+declare function sub325Recursive(out: Sub325Recursive | null, replace: i32): void;
+
+declare class Sub325WatchGroup {
+  label: string;
+  items: Sub325Link[];
+  constructor(label: string, items: Sub325Link[]);
+}
+
+declare class Sub325WatchGroups {
+  tag: i32;
+  groups: Sub325WatchGroup[];
+  constructor(tag: i32, groups: Sub325WatchGroup[]);
+}
+
+declare function sub325WatchNested(out: Sub325WatchGroups | null, replace: i32): void;
+declare function sub325Shrink(out: Sub325Links | null): void;
+declare function sub325ShrinkMutable(out: Sub325MutableLinks | null, mode: i32): void;
+declare function sub325ShrinkScratch(out: Sub325TextLinks | null): void;
+
+declare class Sub325Callbacks {
+  tag: i32;
+  items: SubCallbackInfo[];
+  constructor(tag: i32, items: SubCallbackInfo[]);
+}
+
+declare function sub325ShrinkCallbacks(out: Sub325Callbacks | null): void;
+declare function sub325ShrinkGroups(out: Sub325WatchGroups | null): void;
+
+declare class Sub325Reentrant {
+  items: Sub325Link[];
+  info: SubCallbackInfo;
+  constructor(items: Sub325Link[], info: SubCallbackInfo);
+}
+
+declare class Sub325ReentrantHolder {
+  out: Sub325Reentrant | null;
+  constructor(out: Sub325Reentrant | null);
+}
+
+declare function sub325ShrinkReentrant(out: Sub325Reentrant | null): void;
+declare function sub325ShrinkIndirect(holder: Sub325ReentrantHolder | null): void;
+
+declare class Sub325ReentrantGroups {
+  groups: Sub325WatchGroup[];
+  info: SubCallbackInfo;
+  constructor(groups: Sub325WatchGroup[], info: SubCallbackInfo);
+}
+
+declare function sub325ShrinkReentrantGroups(out: Sub325ReentrantGroups | null): void;
 
 type SubFloat16 = f16;
 

@@ -263,6 +263,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         let boundary_position = self.emitter.pos_id(&instruction.pos);
         self.boundary_targets = Some(BoundaryTargets {
+            callee: declaration.source_name.clone(),
             scratch_mark: scratch_mark.clone(),
             ..BoundaryTargets::default()
         });
@@ -305,6 +306,24 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     &["void*".into(), "const void*".into()],
                     &["ctx".into(), value.clone()],
                 );
+                let saved_data = self.fresh();
+                let saved_count = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    const void* {saved_data} = {data};\n    int32_t {saved_count} = {count};"
+                );
+                let data = saved_data;
+                let count = saved_count;
+                if let Some(watch) = &pair.watch {
+                    self.watch_memory(
+                        out,
+                        watch,
+                        &parameter.source_name,
+                        &data,
+                        (&count, true),
+                        boundary_position,
+                    )?;
+                }
                 let (data, count) = match &pair.elements {
                     Some(elements) => self.marshal_boundary_array(
                         out,
@@ -424,6 +443,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             _ => self.assign(out, result.clone(), &call)?,
         }
+        for snapshot in &targets.watches {
+            let call = self.emitter.runtime_call(
+                "void",
+                "subscript_rt_boundary_watch_finish",
+                &["void*".into(), "void*".into()],
+                &["ctx".into(), snapshot.clone()],
+            );
+            let _ = writeln!(out, "    {call};");
+        }
+        self.finish_inline_watches(out, &targets.inline_watches)?;
         if !boundary_writebacks.is_empty() || !targets.targets.is_empty() {
             out.push_str("    if (*(const uint32_t*)ctx == 0u) {\n");
             // The parameters first, then each nested target, the last one
@@ -432,7 +461,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .into_iter()
                 .chain(targets.targets.into_iter().rev())
             {
-                self.emit_boundary_writeback(out, writeback, boundary_position)?;
+                self.emit_boundary_writeback(
+                    out,
+                    writeback,
+                    boundary_position,
+                    &declaration.source_name,
+                )?;
             }
             out.push_str("    }\n");
         }

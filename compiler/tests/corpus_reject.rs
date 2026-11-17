@@ -341,11 +341,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         12,
     ),
     (
-        "r413-foreign-fill-embedded-external-userdata.ts",
-        RuleCode::S100,
-        12,
-    ),
-    (
         "r414-await-result-handle-array-in-place.ts",
         RuleCode::S013,
         10,

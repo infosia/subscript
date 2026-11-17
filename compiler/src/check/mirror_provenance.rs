@@ -343,6 +343,25 @@ impl<'p> Checker<'p> {
         ty: &Type,
     ) -> Option<hir::ForeignTypeProvenance> {
         let key = (owner.to_string(), member.to_string());
+        if matches!(self.apparent_type(ty), Type::Array(_)) {
+            if let Some(pointer_first) = self
+                .prog
+                .files
+                .iter()
+                .find_map(|file| file.provenance.pair_orders.get(&key))
+            {
+                let element_const = self
+                    .prog
+                    .files
+                    .iter()
+                    .filter_map(|file| file.provenance.members.get(&key))
+                    .any(|record| record.value);
+                return Some(hir::ForeignTypeProvenance::PairOrder {
+                    pointer_first: *pointer_first,
+                    element_const,
+                });
+            }
+        }
         let constant = self
             .prog
             .files

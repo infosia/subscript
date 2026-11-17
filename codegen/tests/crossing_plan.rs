@@ -85,7 +85,11 @@ fn the_plan_gives_each_node_its_pass_its_causes_and_its_write_back() -> Result<(
         (StructPass::Scratch, vec![1])
     );
     let write_back = out.write_back.as_ref().ok_or("a write-back")?;
-    assert_eq!(write_back.members.len(), 1);
+    assert_eq!(write_back.members.len(), 2);
+    assert_eq!(
+        write_back.members[1].write,
+        WriteBack::Pointer { nullable: true }
+    );
     assert_eq!(
         (write_back.members[0].field, &write_back.members[0].write),
         (0, &WriteBack::Bytes)
@@ -245,6 +249,75 @@ fn fixed_array_kind_carries_extent_pass_and_write_back() {
                 .and_then(|p| p.write_back.as_ref())
                 .is_some(),
             name == "fill"
+        );
+    }
+}
+
+#[test]
+fn the_report_names_script_memory_compares_and_const_targets() {
+    use subscript_compiler::crossing::call_plan;
+    use subscript_compiler::{check_program, SourceFile};
+    let mirror = SourceFile::ambient("watch.d.ts", "// @subscript-c-header include=\"watch.h\"\n// @subscript-c-member aggregate=\"Root\" member=\"link\" const=true\ndeclare class Leaf { user: object | null; constructor(user: object | null); }\ndeclare class Root { link: Leaf | null; constructor(link: Leaf | null); }\ndeclare function step(out: Root | null): void;");
+    let module = check_program(&[
+        mirror,
+        SourceFile::new(
+            "watch.ts",
+            "export function main(): void { step(new Root(new Leaf(null))); }",
+        ),
+    ])
+    .expect("checks");
+    let module = subscript_codegen::lir::lower_module(&module).expect("lowers");
+    let plan = call_plan(&module, callee(&module, "step").expect("step")).expect("plan");
+    let ParameterPlan::Pointer(pointer) = &plan.parameters[0] else {
+        panic!("pointer plan")
+    };
+    assert!(
+        pointer.write_back.is_none(),
+        "script memory has no scratch copy-back"
+    );
+    let report = subscript_compiler::crossing::report(&module)
+        .expect("report")
+        .join("\n");
+    assert!(report.contains("pointer compares"), "{report}");
+    assert!(
+        report.contains("Root.link compare, nullable=true"),
+        "{report}"
+    );
+    assert!(
+        !report.contains("Leaf.user compare"),
+        "const target: {report}"
+    );
+}
+
+#[test]
+fn watch_plans_keep_only_live_recursion() {
+    use subscript_compiler::crossing::{call_plan, WatchMember};
+    use subscript_compiler::{check_program, SourceFile};
+    for (constant, recursive) in [(true, false), (false, true)] {
+        let record = if constant {
+            "// @subscript-c-member aggregate=\"Node\" member=\"next\" const=true\n"
+        } else {
+            ""
+        };
+        let mirror = format!("// @subscript-c-header include=\"watch.h\"\n{record}declare class Node {{ value: i32; next: Node | null; userdata: object | null; constructor(value: i32, next: Node | null, userdata: object | null); }}\ndeclare class Extension {{ base: Node; extra: i32; constructor(base: Node, extra: i32); }}\ndeclare function step(out: Node | null): void;");
+        let hir = check_program(&[
+            SourceFile::ambient("watch.d.ts", mirror),
+            SourceFile::new("main.ts", "export function main(): void {}"),
+        ])
+        .expect("header family checks");
+        let module = subscript_codegen::lir::lower_module(&hir).expect("lowers");
+        let plan = call_plan(&module, callee(&module, "step").expect("step")).expect("plan");
+        let ParameterPlan::Pointer(pointer) = &plan.parameters[0] else {
+            panic!("pointer")
+        };
+        let watch = pointer.watch.as_ref().expect("pointer slots are checked");
+        assert_eq!(watch.recursive, recursive);
+        assert_eq!(
+            watch.nodes[watch.root]
+                .members
+                .iter()
+                .any(|member| matches!(member, WatchMember::Pointer { .. })),
+            recursive
         );
     }
 }

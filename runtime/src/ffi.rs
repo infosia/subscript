@@ -52,10 +52,12 @@ mod files;
 mod json;
 mod memory;
 mod numbers;
+mod receive;
 mod regex;
 mod strings;
 mod text;
 mod uri;
+pub(crate) mod watch;
 
 pub use array_methods::*;
 pub use arrays::*;
@@ -68,10 +70,12 @@ pub use files::*;
 pub use json::*;
 pub use memory::*;
 pub use numbers::*;
+pub use receive::*;
 pub use regex::*;
 pub use strings::*;
 pub use text::*;
 pub use uri::*;
+pub use watch::*;
 
 #[cfg(test)]
 mod tests;

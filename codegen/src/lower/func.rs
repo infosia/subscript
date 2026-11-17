@@ -35,6 +35,8 @@ mod async_callable;
 mod async_count;
 pub(crate) use async_callable::define_async_callable;
 mod boundary;
+mod boundary_receive;
+mod boundary_watch;
 pub(crate) use boundary::{
     fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
 };
@@ -158,6 +160,8 @@ struct BoundaryPtrWriteback {
     scratch: Value,
     /// The bytes that the call put in `scratch` before the call.
     snapshot: Value,
+    /// Input script array handles, before a callback can replace a member.
+    original: Value,
 }
 
 /// The scratch copies of pointer targets that the build of one foreign
@@ -168,6 +172,9 @@ struct BoundaryPtrWriteback {
 /// writes back each target by code after the call.
 #[derive(Debug, Clone)]
 struct BoundaryTargets {
+    callee: String,
+    watches: Vec<StackSlot>,
+    inline_watches: Vec<boundary_watch::Inline>,
     /// The call scope to release before each exit (§296 rules 1 and 2).
     scratch_mark: Option<Value>,
     /// The block where the build of the call starts.

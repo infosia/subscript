@@ -288,7 +288,7 @@ fn fill_read(kind: MemberKind, pass: StructPass, reach: Reach) -> MemberRead {
         // slot and a callback field, so the script keeps its own values. In
         // a struct whose bytes the call passes, the script reads C's bytes.
         MemberKind::Userdata | MemberKind::Callback if scratch => MemberRead::Readable,
-        MemberKind::Userdata => MemberRead::Unreadable(UnreadableKind::Userdata),
+        MemberKind::Userdata => MemberRead::Readable,
         // §187 rule 11 and core principle 16: a pair whose elements the call
         // copies in and back has a cost that grows with the count.
         MemberKind::Pair {
@@ -299,6 +299,10 @@ fn fill_read(kind: MemberKind, pass: StructPass, reach: Reach) -> MemberRead {
         // pair at every reach. C writes the elements in place, so the
         // elements are read where C writes them: through the element
         // pointer, or through the pointers of `const` elements.
+        MemberKind::Pair {
+            mutable: false,
+            elements: Some(PointerPass::ScratchReadOnly),
+        } => nested(ReadRoot::Fill(StructPass::Scratch), Reach::Embedded, None),
         MemberKind::Pair {
             mutable,
             elements: Some(pointer),
@@ -951,10 +955,7 @@ mod tests {
                 let (userdata, callback) = if pass == SCRATCH {
                     (MemberRead::Readable, MemberRead::Readable)
                 } else {
-                    (
-                        unreadable(UnreadableKind::Userdata),
-                        unreadable(UnreadableKind::Callback),
-                    )
+                    (MemberRead::Readable, unreadable(UnreadableKind::Callback))
                 };
                 assert_eq!(case(MemberKind::Userdata), userdata);
                 assert_eq!(case(MemberKind::Callback), callback);
@@ -1025,7 +1026,7 @@ mod tests {
         }
         assert_eq!(
             root(pair(false, Some(READ))),
-            nested(ReadRoot::Input(SCRATCH), Reach::Indirect, None)
+            nested(ReadRoot::Fill(SCRATCH), Reach::Embedded, None)
         );
         assert_eq!(
             root(pair(false, Some(MEMORY))),
@@ -1047,7 +1048,7 @@ mod tests {
             );
             assert_eq!(
                 member_read(pair(false, Some(READ)), fill(SCRATCH), reach),
-                nested(ReadRoot::Input(SCRATCH), Reach::Indirect, None)
+                nested(ReadRoot::Fill(SCRATCH), Reach::Embedded, None)
             );
             assert_eq!(
                 member_read(pair(false, Some(MEMORY)), fill(SCRATCH), reach),
@@ -1323,10 +1324,7 @@ mod tests {
         // (rule 11).
         assert_eq!(walk("List", fill), Some(written_back("List", false)));
         // An embedded userdata slot under a fill (rule 8).
-        assert_eq!(
-            walk("Named", fill),
-            Some(found("Ud", "ud", UnreadableKind::Userdata))
-        );
+        assert_eq!(walk("Named", fill), None);
         // A userdata slot of a pointer target that C can write.
         assert_eq!(
             walk("UdHolder", fill),
@@ -1389,7 +1387,7 @@ mod tests {
                 )],
             ),
         ]);
-        let userdata = Some(found("Ud", "ud", UnreadableKind::Userdata));
+        let userdata: Option<Unreadable> = None;
         for s in ["ByEmbed", "ByPointer", "ByElements"] {
             assert_eq!(
                 first_unreadable(&view, s, ReadRoot::Fill(SCRATCH), Reach::Root),

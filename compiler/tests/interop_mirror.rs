@@ -235,6 +235,40 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subFixedReadLays",
             "subFixedTwoLays",
             "subFixedLayPointer",
+            "sub325Replace",
+            "sub325First",
+            "sub325Indirect",
+            "sub325Texts",
+            "sub325Write",
+            "sub325Empty",
+            "sub325Null",
+            "sub325Pointer",
+            "sub325Bytes",
+            "sub325Userdata",
+            "sub325Callback",
+            "sub325BadPair",
+            "sub325Received",
+            "sub325ReceivedNull",
+            "sub325Read",
+            "sub325Unchanged",
+            "sub325Descriptor",
+            "sub325ReceivedScratch",
+            "sub325ReceivedScratchNull",
+            "sub325Embedded",
+            "sub325Graph",
+            "sub325Nested",
+            "sub325NestedReceive",
+            "sub325WatchEight",
+            "sub325Recursive",
+            "sub325WatchNested",
+            "sub325Shrink",
+            "sub325ShrinkMutable",
+            "sub325ShrinkScratch",
+            "sub325ShrinkCallbacks",
+            "sub325ShrinkGroups",
+            "sub325ShrinkReentrant",
+            "sub325ShrinkIndirect",
+            "sub325ShrinkReentrantGroups",
         ]
     );
 
@@ -653,13 +687,8 @@ fn handwritten_fixed_array_without_const_record_is_a_read_position() {
         SourceFile::ambient("array.d.ts", declaration),
         program.clone(),
     ])
-    .expect_err("mutable bytes expose a userdata read with no lowering");
-    assert!(
-        mutable
-            .iter()
-            .any(|d| d.message.contains("arrayRead") && d.message.contains("userdata")),
-        "{mutable:?}"
-    );
+    .expect("compiler.md §325 compares changed userdata slots");
+    assert_eq!(mutable.foreign_fns[0].params[0].foreign_provenance, None);
     let constant = format!("// @subscript-c-parameter function=\"arrayRead\" parameter=\"values\" const=true\n{declaration}");
     let module = check_program(&[SourceFile::ambient("array.d.ts", constant), program])
         .expect("const input does not read C writes");

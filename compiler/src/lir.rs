@@ -209,6 +209,13 @@ pub struct Global {
 /// Boundary type information attached to the exact occurrence that uses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ForeignTypeProvenance {
+    /// The adjacent halves of a struct pair (compiler.md §325 rule 8).
+    PairOrder {
+        /// True when the pointer precedes its count.
+        pointer_first: bool,
+        /// True when C cannot write the elements.
+        element_const: bool,
+    },
     /// Trailing by-value runtime host completion endpoint.
     CompletionEndpoint,
     /// A by-value descriptor aggregate.

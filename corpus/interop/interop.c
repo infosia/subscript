@@ -1827,3 +1827,103 @@ void subFixedLayPointer(SubDescReadLay first[2], SubDescReadLay *second) {
     first[0].tag += 1;
     second->tag += 10;
 }
+
+static int32_t sub325_values[] = {11, 22, 33};
+static Sub325Leaf sub325_leaf = {7};
+void sub325Replace(Sub325List *out) { out->itemsCount = 3; out->items = sub325_values; }
+void sub325First(Sub325First *out) { out->itemsCount = 3; out->items = sub325_values; }
+void sub325Indirect(Sub325Holder *out) { sub325Replace(out->list); }
+void sub325Texts(Sub325Texts *out) {
+    static const Sub325Text values[] = {{{"first", 5}, 41}, {{"second", 6}, 42}};
+    out->itemsCount = 2; out->items = values;
+}
+void sub325Write(Sub325List *out) {
+    int32_t *items = out->items;
+    for (size_t i = 0; i < out->itemsCount; i++) items[i] += 10;
+}
+void sub325Empty(Sub325List *out) { out->itemsCount = 0; out->items = NULL; }
+void sub325Null(Sub325Scratch *out) { out->leaf = NULL; }
+void sub325Pointer(Sub325Scratch *out) { out->leaf = &sub325_leaf; }
+void sub325Bytes(Sub325Link *out) { out->leaf = &sub325_leaf; }
+void sub325Userdata(SubCallbackInfo *out) { out->userdata = &sub325_leaf; }
+static void sub325_log(SubStringView message, void *first, void *second) {
+    (void)message; (void)first; (void)second;
+}
+void sub325Callback(SubCallbackInfo *out) { out->callback = sub325_log; }
+void sub325BadPair(Sub325List *out) { out->itemsCount = 1; out->items = NULL; }
+void sub325Received(Sub325Links *out) {
+    static const Sub325Link values[] = {{1, &sub325_leaf}};
+    out->itemsCount = 1; out->items = values;
+}
+void sub325ReceivedNull(Sub325Links *out) {
+    static const Sub325Link values[] = {{1, NULL}};
+    out->itemsCount = 1; out->items = values;
+}
+int32_t sub325Read(const Sub325List *out) { return (int32_t)out->itemsCount; }
+void sub325Unchanged(Sub325List *out) { (void)out; }
+
+void sub325Descriptor(Sub325Descriptor *out) { out->count = 3; out->items = sub325_values; }
+void sub325ReceivedScratch(Sub325TextLinks *out) {
+    static const Sub325TextLink values[] = {{{"received", 8}, &sub325_leaf}};
+    out->itemsCount = 1; out->items = values;
+}
+void sub325ReceivedScratchNull(Sub325TextLinks *out) {
+    static const Sub325TextLink values[] = {{{"received", 8}, NULL}};
+    out->itemsCount = 1; out->items = values;
+}
+void sub325Embedded(Sub325Embedded *out) { out->inner.leaf = &sub325_leaf; }
+void sub325Graph(const Sub325Graph *out) { if (out && out->link) out->link->leaf = &sub325_leaf; }
+
+void sub325Nested(const Sub325Nested *out) { out->groups[0].items[0].leaf = &sub325_leaf; }
+
+void sub325NestedReceive(Sub325Nested *out) {
+    static Sub325Link items[] = {{5, NULL}, {6, NULL}};
+    static const Sub325MutableLinks groups[] = {{2, items}};
+    out->groupsCount = 1; out->groups = groups;
+}
+
+#include "../../codegen/tests/native-fixture/external-userdata.h"
+void sub325ExternalKeep(Sub325ExternalUd *out) { out->inner.k += 1; }
+void sub325ExternalReplace(Sub325ExternalUd *out) {
+    static int marker;
+    out->inner.ud = &marker;
+}
+
+void sub325WatchEight(Sub325MutableLinks *out, int32_t replace) {
+    static const Sub325Leaf leaf = { 19 };
+    if (replace && out->itemsCount > 6) out->items[6].leaf = &leaf;
+}
+void sub325Recursive(Sub325Recursive *out, int32_t replace) {
+    static int marker;
+    if (replace) out->userdata = &marker;
+}
+
+void sub325WatchNested(const Sub325WatchGroups *out, int32_t replace) {
+    static const Sub325Leaf leaf = { 23 };
+    if (replace && out->groupsCount > 1 && out->groups[1].itemsCount > 6)
+        out->groups[1].items[6].leaf = &leaf;
+}
+
+void sub325Shrink(Sub325Links *out) { if (out->itemsCount) out->itemsCount--; }
+void sub325ShrinkMutable(Sub325MutableLinks *out, int32_t mode) {
+    if (mode == 1) { out->itemsCount++; return; }
+    if (out->itemsCount) {
+        if (mode == 2) out->items[0].leaf = &sub325_leaf;
+        if (mode == 3) out->items[0].leaf = NULL;
+        out->itemsCount--;
+    }
+}
+void sub325ShrinkScratch(Sub325TextLinks *out) { if (out->itemsCount) out->itemsCount--; }
+void sub325ShrinkCallbacks(Sub325Callbacks *out) { if (out->itemsCount) out->itemsCount--; }
+void sub325ShrinkGroups(Sub325WatchGroups *out) { if (out->groupsCount) out->groupsCount--; }
+
+void sub325ShrinkReentrant(Sub325Reentrant *out) {
+    out->info.callback((SubStringView){"shrink", 6}, out->info.userdata, out->info.userparam);
+    if (out->itemsCount) out->itemsCount--;
+}
+void sub325ShrinkIndirect(Sub325ReentrantHolder *holder) { sub325ShrinkReentrant(holder->out); }
+
+void sub325ShrinkReentrantGroups(Sub325ReentrantGroups *out) {
+    out->info.callback((SubStringView){"shrink", 6}, out->info.userdata, out->info.userparam);
+    if (out->groupsCount) out->groupsCount--;
+}

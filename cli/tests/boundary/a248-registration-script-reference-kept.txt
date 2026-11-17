@@ -1,4 +1,5 @@
 corpus/accept/a248-registration-script-reference-kept.ts:16:29 subDeviceCreate chain: script memory
+corpus/accept/a248-registration-script-reference-kept.ts:16:29 subDeviceCreate chain: pointer compares [recursive runtime walk, root node 0, node 0 SubChainHeader.next compare, nullable=true, node 0 SubChainHeader.next pointer to node 0]
 corpus/accept/a248-registration-script-reference-kept.ts:16:29 subDeviceCreate result: value
 corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart device: value
 corpus/accept/a248-registration-script-reference-kept.ts:31:3 subRequestStart payload: value

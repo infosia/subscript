@@ -10,6 +10,7 @@ use crate::diag::{Diagnostic, Pos};
 use crate::provenance;
 use crate::SourceFile;
 
+mod ambient;
 pub(crate) mod local_function;
 pub(crate) mod parameter_property;
 pub(crate) mod private_name;
@@ -189,7 +190,9 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         let syntax = Syntax::Typescript(TsSyntax {
             tsx: false,
             decorators: true,
-            dts: source.dts,
+            // Ambient classification belongs to ParsedFile. Explicit `declare`
+            // syntax supplies parser context without declaration-only recovery assertions.
+            dts: false,
             no_early_errors: false,
             disallow_ambiguous_jsx_like: false,
         });
@@ -204,6 +207,24 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         let mut errors = parser.take_errors();
         match parsed {
             Ok(mut module) => {
+                if source.dts {
+                    // An implicit ambient const needs no initializer. The checker
+                    // retains the mirror variable contract (compiler.md §136).
+                    errors.retain(|error| {
+                        !matches!(error.kind(),
+                        swc_ecma_parser::error::SyntaxError::ConstDeclarationsRequireInitialization)
+                    });
+                    if errors.is_empty() {
+                        if let Some((span, kind)) = ambient::first_error(&module) {
+                            diags.push(diagnostic(
+                                RejectionSite::ParserSyntaxError,
+                                format!("parse error: {}", kind.msg()),
+                                lookup(&source_map, &source.name, span),
+                            ));
+                            continue;
+                        }
+                    }
+                }
                 if !source.dts {
                     parameter_property::lower_module(&mut module);
                     private_name::lower_module(&mut module);
@@ -287,6 +308,43 @@ mod tests {
             dts: false,
             entry: false,
         }
+    }
+
+    #[test]
+    fn ambient_sources_reject_implementations_and_default_arguments() {
+        for text in [
+            "function host(): void {}",
+            "class Point { constructor() {} }",
+            "class Point { method(): void {} }",
+            "function host(value: i32 = 1): void;",
+            "class Point { constructor(value: i32 = 1); }",
+            "namespace Host { function run(): void {} }",
+        ] {
+            let errors = match parse_program(&[SourceFile::ambient("bad.d.ts", text)]) {
+                Err(errors) => errors,
+                Ok(_) => panic!("ambient implementation must fail: {text}"),
+            };
+            assert_eq!(errors[0].code, RuleCode::S100);
+            assert!(errors[0].message.contains("implementation"), "{errors:?}");
+        }
+        // The checker, rather than the parser, owns the mirror variable restriction.
+        assert!(parse_program(&[SourceFile::ambient("const.d.ts", "const value: i32;")]).is_ok());
+    }
+
+    #[test]
+    fn malformed_ambient_assignment_returns_a_syntax_diagnostic() {
+        let sources = [SourceFile::ambient(
+            "bad.d.ts",
+            "declar= function subWireModeRecordEchoMode(value: object | null): i32;",
+        )];
+        let errors = match parse_program(&sources) {
+            Err(errors) => errors,
+            Ok(_) => panic!("malformed declaration must fail"),
+        };
+        assert_eq!(errors[0].code, RuleCode::S100);
+        let parsed = parse_program(&[SourceFile::ambient("good.d.ts",
+            "declare class Point { x: i32; constructor(x: i32); } declare function usePoint(p: Point | null): void;")]).unwrap_or_else(|errors| panic!("{errors:?}"));
+        assert!(parsed.files[0].dts);
     }
 
     #[test]

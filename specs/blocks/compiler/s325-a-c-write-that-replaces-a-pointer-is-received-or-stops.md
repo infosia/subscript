@@ -106,8 +106,9 @@ memory (§187.3 item 8, measured `3 7`).
 2. A runtime error test for each of: a replaced pointer member, a
    replaced userdata slot, a replaced callback field, a pointer member
    of a struct passed as script memory, a null pair with a count
-   above 0, and a received element with a non-null pointer member. The development tier and the ship tier give the same kind,
-   message, and position.
+   above 0, and a received element with a non-null pointer member.
+   The development tier and the ship tier give the same kind, message,
+   and position.
 3. A `const` pointer target that C does not write gets no compare: the
    emitted C of a read-only call has no compare code for it.
 4. The `bound-call` benchmark, and a call with one out-struct that C
@@ -123,3 +124,83 @@ memory (§187.3 item 8, measured `3 7`).
 - §187 rules 4, 7, 8, and 11: a replaced pair is received; a replaced
   pointer, userdata slot, or callback field stops. §187.3 items 1, 4,
   and 8 close.
+
+### 325.4 Phase Review
+
+Form. The crossing plan names a pair read-back (`WriteBack::Pair`,
+`ReceivePlan`) and the compares of rule 4 (`WriteBack::Pointer`, and
+`WatchPlan` for script memory). The mirror records the C order of each
+pair in a struct (`order=` on `@subscript-c-member`). The checker
+carries it through HIR and LIR. Both tiers emit a finite watch inline:
+one load before the call and one compare after it for each slot. A pair
+whose elements hold watched slots takes one buffer that the Context
+reuses, then compares in a loop. A recursive plan (an embedded header
+that reaches its own type) keeps a runtime walk. The trap kind is 37,
+`ForeignPointerReplaced`: `<function>.<path>: C replaced a pointer that
+the script cannot receive`, or `C returned an invalid pointer/count
+pair`.
+
+Measured with a475 and the interop fixtures, development tier and ship
+tier the same:
+
+| Form | Pin | After |
+|---|---|---|
+| Count-first pair replaced, script array non-empty (length, first) | `2 1` | `3 11` |
+| The same, script array empty (length) | `0` | `3` |
+| The same pair behind a pointer member (length) | `2` | `3` |
+| Pointer-first pair replaced | rejected by `bind` | `3 11` |
+| Pair of structs with a string view replaced | length `0` | `first second 41 42` |
+| Pair kept, C writes the elements | `11 12 13` | `11 12 13` |
+| Pair set to null with count 0 (length) | `2` | `0` |
+| Pointer member set to null (`=== null`) | `false` | `true` |
+
+Each error of acceptance 2, a count above the earlier count with the
+same pointer, and an element pointer replaced at index 6 of eight give
+the same kind, message, and position in both tiers.
+
+Cost, release, ns per call, pin then after (development tier, ship
+tier): `World { Child *child; }` with a watched pointer, C writes
+nothing: 11.12 to 10.53, 9.55 to 9.88. One unchanged out-struct: 15.74
+to 14.17, 12.82 to 11.45. A pair of eight structs that each hold a
+pointer member: 15.17 to 28.43, 12.70 to 18.97. A receive of 1,000
+struct elements: 21.5 µs and 18.8 µs (the pin does not receive). The
+first form of the watch (a runtime graph walk per call) measured 56.8
+and 59.1 ns for `World`; the inline form replaced it.
+
+The first full gate failed on 11 tests in targets that the coding agent
+did not run (tests of the removed §187 userdata rejection, the old
+"lost" result, the committed mirrors, a tutorial excerpt, and a parser
+assertion that a mutated mirror reached). Each now tests the §325
+result; the parser case is avoided in the checker. The reject entry
+r413 (a userdata slot that C can write) is deleted: rule 4 compares the
+slot now, and a trap test covers its embedded external-mirror shape.
+
+Two fresh reviews. The first found two MAJOR findings, both realistic:
+`bind` changed the by-value parameter of a two-field descriptor from
+`T[]` to the struct, and the watch did heap work on each call. Both are
+fixed. It also found seven MINOR findings, fixed: a check that could
+not fail, a third C layout function with a silent fallback, one
+predicate written five times, watch plans missing from the `boundary`
+output, the coverage of r413, and the order record parse. The second
+review found no CRITICAL or MAJOR finding. Its three MINOR findings are
+fixed: a "capacity in, count out" call stopped with a false error (rule
+2 now compares a kept element with its earlier value), the receive
+built path text on the success path, and a descriptor in a fixed array
+field reached an internal error.
+
+### 325.5 Open
+
+1. A script callback that runs during the call and stores a different
+   reference into a watched slot of script memory gives the rule 4
+   error. The compare cannot tell a script write from a C write. Rare.
+2. A recursive watch plan (an embedded header that reaches its own
+   type) keeps a runtime walk with a visited set. Its cost is not
+   measured.
+3. Contrived: a count above the largest `i32` has only a runtime unit
+   test, not a test in both tiers.
+4. The development tier pays 13 ns for the eight-element pair, and the
+   ship tier pays 6 ns. Earlier runs gave 27 to 35 ns. The cause of
+   the spread is not known.
+5. The `bound-call` benchmark exits 2 on its decomposition check at
+   the pin and after, so it gives no valid comparison here.
+

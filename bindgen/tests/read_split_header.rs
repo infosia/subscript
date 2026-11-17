@@ -89,6 +89,11 @@ fn an_external_struct_is_read_through_its_included_definition() {
     for (external, bad, twin_external, good, message) in cases {
         let twin = b_h(&directory, twin_external, good);
         generate_for_header(&twin, "b.h").unwrap_or_else(|error| panic!("{good}: {}", error.0));
+        if message.contains("userdata field") {
+            generate_for_header(&b_h(&directory, external, bad), "b.h")
+                .expect("compiler.md §325 compares changed userdata slots");
+            continue;
+        }
         let error = generate_for_header(&b_h(&directory, external, bad), "b.h").expect_err(bad);
         assert_eq!(error.0, format!("{message} {TAIL}"), "{bad}");
     }
@@ -165,7 +170,8 @@ fn the_defining_mirror_records_member_const() {
         [
             "// @subscript-c-member aggregate=\"Host\" member=\"owned\" const=false",
             "// @subscript-c-member aggregate=\"Host\" member=\"shared\" const=true",
-            "// @subscript-c-member aggregate=\"Pairs\" member=\"objs\" const=false",
+            "// @subscript-c-member aggregate=\"Pairs\" member=\"objs\" const=false order=count-first",
+            "// @subscript-c-member aggregate=\"Pairs\" member=\"values\" const=true order=count-first",
         ]
     );
 }

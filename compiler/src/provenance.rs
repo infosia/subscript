@@ -50,6 +50,8 @@ pub(crate) struct Mirror {
     /// each pair of struct elements (`specs/blocks/compiler.md` §187
     /// rule 3). A member with no record counts as mutable.
     pub members: HashMap<(String, String), Record<bool>>,
+    /// `(aggregate, member)` → pointer-first order of an adjacent C pair (§325 rule 8).
+    pub pair_orders: HashMap<(String, String), bool>,
     /// `(function, parameter)` → `const` of each struct-pointer parameter
     /// (§187 rule 3). A pointer parameter with no record counts as
     /// non-`const`.
@@ -352,7 +354,13 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                 aggregate,
                 member,
                 is_const,
+                pointer_first,
             } => {
+                if let Some(order) = pointer_first {
+                    mirror
+                        .pair_orders
+                        .insert((aggregate.clone(), member.clone()), order);
+                }
                 if aggregate.is_empty() || member.is_empty() {
                     return Err(malformed(
                         RejectionSite::ProvenanceEmptyMember,
@@ -479,6 +487,7 @@ enum Parsed {
         aggregate: String,
         member: String,
         is_const: bool,
+        pointer_first: Option<bool>,
     },
     PointerParameter {
         function: String,
@@ -545,6 +554,7 @@ fn parse_line(body: &str) -> Result<Parsed, RejectionFailure> {
             aggregate: cursor.string("aggregate")?,
             member: cursor.string("member")?,
             is_const: cursor.boolean("const")?,
+            pointer_first: cursor.pair_order()?,
         },
         "parameter" => Parsed::PointerParameter {
             function: cursor.string("function")?,
@@ -624,6 +634,24 @@ impl<'a> Cursor<'a> {
                 format!("expected `{expected}=`"),
             ))
         }
+    }
+
+    fn pair_order(&mut self) -> Result<Option<bool>, RejectionFailure> {
+        if self.input[self.offset..].trim().is_empty() {
+            return Ok(None);
+        }
+        self.key("order")?;
+        let remaining = &self.input[self.offset..];
+        for (word, first) in [("count-first", false), ("pointer-first", true)] {
+            if remaining.split_whitespace().next() == Some(word) {
+                self.offset += word.len();
+                return Ok(Some(first));
+            }
+        }
+        Err(RejectionFailure::new(
+            RejectionSite::ProvenanceUnexpectedKey,
+            "pair order must be count-first or pointer-first",
+        ))
     }
 
     fn string(&mut self, key: &str) -> Result<String, RejectionFailure> {
@@ -757,3 +785,19 @@ impl<'a> Cursor<'a> {
         }
     }
 }
+
+// Both IRs keep the same C write permission (compiler.md §325 rule 7).
+macro_rules! write_permission {
+    ($($ty:path),+ $(,)?) => {$(
+        impl $ty {
+            /// True when C cannot write the pointer target or pair elements.
+            pub(crate) fn cannot_write(&self) -> bool {
+                matches!(self, Self::ConstPointer | Self::PairOrder { element_const: true, .. })
+            }
+        }
+    )+};
+}
+write_permission!(
+    crate::hir::ForeignTypeProvenance,
+    crate::lir::ForeignTypeProvenance
+);

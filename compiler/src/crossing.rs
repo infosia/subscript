@@ -18,7 +18,12 @@
 //!
 //! The plan reads the lowered LIR: the class view that both tiers read.
 
+mod paths;
+mod receive;
 mod render;
+mod watch;
+pub use receive::{ReceiveMember, ReceivePlan};
+pub use watch::{WatchMember, WatchNode, WatchPlan};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -82,6 +87,10 @@ pub struct FixedArrayPlan {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct StructPlan {
+    /// The member path from the foreign parameter.
+    pub path: String,
+    /// Checks of pointer targets reached through a by-value or embedded bytes struct.
+    pub watch: Option<WatchPlan>,
     /// The struct.
     pub class: ClassId,
     /// The pass of the struct.
@@ -143,6 +152,12 @@ pub struct CallbackPlan {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct PairPlan {
+    /// The member path from the foreign parameter.
+    pub path: String,
+    /// Checks of script-memory elements and their pointer targets.
+    pub watch: Option<WatchPlan>,
+    /// True for a pointer-first struct member (compiler.md §325 rule 8).
+    pub pointer_first: bool,
     /// `None` when the call passes the script array: scalar elements, or
     /// structs that copy their bytes.
     pub elements: Option<ElementsPlan>,
@@ -164,6 +179,10 @@ pub struct ElementsPlan {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct PointerPlan {
+    /// The member path from the foreign parameter.
+    pub path: String,
+    /// Checks of reachable script-memory pointer slots (compiler.md §325 rule 5).
+    pub watch: Option<WatchPlan>,
     /// The target struct.
     pub class: ClassId,
     /// The pass of the target.
@@ -180,6 +199,8 @@ pub struct PointerPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct WriteBackPlan {
+    /// The member path from the foreign parameter.
+    pub path: String,
     /// The struct.
     pub class: ClassId,
     /// Each member that the copy-back writes, in field order.
@@ -200,6 +221,18 @@ pub struct WriteBackMember {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WriteBack {
+    /// Receive a replaced pair, with the read of each new element.
+    Pair {
+        /// True when the pointer precedes its count.
+        pointer_first: bool,
+        /// The read of each newly received element.
+        element: ReceivePlan,
+    },
+    /// Compare a pointer; null writes back only to a nullable member.
+    Pointer {
+        /// True when the script member permits null.
+        nullable: bool,
+    },
     /// Copy the C bytes into the script member.
     Bytes,
     /// Copy a fixed array of scalars as bytes.
@@ -338,11 +371,14 @@ pub fn call_plan(module: &l::Module, callee: ForeignFunctionId) -> Result<CallPl
         module,
         view: Classes(module),
     };
-    let parameters = declaration
+    let mut parameters = declaration
         .parameters
         .iter()
         .map(|parameter| planner.parameter(parameter))
         .collect::<Result<Vec<_>, _>>()?;
+    for (parameter, plan) in declaration.parameters.iter().zip(&mut parameters) {
+        paths::parameter(module, plan, &parameter.source_name);
+    }
     let scratch_scope = declaration
         .parameters
         .iter()
@@ -451,7 +487,7 @@ impl Planner<'_> {
                     subscript_boundary::fixed_array_parameter(&self.view, class, *length, writable);
                 let element = kind
                     .element
-                    .map(|(class, pass)| self.pointer(class, pass, &mut Vec::new()))
+                    .map(|(class, pass)| self.pointer(class, pass, writable, &mut Vec::new()))
                     .transpose()?;
                 ParameterPlan::FixedArray(FixedArrayPlan { kind, element })
             }
@@ -483,7 +519,7 @@ impl Planner<'_> {
                     let writable =
                         parameter.foreign_provenance != Some(ForeignTypeProvenance::ConstPointer);
                     let pass = parameter_pass(&self.view, class, writable);
-                    ParameterPlan::Pointer(self.pointer(class, pass, &mut Vec::new())?)
+                    ParameterPlan::Pointer(self.pointer(class, pass, writable, &mut Vec::new())?)
                 }
                 None => ParameterPlan::Value,
             },
@@ -518,17 +554,27 @@ impl Planner<'_> {
             }
             _ => None,
         };
-        Ok(PairPlan { elements })
+        Ok(PairPlan {
+            path: String::new(),
+            watch: match element {
+                Type::Class(class) if self.is_value(*class) => self.watch(*class, writable)?,
+                _ => None,
+            },
+            elements,
+            pointer_first: false,
+        })
     }
 
     fn pointer(
         &self,
         class: ClassId,
         pass: PointerPass,
+        writable: bool,
         active: &mut Vec<ClassId>,
     ) -> Result<PointerPlan, String> {
         let (target, write_back) = match pass {
-            PointerPass::ScriptMemory | PointerPass::Cycle => (None, None),
+            PointerPass::ScriptMemory => (None, None),
+            PointerPass::Cycle => (None, None),
             PointerPass::ScratchReadOnly => (
                 Some(self.structure(class, StructPass::Scratch, active)?),
                 None,
@@ -539,6 +585,12 @@ impl Planner<'_> {
             ),
         };
         Ok(PointerPlan {
+            path: self.class(class)?.source_name.clone(),
+            watch: if pass == PointerPass::ScriptMemory {
+                self.watch(class, writable)?
+            } else {
+                None
+            },
             class,
             pass,
             target,
@@ -562,6 +614,12 @@ impl Planner<'_> {
         };
         if pass != StructPass::Scratch {
             return Ok(StructPlan {
+                path: definition.source_name.clone(),
+                watch: if pass == StructPass::Bytes {
+                    self.watch(class, false)?
+                } else {
+                    None
+                },
                 class,
                 pass,
                 causes: Vec::new(),
@@ -581,6 +639,8 @@ impl Planner<'_> {
         }
         active.pop();
         Ok(StructPlan {
+            path: definition.source_name.clone(),
+            watch: None,
             class,
             pass,
             causes: scratch_members(&self.view, class),
@@ -598,7 +658,10 @@ impl Planner<'_> {
     ) -> Result<(MemberCrossing, usize), String> {
         let field = &definition.fields[index];
         // §187 rule 7: the call does not write a `const` target back.
-        let writable = field.foreign_provenance != Some(ForeignTypeProvenance::ConstPointer);
+        let writable = !field
+            .foreign_provenance
+            .as_ref()
+            .is_some_and(|value| value.cannot_write());
         Ok(match &field.ty {
             Type::Func(_) => {
                 if index + 1 >= definition.fields.len() {
@@ -623,7 +686,17 @@ impl Planner<'_> {
                 )
             }
             Type::Array(element) => (
-                MemberCrossing::Pair(self.pair(element, writable, active)?),
+                MemberCrossing::Pair({
+                    let mut pair = self.pair(element, writable, active)?;
+                    pair.pointer_first = matches!(
+                        field.foreign_provenance,
+                        Some(ForeignTypeProvenance::PairOrder {
+                            pointer_first: true,
+                            ..
+                        })
+                    );
+                    pair
+                }),
                 1,
             ),
             Type::Str => (MemberCrossing::StringView, 1),
@@ -640,7 +713,7 @@ impl Planner<'_> {
                     .ok_or_else(|| internal("boundary pointer class is missing"))?;
                 let pass = member_pass(&self.view, StructPass::Scratch, nested, writable);
                 (
-                    MemberCrossing::Pointer(self.pointer(nested, pass, active)?),
+                    MemberCrossing::Pointer(self.pointer(nested, pass, writable, active)?),
                     1,
                 )
             }
@@ -667,13 +740,41 @@ impl Planner<'_> {
         for (index, field) in definition.fields.iter().enumerate() {
             let write = match copy_back(&field_shape(self.module, &field.ty)) {
                 CopyBack::Skip => continue,
+                CopyBack::Pair => {
+                    let Type::Array(element) = &field.ty else {
+                        return Err(internal("a pair has no element type"));
+                    };
+                    WriteBack::Pair {
+                        pointer_first: matches!(
+                            field.foreign_provenance,
+                            Some(ForeignTypeProvenance::PairOrder {
+                                pointer_first: true,
+                                ..
+                            })
+                        ),
+                        element: self.receive(element)?,
+                    }
+                }
+                CopyBack::Pointer => WriteBack::Pointer {
+                    nullable: matches!(field.ty, Type::Nullable(..)),
+                },
                 CopyBack::Bytes if matches!(field.ty, Type::FixedArray(..)) => {
                     WriteBack::FixedBytes
                 }
                 CopyBack::Bytes => WriteBack::Bytes,
                 CopyBack::StringView => WriteBack::StringView,
                 CopyBack::Embedded(nested) => match struct_pass(&self.view, nested) {
-                    StructPass::Bytes => WriteBack::EmbeddedBytes(nested),
+                    StructPass::Bytes => {
+                        if self
+                            .pointer_checks(nested, &mut Vec::new())?
+                            .members
+                            .is_empty()
+                        {
+                            WriteBack::EmbeddedBytes(nested)
+                        } else {
+                            WriteBack::Embedded(self.write_back(nested, active)?)
+                        }
+                    }
                     StructPass::Scratch if !active.contains(&nested) => {
                         WriteBack::Embedded(self.write_back(nested, active)?)
                     }
@@ -686,7 +787,11 @@ impl Planner<'_> {
             });
         }
         active.pop();
-        Ok(WriteBackPlan { class, members })
+        Ok(WriteBackPlan {
+            class,
+            members,
+            path: definition.source_name.clone(),
+        })
     }
 
     /// True when a call that passes an argument of type `ty` can allocate a
@@ -812,7 +917,10 @@ impl ReadView for LirRead<'_, '_> {
                     ReadMember::new(
                         field.source_name.clone(),
                         shape,
-                        field.foreign_provenance != Some(ForeignTypeProvenance::ConstPointer),
+                        !field
+                            .foreign_provenance
+                            .as_ref()
+                            .is_some_and(|value| value.cannot_write()),
                     )
                 })
                 .collect(),

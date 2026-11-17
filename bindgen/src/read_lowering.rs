@@ -53,7 +53,10 @@ pub(crate) fn boundary_passes(parsed: &Parsed) -> Result<Vec<StructPasses>, Pars
         let Decl::Struct { name, fields } = decl else {
             continue;
         };
-        if !matches!(registry.get(name), Some(Kind::Boundary)) {
+        if !matches!(
+            registry.get(name),
+            Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+        ) {
             continue;
         }
         let pass = struct_pass(&view, name.as_str());
@@ -118,7 +121,7 @@ fn first_unreadable_in(
 fn is_struct(registry: &HashMap<String, Kind>, base: &str) -> bool {
     matches!(
         registry.get(base),
-        Some(Kind::Boundary | Kind::ArrayPair(_) | Kind::StringView)
+        Some(Kind::Boundary | Kind::ArrayPairStruct(_) | Kind::ArrayPair(_) | Kind::StringView)
     )
 }
 
@@ -332,7 +335,10 @@ fn validate_parameter(
     if !is_struct(registry, &param.base) {
         return Ok(());
     }
-    let boundary = matches!(registry.get(&param.base), Some(Kind::Boundary));
+    let boundary = matches!(
+        registry.get(&param.base),
+        Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+    );
     // A non-`const` pointer is a fill: C writes the whole struct, at the
     // pass that the call gives it. A `const` pointer, a by-value struct,
     // and a by-value descriptor aggregate are inputs: C writes only
@@ -372,8 +378,11 @@ fn validate_parameter(
     } else {
         ReadRoot::Input(pass)
     };
-    let descriptor =
-        !param.pointer && matches!(registry.get(&param.base), Some(Kind::ArrayPair(_)));
+    let descriptor = !param.pointer
+        && matches!(
+            registry.get(&param.base),
+            Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_))
+        );
     match first_unreadable_in(view, registry, name, root, Reach::Root) {
         // §187 rule 11: the pair of a by-value descriptor is the
         // parameter, so the diagnostic names the parameter, as the

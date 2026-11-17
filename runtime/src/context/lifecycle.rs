@@ -53,6 +53,7 @@ impl Context {
             live_bytes_counter: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
+            boundary_watch: Default::default(),
             boundary_borrows: Vec::new(),
             dead_allocations: AddressSet::default(),
             retained_allocations: VecDeque::new(),
@@ -1053,6 +1054,7 @@ impl Context {
     pub fn boundary_scope_mark(&mut self) -> usize {
         let mark = self.boundary_borrows.len();
         self.boundary_borrows.push(BoundaryBorrow::Scope {
+            watch: self.boundary_watch.mark(),
             scratch: self.boundary_scratch.len(),
         });
         mark
@@ -1069,7 +1071,10 @@ impl Context {
                     // SAFETY: this record roots the array until this release.
                     unsafe { (*(value as *mut ArrayHeader)).native_borrows = saved };
                 }
-                Some(BoundaryBorrow::Scope { scratch }) => self.boundary_scratch_release(scratch),
+                Some(BoundaryBorrow::Scope { scratch, watch }) => {
+                    self.boundary_scratch_release(scratch);
+                    self.boundary_watch.release(watch);
+                }
                 Some(BoundaryBorrow::Value {
                     array_count: None, ..
                 })

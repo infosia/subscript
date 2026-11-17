@@ -144,8 +144,10 @@ impl BoundaryClasses for crate::lir::Module {
                     .map(|field| {
                         (
                             field.ty.clone(),
-                            field.foreign_provenance
-                                == Some(crate::lir::ForeignTypeProvenance::ConstPointer),
+                            field
+                                .foreign_provenance
+                                .as_ref()
+                                .is_some_and(|value| value.cannot_write()),
                         )
                     })
                     .collect(),
@@ -173,8 +175,10 @@ impl BoundaryClasses for crate::hir::Module {
                     .map(|field| {
                         (
                             field.ty.clone(),
-                            field.foreign_provenance
-                                == Some(crate::hir::ForeignTypeProvenance::ConstPointer),
+                            field
+                                .foreign_provenance
+                                .as_ref()
+                                .is_some_and(|value| value.cannot_write()),
                         )
                     })
                     .collect(),

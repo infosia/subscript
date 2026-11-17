@@ -537,6 +537,10 @@ fn builds_scratch_from<V: StructView>(
 /// rule 6). Both tiers write back the members that this function names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyBack<S> {
+    /// Receive a replaced pair (compiler.md §325 rule 1).
+    Pair,
+    /// Compare a pointer with its input value (compiler.md §325 rule 4).
+    Pointer,
     /// Copy the C bytes into the script member.
     Bytes,
     /// Build a new script string from the C view (§28.2).
@@ -548,25 +552,20 @@ pub enum CopyBack<S> {
     Skip,
 }
 
-/// Decides what the copy-back of a scratch struct does with a member of
-/// shape `field`. A pair keeps the script array (§187 rule 4); a callback
-/// keeps the script closure; a pointer member keeps the script link, and
-/// the call writes back the scratch copy of its target separately (§187
-/// rule 7). A userdata slot keeps the script value: C can write any
-/// address there, and no registration exists to validate it against.
+/// Decides the read-back of a changed C member (compiler.md §325 rules 1 and 4).
+/// A pair receives a new array. A pointer compares against its input value.
+/// The call writes a pointer target back separately (§187 rule 7).
 #[must_use]
 pub fn copy_back<S: Copy>(field: &FieldShape<S>) -> CopyBack<S> {
     match *field {
         FieldShape::Bytes => CopyBack::Bytes,
         FieldShape::StringView => CopyBack::StringView,
         FieldShape::Embedded(nested) => CopyBack::Embedded(nested),
-        FieldShape::Userdata
-        | FieldShape::Pair { .. }
-        | FieldShape::ValidatedPair
-        | FieldShape::Callback
-        | FieldShape::DescriptorAggregate
-        | FieldShape::Pointer { .. }
-        | FieldShape::Unlowered => CopyBack::Skip,
+        FieldShape::Pair { .. } | FieldShape::ValidatedPair => CopyBack::Pair,
+        FieldShape::Userdata | FieldShape::Callback | FieldShape::Pointer { .. } => {
+            CopyBack::Pointer
+        }
+        FieldShape::DescriptorAggregate | FieldShape::Unlowered => CopyBack::Skip,
     }
 }
 
@@ -978,15 +977,15 @@ mod tests {
     }
 
     #[test]
-    fn the_copy_back_writes_bytes_views_and_embedded_structs_only() {
+    fn the_copy_back_names_received_pairs_and_pointer_checks() {
         let cases: [(FieldShape<&str>, CopyBack<&str>); 10] = [
             (FieldShape::Bytes, CopyBack::Bytes),
             (FieldShape::StringView, CopyBack::StringView),
             (FieldShape::Embedded("P"), CopyBack::Embedded("P")),
-            (FieldShape::Userdata, CopyBack::Skip),
-            (FieldShape::Pair { elements: None }, CopyBack::Skip),
-            (FieldShape::ValidatedPair, CopyBack::Skip),
-            (FieldShape::Callback, CopyBack::Skip),
+            (FieldShape::Userdata, CopyBack::Pointer),
+            (FieldShape::Pair { elements: None }, CopyBack::Pair),
+            (FieldShape::ValidatedPair, CopyBack::Pair),
+            (FieldShape::Callback, CopyBack::Pointer),
             (FieldShape::DescriptorAggregate, CopyBack::Skip),
             (
                 FieldShape::Pointer {
@@ -994,7 +993,7 @@ mod tests {
                     header: false,
                     constant: false,
                 },
-                CopyBack::Skip,
+                CopyBack::Pointer,
             ),
             (FieldShape::Unlowered, CopyBack::Skip),
         ];

@@ -36,6 +36,44 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn sub325ShrinkReentrantGroups();
+    fn sub325ShrinkReentrant();
+    fn sub325ShrinkIndirect();
+    fn sub325Shrink();
+    fn sub325ShrinkMutable();
+    fn sub325ShrinkScratch();
+    fn sub325ShrinkCallbacks();
+    fn sub325ShrinkGroups();
+    fn sub325WatchNested();
+    fn sub325WatchEight();
+    fn sub325Recursive();
+    fn sub325ExternalKeep();
+    fn sub325ExternalReplace();
+    fn sub325NestedReceive();
+    fn sub325Nested();
+    fn sub325Descriptor();
+    fn sub325ReceivedScratch();
+    fn sub325ReceivedScratchNull();
+    fn sub325Embedded();
+    fn sub325Graph();
+
+    fn sub325Replace();
+    fn sub325First();
+    fn sub325Indirect();
+    fn sub325Texts();
+    fn sub325Write();
+    fn sub325Empty();
+    fn sub325Null();
+    fn sub325Pointer();
+    fn sub325Bytes();
+    fn sub325Userdata();
+    fn sub325Callback();
+    fn sub325BadPair();
+    fn sub325Received();
+    fn sub325ReceivedNull();
+    fn sub325Read();
+    fn sub325Unchanged();
+
     fn subFixedReadLays();
     fn subFixedTwoLays();
     fn subFixedLayPointer();
@@ -263,6 +301,72 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                (
+                    "sub325ShrinkReentrant".into(),
+                    sub325ShrinkReentrant as *const u8,
+                ),
+                (
+                    "sub325ShrinkIndirect".into(),
+                    sub325ShrinkIndirect as *const u8,
+                ),
+                (
+                    "sub325ShrinkReentrantGroups".into(),
+                    sub325ShrinkReentrantGroups as *const u8,
+                ),
+                ("sub325Shrink".into(), sub325Shrink as *const u8),
+                (
+                    "sub325ShrinkMutable".into(),
+                    sub325ShrinkMutable as *const u8,
+                ),
+                (
+                    "sub325ShrinkScratch".into(),
+                    sub325ShrinkScratch as *const u8,
+                ),
+                (
+                    "sub325ShrinkCallbacks".into(),
+                    sub325ShrinkCallbacks as *const u8,
+                ),
+                ("sub325ShrinkGroups".into(), sub325ShrinkGroups as *const u8),
+                ("sub325WatchNested".into(), sub325WatchNested as *const u8),
+                ("sub325WatchEight".into(), sub325WatchEight as *const u8),
+                ("sub325Recursive".into(), sub325Recursive as *const u8),
+                ("sub325ExternalKeep".into(), sub325ExternalKeep as *const u8),
+                (
+                    "sub325ExternalReplace".into(),
+                    sub325ExternalReplace as *const u8,
+                ),
+                (
+                    "sub325NestedReceive".into(),
+                    sub325NestedReceive as *const u8,
+                ),
+                ("sub325Nested".into(), sub325Nested as *const u8),
+                ("sub325Descriptor".into(), sub325Descriptor as *const u8),
+                (
+                    "sub325ReceivedScratch".into(),
+                    sub325ReceivedScratch as *const u8,
+                ),
+                (
+                    "sub325ReceivedScratchNull".into(),
+                    sub325ReceivedScratchNull as *const u8,
+                ),
+                ("sub325Embedded".into(), sub325Embedded as *const u8),
+                ("sub325Graph".into(), sub325Graph as *const u8),
+                ("sub325Replace".into(), sub325Replace as *const u8),
+                ("sub325First".into(), sub325First as *const u8),
+                ("sub325Indirect".into(), sub325Indirect as *const u8),
+                ("sub325Texts".into(), sub325Texts as *const u8),
+                ("sub325Write".into(), sub325Write as *const u8),
+                ("sub325Empty".into(), sub325Empty as *const u8),
+                ("sub325Null".into(), sub325Null as *const u8),
+                ("sub325Pointer".into(), sub325Pointer as *const u8),
+                ("sub325Bytes".into(), sub325Bytes as *const u8),
+                ("sub325Userdata".into(), sub325Userdata as *const u8),
+                ("sub325Callback".into(), sub325Callback as *const u8),
+                ("sub325BadPair".into(), sub325BadPair as *const u8),
+                ("sub325Received".into(), sub325Received as *const u8),
+                ("sub325ReceivedNull".into(), sub325ReceivedNull as *const u8),
+                ("sub325Read".into(), sub325Read as *const u8),
+                ("sub325Unchanged".into(), sub325Unchanged as *const u8),
                 (
                     "subFixedReadLays".to_string(),
                     subFixedReadLays as *const u8,
@@ -718,7 +822,10 @@ impl Fixture {
             // same-name signature in the committed mirror and header.
             unsafe {
                 NativeLibrary::new(
-                    vec![directory.clone()],
+                    vec![
+                        directory.clone(),
+                        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/native-fixture"),
+                    ],
                     if archive {
                         vec![PathBuf::from(subscript_interop_fixture::CLASS_DIRECTORY)
                             .join("libsubscript_interop_fixture.a")]

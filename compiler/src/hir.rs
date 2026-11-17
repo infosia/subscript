@@ -248,6 +248,13 @@ pub struct ForeignMirror {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ForeignTypeProvenance {
+    /// The adjacent halves of a struct pair (compiler.md §325 rule 8).
+    PairOrder {
+        /// True when the pointer precedes its count.
+        pointer_first: bool,
+        /// True when C cannot write the elements.
+        element_const: bool,
+    },
     /// A by-value C `(pointer, count)` descriptor mapped to a language array.
     Descriptor {
         /// C descriptor struct name used by a compound literal.

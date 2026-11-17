@@ -40,7 +40,12 @@ impl<'a> HeaderStructs<'a> {
     /// first by-value field of another boundary struct and a struct field
     /// or a function parameter points to it, as the mirror classes give it.
     pub(crate) fn new(parsed: &'a Parsed, registry: &'a HashMap<String, Kind>) -> Self {
-        let boundary = |base: &str| matches!(registry.get(base), Some(Kind::Boundary));
+        let boundary = |base: &str| {
+            matches!(
+                registry.get(base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            )
+        };
         let mut first = HashSet::new();
         let mut linked = HashSet::new();
         for decl in &parsed.decls {
@@ -143,7 +148,8 @@ impl<'a> HeaderStructs<'a> {
                 return Some(FieldShape::ValidatedPair);
             }
             return Some(FieldShape::Pair {
-                elements: matches!(kind, Some(Kind::Boundary)).then_some(base),
+                elements: matches!(kind, Some(Kind::Boundary | Kind::ArrayPairStruct(_)))
+                    .then_some(base),
             });
         }
         if field.array_len.is_some() || !field.pointer {
@@ -152,7 +158,7 @@ impl<'a> HeaderStructs<'a> {
                 return Some(FieldShape::Bytes);
             }
             return Some(match kind {
-                Some(Kind::Boundary) => FieldShape::Embedded(base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_)) => FieldShape::Embedded(base),
                 Some(Kind::StringView) => FieldShape::StringView,
                 Some(Kind::ArrayPair(_)) => FieldShape::DescriptorAggregate,
                 Some(Kind::FnPtr) => FieldShape::Callback,
@@ -166,7 +172,7 @@ impl<'a> HeaderStructs<'a> {
             return Some(FieldShape::Userdata);
         }
         Some(match kind {
-            Some(Kind::Boundary) => FieldShape::Pointer {
+            Some(Kind::Boundary | Kind::ArrayPairStruct(_)) => FieldShape::Pointer {
                 target: base,
                 header: self.headers.contains(base),
                 constant: field.is_const,
@@ -195,7 +201,10 @@ impl HeaderStructs<'_> {
         #[cfg(test)]
         crate::graph_test::CALLS.set(crate::graph_test::CALLS.get() + 1);
         if visited.contains(&aggregate)
-            || !matches!(self.registry.get(aggregate), Some(Kind::Boundary))
+            || !matches!(
+                self.registry.get(aggregate),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            )
         {
             return false;
         }
@@ -242,7 +251,10 @@ impl<'a> StructView for HeaderStructs<'a> {
             .iter()
             .filter_map(|decl| match decl {
                 Decl::Struct { name, .. }
-                    if matches!(self.registry.get(name), Some(Kind::Boundary)) =>
+                    if matches!(
+                        self.registry.get(name),
+                        Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+                    ) =>
                 {
                     Some(name.as_str())
                 }
@@ -261,7 +273,10 @@ impl<'a> StructView for HeaderStructs<'a> {
 
 impl<'a> HeaderStructs<'a> {
     fn read_fields(&self, s: &'a str) -> Option<Vec<FieldShape<&'a str>>> {
-        if !matches!(self.registry.get(s), Some(Kind::Boundary)) {
+        if !matches!(
+            self.registry.get(s),
+            Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+        ) {
             return None;
         }
         let fields = self.struct_fields(s)?;
@@ -300,7 +315,9 @@ impl<'a> HeaderStructs<'a> {
     fn read_members(&self, s: &'a str) -> Option<Vec<ReadMember<&'a str>>> {
         let fields = self.struct_fields(s)?;
         let pairs = match self.registry.get(s) {
-            Some(Kind::Boundary) => embedded_array_pairs(s, fields, self.registry).ok()?,
+            Some(Kind::Boundary | Kind::ArrayPairStruct(_)) => {
+                embedded_array_pairs(s, fields, self.registry).ok()?
+            }
             Some(Kind::ArrayPair(element)) => super::descriptor_pair(fields, element),
             _ => return None,
         };

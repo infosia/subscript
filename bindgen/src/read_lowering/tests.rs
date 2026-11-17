@@ -97,13 +97,10 @@ fn predicate_finds_each_member_kind_at_each_depth() {
             assert_eq!(read(&root, value), *expected, "{root}");
         }
     }
-    // A fill of a scratch struct: the copy-back keeps the script array of
-    // a direct pair (§187 rule 4), materializes a string view at any depth
-    // of by-value embedding (rule 2), and skips a userdata slot and a
-    // callback field (rule 8). `Plain` copies its bytes, so embedded in a
-    // scratch struct its userdata slot is C's bytes (rule 8). The `const`
-    // pointer of `Ptr*` gives a target that C only reads.
-    let userdata = found("Plain", "ud", UnreadableKind::Userdata);
+    // compiler.md §325: a scratch fill receives pairs and checks changed pointer slots.
+    // String views convert at embedded reaches. An absorbed descriptor aggregate keeps its rejection.
+    // A const pointer target stays readonly (compiler.md §187 rule 7).
+    let userdata: Option<(String, String, UnreadableKind)> = None;
     let scratch_direct = [
         ("Pair", None),
         ("ObjPair", None),
@@ -117,7 +114,7 @@ fn predicate_finds_each_member_kind_at_each_depth() {
     ];
     for ((leaf, direct), (_, nested)) in scratch_direct.iter().zip(&copy) {
         assert_eq!(read(leaf, fill), *direct, "{leaf}");
-        // Rule 11: a pair keeps its script array at every reach.
+        // compiler.md §325 rule 1: a changed pair is received at every reach.
         let embedded = match *leaf {
             "Plain" => userdata.clone(),
             "Str" | "Pair" | "ObjPair" | "Call" => None,
@@ -301,6 +298,11 @@ fn scan_rejects_each_read_position() {
             |declarations: &str| format!("{SCAN_TYPES}\nvoid keep(const Call *c);\n{declarations}");
         crate::generate_for_header(&make(case.good), "t.h")
             .unwrap_or_else(|error| panic!("{}: {}", case.good, error.0));
+        if case.message.contains("userdata field") {
+            crate::generate_for_header(&make(case.bad), "t.h")
+                .expect("compiler.md §325 checks pointer replacements at runtime");
+            continue;
+        }
         let error = crate::generate_for_header(&make(case.bad), "t.h").expect_err(case.bad);
         let expected = if case.message.ends_with("(compiler.md §187)") {
             case.message.to_string()

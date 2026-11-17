@@ -100,6 +100,8 @@ pub enum TrapKind {
     WorkerSpawnInWorker = 35,
     /// Array growth would move storage borrowed by a native call (compiler.md §323).
     ArrayStorageBorrowed = 36,
+    /// C replaced a pointer that the script cannot receive (compiler.md §325).
+    ForeignPointerReplaced = 37,
 }
 
 impl TrapKind {
@@ -139,6 +141,7 @@ impl TrapKind {
             34 => TrapKind::HostEntryReentry,
             35 => TrapKind::WorkerSpawnInWorker,
             36 => TrapKind::ArrayStorageBorrowed,
+            37 => TrapKind::ForeignPointerReplaced,
             _ => return None,
         })
     }
@@ -178,6 +181,7 @@ impl TrapKind {
             TrapKind::HostEntryReentry => "host-entry-reentry",
             TrapKind::WorkerSpawnInWorker => "worker-spawn-in-worker",
             TrapKind::ArrayStorageBorrowed => "array-storage-borrowed",
+            TrapKind::ForeignPointerReplaced => "foreign-pointer-replaced",
         }
     }
 
@@ -283,7 +287,11 @@ mod tests {
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(37), None);
+        assert_eq!(
+            TrapKind::from_u32(37),
+            Some(TrapKind::ForeignPointerReplaced)
+        );
+        assert_eq!(TrapKind::from_u32(38), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 

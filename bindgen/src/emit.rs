@@ -13,6 +13,8 @@ pub(super) enum Kind {
     Enum,
     /// `(pointer, count)` descriptor → `elem[]` at use sites.
     ArrayPair(String),
+    /// A descriptor with a struct mirror for pointer uses; value uses keep `T[]`.
+    ArrayPairStruct(String),
     /// `{ const char*; size_t; }` → `string` at use sites.
     StringView,
     Handle,
@@ -232,7 +234,10 @@ fn validate_nullable_positions(
                     let nullable_handle = is_direct_registered_handle(field, registry);
                     let nullable_struct_pointer = field.pointer
                         && field.array_len.is_none()
-                        && matches!(registry.get(&field.base), Some(Kind::Boundary));
+                        && matches!(
+                            registry.get(&field.base),
+                            Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+                        );
                     let lowered = nullable_handle || nullable_struct_pointer;
                     if !lowered {
                         return Err(ParseError(format!(
@@ -344,10 +349,12 @@ fn validate_boundary_positions(
         .iter()
         .filter_map(|decl| match decl {
             Decl::Struct { name, fields }
-                if matches!(registry.get(name), Some(Kind::Boundary))
-                    && fields.iter().any(|field| {
-                        matches!(registry.get(&field.base), Some(Kind::StringView))
-                    }) =>
+                if matches!(
+                    registry.get(name),
+                    Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+                ) && fields
+                    .iter()
+                    .any(|field| matches!(registry.get(&field.base), Some(Kind::StringView))) =>
             {
                 Some(name.clone())
             }
@@ -389,7 +396,7 @@ fn validate_boundary_positions(
                 continue;
             }
             match registry.get(&field.base) {
-                Some(Kind::ArrayPair(_)) => {
+                Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_)) => {
                     return Err(ParseError(format!(
                         "string-field boundary struct `{name}` field `{}` uses descriptor \
                          aggregate `{}`; combined absorbed aggregate fields are not lowered",
@@ -424,7 +431,9 @@ fn validate_boundary_positions(
     for decl in &parsed.decls {
         match decl {
             Decl::Struct { name, fields } => {
-                if let Some(Kind::ArrayPair(element)) = registry.get(name) {
+                if let Some(Kind::ArrayPair(element) | Kind::ArrayPairStruct(element)) =
+                    registry.get(name)
+                {
                     if callback_names.contains(element.as_str()) {
                         return Err(ParseError(format!(
                             "descriptor struct `{name}` has callback-typedef element \
@@ -443,8 +452,10 @@ fn validate_boundary_positions(
                     // every emitted array field for a proven adjacency.
                     if let Some(field) = fields.iter().find(|field| {
                         !field.pointer
-                            && field.array_len.is_none()
-                            && matches!(registry.get(&field.base), Some(Kind::ArrayPair(_)))
+                            && matches!(
+                                registry.get(&field.base),
+                                Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_))
+                            )
                     }) {
                         return Err(ParseError(format!(
                             "struct `{name}` field `{}` embeds descriptor aggregate `{}`; \
@@ -497,7 +508,7 @@ fn validate_boundary_positions(
                                 ret.base
                             )));
                         }
-                        Some(Kind::ArrayPair(_)) => {
+                        Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_)) => {
                             return Err(ParseError(format!(
                                 "foreign function `{name}` returns descriptor aggregate \
                                  `{}` by value; the boundary provenance vocabulary cannot \
@@ -613,12 +624,16 @@ fn validate_boundary_positions(
         };
         for param in params {
             let root = if (param.pointer || param.array_len.is_some())
-                && matches!(registry.get(&param.base), Some(Kind::Boundary))
-            {
+                && matches!(
+                    registry.get(&param.base),
+                    Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+                ) {
                 Some(param.base.as_str())
             } else if !param.pointer && param.array_len.is_none() {
                 match registry.get(&param.base) {
-                    Some(Kind::ArrayPair(element)) => Some(element.as_str()),
+                    Some(Kind::ArrayPair(element) | Kind::ArrayPairStruct(element)) => {
+                        Some(element.as_str())
+                    }
                     _ => None,
                 }
             } else {
@@ -716,7 +731,10 @@ fn validate_lowerable_boundary_aggregate(
             // §187 rules 9 and 15: the pass decision rejects a cycle that
             // a call must build, and passes a `const` cycle that copies its
             // bytes; this walk visits each struct once.
-            if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+            if matches!(
+                registry.get(&field.base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            ) {
                 validate_lowerable_boundary_aggregate(
                     parsed,
                     registry,
@@ -728,7 +746,10 @@ fn validate_lowerable_boundary_aggregate(
             continue;
         }
         if field.pointer {
-            if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+            if matches!(
+                registry.get(&field.base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            ) {
                 validate_lowerable_boundary_aggregate(
                     parsed,
                     registry,
@@ -741,7 +762,7 @@ fn validate_lowerable_boundary_aggregate(
         }
         match registry.get(&field.base) {
             Some(Kind::StringView) => {}
-            Some(Kind::ArrayPair(_)) => {
+            Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_)) => {
                 return Err(ParseError(format!(
                     "boundary scratch root `{root}` recursively reaches `{aggregate}.{}` \
                      which is an absorbed descriptor aggregate and has no write-direction \
@@ -767,7 +788,13 @@ fn validate_lowerable_boundary_aggregate(
 fn aggregate_kind(kind: Option<&Kind>) -> bool {
     matches!(
         kind,
-        Some(Kind::Boundary | Kind::StringView | Kind::ArrayPair(_) | Kind::FnPtr)
+        Some(
+            Kind::Boundary
+                | Kind::StringView
+                | Kind::ArrayPair(_)
+                | Kind::ArrayPairStruct(_)
+                | Kind::FnPtr
+        )
     )
 }
 
@@ -805,13 +832,22 @@ fn collect_recursive_string_owners(
         let pair_element = pairs.ptr_elem.contains_key(&index);
         let embedded_value = !field.pointer
             && field.array_len.is_none()
-            && matches!(registry.get(&field.base), Some(Kind::Boundary));
+            && matches!(
+                registry.get(&field.base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            );
         let pointer_member = field.pointer
             && field.array_len.is_none()
             && !pair_element
-            && matches!(registry.get(&field.base), Some(Kind::Boundary));
+            && matches!(
+                registry.get(&field.base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            );
         if (pair_element || embedded_value || pointer_member)
-            && matches!(registry.get(&field.base), Some(Kind::Boundary))
+            && matches!(
+                registry.get(&field.base),
+                Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+            )
         {
             collect_recursive_string_owners(
                 parsed,
@@ -950,7 +986,7 @@ fn emit_pointer_parameter_provenance(
             || (param.pointer
                 && matches!(
                     registry.get(&param.base),
-                    Some(Kind::Boundary | Kind::External)
+                    Some(Kind::Boundary | Kind::ArrayPairStruct(_) | Kind::External)
                 ))
         {
             records.push(format!(
@@ -975,25 +1011,42 @@ fn emit_member_provenance(
     registry: &HashMap<String, Kind>,
     records: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    if !matches!(registry.get(owner), Some(Kind::Boundary)) {
+    if !matches!(
+        registry.get(owner),
+        Some(Kind::Boundary | Kind::ArrayPairStruct(_))
+    ) {
         return Ok(());
     }
     let pairs = embedded_array_pairs(owner, fields, registry)?;
     for (index, field) in fields.iter().enumerate() {
         let target = matches!(
             registry.get(&field.base),
-            Some(Kind::Boundary | Kind::External)
+            Some(Kind::Boundary | Kind::ArrayPairStruct(_) | Kind::External)
         );
         let pair = pairs.ptr_elem.contains_key(&index);
         let pointer = field.pointer && field.array_len.is_none() && !pair;
         let validated = pair && matches!(registry.get(&field.base), Some(Kind::CEnum(_)));
-        if (target && (pair || pointer)) || validated {
+        if pair || (target && pointer) || validated {
             records.push(format!(
                 "// @subscript-c-member aggregate={} member={} const={}",
                 quoted(owner),
                 quoted(&field.name),
                 field.is_const
             ));
+            if pair {
+                let pointer_first = fields.get(index + 1).is_some_and(|count| {
+                    embedded_count_element_name(&count.name) == Some(field.name.as_str())
+                        || (fields.len() == 2 && count.name == "count")
+                });
+                let order = if pointer_first {
+                    "pointer-first"
+                } else {
+                    "count-first"
+                };
+                if let Some(record) = records.last_mut() {
+                    record.push_str(&format!(" order={order}"));
+                }
+            }
         }
     }
     Ok(())
@@ -1024,7 +1077,8 @@ fn emit_parameter_provenance(
             continue;
         }
         match registry.get(&param.base) {
-            Some(Kind::ArrayPair(_)) => {
+            Some(Kind::ArrayPairStruct(_)) if param.pointer => {}
+            Some(Kind::ArrayPair(_) | Kind::ArrayPairStruct(_)) => {
                 let element = first_struct_field(parsed, &param.base).ok_or_else(|| {
                     ParseError(format!(
                         "descriptor provenance for `{}.{}` lost C struct `{}`",
@@ -1195,6 +1249,42 @@ pub(super) fn classify(parsed: &Parsed) -> HashMap<String, Kind> {
             Decl::Func { .. } => {}
         }
     }
+    // compiler.md §325 rule 8: a descriptor used through a pointer needs a struct mirror.
+    let wrappers: HashSet<String> = parsed
+        .decls
+        .iter()
+        .flat_map(|decl| match decl {
+            Decl::Func { params, .. } => params
+                .iter()
+                .filter(|field| field.pointer)
+                .map(|field| field.base.clone())
+                .collect::<Vec<_>>(),
+            Decl::Struct { fields, .. } => fields
+                .iter()
+                .filter(|field| field.pointer)
+                .map(|field| field.base.clone())
+                .collect(),
+            _ => Vec::new(),
+        })
+        .filter(|name| matches!(reg.get(name), Some(Kind::ArrayPair(_))))
+        .collect();
+    for name in wrappers {
+        let Some(Decl::Struct { fields, .. }) = parsed
+            .decls
+            .iter()
+            .find(|decl| matches!(decl, Decl::Struct { name: owner, .. } if owner == &name))
+        else {
+            continue;
+        };
+        if fields[1].name != "count"
+            && embedded_count_element_name(&fields[1].name) != Some(fields[0].name.as_str())
+        {
+            continue;
+        }
+        if let Some(Kind::ArrayPair(element)) = reg.get(&name) {
+            reg.insert(name, Kind::ArrayPairStruct(element.clone()));
+        }
+    }
     // A scalar typedef alias resolves to its own name at use sites (the
     // emitted `type X = <scalar>` alias). Only aliases whose typedef chain
     // bottoms out in a mapped integer are registered; others are left
@@ -1286,18 +1376,10 @@ pub(super) struct EmbeddedPairs {
     pub(super) count_idx: HashSet<usize>,
 }
 
-/// Recognizes embedded `(count, pointer)` array pairs (§13.2/§30.2), and
-/// ONLY the shape both lowerings reconstruct: a `size_t` count field named
-/// `<n>Count` or `<n>_count` **immediately followed** by `[const] T* <n>`
-/// (count-first, contiguous). `T` may be a [`lang_scalar`] scalar, a
-/// registered enum, registered boundary struct, or (for const input only)
-/// a registered opaque handle. The pointer field index maps to `T[]`; the
-/// count field index is elided.
-///
-/// This recognizer is deliberately total for pair-looking struct fields.
-/// If matching halves are non-adjacent, pointer-first, or have an
-/// unsupported element, it returns a named bind error. That makes a leaked
-/// count plus `Enum | null`/`Struct | null` pointer impossible to emit.
+/// Recognizes adjacent struct pairs in either C order (compiler.md §325 rule 8).
+/// A named count uses `<n>Count` or `<n>_count`; a two-field descriptor can use `count`.
+/// The count has type `size_t`. The mirror elides it and spells the pointer as `T[]`.
+/// Non-adjacent halves, unmatched names, and unsupported elements fail before emission.
 pub(super) fn embedded_array_pairs(
     owner: &str,
     fields: &[CField],
@@ -1308,7 +1390,11 @@ pub(super) fn embedded_array_pairs(
         if count.pointer || count.array_len.is_some() {
             continue;
         }
-        let Some(element_name) = embedded_count_element_name(&count.name) else {
+        let descriptor_name =
+            (fields.len() == 2 && count_index == 1 && count.name == "count" && fields[0].pointer)
+                .then_some(fields[0].name.as_str());
+        let Some(element_name) = embedded_count_element_name(&count.name).or(descriptor_name)
+        else {
             continue;
         };
         let matching_pointer = fields
@@ -1338,7 +1424,7 @@ pub(super) fn embedded_array_pairs(
                 count.name, ptr.name, count.base
             )));
         }
-        if pointer_index != count_index + 1 || ptr.array_len.is_some() {
+        if pointer_index.abs_diff(count_index) != 1 || ptr.array_len.is_some() {
             return Err(ParseError(format!(
                 "struct `{owner}` fields `{}` and `{}` form a count/pointer pair but are not \
                  the supported adjacent count-first shape; refusing to emit a bare count \
@@ -1350,7 +1436,7 @@ pub(super) fn embedded_array_pairs(
             scalar.to_string()
         } else {
             match reg.get(&ptr.base) {
-                Some(Kind::Enum | Kind::Boundary) => ptr.base.clone(),
+                Some(Kind::Enum | Kind::Boundary | Kind::ArrayPairStruct(_)) => ptr.base.clone(),
                 Some(Kind::CEnum(alias)) => alias.clone(),
                 Some(Kind::Handle | Kind::External) if ptr.is_const => ptr.base.clone(),
                 _ => {
@@ -1451,7 +1537,7 @@ fn parameter_array_pairs(
                 Some(Kind::Handle | Kind::External) => {
                     "registered opaque handles are input-only and require `const H*`"
                 }
-                Some(Kind::Enum | Kind::Boundary) => {
+                Some(Kind::Enum | Kind::Boundary | Kind::ArrayPairStruct(_)) => {
                     "registered enum and boundary-struct pairs are supported only at \
                      struct level; direct parameter pairs have no lowering"
                 }
@@ -1579,7 +1665,12 @@ fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError
         if f.base == "void" {
             return Ok("object | null".to_string());
         }
-        return Ok(format!("{} | null", map_named(&f.base, reg)?));
+        let name = if matches!(reg.get(&f.base), Some(Kind::ArrayPairStruct(_))) {
+            f.base.clone()
+        } else {
+            map_named(&f.base, reg)?
+        };
+        return Ok(format!("{name} | null"));
     }
     if f.base == "void" {
         return Ok("void".to_string());
@@ -1595,7 +1686,7 @@ fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError
 /// unknown spelling into the mirror.
 fn map_named(base: &str, reg: &HashMap<String, Kind>) -> Result<String, ParseError> {
     match reg.get(base) {
-        Some(Kind::ArrayPair(elem)) => {
+        Some(Kind::ArrayPair(elem) | Kind::ArrayPairStruct(elem)) => {
             let element = match reg.get(elem) {
                 Some(Kind::CEnum(alias)) => alias,
                 _ => elem,
@@ -1714,12 +1805,9 @@ mod fixed_array_parameter_tests {
     #[test]
     fn mutable_array_elements_are_read_roots() {
         let header = "typedef struct Item { void *userdata; } Item;\nvoid fill(Item values[2]);\n";
-        let error = crate::generate_for_header(header, "array.h")
-            .expect_err("mutable userdata has no read lowering");
-        assert!(
-            error.0.contains("fill") && error.0.contains("userdata"),
-            "{error}"
-        );
+        let mirror = crate::generate_for_header(header, "array.h")
+            .expect("compiler.md §325 checks a changed userdata slot");
+        assert!(mirror.contains("userdata: object | null"));
         let constant = header.replace("Item values[2]", "const Item values[2]");
         crate::generate_for_header(&constant, "array.h").expect("const array is an input");
     }

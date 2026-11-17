@@ -51,6 +51,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", header.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest.join("external-userdata.h").display()
+    );
     // The §187 read-root fixture: the tests bind subsets of its header.
     let read_root_source = manifest.join("read-root.c");
     println!("cargo:rerun-if-changed={}", read_root_source.display());
