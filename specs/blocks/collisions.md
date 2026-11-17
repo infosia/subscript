@@ -977,7 +977,9 @@ Accept: `a369`, `a370`. Reject: `r421`.
   members are rejected by this compiler (`tsc` accepts them; no reject
   entry per member — the whitelist is the rule). At a C boundary a `T[]`
   argument lowers to its `(ptr, len)` pair; the callee borrows, the
-  caller retains ownership.
+  caller retains ownership. The array stays reachable until the call
+  returns, and a growth past its capacity during the call (from a
+  callback) is a runtime error (`compiler.md` §323).
 - **Q5 (strings)** — `string` is an immutable UTF-8 byte view
   `(ptr, len)`; no NUL terminator assumed. `length` is the byte length
   (`i32`). `slice(start, end)` takes byte offsets and traps off a UTF-8
